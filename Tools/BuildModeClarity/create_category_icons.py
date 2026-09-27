@@ -1,3 +1,6 @@
+# create_category_icons.py
+# 역할: 건설 화면의 배치·색·가독성 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Create original SDF pictograms without modifying any existing icon artwork.
 
 Run before FF.ApplyBuildModeClarityCatalog. The project already always-cooks

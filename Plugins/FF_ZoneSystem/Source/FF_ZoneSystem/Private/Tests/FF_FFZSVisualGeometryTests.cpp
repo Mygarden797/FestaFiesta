@@ -1,8 +1,11 @@
+// FF_FFZSVisualGeometryTests.cpp
+// 역할: 메시의 중심과 크기 보정이 시설 표시 규격을 지키는지 자동 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
 
 #include "FF_FFZSVisualGeometry.h"
+#include "FF_FFZSTypes.h"
 
 namespace
 {

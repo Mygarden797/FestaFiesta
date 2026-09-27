@@ -1,3 +1,6 @@
+// FF_FacilityCodexSubsystem.h
+// 역할: 월드·카탈로그·발견 기록 변경을 도감 화면과 보상 청구로 연결한다.
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -36,6 +39,12 @@ public:
 	/** Claims a discovered recipe's authored reward once per profile. */
 	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
 	bool ClaimDiscoveryReward(FName RuleId);
+	/** Global collection progress, independent of the screen's category/search filters. */
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
+	TArray<FFF_FacilityCodexCollectionMilestone> GetCollectionMilestones() const;
+	/** Claims one configured collection stage once per profile, using the same Gold wallet. */
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
+	bool ClaimCollectionReward(FName MilestoneId);
 	/** Explicit boundary refresh, useful after external registry reconstruction. Not a per-frame call. */
 	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
 	void Refresh();
@@ -60,6 +69,8 @@ private:
 	TSet<FName> SessionDiscoveries;
 	TMap<FName, int32> EntryByRuleId;
 	TSet<FGuid> EligibleInstanceIds;
+	TSet<FGuid> UnreferencedInstanceIds;
+	TSet<FName> ReferencedDefinitionIds;
 	uint64 CachedRegistryRevision = MAX_uint64;
 	FTimerHandle StartupRewardTimer;
 	bool bReadyToClaimRewards = false;

@@ -1,7 +1,11 @@
+// FF_PrepBuildDesignerTests.cpp
+// 역할: 준비 단계 건설 화면의 동작과 저장된 화면 연결을 자동 검증한다.
+
 // Checks Designer edits on a transient instance; never saves or modifies a WBP asset.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/Border.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
@@ -23,7 +27,7 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 	auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepBuildTileWidget>(nullptr,
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C")));
+		FFBuildUIAssetPaths::PrepBuildTileClass));
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	if (!TestNotNull(TEXT("Actual Designer tile class"), Class) || !TestNotNull(TEXT("Editor world"), World)) { return false; }
 	const bool Previous = Class->bCanCallInitializedWithoutPlayerContext;

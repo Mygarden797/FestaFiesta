@@ -1,3 +1,6 @@
+# apply_catalog_emphasis.py
+# 역할: UI 이미지·화면 에셋 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Apply and verify the one-time UMG catalog emphasis migration.
 
 Run in a freshly built, full Unreal Editor with -ExecutePythonScript (not a

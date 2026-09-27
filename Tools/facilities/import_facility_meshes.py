@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# import_facility_meshes.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 제작 결과를 Unreal 에셋으로 가져오고 연결한다.
+
 """Import the generated festival facility FBXs and link them to FFZS definitions.
 
 Run from UnrealEditor-Cmd after ``build_facility_meshes.py`` has generated the

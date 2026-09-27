@@ -1,12 +1,17 @@
+// FF_FacilityCodexPresenterTests.cpp
+// 역할: 시설 도감의 동작과 저장된 화면 연결을 자동 검증한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
+#include "Components/TileView.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
@@ -217,7 +222,7 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 	// closing the codex must not close/recreate its browsing session or reset filters.
 	{
 		UClass* PrepClass = LoadClass<UFF_PrepPanelBuild>(nullptr,
-			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
+			FFBuildUIAssetPaths::BuildPanelClass);
 		if (!TestNotNull(TEXT("Production prep catalog WBP"), PrepClass)) return false;
 		// This fixture deliberately detaches the catalog and inspects it afterwards.
 		// A preview world requests GC when it closes, so a raw local cannot own that
@@ -259,10 +264,16 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 			!TestNotNull(TEXT("Catalog header codex button"), CatalogOpenButton)) return false;
 		const FText SearchBefore = FText::FromString(TEXT("부스"));
 		Search->SetText(SearchBefore);
-		if (!TestTrue(TEXT("Authored booth search spans multiple pages"), Prep->GetCatalogPageCount() > 1)) return false;
-		Prep->SetCatalogPage(1);
-		const int32 PageBefore = Prep->GetCatalogPageIndex();
+		UTileView* CatalogList = Cast<UTileView>(Prep->GetWidgetFromName(TEXT("TileView_Facilities")));
+		if (!TestNotNull(TEXT("Production virtualized catalog list"), CatalogList)) return false;
 		const TArray<UObject*> PageItemsBefore = Prep->GetCatalogPageItems();
+		if (!TestTrue(TEXT("Authored booth search returns multiple facilities"), PageItemsBefore.Num() > 1)) return false;
+		TestEqual(TEXT("Continuous catalog has one logical page"), Prep->GetCatalogPageCount(), 1);
+		TestEqual(TEXT("Filtered facilities populate the virtualized list"),
+			CatalogList->GetListItems().Num(), PageItemsBefore.Num());
+		CatalogList->SetScrollOffset(1.f);
+		const float ScrollBefore = CatalogList->GetScrollOffset();
+		if (!TestTrue(TEXT("Continuous catalog can retain a browsing offset"), ScrollBefore > 0.f)) return false;
 		const ESlateVisibility VisibilityBefore = Prep->GetVisibility();
 		CatalogOpenButton->OnClicked.Broadcast();
 		if (!TestTrue(TEXT("Search-adjacent launcher opens the codex"), Presenter->IsCodexOpen())) return false;
@@ -284,8 +295,10 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("Catalog input resumes after closing codex"), Build->IsInputSuspendedForPauseMenu());
 		TestEqual(TEXT("Closing codex returns to the same catalog state"), Build->GetBuildModeState(), EFF_BuildModeState::CatalogOpen);
 		TestTrue(TEXT("Catalog search text survives codex open and close"), Search->GetText().EqualTo(SearchBefore));
-		TestEqual(TEXT("The second catalog page survives codex open and close"), Prep->GetCatalogPageIndex(), PageBefore);
+		TestEqual(TEXT("The continuous catalog stays on its logical page"), Prep->GetCatalogPageIndex(), 0);
 		TestTrue(TEXT("Catalog item identities and order survive codex open and close"), Prep->GetCatalogPageItems() == PageItemsBefore);
+		TestTrue(TEXT("Catalog browsing offset survives codex open and close"),
+			FMath::IsNearlyEqual(CatalogList->GetScrollOffset(), ScrollBefore));
 		TestTrue(TEXT("The same catalog instance is still mounted after closing codex"), Prep->IsInViewport());
 		TestEqual(TEXT("Closing codex restores the original catalog visibility"), Prep->GetVisibility(), VisibilityBefore);
 

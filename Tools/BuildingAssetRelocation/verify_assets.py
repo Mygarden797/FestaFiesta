@@ -1,3 +1,6 @@
+# verify_assets.py
+# 역할: 건설 에셋 폴더 이관 작업에서 저장된 결과가 요구 조건에 맞는지 검증한다.
+
 """Read-only Unreal verification for the building asset relocation manifest.
 
 Run this script in a fresh, headless editor before and after relocation. It

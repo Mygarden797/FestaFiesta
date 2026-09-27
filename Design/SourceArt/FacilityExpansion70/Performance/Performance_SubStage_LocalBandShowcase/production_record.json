@@ -1,0 +1,81 @@
+{
+  "number": 43,
+  "category": "Performance",
+  "subtype": "SubStage",
+  "name_ko": "로컬 밴드 쇼케이스",
+  "slug": "LocalBandShowcase",
+  "id": "Performance_SubStage_LocalBandShowcase",
+  "footprint_cm": [
+    900,
+    650
+  ],
+  "height_cm": 500,
+  "description_ko": "짧은 공연을 위한 소형 무대.",
+  "emphasis_ko": "낮은 지붕·밴드 배너·간단한 악기 구성을 강조. 악기와 스탠드를 공유하고 연주 애니메이션용 부품은 분리한다.",
+  "reference_image": "Design/Facitilies/43 로컬 밴드 쇼케이스.png",
+  "exploded_reference_image": "Design/Facitilies/43 로컬 밴드 쇼케이스 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_SubStage_LocalArtist",
+  "followup_features": [
+    "악기 연주 애니메이션·음향·공연 프로그램·관객 행동은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_SubStage_LocalBandShowcase\\SM_FF_Performance_SubStage_LocalBandShowcase.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\43_Performance_SubStage_LocalBandShowcase.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_SubStage_LocalBandShowcase\\iso.png",
+  "bounds_m": [
+    8.46846866607666,
+    5.965965747833252,
+    5.0
+  ],
+  "bounds_min_m": [
+    -4.23423433303833,
+    -2.982982873916626,
+    0.0
+  ],
+  "bounds_max_m": [
+    4.23423433303833,
+    2.982982873916626,
+    5.0
+  ],
+  "triangles": 24304,
+  "material_names": [
+    "M_F70_DarkTeal",
+    "M_F70_Wood",
+    "M_F70_Cream",
+    "M_F70_Teal",
+    "M_F70_Metal",
+    "M_F70_Green",
+    "M_F70_Amber"
+  ],
+  "collision_count": 12,
+  "editable_parts": 106,
+  "fbx_sha256": "13723f33db6078aecf73f77243f2699384151694c1d8a72f226025e3abf1aeaf",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": [
+    [
+      -3.6936936378479004,
+      -2.3323323726654053,
+      3.7037036418914795
+    ],
+    [
+      -3.6936936378479004,
+      1.441441535949707,
+      3.7037036418914795
+    ],
+    [
+      3.6936936378479004,
+      -2.3323323726654053,
+      3.7037036418914795
+    ],
+    [
+      3.6936936378479004,
+      1.441441535949707,
+      3.7037036418914795
+    ]
+  ]
+}

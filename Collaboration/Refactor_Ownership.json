@@ -1,0 +1,3847 @@
+{
+  "schema_version": 1,
+  "base_commit": "33e69067a0204cc5bd49223ff3f2f6718dbbf42e",
+  "authors": [
+    "Asera",
+    "HanKwangHoon"
+  ],
+  "moves": {
+    "Source/FestaFiesta/Private/UI/Widgets/FF_UICommonWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Widgets/FF_UICommonWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildFacilityCostTooltipWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildFacilityCostTooltipWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/UI/FF_BuildCatalogWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/UI/FF_BuildCatalogWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Testing/FF_ZoneLifecycleTestPanelWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Testing/FF_ZoneLifecycleTestPanelWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildModeClaritySynergyBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildModeClaritySynergyBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildModeClarityToolsBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildModeClarityToolsBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildModeGuideWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildModeGuideWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildMultiSelectionWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildMultiSelectionWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildPlacementFailureFeedbackWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildPlacementFailureFeedbackWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_BuildModeClarityFacilityV2Builder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildModeClarityFacilityV2Builder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Title/FF_TitleCleanCasualWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Title/FF_TitleCleanCasualWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityAuroraThemeBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraThemeBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_FacilityAuroraBuildWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_FacilityAuroraBuildWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenuePearlBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenuePearlBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityAuroraLightingBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraLightingBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Atlas/FF_AtlasNaturalWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Atlas/FF_AtlasNaturalWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Core/FF_UIWbpBuilderCommon.cpp": "Source/FestaFiestaEditor/Private/UI/Core/FF_UIWbpBuilderCommon.cpp",
+    "Source/FestaFiesta/Private/UI/LiveHUD/FF_LiveHudWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/LiveHUD/FF_LiveHudWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueClarityBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueClarityBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityAuroraInfoBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraInfoBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityAuroraRevenueProgramsMigration.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityAuroraRevenueProgramsMigration.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildTypographyBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildTypographyBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_BuildReferenceFacilityInfoBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildReferenceFacilityInfoBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Atlas/FF_AtlasWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Atlas/FF_AtlasWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Core/FF_UIFlowStubWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Core/FF_UIFlowStubWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_BuildModeClarityInfoBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildModeClarityInfoBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildToolsWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Core/FF_LoadingScreenWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Core/FF_LoadingScreenWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_BuildPearlCodexBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildPearlCodexBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Frontend/FF_FrontendWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Frontend/FF_FrontendWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_BuildReferenceFacilityCodexBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildReferenceFacilityCodexBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_BuildReferenceCodexCatalogTabBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildReferenceCodexCatalogTabBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildStudioWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildStudioWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Frontend/FF_FrontendSetupStyleWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Frontend/FF_FrontendSetupStyleWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildSynergyCardWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildSynergyCardWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildReferenceToolsWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildReferenceToolsWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildSynergyWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildSynergyWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexActionsBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexActionsBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilitySynergyPearlBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilitySynergyPearlBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexClarityBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexClarityBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_ProgramPearlWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_ProgramPearlWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCatalogBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexCatalogBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityWorldBadgeWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityWorldBadgeWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Settings/FF_FullscreenOptionsWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Settings/FF_FullscreenOptionsWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Settings/FF_SettingsWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Settings/FF_SettingsWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Settings/FF_KeyBindingWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Settings/FF_KeyBindingWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexFestivalBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexFestivalBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexContrastBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexContrastBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Report/FF_ReportScreenWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Report/FF_ReportScreenWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexGlassBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexGlassBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Pause/FF_PauseWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Pause/FF_PauseWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexInspectorBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexInspectorBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexRewardAffordanceBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexRewardAffordanceBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_CodexCatalogFocusBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_CodexCatalogFocusBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexRefinementBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexRefinementBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_BuildReferenceCatalogBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_BuildReferenceCatalogBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_BuildModeClarityCatalogBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_BuildModeClarityCatalogBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_BuildPearlCatalogBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_BuildPearlCatalogBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexShowcaseBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexShowcaseBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_PrepBuildWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_PrepBuildWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/PrepHUD/FF_PrepHudWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/FF_PrepHudWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildTypography.h": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildTypography.h",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildUIAssetPaths.h": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildUIAssetPaths.h",
+    "Source/FestaFiesta/Private/UI/Core/FF_BuildPearlStyle.h": "Source/FestaFiesta/Public/UI/Core/FF_BuildPearlStyle.h",
+    "Source/FestaFiesta/Private/UI/Core/FF_PauseOptionsLightTealStyle.h": "Source/FestaFiesta/Public/UI/Core/FF_PauseOptionsLightTealStyle.h",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramLayout.h": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramLayout.h",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoUpgradeLayout.h": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoUpgradeLayout.h",
+    "Source/FestaFiesta/Private/UI/Settings/FF_KeyBindingLayoutMetrics.h": "Source/FestaFiesta/Public/UI/Settings/FF_KeyBindingLayoutMetrics.h",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoSelection.h": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoSelection.h",
+    "Source/FestaFiesta/Private/UI/Frontend/FF_FrontendCasualStyle.h": "Source/FestaFiesta/Public/UI/Frontend/FF_FrontendCasualStyle.h",
+    "Source/FestaFiesta/Private/UI/Core/FF_UIWbpBuilderCommon.h": "Source/FestaFiestaEditor/Private/UI/Core/FF_UIWbpBuilderCommon.h",
+    "Source/FestaFiesta/Private/UI/Frontend/FF_FrontendCasualBuilder.h": "Source/FestaFiestaEditor/Private/UI/Frontend/FF_FrontendCasualBuilder.h",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoWbpBuilder.h": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoWbpBuilder.h",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoTests.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildingAssetRelocation.cpp": "Source/FestaFiestaEditor/Private/Building/FF_BuildingAssetRelocation.cpp",
+    "Source/FestaFiesta/Private/Editor/FF_PackagingInteractionRepair.cpp": "Source/FestaFiestaEditor/Private/Editor/FF_PackagingInteractionRepair.cpp"
+  },
+  "support": [
+    "Source/FestaFiesta/Private/Building/FF_BuildCatalogModel.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildMultiSelection.cpp",
+    "Source/FestaFiestaEditor/FestaFiestaEditor.Build.cs",
+    "Source/FestaFiestaEditor/Private/FestaFiestaEditorModule.cpp"
+  ],
+  "files": [
+    {
+      "path": "Design/UXUI/Facility_Aurora_20260920/V7/catalog-v5.js",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Design/UXUI/Facility_Aurora_20260920/V7/flow-refinements.js",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Design/UXUI/Facility_Aurora_20260920/V7/lighting-refine.js",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Design/UXUI/Facility_Aurora_20260920/V7/lighting-tabs-v6.js",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Design/UXUI/Facility_Aurora_20260920/V7/lighting.js",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Design/UXUI/Facility_Aurora_20260920/V7/placement-v5.js",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Design/UXUI/Facility_Aurora_20260920/V7/program-marker-v5.js",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Design/UXUI/Facility_Aurora_20260920/V7/ui.js",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Config/DefaultFF_ZoneSystem.ini",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Config/FilterPlugin.ini",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/FF_ZoneSystem.Build.cs",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSAudienceLayout.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSAudienceLibrary.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildArea.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildAreaGeometry.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildAreaGeometry.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildGridSurface.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildPresentationSettings.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildRangePresentation.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildRangePresentation.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildableGrid.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildableGridActor.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildableGridComponent.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSDeveloperSettings.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSFacilityActor.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSFacilityDefinition.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSFacilityLightingRig.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSGridLibrary.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSNavArea_QueueLane.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "adf3be73d973021a3b482de3abf0165588a93a91"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSOrientedGeometry.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "5ed94017e2046f16ef8c6be38fd878c06a0a86d7"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSPlacementPreviewActor.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSProtectedArea.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSQueueComponent.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSSpatialHash.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSSpatialHash.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSTypes.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSWorldSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSZoneAccessSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "f27bd53e6b032b3edf50b62acc8c2953d638fb4f"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSZoneActor.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_ZoneSystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSAudienceTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSBuildAreaGeometryTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSBuildRangePresentationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSBuildableGridTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSDeveloperSettingsTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSFacilityDefinitionTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSGridTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSOrientedGeometryTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "5ed94017e2046f16ef8c6be38fd878c06a0a86d7"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSQueueTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSTestFixtures.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f035fe8c177c60c71bd205acb1f7ae73d9ff81c"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSAudienceLayout.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSAudienceLibrary.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSBuildArea.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSBuildGridSurface.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSBuildPresentationSettings.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSBuildableGrid.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSBuildableGridActor.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSBuildableGridComponent.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSCollision.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSDeveloperSettings.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSExternalPolicy.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSFacilityActor.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSFacilityAnchorComponent.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSFacilityDefinition.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSFacilityLightingRig.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSGridLibrary.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSNavArea_QueueLane.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "adf3be73d973021a3b482de3abf0165588a93a91"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSOrientedGeometry.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "5ed94017e2046f16ef8c6be38fd878c06a0a86d7"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSPlacementGridModel.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSPlacementPreviewActor.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSProtectedArea.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSQueueAgent.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSQueueComponent.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSTypes.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSWorldSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSZoneAccessSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "f27bd53e6b032b3edf50b62acc8c2953d638fb4f"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSZoneActor.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_ZoneSystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSAudienceCapacityEditor.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSAudienceCapacityEditor.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityEditorHelpers.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f035fe8c177c60c71bd205acb1f7ae73d9ff81c"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityLevelPreview.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityLevelPreview.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSNavigationEditorLibrary.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Tests/FF_FFZSAudienceCapacityTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Tests/FF_FFZSAudienceEditorTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Public/FF_FFZSNavigationEditorLibrary.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/FF_ZoneSystemTests.Build.cs",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSAudienceWorldTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildCatalogLightingTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "66443ca778f251b60d13c502947290ca628c1b09"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildGridSurfaceTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildableGridPresentationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildableGridRenderedPreviewTest.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildableGridWorldTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSFacilityLevelPresentationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSFacilityLightingTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSFacilityPlayerCollisionTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSLightingTestRig.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSLightingTestRig.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSNavigationObstacleTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "5ed94017e2046f16ef8c6be38fd878c06a0a86d7"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSPolicyTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSProductionLightingTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSRoadTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSSaveGameTestObject.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSSaveGameTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSSpatialHashTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSTestExternalPolicy.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSUnifiedConstructionTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSWorldTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSZoneAccessDiagnosticsTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_ZoneSystemTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Public/FF_FFZSTestExternalPolicy.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexModel.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexProgressSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexRewardTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexSettings.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexTestObserver.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "599c2edcd2cf9baa6a1dd2c6679fb9917e7555fb"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogEconomyReadModel.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogModel.cpp",
+      "scope": "new_support",
+      "author": "",
+      "creation_commit": ""
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogProgramTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe1c3ea3f72c3f764b28cb023e5509968a16e02f"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogRetirementTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogSubsystemTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogThumbnailTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildDragPlacement.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildDragPlacementPath.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildDragPlacementPathTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildDragPlacementTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildFacilityInspectionTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildGridOverviewTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildLightingCatalogTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "66443ca778f251b60d13c502947290ca628c1b09"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildModeSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildModeSubsystemTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "f45182f90acc03c09ea8413aac9065f6249ccd0b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildMultiSelection.cpp",
+      "scope": "new_support",
+      "author": "",
+      "creation_commit": ""
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildMultiSelectionTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildNoRoadPlacementTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildPlacementAssistance.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildPlacementAssistanceTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildPlacementGizmoIntegration.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildPlacementPointerPolicy.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildPlacementPointerPolicy.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildPlacementPointerPolicyTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildRoadCatalogTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildSynergyCatalogContextTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_BuildingSettings.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_FacilityDefinitionContentTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f035fe8c177c60c71bd205acb1f7ae73d9ff81c"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_FacilityNamingLibrary.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_FacilityNamingLibraryTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_FacilityUpgradeIntegrationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_FacilityUpgradeRulesTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_FacilityUpgradeSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_FacilityUpgradeTestPolicy.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FF_FacilityUpgradeTypes.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildCategoryIcons.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "78c10d0e333de5ba7d31933fc8f05c3e3d8109b1"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildFacilityCostTooltip.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildFacilityCostTooltipTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildFavoritesSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "78c10d0e333de5ba7d31933fc8f05c3e3d8109b1"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildFeedback.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildModeGuide.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "5ed94017e2046f16ef8c6be38fd878c06a0a86d7"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildMultiSelectionWidget.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildPlacementFailureFeedback.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildPlacementFailureFeedbackTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildPlacementGizmo.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildPlacementGizmoTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildPlacementGuidance.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildStudioWidgetTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildSynergyPresentationTest.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildSynergyWidget.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsVisualTest.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsWidget.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsWidgetTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_FacilityAuroraBuildTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyEvaluator.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyRulePolicy.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyRulePolicy.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergySubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyTableBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyTableBuilder.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyTypes.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Testing/FF_ZoneLifecycleDebugDayControl.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "126b9e8fc6080a6535738ac1a4281fbeb163cf5a"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Testing/FF_ZoneLifecycleTestPanel.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b280911a37b24d86b6da0921f96cdbc8ec937716"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Testing/FF_ZoneLifecycleTestPanelSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b280911a37b24d86b6da0921f96cdbc8ec937716"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Testing/FF_ZoneLifecycleTestPanelTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b280911a37b24d86b6da0921f96cdbc8ec937716"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityCatalogDataTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/UI/FF_BuildCatalogGoldTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/UI/FF_BuildCatalogScreen.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/UI/FF_BuildCatalogWidgetBlueprintTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/UI/FF_BuildFacilityCard.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/UI/FF_BuildMinorSection.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/UI/FF_BuildTopButton.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/UI/FF_BuildTopButtonStyle.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Camera/FF_FestivalPlayerControllerTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5e62426529c46e698d4eb9254944ca77871918e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Character/FF_FestivalCharacterTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/CrowdSystem/Lane/FF_CrowdLaneValidationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/CrowdSystem/Systems/FF_CrowdArrivalLifecycleTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/CrowdSystem/Systems/FF_CrowdProductionSpawnTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/CrowdSystem/Systems/FF_CrowdRoadSurfaceTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/DataTables/FF_FacilityRevenueTableRow.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "dcd448a404c949a6a0aa0d5c2de45a2b0bcd00f0"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Economy/FF_ProgramAuthoringValidationLibrary.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Economy/FF_ProgramFacilityProtectionSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Economy/FF_ProgramSchedulingSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Economy/FF_ZoneSystemEconomyBridgeSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Economy/Rules/FF_FacilityRevenueBook.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Economy/Tests/FF_FacilityRevenueBookTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Economy/Tests/FF_FacilityRevenueTableTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "dcd448a404c949a6a0aa0d5c2de45a2b0bcd00f0"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Economy/Tests/FF_ProgramAuthoringValidationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Economy/Tests/FF_ProgramSchedulingSubsystemTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Economy/Tests/FF_ZoneSystemEconomyBridgeSubsystemTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Incident/Tests/FF_IncidentCatalogLoadTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "17289a122fb98a6a6112e19b3419546fbd1b55c7"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/NPC/Insights/FF_CrowdInsightsLifecycleTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "17289a122fb98a6a6112e19b3419546fbd1b55c7"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityColorPicker.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoPanel.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoTypes.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityLightingControls.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityLightingDraftTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramCard.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramPicker.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramPreviewTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "78c10d0e333de5ba7d31933fc8f05c3e3d8109b1"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityProgramMarkerSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityProgramMarkerTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityProgramMarkerWidget.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilitySynergyEntryWidget.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilitySynergyTabTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCard.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCatalogUiTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCollection.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCollectionTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexGlassTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexImage.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexLauncher.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPresentation.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPresenterSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPresenterTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPreview.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPreviewTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexRewardFeedbackTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexScreen.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexThumbnailTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexUiTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueRanking.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Pause/FF_PauseHubScreen.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Pause/FF_PauseHubTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_PrepBuildInputBridgeSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "7733733eaaef00d0ca4419b4324ab1b503d9a5f9"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_PrepBuildPresentationModel.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_PrepBuildPresentationRules.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_PrepBuildTileData.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_PrepBuildTileWidget.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Build/Tests/FF_PrepBuildDesignerTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "78c10d0e333de5ba7d31933fc8f05c3e3d8109b1"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Build/Tests/FF_PrepBuildInputBridgeTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "7733733eaaef00d0ca4419b4324ab1b503d9a5f9"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Build/Tests/FF_PrepBuildPresentationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Build/Tests/FF_PrepBuildVirtualizedSlateTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Build/Tests/FF_PrepBuildWidgetContractTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Panels/FF_PrepPanelBuild.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Panels/FF_PrepProgramFacilityNavigationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Panels/FF_ProgramFacilityGuide.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/PrepHUD/Panels/FF_ProgramFacilityGuideTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Settings/FF_FestivalSettingsPolicy.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Settings/FF_FestivalSettingsScreen.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Settings/FF_FestivalSettingsSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Settings/FF_FestivalSettingsTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Settings/FF_KeyBindingDefinitions.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Settings/FF_KeyBindingPanel.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Settings/FF_KeyBindingRuntimeSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Settings/FF_KeyBindingTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Settings/FF_RuntimeSettingsSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Settings/FF_SettingSelectRow.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Settings/FF_SettingSliderRow.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/Settings/FF_SettingToggleRow.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/UI/ViewModel/FF_FestivalViewModelConsoleTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/FF_TimeHudWidgetBlueprintTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0f6eb33128979cefdbeb0b888888fd02448d778b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneAccessExitTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneFacilityLifecycleTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b280911a37b24d86b6da0921f96cdbc8ec937716"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneLayoutAuthoringLibrary.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/FF_ZonePopulationBridgeSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c37a670b4510a7e5b511dfedf279fb215dc3c4bc"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/FF_ZonePopulationBridgeTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c37a670b4510a7e5b511dfedf279fb215dc3c4bc"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneQueuePolicy.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneQueueProjection.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneSystemIntegrationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "9295457293fab7d61ffd20be13e340ed47a9bc57"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneSystemQueueBridgeSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "9295457293fab7d61ffd20be13e340ed47a9bc57"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneSystemStageBridgeSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "9295457293fab7d61ffd20be13e340ed47a9bc57"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexModel.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexProgressSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexSettings.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexTypes.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FF_BuildCatalogEconomyReadModel.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FF_BuildCatalogModel.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FF_BuildCatalogSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FF_BuildCatalogTypes.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FF_BuildModeSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FF_BuildMultiSelectionModel.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FF_BuildToolbarInput.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FF_BuildingSettings.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FF_FacilityNamingLibrary.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FF_FacilityUpgradeSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FF_FacilityUpgradeTypes.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildCategoryIcons.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "78c10d0e333de5ba7d31933fc8f05c3e3d8109b1"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildFacilityCostTooltip.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildFavoritesSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "78c10d0e333de5ba7d31933fc8f05c3e3d8109b1"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildFeedback.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildModeGuide.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "028493cc491c4741b0ad2c2a9f98e33c15b58e94"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildMultiSelectionWidget.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildPlacementFailureFeedback.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildPlacementGizmo.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildPlacementGuidance.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildSynergyWidget.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildToolsWidget.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildTypography.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildUIAssetPaths.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Synergy/FF_FacilitySynergyEvaluator.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Synergy/FF_FacilitySynergySettings.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Synergy/FF_FacilitySynergySubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Synergy/FF_FacilitySynergyTypes.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Testing/FF_ZoneLifecycleTestPanel.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b280911a37b24d86b6da0921f96cdbc8ec937716"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/Testing/FF_ZoneLifecycleTestPanelSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b280911a37b24d86b6da0921f96cdbc8ec937716"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/UI/FF_BuildCatalogScreen.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/UI/FF_BuildFacilityCard.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/UI/FF_BuildMinorSection.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/UI/FF_BuildTopButton.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/UI/FF_BuildTopButtonStyle.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/DataTables/FF_FacilityRevenueTableRow.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "dcd448a404c949a6a0aa0d5c2de45a2b0bcd00f0"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Economy/FF_ProgramAuthoringValidationLibrary.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Economy/FF_ProgramFacilityProtectionSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Economy/FF_ProgramSchedulingSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Economy/FF_ZoneSystemEconomyBridgeSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Economy/Rules/FF_FacilityRevenueBook.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Minigame/FF_MinigameDefinition.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "dde521103443e5b3742ce9dbd26b90db976c3895"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Core/FF_BuildPearlStyle.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Core/FF_PauseOptionsLightTealStyle.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityColorPicker.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoPanel.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoSelection.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoTypes.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoUpgradeLayout.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityLightingControls.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramCard.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramLayout.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramPicker.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramTypes.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityProgramMarkerSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityProgramMarkerWidget.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilitySynergyEntryWidget.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexCard.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexImage.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexLauncher.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexPresenterSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexPreview.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexScreen.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/FacilityRevenue/FF_FacilityRevenueRanking.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Frontend/FF_FrontendCasualStyle.h",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "bd9371b60819fce2cc500030dbb564162fa35e77"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Pause/FF_PauseHubScreen.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/PrepHUD/Build/FF_PrepBuildInputBridgeSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "7733733eaaef00d0ca4419b4324ab1b503d9a5f9"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/PrepHUD/Build/FF_PrepBuildPresentationTypes.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/PrepHUD/Build/FF_PrepBuildTileData.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/PrepHUD/Build/FF_PrepBuildTileWidget.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/PrepHUD/Panels/FF_PrepPanelBuild.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/PrepHUD/Panels/FF_ProgramFacilityGuide.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Settings/FF_FestivalSettingsScreen.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Settings/FF_FestivalSettingsSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Settings/FF_KeyBindingDefinitions.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Settings/FF_KeyBindingLayoutMetrics.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Settings/FF_KeyBindingPanel.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Settings/FF_KeyBindingRuntimeSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Settings/FF_RuntimeSettingsSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Settings/FF_SettingSelectRow.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Settings/FF_SettingSliderRow.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/UI/Settings/FF_SettingToggleRow.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Zone/FF_ZoneLayoutAuthoringLibrary.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Zone/FF_ZonePopulationBridgeSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c37a670b4510a7e5b511dfedf279fb215dc3c4bc"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Zone/FF_ZoneSystemQueueBridgeSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "9295457293fab7d61ffd20be13e340ed47a9bc57"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Zone/FF_ZoneSystemStageBridgeSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "9295457293fab7d61ffd20be13e340ed47a9bc57"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/FestaFiestaEditor.Build.cs",
+      "scope": "new_support",
+      "author": "",
+      "creation_commit": ""
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FF_BuildingAssetRelocation.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildFacilityCostTooltipWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildModeClaritySynergyBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildModeClarityToolsBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildModeGuideWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "028493cc491c4741b0ad2c2a9f98e33c15b58e94"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildMultiSelectionWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildPlacementFailureFeedbackWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildReferenceToolsWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildStudioWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildSynergyCardWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildSynergyWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildToolsWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildTypographyBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_FacilityAuroraBuildWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Testing/FF_ZoneLifecycleTestPanelWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b280911a37b24d86b6da0921f96cdbc8ec937716"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/UI/FF_BuildCatalogWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Editor/FF_PackagingInteractionRepair.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/FestaFiestaEditorModule.cpp",
+      "scope": "new_support",
+      "author": "",
+      "creation_commit": ""
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Atlas/FF_AtlasNaturalWbpBuilder.cpp",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "faec74d2a7c16042afd20f1447d24d93f25f9dfe"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Atlas/FF_AtlasWbpBuilder.cpp",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "4103f13f916000346af8e469675a1dc8cf34d4de"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Core/FF_LoadingScreenWbpBuilder.cpp",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "4103f13f916000346af8e469675a1dc8cf34d4de"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Core/FF_UIFlowStubWbpBuilder.cpp",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "590bfa59e9e39dea069684f086f34dc1c7c2a67c"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Core/FF_UIWbpBuilderCommon.cpp",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "a2557801906a95dc59fe91de1c90345f96f93ac3"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Core/FF_UIWbpBuilderCommon.h",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "a2557801906a95dc59fe91de1c90345f96f93ac3"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildModeClarityFacilityV2Builder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildModeClarityInfoBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildReferenceFacilityInfoBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraInfoBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraLightingBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraThemeBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoWbpBuilder.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilitySynergyPearlBuilder.cpp",
+      "scope": "owned",
+      "author": "HanKwangHoon",
+      "creation_commit": "ff1dba5d1c43d64998095ca7f8196ea13f35e4a2"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityWorldBadgeWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_ProgramPearlWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildPearlCodexBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildReferenceCodexCatalogTabBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildReferenceFacilityCodexBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexActionsBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexCatalogBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexClarityBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexContrastBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexFestivalBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexGlassBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexInspectorBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexRefinementBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexRewardAffordanceBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexShowcaseBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityAuroraRevenueProgramsMigration.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueClarityBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenuePearlBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Frontend/FF_FrontendCasualBuilder.h",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "bd9371b60819fce2cc500030dbb564162fa35e77"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Frontend/FF_FrontendSetupStyleWbpBuilder.cpp",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "bd9371b60819fce2cc500030dbb564162fa35e77"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Frontend/FF_FrontendWbpBuilder.cpp",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "0f2f4ad9bc9b4f43fc158296a5d1bb3052c0fe6e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/LiveHUD/FF_LiveHudWbpBuilder.cpp",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "a352d46d6367a4a7ece49589e480c6a033b4252a"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Pause/FF_PauseWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_BuildModeClarityCatalogBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_BuildPearlCatalogBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_BuildReferenceCatalogBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_CodexCatalogFocusBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_PrepBuildWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe54652507b3001ea15b446c5cd1c07abbd1f84d"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/PrepHUD/FF_PrepHudWbpBuilder.cpp",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "2b42ba39dfc9bac55873c08944cfe6717b517a0f"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Report/FF_ReportScreenWbpBuilder.cpp",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "429f2b2f58a24add8d2b0fd909d09068a2023894"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Settings/FF_FullscreenOptionsWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Settings/FF_KeyBindingWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Settings/FF_SettingsWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d7fd750de8f55e943de1703b5d5201fcef1c93ba"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Title/FF_TitleCleanCasualWbpBuilder.cpp",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "071bfe1fac38f913dabb17a4eeec1acb729d0fed"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/UI/Widgets/FF_UICommonWbpBuilder.cpp",
+      "scope": "integration",
+      "author": "bjt",
+      "creation_commit": "3b65c06872b3d97e0f28c44fa23370dd213a436a"
+    },
+    {
+      "path": "Tools/Build/Analyze-UnrealCsv.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "17289a122fb98a6a6112e19b3419546fbd1b55c7"
+    },
+    {
+      "path": "Tools/Build/FestaFiesta.Build.psm1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Tools/Build/Measure-PackagedPerformance.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "17289a122fb98a6a6112e19b3419546fbd1b55c7"
+    },
+    {
+      "path": "Tools/Build/Package-Win64.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Tools/Build/Run-AutomationTests.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Tools/Build/Test-PackagedNpcArrival.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Tools/Build/Verify-Package.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
+    },
+    {
+      "path": "Tools/Build/apply_navigation_zone_layout.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Tools/Build/inspect_packaging_navigation.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Tools/Build/rebuild_packaging_navigation.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Tools/Build/repair_packaging_animations.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Tools/Build/repair_packaging_interaction.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Tools/Build/test_navigation_rebuild.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Tools/Build/test_navigation_zone_layout.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Tools/BuildModeClarity/apply_and_verify.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Tools/BuildModeClarity/apply_catalog_row_preview.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/BuildModeClarity/apply_ui_fixes.py",
+      "scope": "owned",
+      "author": "HanKwangHoon",
+      "creation_commit": "ff1dba5d1c43d64998095ca7f8196ea13f35e4a2"
+    },
+    {
+      "path": "Tools/BuildModeClarity/capture_runtime.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Tools/BuildModeClarity/capture_ui_fixes.py",
+      "scope": "owned",
+      "author": "HanKwangHoon",
+      "creation_commit": "ff1dba5d1c43d64998095ca7f8196ea13f35e4a2"
+    },
+    {
+      "path": "Tools/BuildModeClarity/create_category_icons.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Tools/BuildModeClarity/create_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Tools/BuildModeClarity/create_pearl_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Tools/BuildModeClarity/create_placement_feedback.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Tools/BuildModeClarity/shaders/BuildPearl.ush",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Tools/BuildModeClarity/shaders/BuildSurface.ush",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Tools/BuildModeClarity/shaders/CategoryPictograms.ush",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Tools/BuildModeUI/apply_approved_design_20260919.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Tools/BuildModeUI/apply_data_maintenance_20260919.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Tools/BuildModeUI/apply_render_fixes_20260919.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Tools/BuildModeUI/audit_data_maintenance_20260919.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Tools/BuildModeUI/snapshot_before.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Tools/BuildModeUI/tune_revenue_after_render.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Tools/BuildingAssetRelocation/prepare_relocation.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/BuildingAssetRelocation/repair_import_sources.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/BuildingAssetRelocation/run_phase.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/BuildingAssetRelocation/update_references.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/BuildingAssetRelocation/verify_assets.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/Diagnostics/migrate_staff_economy_ui.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "466f57ae98e8e70d66dc0420c16edfc7a9b8369c"
+    },
+    {
+      "path": "Tools/Diagnostics/repair_legacy_facility_cost.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Tools/Diagnostics/repair_owned_warning_assets.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Tools/Diagnostics/verify_owned_warning_assets.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Tools/FacilityAudience/configure_sunset_audience.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Tools/FacilityAurora_20260920/apply_and_verify.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Tools/FacilityAurora_20260920/create_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Tools/FacilityAurora_20260920/patch_world_badge_amount.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_actions.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_contrast_codex.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_contrast_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_festival_codex.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_glass_codex.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_pearl_codex.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_pearl_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_reward_affordance.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_reward_affordance_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_reward_bounds.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_reward_hint.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_reward_icon.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_reward_iridescence.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_reward_status.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_showcase_codex.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_white_codex.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/apply_white_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/audit_project_fonts.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/create_and_verify.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Tools/FacilityCodex/create_catalog_focus_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/create_festival_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/create_glass_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/create_reward_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/create_showcase_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityCodex/create_thumbnail_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Tools/FacilityLighting/Run-EditorScript.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Tools/FacilityLighting/Run-LightingTests.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Tools/FacilityLighting/capture_buildable_lights.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "66443ca778f251b60d13c502947290ca628c1b09"
+    },
+    {
+      "path": "Tools/FacilityLighting/create_assets.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Tools/FacilityLighting/create_buildable_lights.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "66443ca778f251b60d13c502947290ca628c1b09"
+    },
+    {
+      "path": "Tools/FacilityLighting/import_catalog_thumbnails.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2d95247eab1424d5d1b4c56e40afaf081dd9fe21"
+    },
+    {
+      "path": "Tools/FacilityLighting/inspect_assets.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Tools/FacilityLighting/inspect_buildable_lights.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "66443ca778f251b60d13c502947290ca628c1b09"
+    },
+    {
+      "path": "Tools/FacilityLighting/render_catalog_thumbnails.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2d95247eab1424d5d1b4c56e40afaf081dd9fe21"
+    },
+    {
+      "path": "Tools/FacilityLighting/verify_assets.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Tools/FacilityLighting/verify_buildable_lights.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "66443ca778f251b60d13c502947290ca628c1b09"
+    },
+    {
+      "path": "Tools/FacilityRevenue/create_and_verify.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "dcd448a404c949a6a0aa0d5c2de45a2b0bcd00f0"
+    },
+    {
+      "path": "Tools/FacilitySynergy/create_and_verify.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Tools/FacilitySynergy/migrate_catalog_highlights.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Tools/FacilitySynergy/migrate_inspector_and_verify.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Tools/FacilitySynergy/migrate_partner_link.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Tools/FacilitySynergy/migrate_required_badges.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Tools/Git/Invoke-SafePull.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "3b4cbed3501a4abf18ee7b1c5427395a62ff577e"
+    },
+    {
+      "path": "Tools/MainMan_20260911/analyze_parts.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/build_character.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/delivery.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/finalize_blend.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/import_project.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/inspect_source.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/preview_source.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/quick_stats.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/restore_skeleton.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/roundtrip.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/sample_colors.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/self_intersections.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/unreal_final_qa.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/unreal_import_test.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/unreal_material_test.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/validate_export.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/verify_project.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/MainMan_20260911/verify_restored_skeleton.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4e55e78b3ae5c8048ed9c1453fdfe68ce7662c0c"
+    },
+    {
+      "path": "Tools/Maintenance/build_code_index.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
+    },
+    {
+      "path": "Tools/RoadFacilities/RoadFacilities.Runner.psm1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadFacilities/Run-RoadEditor.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadFacilities/Run-RoadTests.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadFacilities/build_roads.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadFacilities/capture_roads.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadFacilities/compose_qa.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadFacilities/enable_drag_placement.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Tools/RoadFacilities/finalize_report.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadFacilities/import_roads.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadFacilities/split_road_tiles.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "9ef52a796c4d2f0af2f2ee6930e4097991813eb3"
+    },
+    {
+      "path": "Tools/RoadFacilities/tests/test_drag_placement_migration.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Tools/RoadFacilities/tests/test_surface_split_migration.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "9ef52a796c4d2f0af2f2ee6930e4097991813eb3"
+    },
+    {
+      "path": "Tools/RoadFacilities/validate_saved_roads.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadFacilities/verify_drag_placement.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Tools/RoadFacilities/verify_road_tiles.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "9ef52a796c4d2f0af2f2ee6930e4097991813eb3"
+    },
+    {
+      "path": "Tools/RoadFacilities/verify_roads.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/Package-RoadDelivery.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/Run-RoadEditor.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/audit_helpers.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/build_roads.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/capture_roads.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/cleanup_attempts.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/compose_report.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/compose_unreal.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/finalize_delivery.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/import_roads.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/patterns.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/rebuild_all.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/render_roads.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/verify_roads.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/RoadTiles_20260910/verify_saved_blends.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Tools/Scenarios/prepare_zone_layout.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Tools/Unreal/remote.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Tools/ZoneSystem/enable_unified_build_area.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Tools/facilities/Run-Expansion70Editor.ps1",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "71ed6aaf4461030d49acab80853acfde70d1bd4c"
+    },
+    {
+      "path": "Tools/facilities/audit_player_collision.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Tools/facilities/build_claw_machine_test_asset.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "5842bb911a3e5b66d54182a4f7a0b4a82f3de703"
+    },
+    {
+      "path": "Tools/facilities/build_expansion70.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "71ed6aaf4461030d49acab80853acfde70d1bd4c"
+    },
+    {
+      "path": "Tools/facilities/build_facility_meshes.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "f45182f90acc03c09ea8413aac9065f6249ccd0b"
+    },
+    {
+      "path": "Tools/facilities/build_surfing_test_asset.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "dde521103443e5b3742ce9dbd26b90db976c3895"
+    },
+    {
+      "path": "Tools/facilities/capture_expansion70.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "71ed6aaf4461030d49acab80853acfde70d1bd4c"
+    },
+    {
+      "path": "Tools/facilities/configure_facility_mesh_materials.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "f45182f90acc03c09ea8413aac9065f6249ccd0b"
+    },
+    {
+      "path": "Tools/facilities/expansion70_common.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "71ed6aaf4461030d49acab80853acfde70d1bd4c"
+    },
+    {
+      "path": "Tools/facilities/expansion70_geometry_environment.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "71ed6aaf4461030d49acab80853acfde70d1bd4c"
+    },
+    {
+      "path": "Tools/facilities/expansion70_geometry_food.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "71ed6aaf4461030d49acab80853acfde70d1bd4c"
+    },
+    {
+      "path": "Tools/facilities/expansion70_geometry_services.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "71ed6aaf4461030d49acab80853acfde70d1bd4c"
+    },
+    {
+      "path": "Tools/facilities/expansion70_paths.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
+    },
+    {
+      "path": "Tools/facilities/finalize_expansion70_blends.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "71ed6aaf4461030d49acab80853acfde70d1bd4c"
+    },
+    {
+      "path": "Tools/facilities/import_claw_machine_facility.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Tools/facilities/import_expansion70.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "71ed6aaf4461030d49acab80853acfde70d1bd4c"
+    },
+    {
+      "path": "Tools/facilities/import_facility_meshes.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "f45182f90acc03c09ea8413aac9065f6249ccd0b"
+    },
+    {
+      "path": "Tools/facilities/import_surfing_test_asset.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "dde521103443e5b3742ce9dbd26b90db976c3895"
+    },
+    {
+      "path": "Tools/facilities/migrate_facility_upgrade_settings.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Tools/facilities/repair_facility_queue_reservations.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Tools/facilities/report_expansion70.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "71ed6aaf4461030d49acab80853acfde70d1bd4c"
+    },
+    {
+      "path": "Tools/facilities/update_facility_movement_targets.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ddf2317d6476403e0e7482a1a5724678ce5780db"
+    },
+    {
+      "path": "Tools/facilities/verify_claw_machine_facility.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Tools/facilities/verify_expansion70.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "71ed6aaf4461030d49acab80853acfde70d1bd4c"
+    },
+    {
+      "path": "Tools/facilities/verify_facility_meshes.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "f45182f90acc03c09ea8413aac9065f6249ccd0b"
+    },
+    {
+      "path": "Tools/facilities/verify_surfing_test_asset.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "dde521103443e5b3742ce9dbd26b90db976c3895"
+    },
+    {
+      "path": "Tools/ui/apply_approved_build_ui.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "78c10d0e333de5ba7d31933fc8f05c3e3d8109b1"
+    },
+    {
+      "path": "Tools/ui/apply_build_reference_ui.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Tools/ui/apply_catalog_emphasis.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe1c3ea3f72c3f764b28cb023e5509968a16e02f"
+    },
+    {
+      "path": "Tools/ui/capture_facility_aurora_runtime.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Tools/ui/generate_festafiesta_dt_ui_v2_kit.js",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2b336bf3590bb344e1509e26715784d49fa241e4"
+    },
+    {
+      "path": "Tools/ui/import_star_gold_coin.py",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Tools/ui/validate_festafiesta_dt_ui_v2_kit.js",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2b336bf3590bb344e1509e26715784d49fa241e4"
+    }
+  ]
+}

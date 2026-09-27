@@ -52,6 +52,16 @@ enum class EFFZSFacilityState : uint8
     Removed
 };
 
+// 시설마다 저장되는 플레이어 대기열 형태. 기존 데이터는 Authored로 읽어 제작 경로를 유지한다.
+UENUM(BlueprintType)
+enum class EFFZSQueueLayout : uint8
+{
+    Authored UMETA(DisplayName = "기본형"),
+    Left UMETA(DisplayName = "좌측형"),
+    Right UMETA(DisplayName = "우측형"),
+    UShape UMETA(DisplayName = "U자형")
+};
+
 //시설 큐의 참가·처리 상태.
 // Open은 참가 가능, Full은 정원 도달, Draining은 신규 참가 금지 후 비우기,
 // Closed는 완전히 비어 있음, Blocked는 이전 의미 상태를 보존한 일시 접근 장애다.
@@ -604,6 +614,10 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     TArray<FVector> QueueSplinePointsCm;
     // Service 지점에서 Queue 끝 방향으로 정렬된 Local 센티미터 단위 Queue Spline Point다.
 
+    // 원본 경로·예약 영역·앵커를 덮어쓰지 않는다. 현재 크기의 실효 사양에서만 선택한 형태를 생성한다.
+    UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Queue")
+    EFFZSQueueLayout QueueLayout = EFFZSQueueLayout::Authored;
+
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Queue Rules", ToolTip = "대기 정원·슬롯 간격·동시 서비스 수·처리 시간·이탈·내비 재시도 규칙입니다."))
     FFFZSQueueRules QueueRules;
 
@@ -843,6 +857,13 @@ struct FF_ZONESYSTEM_API FFFZSCommand
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Command")
     FFFZSGridPlacement Placement;
+
+    // Optional Move edit. Geometry always derives from the existing instance's authored base spec.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Command|Queue")
+    bool bChangeQueueLayout = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Command|Queue")
+    EFFZSQueueLayout QueueLayout = EFFZSQueueLayout::Authored;
 
     // Upgrade payload: absolute values relative to the original installation spec.
     // Other command types ignore these fields and keep their existing fingerprint.

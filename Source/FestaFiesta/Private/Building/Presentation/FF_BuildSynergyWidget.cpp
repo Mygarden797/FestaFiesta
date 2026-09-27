@@ -1,3 +1,6 @@
+// FF_BuildSynergyWidget.cpp
+// 역할: 시설 조합의 예상 효과와 거리, 연결선을 표시한다.
+
 #include "Building/Presentation/FF_BuildSynergyWidget.h"
 #include "Building/Presentation/FF_BuildTypography.h"
 
@@ -13,33 +16,28 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
-#include "Engine/Font.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
-#include "UI/Data/FF_UIPalette.h"
-#include "UObject/ConstructorHelpers.h"
+#include "UI/Core/FF_BuildPearlStyle.h"
 
 #define LOCTEXT_NAMESPACE "FFBuildSynergy"
 
 UFF_BuildSynergyWidget::UFF_BuildSynergyWidget(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
-    static ConstructorHelpers::FObjectFinder<UFont> Font(
-        TEXT("/Game/Asset/Font/NEXON_Lv2_Gothic_OTF_Medium_Font.NEXON_Lv2_Gothic_OTF_Medium_Font"));
-    PresentationFont = Font.Object;
-    const FFF_UIPaletteInGame& Palette = UFF_UIPalette::Get()->InGame;
-    ActiveTextColor = FSlateColor(Palette.Info);
-    InactiveTextColor = FSlateColor(Palette.Ink);
-    ActiveLineColor = Palette.Info;
-    InactiveLineColor = Palette.Amber;
+    ActiveTextColor = FSlateColor(FFBuildPearl::Ink);
+    InactiveTextColor = FSlateColor(FFBuildPearl::Muted);
+    ActiveLineColor = FFBuildPearl::Cyan;
+    InactiveLineColor = FFBuildPearl::Muted;
     SetIsFocusable(false);
     SetVisibility(ESlateVisibility::Collapsed);
     // Camera movement only reprojects at most 49 range points + 3 markers; it never runs a world query.
     ForceVolatile(true);
 }
 
+// 저장된 WBP가 있으면 사용하고, 비어 있을 때만 기본 화면을 만든다.
 TSharedRef<SWidget> UFF_BuildSynergyWidget::RebuildWidget()
 {
     if (WidgetTree && !WidgetTree->RootWidget) { BuildNativeTree(); }
@@ -47,6 +45,7 @@ TSharedRef<SWidget> UFF_BuildSynergyWidget::RebuildWidget()
     return Super::RebuildWidget();
 }
 
+// WBP 위젯 이름으로 카드·제목·설명 연결을 찾아 보관한다.
 void UFF_BuildSynergyWidget::ResolveBindings()
 {
     // BindWidget handles authored WBP instances. Name resolution also supports the native
@@ -75,9 +74,9 @@ bool UFF_BuildSynergyWidget::HasRequiredBindings() const
         !RowTitles.Contains(nullptr) && !RowDetails.Contains(nullptr);
 }
 
+// 화면 에셋을 찾지 못했을 때 표시할 기본 조합 안내 패널을 조립한다.
 void UFF_BuildSynergyWidget::BuildNativeTree()
 {
-    const FFF_UIPaletteInGame& Palette = UFF_UIPalette::Get()->InGame;
     UCanvasPanel* Canvas = WidgetTree->ConstructWidget<UCanvasPanel>();
     WidgetTree->RootWidget = Canvas;
     Canvas->SetVisibility(ESlateVisibility::HitTestInvisible);
@@ -85,18 +84,14 @@ void UFF_BuildSynergyWidget::BuildNativeTree()
     Size->SetWidthOverride(344.0f);
     UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Border_Synergy"));
     CardPanel = Panel;
-    FSlateBrush Brush;
-    Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
-    Brush.TintColor = FSlateColor(Palette.Paper);
-    Brush.OutlineSettings = FSlateBrushOutlineSettings(10.0f, FSlateColor(Palette.LineStrong), 1.0f);
-    Panel->SetBrush(Brush);
+    Panel->SetBrush(FFBuildPearl::MaterialBrush(TEXT("Card")));
     Panel->SetBrushColor(FLinearColor::White);
     Panel->SetPadding(FMargin(14.0f, 8.0f));
     Size->AddChild(Panel);
     UCanvasPanelSlot* Position = Canvas->AddChildToCanvas(Size);
     Position->SetAnchors(FAnchors(1.0f, 0.0f));
     Position->SetAlignment(FVector2D(1.0, 0.0));
-    Position->SetPosition(FVector2D(-22.0, 96.0));
+    Position->SetPosition(FVector2D(-28.0, 440.0));
     Position->SetAutoSize(true);
     UVerticalBox* Rows = WidgetTree->ConstructWidget<UVerticalBox>();
     Panel->AddChild(Rows);
@@ -116,19 +111,19 @@ void UFF_BuildSynergyWidget::BuildNativeTree()
         return Label;
     };
 
-    AddText(LOCTEXT("Title", "함께 두면 생기는 수익"), 16, Palette.Ink, true, 4.0f);
+    AddText(LOCTEXT("Title", "함께 두면 생기는 수익"), 16, FFBuildPearl::Ink, true, 4.0f);
     Legend = AddText(LOCTEXT("Legend", "실선: 효과 적용 · 점선: 미적용 · 원: 1번 거리"),
-        11, Palette.InkMuted, false, 4.0f, TEXT("Text_SynergyLegend"));
+        11, FFBuildPearl::Muted, false, 4.0f, TEXT("Text_SynergyLegend"));
     RowTitles.Reset();
     RowDetails.Reset();
     for (int32 Index = 0; Index < MaxVisibleRows; ++Index)
     {
-        RowTitles.Add(AddText(FText::GetEmpty(), 13, Palette.Ink, true, 0.0f,
+        RowTitles.Add(AddText(FText::GetEmpty(), 13, FFBuildPearl::Ink, true, 0.0f,
             FName(*FString::Printf(TEXT("Text_SynergyTitle_%d"), Index + 1))));
-        RowDetails.Add(AddText(FText::GetEmpty(), 11, Palette.InkMuted, false, 4.0f,
+        RowDetails.Add(AddText(FText::GetEmpty(), 11, FFBuildPearl::Muted, false, 4.0f,
             FName(*FString::Printf(TEXT("Text_SynergyDetail_%d"), Index + 1))));
     }
-    Footer = AddText(FText::GetEmpty(), 10, Palette.InkMuted, false, 0.0f, TEXT("Text_SynergyFooter"));
+    Footer = AddText(FText::GetEmpty(), 10, FFBuildPearl::Muted, false, 0.0f, TEXT("Text_SynergyFooter"));
 }
 
 FText UFF_BuildSynergyWidget::ResolveFacilityName(const FName DefinitionId) const
@@ -139,6 +134,7 @@ FText UFF_BuildSynergyWidget::ResolveFacilityName(const FName DefinitionId) cons
         : LOCTEXT("FacilityNameLoading", "시설 이름 불러오는 중");
 }
 
+// 계산이 끝난 조합 결과를 최대 세 행과 연결선 자료로 바꾼다.
 void UFF_BuildSynergyWidget::PresentPreview(
     const FFF_FacilitySynergyPreview& Preview, const FVector& CandidateLocation)
 {
@@ -146,6 +142,36 @@ void UFF_BuildSynergyWidget::PresentPreview(
     if (!HasRequiredBindings()) { TakeWidget(); }
     if (!ensureMsgf(HasRequiredBindings(), TEXT("Build synergy WBP requires the named Border_Synergy and Text_Synergy* bindings.")))
     { ClearPreview(); return; }
+
+    // Move only the authored card: the full-screen widget must stay in place for world
+    // connection lines, while the card sits below the right-side facility information.
+    if (USizeBox* CardSize = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_Synergy"))))
+    {
+        if (UCanvasPanelSlot* CardSlot = Cast<UCanvasPanelSlot>(CardSize->Slot))
+        {
+            const float Scale = FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(this));
+            const float LogicalHeight = UWidgetLayoutLibrary::GetViewportSize(this).Y / Scale;
+            const float Top = LogicalHeight > 0.f
+                ? FMath::Min(440.f, FMath::Max(56.f, LogicalHeight - 600.f)) : 56.f;
+            const FVector2D Desired(-28.f, Top);
+            if (!CardSlot->GetPosition().Equals(Desired, .5f)) CardSlot->SetPosition(Desired);
+        }
+    }
+    if (!bPearlStyleApplied)
+    {
+        CardPanel->SetBrush(FFBuildPearl::MaterialBrush(TEXT("Card")));
+        CardPanel->SetBrushColor(FLinearColor::White);
+        if (UTextBlock* Heading = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_SynergyHeading"))))
+            Heading->SetColorAndOpacity(FSlateColor(FFBuildPearl::Ink));
+        Legend->SetColorAndOpacity(FSlateColor(FFBuildPearl::Muted));
+        Footer->SetColorAndOpacity(FSlateColor(FFBuildPearl::Muted));
+        for (int32 Index = 0; Index < MaxVisibleRows; ++Index)
+        {
+            RowTitles[Index]->SetColorAndOpacity(FSlateColor(FFBuildPearl::Ink));
+            RowDetails[Index]->SetColorAndOpacity(FSlateColor(FFBuildPearl::Muted));
+        }
+        bPearlStyleApplied = true;
+    }
 
     PreviewData = Preview;
     CandidateWorldLocation = CandidateLocation + FVector(0.0, 0.0, 20.0);
@@ -223,6 +249,7 @@ void UFF_BuildSynergyWidget::PresentPreview(
     BP_OnPreviewChanged(PreviewData);
 }
 
+// 미리보기를 숨기고 이전 시설의 표시 데이터를 비운다.
 void UFF_BuildSynergyWidget::ClearPreview()
 {
     const bool bHadPreview = PreviewData.bRulesAvailable;
@@ -233,6 +260,7 @@ void UFF_BuildSynergyWidget::ClearPreview()
     if (bHadPreview) { BP_OnPreviewCleared(); }
 }
 
+// 저장된 위치를 화면 좌표로 바꿔 거리 원·연결선·번호를 그린다. 조합 규칙은 여기서 재계산하지 않는다.
 int32 UFF_BuildSynergyWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
     const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements,
     const int32 LayerId, const FWidgetStyle& InWidgetStyle, const bool bParentEnabled) const

@@ -1,3 +1,5 @@
+// FF_FFZSAudienceEditorTests.cpp
+// 역할: 관람 영역과 관객 설정을 편집하는 에디터 도우미 동작을 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
 #include "FF_FFZSFacilityEditorHelpers.h"

@@ -1,3 +1,6 @@
+// FF_FestivalSettingsScreen.cpp
+// 역할: 게임 중 설정 값과 조작 도움말을 표시한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Settings/FF_FestivalSettingsScreen.h"
@@ -168,7 +171,6 @@ void UFF_FestivalSettingsScreen::PopulateDefaultKeyboardGuide()
 	const FText Camera = LOCTEXT("KeyContextCamera", "관찰 카메라");
 	const FText Build = LOCTEXT("KeyContextBuild", "건축");
 	const FText Character = LOCTEXT("KeyContextCharacter", "캐릭터");
-	const FText Minigame = LOCTEXT("KeyContextMinigame", "미니게임");
 	AddGuide(Common, LOCTEXT("KeyOptions", "ESC / F5"),
 		LOCTEXT("KeyOptionsAction", "일시정지 메뉴 열기 / 이전으로"));
 	AddGuide(Camera, LOCTEXT("KeyCameraMove", "WASD"), LOCTEXT("KeyCameraMoveAction", "카메라 이동"));
@@ -189,9 +191,6 @@ void UFF_FestivalSettingsScreen::PopulateDefaultKeyboardGuide()
 	AddGuide(Build, LOCTEXT("KeyBuildFree", "Alt"), LOCTEXT("KeyBuildFreeAction", "누르는 동안 자유 배치"));
 	AddGuide(Character, LOCTEXT("KeyCharacterMove", "WASD · Shift · Space"), LOCTEXT("KeyCharacterMoveAction", "이동 · 달리기 · 점프"));
 	AddGuide(Character, LOCTEXT("KeyCharacterLook", "마우스 이동"), LOCTEXT("KeyCharacterLookAction", "캐릭터 시점 조작"));
-	AddGuide(Minigame, LOCTEXT("KeyMinigameExit", "ESC"), LOCTEXT("KeyMinigameExitAction", "미니게임 나가기"));
-	AddGuide(Minigame, LOCTEXT("KeyMinigameMove", "WASD / 방향키"), LOCTEXT("KeyMinigameMoveAction", "서핑·인형뽑기 이동"));
-	AddGuide(Minigame, LOCTEXT("KeyMinigameAction", "Space / Enter / 좌클릭"), LOCTEXT("KeyMinigameActionAction", "부스트·집게·물총 사용"));
 }
 
 bool UFF_FestivalSettingsScreen::FSettingsDraft::Equals(const FSettingsDraft& Other) const

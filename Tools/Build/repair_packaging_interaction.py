@@ -1,3 +1,6 @@
+# repair_packaging_interaction.py
+# 역할: Windows 빌드·패키징·검증 작업에서 확인된 데이터 오류만 수정한다.
+
 """Repair the audited Test_Main cast/function references with a native editor command.
 
 The command backs up the map before changing it and saves only after Blueprint

@@ -1,4 +1,5 @@
-// Shared UI surface. Static thin-film interference stays at the edges so text remains quiet.
+// 역할: 건축 UI 공용 배경과 프로그램·필수 시설 표시를 그린다. 가장자리만 은은하게 반사시켜 글자를 읽기 쉽게 한다.
+// 좌표 변화량으로 경계선을 부드럽게 처리하고, Role 값에 따라 배경 색과 불투명도를 선택한다.
 float2 p = saturate(UV);
 float py = max(length(ddy(UV)), 0.00001);
 float px = max(length(ddx(UV)), 0.00001);

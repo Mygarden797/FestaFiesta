@@ -1,3 +1,6 @@
+// FF_BuildRoadCatalogTests.cpp
+// 역할: BuildRoadCatalog 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Catalog.ProductionRoadAssetsAndEconomy).
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/FF_BuildCatalogModel.h"
@@ -6,6 +9,7 @@
 #include "Engine/AssetManager.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalSettings.h"
 #include "HAL/PlatformTime.h"
@@ -15,6 +19,8 @@
 
 namespace FFBuildRoadCatalogTest
 {
+    // Required baseline prevents an empty/incomplete catalog from passing. Additional
+    // authored surfaces are discovered below and receive the same checks automatically.
     // Wood and Stone moved from roads to tiles; the remaining four stay roads only.
     const TCHAR* RoadNames[] = { TEXT("Sand"), TEXT("Asphalt"), TEXT("Herringbone"), TEXT("Concrete") };
     const TCHAR* TileNames[] = { TEXT("Wood"), TEXT("Stone") };
@@ -54,9 +60,23 @@ namespace FFBuildRoadCatalogTest
                 const FFF_BuildCatalogCategoryGroup* CategoryGroup = Groups.FindByPredicate(
                     [Category](const FFF_BuildCatalogCategoryGroup& Group) { return Group.Category == Category; });
                 Test->TestNotNull(*FString::Printf(TEXT("Build menu exposes %s separately"), MajorToken), CategoryGroup);
+                TArray<FName> SurfaceIds;
+                for (const FFF_BuildCatalogEntry& Entry : Catalog->GetEntriesView())
+                {
+                    if (Entry.Category == Category && Entry.MinorToken == TEXT("Surface"))
+                    {
+                        SurfaceIds.Add(Entry.FacilityDefinitionId);
+                    }
+                }
                 for (const TCHAR* Name : bIsTile ? MakeArrayView(TileNames) : MakeArrayView(RoadNames))
                 {
-                    const FName Id(*FString::Printf(TEXT("%s_Surface_%s"), MajorToken, Name));
+                    const FName RequiredId(*FString::Printf(TEXT("%s_Surface_%s"), MajorToken, Name));
+                    Test->TestTrue(*FString::Printf(TEXT("Baseline surface %s remains selectable"), *RequiredId.ToString()),
+                        SurfaceIds.Contains(RequiredId));
+                }
+                Test->AddInfo(FString::Printf(TEXT("Checking all %d catalog %s surfaces"), SurfaceIds.Num(), MajorToken));
+                for (const FName Id : SurfaceIds)
+                {
                     const FPrimaryAssetId PrimaryId(UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(), Id);
                     Test->TestEqual(TEXT("Surface is packaged as a production primary asset"),
                         UAssetManager::Get().GetPrimaryAssetRules(PrimaryId).CookRule, EPrimaryAssetCookRule::AlwaysCook);
@@ -67,8 +87,9 @@ namespace FFBuildRoadCatalogTest
                     FFF_PrepBuildFilter Filter;
                     Filter.bFilterByCategory = true;
                     Filter.Category = Category;
-                    Filter.SearchText = bIsTile ? TEXT("타일") : TEXT("길");
-                    Test->TestTrue(TEXT("Prep HUD category and Korean search expose the surface"),
+                    Test->TestFalse(TEXT("Surface has an authored display name"), Entry.DisplayName.IsEmptyOrWhitespace());
+                    Filter.SearchText = Entry.DisplayName.ToString();
+                    Test->TestTrue(TEXT("Prep HUD category and authored-name search expose the surface"),
                         FFF_PrepBuildPresentationRules::IsEntryVisible(Entry, Filter));
                     Filter.Category = bIsTile ? EFFZSFacilityCategory::Road : EFFZSFacilityCategory::Tile;
                     Filter.SearchText.Reset();
@@ -99,10 +120,12 @@ namespace FFBuildRoadCatalogTest
                     int32 Cost = 0;
                     FName MatchedRow;
                     FString Failure;
-                    const FName ExpectedRow(*FString::Printf(TEXT("Cost.%s.Surface.%s"), MajorToken, Name));
+                    const FName ExpectedRow = Spec.InstallCostKey.IsNone()
+                        ? FName(*FString::Printf(TEXT("Cost.%s.Surface.%s"), MajorToken, *Entry.UniqueNameToken))
+                        : Spec.InstallCostKey;
                     Test->TestTrue(TEXT("Production economy resolves surface cost"),
                         FFF_FacilityCostResolver::FindInstallCost(Spec, CostTable, Cost, MatchedRow, Failure));
-                    Test->TestEqual(TEXT("Surface cost uses its exact category row"), MatchedRow, ExpectedRow);
+                    Test->TestEqual(TEXT("Surface cost honors its authored key or exact category row"), MatchedRow, ExpectedRow);
                     Test->TestTrue(TEXT("Surface installation cost is valid"), FFF_FacilityCostResolver::IsValidInstallCost(Cost));
                     if (Festival)
                     {

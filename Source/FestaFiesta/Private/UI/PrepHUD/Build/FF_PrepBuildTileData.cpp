@@ -1,3 +1,6 @@
+// FF_PrepBuildTileData.cpp
+// 역할: 시설 카드에 표시할 정보를 담고 그림 로딩 상태를 관리한다.
+
 // UTileView용 시설 카드 데이터 객체 구현.
 
 #include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"

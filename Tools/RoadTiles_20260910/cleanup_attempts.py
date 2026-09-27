@@ -1,3 +1,6 @@
+# cleanup_attempts.py
+# 역할: 도로·타일 제작 원본과 납품 작업에서 해당 제작 작업에서 실패한 임시 결과만 정리한다.
+
 """Remove only this road job's failed preliminary packages after final validation."""
 import json
 from pathlib import Path

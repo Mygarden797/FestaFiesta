@@ -309,6 +309,7 @@ void UFF_PrepHudBar::BindSources()
 		if (UFFZSWorldSubsystem* Zone = World->GetSubsystem<UFFZSWorldSubsystem>())
 		{
 			Zone->OnWorldChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleWorldChanged);
+			Zone->OnWorldSnapshotRestored.AddUniqueDynamic(this, &UFF_PrepHudBar::RefreshAll);
 			BoundZoneWorldSubsystem = Zone;
 		}
 		else
@@ -341,6 +342,7 @@ void UFF_PrepHudBar::UnbindSources()
 	if (UFFZSWorldSubsystem* Zone = BoundZoneWorldSubsystem.Get())
 	{
 		Zone->OnWorldChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleWorldChanged);
+		Zone->OnWorldSnapshotRestored.RemoveDynamic(this, &UFF_PrepHudBar::RefreshAll);
 	}
 	BoundZoneWorldSubsystem = nullptr;
 }
@@ -1188,19 +1190,9 @@ void UFF_PrepHudBar::RefreshFacilityCount()
 		return;
 	}
 
-	const FFFZSReadModel ReadModel = Zone->BuildReadModel();
-
-	int32 Count = 0;
-	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
-	{
-		// 철거된 것은 세지 않는다. 계획·검증 상태는 "놓은 것"으로 본다 —
-		// 개장 전 준비 단계에서는 아직 Active 가 아닌 시설이 정상이다.
-		if (Facility.State != EFFZSFacilityState::Removed)
-		{
-			++Count;
-		}
-	}
-	FacilityCount = Count;
+	// Count through the registry without copying and sorting every facility and queue.
+	// Planned/validated facilities still count during preparation; removed ones do not.
+	FacilityCount = Zone->GetPlacedFacilityCount();
 }
 
 // =============================================================================

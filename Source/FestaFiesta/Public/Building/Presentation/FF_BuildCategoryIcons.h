@@ -1,3 +1,6 @@
+// FF_BuildCategoryIcons.h
+// 역할: 시설 분류의 새 아이콘과 예비 아이콘을 선택한다.
+
 #pragma once
 
 #include "CoreMinimal.h"

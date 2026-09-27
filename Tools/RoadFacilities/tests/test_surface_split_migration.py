@@ -1,3 +1,6 @@
+# test_surface_split_migration.py
+# 역할: 설치 가능한 도로·타일 작업에서 오류 경계와 기존 데이터 보존 동작을 검증한다.
+
 """Exercise package failure boundaries and authored-data preservation without UE."""
 import copy
 import importlib.util

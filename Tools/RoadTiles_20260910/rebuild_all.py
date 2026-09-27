@@ -1,3 +1,6 @@
+# rebuild_all.py
+# 역할: 도로·타일 제작 원본과 납품 작업에서 제작 입력으로 결과를 다시 생성한다.
+
 """Recreate this kit in a fresh Blender process (or use build_roads via MCP).
 Run: blender --background --factory-startup --python <this file>
 Only task-generated paths under ROOT are written. Existing deliveries are backed up.

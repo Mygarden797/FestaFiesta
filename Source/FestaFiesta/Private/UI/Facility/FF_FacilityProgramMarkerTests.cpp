@@ -1,3 +1,6 @@
+// FF_FacilityProgramMarkerTests.cpp
+// 역할: 프로그램 표시의 데이터 연결과 생성·해제 동작을 검증한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
@@ -54,6 +57,47 @@ namespace
 		UWidgetBlueprintGeneratedClass& Class;
 		bool bPrevious;
 	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityProgramMarkerOrderTest,
+	"FestaFiesta.UI.FacilityProgramMarker.OrderCache",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityProgramMarkerOrderTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	// 화면을 만들지 않고, 시설 추가·삭제·선택에 따른 배치 우선순위만 검증한다.
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!TestNotNull(TEXT("서브시스템의 소유 월드"), World)) return false;
+	TStrongObjectPtr<UFF_FacilityProgramMarkerSubsystem> Subsystem(
+		NewObject<UFF_FacilityProgramMarkerSubsystem>(World));
+	const FGuid First(0, 0, 0, 1);
+	const FGuid Second(0, 0, 0, 2);
+	const FGuid Third(0, 0, 0, 3);
+	Subsystem->Markers.Add(Third, nullptr);
+	Subsystem->Markers.Add(First, nullptr);
+	Subsystem->Markers.Add(Second, nullptr);
+	Subsystem->RefreshMarkerOrder(Second);
+	TestTrue(TEXT("선택 시설을 먼저 배치하고 나머지는 고유 번호 순서를 유지한다"),
+		Subsystem->MarkerOrder == TArray<FGuid>({Second, First, Third}));
+	TestFalse(TEXT("계산이 끝난 순서는 다음 프레임에 그대로 재사용한다"), Subsystem->bMarkerOrderDirty);
+	Subsystem->RefreshMarkerOrder(Second);
+	TestTrue(TEXT("선택이 그대로이면 배치 순서도 그대로 유지된다"),
+		Subsystem->MarkerOrder == TArray<FGuid>({Second, First, Third}));
+	Subsystem->RefreshMarkerOrder(Third);
+	TestTrue(TEXT("선택 변경을 캐시에 즉시 반영한다"),
+		Subsystem->MarkerOrder == TArray<FGuid>({Third, First, Second}));
+	Subsystem->Markers.Remove(First);
+	Subsystem->bMarkerOrderDirty = true;
+	Subsystem->RefreshMarkerOrder(Third);
+	TestTrue(TEXT("삭제한 시설은 재사용 순서에서도 제거된다"),
+		Subsystem->MarkerOrder == TArray<FGuid>({Third, Second}));
+	Subsystem->RefreshMarkerOrder(FGuid());
+	TestTrue(TEXT("선택을 해제하면 고유 번호 순서로 돌아온다"),
+		Subsystem->MarkerOrder == TArray<FGuid>({Second, Third}));
+	Subsystem->ClearPresentation();
+	TestTrue(TEXT("화면을 정리하면 이전 시설 순서도 제거된다"), Subsystem->MarkerOrder.IsEmpty());
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityProgramMarkerLifecycleTest,

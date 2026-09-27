@@ -54,25 +54,55 @@ struct FESTAFIESTA_API FFF_FestivalRecord
 	}
 };
 
-/* 축제 사이에 남는 것들.
+/* 축제 사이에 남는 것들. 어느 파트에도 속하지 않아서 저장 시스템이 직접 들고 있는다.
 
-   게임을 껐다 켜도 유지돼야 하는 진행 상태다. 축제 도중의 상태와 달리
-   어느 파트에도 속하지 않아서 저장 시스템이 직접 들고 있는다.
+   ─── 수명이 둘이다 ─────────────────────────────────────────────────────────
+   판 단위  : 튜토리얼 기록(로비 인트로·안내 끔·본 축제). 새 게임을 누르면 비우고,
+              이어하기를 하면 그 세이브에 담긴 값으로 돌아간다. 세이브 파일 안에 담긴다.
+   계정 단위: 깬 축제·최고 기록. 판과 상관없이 쌓인다. FF_MetaStore 에 담긴다.
+
+   튜토리얼을 판 단위로 둔 이유: "새 게임은 처음부터, 세이브로 들어가면 그 판에서
+   본 것은 안 본다" 가 기획이다. 계정 단위로 두면 한 판에서 건너뛴 것이 다른 판,
+   심지어 새 게임까지 따라간다.
+
+   한 구조체에 둔 채로 나누는 이유는 저장 형식을 안 바꾸기 위해서다. 옛 세이브도
+   같은 자리에서 읽힌다. 나누는 규칙은 아래 ResetRunScoped / TakeRunScopedFrom 한 곳에 둔다.
 */
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_MetaSave
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
-	bool bTutorialCompleted = false;
+	/* 로비 인트로를 끝까지 봤는가.
 
-	// 끝까지 본 것과 건너뛴 것을 나눠 둔다.
-	//
-	// 둘 다 "다시 안 보여준다" 는 같지만, 건너뛴 사람에게는 나중에 다시 볼
-	// 기회를 주고 싶어질 수 있다. 하나로 합치면 그때 구분할 방법이 없다.
+	   축제를 고르기 전에 로비에서 도는 오프닝이라 축제별로 나눌 수 없다.
+	   판 단위다. 새 게임마다 한 번 보여준다.
+	*/
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
-	bool bTutorialSkipped = false;
+	bool bLobbyIntroSeen = false;
+
+	/* 안내를 통째로 껐는가.
+
+	   건너뛰기는 "이번 것만 넘긴다" 가 아니라 "안내 없이 운영만 하겠다" 는 선언이다.
+	   그래서 같은 판 안에서는 축제가 바뀌어도 되살아나지 않는다.
+	   판 단위라 새 게임을 누르면 풀린다.
+
+	   끝까지 본 것과 나눠 두는 이유는, 둘 다 "다시 안 보여준다" 는 같지만
+	   건너뛴 사람에게는 나중에 다시 볼 기회를 주고 싶어질 수 있어서다.
+	*/
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	bool bTutorialOptedOut = false;
+
+	/* 튜토리얼을 끝까지 본 축제들.
+
+	   축제마다 배울 것이 다르므로 판정도 축제 단위다. 전역 bool 하나로 두면
+	   첫 축제를 끝낸 사람이 다음 축제의 안내를 영영 못 본다.
+
+	   Set 이 아니라 배열인 이유는 ClearedFestivals 와 같다. 수가 적고,
+	   저장 형식이 단순한 편이 나중에 눈으로 들여다볼 때 낫다.
+	*/
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	TArray<FName> TutorialSeenFestivals;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
 	TArray<FName> ClearedFestivals;
@@ -84,6 +114,121 @@ struct FESTAFIESTA_API FFF_MetaSave
 	{
 		return ClearedFestivals.Contains(FestivalId);
 	}
+
+	bool HasSeenTutorialFor(const FName FestivalId) const
+	{
+		return !FestivalId.IsNone() && TutorialSeenFestivals.Contains(FestivalId);
+	}
+
+	// 판 단위 값을 비운다. 새 게임이 이것으로 시작한다.
+	void ResetRunScoped()
+	{
+		bLobbyIntroSeen = false;
+		bTutorialOptedOut = false;
+		TutorialSeenFestivals.Reset();
+
+		// 판 1 의 옛 값도 판 단위다. 남겨두면 다음 옮기기에서 되살아난다.
+		bTutorialCompleted_DEPRECATED = false;
+		bTutorialSkipped_DEPRECATED = false;
+	}
+
+	// 판 단위 값만 다른 것에서 가져온다. 계정 단위 값(기록·깬 축제)은 그대로 둔다.
+	void TakeRunScopedFrom(const FFF_MetaSave& Other)
+	{
+		bLobbyIntroSeen = Other.bLobbyIntroSeen;
+		bTutorialOptedOut = Other.bTutorialOptedOut;
+		TutorialSeenFestivals = Other.TutorialSeenFestivals;
+		bTutorialCompleted_DEPRECATED = false;
+		bTutorialSkipped_DEPRECATED = false;
+	}
+
+	/* 다른 곳에서 읽은 메타를 합친다. 무엇이 바뀌었는지 돌려준다.
+
+	   덮어쓰지 않고 합치는 이유는, 메타가 여러 파일에 흩어져 있을 수 있어서다.
+	   옛 슬롯을 불러올 때 그 슬롯의 메타로 갈아끼우면, 그 뒤에 본 튜토리얼이나 깬
+	   축제가 통째로 사라진다. 메타는 "한 번 일어난 일" 의 기록이라 되돌아갈 일이 없다.
+
+	   그래서 규칙이 단순하다. 플래그는 OR, 목록은 합집합, 기록은 칸마다 큰 값.
+	   PlayCount 도 더하지 않고 큰 값을 쓴다. 같은 파일을 두 번 합쳐도 결과가 같아야 한다.
+	*/
+	bool MergeFrom(const FFF_MetaSave& Other)
+	{
+		bool bChanged = false;
+
+		if (Other.bLobbyIntroSeen && !bLobbyIntroSeen)
+		{
+			bLobbyIntroSeen = true; bChanged = true;
+		}
+		if (Other.bTutorialOptedOut && !bTutorialOptedOut)
+		{
+			bTutorialOptedOut = true; bChanged = true;
+		}
+
+		for (const FName& Id : Other.TutorialSeenFestivals)
+		{
+			if (!Id.IsNone() && !TutorialSeenFestivals.Contains(Id))
+			{
+				TutorialSeenFestivals.Add(Id); bChanged = true;
+			}
+		}
+		for (const FName& Id : Other.ClearedFestivals)
+		{
+			if (!Id.IsNone() && !ClearedFestivals.Contains(Id))
+			{
+				ClearedFestivals.Add(Id); bChanged = true;
+			}
+		}
+
+		for (const TPair<FName, FFF_FestivalRecord>& Pair : Other.Records)
+		{
+			// 처음 보는 축제면 통째로 옮긴다. 0 과 비교하면 적자 기록이 0 으로 올라간다.
+			FFF_FestivalRecord* Found = Records.Find(Pair.Key);
+			if (!Found)
+			{
+				Records.Add(Pair.Key, Pair.Value); bChanged = true;
+				continue;
+			}
+
+			FFF_FestivalRecord& Mine = *Found;
+			const FFF_FestivalRecord& Theirs = Pair.Value;
+
+			if (Theirs.BestVisitors > Mine.BestVisitors)
+			{
+				Mine.BestVisitors = Theirs.BestVisitors; bChanged = true;
+			}
+			if (Theirs.BestSatisfaction > Mine.BestSatisfaction)
+			{
+				Mine.BestSatisfaction = Theirs.BestSatisfaction; bChanged = true;
+			}
+			if (Theirs.BestProfit > Mine.BestProfit)
+			{
+				Mine.BestProfit = Theirs.BestProfit; bChanged = true;
+			}
+			if (Theirs.PlayCount > Mine.PlayCount)
+			{
+				Mine.PlayCount = Theirs.PlayCount; bChanged = true;
+			}
+		}
+
+		return bChanged;
+	}
+
+	// ── 판 1 에서만 쓰던 값 ─────────────────────────────────────────────────
+
+	/* 판 1 에는 전역 bool 두 개뿐이었다.
+
+	   새 코드는 여기에 쓰지 않는다. 판 1 저장을 읽을 때 위의 값들로 한 번 옮기고
+	   그 뒤로는 비어 있다(UFF_SaveSubsystem::MigrateMeta).
+
+	   지우지 않고 남겨 두는 이유는, 지우면 옛 저장에서 이 값을 읽을 자리가 없어져
+	   튜토리얼 이력이 통째로 사라지기 때문이다. `_DEPRECATED` 접미사는 UHT 가
+	   떼고 맞춰주므로 파일에 적힌 이름은 예전 그대로다.
+	*/
+	UPROPERTY()
+	bool bTutorialCompleted_DEPRECATED = false;
+
+	UPROPERTY()
+	bool bTutorialSkipped_DEPRECATED = false;
 };
 
 /* 축제 도중의 상태.
@@ -230,13 +375,29 @@ class FESTAFIESTA_API UFF_SaveGame : public USaveGame
 	GENERATED_BODY()
 
 public:
-	/* 저장 형식의 판번호.
+	/* 지금 코드가 쓰는 판번호.
 
 	   구조가 바뀌면 올린다. 올리지 않으면 옛 저장을 새 코드가 읽을 때
 	   빠진 값이 기본값으로 들어가고, 그게 정상인지 오류인지 구분할 수 없다.
+
+	   판 2: 튜토리얼 판정을 전역 bool 두 개에서 축제별 목록으로 바꿨다.
+	         FFF_MetaSave 의 `판 1 에서만 쓰던 값` 항목을 볼 것.
+	*/
+	static constexpr int32 CurrentVersion = 2;
+
+	/* 이 파일이 쓰인 판번호. 기본값은 일부러 0 이다.
+
+	   SaveGame 은 CDO 기본값과 같은 값을 파일에 쓰지 않는다. 기본값을 지금 판으로
+	   두면 판번호가 한 번도 파일에 안 들어가고, 읽을 때는 그때 코드의 기본값이
+	   채워진다. 판 1 저장을 판 2 코드가 읽으면 2 로 보여서 옮기기가 건너뛰어졌다.
+
+	   기본값을 0 으로 두고 저장할 때마다 CurrentVersion 을 직접 넣는다. 그러면
+	   0 은 "판번호를 모르는 옛 파일" 이라는 뜻만 남는다. 이 수정 전에 쓴 파일은
+	   판 1 이든 판 2 든 전부 0 으로 읽히므로, 옮기기는 판번호가 아니라 옛 값이
+	   남아 있는지로 판단한다(UFF_SaveSubsystem::MigrateMeta).
 	*/
 	UPROPERTY()
-	int32 Version = 1;
+	int32 Version = 0;
 
 	UPROPERTY()
 	FFF_MetaSave Meta;

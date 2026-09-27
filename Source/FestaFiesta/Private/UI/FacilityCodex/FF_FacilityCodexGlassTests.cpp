@@ -1,3 +1,6 @@
+// FF_FacilityCodexGlassTests.cpp
+// 역할: 시설 도감의 동작과 저장된 화면 연결을 자동 검증한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 #include "Components/Image.h"
 #include "Engine/TextureRenderTarget2D.h"

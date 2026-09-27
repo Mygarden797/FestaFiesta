@@ -207,6 +207,88 @@ bool FFF_CrowdEconomyBridge_AdmissionAddsRevenue::RunTest(const FString& Paramet
 	return true;
 }
 
+// 실제 입장 신호가 목표를 넘는 순간 하루 한 번만 보너스를 주고 다음 날 다시 허용한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdEconomyBridge_DailyGoalPaysOncePerDay,
+	"FestaFiesta.Economy.CrowdBridge.DailyGoalPaysOncePerDay",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdEconomyBridge_DailyGoalPaysOncePerDay::RunTest(const FString& Parameters)
+{
+	using namespace FFF_CrowdEconomyBridgeTestHelpers;
+
+	FCrowdEconomyHarness Harness;
+	if (!TestTrue(TEXT("격리 월드가 초기화된다"), Harness.Initialize(this)))
+	{
+		return false;
+	}
+
+	Harness.Definition->DailyVisitorGoal = 500;
+	Harness.Definition->DailyGoalBonusGold = 300;
+	Harness.CrowdSim->OnVisitorsAdmitted.Broadcast(498);
+	TestEqual(TEXT("목표 직전에는 보너스가 없다"),
+		Harness.Progression->GetDayLedger().GetEarnByReason(EFF_EarnReason::DailyGoalBonus), 0);
+
+	Harness.CrowdSim->OnVisitorsAdmitted.Broadcast(2);
+	TestEqual(TEXT("목표 도달 시 보너스를 한 번 지급한다"),
+		Harness.Progression->GetDayLedger().GetEarnByReason(EFF_EarnReason::DailyGoalBonus), 300);
+	TestEqual(TEXT("입장료와 보너스가 오늘 매출에 함께 들어간다"),
+		Harness.Progression->GetTodayRevenue(), 500 * 5 + 300);
+
+	Harness.CrowdSim->OnVisitorsAdmitted.Broadcast(10);
+	TestEqual(TEXT("추가 입장은 보너스를 중복 지급하지 않는다"),
+		Harness.Progression->GetDayLedger().GetEarnByReason(EFF_EarnReason::DailyGoalBonus), 300);
+
+	TArray<uint8> SavedEconomy;
+	Harness.Progression->WriteSaveData(SavedEconomy);
+	const int32 SavedGold = Harness.Progression->GetGold();
+	Harness.Progression->RestartFestival();
+	Harness.Progression->ReadSaveData(SavedEconomy);
+	Harness.CrowdSim->OnVisitorsAdmitted.Broadcast(1);
+	TestEqual(TEXT("복원한 날에도 달성 보너스를 다시 지급하지 않는다"),
+		Harness.Progression->GetGold(), SavedGold + 5);
+
+	Harness.Progression->BeginNewDay(2);
+	Harness.CrowdSim->OnVisitorsAdmitted.Broadcast(500);
+	TestEqual(TEXT("다음 날에는 다시 한 번 지급한다"),
+		Harness.Progression->GetDayLedger().GetEarnByReason(EFF_EarnReason::DailyGoalBonus), 300);
+	return true;
+}
+
+// 축제 전체 누적 방문객 — 하루 경계로 안 지워지고, 새 축제에서만 0으로 돌아간다.
+// 저장 기록(FFF_FestivalRecord::BestVisitors, FF_SaveSubsystem::HandleFestivalEnded)이
+// 이 값을 읽는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdEconomyBridge_TotalAdmittedVisitorsAccumulatesAcrossDays, "FestaFiesta.Economy.CrowdBridge.TotalAdmittedVisitorsAccumulatesAcrossDays", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdEconomyBridge_TotalAdmittedVisitorsAccumulatesAcrossDays::RunTest(const FString& Parameters)
+{
+	using namespace FFF_CrowdEconomyBridgeTestHelpers;
+
+	FCrowdEconomyHarness Harness;
+	if (!TestTrue(TEXT("격리 월드가 초기화된다"), Harness.Initialize(this)))
+	{
+		return false;
+	}
+
+	Harness.CrowdSim->OnVisitorsAdmitted.Broadcast(300);
+	TestEqual(TEXT("첫 입장이 누적된다"),
+		Harness.Progression->GetTotalAdmittedVisitors(), 300);
+
+	Harness.Progression->BeginNewDay(2);
+	Harness.CrowdSim->OnVisitorsAdmitted.Broadcast(200);
+	TestEqual(TEXT("하루 경계를 넘어도 누적이 안 지워지고 더해진다"),
+		Harness.Progression->GetTotalAdmittedVisitors(), 500);
+
+	TArray<uint8> Saved;
+	Harness.Progression->WriteSaveData(Saved);
+	Harness.Progression->StartFestival(Harness.Definition);
+	TestEqual(TEXT("새 축제를 시작하면 0으로 돌아간다"),
+		Harness.Progression->GetTotalAdmittedVisitors(), 0);
+
+	Harness.Progression->ReadSaveData(Saved);
+	TestEqual(TEXT("복원하면 저장 시점의 누적이 돌아온다"),
+		Harness.Progression->GetTotalAdmittedVisitors(), 500);
+
+	return true;
+}
+
 // 0명 입장·축제 시작 전에는 아무 일도 일어나지 않는다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdEconomyBridge_IgnoresZeroAndPreFestival, "FestaFiesta.Economy.CrowdBridge.IgnoresZeroAndPreFestival", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdEconomyBridge_IgnoresZeroAndPreFestival::RunTest(const FString& Parameters)
@@ -304,8 +386,8 @@ bool FFF_CrowdEconomyBridge_FestivalStartFillsExpectedVisitors::RunTest(const FS
 
 	TestEqual(TEXT("홍보를 안 사도 BaseDailyVisitors 로 채워진다"),
 		Crowd->GetExpectedVisitorCountOverride(), Progression->GetExpectedVisitors());
-	TestEqual(TEXT("미구매 배수는 1.0 이라 값 자체는 BaseDailyVisitors 다"),
-		Crowd->GetExpectedVisitorCountOverride(), 500);
+	TestEqual(TEXT("미구매는 홍보 없음 배수(×0.85)라 500 × 0.85"),
+		Crowd->GetExpectedVisitorCountOverride(), 425);
 
 	return true;
 }
@@ -322,7 +404,7 @@ bool FFF_CrowdEconomyBridge_PromotionPurchaseUpdatesExpectedVisitors::RunTest(co
 		return false;
 	}
 
-	// PromotionBasic 은 Definition 생성자 기본값(500 Gold, 배수 1.08)을 그대로 쓴다 —
+	// PromotionBasic 은 Definition 생성자 기본값(600 Gold, 배수 1.00, 화제성 +6)을 그대로 쓴다 —
 	// 이 테스트가 보려는 건 구매로 인한 갱신이지, 시작 시점 채움(앞선 테스트가 이미 봄)이 아니다.
 	if (!TestEqual(TEXT("기본 홍보 구매가 성공한다"),
 		Harness.Progression->TryPurchasePromotion(EFF_PromotionGrade::Basic),
@@ -369,8 +451,9 @@ bool FFF_CrowdEconomyBridge_RestartResetsExpectedVisitors::RunTest(const FString
 
 	TestEqual(TEXT("재시작하면 등급이 비워진다"),
 		Harness.Progression->GetPurchasedPromotionGrade(), EFF_PromotionGrade::None);
-	TestEqual(TEXT("Crowd 의 override 도 기본값으로 돌아온다 — 이벤트가 실제로 나갔다는 뜻"),
-		Harness.CrowdSim->GetExpectedVisitorCountOverride(), Harness.Definition->BaseDailyVisitors);
+	TestEqual(TEXT("Crowd 의 override 도 홍보 없음 값으로 돌아온다 — 이벤트가 실제로 나갔다는 뜻"),
+		Harness.CrowdSim->GetExpectedVisitorCountOverride(), FMath::FloorToInt32(
+			Harness.Definition->BaseDailyVisitors * Harness.Definition->NoPromotionVisitorMultiplier + 1e-4f));
 
 	return true;
 }

@@ -1,6 +1,6 @@
 from pathlib import Path
 root=Path(__file__).resolve().parents[2]
-p=root/'Source/FestaFiesta/Private/UI/Atlas/FF_AtlasWbpBuilder.cpp'
+p=root/'Source/FestaFiestaEditor/Private/UI/Atlas/FF_AtlasWbpBuilder.cpp'
 s=p.read_text(encoding='utf-8-sig').replace('#include "UI/Data/FF_UIPalette.h"','#include "UI/Data/FF_UIPalette.h"\n#include "UI/Frontend/FF_FrontendCasualBuilder.h"')
 start=s.index('\tbool BuildAtlasGlobeSetupLayout(')
 end=s.index('\n\t/**',start)

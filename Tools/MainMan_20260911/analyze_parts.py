@@ -1,3 +1,6 @@
+# analyze_parts.py
+# 역할: 원본 캐릭터 메시를 연결된 부위로 나누고 각 부위의 크기·구멍·높이별 단면을 JSON으로 기록한다.
+
 import bpy,bmesh,json,numpy as np
 from pathlib import Path
 OUT=Path(__file__).resolve().parents[2]/'SourceArt/MainMan_20260911/qa'
@@ -5,15 +8,8 @@ o=next(o for o in bpy.data.objects if o.type=='MESH');me=o.data;bm=bmesh.new();b
 bm.verts.ensure_lookup_table();bm.faces.ensure_lookup_table()
 remaining=set(bm.verts);parts=[]
 while remaining:
+    # 한 점에서 연결선을 따라가며 같은 부위에 속한 점을 모두 모은다.
     v=remaining.pop();todo=[v];vs={v}
-    while todo:
-        for e in todo.pop().link_edges:
-            n=e.other_vert(v) if False else None
-        # visit using explicit current vertex
-        for vert in list(vs):
-            pass
-        break
-    todo=list(vs)
     while todo:
         curr=todo.pop()
         for e in curr.link_edges:
@@ -32,5 +28,6 @@ for i,vs in enumerate(parts):
         for z in np.arange(.08,1,.025):
             a=coords[np.abs(coords[:,2]-z)<.008]
             if len(a):d['slices'].append({'z':round(float(z),3),'min':a.min(axis=0).tolist(),'max':a.max(axis=0).tolist()})
-(OUT/'parts.json').write_text(json.dumps(data,indent=2))
+bm.free()
+(OUT/'parts.json').write_text(json.dumps(data,indent=2),encoding='utf-8')
 print(json.dumps([{k:v for k,v in d.items() if k!='slices'} for d in data]))

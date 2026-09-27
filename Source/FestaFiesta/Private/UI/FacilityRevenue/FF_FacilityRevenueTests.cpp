@@ -1,8 +1,12 @@
+// FF_FacilityRevenueTests.cpp
+// 역할: 시설 수입 순위·표시 금액·관련 화면의 연결을 검증한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -37,8 +41,8 @@
 
 namespace
 {
-	const TCHAR* RevenuePanelPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking.WBP_FF_FacilityRevenueRanking");
-	const TCHAR* RevenueRowPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRankRow.WBP_FF_FacilityRevenueRankRow");
+	const TCHAR* RevenuePanelPath = FFBuildUIAssetPaths::FacilityRevenueRankingObject;
+	const TCHAR* RevenueRowPath = FFBuildUIAssetPaths::FacilityRevenueRankRowObject;
 
 	struct FRevenueFixture
 	{
@@ -118,6 +122,13 @@ bool FFF_FacilityRevenueRankModelTest::RunTest(const FString& Parameters)
 		FFFacilityRevenueRanking::Rank(Rows, false), int64(MAX_int32) * 3);
 	TestTrue(TEXT("Large aggregate keeps a finite exact share"), First->bHasShare &&
 		FMath::IsFinite(First->Share) && FMath::IsNearlyEqual(First->Share, 1. / 3.));
+	// 문자열 변환을 없애도 번호의 각 자리를 비교하는 기존 동률 순서는 보존되어야 한다.
+	First->FacilityId = FGuid(0, 1, 0, 0);
+	Second->FacilityId = FGuid(0, 0, 1, 0);
+	Rows = {First, Second};
+	FFFacilityRevenueRanking::Rank(Rows, false);
+	TestTrue(TEXT("고유 번호의 앞자리 차이도 기존 문자 정렬과 같은 순서를 유지한다"),
+		Rows[0] == Second && Rows[1] == First);
 	return true;
 }
 
@@ -337,9 +348,9 @@ bool FFF_FacilityRevenueVirtualizedPreviewTest::RunTest(const FString& Parameter
 		const FSlateRect BodyRect = Body->GetPaintSpaceGeometry().GetLayoutBoundingRect();
 		TestTrue(TEXT("Revenue panel stays above its 70-logical-unit bottom HUD reserve at project DPI"), BodyRect.Top >= 0 && BodyRect.Bottom <= Height - 69.5f * Dpi &&
 			BodyRect.Left >= 0 && BodyRect.Right <= Width && BodyRect.GetSize().GetMin() > 0);
-		TestTrue(TEXT("Ranking stays a compact 500-wide floating surface capped at 600 logical pixels"),
-			FMath::IsNearlyEqual(BodyRect.GetSize().X / Dpi, 500.f, 1.f) && BodyRect.GetSize().Y / Dpi <= 601.f);
-		TestTrue(TEXT("Ranking leaves the center of the world clear"), BodyRect.Left > Width * .65f);
+		TestTrue(TEXT("Ranking stays a 600-wide floating surface capped at 600 logical pixels"),
+			FMath::IsNearlyEqual(BodyRect.GetSize().X / Dpi, 600.f, 1.f) && BodyRect.GetSize().Y / Dpi <= 601.f);
+		TestTrue(TEXT("Ranking leaves the center of the world clear"), BodyRect.Left > Width * .55f);
 		if (Rows.Num() <= 2)
 			TestTrue(TEXT("Sparse and empty rankings shrink instead of reserving a full-height blank list"), BodyRect.GetSize().Y / Dpi < 480.f);
 		TestEqual(TEXT("Every installation remains in the data source"), List->GetNumItems(), Rows.Num());

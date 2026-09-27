@@ -1,3 +1,6 @@
+// FF_FacilityRevenueRanking.h
+// 역할: 시설별 수입 순위를 표시하고 선택 시설로 이동하는 요청을 전달한다.
+
 #pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -73,7 +76,7 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankRow : public UUserWidget, public IU
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UProgressBar> Bar_Revenue;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UBorder> Border_Row;
 	UPROPERTY(EditDefaultsOnly, Category = "Appearance")
-	FLinearColor SelectedTint = FLinearColor::FromSRGBColor(FColor(215, 235, 223));
+	FLinearColor SelectedTint = FLinearColor::FromSRGBColor(FColor(216, 244, 255));
 
   private:
 	FLinearColor AuthoredTint = FLinearColor::White;
@@ -118,7 +121,7 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Tabs")
 	FLinearColor SelectedPeriodTextColor = FLinearColor::White;
 	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Tabs")
-	FLinearColor InactivePeriodTextColor = FLinearColor::FromSRGBColor(FColor(0x20, 0x4c, 0x36));
+	FLinearColor InactivePeriodTextColor = FLinearColor::FromSRGBColor(FColor(0x3D, 0x3C, 0x4F));
 
   private:
 	UFUNCTION() void Today();

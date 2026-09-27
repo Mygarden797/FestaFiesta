@@ -1,6 +1,7 @@
-#include "Building/FF_FacilityUpgradeTypes.h"
+// FF_FacilityUpgradeTypes.cpp
+// 역할: 강화 전후 비교 정보와 안전한 강화 비용 계산 규칙을 제공한다.
 
-#define LOCTEXT_NAMESPACE "FFFacilityUpgradeRules"
+#include "Building/FF_FacilityUpgradeTypes.h"
 
 bool FFFacilityUpgradeRules::ResolveCost(const int32 InstallCost, const float CostMultiplier, int32& OutCost)
 {
@@ -19,5 +20,3 @@ bool FFFacilityUpgradeRules::ResolveCost(const int32 InstallCost, const float Co
 	OutCost = static_cast<int32>(RoundedCost);
 	return true;
 }
-
-#undef LOCTEXT_NAMESPACE

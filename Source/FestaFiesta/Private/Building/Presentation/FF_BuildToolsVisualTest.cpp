@@ -1,11 +1,18 @@
+// FF_BuildToolsVisualTest.cpp
+// 역할: 건설 도구 모음의 상태별 화면을 실제로 렌더링해 확인한다.
+
 // Render each real authored HUD state without a player or building authority.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetTree.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/SizeBox.h"
 #include "Components/Image.h"
+#include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Editor.h"
 #include "Engine/TextureRenderTarget2D.h"
@@ -46,6 +53,12 @@ bool IsRendered(const UWidget* Widget)
         if (Current->GetVisibility() == ESlateVisibility::Collapsed || Current->GetVisibility() == ESlateVisibility::Hidden) return false;
     return Widget != nullptr;
 }
+bool IsWithin(const UWidget* Widget, const UWidget* Surface)
+{
+    for (const UWidget* Current = Widget; Current; Current = Current->GetParent())
+        if (Current == Surface) return true;
+    return false;
+}
 bool Contains(const FSlateRect& Outer, const FSlateRect& Inner)
 {
     return Inner.Left >= Outer.Left - 1 && Inner.Right <= Outer.Right + 1 &&
@@ -55,7 +68,7 @@ bool Overlaps(const FSlateRect& A, const FSlateRect& B)
 {
     return A.Left < B.Right - .5f && A.Right > B.Left + .5f && A.Top < B.Bottom - .5f && A.Bottom > B.Top + .5f;
 }
-FSlateRect Bounds(const UWidget* Widget) { return Widget->GetPaintSpaceGeometry().GetLayoutBoundingRect(); }
+FSlateRect Bounds(const UWidget* Widget) { return Widget->GetPaintSpaceGeometry().GetRenderBoundingRect(); }
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsRenderedPreviewTest,
@@ -72,8 +85,8 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
     }
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
     auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_BuildToolsWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
-    if (!TestNotNull(TEXT("Playerless editor world"), World) || !TestNotNull(TEXT("Saved compact build HUD"), Class)) return false;
+        FFBuildUIAssetPaths::BuildToolsClass));
+    if (!TestNotNull(TEXT("Playerless editor world"), World) || !TestNotNull(TEXT("Saved build HUD"), Class)) return false;
     FPlayerlessInitialization Context(*Class);
     TStrongObjectPtr<UFF_BuildToolsWidget> Widget(CreateWidget<UFF_BuildToolsWidget>(World, Class));
     if (!TestNotNull(TEXT("Production tools widget"), Widget.Get())) return false;
@@ -91,16 +104,40 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
     Text(TEXT("Text_FacilityName"), TEXT("구름 솜사탕 부스"));
     Text(TEXT("Text_Cost"), TEXT("설치 400 Gold"));
     Text(TEXT("Text_Balance"), TEXT("보유 7,200 Gold  ·  확정 후 6,800 Gold"));
-    Text(TEXT("Text_Legend"), TEXT("배치 가능 · 좌클릭 / Enter로 확정"));
+    Text(TEXT("Text_ToolbarGold"), TEXT("7,200"));
+    Text(TEXT("Text_BuildHelpPrimary"), TEXT("클릭해 시설 배치"));
+    Text(TEXT("Text_BuildHelpRotate"), TEXT("시설 방향 회전"));
+    Text(TEXT("Text_BuildHelpMove"), TEXT("카메라 이동"));
+    Text(TEXT("Text_BuildHelpPrecision"), TEXT("정밀 위치 맞춤"));
+    for (FName Name : {TEXT("Row_BuildHelpRotate"), TEXT("Row_BuildHelpPrecision")})
+        if (UWidget* Row = Widget->GetWidgetFromName(Name))
+            Row->SetVisibility(ESlateVisibility::HitTestInvisible);
+    Text(TEXT("Text_Legend"), TEXT("배치 가능 · 눌러서 설치"));
     Text(TEXT("Text_ActiveSnap"), TEXT("100 cm 맞춤"));
     Text(TEXT("Text_Confirm"), TEXT("배치 확정"));
     Text(TEXT("Text_Footprint"), TEXT("시설 크기  3.2 × 1.97 m\n안전 여유  1 m"));
     Text(TEXT("Text_Queue"), TEXT("대기·이용 정원  5팀\n동시 이용  1팀  ·  팀당 이용  6초"));
-    Text(TEXT("Text_ControlHelp"), TEXT("좌클릭 / Enter  설치 확정\nQ / E  45°씩 회전\nShift + Q / E  자유 회전\nCtrl  25 cm · Alt  1 cm\nT  직접 조정 · G  격자 표시\nB / 우클릭  시설 목록\nW A S D  카메라 이동\nEsc  일시정지"));
+    Text(TEXT("Text_ControlHelp"), TEXT(""));
     auto* Dock = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_Tools")));
     auto* Info = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_PlacementInfo")));
     auto* Help = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_PlacementHelp")));
-    if (!TestNotNull(TEXT("Compact tool dock"), Dock) || !TestNotNull(TEXT("Compact facility summary"), Info)) return false;
+    auto* TopBar = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_BuildTopBar")));
+    auto* Back = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_BuildBack")));
+    auto* Gold = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_BuildToolbarGold")));
+    auto* Settings = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Panel_BuildSettings")));
+    if (!TestNotNull(TEXT("Placement action dock"), Dock) ||
+        !TestNotNull(TEXT("Placement facility summary"), Info) ||
+        !TestNotNull(TEXT("Build-session top toolbar"), TopBar) ||
+        !TestNotNull(TEXT("Build-session back navigation"), Back) ||
+        !TestNotNull(TEXT("Independent top-right gold currency"), Gold) ||
+        !TestNotNull(TEXT("Build settings drawer"), Settings)) return false;
+    // NativeConstruct applies the editor world's Closed state. This render fixture
+    // deliberately authors the visible surfaces without opening a build session.
+    TopBar->SetVisibility(ESlateVisibility::Visible);
+    Back->SetVisibility(ESlateVisibility::Visible);
+    Dock->SetVisibility(ESlateVisibility::Visible);
+    Info->SetVisibility(ESlateVisibility::Visible);
+    Settings->SetVisibility(ESlateVisibility::Collapsed);
     TArray<UWidget*> Controls;
     TSet<UMaterialInterface*> Materials;
     auto Material = [&](const FSlateBrush& Brush)
@@ -143,70 +180,239 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
         TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(Size, TF_Bilinear, true));
         if (!TestNotNull(TEXT("HUD render target"), Target.Get())) return false;
         FHittestGrid HitGrid;
+        TopBar->SetVisibility(ESlateVisibility::Visible);
+        Settings->SetVisibility(ESlateVisibility::Collapsed);
         for (FName Name : {TEXT("Border_PlacementHelp"), TEXT("Panel_PlacementFacts")})
             if (UWidget* Panel = Widget->GetWidgetFromName(Name)) Panel->SetVisibility(ESlateVisibility::Collapsed);
         for (FName Name : {TEXT("Text_PlacementAdvice"), TEXT("Text_PlacementObstruction"), TEXT("Text_AssistanceMessage"),
             TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem")})
             if (UWidget* Panel = Widget->GetWidgetFromName(Name)) Panel->SetVisibility(ESlateVisibility::Collapsed);
-        auto Capture = [&](const TCHAR* State)
+        auto Capture = [&](const TCHAR* State, bool bShowQueueDraft = false)
         {
+            // Freeze authority-driven refresh only for this authored presentation capture.
+            // Production state/queue behavior is covered by the BuildMode integration tests.
+            const bool bWasTicking = Slate->GetCanTick();
+            if (bShowQueueDraft)
+            {
+                Slate->SetCanTick(false);
+                if (UWidget* Queue = Widget->GetWidgetFromName(TEXT("Row_BuildHelpQueue")))
+                    Queue->SetVisibility(ESlateVisibility::HitTestInvisible);
+                Text(TEXT("Text_BuildHelpQueueHint"), TEXT("7 기본 · 8 좌측 · 9 우측 · 0 U자\n현재: U자형 · 배치 확정 시 적용"));
+            }
             for (int32 Frame = 0; Frame < 4; ++Frame)
             {
                 Widget->ForceLayoutPrepass();
+                if (bShowQueueDraft)
+                {
+                    auto* HelpSize = Cast<USizeBox>(Widget->GetWidgetFromName(TEXT("Size_BuildWorldHelp")));
+                    UWidget* Column = Widget->GetWidgetFromName(TEXT("Column_BuildIconHelp"));
+                    if (HelpSize && Column)
+                    {
+                        const FVector2D Placement = FFBuildToolsModel::ResolveHelpVerticalBounds(
+                            Column->GetDesiredSize().Y + 24.f, Size.Y / Dpi - 100.f);
+                        HelpSize->SetHeightOverride(Placement.Y);
+                        if (auto* Slot = Cast<UCanvasPanelSlot>(HelpSize->Slot))
+                            Slot->SetPosition(FVector2D(32.f, Placement.X));
+                    }
+                }
                 Renderer.DrawWindow(Target.Get(), HitGrid, Window, 1.f, Size, .016f, false);
             }
             const FString ContextName = FString::Printf(TEXT("%s %dx%d"), State, Resolution.X, Resolution.Y);
             const FSlateRect Viewport(0, 0, Resolution.X, Resolution.Y);
-            const FSlateRect DockRect = Bounds(Dock), InfoRect = Bounds(Info);
-            TestTrue(ContextName + TEXT(": summary and dock fit the viewport"), Contains(Viewport, DockRect) && Contains(Viewport, InfoRect));
-            TestFalse(ContextName + TEXT(": summary and dock do not overlap"), Overlaps(DockRect, InfoRect));
-            TestTrue(ContextName + TEXT(": dock leaves bottom navigation clear"), DockRect.Bottom <= Resolution.Y - 80.f * Dpi);
-            TestTrue(ContextName + TEXT(": world center remains clear"),
-                DockRect.Left > Resolution.X * .65f && InfoRect.Right < Resolution.X * .35f);
+            const FSlateRect TopRect = Bounds(TopBar);
+            const FSlateRect BackRect = Bounds(Back);
+            const FSlateRect GoldRect = Bounds(Gold);
+            const FSlateRect DockRect = Bounds(Dock), InfoRect = Bounds(Info), SettingsRect = Bounds(Settings);
+            const auto* SettingsScroll = Cast<UScrollBox>(Widget->GetWidgetFromName(TEXT("Scroll_BuildSettings")));
+            const FSlateRect SettingsViewRect = SettingsScroll ? Bounds(SettingsScroll) : SettingsRect;
+            const auto* HelpScroll = Cast<UScrollBox>(Widget->GetWidgetFromName(TEXT("Scroll_BuildHelp")));
+            const FSlateRect HelpViewRect = HelpScroll ? Bounds(HelpScroll) : Bounds(Help);
+            const bool bDock = IsRendered(Dock), bInfo = IsRendered(Info), bSettings = IsRendered(Settings);
+            TestTrue(ContextName + TEXT(": top toolbar fits the viewport"),
+                IsRendered(TopBar) && Contains(Viewport, TopRect));
+            TestTrue(ContextName + TEXT(": pictogram toolbar has comfortable targets"),
+                TopRect.Right - TopRect.Left >= 550.f * Dpi);
+            TestFalse(ContextName + TEXT(": keyboard keycaps are no longer displayed"),
+                IsRendered(Widget->GetWidgetFromName(TEXT("Row_BuildToolbarKeycaps"))));
+            TestTrue(ContextName + TEXT(": back button fits the upper left"),
+                IsRendered(Back) && Contains(Viewport, BackRect) &&
+                BackRect.Right < Resolution.X * .25f && BackRect.Bottom < Resolution.Y * .15f);
+            TestFalse(ContextName + TEXT(": back button and toolbar do not overlap"),
+                Overlaps(BackRect, TopRect));
+            TestTrue(ContextName + TEXT(": one currency pill fits at the upper right"),
+                IsRendered(Gold) && Contains(Viewport, GoldRect) && GoldRect.Left > Resolution.X * .7f);
+            TestTrue(ContextName + TEXT(": currency name and amount have readable badge space"),
+                GoldRect.Right - GoldRect.Left >= 205.f * Dpi &&
+                GoldRect.Bottom - GoldRect.Top >= 54.f * Dpi);
+            TestFalse(ContextName + TEXT(": currency stays separate from the F1-F7 pill"),
+                Overlaps(GoldRect, TopRect));
+            TestTrue(ContextName + TEXT(": top toolbar stays above the working center"),
+                TopRect.Bottom <= Resolution.Y * .18f);
+            if (bDock)
+            {
+                TestTrue(ContextName + TEXT(": placement actions fit the viewport"), Contains(Viewport, DockRect));
+                TestTrue(ContextName + TEXT(": placement actions leave bottom navigation clear"),
+                    DockRect.Bottom <= Resolution.Y - 80.f * Dpi);
+                TestTrue(ContextName + TEXT(": placement actions leave the world center clear"),
+                    DockRect.Left > Resolution.X * .65f);
+                TestFalse(ContextName + TEXT(": top toolbar and placement actions do not overlap"),
+                    Overlaps(TopRect, DockRect));
+            }
+            if (bInfo)
+            {
+                TestTrue(ContextName + TEXT(": facility summary fits the viewport"), Contains(Viewport, InfoRect));
+                TestTrue(ContextName + TEXT(": facility summary docks to the right edge"),
+                    InfoRect.Left > Resolution.X * .62f && InfoRect.Right <= Resolution.X - 8.f * Dpi);
+                TestFalse(ContextName + TEXT(": top toolbar and summary do not overlap"),
+                    Overlaps(TopRect, InfoRect));
+                if (bDock) TestFalse(ContextName + TEXT(": summary and placement actions do not overlap"),
+                    Overlaps(DockRect, InfoRect));
+            }
+            if (bSettings)
+            {
+                TestTrue(ContextName + TEXT(": settings drawer fits the viewport"), Contains(Viewport, SettingsRect));
+                TestTrue(ContextName + TEXT(": settings drawer leaves the world center clear"),
+                    SettingsRect.Right < Resolution.X * .35f);
+                TestFalse(ContextName + TEXT(": settings drawer and top toolbar do not overlap"),
+                    Overlaps(SettingsRect, TopRect));
+                TestFalse(ContextName + TEXT(": settings drawer replaces the left summary"), bInfo);
+            }
             if (IsRendered(Help))
             {
                 const FSlateRect HelpRect = Bounds(Help);
-                TestTrue(ContextName + TEXT(": help follows the left summary without overlap"),
-                    Contains(Viewport, HelpRect) && FMath::IsNearlyEqual(HelpRect.Left, InfoRect.Left, 1.f) &&
-                    FMath::IsNearlyEqual(HelpRect.Right, InfoRect.Right, 1.f) && HelpRect.Top >= InfoRect.Bottom + 8.f * Dpi);
+                TestTrue(ContextName + TEXT(": help fits the viewport"), Contains(Viewport, HelpRect));
+                TestTrue(ContextName + TEXT(": keyboard guide stays in the left scene margin"),
+                    HelpRect.Right < Resolution.X * .35f);
+                if (bInfo) TestFalse(ContextName + TEXT(": world shortcuts avoid the facility summary"),
+                    Overlaps(HelpRect, InfoRect));
                 TestTrue(ContextName + TEXT(": help leaves the bottom navigation clear"), HelpRect.Bottom <= Resolution.Y - 80.f * Dpi);
-                TestFalse(ContextName + TEXT(": left help and right tools are separate"), Overlaps(HelpRect, DockRect));
+                if (bDock) TestFalse(ContextName + TEXT(": left help and right tools are separate"),
+                    Overlaps(HelpRect, DockRect));
+                for (FName Name : {TEXT("Size_BuildHelpMouseIcon"), TEXT("Size_BuildHelpArrowsIcon"),
+                    TEXT("Size_BuildHelpGridIcon"), TEXT("Size_BuildHelpCatalogIcon"),
+                    TEXT("Size_BuildHelpPauseIcon")})
+                    TestTrue(ContextName + TEXT(": help shows the input device: ") + Name.ToString(),
+                        IsRendered(Widget->GetWidgetFromName(Name)));
+                for (const TCHAR* Key : {TEXT("Q"), TEXT("E"), TEXT("W"), TEXT("A"), TEXT("S"),
+                    TEXT("D"), TEXT("Ctrl"), TEXT("G"), TEXT("B"), TEXT("Esc"), TEXT("Z"), TEXT("Y")})
+                {
+                    const FString Name = FString(TEXT("Text_BuildHelpKey_")) + Key;
+                    TestTrue(ContextName + TEXT(": physical keyboard key is visible: ") + Key,
+                        IsRendered(Widget->GetWidgetFromName(FName(*Name))));
+                }
+                for (FName Name : {TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo")})
+                {
+                    const UWidget* Action = Widget->GetWidgetFromName(Name);
+                    if (!TestNotNull(ContextName + TEXT(": existing guide owns the history action"), Action)) continue;
+                    const FGeometry& ActionGeometry = Action->GetCachedGeometry();
+                    const FVector2D Center = ActionGeometry.LocalToAbsolute(ActionGeometry.GetLocalSize() * .5f);
+                    // This presentation fixture has no history. Ignore disabled status while
+                    // verifying the actual painted input path through every guide ancestor.
+                    const TArray<FWidgetAndPointer> Path = HitGrid.GetBubblePath(Center, 0.f, true);
+                    TestTrue(ContextName + TEXT(": guide history action has a pointer path: ") + Name.ToString(),
+                        Path.ContainsByPredicate([&](const FWidgetAndPointer& Entry)
+                        { return &Entry.Widget.Get() == Action->GetCachedWidget().Get(); }));
+                }
+                for (FName Name : {TEXT("Text_BuildHelpUndo"), TEXT("Text_BuildHelpRedo")})
+                    if (const UWidget* Caption = Widget->GetWidgetFromName(Name))
+                        TestTrue(ContextName + TEXT(": history caption fits on one line: ") + Name.ToString(),
+                            Caption->GetCachedGeometry().GetLocalSize().Y <= 26.f &&
+                            Caption->GetCachedGeometry().GetLocalSize().X + 1.f >= Caption->GetDesiredSize().X);
+                for (FName Name : {TEXT("Size_BuildHelpKey_UndoCtrl"), TEXT("Size_BuildHelpKey_RedoCtrl")})
+                    if (const UWidget* Key = Widget->GetWidgetFromName(Name))
+                        TestTrue(ContextName + TEXT(": history keys align with the existing guide"),
+                            FMath::Abs(Bounds(Key).Left - Bounds(Widget->GetWidgetFromName(TEXT("Size_BuildHelpKey_W"))).Left) < 1.f);
+                if (bShowQueueDraft)
+                {
+                    UWidget* Queue = Widget->GetWidgetFromName(TEXT("Row_BuildHelpQueue"));
+                    TestTrue(ContextName + TEXT(": complete queue key guide fits the visible help"),
+                        IsRendered(Queue) && Contains(HelpViewRect, Bounds(Queue)));
+                    const TCHAR* Captions[] = {TEXT("7"), TEXT("8"), TEXT("9"), TEXT("0")};
+                    for (int32 Index = 0; Index < 4; ++Index)
+                    {
+                        const FName KeyName(*FString::Printf(TEXT("Text_BuildHelpKey_%d"), Index + 1));
+                        const UTextBlock* KeyText = Cast<UTextBlock>(Widget->GetWidgetFromName(KeyName));
+                        TestTrue(ContextName + TEXT(": queue guide uses the updated shortcut: ") + Captions[Index],
+                            KeyText && KeyText->GetText().ToString() == Captions[Index]);
+                    }
+                    for (FName Name : {TEXT("Text_BuildHelpKey_1"), TEXT("Text_BuildHelpKey_2"),
+                        TEXT("Text_BuildHelpKey_3"), TEXT("Text_BuildHelpKey_4"), TEXT("Text_BuildHelpQueueHint")})
+                        TestTrue(ContextName + TEXT(": queue mapping and current draft are visible: ") + Name.ToString(),
+                            IsRendered(Widget->GetWidgetFromName(Name)) && Contains(HelpViewRect, Bounds(Widget->GetWidgetFromName(Name))));
+                }
+                TestFalse(ContextName + TEXT(": old letter-key legend stays hidden"),
+                    IsRendered(Widget->GetWidgetFromName(TEXT("Text_ControlHelp"))));
             }
             TArray<UWidget*> VisibleControls;
             for (UWidget* Control : Controls)
             {
                 if (!IsRendered(Control)) continue;
-                VisibleControls.Add(Control);
                 const FSlateRect Rect = Bounds(Control);
+                if (IsWithin(Control, Settings) && !Overlaps(Rect, SettingsViewRect)) continue;
+                if (IsWithin(Control, Help) && !Overlaps(Rect, HelpViewRect)) continue;
+                VisibleControls.Add(Control);
                 const FString Label = ContextName + TEXT(": ") + Control->GetName();
                 TestTrue(Label + TEXT(" has a usable target"), Control->GetCachedGeometry().GetLocalSize().X >= 30 && Control->GetCachedGeometry().GetLocalSize().Y >= 20);
-                TestTrue(Label + TEXT(" remains inside its own surface"), Contains(
-                    Control->GetName() == TEXT("Button_Facts") || Control->GetName() == TEXT("Button_Help") ||
-                    Control->GetName() == TEXT("Button_DirectAdjustment") || Control->GetName() == TEXT("Button_FindNearby") ||
-                    Control->GetName() == TEXT("Button_NextPlacementProblem") ? InfoRect : DockRect, Rect));
+                const UWidget* Surface = IsWithin(Control, Settings) ? static_cast<UWidget*>(Settings)
+                    : IsWithin(Control, TopBar) ? static_cast<UWidget*>(TopBar)
+                    : IsWithin(Control, Back) ? static_cast<UWidget*>(Back)
+                    : IsWithin(Control, Info) ? static_cast<UWidget*>(Info)
+                    : IsWithin(Control, Dock) ? static_cast<UWidget*>(Dock)
+                    : IsWithin(Control, Help) ? static_cast<UWidget*>(Help) : nullptr;
+                if (TestNotNull(Label + TEXT(" has a named interactive surface"), Surface))
+                    TestTrue(Label + TEXT(" remains inside its own surface"),
+                        IsWithin(Control, Settings) ? Overlaps(SettingsViewRect, Rect) :
+                        IsWithin(Control, Help) ? Overlaps(HelpViewRect, Rect) : Contains(Bounds(Surface), Rect));
                 if (const UButton* Button = Cast<UButton>(Control))
                     if (const UWidget* Content = Button->GetContent()) TestTrue(Label + TEXT(" contains its label"), Contains(Rect, Bounds(Content)));
             }
             for (int32 A = 0; A < VisibleControls.Num(); ++A)
                 for (int32 B = A + 1; B < VisibleControls.Num(); ++B)
+                {
+                    // Slate clips scrolled children during paint, but their cached UMG
+                    // geometries can still describe the pre-scroll positions here.
+                    // The unscrolled capture checks their row spacing; the scrolled
+                    // capture is saved for inspection of the actual clipped pixels.
+                    if (FCString::Strcmp(State, TEXT("SettingsDrawerScrolled")) == 0 &&
+                        IsWithin(VisibleControls[A], Settings) && IsWithin(VisibleControls[B], Settings))
+                        continue;
+                    auto PaintedBounds = [&](UWidget* Control)
+                    {
+                        FSlateRect Rect = Bounds(Control);
+                        if (IsWithin(Control, Settings) || IsWithin(Control, Help))
+                        {
+                            const FSlateRect Clip = IsWithin(Control, Settings) ? SettingsViewRect : HelpViewRect;
+                            Rect.Left = FMath::Max(Rect.Left, Clip.Left);
+                            Rect.Top = FMath::Max(Rect.Top, Clip.Top);
+                            Rect.Right = FMath::Min(Rect.Right, Clip.Right);
+                            Rect.Bottom = FMath::Min(Rect.Bottom, Clip.Bottom);
+                        }
+                        return Rect;
+                    };
                     TestFalse(ContextName + TEXT(": controls do not overlap: ") + VisibleControls[A]->GetName() + TEXT(" / ") + VisibleControls[B]->GetName(),
-                        Overlaps(Bounds(VisibleControls[A]), Bounds(VisibleControls[B])));
+                        Overlaps(PaintedBounds(VisibleControls[A]), PaintedBounds(VisibleControls[B])));
+                }
             for (FName Name : {TEXT("Text_ControlHelp"), TEXT("Text_Footprint"), TEXT("Text_Queue"), TEXT("Text_RangeLegend"),
+                TEXT("Text_RotationHint"),
                 TEXT("Text_PlacementAdvice"), TEXT("Text_PlacementObstruction"), TEXT("Text_AssistanceMessage")})
             {
                 UWidget* Label = Widget->GetWidgetFromName(Name);
+                if (IsWithin(Label, Settings) && !Overlaps(Bounds(Label), SettingsViewRect)) continue;
                 if (IsRendered(Label)) TestTrue(ContextName + TEXT(": expanded information stays inside its surface: ") + Name.ToString(),
+                    IsWithin(Label, Settings) ? Overlaps(SettingsViewRect, Bounds(Label)) :
                     Contains(Name == TEXT("Text_ControlHelp") ? Bounds(Help) : InfoRect, Bounds(Label)));
             }
             for (FName Name : {TEXT("Button_Radial"), TEXT("Panel_Radial"), TEXT("Panel_Details")})
                 TestNull(ContextName + TEXT(": removed tool menu has no render or hit-test surface: ") + Name.ToString(),
                     Widget->GetWidgetFromName(Name));
-            TestFalse(ContextName + TEXT(": legacy menu calls cannot reopen a panel"), Widget->IsAuxiliaryPanelOpen());
+            TestFalse(ContextName + TEXT(": legacy radial menu remains closed"), Widget->IsRadialMenuOpen());
+            TestTrue(ContextName + TEXT(": only the settings drawer reserves auxiliary input"),
+                Widget->IsAuxiliaryPanelOpen() == bSettings);
             TArray<FColor> Pixels;
             FReadSurfaceDataFlags Flags; Flags.SetLinearToGamma(false);
             if (!TestTrue(ContextName + TEXT(": complete rendered image"), Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels, Flags) && Pixels.Num() == Resolution.X * Resolution.Y))
             { bAllSaved = false; return; }
-            if (Confirm)
+            if (Confirm && IsRendered(Confirm))
             {
                 const FVector2D Point = Confirm->GetCachedGeometry().LocalToAbsolute(FVector2D(10, Confirm->GetCachedGeometry().GetLocalSize().Y * .5));
                 const int32 X = FMath::FloorToInt(Point.X), Y = FMath::FloorToInt(Point.Y);
@@ -220,9 +426,27 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
             bAllSaved &= bSaved;
             TestTrue(ContextName + TEXT(": screenshot saved"), bSaved);
             AddInfo(FString::Printf(TEXT("Saved %s"), *FPaths::ConvertRelativePathToFull(Path)));
+            if (bShowQueueDraft) Slate->SetCanTick(bWasTicking);
         };
+        Dock->SetVisibility(ESlateVisibility::Collapsed);
+        Info->SetVisibility(ESlateVisibility::Collapsed);
+        Capture(TEXT("CatalogTopBar"));
+        Dock->SetVisibility(ESlateVisibility::Visible);
+        Info->SetVisibility(ESlateVisibility::Visible);
         Click(TEXT("Button_Help")); Capture(TEXT("DefaultHelp"));
+        Capture(TEXT("QueueDraftHelp"), true);
         Click(TEXT("Button_Help")); Capture(TEXT("Compact"));
+        Info->SetVisibility(ESlateVisibility::Collapsed);
+        Settings->SetVisibility(ESlateVisibility::Visible);
+        Capture(TEXT("SettingsDrawer"));
+        if (auto* Scroll = Cast<UScrollBox>(Widget->GetWidgetFromName(TEXT("Scroll_BuildSettings"))))
+        {
+            Scroll->SetScrollOffset(200.0f);
+            Capture(TEXT("SettingsDrawerScrolled"));
+            Scroll->ScrollToStart();
+        }
+        Settings->SetVisibility(ESlateVisibility::Collapsed);
+        Info->SetVisibility(ESlateVisibility::Visible);
         Widget->ToggleRadialMenu(); Capture(TEXT("RemovedMenuEntry"));
         Click(TEXT("Button_Help")); Capture(TEXT("Help"));
         Click(TEXT("Button_Facts")); Capture(TEXT("FactsAndHelp"));
@@ -236,7 +460,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
             TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem")})
             if (UWidget* Panel = Widget->GetWidgetFromName(Name)) Panel->SetVisibility(ESlateVisibility::Visible);
         Capture(TEXT("PlacementProblemAndHelp"));
-        Text(TEXT("Text_Legend"), TEXT("배치 가능 · 좌클릭 / Enter로 확정"));
+        Text(TEXT("Text_Legend"), TEXT("배치 가능 · 눌러서 설치"));
     }
     return bAllSaved;
 }

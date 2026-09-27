@@ -1,5 +1,9 @@
+// FF_FacilityCodexUiTests.cpp
+// 역할: 시설 도감의 동작과 저장된 화면 연결을 자동 검증한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 #include "UI/FacilityCodex/FF_FacilityCodexScreen.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "UI/FacilityCodex/FF_FacilityCodexLauncher.h"
 #include "UI/FacilityCodex/FF_FacilityCodexCard.h"
 #include "UI/FacilityCodex/FF_FacilityCodexImage.h"
@@ -13,6 +17,8 @@
 #include "Components/Button.h"
 #include "Components/BackgroundBlur.h"
 #include "Components/Border.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
 #include "Components/Image.h"
@@ -82,8 +88,7 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
     auto* ScreenClass = LoadClass(TEXT("Screen"));
     auto* CardClass = LoadClass(TEXT("Card"));
     auto* LauncherClass = LoadClass(TEXT("Launcher"));
-    auto* InspectorClass = Cast<UWidgetBlueprintGeneratedClass>(FSoftClassPath(TEXT(
-        "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C")).TryLoadClass<UUserWidget>());
+    auto* InspectorClass = Cast<UWidgetBlueprintGeneratedClass>(FSoftClassPath(FFBuildUIAssetPaths::FacilityInfoPanelClass).TryLoadClass<UUserWidget>());
     if (!TestNotNull(TEXT("Editor world"), World) || !TestNotNull(TEXT("Screen WBP"), ScreenClass) ||
         !TestNotNull(TEXT("Card WBP"), CardClass) || !TestNotNull(TEXT("Launcher WBP"), LauncherClass) ||
         !TestNotNull(TEXT("Existing inspector WBP"), InspectorClass)) return false;
@@ -148,6 +153,273 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
     }
     Screen->SetPreviewEntries(Entries);
     TestEqual(TEXT("All recipes visible"), Screen->GetVisibleEntryCount(), 2);
+    if (Screen->GetWidgetFromName(TEXT("Column_CollectionCategories")))
+    {
+        // The Pearl collection has separate list and detail pages. Exercise the
+        // current saved widget through that navigation instead of requiring the
+        // retired floating inspector to paint while the list page is active.
+        auto* Browse = Cast<USizeBox>(Screen->GetWidgetFromName(TEXT("Size_Browse")));
+        auto* DetailPage = Cast<USizeBox>(Screen->GetWidgetFromName(TEXT("Size_Detail")));
+        auto* Showcase = Cast<USizeBox>(Screen->GetWidgetFromName(TEXT("Size_Showcase")));
+        auto* Amount = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailRewardAmount")));
+        auto* PreviewName = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_PreviewFacilityName")));
+        auto* PreviewTarget = Cast<UButton>(Screen->GetWidgetFromName(TEXT("Button_PreviewTarget")));
+        auto* PreviewPartner = Cast<UButton>(Screen->GetWidgetFromName(TEXT("Button_PreviewPartner")));
+        auto* Claim = Cast<UButton>(Screen->GetWidgetFromName(TEXT("Button_DetailClaimReward")));
+        auto* Claimed = Cast<UBorder>(Screen->GetWidgetFromName(TEXT("Border_DetailRewardClaimed")));
+        auto* Locked = Cast<UBorder>(Screen->GetWidgetFromName(TEXT("Border_DetailRewardLocked")));
+        auto* RewardBounds = Cast<USizeBox>(Screen->GetWidgetFromName(TEXT("Size_DetailRewardState")));
+        auto* ClaimLabel = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailClaimReward")));
+        auto* RewardHeading = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailRewardLabel")));
+        auto* RewardChevron = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailRewardChevron")));
+        auto* ClaimedLabel = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailRewardClaimed")));
+        auto* LockedLabel = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailRewardLocked")));
+        auto* DetailGold = Cast<UImage>(Screen->GetWidgetFromName(TEXT("Image_DetailRewardGold")));
+        auto* CardGold = Cast<UImage>(CardClass->GetWidgetTreeArchetype()->FindWidget(TEXT("Image_CardRewardGold")));
+        if (!TestNotNull(TEXT("Pearl collection browse"), Browse) ||
+            !TestNotNull(TEXT("Separate detail page"), DetailPage) ||
+            !TestNotNull(TEXT("Separate showcase"), Showcase) ||
+            !TestNotNull(TEXT("Reward amount"), Amount) ||
+            !TestNotNull(TEXT("Preview name"), PreviewName) ||
+            !TestNotNull(TEXT("Preview target"), PreviewTarget) ||
+            !TestNotNull(TEXT("Preview partner"), PreviewPartner) ||
+            !TestNotNull(TEXT("Detail claim action"), Claim) ||
+            !TestNotNull(TEXT("Claimed badge"), Claimed) ||
+            !TestNotNull(TEXT("Locked badge"), Locked) ||
+            !TestNotNull(TEXT("Reward state bounds"), RewardBounds) ||
+            !TestNotNull(TEXT("Detail claim label"), ClaimLabel) ||
+            !TestNotNull(TEXT("Discovery reward heading"), RewardHeading) ||
+            !TestNotNull(TEXT("Reward row chevron"), RewardChevron) ||
+            !TestNotNull(TEXT("Claimed reward receipt"), ClaimedLabel) ||
+            !TestNotNull(TEXT("Locked reward explanation"), LockedLabel) ||
+            !TestNotNull(TEXT("Detail Gold icon"), DetailGold) ||
+            !TestNotNull(TEXT("Card Gold icon"), CardGold)) return false;
+        TestTrue(TEXT("Pearl detail reward states fill their parent and reserve a 72-high row"),
+            !RewardBounds->IsWidthOverride() && FMath::IsNearlyEqual(RewardBounds->GetHeightOverride(), 72.f));
+        TestTrue(TEXT("Discovery reward heading, amount, and chevron have a clear hierarchy"),
+            RewardHeading->GetFont().Size == 18 && ClaimLabel->GetFont().Size == 18 &&
+            RewardChevron->GetFont().Size == 27);
+        auto* ClaimIcon = Cast<UImage>(Screen->GetWidgetFromName(TEXT("Image_DetailClaimReward")));
+        if (!TestNotNull(TEXT("The full-width claim row retains its Gold icon"), ClaimIcon)) return false;
+        TestTrue(TEXT("The detail claim Gold icon persists its readable 32 by 32 size"),
+            FMath::IsNearlyEqual(ClaimIcon->GetBrush().ImageSize.X, 32.f) &&
+            FMath::IsNearlyEqual(ClaimIcon->GetBrush().ImageSize.Y, 32.f));
+        for (const TCHAR* Name : {TEXT("Image_DetailRewardClaimed"), TEXT("Image_DetailRewardLocked")})
+        {
+            auto* StateIcon = Cast<UImage>(Screen->GetWidgetFromName(Name));
+            if (!TestNotNull(Name, StateIcon)) return false;
+            TestTrue(TEXT("Receipt and locked rows use the same 32 by 32 Gold badge"),
+                FMath::IsNearlyEqual(StateIcon->GetBrush().ImageSize.X, 32.f) &&
+                FMath::IsNearlyEqual(StateIcon->GetBrush().ImageSize.Y, 32.f));
+        }
+        TestFalse(TEXT("Collection opens on its list page"), Screen->IsCombinationDetailOpen());
+        TestTrue(TEXT("List shows the recipe grid and hides the separate detail"),
+            Browse->IsVisible() && !DetailPage->IsVisible() && !Showcase->IsVisible());
+
+        Screen->OpenCombinationDetail(Entries[0].RuleId);
+        TestTrue(TEXT("Card activation opens the separate detail"), Screen->IsCombinationDetailOpen());
+        TestTrue(TEXT("Detail replaces the list rather than covering it"),
+            !Browse->IsVisible() && DetailPage->IsVisible() && Showcase->IsVisible());
+        TestTrue(TEXT("Discovered recipe shows its facility and exact Gold reward"),
+            PreviewName->GetText().EqualTo(Entries[0].TargetName) &&
+            Amount->GetText().ToString().Contains(TEXT("450")) &&
+            Claim->IsVisible() && Claim->GetIsEnabled() && !Claimed->IsVisible() && !Locked->IsVisible());
+        TestTrue(TEXT("The discovery reward row names its action and exact payment"),
+            RewardHeading->GetText().ToString() == TEXT("발견 보상") &&
+            ClaimLabel->GetText().ToString() == TEXT("450 골드") &&
+            RewardChevron->GetText().ToString() == TEXT("›"));
+        TestTrue(TEXT("The saved Gold artwork remains compact after WBP migration"),
+            DetailGold->GetBrush().ImageSize.X <= 30.f && CardGold->GetBrush().ImageSize.X <= 22.f);
+        PreviewPartner->OnClicked.Broadcast();
+        TestTrue(TEXT("Partner preview follows the selected recipe"), PreviewName->GetText().EqualTo(Entries[0].PartnerName));
+        PreviewTarget->OnClicked.Broadcast();
+        TestTrue(TEXT("Target preview can be restored"), PreviewName->GetText().EqualTo(Entries[0].TargetName));
+        Claim->OnClicked.Broadcast();
+        TestFalse(TEXT("Preview claim cannot mark a reward paid"),
+            CastChecked<UFF_FacilityCodexItem>(Tile->GetSelectedItem())->Entry.bDiscoveryRewardClaimed);
+
+        Screen->OpenCombinationDetail(Entries[1].RuleId);
+        TestTrue(TEXT("Unknown recipe shows its own locked reward and target"),
+            PreviewName->GetText().EqualTo(Entries[1].TargetName) &&
+            Amount->GetText().ToString().Contains(FText::AsNumber(1250).ToString()) &&
+            Locked->IsVisible() && !Claim->IsVisible() && !Claimed->IsVisible() &&
+            LockedLabel->GetText().ToString() == TEXT("1,250 골드 · 미발견"));
+        auto Changed = Entries;
+        Changed[1].DiscoveryRewardGold = 0;
+        Screen->SetPreviewEntries(Changed);
+        Screen->OpenCombinationDetail(Changed[1].RuleId);
+        TestTrue(TEXT("A zero reward clears the earlier amount and all reward actions"),
+            Amount->GetText().ToString().Contains(TEXT("보상 없음")) &&
+            !Amount->GetText().ToString().Contains(FText::AsNumber(1250).ToString()) &&
+            !RewardBounds->IsVisible());
+        Changed = Entries;
+        Changed[0].bDiscoveryRewardClaimed = true;
+        Screen->SetPreviewEntries(Changed);
+        Screen->OpenCombinationDetail(Changed[0].RuleId);
+        TestTrue(TEXT("A claimed reward keeps its amount but removes the action"),
+            Amount->GetText().ToString().Contains(TEXT("450")) &&
+            Claimed->IsVisible() && !Claim->IsVisible() && !Claim->GetIsEnabled() &&
+            ClaimedLabel->GetText().ToString() == TEXT("450 골드 · 수령 완료"));
+
+        Close->OnClicked.Broadcast();
+        TestFalse(TEXT("Back returns to the collection list"), Screen->IsCombinationDetailOpen());
+        Screen->SetPreviewEntries(Entries);
+        Screen->SetDiscoveryFilter(EFF_FacilityCodexFilterState::RewardReady);
+        TestEqual(TEXT("Reward filter lists only the discovered unpaid recipe"), Screen->GetVisibleEntryCount(), 1);
+        Screen->SetDiscoveryFilter(EFF_FacilityCodexFilterState::All);
+        TestEqual(TEXT("All filter restores both recipes"), Screen->GetVisibleEntryCount(), 2);
+
+        if (!FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
+        {
+            for (const FIntPoint Resolution : {FIntPoint(1280, 720), FIntPoint(1024, 768), FIntPoint(720, 960), FIntPoint(1920, 1080)})
+            {
+                FWidgetRenderer Renderer(false, true);
+                const FVector2D Size(Resolution.X, Resolution.Y);
+                const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Resolution);
+                TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(Size, TF_Bilinear, true));
+                if (!TestNotNull(TEXT("Pearl collection render target"), Target.Get())) return false;
+                auto Window = SNew(SVirtualWindow).Size(Size);
+                Window->SetContent(SNew(SDPIScaler).DPIScale(Dpi)[Slate]);
+                FHittestGrid Grid;
+                for (int32 Frame = 0; Frame < 8; ++Frame)
+                {
+                    Screen->ForceLayoutPrepass();
+                    Renderer.DrawWindow(Target.Get(), Grid, Window, 1.f, Size, .016f, false);
+                }
+                const FSlateRect Viewport(0, 0, Resolution.X, Resolution.Y);
+                const FSlateRect BrowseRect = Browse->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const FSlateRect TileRect = Tile->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                TestTrue(TEXT("The collection list and cards remain inside the viewport"),
+                    BrowseRect.Left >= -1.f && BrowseRect.Top >= -1.f &&
+                    BrowseRect.Right <= Viewport.Right + 1.f && BrowseRect.Bottom <= Viewport.Bottom + 1.f &&
+                    TileRect.Left >= BrowseRect.Left - 1.f && TileRect.Right <= BrowseRect.Right + 1.f);
+                TestTrue(TEXT("The separate detail stays hidden while browsing"), !DetailPage->IsVisible());
+                auto* FirstCard = Cast<UFF_FacilityCodexCard>(Tile->GetEntryWidgetFromItem(Tile->GetListItems()[0]));
+                if (!TestNotNull(TEXT("Visible first Pearl recipe card"), FirstCard)) return false;
+                auto* Name = CastChecked<UTextBlock>(FirstCard->GetWidgetFromName(TEXT("Text_Name")));
+                auto* NameBounds = CastChecked<USizeBox>(FirstCard->GetWidgetFromName(TEXT("Size_Name")));
+                auto* State = CastChecked<UBorder>(FirstCard->GetWidgetFromName(TEXT("Border_State")));
+                const FSlateRect CardRect = FirstCard->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const FSlateRect NameRect = Name->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const FSlateRect StateRect = State->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                TestTrue(TEXT("Pearl card title has enough height to show every wrapped line"),
+                    Name->GetDesiredSize().Y <= NameBounds->GetCachedGeometry().GetLocalSize().Y + 1.f);
+                TestTrue(TEXT("Pearl card title and reward stay inside its card"),
+                    NameRect.Bottom <= CardRect.Bottom + 1.f && StateRect.Bottom <= CardRect.Bottom + 1.f);
+                auto* GoldIcon = CastChecked<UImage>(FirstCard->GetWidgetFromName(TEXT("Image_CardRewardGold")));
+                const FSlateRect GoldRect = GoldIcon->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                TestTrue(TEXT("Card Gold icon paints at badge size rather than native texture size"),
+                    GoldRect.GetSize().X <= 24.f * Dpi && GoldRect.GetSize().Y <= 24.f * Dpi);
+                TestTrue(TEXT("Card states show the exact reward and eligibility"),
+                    CastChecked<UTextBlock>(FirstCard->GetWidgetFromName(TEXT("Text_State")))
+                        ->GetText().ToString().Contains(TEXT("450")) &&
+                    CastChecked<UTextBlock>(FirstCard->GetWidgetFromName(TEXT("Text_State")))
+                        ->GetText().ToString().Contains(TEXT("수령 가능")));
+                TestNotNull(TEXT("Card Gold badge uses its saved texture"),
+                    Cast<UTexture2D>(GoldIcon->GetBrush().GetResourceObject()));
+                TestNotNull(TEXT("Pearl card retains its authored UI material"),
+                    Cast<UMaterialInterface>(CastChecked<UBorder>(FirstCard->GetWidgetFromName(TEXT("Border_Card")))
+                        ->Background.GetResourceObject()));
+                if (Resolution == FIntPoint(1280, 720))
+                {
+                    auto* CardClaim = CastChecked<UButton>(FirstCard->GetWidgetFromName(TEXT("Button_ClaimReward")));
+                    auto* Item = CastChecked<UFF_FacilityCodexItem>(Tile->GetListItems()[0]);
+                    const auto PreviousClaim = Item->OnClaimRewardRequested;
+                    int32 ClaimRequests = 0;
+                    Item->OnClaimRewardRequested.BindLambda([&](FName RuleId)
+                    {
+                        ++ClaimRequests;
+                        TestEqual(TEXT("Card reward action routes its own recipe"), RuleId, Entries[0].RuleId);
+                    });
+                    const FGeometry& ButtonGeometry = CardClaim->GetPaintSpaceGeometry();
+                    const FVector2D Point = ButtonGeometry.LocalToAbsolute(ButtonGeometry.GetLocalSize() * .5f);
+                    TArray<FWidgetAndPointer> Bubble = Grid.GetBubblePath(Point, 0.f, false);
+                    FWidgetPath Path(MakeArrayView(Bubble));
+                    if (TestTrue(TEXT("The card reward is on the real Slate hit path"),
+                        Path.IsValid() && Path.ContainsWidget(CardClaim->GetCachedWidget().Get())))
+                    {
+                        const TSet<FKey> Pressed{EKeys::LeftMouseButton}, Released;
+                        FSlateApplication& App = FSlateApplication::Get();
+                        const FPointerEvent Move(0, Point, Point, Released, EKeys::Invalid, 0.f, FModifierKeysState());
+                        const FPointerEvent Down(0, Point, Point, Pressed, EKeys::LeftMouseButton, 0.f, FModifierKeysState());
+                        const FPointerEvent Up(0, Point, Point, Released, EKeys::LeftMouseButton, 0.f, FModifierKeysState());
+                        App.RoutePointerMoveEvent(Path, Move, false);
+                        TestTrue(TEXT("Card reward consumes pointer press"), App.RoutePointerDownEvent(Path, Down).IsEventHandled());
+                        TestTrue(TEXT("Card reward consumes pointer release"), App.RoutePointerUpEvent(Path, Up).IsEventHandled());
+                    }
+                    Item->OnClaimRewardRequested = PreviousClaim;
+                    TestEqual(TEXT("A pointer claim routes exactly once"), ClaimRequests, 1);
+                    TestFalse(TEXT("A card claim does not also open the detail page"), Screen->IsCombinationDetailOpen());
+                    const FFF_FacilityCodexEntry Original = Item->Entry;
+                    auto* CompactState = CastChecked<UTextBlock>(FirstCard->GetWidgetFromName(TEXT("Text_State")));
+                    auto* CardClaimedBadge = CastChecked<UBorder>(FirstCard->GetWidgetFromName(TEXT("Border_RewardClaimed")));
+                    auto* CardLockedBadge = CastChecked<UBorder>(FirstCard->GetWidgetFromName(TEXT("Border_RewardLocked")));
+                    auto* CardBonus = CastChecked<UTextBlock>(FirstCard->GetWidgetFromName(TEXT("Text_Bonus")));
+                    UWidget* CardRewardStrip = FirstCard->GetWidgetFromName(TEXT("Scale_RewardActions"));
+                    if (!TestNotNull(TEXT("Card reward strip"), CardRewardStrip)) return false;
+                    Item->Entry.bDiscoveryRewardClaimed = true;
+                    FirstCard->RefreshPresentation();
+                    TestTrue(TEXT("Claimed card has only its amount and receipt on the bottom line"),
+                        !CardClaim->IsVisible() && !CardClaimedBadge->IsVisible() &&
+                        CardRewardStrip->IsVisible() && CardBonus->IsVisible() &&
+                        CardBonus->GetText().ToString().Contains(TEXT("%")) &&
+                        CompactState->GetText().ToString().Contains(TEXT("수령 완료")) &&
+                        CompactState->GetText().ToString().Contains(TEXT("450")));
+                    Item->Entry.bDiscovered = false;
+                    Item->Entry.bDiscoveryRewardClaimed = false;
+                    FirstCard->RefreshPresentation();
+                    TestTrue(TEXT("Undiscovered card has only its amount and prerequisite on the bottom line"),
+                        !CardClaim->IsVisible() && !CardLockedBadge->IsVisible() &&
+                        CardRewardStrip->IsVisible() && CardBonus->IsVisible() &&
+                        CardBonus->GetText().ToString().Contains(TEXT("%")) &&
+                        CompactState->GetText().ToString().Contains(TEXT("미발견")) &&
+                        CompactState->GetText().ToString().Contains(TEXT("450")));
+                    Item->Entry = Original;
+                    FirstCard->RefreshPresentation();
+                    TestTrue(TEXT("Pooled card restores its claim action after reward-state transitions"),
+                        CardClaim->IsVisible() && CardClaim->GetIsEnabled() && CardRewardStrip->IsVisible());
+                }
+            }
+            Screen->OpenCombinationDetail(Entries[0].RuleId);
+            for (const FIntPoint Resolution : {FIntPoint(1280, 720), FIntPoint(1920, 1080)})
+            {
+                FWidgetRenderer Renderer(false, true);
+                const FVector2D Size(Resolution.X, Resolution.Y);
+                const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Resolution);
+                TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(Size, TF_Bilinear, true));
+                if (!TestNotNull(TEXT("Pearl detail render target"), Target.Get())) return false;
+                auto Window = SNew(SVirtualWindow).Size(Size);
+                Window->SetContent(SNew(SDPIScaler).DPIScale(Dpi)[Slate]);
+                FHittestGrid Grid;
+                for (int32 Frame = 0; Frame < 8; ++Frame)
+                {
+                    Screen->ForceLayoutPrepass();
+                    Renderer.DrawWindow(Target.Get(), Grid, Window, 1.f, Size, .016f, false);
+                }
+                const FSlateRect DetailRect = DetailPage->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const FSlateRect ShowcaseRect = Showcase->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const FSlateRect RewardPanelRect = Screen->GetWidgetFromName(TEXT("Border_ShowcaseRewardInfo"))
+                    ->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const FSlateRect ClaimRect = Claim->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const FSlateRect ClaimLabelRect = ClaimLabel->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const FSlateRect ChevronRect = RewardChevron->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                TestTrue(TEXT("Separate detail and showcase fit the viewport"),
+                    Screen->IsCombinationDetailOpen() && !Browse->IsVisible() &&
+                    DetailRect.Left >= -1.f && DetailRect.Top >= -1.f &&
+                    DetailRect.Right <= Resolution.X + 1.f && DetailRect.Bottom <= Resolution.Y + 1.f &&
+                    ShowcaseRect.Left >= -1.f && ShowcaseRect.Top >= -1.f &&
+                    ShowcaseRect.Right <= Resolution.X + 1.f && ShowcaseRect.Bottom <= Resolution.Y + 1.f);
+                TestTrue(TEXT("The exact Gold amount and chevron paint inside the claim row"),
+                    ClaimLabelRect.GetSize().GetMin() > 0.f && ChevronRect.GetSize().GetMin() > 0.f &&
+                    ClaimLabelRect.Left >= ClaimRect.Left - 1.f && ClaimLabelRect.Right <= ChevronRect.Left + .5f &&
+                    ChevronRect.Right <= ClaimRect.Right + 1.f);
+                TestTrue(TEXT("The Pearl detail claim fills its reward surface at 72 logical pixels high"),
+                    ClaimRect.GetSize().X >= RewardPanelRect.GetSize().X - 32.f * Dpi &&
+                    ClaimRect.GetSize().Y / Dpi >= 71.f && ClaimRect.GetSize().Y / Dpi <= 73.f);
+            }
+        }
+        return true;
+    }
     auto* CollectionProgress = Cast<UProgressBar>(Screen->GetWidgetFromName(TEXT("Progress_Discovery")));
     if (!TestNotNull(TEXT("Festival guide has an authored discovery progress bar"), CollectionProgress)) return false;
     TestTrue(TEXT("Collection progress counts discovered recipes"), FMath::IsNearlyEqual(CollectionProgress->GetPercent(), .5f));
@@ -179,9 +451,9 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
         !TestNotNull(TEXT("Selected recipe reward bounds"), DetailRewardBounds) ||
         !TestNotNull(TEXT("Reward-ready filter"), RewardReady) ||
         !TestNotNull(TEXT("Beneficiary category filter"), CategoryCombo)) return false;
-    TestTrue(TEXT("The selected recipe's reward keeps the established 72 by 32 bounds"),
-        FMath::IsNearlyEqual(DetailRewardBounds->GetWidthOverride(), 72.f) &&
-        FMath::IsNearlyEqual(DetailRewardBounds->GetHeightOverride(), 32.f));
+    TestTrue(TEXT("The selected recipe's reward fills a 72-high row"),
+        !DetailRewardBounds->IsWidthOverride() &&
+        FMath::IsNearlyEqual(DetailRewardBounds->GetHeightOverride(), 72.f));
 
     // Exercise the actual screen controls against a mixed collection. An installed
     // supporting facility's category must not masquerade as the beneficiary category.
@@ -362,8 +634,16 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
     auto* DetailPages = Cast<UWidgetSwitcher>(Screen->GetWidgetFromName(TEXT("Switcher_Detail")));
     if (!TestNotNull(TEXT("Full viewport codex bounds"), Dialog) ||
         !TestNotNull(TEXT("Direct detail tabs"), DetailPages)) return false;
-    TestTrue(TEXT("Detail typography uses the supplied project fonts"),
-        AuthoredFont.FontObject && AuthoredFont.FontObject->GetPathName().StartsWith(TEXT("/Game/Asset/Font/")));
+    TestTrue(TEXT("Detail typography uses the project Pretendard font"),
+        AuthoredFont.FontObject && AuthoredFont.FontObject->GetPathName() ==
+            TEXT("/Game/FestaFiesta/UI/Fonts/F_UI_Pretendard.F_UI_Pretendard"));
+    auto* CodexCanvas = Cast<UCanvasPanel>(Screen->GetWidgetFromName(TEXT("Canvas_CodexLayout")));
+    auto* CodexDock = Cast<UBorder>(Screen->GetWidgetFromName(TEXT("Border_CodexDock")));
+    if (!TestNotNull(TEXT("Authored floating codex canvas"), CodexCanvas) ||
+        !TestNotNull(TEXT("Authored lower catalog dock"), CodexDock)) return false;
+    TestTrue(TEXT("Existing list and detail widgets remain in separate canvas slots"),
+        Main->GetChildrenCount() == 1 && Main->GetChildAt(0) == BrowseBounds &&
+        Cast<UCanvasPanelSlot>(DetailBounds->Slot) != nullptr);
     int32 BlurLayers = 0;
     Screen->WidgetTree->ForEachWidget([&](UWidget* Widget) {
         if (const auto* Blur = Cast<UBackgroundBlur>(Widget))
@@ -373,7 +653,7 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                 Blur->GetBlurStrength() > 0.f && Blur->GetLowQualityFallbackBrush().TintColor.GetSpecifiedColor().A < 1.f);
         }
     });
-    TestEqual(TEXT("Fullscreen glass uses one shared blur rather than a blur per virtualized card"), BlurLayers, 1);
+    TestEqual(TEXT("The floating codex uses one subtle shared backdrop blur"), BlurLayers, 1);
     for (const FName Name : {TEXT("Button_DetailRecipe"), TEXT("Button_DetailPlacement"), TEXT("Button_DetailEffect")})
         if (!TestNotNull(TEXT("Direct detail navigation button"), Cast<UButton>(Screen->GetWidgetFromName(Name)))) return false;
     Screen->SetPreviewEntries(Entries);
@@ -514,9 +794,10 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
             }
         }
         const FSlateRect CloseRect = Close->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+        const FSlateRect DockRect = CodexDock->GetPaintSpaceGeometry().GetLayoutBoundingRect();
         if (Width >= 1280)
-            TestTrue(TEXT("Search keeps a usable full-width input beneath its passive hint"),
-                Search->GetPaintSpaceGeometry().GetLayoutBoundingRect().GetSize().X > Width * .35f);
+            TestTrue(TEXT("Search keeps a usable input inside the lower catalog dock"),
+                Search->GetPaintSpaceGeometry().GetLayoutBoundingRect().GetSize().X > DockRect.GetSize().X * .20f);
         TestTrue(TEXT("Close button stays inside viewport"), CloseRect.Left >= 0 && CloseRect.Top >= 0 &&
             CloseRect.Right <= Width && CloseRect.Bottom <= Height && CloseRect.GetSize().GetMin() > 0);
         TArray<FSlateRect> ActionRects;
@@ -550,24 +831,24 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
         TestTrue(TEXT("Responsive layout preserves Designer typography"), Detail->GetFont() == AuthoredFont);
         const FSlateRect GridRect = Tile->GetPaintSpaceGeometry().GetLayoutBoundingRect();
         const FSlateRect InspectorRect = DetailBounds->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-        TestTrue(TEXT("Responsive inspector and collection grid never overlap"),
-            Main->GetOrientation() == Orient_Horizontal ? InspectorRect.Left >= GridRect.Right - 1.f
-                : InspectorRect.Top >= GridRect.Bottom - 1.f);
-        const float LogicalWidth = Width / Dpi, LogicalHeight = Height / Dpi;
+        TestTrue(TEXT("The lower dock leaves the world visible above it"),
+            DockRect.Top > Height * .25f && DockRect.Bottom <= Height + 1.f);
+        TestTrue(TEXT("Collection cards stay inside the floating dock"),
+            GridRect.Left >= DockRect.Left - 1.f && GridRect.Right <= DockRect.Right + 1.f &&
+            GridRect.Top >= DockRect.Top - 1.f && GridRect.Bottom <= DockRect.Bottom + 1.f);
+        const float LogicalWidth = Width / Dpi;
         const bool bWideShowcase = LogicalWidth >= 1100.f;
-        TestEqual(TEXT("Showcase switches layout at its readable 1100 logical-pixel threshold"),
-            Main->GetOrientation(), bWideShowcase ? Orient_Horizontal : Orient_Vertical);
         if (bWideShowcase)
         {
-            TestTrue(TEXT("Wide showcase reserves a bounded collection browser and gives the remaining width to detail"),
-                FMath::IsNearlyEqual(BrowseBounds->GetWidthOverride(), FMath::Clamp(LogicalWidth * .37f, 420.f, 720.f), 1.f) &&
-                !DetailBounds->IsWidthOverride());
+            TestTrue(TEXT("Wide layout places a separate detail card beside the lower dock"),
+                InspectorRect.Left >= DockRect.Right - 1.f && InspectorRect.Top < DockRect.Top &&
+                InspectorRect.Right <= Width + 1.f);
         }
         else
         {
-            TestTrue(TEXT("Compact showcase bounds its collection height while preserving space for detail"),
-                BrowseBounds->IsHeightOverride() && FMath::IsNearlyEqual(BrowseBounds->GetHeightOverride(),
-                    FMath::Clamp(LogicalHeight * .30f, 160.f, 260.f), 1.f));
+            TestTrue(TEXT("Narrow layout keeps the scrollable detail above the full-width dock"),
+                InspectorRect.Bottom <= DockRect.Top + 1.f && InspectorRect.Top >= 0.f &&
+                DockRect.GetSize().X >= Width * .85f);
         }
         const FSlateRect DialogRect = Dialog->GetPaintSpaceGeometry().GetLayoutBoundingRect();
         TestTrue(TEXT("The codex fills all four viewport edges for full, filtered and empty collections"),
@@ -579,9 +860,22 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
             auto* DetailScroll = Cast<UScrollBox>(Screen->GetWidgetFromName(TEXT("Scroll_DetailGlass")));
             if (!TestNotNull(TEXT("Showcase details retain their authored vertical scroll viewport"), DetailScroll)) return false;
             const FSlateRect ScrollRect = DetailScroll->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+            const FSlateRect TabsRect = Screen->GetWidgetFromName(TEXT("Horizontal_DetailTabs"))->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+            const FSlateRect RewardPanelRect = Screen->GetWidgetFromName(TEXT("Size_ShowcaseRewardInfo"))->GetPaintSpaceGeometry().GetLayoutBoundingRect();
             TestTrue(TEXT("The detail scroll viewport stays inside its reserved region"),
                 ScrollRect.Left >= DetailRect.Left - 1.f && ScrollRect.Right <= DetailRect.Right + 1.f &&
                 ScrollRect.Top >= DetailRect.Top - 1.f && ScrollRect.Bottom <= DetailRect.Bottom + 1.f);
+            TestTrue(TEXT("Preview tabs remain visible above the detail scroll"),
+                TabsRect.GetSize().Y >= 20.f * Dpi && TabsRect.Bottom <= ScrollRect.Top + 1.f &&
+                ScrollRect.GetSize().Y >= 24.f * Dpi);
+            bool bRewardInsideScroll = false;
+            for (UWidget* Parent = Screen->GetWidgetFromName(TEXT("Size_ShowcaseRewardInfo"))->GetParent();
+                Parent; Parent = Parent->GetParent())
+                bRewardInsideScroll |= Parent == DetailScroll;
+            TestTrue(TEXT("The reward row follows the explanation inside the detail scroll"), bRewardInsideScroll);
+            TestTrue(TEXT("The reward row keeps the scroll viewport's horizontal bounds"),
+                RewardPanelRect.Left >= ScrollRect.Left - 1.f &&
+                RewardPanelRect.Right <= ScrollRect.Right + 1.f);
             bool bPagesInsideScroll = false;
             for (UWidget* Parent = DetailPages->GetParent(); Parent; Parent = Parent->GetParent())
                 bPagesInsideScroll |= Parent == DetailScroll;
@@ -590,15 +884,39 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
             TestTrue(FString::Printf(TEXT("%s: detail pages fit the scroll viewport without horizontal overflow"), Filename),
                 ActivePageRect.Left >= ScrollRect.Left - 1.f && ActivePageRect.Right <= ScrollRect.Right + 1.f);
             const TArray<FName> DetailNames = DetailPages->GetActiveWidgetIndex() == 0
-                ? TArray<FName>{TEXT("Text_TargetName"), TEXT("Text_PartnerName"), TEXT("Text_Bonus")}
+                ? TArray<FName>{TEXT("Text_Bonus")}
                 : DetailPages->GetActiveWidgetIndex() == 1
                 ? TArray<FName>{TEXT("Text_Distance"), TEXT("Text_Condition"), TEXT("Text_Discovery")}
                 : TArray<FName>{TEXT("Text_Applied")};
+            int32 VisibleDetailTexts = 0;
             for (FName Name : DetailNames)
             {
-                const FSlateRect Rect = Screen->GetWidgetFromName(Name)->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-                TestTrue(TEXT("Selected detail text fits the inspectable scroll content width"),
+                UWidget* DetailText = Screen->GetWidgetFromName(Name);
+                if (!TestNotNull(TEXT("Detail page text binding is intact"), DetailText)) continue;
+                bool bVisible = DetailText->IsVisible();
+                for (UWidget* Parent = DetailText->GetParent(); Parent && bVisible; Parent = Parent->GetParent())
+                    bVisible = Parent->IsVisible();
+                if (!bVisible) continue;
+                const FSlateRect Rect = DetailText->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                // A scroll box can cull nonempty text below the current viewport;
+                // Slate leaves its cached paint geometry at the zero rect then.
+                if (Rect.GetSize().X <= .5f && Rect.GetSize().Y <= .5f) continue;
+                ++VisibleDetailTexts;
+                TestTrue(FString::Printf(TEXT("Selected detail %s fits scroll width: text [%.1f, %.1f], scroll [%.1f, %.1f]"),
+                    *Name.ToString(), Rect.Left, Rect.Right, ScrollRect.Left, ScrollRect.Right),
                     Rect.Left >= ScrollRect.Left - 1.f && Rect.Right <= ScrollRect.Right + 1.f);
+                if (Name == FName(TEXT("Text_Bonus")))
+                    TestTrue(FString::Printf(TEXT("Selected combination bonus is readable without scrolling: text bottom %.1f, scroll bottom %.1f"),
+                        Rect.Bottom, ScrollRect.Bottom), Rect.Top >= ScrollRect.Top - 1.f &&
+                        Rect.Bottom <= ScrollRect.Bottom + 1.f);
+            }
+            TestTrue(TEXT("Every selected detail page exposes readable text"), VisibleDetailTexts > 0);
+            for (FName Name : {FName(TEXT("Text_TargetName")), FName(TEXT("Text_PartnerName"))})
+            {
+                const FSlateRect Rect = Screen->GetWidgetFromName(Name)->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                TestTrue(TEXT("Facility catalog links stay visible above the detail scroll"),
+                    Rect.Left >= DetailRect.Left - 1.f && Rect.Right <= DetailRect.Right + 1.f &&
+                    Rect.Top >= DetailRect.Top - 1.f && Rect.Bottom <= ScrollRect.Top + 1.f);
             }
             const auto* Selected = Cast<UFF_FacilityCodexItem>(Tile->GetSelectedItem());
             if (TestNotNull(TEXT("Visible showcase has a selected recipe"), Selected))
@@ -614,9 +932,10 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                     const UWidget* Surface = bReady ? static_cast<UWidget*>(DetailReward) : bClaimed
                         ? static_cast<UWidget*>(DetailClaimed) : static_cast<UWidget*>(DetailLocked);
                     const FSlateRect RewardRect = Surface->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-                    TestTrue(TEXT("Selected-detail reward states all paint the same 72 by 32 allocation"),
-                        FMath::IsNearlyEqual(RewardRect.GetSize().X / Dpi, 72.f, 1.f) &&
-                        FMath::IsNearlyEqual(RewardRect.GetSize().Y / Dpi, 32.f, 1.f));
+                    const FSlateRect RewardBoundsRect = DetailRewardBounds->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                    TestTrue(TEXT("Selected-detail reward states fill the same 72-high row"),
+                        FMath::IsNearlyEqual(RewardRect.GetSize().X, RewardBoundsRect.GetSize().X, 1.f) &&
+                        FMath::IsNearlyEqual(RewardRect.GetSize().Y / Dpi, 72.f, 1.f));
                 }
             }
         }
@@ -668,43 +987,25 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                 auto* ClaimedBadge = CastChecked<UBorder>(Card->GetWidgetFromName(TEXT("Border_RewardClaimed")));
                 auto* LockedBadge = CastChecked<UBorder>(Card->GetWidgetFromName(TEXT("Border_RewardLocked")));
                 auto* RewardRegion = CastChecked<USizeBox>(Card->GetWidgetFromName(TEXT("Size_RewardState")));
+                UWidget* RewardStrip = Card->GetWidgetFromName(TEXT("Scale_RewardActions"));
+                auto* CompactState = CastChecked<UTextBlock>(Card->GetWidgetFromName(TEXT("Text_State")));
                 TestEqual(TEXT("Only unclaimed discovered rewards show their action"), RewardButton->IsVisible(), bRewardVisible);
-                TestEqual(TEXT("Claimed history shows a separate completion badge"), ClaimedBadge->IsVisible(), bClaimed);
-                TestEqual(TEXT("Unknown recipes reveal a locked discovery reward"), LockedBadge->IsVisible(), bLocked);
-                TestEqual(TEXT("The shared reward region includes future rewards and excludes absent rewards"),
-                    RewardRegion->IsVisible(), bRewardVisible || bClaimed || bLocked);
+                TestFalse(TEXT("Claimed and locked card badges never repeat the bottom reward state"),
+                    ClaimedBadge->IsVisible() || LockedBadge->IsVisible());
+                TestEqual(TEXT("Only a payable reward reserves the action region"),
+                    RewardRegion->IsVisible(), bRewardVisible);
+                if (TestNotNull(TEXT("Saved card fee and reward strip"), RewardStrip))
+                    TestTrue(TEXT("Every populated card keeps its fee percentage visible"),
+                        RewardStrip->IsVisible() && Bonus->IsVisible() &&
+                        Bonus->GetText().ToString().Contains(TEXT("%")));
                 TestEqual(TEXT("A claimed reward cannot be clicked again"), RewardButton->GetIsEnabled(),
                     bRewardVisible);
                 if (bLocked)
                 {
-                    TestTrue(TEXT("Undiscovered reward hints keep readable contrast and tooltips"), LockedBadge->GetIsEnabled());
-                    const FString LockedTip = LockedBadge->GetToolTipText().ToString();
-                    TestTrue(TEXT("Undiscovered reward tooltip explains its amount and discovery prerequisite"),
-                        LockedTip.Contains(FText::AsNumber(Item->Entry.DiscoveryRewardGold).ToString()) &&
-                        LockedTip.Contains(TEXT("발견하면")) && LockedTip.Contains(TEXT("골드")));
-                    auto* LockedText = CastChecked<UTextBlock>(Card->GetWidgetFromName(TEXT("Text_RewardLocked")));
-                    TestEqual(TEXT("Undiscovered reward state is explicit without hovering"),
-                        LockedText->GetText().ToString(), FString(TEXT("잠김")));
-                    TestTrue(TEXT("Locked reward caption fits its allotted width"),
-                        LockedText->GetDesiredSize().X <= LockedText->GetPaintSpaceGeometry().GetLocalSize().X + 1.f);
-                    auto* LockedImage = CastChecked<UImage>(Card->GetWidgetFromName(TEXT("Image_RewardLocked")));
-                    auto* LockedGiftMaterial = Cast<UMaterialInterface>(LockedImage->GetBrush().GetResourceObject());
-                    if (TestNotNull(TEXT("Unknown recipe uses the grayscale gift shader"), LockedGiftMaterial))
-                    {
-                        float VisualState = 0.f;
-                        UTexture* GiftTexture = nullptr;
-                        TestTrue(TEXT("Locked gift has a grayscale state"), LockedGiftMaterial->GetScalarParameterValue(
-                            FHashedMaterialParameterInfo(TEXT("VisualState")), VisualState) && FMath::IsNearlyEqual(VisualState, 1.f));
-                        TestTrue(TEXT("Locked gift retains its original gift artwork"), LockedGiftMaterial->GetTextureParameterValue(
-                            FHashedMaterialParameterInfo(TEXT("ThumbnailTexture")), GiftTexture) && GiftTexture &&
-                            GiftTexture->GetName() == TEXT("T_FF_Codex_RewardGift"));
-                    }
-                    TestEqual(TEXT("Locked gift leaves its tooltip surface reachable"),
-                        LockedImage->GetVisibility(), ESlateVisibility::HitTestInvisible);
-                    const FSlateRect LockedRect = LockedBadge->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-                    TestTrue(TEXT("Locked hint fits to the right of the fee inside its card"),
-                        LockedRect.Left >= BonusRect.Right - 1.f && LockedRect.Right <= CardBounds.Right + 1.f &&
-                        LockedRect.Top < BonusRect.Bottom && LockedRect.Bottom <= StateRect.Top + 1.f);
+                    TestTrue(TEXT("Undiscovered reward amount and prerequisite remain on the bottom state line"),
+                        CompactState->GetText().ToString().Contains(FText::AsNumber(Item->Entry.DiscoveryRewardGold).ToString()) &&
+                        CompactState->GetText().ToString().Contains(TEXT("미발견")) &&
+                        LockedBadge->GetToolTipText().IsEmpty());
                 }
                 if (bRewardVisible)
                 {
@@ -733,23 +1034,17 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                 }
                 if (bClaimed)
                 {
-                    TestTrue(TEXT("Completion badge keeps full contrast instead of disabled shading"), ClaimedBadge->GetIsEnabled());
-                    auto* CompletedText = CastChecked<UTextBlock>(Card->GetWidgetFromName(TEXT("Text_RewardClaimed")));
-                    TestEqual(TEXT("Completion is explicit without hovering"), CompletedText->GetText().ToString(), FString(TEXT("완료")));
-                    TestTrue(TEXT("Completion text fits its allotted width"),
-                        CompletedText->GetDesiredSize().X <= CompletedText->GetPaintSpaceGeometry().GetLocalSize().X + 1.f);
-                    auto* CheckImage = CastChecked<UImage>(Card->GetWidgetFromName(TEXT("Image_RewardClaimed")));
-                    TestNotNull(TEXT("Completion uses a distinct check icon"), Cast<UTexture2D>(CheckImage->GetBrush().GetResourceObject()));
-                    const FSlateRect BadgeRect = ClaimedBadge->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-                    TestTrue(TEXT("Completion badge occupies the reward region without overflowing"),
-                        BadgeRect.Left >= BonusRect.Right - 1.f && BadgeRect.Right <= CardBounds.Right + 1.f &&
-                        BadgeRect.Top < BonusRect.Bottom && BadgeRect.Bottom <= StateRect.Top + 1.f);
+                    TestTrue(TEXT("Claimed reward amount and receipt remain on the bottom state line"),
+                        (Item->Entry.DiscoveryRewardGold <= 0 ||
+                            CompactState->GetText().ToString().Contains(FText::AsNumber(Item->Entry.DiscoveryRewardGold).ToString())) &&
+                        CompactState->GetText().ToString().Contains(TEXT("수령 완료")) &&
+                        ClaimedBadge->GetToolTipText().IsEmpty());
                 }
             }
             TestTrue(TEXT("The complete card information stays inside its surface"), StateRect.Bottom <= CardBounds.Bottom + 1.f);
         }
-        AddInfo(FString::Printf(TEXT("Codex viewport %dx%d uses project DPI %.3f and %s detail."),
-            Width, Height, Dpi, Main->GetOrientation() == Orient_Horizontal ? TEXT("side") : TEXT("stacked")));
+        AddInfo(FString::Printf(TEXT("Codex viewport %dx%d uses project DPI %.3f and %s floating detail."),
+            Width, Height, Dpi, bWideShowcase ? TEXT("side") : TEXT("upper")));
         if (Tile->GetListItems().Num() > Columns)
         {
             auto* FirstCard = Tile->GetEntryWidgetFromItem(Tile->GetListItems()[0]);
@@ -948,8 +1243,13 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
             TestEqual(TEXT("Claim uses the clicked card even when another recipe is selected"), RequestedRule, Entries[0].RuleId);
             UnknownReward->OnClicked.Broadcast();
             TestEqual(TEXT("Unknown card rejects synthetic claim clicks too"), ClaimRequests, 1);
-            TestTrue(TEXT("Unknown card advertises its reward without exposing a claim action"),
-                UnknownLocked->IsVisible() && !UnknownReward->IsVisible() && !UnknownReward->GetIsEnabled());
+            auto* UnknownState = CastChecked<UTextBlock>(UnknownCard->GetWidgetFromName(TEXT("Text_State")));
+            auto* FoundState = CastChecked<UTextBlock>(FoundCard->GetWidgetFromName(TEXT("Text_State")));
+            TestTrue(TEXT("Unknown card keeps its reward in the bottom line without an extra badge"),
+                !UnknownLocked->IsVisible() && !UnknownReward->IsVisible() && !UnknownReward->GetIsEnabled() &&
+                !UnknownCard->GetWidgetFromName(TEXT("Size_RewardState"))->IsVisible() &&
+                UnknownState->GetText().ToString().Contains(TEXT("미발견")) &&
+                UnknownState->GetText().ToString().Contains(FText::AsNumber(Entries[1].DiscoveryRewardGold).ToString()));
             FoundItem->Entry.bDiscoveryRewardClaimed = true;
             CastChecked<UFF_FacilityCodexCard>(FoundCard)->RefreshPresentation();
             FoundReward->OnClicked.Broadcast();
@@ -957,32 +1257,39 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
             TestFalse(TEXT("Received action is disabled"), FoundReward->GetIsEnabled());
             TestFalse(TEXT("Received gift action disappears"), FoundReward->IsVisible());
             auto* CompletedBadge = CastChecked<UBorder>(FoundCard->GetWidgetFromName(TEXT("Border_RewardClaimed")));
-            TestTrue(TEXT("Completion badge replaces the gift immediately"), CompletedBadge->IsVisible());
-            TestTrue(TEXT("Completion badge explains its state in the tooltip"),
-                CompletedBadge->GetToolTipText().ToString().Contains(TEXT("수령 완료")));
+            TestTrue(TEXT("Claimed card keeps one bottom receipt without a duplicate badge"),
+                !CompletedBadge->IsVisible() && !FoundCard->GetWidgetFromName(TEXT("Size_RewardState"))->IsVisible() &&
+                FoundState->GetText().ToString().Contains(TEXT("수령 완료")) &&
+                FoundState->GetText().ToString().Contains(FText::AsNumber(Entries[0].DiscoveryRewardGold).ToString()));
             TestTrue(TEXT("Claimed reward visual preview"), Capture(1280, 720, TEXT("FacilityCodexClaimed720.png")));
             FoundItem->Entry.DiscoveryRewardGold = 0;
             CastChecked<UFF_FacilityCodexCard>(FoundCard)->RefreshPresentation();
-            TestTrue(TEXT("A changed zero reward amount does not erase claim history"), CompletedBadge->IsVisible());
+            TestTrue(TEXT("A changed zero reward amount keeps claim history on the bottom line"),
+                !CompletedBadge->IsVisible() && FoundState->GetText().ToString().Contains(TEXT("수령 완료")));
             // Restore screen-owned delegates before local assertion captures leave scope.
             Screen->SetPreviewEntries(Entries);
-            TestFalse(TEXT("Pooled card clears the previous completion badge"), CompletedBadge->IsVisible());
+            TestTrue(TEXT("Pooled card clears the previous receipt and restores its ready action"),
+                !CompletedBadge->IsVisible() && FoundState->GetText().ToString().Contains(TEXT("수령 가능")));
             TestTrue(TEXT("Pooled card restores an available claim"), FoundReward->IsVisible() && FoundReward->GetIsEnabled());
             UnknownItem->Entry.bDiscovered = true;
             CastChecked<UFF_FacilityCodexCard>(UnknownCard)->RefreshPresentation();
             TestTrue(TEXT("Discovery replaces a pooled locked hint with its claim action"),
                 !UnknownLocked->IsVisible() && UnknownLocked->GetToolTipText().IsEmpty() &&
-                UnknownReward->IsVisible() && UnknownReward->GetIsEnabled());
+                UnknownReward->IsVisible() && UnknownReward->GetIsEnabled() &&
+                UnknownCard->GetWidgetFromName(TEXT("Size_RewardState"))->IsVisible());
             UnknownItem->Entry.bDiscoveryRewardClaimed = true;
             CastChecked<UFF_FacilityCodexCard>(UnknownCard)->RefreshPresentation();
-            TestTrue(TEXT("Claiming replaces the available state without restoring its locked hint"),
-                UnknownCompleted->IsVisible() && !UnknownLocked->IsVisible() && !UnknownReward->IsVisible());
+            TestTrue(TEXT("Claiming removes the ready action while retaining a single bottom receipt"),
+                !UnknownCompleted->IsVisible() && !UnknownLocked->IsVisible() && !UnknownReward->IsVisible() &&
+                UnknownState->GetText().ToString().Contains(TEXT("수령 완료")) &&
+                !UnknownCard->GetWidgetFromName(TEXT("Size_RewardState"))->IsVisible());
             UnknownItem->Entry.bDiscovered = false;
             UnknownItem->Entry.bDiscoveryRewardClaimed = false;
             CastChecked<UFF_FacilityCodexCard>(UnknownCard)->RefreshPresentation();
-            TestTrue(TEXT("Reusing a completed card for an unknown recipe restores only its locked hint"),
-                UnknownLocked->IsVisible() && !UnknownCompleted->IsVisible() &&
-                UnknownCompleted->GetToolTipText().IsEmpty() && !UnknownReward->IsVisible());
+            TestTrue(TEXT("Reusing a completed card restores only the unknown bottom state"),
+                !UnknownLocked->IsVisible() && !UnknownCompleted->IsVisible() &&
+                UnknownCompleted->GetToolTipText().IsEmpty() && !UnknownReward->IsVisible() &&
+                UnknownState->GetText().ToString().Contains(TEXT("미발견")));
             UnknownItem->Entry.DiscoveryRewardGold = 0;
             CastChecked<UFF_FacilityCodexCard>(UnknownCard)->RefreshPresentation();
             TestTrue(TEXT("A zero-reward unknown recipe clears its previous gift hint and amount"),
@@ -993,13 +1300,6 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
     }
     if (!FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
     {
-        auto SameRect = [](const FSlateRect& Before, const FSlateRect& After)
-        {
-            return FMath::IsNearlyEqual(Before.Left, After.Left, .25f) &&
-                FMath::IsNearlyEqual(Before.Top, After.Top, .25f) &&
-                FMath::IsNearlyEqual(Before.Right, After.Right, .25f) &&
-                FMath::IsNearlyEqual(Before.Bottom, After.Bottom, .25f);
-        };
         for (const FIntPoint Viewport : {FIntPoint(1280, 720), FIntPoint(1920, 1080)})
         {
             TArray<FFF_FacilityCodexEntry> LockedEntries = Entries;
@@ -1020,14 +1320,13 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
             auto* LockedBadge = CastChecked<UBorder>(TransitionCard->GetWidgetFromName(TEXT("Border_RewardLocked")));
             auto* ReadyButton = CastChecked<UButton>(TransitionCard->GetWidgetFromName(TEXT("Button_ClaimReward")));
             auto* CompletedBadge = CastChecked<UBorder>(TransitionCard->GetWidgetFromName(TEXT("Border_RewardClaimed")));
-            UWidget* RewardRow = TransitionCard->GetWidgetFromName(TEXT("Horizontal_RewardActions"));
-            UWidget* FeeText = TransitionCard->GetWidgetFromName(TEXT("Text_Bonus"));
-            const FSlateRect LockedRect = LockedBadge->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+            auto* RewardRegion = CastChecked<USizeBox>(TransitionCard->GetWidgetFromName(TEXT("Size_RewardState")));
+            auto* CompactState = CastChecked<UTextBlock>(TransitionCard->GetWidgetFromName(TEXT("Text_State")));
             const FVector2D LockedDetailSize = DetailLocked->GetPaintSpaceGeometry().GetLayoutBoundingRect().GetSize();
-            const FSlateRect LockedRowRect = RewardRow->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-            const FSlateRect LockedFeeRect = FeeText->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-            TestTrue(TEXT("Pre-discovery geometry belongs to a visible locked hint with positive dimensions"),
-                LockedBadge->IsVisible() && LockedRect.GetSize().GetMin() > 0.f);
+            TestTrue(TEXT("Pre-discovery card shows one bottom reward line without a duplicate locked badge"),
+                !LockedBadge->IsVisible() && !ReadyButton->IsVisible() && !RewardRegion->IsVisible() &&
+                CompactState->GetText().ToString().Contains(TEXT("미발견")) &&
+                CompactState->GetText().ToString().Contains(FText::AsNumber(Entries[0].DiscoveryRewardGold).ToString()));
 
             TransitionItem->Entry = Entries[0];
             TransitionCard->RefreshPresentation();
@@ -1035,14 +1334,12 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
             if (!TestTrue(TEXT("Ready reward transition preview"), Capture(Viewport.X, Viewport.Y, *BeforeFilename))) continue;
             const FSlateRect ReadyRect = ReadyButton->GetPaintSpaceGeometry().GetLayoutBoundingRect();
             const FVector2D ReadyDetailSize = DetailReward->GetPaintSpaceGeometry().GetLayoutBoundingRect().GetSize();
-            const FSlateRect ReadyRowRect = RewardRow->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-            const FSlateRect ReadyFeeRect = FeeText->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-            TestTrue(TEXT("Pre-claim geometry belongs to a visible button with positive dimensions"),
-                ReadyButton->IsVisible() && ReadyRect.GetSize().GetMin() > 0.f);
-            TestTrue(FString::Printf(TEXT("Discovery preserves the reward surface bounds at %dp"), Viewport.Y),
-                SameRect(LockedRect, ReadyRect));
-            TestTrue(FString::Printf(TEXT("Discovery does not resize or move the fee row at %dp"), Viewport.Y),
-                SameRect(LockedRowRect, ReadyRowRect) && SameRect(LockedFeeRect, ReadyFeeRect));
+            const FSlateRect CardRect = TransitionCard->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+            TestTrue(TEXT("Discovery shows a readable claim button inside its card"),
+                ReadyButton->IsVisible() && ReadyButton->GetIsEnabled() && RewardRegion->IsVisible() &&
+                ReadyRect.GetSize().GetMin() > 0.f && ReadyRect.Left >= CardRect.Left - 1.f &&
+                ReadyRect.Right <= CardRect.Right + 1.f && ReadyRect.Bottom <= CardRect.Bottom + 1.f &&
+                CompactState->GetText().ToString().Contains(TEXT("수령 가능")));
             TestTrue(FString::Printf(TEXT("Selected-detail reward retains its size when discovered at %dp"), Viewport.Y),
                 LockedDetailSize.Equals(ReadyDetailSize, .25f));
 
@@ -1054,20 +1351,15 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
             if (!TestTrue(TEXT("Completed reward transition preview"), Capture(Viewport.X, Viewport.Y, *AfterFilename))) continue;
             TestTrue(TEXT("Claim transition measures the same rendered card instance"),
                 Tile->GetEntryWidgetFromItem(TransitionItem) == TransitionCard);
-            TestTrue(TEXT("Post-claim geometry belongs to the visible completion surface"), CompletedBadge->IsVisible());
-            const FSlateRect CompletedRect = CompletedBadge->GetPaintSpaceGeometry().GetLayoutBoundingRect();
             const FVector2D CompletedDetailSize = DetailClaimed->GetPaintSpaceGeometry().GetLayoutBoundingRect().GetSize();
-            TestTrue(FString::Printf(TEXT("Reward width and height remain identical after claiming at %dp"), Viewport.Y),
-                FMath::IsNearlyEqual(ReadyRect.GetSize().X, CompletedRect.GetSize().X, .25f) &&
-                FMath::IsNearlyEqual(ReadyRect.GetSize().Y, CompletedRect.GetSize().Y, .25f));
-            TestTrue(FString::Printf(TEXT("Reward surface stays in the same position after claiming at %dp"), Viewport.Y),
-                SameRect(ReadyRect, CompletedRect));
+            const FSlateRect StateRect = CompactState->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+            TestTrue(TEXT("Claiming hides the upper badge and keeps the receipt inside the card"),
+                !CompletedBadge->IsVisible() && !ReadyButton->IsVisible() && !RewardRegion->IsVisible() &&
+                CompactState->GetText().ToString().Contains(TEXT("수령 완료")) &&
+                StateRect.Left >= CardRect.Left - 1.f && StateRect.Right <= CardRect.Right + 1.f &&
+                StateRect.Bottom <= CardRect.Bottom + 1.f);
             TestTrue(FString::Printf(TEXT("Selected-detail claim replaces its button with an identically sized receipt at %dp"), Viewport.Y),
                 DetailClaimed->IsVisible() && ReadyDetailSize.Equals(CompletedDetailSize, .25f));
-            TestTrue(FString::Printf(TEXT("Claiming does not resize or move the fee row at %dp"), Viewport.Y),
-                SameRect(ReadyRowRect, RewardRow->GetPaintSpaceGeometry().GetLayoutBoundingRect()));
-            TestTrue(FString::Printf(TEXT("Claiming does not resize or move fee text at %dp"), Viewport.Y),
-                SameRect(ReadyFeeRect, FeeText->GetPaintSpaceGeometry().GetLayoutBoundingRect()));
         }
         Screen->SetPreviewEntries(Entries);
     }

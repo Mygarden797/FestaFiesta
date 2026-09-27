@@ -1,3 +1,5 @@
+// FF_FFZSBuildAreaGeometry.cpp
+// 역할: 건설 영역 폴리곤의 합집합과 포함 여부를 계산해 지역 사이 경계를 일관되게 판정한다.
 #include "FF_FFZSBuildAreaGeometry.h"
 
 #include "Algo/Unique.h"

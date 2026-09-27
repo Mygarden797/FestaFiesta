@@ -1,3 +1,6 @@
+# repair_packaging_animations.py
+# 역할: Windows 빌드·패키징·검증 작업에서 확인된 데이터 오류만 수정한다.
+
 """Repair three known missing animation skeleton references after bone checks.
 
 Run with UnrealEditor-Cmd -run=pythonscript -script=<this file>. The default is

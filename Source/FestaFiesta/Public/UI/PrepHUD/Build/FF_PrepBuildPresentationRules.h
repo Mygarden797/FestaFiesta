@@ -1,3 +1,6 @@
+// FF_PrepBuildPresentationRules.h
+// 역할: 건설 목록의 필터·가격·빈 목록 안내를 순수 규칙으로 계산한다.
+
 // Prep HUD 배치 패널의 필터·가격 상태·빈 상태 판단을 순수 함수로 제공한다.
 
 #pragma once

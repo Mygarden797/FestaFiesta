@@ -1,3 +1,6 @@
+// FF_FacilityCodexTypes.h
+// 역할: 조합 도감 항목·필터·완료 집계에 쓰이는 공통 자료형이다.
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -54,6 +57,30 @@ struct FESTAFIESTA_API FFF_FacilityCodexSummary
 	/** Recipe counts, not sums of facility counts. */
 	UPROPERTY(BlueprintReadOnly, Category="Facility Codex") int32 ConditionMetCount = 0;
 	UPROPERTY(BlueprintReadOnly, Category="Facility Codex") int32 EffectAppliedCount = 0;
+};
+
+/** Stable milestone IDs keep already claimed rewards spent when designers rebalance amounts. */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_FacilityCodexCollectionReward
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Facility Codex") FName MilestoneId;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Facility Codex", meta=(ClampMin="1")) int32 RequiredDiscoveries = 10;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Facility Codex", meta=(ClampMin="1")) int32 RewardGold = 500;
+};
+
+/** UI projection of the profile's collection reward. Reading this structure never grants gold. */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_FacilityCodexCollectionMilestone
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category="Facility Codex") FName MilestoneId;
+	UPROPERTY(BlueprintReadOnly, Category="Facility Codex") int32 RequiredDiscoveries = 0;
+	UPROPERTY(BlueprintReadOnly, Category="Facility Codex") int32 RewardGold = 0;
+	UPROPERTY(BlueprintReadOnly, Category="Facility Codex") int32 DiscoveredCount = 0;
+	UPROPERTY(BlueprintReadOnly, Category="Facility Codex") bool bReached = false;
+	UPROPERTY(BlueprintReadOnly, Category="Facility Codex") bool bClaimed = false;
+	UPROPERTY(BlueprintReadOnly, Category="Facility Codex") bool bCanClaim = false;
 };
 
 UENUM(BlueprintType)

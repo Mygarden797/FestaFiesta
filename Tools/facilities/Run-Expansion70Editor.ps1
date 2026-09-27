@@ -1,8 +1,12 @@
+# Run-Expansion70Editor.ps1
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 공통 실행 환경에서 해당 제작·검증 작업을 실행한다.
+
 param(
     [string]$Script = 'Tools/facilities/import_expansion70.py',
     [string]$Label = 'import',
     [string]$Numbers = '',
-    [switch]$ReplaceOwned
+    [switch]$ReplaceOwned,
+    [string]$EngineRoot
 )
 $ErrorActionPreference = 'Stop'
 $taskRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -20,7 +24,8 @@ $taskArgs = @(
     '-DisablePlugins=RiderLink', '-ddc=InstalledNoZenLocalFallback',
     ('-abslog="' + $taskLog + '"')
 )
-$engineInstall = ((Get-Content -LiteralPath 'C:/ProgramData/Epic/UnrealEngineLauncher/LauncherInstalled.dat' | ConvertFrom-Json).InstallationList | Where-Object AppName -EQ 'UE_5.7' | Select-Object -First 1).InstallLocation
+Import-Module (Join-Path $PSScriptRoot '../Build/FestaFiesta.Build.psm1') -Force
+$engineInstall = Resolve-FFEngineRoot -EngineRoot $EngineRoot
 $taskProcess = Start-Process -FilePath (Join-Path $engineInstall 'Engine/Binaries/Win64/UnrealEditor-Cmd.exe') -ArgumentList $taskArgs -WindowStyle Hidden -PassThru
 Write-Output ('FF70_STARTED pid=' + $taskProcess.Id + ' log=' + $taskLog)
 $taskProcess.WaitForExit()

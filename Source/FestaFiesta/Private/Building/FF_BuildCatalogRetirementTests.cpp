@@ -1,3 +1,6 @@
+// FF_BuildCatalogRetirementTests.cpp
+// 역할: BuildCatalogRetirement 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Catalog.RetirementPreservesIdentity).
+
 // Retiring a catalog item must preserve its saved specification and asset identity.
 #include "CoreMinimal.h"
 

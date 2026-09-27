@@ -1,3 +1,6 @@
+# apply_catalog_row_preview.py
+# 역할: 건설 화면의 배치·색·가독성 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Apply and verify the catalog's partial second row in an idle Entry editor."""
 import hashlib
 import json

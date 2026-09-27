@@ -1,6 +1,9 @@
 ﻿// Runtime-loaded arrival and appearance tables must survive GC for the whole festival.
 #include "Misc/AutomationTest.h"
 
+// 역할: 관객 도착 시간표와 외형 데이터가 메모리 정리 후에도 유지되는지 검증한다.
+// 원본 에셋의 임시 사본으로 검사해 에디터가 원본을 보관하는 영향은 배제한다.
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "CrowdSystem/FF_BaseCrowd.h"
@@ -132,6 +135,9 @@ bool FFF_CrowdArrivalTablesSurviveFestivalGarbageCollection::RunTest(const FStri
     }
     Crowd->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), PoolSize, PoolSize, AFF_BaseCrowd::StaticClass());
     Crowd->BeginArrivalSchedule(RequestedVisitors, FVector::ZeroVector, 500.f);
+    // The production economy bridge normally supplies the festival's expected visitor count
+    // when Live begins. Keep this isolated GC test within its 64-slot fixture on both days.
+    Crowd->SetExpectedVisitorCountOverride(RequestedVisitors);
     TestTrue(TEXT("Project arrival curve was loaded during initialization"), Crowd->IsArrivalCurveActive());
     TestTrue(TEXT("The real visitor distribution contains whole parties"), Crowd->GetArrivalPlannedCount() > 0);
     TestEqual(TEXT("Setup starts with no active visitors"), Crowd->GetActiveAgentCount(), 0);

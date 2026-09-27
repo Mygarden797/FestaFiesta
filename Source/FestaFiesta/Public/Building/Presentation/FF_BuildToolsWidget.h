@@ -1,3 +1,6 @@
+// FF_BuildToolsWidget.h
+// 역할: 건설 도구 버튼과 각도 입력을 건설 상태 및 명령에 연결한다.
+
 #pragma once
 
 #include "Blueprint/UserWidget.h"
@@ -8,9 +11,13 @@
 
 class UBorder;
 class UEditableTextBox;
+class UImage;
+class USizeBox;
 class UTextBlock;
 class UFF_BuildModeSubsystem;
 class UFF_BuildCatalogEconomyReadModel;
+class UFF_BuildCatalogSubsystem;
+struct FKey;
 
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_BuildToolsViewData
@@ -37,6 +44,8 @@ namespace FFBuildToolsModel
     // Explicit degree input is finite, decimal and within the displayed 0..360 range.
     // Invalid edits leave the caller's previous value untouched; 360 wraps to 0.
     FESTAFIESTA_API bool TryParseYawText(const FString& Text, float& OutYawDegrees);
+    /** Top and height of the guide, bounded above the measured catalog edge. */
+    FESTAFIESTA_API FVector2D ResolveHelpVerticalBounds(float ContentHeight, float AvailableBottom);
 }
 
 // UButton exposes focus initialization to subclasses, avoiding deprecated property writes.
@@ -77,6 +86,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ToggleHelp();
     bool IsRadialMenuOpen() const;
     bool IsAuxiliaryPanelOpen() const;
+    bool IsBuildSettingsOpen() const;
 
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools")
     void RefreshTools();
@@ -93,13 +103,16 @@ public:
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ToggleDirectAdjustment();
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void FindNearbyPlacement();
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ShowNextPlacementProblem();
+    /** Legacy keyboard entry point. Toolbar actions are now explicit mouse buttons. */
+    bool HandleToolbarKey(const FKey& Key);
+    UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ToggleBuildSettings();
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance|Status")
-    FSlateColor ReadyStatusColor = FSlateColor(FLinearColor::FromSRGBColor(FColor(0x31, 0x57, 0x47)));
+    FSlateColor ReadyStatusColor = FSlateColor(FLinearColor::FromSRGBColor(FColor(0x3D, 0x75, 0xA4)));
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance|Status")
     FSlateColor InvalidStatusColor = FSlateColor(FLinearColor::FromSRGBColor(FColor(0xD7, 0x4E, 0x43)));
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance|Status")
-    FSlateColor NeutralStatusColor = FSlateColor(FLinearColor::FromSRGBColor(FColor(0x6F, 0x7B, 0x75)));
+    FSlateColor NeutralStatusColor = FSlateColor(FLinearColor::FromSRGBColor(FColor(0x7B, 0x7D, 0x92)));
 
 protected:
     virtual void NativeConstruct() override;
@@ -113,6 +126,47 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_Tools;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_PlacementInfo;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_PlacementHelp;
+    /** Build-session toolbar shared by catalog browsing and active placement. */
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_BuildTopBar;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_BuildBack;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_BuildToolbarGold;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Label_BuildMode;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> Size_BuildWorldHelp;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Column_BuildIconHelp;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildBack;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildBack;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Panel_BuildSettings;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> Size_BuildSettings;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildSettings;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_MultiSelect;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_MultiSelect;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_SnapCycle;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SnapCycle;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ToolbarRanges;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ToolbarRanges;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ToolbarCatalog;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ToolbarHelp;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ToolbarGold;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UImage> Image_PlacementFacility;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildSettingsClose;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_SettingsGrid;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SettingsGrid;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_SettingsSnapMeter;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SettingsSnapMeter;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_SettingsSnapPrecision;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SettingsSnapPrecision;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_SettingsSnapFree;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SettingsSnapFree;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_SettingsDirectAdjustment;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SettingsDirectAdjustment;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_SettingsFacilityRanges;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SettingsFacilityRanges;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_SettingsSynergyPreview;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SettingsSynergyPreview;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_SettingsZoomToCursor;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SettingsZoomToCursor;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_SettingsEdgeScroll;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SettingsEdgeScroll;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_ContextPing;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ContextPing;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_PlacementAdvice;
@@ -130,6 +184,17 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Footprint;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Queue;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ControlHelp;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildHelpUndo;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildHelpRedo;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Row_BuildHelpQueue;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildHelpQueue;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildHelpQueueHint;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildHelpPrimary;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildHelpRotate;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildHelpMove;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildHelpPrecision;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Row_BuildHelpRotate;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Row_BuildHelpPrecision;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Details;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_Details;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Mode;
@@ -162,12 +227,28 @@ protected:
 private:
     TWeakObjectPtr<UFF_BuildModeSubsystem> BuildMode;
     TWeakObjectPtr<UFF_BuildCatalogEconomyReadModel> Economy;
+    TWeakObjectPtr<UFF_BuildCatalogSubsystem> CatalogModel;
+    TWeakObjectPtr<UWidget> CatalogHelpAvoidanceSurface;
+    TWeakObjectPtr<UWidget> GroupHelpAvoidanceSurface;
+    double NextCatalogHelpSearchTime = 0.0;
+    double NextGroupHelpSearchTime = 0.0;
     UPROPERTY(Transient) FFF_BuildToolsViewData ViewData;
     FTimerHandle FreeRotationTimer;
     int32 PointerRotationDirection = 0;
     int32 PlacementProblemIndex = 0;
+    bool bRestoreHelpAfterSettings = false;
     double LastPointerRotationTime = 0.0;
     UFUNCTION() void ToggleDetails();
+    UFUNCTION() void HandleMultiSelect();
+    UFUNCTION() void HandleUndoConstruction();
+    UFUNCTION() void HandleRedoConstruction();
+    void RefreshEditingHelp();
+    UFUNCTION() void HandleSnapCycle();
+    UFUNCTION() void HandleBuildBack();
+    UFUNCTION() void HandleFacilityRanges();
+    UFUNCTION() void HandleSynergyPreview();
+    UFUNCTION() void HandleZoomToCursor();
+    UFUNCTION() void HandleEdgeScroll();
     UFUNCTION() void ToggleFacts();
     void SetHelpExpanded(bool bExpanded);
     void CloseRadialMenu();

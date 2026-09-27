@@ -1,3 +1,6 @@
+// FF_FacilityCodexRewardFeedbackTests.cpp
+// 역할: 시설 도감의 동작과 저장된 화면 연결을 자동 검증한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
@@ -128,11 +131,17 @@ bool FFF_FacilityCodexRewardFeedbackTest::RunTest(const FString& Parameters)
 	auto* Feedback = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_RewardFeedback")));
 	auto* FeedbackPanel = Cast<UBorder>(Screen->GetWidgetFromName(TEXT("Border_RewardFeedback")));
 	auto* RewardLabel = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailRewardLabel")));
+	auto* ClaimAmount = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailClaimReward")));
+	auto* ClaimedAmount = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailRewardClaimed")));
+	auto* ClaimedRow = Cast<UBorder>(Screen->GetWidgetFromName(TEXT("Border_DetailRewardClaimed")));
 	auto* RewardHint = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailRewardHint")));
 	auto* ReadyLabel = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Button_RewardReady_Label")));
 	if (!TestNotNull(TEXT("Collection list"), Tile) || !TestNotNull(TEXT("Actual claim button"), ClaimButton) ||
 		!TestNotNull(TEXT("Authored success feedback"), Feedback) || !TestNotNull(TEXT("Feedback surface"), FeedbackPanel) ||
 		!TestNotNull(TEXT("Authored reward label"), RewardLabel) ||
+		!TestNotNull(TEXT("Exact claim amount label"), ClaimAmount) ||
+		!TestNotNull(TEXT("Claimed amount receipt"), ClaimedAmount) ||
+		!TestNotNull(TEXT("Claimed reward row"), ClaimedRow) ||
 		!TestNotNull(TEXT("Authored reward hint"), RewardHint) || !TestNotNull(TEXT("Authored ready count"), ReadyLabel)) return false;
 	if (!TestTrue(TEXT("The real claim button has its native click handler"), ClaimButton->OnClicked.IsBound())) return false;
 	UFF_FacilityCodexItem* FirstItem = nullptr;
@@ -144,6 +153,14 @@ bool FFF_FacilityCodexRewardFeedbackTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("Selectable authoritative reward"), FirstItem)) return false;
 	Tile->SetSelectedItem(FirstItem);
 	TestEqual(TEXT("The actual detail button targets the chosen recipe"), Screen->GetSelectedRuleId(), FirstRule);
+	// Collection tiles select a recipe; the reward panel is populated only after
+	// opening its separate detail page, as the player does.
+	Screen->OpenCombinationDetail(FirstRule);
+	TestTrue(TEXT("The selected recipe opens its reward detail"), Screen->IsCombinationDetailOpen());
+	TestEqual(TEXT("The detail heads its reward section with the reference label"),
+		RewardLabel->GetText().ToString(), FString(TEXT("발견 보상")));
+	TestEqual(TEXT("The clickable row states the exact available Gold"),
+		ClaimAmount->GetText().ToString(), FString(TEXT("333 골드")));
 	TestTrue(TEXT("Pending reward clearly enables its claim action"), ClaimButton->GetIsEnabled() && ClaimButton->IsVisible());
 	TestFalse(TEXT("Pending reward has an explanatory hint"), RewardHint->GetText().IsEmpty());
 	TestFalse(TEXT("There is no success announcement before payment"), Feedback->IsVisible());
@@ -189,7 +206,9 @@ bool FFF_FacilityCodexRewardFeedbackTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Successful payment persists the claim"), Progress->IsDiscoveryRewardClaimed(FirstRule));
 	TestTrue(TEXT("Successful payment displays its credited amount"), FeedbackPanel->IsVisible() && Feedback->IsVisible() &&
 		Feedback->GetText().ToString().Contains(FText::AsNumber(333).ToString()));
-	TestFalse(TEXT("Claimed reward can no longer be clicked"), ClaimButton->GetIsEnabled());
+	TestTrue(TEXT("The paid row becomes a receipt for the exact reward"), ClaimedRow->IsVisible() &&
+		ClaimedAmount->GetText().ToString() == TEXT("333 골드 · 수령 완료"));
+	TestTrue(TEXT("Claimed reward can no longer be clicked"), !ClaimButton->GetIsEnabled() && !ClaimButton->IsVisible());
 	TestTrue(TEXT("The detail hint changes to the claimed explanation"), !RewardHint->GetText().IsEmpty() && !RewardHint->GetText().EqualTo(ReadyHint));
 	TestTrue(TEXT("The ready count drops immediately after payment"), ReadyLabel->GetText().ToString().Contains(TEXT("1")));
 	if (!FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
@@ -244,6 +263,7 @@ bool FFF_FacilityCodexRewardFeedbackTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The ready filter visibly reports zero pending rewards"), ReadyLabel->GetText().ToString().Contains(TEXT("0")));
 	TestTrue(TEXT("Success remains visible even after the ready filter removes its selected row"), Feedback->IsVisible());
 	Screen->SetPreviewEntries({UnclaimedEntry});
+	Screen->OpenCombinationDetail(UnclaimedEntry.RuleId);
 	TestFalse(TEXT("Entering preview clears real payment feedback"), Feedback->IsVisible());
 	TestTrue(TEXT("Preview still demonstrates a ready reward button"), ClaimButton->GetIsEnabled());
 	ClaimButton->OnClicked.Broadcast();

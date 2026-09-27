@@ -1,7 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const sharp = require('C:/Users/jt/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/sharp');
+const os = require('os');
+let sharp;
+try { sharp = require('sharp'); }
+catch (_) { sharp = require(path.join(os.homedir(), '.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/sharp')); }
 
 const projectRoot = path.resolve(__dirname, '../..');
 const liveHudRoot = path.join(projectRoot, 'SourceArt/UI/LiveHUD');
@@ -219,7 +222,7 @@ async function makePreview(root, theme) {
     ['Actions', 'FastForward'], ['Status', 'StatusWarning'], ['Status', 'StatusDanger']
   ];
   for (let i = 0; i < rows.length; i++) {
-    const tint = i === 13 ? C.amber : (i === 14 ? C.danger : C.tealDeep);
+    const tint = i === 0 ? null : (i === 13 ? C.amber : (i === 14 ? C.danger : C.tealDeep));
     await add(`Icons/${rows[i][0]}/T_FF_LH_Icon_${rows[i][1]}_White_256.png`, 80 + i * 155, 985, 92, 92, tint);
   }
 

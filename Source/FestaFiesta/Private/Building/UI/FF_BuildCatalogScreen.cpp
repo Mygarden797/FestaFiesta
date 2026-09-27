@@ -6,7 +6,9 @@
 // 실패/성능: WBP 계약이 불완전하면 Slate로 폴백하고 목록 갱신은 현재 분류 항목만 생성한다.
 
 #include "Building/UI/FF_BuildCatalogScreen.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Building/Presentation/FF_BuildTypography.h"
+#include "Building/FF_BuildToolbarInput.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Building/FF_FacilityNamingLibrary.h"
@@ -25,6 +27,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
@@ -72,13 +75,13 @@ namespace
 	// 런타임에 동적 생성하는 WBP 템플릿과 아이콘 에셋의 기본 경로이다.
 	// 생성자에서 soft reference로만 등록하므로 화면 클래스 로드만으로 에셋을 강제 로드하지 않는다.
 	const TCHAR* CategoryButtonPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCategoryButton.WBP_FF_BuildCategoryButton_C");
+		FFBuildUIAssetPaths::CategoryButtonClass;
 	const TCHAR* MinorSectionPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildMinorSection.WBP_FF_BuildMinorSection_C");
+		FFBuildUIAssetPaths::MinorSectionClass;
 	const TCHAR* FacilityCardPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard.WBP_FF_BuildFacilityCard_C");
+		FFBuildUIAssetPaths::FacilityCardClass;
 	const TCHAR* CategoryIconAtlasPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/T_UI_BuildCatalog_IconAtlas.T_UI_BuildCatalog_IconAtlas");
+		FFBuildUIAssetPaths::CategoryIconAtlasObject;
 
 	void ApplyButtonIconBrush(UFF_CommonButtonBase* Button, const FSlateBrush& Brush)
 	{
@@ -815,6 +818,11 @@ FReply UFF_BuildCatalogScreen::NativeOnPreviewKeyDown(
 	const FGeometry& InGeometry,
 	const FKeyEvent& InKeyEvent)
 {
+	if (FFBuildToolbarInput::IsRetiredShortcut(InKeyEvent.GetKey()))
+	{
+		// Focused catalog search must not route former toolbar keys to pause or gameplay.
+		return FReply::Handled();
+	}
 	if (InKeyEvent.GetKey() == EKeys::B && !InKeyEvent.IsRepeat())
 	{
 		// UI가 먼저 처리한 B가 같은 프레임의 PlayerController 폴링과 중복되지 않도록 별도 의도로 전달한다.
@@ -826,7 +834,7 @@ FReply UFF_BuildCatalogScreen::NativeOnPreviewKeyDown(
 	if (Settings && Settings->OpenCloseKeys.Contains(InKeyEvent.GetKey()) &&
 		!InKeyEvent.IsRepeat())
 	{
-		// 카탈로그/검색창이 GameAndUI 포커스를 소유해도 ESC/F5가 게임 입력으로 유실되지 않게 전달한다.
+		// 카탈로그/검색창이 GameAndUI 포커스를 소유해도 Escape가 유실되지 않게 전달한다.
 		OnPauseMenuKeyRequested.Broadcast();
 		return FReply::Handled();
 	}

@@ -1,3 +1,6 @@
+// FF_BuildGridOverviewTests.cpp
+// 역할: BuildGridOverview 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.BuildMode.PlacementGridOverview).
+
 // Integration coverage for the build session's persistent surroundings grid. The
 // fixture has a real local player but no render viewport, so the placement-surface
 // fallback is required; no mouse, camera, authority commands or world ticks are used.

@@ -1,3 +1,6 @@
+# snapshot_before.py
+# 역할: 승인된 건설 화면 및 데이터 이관 작업에서 변경 전 상태를 기록한다.
+
 """Read-only pre-migration WBP snapshot for the approved September build UI."""
 import hashlib, json
 from pathlib import Path

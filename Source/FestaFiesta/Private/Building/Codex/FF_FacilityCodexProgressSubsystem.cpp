@@ -1,3 +1,6 @@
+// FF_FacilityCodexProgressSubsystem.cpp
+// 역할: 발견한 조합과 받은 보상을 사용자 설정에 저장하여 중복 보상을 막는다.
+
 #include "Building/Codex/FF_FacilityCodexProgressSubsystem.h"
 
 #include "Festival/FF_FestivalProgressionSubsystem.h"
@@ -8,15 +11,18 @@ namespace
 	constexpr const TCHAR* ProgressSection = TEXT("FestaFiesta.FacilityCodex");
 	constexpr const TCHAR* ProgressKey = TEXT("DiscoveredRuleIds");
 	constexpr const TCHAR* ClaimedRewardsKey = TEXT("ClaimedDiscoveryRewardRuleIds");
+	constexpr const TCHAR* ClaimedCollectionRewardsKey = TEXT("ClaimedCollectionRewardIds");
 	constexpr const TCHAR* RewardVersionKey = TEXT("DiscoveryRewardClaimVersion");
 	constexpr int32 ManualRewardVersion = 1;
 }
 
+// 사용자별 발견·수령 기록을 읽는다. 자동 보상 방식의 옛 기록은 이미 받은 보상으로 한 번만 이전한다.
 void UFF_FacilityCodexProgressSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	DiscoveredRuleIds.Reset();
 	ClaimedDiscoveryRewardRuleIds.Reset();
+	ClaimedCollectionRewardIds.Reset();
 	if (!GConfig || GGameUserSettingsIni.IsEmpty()) { return; }
 	TArray<FString> SavedIds;
 	GConfig->GetArray(ProgressSection, ProgressKey, SavedIds, GGameUserSettingsIni);
@@ -24,6 +30,15 @@ void UFF_FacilityCodexProgressSubsystem::Initialize(FSubsystemCollectionBase& Co
 	{
 		const FName RuleId(*SavedId.TrimStartAndEnd());
 		if (!RuleId.IsNone()) { DiscoveredRuleIds.Add(RuleId); }
+	}
+	// New collection stages are opt-in claims for both old and new profiles. Keep spent IDs
+	// even if a stage is temporarily removed from settings, so restoring it cannot repay it.
+	SavedIds.Reset();
+	GConfig->GetArray(ProgressSection, ClaimedCollectionRewardsKey, SavedIds, GGameUserSettingsIni);
+	for (const FString& SavedId : SavedIds)
+	{
+		const FName MilestoneId(*SavedId.TrimStartAndEnd());
+		if (!MilestoneId.IsNone()) { ClaimedCollectionRewardIds.Add(MilestoneId); }
 	}
 	int32 RewardVersion = 0;
 	GConfig->GetInt(ProgressSection, RewardVersionKey, RewardVersion, GGameUserSettingsIni);
@@ -52,6 +67,7 @@ void UFF_FacilityCodexProgressSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
+// 새 조합만 저장하고 실제 변화가 있을 때 화면에 알린다. 같은 발견을 여러 번 기록해도 보상은 늘지 않는다.
 bool UFF_FacilityCodexProgressSubsystem::RecordDiscoveries(const TSet<FName>& RuleIds)
 {
 	const int32 PreviousCount = DiscoveredRuleIds.Num();
@@ -65,6 +81,7 @@ bool UFF_FacilityCodexProgressSubsystem::RecordDiscoveries(const TSet<FName>& Ru
 	return true;
 }
 
+// 발견했고 아직 받지 않은 보상만 지급한다. 수령 기록을 먼저 확정하여 이벤트 재진입을 방어한다.
 bool UFF_FacilityCodexProgressSubsystem::ClaimDiscoveryReward(
 	const FName RuleId, const int32 RewardGold, UFF_FestivalProgressionSubsystem* Economy)
 {
@@ -81,6 +98,30 @@ bool UFF_FacilityCodexProgressSubsystem::ClaimDiscoveryReward(
 	return true;
 }
 
+bool UFF_FacilityCodexProgressSubsystem::ClaimCollectionReward(const FName MilestoneId,
+	const int32 RequiredDiscoveries, const int32 RewardGold, const TSet<FName>& AuthoredRuleIds,
+	UFF_FestivalProgressionSubsystem* Economy)
+{
+	if (!IsInGameThread() || MilestoneId.IsNone() || RequiredDiscoveries <= 0 || RewardGold <= 0
+		|| ClaimedCollectionRewardIds.Contains(MilestoneId) || !Economy || !Economy->IsFestivalStarted())
+	{
+		return false;
+	}
+	int32 CurrentDiscoveries = 0;
+	for (const FName RuleId : AuthoredRuleIds)
+	{
+		if (!RuleId.IsNone() && DiscoveredRuleIds.Contains(RuleId)) { ++CurrentDiscoveries; }
+	}
+	if (CurrentDiscoveries < RequiredDiscoveries) { return false; }
+	// Persist before wallet listeners run. Reentrant UI clicks and a reloaded profile both see spent state.
+	ClaimedCollectionRewardIds.Add(MilestoneId);
+	SaveProgress();
+	Economy->GrantDiscoveryGold(RewardGold);
+	OnProgressChanged.Broadcast();
+	return true;
+}
+
+// 집합을 정렬된 ID 목록으로 저장해 실행 순서와 관계없이 사용자 설정 결과를 안정적으로 유지한다.
 void UFF_FacilityCodexProgressSubsystem::SaveProgress() const
 {
 	if (!GConfig || GGameUserSettingsIni.IsEmpty()) { return; }
@@ -95,6 +136,11 @@ void UFF_FacilityCodexProgressSubsystem::SaveProgress() const
 	for (const FName RuleId : ClaimedDiscoveryRewardRuleIds) { SavedIds.Add(RuleId.ToString()); }
 	SavedIds.Sort();
 	GConfig->SetArray(ProgressSection, ClaimedRewardsKey, SavedIds, GGameUserSettingsIni);
+	SavedIds.Reset();
+	SavedIds.Reserve(ClaimedCollectionRewardIds.Num());
+	for (const FName MilestoneId : ClaimedCollectionRewardIds) { SavedIds.Add(MilestoneId.ToString()); }
+	SavedIds.Sort();
+	GConfig->SetArray(ProgressSection, ClaimedCollectionRewardsKey, SavedIds, GGameUserSettingsIni);
 	GConfig->SetInt(ProgressSection, RewardVersionKey, ManualRewardVersion, GGameUserSettingsIni);
 	GConfig->Flush(false, GGameUserSettingsIni);
 }

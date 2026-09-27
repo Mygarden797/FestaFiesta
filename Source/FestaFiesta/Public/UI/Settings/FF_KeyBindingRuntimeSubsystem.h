@@ -1,3 +1,6 @@
+// FF_KeyBindingRuntimeSubsystem.h
+// 역할: 사용자가 저장한 키 설정을 실제 게임 입력에 적용한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

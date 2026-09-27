@@ -1,3 +1,5 @@
+// FF_FFZSFacilityDefinitionValidator.cpp
+// 역할: 에디터의 데이터 검증 기능에 시설 정의 검사를 연결하여 저장 전 오류를 알려 준다.
 #include "FF_FFZSFacilityDefinitionValidator.h"
 
 #include "AssetRegistry/ARFilter.h"

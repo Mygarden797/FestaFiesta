@@ -112,6 +112,9 @@ public:
     const FFFZSFacilitySpec& GetBaseFacilitySpec() const;
     // 설치 시 복사한 원본 사양. 이후 강화·이동·저장 복원에서 배율을 이 원본에 한 번만 적용한다.
 
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Queue")
+    EFFZSQueueLayout GetQueueLayout() const { return GetBaseFacilitySpec().QueueLayout; }
+
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Lighting")
     bool HasLightingRig() const { return !FacilitySpec.LightingSettings.LightingRigClass.IsNull(); }
 
@@ -224,6 +227,7 @@ private:
 
     // 월드가 새 점유 영역을 검증한 뒤 호출한다. 모든 실패 검사를 변경 전에 완료한다.
     bool ApplyUpgradeState(int32 NewLevel, float NewServiceDurationMultiplier, float NewSizeMultiplier, float NewRevenueMultiplier = 1.0f);
+    bool ApplyQueueLayout(EFFZSQueueLayout Layout);
     
     bool ApplyPlacement(FName NewZoneId, FFFZSGridPlacement NewPlacement, const FTransform& WorldTransform);
     // 비점유 이동 가능 상태에서 존·격자·Transform을 교체하고 Validated로 전환한다. 

@@ -47,6 +47,7 @@ class FESTAFIESTA_API AFF_FestivalPlayerController : public APlayerController
 	GENERATED_BODY()
 
 public:
+	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 	AFF_FestivalPlayerController();
 
 	virtual void BeginPlay() override;

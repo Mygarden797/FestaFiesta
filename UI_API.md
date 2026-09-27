@@ -1320,10 +1320,55 @@ GetAffordableHireCount() < GetRemainingHireCap()  →  "Gold 가 부족합니다
 > ✅ **2026-08-26 백종태 님 요청 해결** — `GetRemainingHireCap()` 을 `public` +
 > `BlueprintPure` 로 열었습니다. UI 에서 같은 식을 다시 쓰실 필요 없습니다.
 
-**아직 미정 — 스태프 강화(승급)**
+### 스태프 강화(승급) — 규칙 확정, API 완성 (2026-09-22 🆕)
 
-Staff 에 개인별 레벨을 붙여 사건 처리 속도를 올리는 방향을 검토 중입니다. **세부 규칙이
-확정되지 않아 이번에는 API 도 UI 요청도 넣지 않았습니다.** 확정되면 이 절에 추가하겠습니다.
+> 설계 전체는 `staff_event_design.md`(Git 제외, 로컬 전용) 참고. 여기는 **UI 가 바로 쓸 수
+> 있는 것**만 적습니다. 사건 시스템(이정원)이 아직 없어서 **승급 버튼을 눌러도 게임 안에서
+> 체감되는 효과는 아직 없습니다** — API 는 끝났지만 "왜 눌러야 하는가"의 답은 다음 커밋에
+> 옵니다. 지금 화면을 만드셔도 나중에 API 가 바뀌어서 다시 갈아엎을 일은 없습니다.
+
+**규칙 요약** — Staff 는 개인별로 Lv1~3 을 갖습니다. 고용 직후엔 항상 Lv1이고, **고용한
+다음 날 아침부터** 승급할 수 있습니다(당일은 불가). 한 아침에 한 사람당 한 단계만 오릅니다.
+→ Day1 에 고용하면 최대 Lv3 까지, Day3 에 고용하면 Lv1 에 머뭅니다 — 이게 "일찍 고용할수록
+이득"이라는 서사를 만듭니다.
+
+**개인별 명단 조회**
+
+```cpp
+UFUNCTION(BlueprintPure) TArray<FFF_StaffMember> GetStaffRoster() const;
+```
+
+`FFF_StaffMember` 필드: `StaffId`(int32) · `TrainingLevel`(1~3) · `HiredOnDay` ·
+`LastPromotedDay`(승급한 적 없으면 `INDEX_NONE`) · `bIsBaseStaff`(무페이 기본 팀 여부).
+기본 팀 6명도 이 배열에 같이 들어 있습니다 — 기본 팀도 승급 가능합니다(Day1 부터).
+
+**승급 실행**
+
+```cpp
+UFUNCTION(BlueprintCallable) bool TryPromoteStaff(int32 StaffId);
+```
+
+거부되면(고용 당일 / 오늘 이미 승급함 / 이미 Lv3) `false`만 돌아오고 상태는 안 바뀝니다.
+세분화된 거부 사유 enum은 없습니다 — 필요하시면 요청해 주세요.
+
+**갱신 알림**
+
+```cpp
+UPROPERTY(BlueprintAssignable) FFF_OnStaffRosterChanged OnStaffRosterChanged;
+```
+
+고용·승급 둘 다 이 델리게이트 하나로 옵니다. 기존 `OnTotalStaffCountChanged`는 **총원 수만**
+바뀔 때 오므로(승급은 인원수가 안 바뀝니다), 개인별 목록 화면은 반드시 이 델리게이트를
+따로 구독해야 화면이 안 낡습니다.
+
+**화면 만드실 때 참고**
+
+- `필요 인원 3명` 같은 옛 프로그램 편성 칸과 헷갈리지 않게, 이건 "누구를 몇 레벨로 키울지"
+  고르는 화면입니다 — 최대 12행(기본 6 + 고용 6), 각 행에 레벨·승급 버튼.
+- `오늘 고용됨 — 내일부터 승급 가능` 문구는 `CurrentDay <= HiredOnDay`로 직접 판정하시거나,
+  `TryPromoteStaff` 호출 결과(`false`)로 버튼만 비활성화하는 두 방식 다 가능합니다. 서버
+  쪽에 "왜 안 되는지" API가 따로 없어서, 세분화된 문구가 필요하면 요청해 주세요.
+- 사건 트레이(어느 사건에 누가 배치됐는가)는 **이번 범위 밖**입니다 — 아래 B표·§6 참고.
 
 **시설 철거 환급은 매출이 아닙니다.** 설치비 50%가 돌아오면서 `OnGoldChanged`는 오지만
 `OnTotalRevenueChanged`는 오지 않습니다. "잔액 상승 = 매출 상승"으로 가정한 코드가 있으면 확인해 주세요.
@@ -1678,7 +1723,7 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 빗나감·놓친
 | **Safety** | 이정원 | Overview 지표, 경고 |
 | **예상 방문객 범위·가정값 미리보기** | 김시리 | 현재 구매 상태의 하루 단일값은 구현됨. `Min`/`Max`와 구매 전 등급별 미리보기 API는 없음. 단일값을 임의 범위로 늘리지 않음 |
 | **`UFF_FestivalEventSubsystem`** — 사건 목록·심각도·필요 인력·남은 시간·`CauseId` | 이정원 | Live 우측 상단 상시 사건 트레이 (`FF_FestivalDefinition.h:146`) |
-| **스태프 배치 Command + 결과 이벤트** | 이정원 · 김시리 | 사건 트레이의 `스태프 N명 배치` |
+| **스태프 배치 Command + 결과 이벤트** | 이정원 · 김시리 | 사건 트레이의 `스태프 N명 배치`. 🟡 **2026-09-22**: 개인별 명단 조회·승급(`GetStaffRoster`/`TryPromoteStaff`)은 완성됨(위 「스태프 강화(승급)」 절) — 남은 것은 "어느 사건에 누굴 보낼지"를 정하는 배치 Command 자체이고, 이건 사건 시스템이 먼저 있어야 함 |
 | **뒷정리 등급 효과 계수** | 김시리 | Day 마감 시트. 가격 3개만 있음(`FF_FestivalDefinition.h:110` TODO) — 지금은 `효과 계수 미확정` 배지 |
 | **최종 점수 산식·등급 가중치** | 김시리 | 최종 결산 — 지금은 `가중치 잠정` 문구 |
 | **저장 슬롯 목록 + 저장·불러오기 Command** | 김시리 | ESC 수동 저장, 플레이 허브 |
@@ -1780,8 +1825,10 @@ UI 가 쓸 수 있는 변환 함수 하나면 됩니다 — `FGuid → int32` �
 
 #### 6. 사건별 스태프 배치
 
-지금은 **총원밖에 없습니다.** 어느 사건에 누가 몇 명 붙어 있는지 읽을 창구가 없어서,
-스태프 패널이 "어디에 몇 명" 을 못 말하고 총합만 말합니다.
+> 2026-09-22 갱신: **개인별 명단은 이제 읽을 수 있습니다** — 위 「스태프 강화(승급)」 절의
+> `GetStaffRoster()`. 다만 "어느 사건에 누가 붙어 있는가"(배치 상태)는 **여전히 없습니다** —
+> 그 배치 상태를 들고 있는 사건 시스템 자체가 아직 없어서입니다. 그래서 스태프 패널이
+> "레벨별 인원 구성"까지는 말할 수 있어도 "어디에 몇 명"은 여전히 못 말합니다.
 
 > 2026-09-21 정정: 예전에 여기 적혀 있던 `GetStaffAssignedToPrograms()` 는 **없어졌습니다.**
 > 프로그램이 인원을 안 쓰게 되면서 "묶인 인원" 자체가 0 이 됐습니다. 배치라는 개념은
@@ -1982,7 +2029,119 @@ UI 가 3일차에 배속을 막고 있었는데, **소유자 코드에는 그런
 - **스태프 개인 상태**(피로도·위치) — 지금 화면에 쓸 자리가 없습니다. Event 나 스태프
   개별 조작이 들어올 때 다시 이야기하겠습니다
 
+### 🆕 홍보 4등급 · 입장료 · 화제성(Buzz) · 축제 평가 — UI 작업 안내 (2026-09-23, 김시리 → 백종태)
+
+> **아래 두 절("홍보 구매·예상 방문객 API", "🔴 홍보 — 웹 프로토타입과 코드가 다릅니다")의 기획 결정이 났습니다.**
+> 웹 프로토타입 방향(홍보 없음 = 손해, 입장료를 플레이어가 정함, 시작 버즈)을 **수치만 조정해서** 채택했습니다.
+> 경제 쪽 API 는 전부 구현·테스트 완료(`FestaFiesta.Economy.Forecast.*`, `Economy.Evaluation.Rules`)이고,
+> 남은 것은 화면입니다. 이 절이 최신 계약이고, 아래 두 절은 과거 기록입니다.
+
+#### 필요한 화면 5가지 (우선순위 순)
+
+| # | 화면 | 어디서 | 무엇을 그리나 |
+|---|---|---|---|
+| 1 | **입장료 슬라이더** | 준비 화면(Setup·MorningCheck), **매일 아침** | 0~15 Gold 슬라이더 + 미리보기("예상 방문객 420명 · 입장료로 −80명 · 예상 입장료 수입 4,200") |
+| 2 | **홍보 카드 4장** | 홍보 단계(기존 패널) | 홍보 없음 / 지역 SNS / 전국 홍보 / 인플루언서. 카드마다 비용·방문객 배수·화제성 +N·예상 방문객 |
+| 3 | **화제성 게이지** | Live HUD (+ 준비 화면) | 0~100 막대, 50 이 중립. "오늘 +4.2" 처럼 아침 대비 변화 |
+| 4 | **축제 평가 화면** | 마지막 날 Report 이후(`FinalReportScreenClass` 가 지금 비어 있음) | 등급 S~D, 총점, 항목 4개 점수, 한 줄 평, 보완 한 줄, 날짜별 만족도 |
+| 5 | 일일 목표 진행도 | Live 패널(운영) | "오늘 방문객 312 / 500 · 달성 시 +300 Gold". 지금 `Debug_SetVisitorCount` 로만 채워짐 |
+
+SNS 입장료 글(화제 15·16)은 **기존 SNS 피드에 그대로 섞여 나오므로 추가 UI 가 필요 없습니다.**
+
+#### API — 전부 `UFF_FestivalProgressionSubsystem` (GameInstance) 에 있습니다
+
+| 용도 | API | 비고 |
+|---|---|---|
+| 현재 예보 | `FFF_VisitorForecast GetVisitorForecast()` | 구매한 홍보 · 현재 입장료 · 현재 화제성 기준 |
+| **미리보기** | `FFF_VisitorForecast PreviewVisitorForecast(EFF_PromotionGrade, int32 Fee)` | **상태를 안 바꿉니다.** 슬라이더를 끄는 동안·홍보 카드 호버 때 부르세요. 안 산 등급을 넣으면 그 등급의 화제성 시작값까지 얹어서 계산합니다 |
+| 예상 방문객 한 숫자 | `int32 GetExpectedVisitors()` + `OnExpectedVisitorsChanged(int32)` | = `GetVisitorForecast().ExpectedVisitors`. 입장료·홍보·화제성 어느 게 바뀌어도 발행 |
+| 입장료 현재값 | `int32 GetAdmissionFee()` + `OnAdmissionFeeChanged(int32)` | 축제 전이면 `INDEX_NONE` |
+| 입장료 범위 | `GetAdmissionFeeRange(int32& Min, int32& Max, int32& Reference)` | 지금 0 / 15 / 5. **숫자를 UI 에 복제하지 마세요** — 밸런싱으로 바뀝니다 |
+| 입장료 변경 | `EFF_AdmissionFeeResult TrySetAdmissionFee(int32)` | `Success / FestivalNotStarted / OutOfRange / LockedDuringLive`. **Live 중에는 거부**합니다 |
+| 홍보 티어 | `FFF_PromotionTier GetPromotionTier(EFF_PromotionGrade)` | `CostGold`·`VisitorMultiplier`·`StartingBuzz`. `None` 도 부를 수 있고 배수 0.85 가 옵니다 |
+| 홍보 구매 | `TryPurchasePromotion(EFF_PromotionGrade)` (기존) | `EFF_PromotionGrade::Influencer` 가 추가됐습니다 |
+| 일일 목표 | `GetAdmittedVisitorsToday()` · `GetDailyVisitorGoal()` · `IsDailyGoalBonusPaid()` + `OnAdmittedVisitorsTodayChanged(int32)` | 목표 없음은 `INDEX_NONE`. 달성 여부는 이벤트를 받은 뒤 `IsDailyGoalBonusPaid()` 로 읽으세요 |
+| 축제 평가 | `FFF_FestivalEvaluation GetFestivalEvaluation()` | 축제 도중에 불러도 됩니다(진행 중 평가). 마지막 날은 현재 만족도를 그날 값으로 씁니다 |
+| 날짜별 만족도 | `TArray<int32> GetDailySatisfactionHistory()` | 끝난 날만. 평가 화면 그래프용 |
+
+화제성은 별도 서브시스템입니다: **`UFF_FestivalBuzzSubsystem`** (GameInstance)
+
+| 용도 | API |
+|---|---|
+| 현재값 | `float GetBuzz()` (0~100, 50 중립) + `OnBuzzChanged(float NewBuzz, float PreviousBuzz)` |
+| 오늘 아침 값 | `float GetBuzzAtDayStart()` — "오늘 +N" 은 `GetBuzz() - GetBuzzAtDayStart()` |
+
+`OnBuzzChanged` 는 SNS 글이 올라올 때마다(수 초 간격) 나갑니다. 숫자를 매번 애니메이션하면 산만하니
+게이지는 보간해서 따라가게 하시는 걸 권합니다.
+
+#### 구조체
+
+`FFF_VisitorForecast` (`Economy/FF_FestivalEconomyTypes.h`)
+
+| 필드 | 뜻 |
+|---|---|
+| `ExpectedVisitors` | 최종 예상 방문객 |
+| `VisitorsAtReferenceFee` | 입장료가 기준값(5)이었다면 올 인원 |
+| `VisitorDeltaFromFee` | 위 둘의 차. **비싸면 음수, 싸면 양수** — "입장료로 −80명" 에 그대로 쓰세요 |
+| `ExpectedAdmissionRevenue` | `ExpectedVisitors × AdmissionFeeGold` |
+| `AdmissionFeeGold` | 이 예보의 입장료 |
+| `PromotionMultiplier` / `AdmissionFeeMultiplier` / `BuzzMultiplier` | 세 배수. 툴팁 분해용 |
+
+`FFF_FestivalEvaluation` (`Economy/Rules/FF_FestivalEvaluationRules.h`)
+
+| 필드 | 뜻 |
+|---|---|
+| `Grade` | `EFF_FestivalEvaluationGrade::{D, C, B, A, S}` — **피날레 구매 등급(`EFF_FinaleGrade`)과 다른 것**입니다. 화면 이름도 "축제 평가" 처럼 구분해 주세요 |
+| `TotalScore` | 0~100 |
+| `SatisfactionScore` / `VisitorScore` / `FinanceScore` / `BuzzScore` | 항목별 0~100 |
+| `StrongestAxis` / `WeakestAxis` | `EFF_FestivalEvaluationAxis::{Satisfaction, Visitors, Finance, Buzz}` |
+| `Headline` | 등급별 한 줄 평 (예: "모두가 다시 오고 싶어 하는 축제였다") |
+| `WeakestAxisComment` | 가장 못한 항목 한 줄 (예: "생각보다 손님이 적었다"). S 면 비어 있음 |
+
+#### 규칙 (화면 문구에 필요한 만큼만)
+
+- **방문객 = 기본 500 × 홍보 × 입장료 × 화제성.**
+- 홍보 4등급 — 홍보 없음 ×0.85 · 0 Gold / 지역 SNS ×1.00 · 600 · 화제성 +6 / 전국 홍보 ×1.12 · 1,400 · +14 / 인플루언서 ×1.25 · 2,600 · +26.
+  **안 사면 손해**입니다. 카드 문구도 그 방향으로 부탁드립니다.
+- 입장료 — 기준 5 Gold 에서 1 Gold 비쌀 때마다 방문객 −5%(최대 ×0.5), 쌀 때마다 +5%(최대 ×1.15).
+  비싸면 입장료 수입은 늘지만 손님이 줄어 **부스 매출이 줄고 SNS 부정 글이 늘어 다음 날 화제성이 떨어집니다.**
+- 화제성 — 홍보 구매·SNS 긍정 글·유료 프로그램 개최로 오르고, SNS 부정 글로 내려갑니다. 하루가 바뀌면 중립 쪽으로 25% 식습니다.
+- 축제 평가 — 만족도 40% · 방문객 목표 달성률 25% · 재무(원금 대비) 20% · 화제성 15%. S ≥ 85, A ≥ 70, B ≥ 55, C ≥ 40.
+
+#### 유료 프로그램 — "하루 한 번" 이 시설 단위로 바뀌었습니다 (2026-09-23)
+
+공방 4종(모래 공예·부채·조개 팔찌·레진 키링)이 모두 공방 카드 한 장만 열 수 있어서, 전역 "하루 한 번" 이면
+두 번째 공방부터 편성할 카드가 없었습니다. 이제 **같은 카드라도 다른 시설이면 따로 편성**됩니다.
+
+| API | 변경 |
+|---|---|
+| `Progression::CanScheduleProgramAtFacility(ProgramId, FacilityId)` 🆕 | 이 시설 기준 판정. 시설을 알면 이것을 쓰세요 |
+| `Progression::GetScheduledProgramIdsAtFacility(FacilityId)` 🆕 | 이 시설에 오늘 편성한 카드 |
+| `ViewModel::CanScheduleProgramAtFacility` / `GetScheduledProgramIdsAtFacility` 🆕 | 위 둘의 중계 |
+| `CanScheduleProgram(ProgramId)` | 시설을 모르므로 **중복을 안 봅니다**(카드·Gold 만) |
+| `FFF_ScheduledProgram::FacilityInstanceId` 🆕 | 편성한 시설 |
+
+Prep 프로그램 패널의 "✓ 편성함" 표시와 견적 판정은 **선택한 시설 기준**으로 바꿔 두었습니다.
+
+#### ⚠️ 주의 4가지
+
+1. **ViewModel 쪽은 김시리가 먼저 맞춰 두었습니다(2026-09-23).** `EFF_PromotionChoice::Influencer` 추가, 변환 함수 2개,
+   `GetPromotionOptions()` 가 4등급을 경제의 `GetPromotionTier` 로 채움(홍보 없음 ×0.85 가 그대로 나옴),
+   홍보 패널 라벨(홍보 없음 / 지역 SNS / 전국 홍보 / 인플루언서), `GetAdmissionFeeGold()` 가 **오늘 입장료**를 반환,
+   `OnAdmissionFeeChanged` 중계 + 준비 화면(Check 패널) 구독까지. 카드 위젯은 동적으로 만들어져 4장째가 자동으로 붙습니다 —
+   레이아웃(가로 폭)만 확인해 주세요. 값(숫자)은 그대로라 저장은 안 깨집니다.
+2. **enum 표시명을 `GetDisplayNameText` 로 읽지 마세요**(위 "🔴 enum 의 DisplayName" 절). 패키징 빌드에서 영문으로 나옵니다.
+   등급·항목 이름은 UI 쪽 문자열 표로 매핑해 주세요.
+3. **예상 방문객은 "올 사람" 이지 "들어온 사람" 이 아닙니다.** 군중 동시 인원 상한(Agent 풀 500)에 막히면 실제 입장은 더 적을 수 있습니다.
+   입장료 수입도 실제 입장 인원 기준으로 들어옵니다. 미리보기에 "최대" 같은 단정 표현은 피해 주세요.
+4. **입장료는 Live 중 변경 불가**입니다. 슬라이더는 `LockedDuringLive` 를 받으면 되돌리고, Live 동안은 비활성으로 두는 걸 권합니다.
+   값이 바뀌면 `OnAdmissionFeeChanged` 가 오므로 낙관적 갱신 없이 이벤트를 받아 그리면 됩니다(원칙 2).
+
+---
+
 ### 홍보 구매·예상 방문객 API (2026-09-02 확인)
+
+> ⚠️ 2026-09-23 이후 수치·등급은 바로 위 절이 최신입니다(3등급 → 4등급, 미구매 ×1.00 → ×0.85).
 
 `2ed2679`에서 경제가 구매 판정·차감·등급 보관·하루 예상 방문객 계산을 소유하도록 연결했습니다.
 UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
@@ -2018,7 +2177,11 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
   과거의 “경제 전체가 재시작되지 않는다”와 현재의 “홍보 UI 캐시가 갱신되지 않는다”는 다른 문제입니다.
 - 저장·불러오기, 브리지의 홍보 단계 판정, 상세 실패 enum의 위젯 전달, 예상 범위·구매 전 미리보기는 별도 작업입니다.
 
-### 🔴 홍보 — 웹 프로토타입과 코드가 다릅니다 (2026-08-27, 백종태) · **기획 결정 필요**
+### ✅ 홍보 — 웹 프로토타입과 코드가 다릅니다 (2026-08-27, 백종태) · **2026-09-23 결정됨**
+
+> ✅ **2026-09-23 결정(김시리).** 프로토타입 방향으로 갑니다 — 4등급, 홍보 없음 = 손해, 플레이어가 매일 입장료를 정함,
+> 시작 버즈 있음. 배율은 Agent 풀 때문에 줄였습니다(×0.78~1.46 → ×0.85~1.25). 3일 합계·최대 동시 인원·혼잡 위험 표시는
+> 이번 범위에서 뺐습니다. 계약은 위 "🆕 홍보 4등급 · 입장료 · 화제성 · 축제 평가" 절을 보세요.
 
 > ⚠️ **2026-09-18 갱신(김시리).** Buzz(아래 "시작 버즈" 행)는 `FF_FestivalViewModelSubsystem.h`
 > 주석의 "Utility AI 점수 항"·`economy_spec.md`의 "공연 부가효과"와 셋이 같은 값을 가리키는지도
@@ -2074,6 +2237,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 | 날짜         | 작성자 | 내용                                                                                             |
 | ---------- | --- | ---------------------------------------------------------------------------------------------- |
+| 2026-09-23 | 김시리 | 홍보 기획 결정 반영(4등급·홍보 없음 ×0.85). 매일 입장료 설정·예보 미리보기·화제성(Buzz)·축제 평가·일일 목표 진행도 API 와 필요한 화면 5가지를 "🆕 홍보 4등급 · 입장료 · 화제성 · 축제 평가" 절에 정리 |
 | 2026-09-02 | Codex | 홍보 구매·예상 방문객 원본과 UI/스폰 미연동 경계를 반영. 가용 스태프·프로그램 패널·표시 문자열·Crowd 테스트 상태 정정. 예약자 전용 및 실제 참여 인원 미노출, 재시작 홍보 캐시 주의사항 추가 |
 | 2026-08-06 | 백종태 | 문서 신설. 현재 리포에서 확인한 API를 초기 채움                                                                  |
 | 2026-08-06 | 백종태 | Revenue를 축제 누적으로 확정하고 `TodayRevenue`·`Gold` 분리. 갱신 주기를 일정 틱으로 확정. Satisfaction 이중 지표의 화면 배치 결정 |
@@ -2133,3 +2297,4 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 
 | 2026-09-21 | 김시리 | 🔴 **임대료·미납 제거 + Staff 영구 고용 + 프로그램에서 Staff 분리.** 화면에서 **빼셔야 하는 것**: ① 미납 관련 전부(`GetTotalArrears`·`OnTotalArrearsChanged` **삭제**) ② `가용 인원` 개념 전부(`GetAvailableStaffCount`·`GetStaffAssignedToPrograms`·`OnAvailableStaffCountChanged` **삭제**) — 프로그램이 인원을 안 쓰므로 `GetTotalStaffCount()` 하나면 됩니다 ③ 프로그램 카드·패널·시설 피커의 `필요 인력` 칸(`FFF_ProgramCard::RequiredStaff` **필드째 삭제**). **이름이 바뀐 것**: `TryHireTemporaryStaff`→`TryHireStaff`, `GetAffordableTemporaryStaffCount`→`GetAffordableHireCount`, `GetTemporaryStaffCount`→`GetHiredStaffCount`, `DailyStaffWageGold`→`StaffHireCostGold`(150/일 → 450/1회), `MaxHiredStaffPerDay`→`MaxHiredStaffCount`(**하루 상한이 아니라 축제 총원 상한**). `EFF_SpendReason::StaffWages` 와 결과 enum 3종의 `NotEnoughStaff` 도 삭제됐고 뒤 값이 재번호됐습니다. ✅ 8/26 요청하신 `GetRemainingHireCap()` public 전환 완료 — UI 쪽 중복 식 지우셔도 됩니다. ⚠️ **WBP 자산 9종은 재생성했습니다**(`FF.RebuildPrepHudStaffUI`·`FF.RebuildLiveHudStaffUI`·`FF.RefreshFacilityPaidProgramUMG`) — 죽은 칸이 자산에만 남아 `밀린 임대료 미납 2,400` 이 화면에 나오던 문제입니다. 스태프 강화(승급)는 **세부 미정이라 이번에 안 넣었습니다** |
+| 2026-09-22 | 김시리 | 🆕 **스태프 강화(승급) 규칙 확정 + API 완성.** 위 「스태프 강화(승급)」 절 새로 씀. 핵심 3개: `GetStaffRoster()`(개인별 명단, `FFF_StaffMember{StaffId, TrainingLevel, HiredOnDay, LastPromotedDay, bIsBaseStaff}`) · `TryPromoteStaff(int32 StaffId)`(승급 실행) · `OnStaffRosterChanged`(고용·승급 둘 다 이걸로 옴 — 승급은 `OnTotalStaffCountChanged` 로 안 옵니다, 인원수가 안 바뀌니까요). 규칙: 고용 다음 날 아침부터 승급 가능(당일 불가), 한 아침에 1인당 1단계만, 최대 Lv3. **⚠️ 아직 체감 효과는 없습니다** — 승급해도 사건 시스템(이정원)이 없어서 게임 안에서 달라지는 게 없습니다. 그래도 화면은 지금 만드셔도 나중에 API가 안 바뀝니다. 사건별 배치(`스태프 N명 배치`)는 여전히 이번 범위 밖 — §6 참고 |

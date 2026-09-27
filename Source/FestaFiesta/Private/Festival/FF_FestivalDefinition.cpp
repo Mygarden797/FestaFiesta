@@ -72,12 +72,19 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 		ProgramCatalog = { Workshop, Yoga };
 	}
 
-	// "안 함"은 데이터가 아니라 미구매 상태다 (0 Gold · 배수 1.0)
-	PromotionBasic.CostGold = 500;
-	PromotionBasic.VisitorMultiplier = 1.08f;
+	// "홍보 없음"은 데이터가 아니라 미구매 상태다 (0 Gold · NoPromotionVisitorMultiplier).
+	// 지역 SNS 가 기준선(×1.00)이라 안 사면 손해다.
+	PromotionBasic.CostGold = 600;
+	PromotionBasic.VisitorMultiplier = 1.f;
+	PromotionBasic.StartingBuzz = 6;
 
-	PromotionFocused.CostGold = 1200;
-	PromotionFocused.VisitorMultiplier = 1.18f;
+	PromotionFocused.CostGold = 1400;
+	PromotionFocused.VisitorMultiplier = 1.12f;
+	PromotionFocused.StartingBuzz = 14;
+
+	PromotionInfluencer.CostGold = 2600;
+	PromotionInfluencer.VisitorMultiplier = 1.25f;
+	PromotionInfluencer.StartingBuzz = 26;
 }
 
 UDataTable* UFF_FestivalDefinition::GetFacilityRevenueTable() const
@@ -226,18 +233,40 @@ bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 	// 배수가 1.0 미만이면 홍보가 방문객을 줄이게 된다.
 	// 비용 0 이면 무료 홍보가 되어 "안 함"과 구분되지 않는다.
 	if (PromotionBasic.CostGold <= 0 || PromotionBasic.VisitorMultiplier < 1.f
-		|| PromotionFocused.CostGold <= 0 || PromotionFocused.VisitorMultiplier < 1.f)
+		|| PromotionFocused.CostGold <= 0 || PromotionFocused.VisitorMultiplier < 1.f
+		|| PromotionInfluencer.CostGold <= 0 || PromotionInfluencer.VisitorMultiplier < 1.f)
 	{
 		OutErrors.Add(LOCTEXT("BadPromotionTier",
 			"홍보 등급이 잘못됐다. 비용은 1 이상, 방문객 배수는 1.0 이상이어야 한다."));
 	}
 
-	// 집중이 기본보다 비싼데 효과가 같거나 낮으면 그 등급은 함정이 된다.
+	// 윗 등급이 더 비싼데 효과가 같거나 낮으면 그 등급은 함정이 된다.
 	if (PromotionFocused.CostGold <= PromotionBasic.CostGold
-		|| PromotionFocused.VisitorMultiplier <= PromotionBasic.VisitorMultiplier)
+		|| PromotionFocused.VisitorMultiplier <= PromotionBasic.VisitorMultiplier
+		|| PromotionInfluencer.CostGold <= PromotionFocused.CostGold
+		|| PromotionInfluencer.VisitorMultiplier <= PromotionFocused.VisitorMultiplier)
 	{
 		OutErrors.Add(LOCTEXT("PromotionNotMonotonic",
-			"집중 홍보가 기본보다 비싸면서 방문객 배수도 더 커야 한다."));
+			"윗 등급 홍보일수록 비싸면서 방문객 배수도 더 커야 한다(지역 SNS < 전국 < 인플루언서)."));
+	}
+
+	if (NoPromotionVisitorMultiplier > PromotionBasic.VisitorMultiplier)
+	{
+		OutErrors.Add(LOCTEXT("NoPromotionAboveBasic",
+			"홍보 없음의 방문객 배수가 지역 SNS 보다 크면 홍보를 살 이유가 없다."));
+	}
+
+	// --- 입장료 ---
+	if (AdmissionFeeMinGold > AdmissionFeeMaxGold
+		|| AdmissionFeeGold < AdmissionFeeMinGold || AdmissionFeeGold > AdmissionFeeMaxGold)
+	{
+		OutErrors.Add(LOCTEXT("BadAdmissionFeeRange",
+			"입장료 범위가 잘못됐다. Min <= 기준값(AdmissionFeeGold) <= Max 여야 한다."));
+	}
+	if (AdmissionFeeMinVisitorMultiplier > 1.f)
+	{
+		OutErrors.Add(LOCTEXT("BadAdmissionFeeMultiplier",
+			"입장료 최소 방문객 배수가 1.0 보다 크면 비싸게 받아도 손님이 줄지 않는다."));
 	}
 
 	// --- 참조 표 ---

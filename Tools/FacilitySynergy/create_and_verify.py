@@ -1,3 +1,6 @@
+# create_and_verify.py
+# 역할: 시설 조합 효과와 표시 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Run with UnrealEditor-Cmd -run=pythonscript -script=<this file> after an Editor build.
 
 Creates only a missing table and native UMG Blueprint, verifies starter rules against

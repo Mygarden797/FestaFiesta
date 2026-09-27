@@ -1,3 +1,6 @@
+# import_roads.py
+# 역할: 도로·타일 제작 원본과 납품 작업에서 제작 결과를 Unreal 에셋으로 가져오고 연결한다.
+
 """Import six road tiles, their authored LODs and palette into UE 5.7.4.
 
 Run through Run-RoadEditor.ps1 -Mode Import. Existing packages are never

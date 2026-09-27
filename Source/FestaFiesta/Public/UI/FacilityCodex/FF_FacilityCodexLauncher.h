@@ -1,3 +1,6 @@
+// FF_FacilityCodexLauncher.h
+// 역할: 시설 도감을 여는 버튼을 도감 화면 관리자에 연결한다.
+
 #pragma once
 
 #include "CoreMinimal.h"

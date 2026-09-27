@@ -1,3 +1,6 @@
+# expansion70_common.py
+# 역할: 시설 70종 제작에 사용하는 Blender 도형·재질·컬렉션 구성 함수를 제공한다.
+
 """Reusable, scoped Blender authoring primitives for the Facility70 collection.
 
 All dimensions are metres. Only newly created task collections are modified.

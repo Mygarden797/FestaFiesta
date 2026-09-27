@@ -1,5 +1,5 @@
-// Original, static 24-unit schematic line icons. SDF coverage stays crisp at 22px.
-// The UImage owns sage/white state tint; this shader only supplies a white silhouette.
+// 역할: 건축 카테고리 아이콘을 선·원·사각형의 거리 계산으로 그린다. 작게 표시해도 경계가 선명하게 유지된다.
+// Glyph 값으로 종류를 선택하며, 색은 화면의 UImage가 담당하고 이 코드는 보일 부분의 모양만 반환한다.
 struct FFCategoryShapes
 {
     float Line(float2 p, float2 a, float2 b)

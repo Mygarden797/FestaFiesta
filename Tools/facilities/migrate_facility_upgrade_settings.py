@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# migrate_facility_upgrade_settings.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 기존 데이터를 현재 구조로 이관한다.
+
 """One-time, idempotent migration from the old festival-wide upgrade defaults.
 
 Run as an unattended Unreal Python commandlet after compiling the new structs.

@@ -1,3 +1,6 @@
+// FF_ProgramFacilityGuideTests.cpp
+// 역할: 프로그램의 필요 시설 안내의 동작과 저장된 화면 연결을 자동 검증한다.
+
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS

@@ -1,3 +1,6 @@
+# create_thumbnail_materials.py
+# 역할: 시설 조합 도감과 보상 표시 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Author the codex's alpha-preserving grayscale/silhouette UI shader.
 
 Run before the festival codex WBP migration. The original catalog art is never

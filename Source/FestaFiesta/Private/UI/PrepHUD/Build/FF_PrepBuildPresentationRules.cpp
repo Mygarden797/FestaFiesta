@@ -1,3 +1,6 @@
+// FF_PrepBuildPresentationRules.cpp
+// 역할: 건설 목록의 필터·가격·빈 목록 안내를 순수 규칙으로 계산한다.
+
 // Prep HUD 배치 패널의 순수 표현 규칙 구현.
 
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"

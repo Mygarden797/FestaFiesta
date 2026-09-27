@@ -1,6 +1,10 @@
+// FF_PrepPanelBuild.cpp
+// 역할: 건설 카탈로그의 검색·분류·선택과 배치 상태를 표시한다.
+
 // LightTeal PrepHUD build panel runtime presentation.
 
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
+#include "Building/FF_BuildToolbarInput.h"
 
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
@@ -12,6 +16,7 @@
 #include "Building/Presentation/FF_BuildFeedback.h"
 #include "Building/Presentation/FF_BuildCategoryIcons.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -104,8 +109,7 @@ void UFF_PrepPanelBuild::NativeConstruct()
 	{
 		// UListView applies scrollbar visibility to its live Slate widget, not a saved
 		// property. NativeConstruct runs after Slate creation, including viewport reattach.
-		TileView_Facilities->SetScrollbarVisibility(bUsePagination
-			? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		TileView_Facilities->SetScrollbarVisibility(ESlateVisibility::Collapsed);
 		// NativeConstruct can run again on the same panel instance after a viewport reattach.
 		TileView_Facilities->OnItemClicked().RemoveAll(this);
 		TileView_Facilities->OnItemClicked().AddUObject(this, &ThisClass::HandleTileClicked);
@@ -240,6 +244,43 @@ void UFF_PrepPanelBuild::NativeDestruct()
 void UFF_PrepPanelBuild::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (!bUsePagination && Size_ClarityCatalogDock && BuildModeSubsystem &&
+		BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen)
+	{
+		const float ViewportScale = FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(this));
+		const float LogicalViewportWidth = UWidgetLayoutLibrary::GetViewportSize(this).X / ViewportScale;
+		if (LogicalViewportWidth > 64.f)
+		{
+			const float DockWidth = LogicalViewportWidth - 64.f;
+			if (!Size_ClarityCatalogDock->IsWidthOverride() ||
+				!FMath::IsNearlyEqual(Size_ClarityCatalogDock->GetWidthOverride(), DockWidth, .5f))
+			{
+				Size_ClarityCatalogDock->SetWidthOverride(DockWidth);
+			}
+		}
+		if (Border_PanelRoot)
+		{
+			const bool bSettingsOpen = BuildModeSubsystem->IsBuildSettingsOpen();
+			const ESlateVisibility Desired = bSettingsOpen
+				? ESlateVisibility::Collapsed : ESlateVisibility::Visible;
+			if (Border_PanelRoot->GetVisibility() != Desired) Border_PanelRoot->SetVisibility(Desired);
+			if (bSettingsOpen)
+			{
+				ResetCatalogDrag();
+				CatalogScrollVelocity = 0.f;
+			}
+		}
+	}
+	if (!bUsePagination && TileView_Facilities && TileView_Facilities->IsVisible())
+	{
+		if (!bCatalogPointerDown && FMath::Abs(CatalogScrollVelocity) > 0.01f)
+		{
+			const float Decay = FMath::Exp(-8.f * FMath::Min(InDeltaTime, .05f));
+			ScrollCatalogBy(CatalogScrollVelocity * (1.f - Decay) / 8.f);
+			CatalogScrollVelocity *= Decay;
+		}
+		return;
+	}
 	if (!bUsePagination || !TileView_Facilities || !TileView_Facilities->IsVisible()) return;
 	const float Width = TileView_Facilities->GetCachedGeometry().GetLocalSize().X;
 	const int32 Columns = FMath::Max(1, CardsPerPage);
@@ -256,32 +297,42 @@ void UFF_PrepPanelBuild::NativeTick(const FGeometry& MyGeometry, const float InD
 
 void UFF_PrepPanelBuild::MatchCatalogHeaderActions()
 {
-	// The launcher is a nested WBP. Copy the catalog's authored action style once on
-	// construction so its inner button matches without changing other launcher instances.
+	// The launcher is a nested WBP. The saved catalog places it either in the
+	// original header or as the pinned combination-codex tab beside category filters.
 	auto* Ranking = Cast<UButton>(GetWidgetFromName(TEXT("Button_RevenueRanking")));
 	auto* RankingText = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_RevenueRanking")));
 	auto* Launcher = Cast<UUserWidget>(GetWidgetFromName(TEXT("Widget_FacilityCodexCatalogLauncher")));
 	if (!Ranking || !RankingText || !Launcher) return;
+	const auto* RankingSlot = Cast<UButtonSlot>(RankingText->Slot);
+	const bool bBottomCodexTab = Launcher->GetParent() == GetWidgetFromName(TEXT("Row_BuildCodexCategory"));
 	if (auto* Bounds = Cast<USizeBox>(Launcher->GetWidgetFromName(TEXT("Size_Launcher"))))
 	{
-		Bounds->SetWidthOverride(112.f);
-		Bounds->SetHeightOverride(40.f);
+		Bounds->SetWidthOverride(bBottomCodexTab ? 150.f : 112.f);
+		Bounds->SetHeightOverride(bBottomCodexTab ? 34.f : 40.f);
 	}
 	if (auto* Button = Cast<UButton>(Launcher->GetWidgetFromName(TEXT("Button_OpenCodex"))))
 	{
-		Button->SetStyle(Ranking->GetStyle());
+		auto* CategoryTab = Cast<UButton>(GetWidgetFromName(TEXT("Button_FilterAll")));
+		FButtonStyle Style = bBottomCodexTab && CategoryTab ? CategoryTab->GetStyle() : Ranking->GetStyle();
+		if (bBottomCodexTab)
+		{
+			Style.NormalPadding = FMargin(10.f, 3.f);
+			Style.PressedPadding = FMargin(10.f, 3.f);
+		}
+		Button->SetStyle(Style);
 		if (auto* Label = Cast<UTextBlock>(Button->GetContent()))
 		{
+			Label->SetText(bBottomCodexTab ? LOCTEXT("CombinationCodexTab", "조합 도감") : Label->GetText());
 			Label->SetFont(RankingText->GetFont());
-			Label->SetMinDesiredWidth(RankingText->GetMinDesiredWidth());
-			Label->SetColorAndOpacity(RankingText->GetColorAndOpacity());
+			Label->SetMinDesiredWidth(bBottomCodexTab ? 90.f : RankingText->GetMinDesiredWidth());
+			Label->SetColorAndOpacity(bBottomCodexTab ? FSlateColor(FLinearColor::White) : RankingText->GetColorAndOpacity());
 			Label->SetJustification(ETextJustify::Center);
+			Label->SetAutoWrapText(false);
 			if (auto* ButtonContentSlot = Cast<UButtonSlot>(Label->Slot))
 			{
-				const auto* RankingSlot = Cast<UButtonSlot>(RankingText->Slot);
-				ButtonContentSlot->SetPadding(RankingSlot ? RankingSlot->GetPadding() : FMargin(0));
+				ButtonContentSlot->SetPadding(bBottomCodexTab ? FMargin(0) : RankingSlot ? RankingSlot->GetPadding() : FMargin(0));
 				ButtonContentSlot->SetHorizontalAlignment(HAlign_Center);
-				ButtonContentSlot->SetVerticalAlignment(RankingSlot ? RankingSlot->GetVerticalAlignment() : VAlign_Fill);
+				ButtonContentSlot->SetVerticalAlignment(bBottomCodexTab ? VAlign_Center : RankingSlot ? RankingSlot->GetVerticalAlignment() : VAlign_Fill);
 			}
 		}
 	}
@@ -289,7 +340,7 @@ void UFF_PrepPanelBuild::MatchCatalogHeaderActions()
 
 bool UFF_PrepPanelBuild::IsPointerOverCatalog(const FVector2D& ScreenPosition) const
 {
-	return bUsePagination && TileView_Facilities && TileView_Facilities->IsVisible() &&
+	return TileView_Facilities && TileView_Facilities->IsVisible() &&
 		TileView_Facilities->GetCachedGeometry().IsUnderLocation(ScreenPosition);
 }
 
@@ -298,6 +349,18 @@ void UFF_PrepPanelBuild::ResetCatalogDrag()
 	bCatalogPointerDown = false;
 	bCatalogPointerMoved = false;
 	CatalogPressedItem.Reset();
+}
+
+void UFF_PrepPanelBuild::ScrollCatalogBy(const float ItemDelta)
+{
+	if (!TileView_Facilities || !FMath::IsFinite(ItemDelta)) return;
+	const float Pitch = FMath::Max(1.f, TileView_Facilities->GetEntryWidth());
+	const float VisibleCount = TileView_Facilities->GetCachedGeometry().GetLocalSize().X / Pitch;
+	const float MaxOffset = FMath::Max(0.f, TileView_Facilities->GetNumItems() - VisibleCount);
+	const float Requested = TileView_Facilities->GetScrollOffset() + ItemDelta;
+	const float Offset = FMath::Clamp(Requested, 0.f, MaxOffset);
+	if (!FMath::IsNearlyEqual(Requested, Offset)) CatalogScrollVelocity = 0.f;
+	TileView_Facilities->SetScrollOffset(Offset);
 }
 
 FReply UFF_PrepPanelBuild::NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
@@ -317,6 +380,10 @@ FReply UFF_PrepPanelBuild::NativeOnPreviewMouseButtonDown(const FGeometry& Geome
 		break;
 	}
 	CatalogDragOrigin = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition());
+	CatalogDragLastPosition = CatalogDragOrigin;
+	CatalogDragLastTime = FPlatformTime::Seconds();
+	CatalogDragStartOffset = TileView_Facilities->GetScrollOffset();
+	CatalogScrollVelocity = 0.f;
 	bCatalogPointerDown = true;
 	bCatalogPointerMoved = false;
 	return FReply::Handled().CaptureMouse(TakeWidget()).SetUserFocus(TileView_Facilities->TakeWidget());
@@ -327,6 +394,18 @@ FReply UFF_PrepPanelBuild::NativeOnMouseMove(const FGeometry& Geometry, const FP
 	if (!bCatalogPointerDown) return Super::NativeOnMouseMove(Geometry, Event);
 	const FVector2D Delta = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition()) - CatalogDragOrigin;
 	bCatalogPointerMoved |= Delta.SizeSquared() >= FMath::Square(10.0);
+	if (!bUsePagination && bCatalogPointerMoved && TileView_Facilities)
+	{
+		const FVector2D Position = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition());
+		const double Now = FPlatformTime::Seconds();
+		const float Pitch = FMath::Max(1.f, TileView_Facilities->GetEntryWidth());
+		const float DesiredOffset = CatalogDragStartOffset - Delta.X / Pitch;
+		ScrollCatalogBy(DesiredOffset - TileView_Facilities->GetScrollOffset());
+		const float Seconds = FMath::Clamp(static_cast<float>(Now - CatalogDragLastTime), .001f, .1f);
+		CatalogScrollVelocity = FMath::Clamp(static_cast<float>(CatalogDragLastPosition.X - Position.X) / Pitch / Seconds, -24.f, 24.f);
+		CatalogDragLastPosition = Position;
+		CatalogDragLastTime = Now;
+	}
 	return FReply::Handled();
 }
 
@@ -338,11 +417,15 @@ FReply UFF_PrepPanelBuild::NativeOnMouseButtonUp(const FGeometry& Geometry, cons
 	const bool bMoved = bCatalogPointerMoved || Delta.SizeSquared() >= FMath::Square(10.0);
 	UFF_PrepBuildTileData* PressedItem = CatalogPressedItem.Get();
 	ResetCatalogDrag();
-	if (FMath::Abs(Delta.X) >= 42.0 && FMath::Abs(Delta.X) > FMath::Abs(Delta.Y) * 1.25)
+	if (!bUsePagination && bMoved)
+	{
+		if (FPlatformTime::Seconds() - CatalogDragLastTime > .1) CatalogScrollVelocity = 0.f;
+	}
+	else if (bUsePagination && FMath::Abs(Delta.X) >= 42.0 && FMath::Abs(Delta.X) > FMath::Abs(Delta.Y) * 1.25)
 	{
 		if (Delta.X < 0) NextCatalogPage(); else PreviousCatalogPage();
 	}
-	else if (FMath::Abs(Delta.Y) >= 42.0 && FMath::Abs(Delta.Y) > FMath::Abs(Delta.X) * 1.25)
+	else if (bUsePagination && FMath::Abs(Delta.Y) >= 42.0 && FMath::Abs(Delta.Y) > FMath::Abs(Delta.X) * 1.25)
 	{
 		if (Delta.Y < 0) NextCatalogPage(); else PreviousCatalogPage();
 	}
@@ -366,12 +449,17 @@ FReply UFF_PrepPanelBuild::NativeOnMouseWheel(const FGeometry& Geometry, const F
 {
 	if (!IsPointerOverCatalog(Event.GetScreenSpacePosition()) || FMath::IsNearlyZero(Event.GetWheelDelta()))
 		return Super::NativeOnMouseWheel(Geometry, Event);
-	if (Event.GetWheelDelta() < 0) NextCatalogPage(); else PreviousCatalogPage();
+	if (!bUsePagination)
+	{
+		CatalogScrollVelocity = FMath::Clamp(CatalogScrollVelocity - Event.GetWheelDelta() * 12.f, -30.f, 30.f);
+	}
+	else if (Event.GetWheelDelta() < 0) NextCatalogPage(); else PreviousCatalogPage();
 	return FReply::Handled();
 }
 
 void UFF_PrepPanelBuild::NativeOnMouseCaptureLost(const FCaptureLostEvent& Event)
 {
+	if (bCatalogPointerDown) CatalogScrollVelocity = 0.f;
 	ResetCatalogDrag();
 	Super::NativeOnMouseCaptureLost(Event);
 }
@@ -711,6 +799,11 @@ FReply UFF_PrepPanelBuild::NativeOnPreviewKeyDown(
 		HandleTileClicked(TileView_Facilities->GetSelectedItem<UObject>());
 		return FReply::Handled();
 	}
+	if (CurrentState != EFF_BuildModeState::Closed &&
+		FFBuildToolbarInput::IsRetiredShortcut(InKeyEvent.GetKey()))
+	{
+		return FReply::Handled();
+	}
 	if (Settings && FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
 		InKeyEvent.GetKey(),
 		InKeyEvent.IsRepeat(),
@@ -719,7 +812,7 @@ FReply UFF_PrepPanelBuild::NativeOnPreviewKeyDown(
 		CurrentState,
 		Settings->OpenCloseKeys))
 	{
-		// Preview 단계에서 child 검색창보다 먼저 받아 ESC/F5가 텍스트 편집 동작으로 소실되지 않게 한다.
+		// Escape remains available while the catalog search field has focus.
 		if (UGameInstance* GameInstance = GetGameInstance())
 		{
 			if (UFF_FestivalSettingsSubsystem* SettingsSubsystem =
@@ -1696,6 +1789,8 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 	{
 		if (bReplaceListItems || bPageClamped)
 		{
+			CatalogScrollVelocity = 0.f;
+			ResetCatalogDrag();
 			const TArray<UObject*> PageItems = GetCatalogPageItems();
 			TileView_Facilities->SetListItems(PageItems);
 			if (PageItems.IsEmpty())
@@ -1745,7 +1840,7 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 			Status = (ThumbnailState == EFF_BuildCatalogThumbnailLoadState::Loading ||
 				ThumbnailState == EFF_BuildCatalogThumbnailLoadState::WaitingForCatalog)
 				? LOCTEXT("ThumbnailsLoading", "시설 이미지를 불러오는 중입니다. 목록은 먼저 선택할 수 있습니다.")
-				: LOCTEXT("ClarityCatalogReadyV9", "카드 선택 → 위치 지정  ·  확정 시 결제  ·  위아래 드래그 / 휠로 넘기기  ·  ☆ 즐겨찾기");
+				: LOCTEXT("PearlCatalogReady", "카드 선택 → 위치 지정  ·  확정 시 결제  ·  좌우 드래그 / 휠로 넘기기  ·  ☆ 즐겨찾기");
 		}
 		const FText SynergySource = BuildModeSubsystem
 			? BuildModeSubsystem->GetSynergyCatalogSourceName() : FText::GetEmpty();
@@ -1777,12 +1872,19 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 	ResetCatalogDrag();
 	RefreshSelectedFacilityPresentation();
 	const bool bShowCatalog = State == EFF_BuildModeState::CatalogOpen;
-	const bool bShowCompact = State == EFF_BuildModeState::BuildMode;
+	const bool bShowCompact = bUsePagination && State == EFF_BuildModeState::BuildMode;
 	const bool bShowSeparateTools = State == EFF_BuildModeState::Placing || State == EFF_BuildModeState::Moving;
 	if (Size_ClarityCatalogDock)
 	{
 		Size_ClarityCatalogDock->SetHeightOverride(bShowCatalog ? CatalogHeight : CompactHeight);
-		Size_ClarityCatalogDock->SetWidthOverride(bShowCatalog ? 1560.f : 1080.f);
+		float CatalogWidth = 1560.f;
+		if (!bUsePagination && bShowCatalog)
+		{
+			const float Scale = FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(this));
+			const float LogicalWidth = UWidgetLayoutLibrary::GetViewportSize(this).X / Scale;
+			if (LogicalWidth > 64.f) CatalogWidth = LogicalWidth - 64.f;
+		}
+		Size_ClarityCatalogDock->SetWidthOverride(bShowCatalog ? CatalogWidth : 1080.f);
 	}
 
 	if (Panel_Catalog)
@@ -1805,15 +1907,17 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 	// The WBP owns padding; C++ changes only which surface is visible.
 	if (Border_PanelRoot)
 	{
-		// Placement tools have their own WBP and viewport host. Do not leave an empty catalog rectangle behind.
-		Border_PanelRoot->SetVisibility(bShowSeparateTools ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		// The continuous ribbon is catalog-only; the floating tools WBP handles the rest of the session.
+		// Retain the legacy compact surface only for authored paginated catalogs.
+		Border_PanelRoot->SetVisibility(bShowCatalog || (bUsePagination && !bShowSeparateTools)
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 	if (Text_PlacementGuide)
 	{
 		FText Guide;
 		switch (State)
 		{
-		case EFF_BuildModeState::Placing: 
+		case EFF_BuildModeState::Placing:
 			// 🔴 **한 줄로 쓴다.** 네 줄로 쌓으면 그만큼 지면을 가리는데, 배치 중에는
 			//   지면이 보여야 시설을 놓을 수 있다 (2026-09-03 백종태 요청).
 			Guide = BuildModeSubsystem && BuildModeSubsystem->IsDragPlacementEnabled()

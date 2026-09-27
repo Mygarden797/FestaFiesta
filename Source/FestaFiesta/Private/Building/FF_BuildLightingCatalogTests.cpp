@@ -1,3 +1,6 @@
+// FF_BuildLightingCatalogTests.cpp
+// 역할: BuildLightingCatalog 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Catalog.ProductionLightingAssetsAndEconomy).
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/FF_BuildCatalogModel.h"
@@ -7,6 +10,7 @@
 #include "Engine/AssetManager.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalSettings.h"
 #include "HAL/PlatformTime.h"

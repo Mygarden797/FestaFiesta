@@ -40,6 +40,14 @@ struct FFFZSFacilityRegionOccupancy
     FBox2D WorldBounds = FBox2D(ForceInit);
 };
 
+// Only facilities touched by this edit are captured; unrelated simulation and money are never rewound.
+struct FFFZSConstructionHistoryEntry
+{
+    TArray<FFFZSCommand> Commands;
+    TMap<FGuid, FFFZSFacilityInstanceSnapshot> Before;
+    TMap<FGuid, FFFZSFacilityInstanceSnapshot> After;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFFZSWorldChangedSignature, const FFFZSWorldChangeEvent&, Event);
 // 성공한 권한 명령이 확정되고 WorldRevision이 증가한 뒤 방송하는 불변 이벤트.
 
@@ -145,6 +153,9 @@ public:
     int32 CountFacilitiesByDefinitionId(FName FacilityDefinitionId) const;
     // 현재 등록된 유효 시설 중 FacilityDefinitionId가 같은 인스턴스 수를 반환한다. None이면 0이다.
 
+    // 전체 읽기 모델의 복사와 정렬 없이, 철거되지 않은 유효 등록 시설만 집계한다.
+    int32 GetPlacedFacilityCount() const;
+
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
     AFFZSFacilityActor* FindFacilityAtWorldPoint(
         const FVector& WorldPoint,
@@ -174,6 +185,9 @@ public:
 
     FFFZSPlacementValidation ValidatePlacement(const FFFZSCommand& Command) const;
 
+    // Computes the geometric pose only; placement acceptance and ground height still require validation.
+    FTransform BuildPlacementTransform(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement) const;
+
     // Read-only, bounded spatial overview using the same zone ownership, reservations and
     // protected areas as placement. An empty definition selects overview mode. Physical
     // obstacles are conservatively masked from one broad-phase query; no per-cell policies,
@@ -194,6 +208,32 @@ public:
      //실패하면 권한 상태를 확정하지 않고 FFFZSCommandResult로 이유를 반환한다.
     
     FFFZSCommandResult ExecuteCommand(const FFFZSCommand& Command);
+
+    // One atomic edit, including validation against the final group positions. At most 128 facilities.
+    bool ValidateConstructionBatch(const TArray<FFFZSCommand>& Commands, FText& OutFailureReason);
+    FFFZSCommandResult ExecuteConstructionBatch(const TArray<FFFZSCommand>& Commands);
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
+    bool UndoConstruction(FText& OutFailureReason);
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
+    bool RedoConstruction(FText& OutFailureReason);
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Construction")
+    bool CanUndoConstruction() const;
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Construction")
+    bool CanRedoConstruction() const;
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
+    void ClearConstructionHistory();
+
+    // Trusted policy context, available only while replaying an edit. Callers cannot forge it.
+    bool GetConstructionReplaySource(FGuid CommandId, FGuid& OutOriginalCommandId, bool& bOutUndo) const;
+    // Borrowed only during policy callbacks; lets read-only previews validate aggregate costs.
+    const TArray<FFFZSPolicyContext>* GetConstructionBatchPolicyContexts() const { return ConstructionPolicyContexts; }
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Queue")
+    FFFZSPlacementValidation ValidateQueueLayout(FGuid FacilityInstanceId, EFFZSQueueLayout Layout) const;
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Queue")
+    bool SetFacilityQueueLayout(FGuid FacilityInstanceId, EFFZSQueueLayout Layout, FText& OutError);
+
 
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Policy")
     bool RegisterExternalPolicy(UObject* PolicyProvider);
@@ -291,6 +331,21 @@ public:
     // GIS·콘텐츠 경계 변경 뒤 해당 존 시설을 현재 규칙으로 다시 검증한다. 인스턴스는 보존하고 실패 항목만 NeedsRelocation으로 표시.
 
 private:
+    TArray<FFFZSConstructionHistoryEntry> ConstructionUndoStack;
+    TArray<FFFZSConstructionHistoryEntry> ConstructionRedoStack;
+    TSet<FGuid> ConstructionIgnoredFacilities;
+    TMap<FGuid, FGuid> ConstructionReplaySources;
+    const TArray<FFFZSPolicyContext>* ConstructionPolicyContexts = nullptr;
+    bool bConstructionReplayUndo = false;
+    bool bIsConstructionBatch = false;
+    bool bIsReplayingConstruction = false;
+
+    void RecordConstructionEdit(const FFFZSCommand& Command, const FFFZSFacilityInstanceSnapshot& Before);
+    void PushConstructionHistory(FFFZSConstructionHistoryEntry&& Entry);
+    bool ReplayConstructionHistory(bool bUndo, FText& OutFailureReason);
+    FFFZSCommandResult ProcessConstructionBatch(const TArray<FFFZSCommand>& Commands,
+        const TMap<FGuid, FFFZSFacilityInstanceSnapshot>* DesiredSnapshots, bool bPreviewOnly);
+
     TMap<FName, TWeakObjectPtr<AFFZSGameplayZone>> ZonesById;
     TWeakObjectPtr<AFFZSBuildArea> UnifiedBuildArea;
     TSharedPtr<FFFZSSpatialHash2D> FacilitySpatialIndex;
@@ -355,7 +410,6 @@ private:
 
     FFFZSPlacementValidation ValidatePlacementLocal(const FFFZSCommand& Command, const AFFZSFacilityActor* IgnoreFacility, bool bRevalidateExisting = false) const;
     // 외부 정책 없이 플러그인 소유 데이터·기하·점유·월드 검사만 수행한다. Move는 기존 시설 점유를 IgnoreFacility로 제외한다. 
-    FTransform BuildPlacementTransform(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement) const;
     void ValidateGround(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const AFFZSFacilityActor* IgnoreFacility, FFFZSPlacementValidation& InOutValidation) const;
     void ValidateWorldCollision(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const AFFZSFacilityActor* IgnoreFacility, FFFZSPlacementValidation& InOutValidation) const;
     void ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZSPlacementValidation& InOutValidation) const;

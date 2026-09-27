@@ -1,3 +1,6 @@
+// FF_FacilityCodexCard.h
+// 역할: 시설 도감의 한 카드에 발견 상태·이미지·선택 상태를 표시한다.
+
 // Facility collection presentation. Layout and default appearance belong to WBP assets.
 #pragma once
 
@@ -48,6 +51,8 @@ class FESTAFIESTA_API UFF_FacilityCodexCard : public UUserWidget, public IUserOb
 	GENERATED_BODY()
 public:
 	void RefreshPresentation();
+	/** True when this entry's reward button owns the current pointer action. */
+	bool IsClaimActionUnderCursorFor(const UObject* ExpectedItem) const;
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativePreConstruct() override;
@@ -61,6 +66,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_ClaimReward;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UImage> Image_ClaimReward;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ClaimReward;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UImage> Image_CardRewardGold;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UBorder> Border_RewardClaimed;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UImage> Image_RewardClaimed;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UBorder> Border_RewardLocked;

@@ -722,4 +722,113 @@ bool FFF_DayBoundary_StartFestivalClearsSnapshot::RunTest(const FString& Paramet
 	return true;
 }
 
+// 영구 고용 인원·피날레·홍보 구매 상태가 저장·복원을 견딘다.
+// 이 셋은 2026-09-22 까지 저장 형식에서 빠져 있었다 — 임대료 삭제(9/21)로 Gold 만 있으면
+// 되던 시절의 저장 형식이 그대로 남아 있었다. Staff 가 영구 고용으로 바뀌고 홍보·피날레가
+// 이미 있는 지금은 이어하기가 이 셋을 잃으면 안 된다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_SaveRestoresStaffFinalePromotion, "FestaFiesta.Economy.DayBoundary.SaveRestoresStaffFinalePromotion", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DayBoundary_SaveRestoresStaffFinalePromotion::RunTest(const FString& Parameters)
+{
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(20000)))
+	{
+		return false;
+	}
+
+	if (!TestTrue(TEXT("인원 3명을 고용한다"), Harness.Progression->TryHireStaff(3))) return false;
+	if (!TestEqual(TEXT("피날레 C 구매가 성공한다"),
+		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::C),
+		EFF_FinalePurchaseResult::Success)) return false;
+	if (!TestEqual(TEXT("홍보 기본 구매가 성공한다"),
+		Harness.Progression->TryPurchasePromotion(EFF_PromotionGrade::Basic),
+		EFF_PromotionPurchaseResult::Success)) return false;
+
+	const int32 StaffBeforeSave = Harness.Progression->GetTotalStaffCount();
+
+	TArray<uint8> Saved;
+	Harness.Progression->WriteSaveData(Saved);
+
+	// 새 축제로 리셋해서 저장 없이는 값이 안 살아남는다는 것부터 확인한다.
+	Harness.Progression->StartFestival(Harness.Definition);
+	TestNotEqual(TEXT("리셋 직후 인원 수는 저장 시점과 다르다"),
+		Harness.Progression->GetTotalStaffCount(), StaffBeforeSave);
+	TestEqual(TEXT("리셋 직후 피날레는 미구매로 돌아간다"),
+		Harness.Progression->GetPurchasedFinaleGrade(), EFF_FinaleGrade::None);
+	TestEqual(TEXT("리셋 직후 홍보도 미구매로 돌아간다"),
+		Harness.Progression->GetPurchasedPromotionGrade(), EFF_PromotionGrade::None);
+
+	Harness.Progression->ReadSaveData(Saved);
+
+	TestEqual(TEXT("복원 후 고용 인원이 저장 시점과 같다"),
+		Harness.Progression->GetTotalStaffCount(), StaffBeforeSave);
+	TestEqual(TEXT("복원 후 피날레 등급이 되돌아온다"),
+		Harness.Progression->GetPurchasedFinaleGrade(), EFF_FinaleGrade::C);
+	TestEqual(TEXT("복원 후 홍보 등급이 되돌아온다"),
+		Harness.Progression->GetPurchasedPromotionGrade(), EFF_PromotionGrade::Basic);
+
+	return true;
+}
+
+// 승급은 고용 당일엔 막히고, 다음 날 아침부터 가능하며, 한 번 올린 레벨은 저장·복원을 견딘다.
+// staff_event_design.md §4 "고용 시점이 최종 도달 등급을 정한다" 규칙의 회귀 가드.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_PromotionRespectsHireDayAndPersists, "FestaFiesta.Economy.DayBoundary.PromotionRespectsHireDayAndPersists", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DayBoundary_PromotionRespectsHireDayAndPersists::RunTest(const FString& Parameters)
+{
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(20000)))
+	{
+		return false;
+	}
+
+	if (!TestTrue(TEXT("Day1 에 1명 고용한다"), Harness.Progression->TryHireStaff(1)))
+	{
+		return false;
+	}
+
+	TArray<FFF_StaffMember> Roster = Harness.Progression->GetStaffRoster();
+	const FFF_StaffMember* Hired = Roster.FindByPredicate(
+		[](const FFF_StaffMember& Member) { return !Member.bIsBaseStaff; });
+	if (!TestNotNull(TEXT("방금 고용한 사람이 명단에 있다"), Hired))
+	{
+		return false;
+	}
+	const int32 HiredId = Hired->StaffId;
+	TestEqual(TEXT("Day1 고용은 HiredOnDay 1로 남는다"), Hired->HiredOnDay, 1);
+	TestEqual(TEXT("고용 직후 레벨은 1이다"), Hired->TrainingLevel, 1);
+
+	TestFalse(TEXT("고용한 당일은 승급 못 한다"), Harness.Progression->TryPromoteStaff(HiredId));
+
+	Harness.Progression->BeginNewDay(2);
+	TestTrue(TEXT("다음 날 아침부터는 승급 가능하다"), Harness.Progression->TryPromoteStaff(HiredId));
+	TestFalse(TEXT("같은 날 두 번 승급은 안 된다"), Harness.Progression->TryPromoteStaff(HiredId));
+	TestFalse(TEXT("존재하지 않는 StaffId는 조용히 실패한다"), Harness.Progression->TryPromoteStaff(99999));
+
+	Roster = Harness.Progression->GetStaffRoster();
+	const FFF_StaffMember* Promoted = Roster.FindByPredicate(
+		[HiredId](const FFF_StaffMember& Member) { return Member.StaffId == HiredId; });
+	if (!TestNotNull(TEXT("승급한 사람이 명단에 그대로 있다"), Promoted))
+	{
+		return false;
+	}
+	TestEqual(TEXT("승급 후 레벨은 2다"), Promoted->TrainingLevel, 2);
+
+	// 저장·복원을 거쳐도 개인별 레벨·고용일이 살아남아야 한다.
+	TArray<uint8> Saved;
+	Harness.Progression->WriteSaveData(Saved);
+	Harness.Progression->StartFestival(Harness.Definition);
+	Harness.Progression->ReadSaveData(Saved);
+
+	Roster = Harness.Progression->GetStaffRoster();
+	const FFF_StaffMember* Restored = Roster.FindByPredicate(
+		[HiredId](const FFF_StaffMember& Member) { return Member.StaffId == HiredId; });
+	if (!TestNotNull(TEXT("복원 후에도 같은 StaffId가 남아 있다"), Restored))
+	{
+		return false;
+	}
+	TestEqual(TEXT("복원 후에도 레벨 2가 유지된다"), Restored->TrainingLevel, 2);
+	TestEqual(TEXT("복원 후에도 HiredOnDay가 유지된다"), Restored->HiredOnDay, 1);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -176,6 +176,40 @@ bool FFF_CrowdDensity_CongestedCellCountUsesLOSD::RunTest(const FString& Paramet
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdDensity_CongestedCellsReportIndices, "FestaFiesta.Crowd.Density.CongestedCellsReportIndices", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdDensity_CongestedCellsReportIndices::RunTest(const FString& Parameters)
+{
+	FCrowdDensityGrid Grid = FFF_CrowdTestHelpers::MakeTestGrid();
+
+	TArray<FUnitData> Units;
+
+	FFF_CrowdTestHelpers::AddUnitsAt(Units, FVector(100.f, 100.f, 0.f), 4);
+
+	FFF_CrowdTestHelpers::AddUnitsAt(Units, FVector(500.f, 100.f, 0.f), 8);
+
+	FFF_CrowdTestHelpers::AddUnitsAt(Units, FVector(900.f, 900.f, 0.f), 12);
+
+	Grid.Update(Units);
+
+	const TArray<int32>& Congested = Grid.GetCongestedCells();
+
+	TestEqual(TEXT("목록 길이와 카운트가 같다"), Congested.Num(), Grid.GetCongestedCellCount());
+	TestTrue(TEXT("(2,0) 셀이 들어 있다"), Congested.Contains(2));
+	TestTrue(TEXT("(4,4) 셀이 들어 있다"), Congested.Contains(24));
+	TestFalse(TEXT("LOS D 이하인 (0,0) 셀은 빠진다"), Congested.Contains(0));
+
+	for (FUnitData& Unit : Units)
+	{
+		Unit.Position = FVector(100.f, 900.f, 0.f);
+		Unit.bIsActive = false;
+	}
+	Grid.Update(Units);
+
+	TestEqual(TEXT("혼잡이 풀리면 목록이 비어야 한다"), Grid.GetCongestedCells().Num(), 0);
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdSteering_FixedStepConsumesWholeStepsOnly, "FestaFiesta.Crowd.Steering.FixedStepConsumesWholeStepsOnly", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdSteering_FixedStepConsumesWholeStepsOnly::RunTest(const FString& Parameters)
 {
@@ -2417,6 +2451,67 @@ bool FFF_CrowdAvoidance_OrientedRectWallsMatchFootprint::RunTest(const FString& 
 
 	FFF_CrowdWalls::AppendOrientedRect(Walls, FVector2f(100.f, 100.f), 0.f, HalfX, HalfY);
 	TestEqual(TEXT("기존 선분 뒤에 붙는다"), Walls.Num(), 8);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_SegmentClearDetectsBuildingBetween, "FestaFiesta.Crowd.Avoidance.SegmentClearDetectsBuildingBetween", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_SegmentClearDetectsBuildingBetween::RunTest(const FString& Parameters)
+{
+	TArray<FFF_CrowdWallSegment> Walls;
+	FFF_CrowdWalls::AppendOrientedRect(Walls, FVector2f::ZeroVector, 0.f, 5.f, 2.5f);
+
+	TestFalse(TEXT("건물을 관통하는 직선은 막힌다"),
+		FFF_CrowdWalls::IsSegmentClear(Walls, FVector2f(-10.f, 0.f), FVector2f(10.f, 0.f), 0.f));
+	TestFalse(TEXT("모서리만 베는 직선도 막힌다"),
+		FFF_CrowdWalls::IsSegmentClear(Walls, FVector2f(-8.f, 0.f), FVector2f(0.f, 6.f), 0.f));
+	TestTrue(TEXT("건물 옆을 지나는 직선은 뚫려 있다"),
+		FFF_CrowdWalls::IsSegmentClear(Walls, FVector2f(-10.f, 5.f), FVector2f(10.f, 5.f), 0.3f));
+	TestTrue(TEXT("건물과 먼 직선은 뚫려 있다"),
+		FFF_CrowdWalls::IsSegmentClear(Walls, FVector2f(20.f, 20.f), FVector2f(30.f, 20.f), 0.3f));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_SegmentClearRespectsBodyRadius, "FestaFiesta.Crowd.Avoidance.SegmentClearRespectsBodyRadius", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_SegmentClearRespectsBodyRadius::RunTest(const FString& Parameters)
+{
+	TArray<FFF_CrowdWallSegment> Walls;
+	FFF_CrowdWalls::AppendOrientedRect(Walls, FVector2f::ZeroVector, 0.f, 5.f, 2.5f);
+
+	const FVector2f GrazeFrom(-10.f, 2.7f);
+	const FVector2f GrazeTo(10.f, 2.7f);
+
+	TestTrue(TEXT("반지름 0이면 20cm 스치는 직선은 뚫려 있다"),
+		FFF_CrowdWalls::IsSegmentClear(Walls, GrazeFrom, GrazeTo, 0.f));
+	TestFalse(TEXT("몸 반지름이 간격보다 크면 같은 직선이 막힌다"),
+		FFF_CrowdWalls::IsSegmentClear(Walls, GrazeFrom, GrazeTo, 0.3f));
+	TestFalse(TEXT("벽을 따라 겹쳐 놓인 직선은 반지름 0에서도 막힌다"),
+		FFF_CrowdWalls::IsSegmentClear(Walls, FVector2f(-10.f, 2.5f), FVector2f(10.f, 2.5f), 0.f));
+	TestFalse(TEXT("목표점이 벽에 붙어 있으면 막힌다"),
+		FFF_CrowdWalls::IsSegmentClear(Walls, FVector2f(0.f, 10.f), FVector2f(0.f, 2.6f), 0.3f));
+	TestFalse(TEXT("벽에 붙은 개체는 멀어지는 방향이어도 막힌 것으로 본다"),
+		FFF_CrowdWalls::IsSegmentClear(Walls, FVector2f(0.f, 2.6f), FVector2f(0.f, 10.f), 0.3f));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_SegmentClearHandlesDegenerateInput, "FestaFiesta.Crowd.Avoidance.SegmentClearHandlesDegenerateInput", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_SegmentClearHandlesDegenerateInput::RunTest(const FString& Parameters)
+{
+	const TArray<FFF_CrowdWallSegment> NoWalls;
+	TestTrue(TEXT("벽이 없으면 항상 뚫려 있다"),
+		FFF_CrowdWalls::IsSegmentClear(NoWalls, FVector2f(-10.f, 0.f), FVector2f(10.f, 0.f), 0.3f));
+
+	TArray<FFF_CrowdWallSegment> Walls;
+	FFF_CrowdWalls::AppendOrientedRect(Walls, FVector2f::ZeroVector, 0.f, 5.f, 2.5f);
+
+	TestTrue(TEXT("길이 0 선분도 벽에서 멀면 뚫려 있다"),
+		FFF_CrowdWalls::IsSegmentClear(Walls, FVector2f(10.f, 10.f), FVector2f(10.f, 10.f), 0.3f));
+	TestFalse(TEXT("길이 0 선분이 건물 벽 위면 막힌다"),
+		FFF_CrowdWalls::IsSegmentClear(Walls, FVector2f(5.f, 0.f), FVector2f(5.f, 0.f), 0.3f));
+	TestTrue(TEXT("음수 반지름은 0으로 다룬다"),
+		FFF_CrowdWalls::IsSegmentClear(Walls, FVector2f(-10.f, 2.7f), FVector2f(10.f, 2.7f), -1.f));
 
 	return true;
 }

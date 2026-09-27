@@ -1,7 +1,11 @@
+// FF_BuildSynergyPresentationTest.cpp
+// 역할: 시설 조합 화면의 생성·해제·실제 배치를 검증한다.
+
 // One integration fixture covers presentation lifetime, bounded data and the real Slate layout.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/Presentation/FF_BuildSynergyWidget.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Building/Synergy/FF_FacilitySynergyTypes.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
@@ -22,6 +26,7 @@
 #include "Styling/CoreStyle.h"
 #include "TextureResource.h"
 #include "UI/Data/FF_UIPalette.h"
+#include "UI/Core/FF_BuildPearlStyle.h"
 #include "UObject/StrongObjectPtr.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/SOverlay.h"
@@ -49,7 +54,7 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
     if (!TestNotNull(TEXT("Editor world for isolated presentation fixture"), World)) { return false; }
     UWidgetBlueprintGeneratedClass* SynergyClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_BuildSynergyWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy.WBP_FF_BuildSynergy_C")));
+        FFBuildUIAssetPaths::BuildSynergyClass));
     if (!TestNotNull(TEXT("Editable synergy WBP (generate with FF.CreateBuildSynergyWidget)"), SynergyClass)) { return false; }
     FScopedSynergyPlayerlessInitialization SynergyInitialization(*SynergyClass);
     TStrongObjectPtr<UFF_BuildSynergyWidget> Widget(CreateWidget<UFF_BuildSynergyWidget>(World, SynergyClass));
@@ -59,7 +64,6 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
     const bool bClarity=SynergySize&&FMath::IsNearlyEqual(SynergySize->GetWidthOverride(),412.f);
     if (!TestTrue(TEXT("Designer tree satisfies named runtime binding contract"), Widget->HasRequiredBindings())) { return false; }
     const FSlateFontInfo AuthoredFont = Widget->RowTitles[0]->GetFont();
-    const FSlateColor AuthoredColor = Widget->RowTitles[0]->GetColorAndOpacity();
     FFF_FacilitySynergyPreview Preview;
     Preview.bRulesAvailable = true;
     for (int32 Index = 0; Index < 3; ++Index)
@@ -84,9 +88,9 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("Missing catalog never exposes internal facility IDs"),
         Widget->RowDetails[0]->GetText().ToString().Contains(TEXT("Booth_")) ||
         Widget->RowDetails[0]->GetText().ToString().Contains(TEXT("Rest_")));
-    TestTrue(TEXT("Runtime data keeps authored font and text color"),
+    TestTrue(TEXT("Runtime data keeps authored font and applies the pearl ink color"),
         Widget->RowTitles[0]->GetFont() == AuthoredFont &&
-        (Widget->bApplyStateTextColors || Widget->RowTitles[0]->GetColorAndOpacity() == AuthoredColor));
+        Widget->RowTitles[0]->GetColorAndOpacity() == FSlateColor(FFBuildPearl::Ink));
     TestEqual(TEXT("Read-only overlay never consumes placement clicks"),
         Widget->GetVisibility(), ESlateVisibility::HitTestInvisible);
     TestEqual(TEXT("Missing counterpart has no misleading world marker"), Widget->Markers.Num(), 2);
@@ -115,7 +119,7 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
         Widget->RowDetails[1]->SetText(FText::FromString(TEXT("함께: 추억을 담는 포토 키오스크 · 20m 이내\n거리 초과 · 현재 31m · 적용 +0%\n게임장 조합 보너스: +0% → +10%")));
     }
     UWidgetBlueprintGeneratedClass* ToolsClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_BuildToolsWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
+        FFBuildUIAssetPaths::BuildToolsClass));
     if (!TestNotNull(TEXT("Existing production placement toolbar"), ToolsClass)) { return false; }
     FScopedSynergyPlayerlessInitialization ToolsInitialization(*ToolsClass);
     TStrongObjectPtr<UFF_BuildToolsWidget> ToolsWidget(CreateWidget<UFF_BuildToolsWidget>(World, ToolsClass));
@@ -124,6 +128,9 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
     ToolsWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     UBorder* ToolsPanel = Cast<UBorder>(ToolsWidget->GetWidgetFromName(TEXT("Border_Tools")));
     if (!TestNotNull(TEXT("Toolbar geometry for overlap check"), ToolsPanel)) { return false; }
+    // The playerless editor world is Closed. Render the real placement dock
+    // explicitly, as the build-tools visual fixture does, to measure overlap.
+    ToolsPanel->SetVisibility(ESlateVisibility::Visible);
     const TSharedRef<SWidget> Composition = SNew(SOverlay)
         + SOverlay::Slot()[SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush(TEXT("WhiteBrush")))
             .BorderBackgroundColor(UFF_UIPalette::Get()->InGame.PaperSunken)]
@@ -141,6 +148,7 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
         }
         const FSlateRect Card = Widget->CardPanel->GetCachedGeometry().GetLayoutBoundingRect();
         const FSlateRect Tools = ToolsPanel->GetCachedGeometry().GetLayoutBoundingRect();
+        TestTrue(TEXT("Placement dock has measurable rendered geometry"), Tools.GetSize().X > 0 && Tools.GetSize().Y > 0);
         TestTrue(TEXT("Combo panel fits between upper HUD and existing bottom toolbar"),
             Card.Left >= 0.0f && Card.Right <= Size.X && Card.Top >= (bClarity?55.f:90.f) && Card.Bottom < Tools.Top);
         if(bClarity) TestTrue(TEXT("Three wrapped recipes stay inside the reserved side area"), Card.GetSize().Y <= 490.f);

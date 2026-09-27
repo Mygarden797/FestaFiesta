@@ -1,0 +1,167 @@
+{
+  "M_F70_Teal": {
+    "base_color": [
+      0.012,
+      0.36,
+      0.4,
+      1
+    ],
+    "roughness": 0.52,
+    "metallic": 0,
+    "emissive_strength": 0
+  },
+  "M_F70_DarkTeal": {
+    "base_color": [
+      0.009,
+      0.095,
+      0.115,
+      1
+    ],
+    "roughness": 0.55,
+    "metallic": 0.1,
+    "emissive_strength": 0
+  },
+  "M_F70_Cream": {
+    "base_color": [
+      0.88,
+      0.82,
+      0.67,
+      1
+    ],
+    "roughness": 0.62,
+    "metallic": 0,
+    "emissive_strength": 0
+  },
+  "M_F70_White": {
+    "base_color": [
+      0.94,
+      0.94,
+      0.89,
+      1
+    ],
+    "roughness": 0.48,
+    "metallic": 0,
+    "emissive_strength": 0
+  },
+  "M_F70_Wood": {
+    "base_color": [
+      0.54,
+      0.29,
+      0.105,
+      1
+    ],
+    "roughness": 0.72,
+    "metallic": 0,
+    "emissive_strength": 0
+  },
+  "M_F70_DarkWood": {
+    "base_color": [
+      0.19,
+      0.085,
+      0.038,
+      1
+    ],
+    "roughness": 0.8,
+    "metallic": 0,
+    "emissive_strength": 0
+  },
+  "M_F70_Metal": {
+    "base_color": [
+      0.07,
+      0.095,
+      0.105,
+      1
+    ],
+    "roughness": 0.36,
+    "metallic": 0.65,
+    "emissive_strength": 0
+  },
+  "M_F70_Glass": {
+    "base_color": [
+      0.035,
+      0.19,
+      0.24,
+      1
+    ],
+    "roughness": 0.18,
+    "metallic": 0.25,
+    "emissive_strength": 0
+  },
+  "M_F70_Amber": {
+    "base_color": [
+      1,
+      0.52,
+      0.1,
+      1
+    ],
+    "roughness": 0.32,
+    "metallic": 0,
+    "emissive_strength": 2
+  },
+  "M_F70_Coral": {
+    "base_color": [
+      0.8,
+      0.15,
+      0.085,
+      1
+    ],
+    "roughness": 0.58,
+    "metallic": 0,
+    "emissive_strength": 0
+  },
+  "M_F70_Green": {
+    "base_color": [
+      0.12,
+      0.39,
+      0.13,
+      1
+    ],
+    "roughness": 0.78,
+    "metallic": 0,
+    "emissive_strength": 0
+  },
+  "M_F70_Blue": {
+    "base_color": [
+      0.04,
+      0.29,
+      0.62,
+      1
+    ],
+    "roughness": 0.5,
+    "metallic": 0,
+    "emissive_strength": 0
+  },
+  "M_F70_Pink": {
+    "base_color": [
+      0.8,
+      0.3,
+      0.47,
+      1
+    ],
+    "roughness": 0.6,
+    "metallic": 0,
+    "emissive_strength": 0
+  },
+  "M_F70_Sand": {
+    "base_color": [
+      0.65,
+      0.45,
+      0.23,
+      1
+    ],
+    "roughness": 0.86,
+    "metallic": 0,
+    "emissive_strength": 0
+  },
+  "M_F70_Screen": {
+    "base_color": [
+      0.025,
+      0.08,
+      0.105,
+      1
+    ],
+    "roughness": 0.3,
+    "metallic": 0,
+    "emissive_strength": 0.2
+  }
+}

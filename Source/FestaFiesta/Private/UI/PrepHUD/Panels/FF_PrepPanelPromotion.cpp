@@ -365,9 +365,10 @@ FText UFF_PrepPanelPromotion::GetChoiceLabel(EFF_PromotionChoice Choice)
 	// 여기서 만든다 — 생기면 그쪽으로 옮긴다.
 	switch (Choice)
 	{
-	case EFF_PromotionChoice::Basic:	return LOCTEXT("PrepPromotion_LabelBasic", "기본");
-	case EFF_PromotionChoice::Focused:	return LOCTEXT("PrepPromotion_LabelFocused", "집중");
-	default:							return LOCTEXT("PrepPromotion_LabelNone", "안 함");
+	case EFF_PromotionChoice::Basic:		return LOCTEXT("PrepPromotion_LabelBasic", "지역 SNS");
+	case EFF_PromotionChoice::Focused:		return LOCTEXT("PrepPromotion_LabelFocused", "전국 홍보");
+	case EFF_PromotionChoice::Influencer:	return LOCTEXT("PrepPromotion_LabelInfluencer", "인플루언서");
+	default:								return LOCTEXT("PrepPromotion_LabelNone", "홍보 없음");
 	}
 }
 

@@ -1,0 +1,60 @@
+{
+  "number": 3,
+  "category": "Booth",
+  "subtype": "FoodStall",
+  "name_ko": "부산 어묵 포장마차",
+  "slug": "BusanFishCakeCart",
+  "id": "Booth_FoodStall_BusanFishCakeCart",
+  "footprint_cm": [
+    420,
+    270
+  ],
+  "height_cm": 330,
+  "description_ko": "지역색을 보여 주는 야시장 먹거리.",
+  "emphasis_ko": "사각 국물통·꼬치·천막 실루엣을 강조. 꼬치는 저밀도 반복 부품으로 만들고 김은 별도 효과로 처리한다.",
+  "reference_image": "Design/Facitilies/03 부산 어묵 포장마차.png",
+  "exploded_reference_image": "Design/Facitilies/03 부산 어묵 포장마차 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
+  "followup_features": [
+    "조리 김과 음식 제공 상호작용은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_BusanFishCakeCart\\SM_FF_Booth_FoodStall_BusanFishCakeCart.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\03_Booth_FoodStall_BusanFishCakeCart.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_BusanFishCakeCart\\iso.png",
+  "bounds_m": [
+    4.199999809265137,
+    2.5743470191955566,
+    2.9557316303253174
+  ],
+  "bounds_min_m": [
+    -2.0999999046325684,
+    -1.2871735095977783,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.0999999046325684,
+    1.2871735095977783,
+    2.9557316303253174
+  ],
+  "triangles": 13292,
+  "material_names": [
+    "M_F70_DarkWood",
+    "M_F70_Cream",
+    "M_F70_Teal",
+    "M_F70_Wood",
+    "M_F70_Metal",
+    "M_F70_Sand",
+    "M_F70_Amber"
+  ],
+  "collision_count": 7,
+  "editable_parts": 59,
+  "fbx_sha256": "3d2965fafa79778ed0c175bfa22f36eb15c9d9b754a5161edbc4ff45e25b2840",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

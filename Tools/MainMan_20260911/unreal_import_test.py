@@ -1,3 +1,6 @@
+# unreal_import_test.py
+# 역할: FBX를 Unreal의 /Game/MainManQA로 가져오고 메시·손가락 뼈대·키·재질 개수를 검증해 보고서를 쓴다.
+
 import unreal,json,traceback,hashlib
 from pathlib import Path
 OUT=Path(__file__).resolve().parents[2]/'SourceArt/MainMan_20260911'

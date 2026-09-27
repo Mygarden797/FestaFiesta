@@ -10,6 +10,26 @@
 
 #include "FF_FFZSGridLibrary.h"
 
+namespace
+{
+    // 유효하지 않은 외부 설정이 물리 추적 좌표나 표본 개수로 전달되지 않게 한다.
+    double FiniteOrDefault(const double Value, const double Default)
+    {
+        return FMath::IsFinite(Value) ? Value : Default;
+    }
+}
+
+FFFZSGroundValidationSettings UFFZSDeveloperSettings::ResolveGroundValidationSettings() const
+{
+    return {
+        FMath::Clamp(FiniteOrDefault(GroundSampleSpacingCm, DefaultGroundSampleSpacingCm), 1.0, 1000.0),
+        FMath::Max(1.0, FiniteOrDefault(GroundTraceAboveCm, DefaultGroundTraceDistanceCm)),
+        FMath::Max(1.0, FiniteOrDefault(GroundTraceBelowCm, DefaultGroundTraceDistanceCm)),
+        FMath::Clamp(FiniteOrDefault(MaxGroundSlopeDegrees, DefaultMaxGroundSlopeDegrees), 0.0, 89.0),
+        FMath::Max(0.0, FiniteOrDefault(MaxGroundHeightVarianceCm, DefaultMaxGroundHeightVarianceCm))
+    };
+}
+
 // Project Settings > Game > FF_ZoneSystem 경로를 고정하고 Accepted Zone ID를 새 프로젝트 기본값으로 채운다.
 // Config=Game 역직렬화가 이후 담당자가 저장한 값을 덮어쓰므로 이 코드는 사용자 설정을 런타임마다 강제하지 않는다.
 

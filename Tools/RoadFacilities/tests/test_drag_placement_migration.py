@@ -1,3 +1,6 @@
+# test_drag_placement_migration.py
+# 역할: 설치 가능한 도로·타일 작업에서 오류 경계와 기존 데이터 보존 동작을 검증한다.
+
 """Exercise migration failure boundaries without starting Unreal or touching assets."""
 import copy
 import importlib.util

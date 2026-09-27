@@ -60,6 +60,21 @@ void FFF_DayLedger::Reset()
 	RevenueByFacility.Reset(); // 할당해둔 내부 메모리는 재사용할 수 있게 유지
 }
 
+bool FFF_DayLedger::CanAdjustConstruction(const int64 InstallSpendDelta, const int64 RefundDelta) const
+{
+	const int64 Spend = int64(GetSpendByReason(EFF_SpendReason::FacilityInstall)) + InstallSpendDelta;
+	const int64 Refund = int64(TotalRefund) + RefundDelta;
+	return Spend >= 0 && Spend <= MAX_int32 && Refund >= 0 && Refund <= MAX_int32;
+}
+
+bool FFF_DayLedger::AdjustConstruction(const int64 InstallSpendDelta, const int64 RefundDelta)
+{
+	if (!CanAdjustConstruction(InstallSpendDelta, RefundDelta)) return false;
+	SpendByReason[static_cast<int32>(EFF_SpendReason::FacilityInstall)] += int32(InstallSpendDelta);
+	TotalRefund += int32(RefundDelta);
+	return true;
+}
+
 int32 FFF_DayLedger::GetSpendByReason(EFF_SpendReason Reason) const
 {
 	return SpendByReason[static_cast<int32>(Reason)];

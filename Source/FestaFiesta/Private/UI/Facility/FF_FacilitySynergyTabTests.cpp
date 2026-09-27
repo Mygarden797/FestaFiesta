@@ -1,6 +1,10 @@
+// FF_FacilitySynergyTabTests.cpp
+// 역할: 시설 정보의 조합 탭과 상대 시설 연결을 검증한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "UI/Facility/FF_FacilitySynergyEntryWidget.h"
 #include "Building/Synergy/FF_FacilitySynergyTypes.h"
 #include "Building/Synergy/FF_FacilitySynergyEvaluator.h"
@@ -126,9 +130,9 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
 {
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
     auto* PanelClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr,
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C")));
+        FFBuildUIAssetPaths::FacilityInfoPanelClass));
     auto* EntryClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilitySynergyEntryWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry.WBP_FF_FacilitySynergyEntry_C")));
+        FFBuildUIAssetPaths::FacilitySynergyEntryClass));
     const auto* Burger = LoadObject<UFFZSFacilityDefinition>(nullptr,
         TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"));
     const auto* Seating = LoadObject<UFFZSFacilityDefinition>(nullptr,

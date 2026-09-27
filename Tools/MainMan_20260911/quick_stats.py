@@ -1,3 +1,6 @@
+# quick_stats.py
+# 역할: 열린 Blender 메시들의 점·면·구멍·겹친 연결선·부피를 읽어 콘솔에 JSON으로 출력한다.
+
 import bpy,bmesh,json
 d=[]
 for o in bpy.data.objects:

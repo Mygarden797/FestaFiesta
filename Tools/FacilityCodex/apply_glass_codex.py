@@ -1,3 +1,6 @@
+# apply_glass_codex.py
+# 역할: 시설 조합 도감과 보상 표시 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Save build typography and the fullscreen glass collection, with repeat-run checks."""
 import hashlib
 import json
@@ -17,7 +20,7 @@ CODEX = {
     "Screen": "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen",
     "Card": "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard",
 }
-builder = (ROOT / "Source/FestaFiesta/Private/Building/Presentation/FF_BuildTypographyBuilder.cpp").read_text(encoding="utf-8")
+builder = (ROOT / "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildTypographyBuilder.cpp").read_text(encoding="utf-8")
 allowlist = re.search(r"const TCHAR\* Paths\[\] = \{(.*?)\};", builder, re.S)
 assert allowlist, "Typography must expose its explicit construction-only allowlist"
 TYPOGRAPHY = re.findall(r'TEXT\("(/Game/[^\"]+)"\)', allowlist.group(1))

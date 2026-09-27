@@ -129,6 +129,7 @@ private:
 	friend class FFF_AuroraCatalogSelectionTest;
 	friend class FFF_BuildCatalogRetiredDefinitionTest;
 	friend class FFF_BuildDragPlacementTest;
+	friend class FFF_BuildQueueLayoutDraftTest;
 	friend class FFF_PrepProgramFacilityNavigationTest;
 #endif
 

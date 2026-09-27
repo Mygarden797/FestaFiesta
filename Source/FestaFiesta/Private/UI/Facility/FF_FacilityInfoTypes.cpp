@@ -1,3 +1,6 @@
+// FF_FacilityInfoTypes.cpp
+// 역할: 시설 정보 화면에 전달할 값과 비용·상태·수입의 표시 규칙을 정의한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityInfoTypes.h"

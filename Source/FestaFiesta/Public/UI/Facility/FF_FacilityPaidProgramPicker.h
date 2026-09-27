@@ -1,3 +1,6 @@
+// FF_FacilityPaidProgramPicker.h
+// 역할: 시설에서 편성할 유료 프로그램 목록과 선택 결과를 보여 준다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
@@ -126,7 +129,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))
 	FLinearColor FeedbackSuccessColor =
-		FLinearColor::FromSRGBColor(FColor(0x3F, 0x8F, 0x6D));
+		FLinearColor::FromSRGBColor(FColor(0x3D, 0x3C, 0x4F));
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UBorder> Border_Picker;

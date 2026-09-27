@@ -195,6 +195,18 @@ protected:
 	UFUNCTION()
 	void HandlePlayHubContinueRequested();
 
+	/**
+	 * 슬롯 하나를 지정해 이어한다. 플레이 허브의 `계속하기` 와 저장 기록 목록이 함께 쓴다.
+	 *
+	 * 여기서 불러오지 않는다. 슬롯만 저장 시스템에 넘겨두고 레벨을 열면, 레벨이 준비된 뒤
+	 * `GameMode::BeginPlay` 가 복원을 부른다. 화면은 그 순서를 몰라도 된다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Flow")
+	void ContinueFromSlot(FName SlotId);
+
+	UFUNCTION()
+	void HandleSaveListSlotChosen(FName SlotId);
+
 	UFUNCTION()
 	void HandlePlayHubNewFestivalRequested();
 

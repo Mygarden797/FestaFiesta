@@ -1,3 +1,6 @@
+// FF_FacilityUpgradeSubsystem.h
+// 역할: 강화 견적을 만들고 공간·운영 상태·잔액 확인 후 비용 예약과 확정을 연결한다.
+
 #pragma once
 
 #include "CoreMinimal.h"

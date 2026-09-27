@@ -1,3 +1,6 @@
+# capture_buildable_lights.py
+# 역할: 시설 조명과 조명 제어 화면 작업에서 실행 화면이나 모델을 촬영해 시각 검증 자료를 만든다.
+
 """Capture actual buildable fixtures for visual QA of their runtime controls.
 
 Launch in /Engine/Maps/Entry with a real RHI and -RenderOffscreen. The transient

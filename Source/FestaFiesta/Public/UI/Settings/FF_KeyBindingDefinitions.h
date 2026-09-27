@@ -1,9 +1,14 @@
+// FF_KeyBindingDefinitions.h
+// 역할: 변경 가능한 조작 항목의 이름·기본 키·입력 유형을 정의한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "InputCoreTypes.h"
+
+class UEnhancedInputUserSettings;
 
 /**
  * Player-remappable input domains.
@@ -39,6 +44,8 @@ namespace FFKeyBindingDefinitions
 {
 	FESTAFIESTA_API const TArray<FFF_KeyBindingDefinition>& GetAll();
 	FESTAFIESTA_API const FFF_KeyBindingDefinition* Find(FName MappingName);
+	/** 현재 제공하는 동작만 저장 키를 읽는다. 없거나 비어 있으면 기본 키로 돌아간다. */
+	FESTAFIESTA_API FKey ResolveCurrentKey(const UEnhancedInputUserSettings* UserSettings, FName MappingName);
 	FESTAFIESTA_API bool IsSystemMapping(FName MappingName);
 	FESTAFIESTA_API FText GetContextLabel(EFF_KeyBindingContext Context);
 }

@@ -1,3 +1,6 @@
+// FF_BuildPlacementPointerPolicy.cpp
+// 역할: 실제 조작 UI를 향한 포인터 입력이 바닥 설치로 새지 않게 판정한다.
+
 #include "FF_BuildPlacementPointerPolicy.h"
 
 #include "Building/UI/FF_BuildCatalogScreen.h"

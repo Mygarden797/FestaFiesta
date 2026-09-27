@@ -1,3 +1,5 @@
+// FF_FFZSBuildGridSurfaceTests.cpp
+// 역할: 지면 추적, 캐시 만료, 지형 변경, 추적 예산이 화면 격자에 올바르게 반영되는지 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

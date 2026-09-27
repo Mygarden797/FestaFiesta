@@ -1,3 +1,6 @@
+# create_catalog_focus_materials.py
+# 역할: 시설 조합 도감과 보상 표시 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Create a mint/champagne/lilac UI interference rim for the codex destination.
 
 Only the destination card uses these materials. Its center remains transparent,

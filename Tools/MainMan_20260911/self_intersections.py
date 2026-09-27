@@ -1,3 +1,6 @@
+# self_intersections.py
+# 역할: 각 메시 내부에서 서로 떨어진 삼각형이 뚫고 지나가는지 검사한다. 부위 사이의 의도된 겹침은 제외한다.
+
 import bpy,json
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree

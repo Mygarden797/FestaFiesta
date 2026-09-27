@@ -1,0 +1,61 @@
+{
+  "number": 1,
+  "category": "Booth",
+  "subtype": "FoodStall",
+  "name_ko": "카페 트럭",
+  "slug": "CafeTruck",
+  "id": "Booth_FoodStall_CafeTruck",
+  "footprint_cm": [
+    600,
+    320
+  ],
+  "height_cm": 380,
+  "description_ko": "휴게 좌석과 어울리는 커피 매점.",
+  "emphasis_ko": "트럭 옆 판매창·컵 간판·커피 머신 실루엣을 강조. 바퀴와 차체는 공유하고 판매창 앞 접근 공간을 비운다.",
+  "reference_image": "Design/Facitilies/01 카페 트럭.png",
+  "exploded_reference_image": "Design/Facitilies/01 카페 트럭 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
+  "followup_features": [
+    "커피 제공 상호작용과 제조 애니메이션은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_CafeTruck\\SM_FF_Booth_FoodStall_CafeTruck.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\01_Booth_FoodStall_CafeTruck.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_CafeTruck\\iso.png",
+  "bounds_m": [
+    5.353240013122559,
+    2.8856005668640137,
+    3.799999713897705
+  ],
+  "bounds_min_m": [
+    -2.6766197681427,
+    -1.4428002834320068,
+    2.127127629591996e-08
+  ],
+  "bounds_max_m": [
+    2.6766200065612793,
+    1.4428004026412964,
+    3.799999713897705
+  ],
+  "triangles": 22200,
+  "material_names": [
+    "M_F70_Teal",
+    "M_F70_Cream",
+    "M_F70_Glass",
+    "M_F70_Wood",
+    "M_F70_DarkTeal",
+    "M_F70_Metal",
+    "M_F70_White",
+    "M_F70_DarkWood"
+  ],
+  "collision_count": 9,
+  "editable_parts": 85,
+  "fbx_sha256": "5d950ff7501660c8a21a4bf2666df8d2fd55879c29f9d22edd0a175fa7c42f2d",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

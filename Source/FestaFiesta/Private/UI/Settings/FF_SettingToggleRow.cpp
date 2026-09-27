@@ -1,3 +1,6 @@
+// FF_SettingToggleRow.cpp
+// 역할: 켜기·끄기 설정 행을 표시한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Settings/FF_SettingToggleRow.h"

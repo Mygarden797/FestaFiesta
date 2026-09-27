@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# verify_notion_facility_examples.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 저장된 결과가 요구 조건에 맞는지 검증한다.
+
 """Verify technical quality for all 29 Notion reference-art examples.
 
 No placement-size assertion belongs here: these assets are under Test_Asset and

@@ -15,6 +15,14 @@ class UVerticalBox;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnSaveListBackRequested);
 
 /**
+ * 슬롯을 골랐다. 흐름 쪽이 받아 레벨을 연다.
+ *
+ * 화면이 직접 불러오지 않는 이유는 불러오기가 레벨 전환을 동반하기 때문이다.
+ * 화면이 자기를 없애는 전환을 스스로 시작하면 수명이 꼬인다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSaveSlotChosen, FName, SlotId);
+
+/**
  * 저장 기록 목록. 자동 저장과 수동 저장을 그룹으로 나눠 보여준다.
  *
  * === 불러오기를 하지 않는다 ===
@@ -37,6 +45,9 @@ class FESTAFIESTA_API UFF_SaveListScreen : public UFF_ActivatableScreenBase
 public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI")
 	FFF_OnSaveListBackRequested OnBackRequested;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI")
+	FFF_OnSaveSlotChosen OnSlotChosen;
 
 protected:
 	virtual void NativeOnInitialized() override;

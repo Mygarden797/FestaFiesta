@@ -1,3 +1,5 @@
+// FF_FFZSBuildableGridWorldTests.cpp
+// 역할: 시설·보호 영역·지면을 반영한 건설 가능 격자 판정을 테스트 월드에서 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

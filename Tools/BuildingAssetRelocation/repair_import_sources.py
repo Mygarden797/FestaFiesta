@@ -1,3 +1,6 @@
+# repair_import_sources.py
+# 역할: 건설 에셋 폴더 이관 작업에서 확인된 데이터 오류만 수정한다.
+
 """Rebase import filenames for relocated textures without reimporting image pixels."""
 import json
 import sys

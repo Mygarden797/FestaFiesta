@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "description": "Test_Main: 지형을 유지하고 연결된 기존 존 6개를 나눠 단절된 6개 존을 수용한다.",
+  "map": "/Game/FestaFiesta/Maps/Test_Main",
+  "zone_count": 31,
+  "source_sha256": "71eaf3bac470dd47004b06c020718e5d751ba84f89b2260873435a5660a8ced8",
+  "minimum_side_cm": 2500,
+  "anchor_boundary_margin_cm": 300,
+  "anchor_projection_extent_cm": [
+    300,
+    300,
+    2000
+  ],
+  "neighbor_gap_cm": 500,
+  "neighbor_policy": "변을 마주하고 사이가 5m 이내인 존을 양방향 이웃으로 지정한다. 실제 이동 가능 여부는 NavMesh 경로로 별도 검증한다.",
+  "splits": [
+    {
+      "donor": "GZ_TestMain_09",
+      "recipient": "GZ_TestMain_11",
+      "origin": [
+        66860.0,
+        48120.0,
+        480.0
+      ],
+      "size": [
+        10000.0,
+        10000.0
+      ],
+      "axis": "x",
+      "cut_cm": 6750,
+      "recipient_side": "high",
+      "anchors_world": {
+        "GZ_TestMain_11": [
+          75141.25,
+          53120.0,
+          516.287707422096
+        ],
+        "GZ_TestMain_09": [
+          70766.25,
+          53120.0,
+          516.287707422096
+        ]
+      }
+    },
+    {
+      "donor": "GZ_TestMain_13",
+      "recipient": "GZ_TestMain_12",
+      "origin": [
+        76830.0,
+        58120.0,
+        480.0
+      ],
+      "size": [
+        10000.0,
+        10000.0
+      ],
+      "axis": "x",
+      "cut_cm": 5750,
+      "recipient_side": "high",
+      "anchors_world": {
+        "GZ_TestMain_12": [
+          85111.25,
+          66401.25,
+          516.287707422096
+        ],
+        "GZ_TestMain_13": [
+          79642.5,
+          63120.0,
+          516.287707422096
+        ]
+      }
+    },
+    {
+      "donor": "GZ_TestMain_16",
+      "recipient": "GZ_TestMain_15",
+      "origin": [
+        76830.0,
+        68180.0,
+        480.0
+      ],
+      "size": [
+        10000.0,
+        10000.0
+      ],
+      "axis": "x",
+      "cut_cm": 7500,
+      "recipient_side": "high",
+      "anchors_world": {
+        "GZ_TestMain_15": [
+          85131.49688149687,
+          73158.40332640332,
+          516.287707422096
+        ],
+        "GZ_TestMain_16": [
+          81830.0,
+          69898.75,
+          516.287707422096
+        ]
+      }
+    },
+    {
+      "donor": "GZ_TestMain_06",
+      "recipient": "GZ_TestMain_26",
+      "origin": [
+        66860.0,
+        38050.0,
+        480.0
+      ],
+      "size": [
+        10000.0,
+        10000.0
+      ],
+      "axis": "y",
+      "cut_cm": 4250,
+      "recipient_side": "low",
+      "anchors_world": {
+        "GZ_TestMain_26": [
+          75141.25,
+          39768.75,
+          526.287707422096
+        ],
+        "GZ_TestMain_06": [
+          71860.0,
+          45237.5,
+          526.287707422096
+        ]
+      }
+    },
+    {
+      "donor": "GZ_DadaPocha",
+      "recipient": "GZ_TestMain_27",
+      "origin": [
+        76810.0,
+        28000.0,
+        480.0
+      ],
+      "size": [
+        10000.0,
+        10000.0
+      ],
+      "axis": "y",
+      "cut_cm": 4250,
+      "recipient_side": "low",
+      "anchors_world": {
+        "GZ_TestMain_27": [
+          78528.75,
+          29718.75,
+          556.287707422096
+        ],
+        "GZ_DadaPocha": [
+          81810.0,
+          35187.5,
+          556.287707422096
+        ]
+      }
+    },
+    {
+      "donor": "GZ_TestMain_03",
+      "recipient": "GZ_TestMain_28",
+      "origin": [
+        46790.0,
+        28520.0,
+        480.0
+      ],
+      "size": [
+        10000.0,
+        10000.0
+      ],
+      "axis": "x",
+      "cut_cm": 6750,
+      "recipient_side": "high",
+      "anchors_world": {
+        "GZ_TestMain_28": [
+          55071.25,
+          34613.75,
+          516.287707422096
+        ],
+        "GZ_TestMain_03": [
+          50696.25,
+          33520.0,
+          516.287707422096
+        ]
+      }
+    }
+  ]
+}

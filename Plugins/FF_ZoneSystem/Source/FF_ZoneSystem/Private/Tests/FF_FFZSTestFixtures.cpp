@@ -1,4 +1,5 @@
 // FF_FFZSTestFixtures.cpp
+// 역할: 자동화 테스트에서 공유하는 정상 시설·지역 데이터를 만든다. 게임 실행용 콘텐츠는 아니다.
 
 #include "Tests/FF_FFZSTestFixtures.h"
 

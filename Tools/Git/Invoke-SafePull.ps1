@@ -1,3 +1,6 @@
+# Invoke-SafePull.ps1
+# 역할: Git 공동 작업 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+
 <#
 .SYNOPSIS
     Guards 'git pull' against the Windows memory-mapped .uasset failure and repairs

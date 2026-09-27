@@ -1,3 +1,6 @@
+# apply_approved_build_ui.py
+# 역할: UI 이미지·화면 에셋 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Apply the approved build/inspection UI in an unattended full Unreal Editor process.
 
 Run with -ExecutePythonScript, not the Python commandlet: WBP compilation needs editor

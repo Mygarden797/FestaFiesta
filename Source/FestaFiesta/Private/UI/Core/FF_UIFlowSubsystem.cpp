@@ -13,7 +13,9 @@
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "MoviePlayer.h"
+#include "Save/FF_SaveSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "UI/Frontend/FF_SaveListProvider.h"
 #include "UI/Atlas/FF_AtlasCameraRig.h"
 #include "UI/Atlas/FF_AtlasCountryScreen.h"
 #include "UI/Atlas/FF_AtlasGlobeScreen.h"
@@ -600,6 +602,7 @@ void UFF_UIFlowSubsystem::GoToScreenImmediate(EFF_UIFlowScreen Screen)
 	else if (UFF_SaveListScreen* SaveList = Cast<UFF_SaveListScreen>(Pushed))
 	{
 		SaveList->OnBackRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleFrontendBackRequested);
+		SaveList->OnSlotChosen.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleSaveListSlotChosen);
 	}
 	else if (UFF_OptionsScreen* Options = Cast<UFF_OptionsScreen>(Pushed))
 	{
@@ -699,11 +702,61 @@ void UFF_UIFlowSubsystem::HandleTitleOptionsRequested()
 
 void UFF_UIFlowSubsystem::HandlePlayHubContinueRequested()
 {
-	// 불러오기 Command 가 없다. 낙관적으로 화면을 바꾸지 않는다 —
-	// 결과 이벤트를 받은 뒤에 전환하는 것이 저장 UI 경계 규칙이다.
-	// 플레이 허브가 저장이 없으면 이 버튼을 잠그므로 보통 여기 오지 않는다.
-	UE_LOG(LogFestaFiestaUI, Log,
-		TEXT("UFF_UIFlowSubsystem: `최근 축제 계속하기` 요청. 불러오기 API 가 아직 없어 대기한다."));
+	// 플레이 허브가 저장이 없으면 이 버튼을 잠그므로 보통 빈 목록으로 오지 않는다.
+	const UFF_SaveListProvider* Provider = UFF_SaveListProvider::Get(this);
+
+	FFF_SaveSlotEntry Recent;
+	if (!Provider || !Provider->GetMostRecent(Recent))
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("UFF_UIFlowSubsystem: `계속하기` 를 눌렀지만 저장 기록이 없다."));
+		return;
+	}
+
+	ContinueFromSlot(Recent.SlotId);
+}
+
+void UFF_UIFlowSubsystem::HandleSaveListSlotChosen(const FName SlotId)
+{
+	ContinueFromSlot(SlotId);
+}
+
+void UFF_UIFlowSubsystem::ContinueFromSlot(const FName SlotId)
+{
+	UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this);
+	if (!Save)
+	{
+		UE_LOG(LogFestaFiestaUI, Error,
+			TEXT("UFF_UIFlowSubsystem: 저장 시스템이 없어 이어할 수 없다."));
+		return;
+	}
+
+	/* 슬롯에 담긴 축제의 레벨을 연다. 여기서 곧바로 불러오지 않는다.
+
+	   복원은 레벨이 뜨고 모든 시스템이 준비된 뒤에야 의미가 있고, 그 시점은
+	   GameMode 가 안다(BeginPlay 에서 TryContinueFestival 을 부른다).
+	   여기서 하는 일은 어느 슬롯인지 넘겨두고 레벨을 여는 것뿐이다.
+	*/
+	const FName FestivalId = Save->PeekFestivalIdInSlot(SlotId);
+	if (FestivalId.IsNone())
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("UFF_UIFlowSubsystem: 슬롯 `%s` 에 축제 정보가 없어 이어할 수 없다."),
+			*SlotId.ToString());
+		return;
+	}
+
+	Save->RequestContinueFromSlot(SlotId);
+
+	if (!StartFestival(FestivalId))
+	{
+		// 레벨을 못 열었으면 지정도 물린다. 남겨두면 다음에 새로 시작해도 이 슬롯을 문다.
+		Save->RequestContinueFromSlot(NAME_None);
+
+		UE_LOG(LogFestaFiestaUI, Error,
+			TEXT("UFF_UIFlowSubsystem: `%s` 레벨을 열지 못해 이어하기를 취소한다."),
+			*FestivalId.ToString());
+	}
 }
 
 void UFF_UIFlowSubsystem::HandlePlayHubNewFestivalRequested()
@@ -993,9 +1046,16 @@ void UFF_UIFlowSubsystem::RequestAdvanceStage()
 	{
 		if (Stage->IsFinalDay())
 		{
-			// 마지막 날에는 다음 날이 없다. 축제 종료는 OnFestivalEnded 가 알린다.
+			/* 마지막 날에는 다음 날이 없다. 한 사이클을 닫아 로비로 보낸다.
+
+			   예전에는 여기서 로그만 남기고 돌아갔다. 최종 결산 화면이 제대로 붙기
+			   전까지는 그게 "버튼을 눌러도 아무 일도 없고 나갈 데도 없는" 상태였다.
+			   결산 화면이 붙으면 그 화면의 `로비로` 가 이 역할을 가져간다.
+			*/
 			UE_LOG(LogFestaFiestaUI, Log,
-				TEXT("UFF_UIFlowSubsystem: 마지막 날 Report 다. 다음 날로 갈 수 없다."));
+				TEXT("UFF_UIFlowSubsystem: 마지막 날 Report 다. 로비로 돌아간다."));
+
+			ReturnToAtlas();
 			return;
 		}
 

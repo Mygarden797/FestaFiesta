@@ -1,0 +1,56 @@
+{
+  "number": 51,
+  "category": "PhotoSpot",
+  "subtype": "Landmark",
+  "name_ko": "대형 모래성",
+  "slug": "GrandSandcastle",
+  "id": "PhotoSpot_Landmark_GrandSandcastle",
+  "footprint_cm": [
+    750,
+    600
+  ],
+  "height_cm": 650,
+  "description_ko": "해변 축제의 대표 상징물.",
+  "emphasis_ko": "큰 탑·아치·성벽의 단계적 실루엣을 강조. 모래 알갱이는 재질로 표현하고 탑 끝을 지나치게 가늘게 만들지 않는다.",
+  "reference_image": "Design/Facitilies/51 대형 모래성.png",
+  "exploded_reference_image": "Design/Facitilies/51 대형 모래성 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/PDA_FFZS_PhotoSpot_Landmark_Landmark",
+  "followup_features": [
+    "사진 포즈·촬영 UI·이미지 저장은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Landmark_GrandSandcastle\\SM_FF_PhotoSpot_Landmark_GrandSandcastle.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\51_PhotoSpot_Landmark_GrandSandcastle.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Landmark_GrandSandcastle\\iso.png",
+  "bounds_m": [
+    7.5,
+    5.632652759552002,
+    5.525510311126709
+  ],
+  "bounds_min_m": [
+    -3.75,
+    -2.816326379776001,
+    1.4901161193847656e-08
+  ],
+  "bounds_max_m": [
+    3.750000238418579,
+    2.816326379776001,
+    5.525510311126709
+  ],
+  "triangles": 5517,
+  "material_names": [
+    "M_F70_Sand",
+    "M_F70_Wood",
+    "M_F70_Teal"
+  ],
+  "collision_count": 10,
+  "editable_parts": 52,
+  "fbx_sha256": "83b79370bdc0f5463c5efa58a6e6b7d260676bca3423fbd7ca1ced56b22d5e07",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

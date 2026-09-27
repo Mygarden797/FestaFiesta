@@ -1,0 +1,61 @@
+{
+  "number": 13,
+  "category": "Booth",
+  "subtype": "CraftExperience",
+  "name_ko": "나만의 부채 공방",
+  "slug": "PersonalFanWorkshop",
+  "id": "Booth_CraftExperience_PersonalFanWorkshop",
+  "footprint_cm": [
+    550,
+    420
+  ],
+  "height_cm": 410,
+  "description_ko": "그림을 그리는 짧은 여름 체험.",
+  "emphasis_ko": "펼친 부채 지붕 장식과 채색 도구를 강조. 부채 무늬는 공통 UV·텍스처 변형으로 재사용한다.",
+  "reference_image": "Design/Facitilies/13 나만의 부채 공방.png",
+  "exploded_reference_image": "Design/Facitilies/13 나만의 부채 공방 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt",
+  "followup_features": [
+    "부채 채색·무늬 선택과 결과물 저장은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_CraftExperience_PersonalFanWorkshop\\SM_FF_Booth_CraftExperience_PersonalFanWorkshop.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\13_Booth_CraftExperience_PersonalFanWorkshop.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_CraftExperience_PersonalFanWorkshop\\iso.png",
+  "bounds_m": [
+    4.900473594665527,
+    4.199999809265137,
+    3.7345967292785645
+  ],
+  "bounds_min_m": [
+    -2.4502365589141846,
+    -2.0999996662139893,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.4502370357513428,
+    2.0999999046325684,
+    3.7345967292785645
+  ],
+  "triangles": 12912,
+  "material_names": [
+    "M_F70_Wood",
+    "M_F70_Teal",
+    "M_F70_Metal",
+    "M_F70_Cream",
+    "M_F70_Coral",
+    "M_F70_Blue",
+    "M_F70_Sand",
+    "M_F70_DarkTeal"
+  ],
+  "collision_count": 8,
+  "editable_parts": 110,
+  "fbx_sha256": "bb315162d4667435428daba631299ee40eb831762dca8d24382f1c850a81db7f",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

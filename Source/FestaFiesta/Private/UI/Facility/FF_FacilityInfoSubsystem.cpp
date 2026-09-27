@@ -1,6 +1,10 @@
+// FF_FacilityInfoSubsystem.cpp
+// 역할: 현재 선택 시설의 정보를 모아 화면을 열고 시설 조작 요청을 담당 시스템에 전달한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogTypes.h"
@@ -24,8 +28,6 @@
 #include "GameFramework/Pawn.h"
 #include "Layout/Margin.h"
 #include "InputCoreTypes.h"
-#include "Minigame/FF_MinigameCatalogSubsystem.h"
-#include "Minigame/FF_MinigameDefinition.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -143,23 +145,7 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 	CachedSynergyEntries.Reset();
 	CachedSynergySummary = FText::GetEmpty();
 	SelectionContext = EFF_FacilityInfoContext::None;
-	if (Panel)
-	{
-		Panel->OnFavoriteRequested.RemoveAll(this);
-		Panel->OnMoveRequested.RemoveAll(this);
-		Panel->OnRemoveRequested.RemoveAll(this);
-		Panel->OnProgramScheduleRequested.RemoveAll(this);
-		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->CancelLightingEdit();
-        Panel->OnLightingRollbackRequested.RemoveAll(this);
-        Panel->OnLightingRequested.RemoveAll(this);
-		Panel->OnLightingResetRequested.RemoveAll(this);
-		Panel->OnMinigameRequested.RemoveAll(this);
-		Panel->OnCloseRequested.RemoveAll(this);
-		Panel->OnRevenueRankingRequested.RemoveAll(this);
-		Panel->RemoveFromParent();
-		Panel = nullptr;
-	}
+	ReleasePanel();
 	OwningController.Reset();
 	Super::Deinitialize();
 }
@@ -248,9 +234,7 @@ TStatId UFF_FacilityInfoSubsystem::GetStatId() const
 
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPanelClassPath()
 {
-	return FSoftClassPath(TEXT(
-		"/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel."
-		"WBP_FF_FacilityInfoPanel_C"));
+	return FSoftClassPath(FFBuildUIAssetPaths::FacilityInfoPanelClass);
 }
 
 bool UFF_FacilityInfoSubsystem::PrimePanel(APlayerController* InOwningController)
@@ -259,6 +243,7 @@ bool UFF_FacilityInfoSubsystem::PrimePanel(APlayerController* InOwningController
 		EnsurePanel(*InOwningController);
 }
 
+// 필요할 때 시설 정보 화면을 만들고 사용자의 명령을 담당 함수에 연결한다.
 bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningController)
 {
 	if (Panel)
@@ -268,22 +253,8 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 			return true;
 		}
 
-		// Seamless controller replacement is uncommon in this single-player project, but keeping
-		// the panel bound to a stale LocalPlayer would route input and viewport ownership incorrectly.
-		Panel->OnFavoriteRequested.RemoveAll(this);
-		Panel->OnMoveRequested.RemoveAll(this);
-		Panel->OnRemoveRequested.RemoveAll(this);
-		Panel->OnProgramScheduleRequested.RemoveAll(this);
-		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->CancelLightingEdit();
-        Panel->OnLightingRollbackRequested.RemoveAll(this);
-        Panel->OnLightingRequested.RemoveAll(this);
-		Panel->OnLightingResetRequested.RemoveAll(this);
-		Panel->OnMinigameRequested.RemoveAll(this);
-		Panel->OnCloseRequested.RemoveAll(this);
-		Panel->OnRevenueRankingRequested.RemoveAll(this);
-		Panel->RemoveFromParent();
-		Panel = nullptr;
+		// 플레이어가 교체되면 이전 플레이어에게 연결된 화면과 입력도 함께 정리한다.
+		ReleasePanel();
 		ClosePaidProgramPicker();
 		OwningController.Reset();
 	}
@@ -317,7 +288,6 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	Panel->OnLightingRequested.AddUObject(this, &ThisClass::HandlePanelLightingRequested);
 	Panel->OnLightingRollbackRequested.AddUObject(this, &ThisClass::HandlePanelLightingRollbackRequested);
 	Panel->OnLightingResetRequested.AddUObject(this, &ThisClass::HandlePanelLightingResetRequested);
-	Panel->OnMinigameRequested.AddUObject(this, &ThisClass::HandlePanelMinigameRequested);
 	Panel->OnCloseRequested.AddUObject(this, &ThisClass::HandlePanelCloseRequested);
 	Panel->OnRevenueRankingRequested.AddUObject(this, &ThisClass::HandlePanelRevenueRankingRequested);
 	// RootLayout and its stage HUDs use AddToViewport. AddToPlayerScreen belongs to UE's lower
@@ -328,24 +298,35 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	{
 		UE_LOG(LogFestaFiestaFacilityInfo, Error,
 			TEXT("시설 정보 패널을 Viewport 화면에 추가하지 못했습니다."));
-		Panel->OnFavoriteRequested.RemoveAll(this);
-		Panel->OnMoveRequested.RemoveAll(this);
-		Panel->OnRemoveRequested.RemoveAll(this);
-		Panel->OnProgramScheduleRequested.RemoveAll(this);
-		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->CancelLightingEdit();
-        Panel->OnLightingRollbackRequested.RemoveAll(this);
-        Panel->OnLightingRequested.RemoveAll(this);
-		Panel->OnLightingResetRequested.RemoveAll(this);
-		Panel->OnMinigameRequested.RemoveAll(this);
-		Panel->OnCloseRequested.RemoveAll(this);
-		Panel->OnRevenueRankingRequested.RemoveAll(this);
-		Panel = nullptr;
+		ReleasePanel();
 		return false;
 	}
 	Panel->SetPanelOpen(false);
 	OwningController = &InOwningController;
 	return true;
+}
+
+void UFF_FacilityInfoSubsystem::ReleasePanel()
+{
+	if (!Panel)
+	{
+		return;
+	}
+
+	Panel->OnFavoriteRequested.RemoveAll(this);
+	Panel->OnMoveRequested.RemoveAll(this);
+	Panel->OnRemoveRequested.RemoveAll(this);
+	Panel->OnProgramScheduleRequested.RemoveAll(this);
+	Panel->OnUpgradeRequested.RemoveAll(this);
+	// 취소 시 원래 조명으로 되돌리는 이벤트가 필요하므로 연결을 끊기 전에 취소한다.
+	Panel->CancelLightingEdit();
+	Panel->OnLightingRollbackRequested.RemoveAll(this);
+	Panel->OnLightingRequested.RemoveAll(this);
+	Panel->OnLightingResetRequested.RemoveAll(this);
+	Panel->OnCloseRequested.RemoveAll(this);
+	Panel->OnRevenueRankingRequested.RemoveAll(this);
+	Panel->RemoveFromParent();
+	Panel = nullptr;
 }
 
 bool UFF_FacilityInfoSubsystem::EnsurePaidProgramPicker(APlayerController& InOwningController)
@@ -1101,23 +1082,6 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		bEconomyAvailable ? Progression->GetTodayRevenue() : 0,
 		OutViewData);
 
-	const UFF_MinigameCatalogSubsystem* MinigameCatalog = GameInstance
-		? GameInstance->GetSubsystem<UFF_MinigameCatalogSubsystem>()
-		: nullptr;
-	const UFF_MinigameDefinition* MinigameDefinition = MinigameCatalog
-		? MinigameCatalog->FindDefinitionForFacility(Spec.FacilityDefinitionId)
-		: nullptr;
-	OutViewData.bHasMinigame = MinigameDefinition != nullptr;
-	OutViewData.bCanStartMinigame =
-		SelectionContext == EFF_FacilityInfoContext::Live &&
-		MinigameDefinition &&
-		ReadModel.State == EFFZSFacilityState::Active &&
-		!ReadModel.bNeedsRelocation;
-	OutViewData.MinigameActionText = MinigameDefinition
-		? FText::Format(
-			LOCTEXT("StartNamedMinigame", "{0} 시작"),
-			MinigameDefinition->DisplayName)
-		: FText::GetEmpty();
 	return true;
 }
 
@@ -1587,9 +1551,7 @@ void UFF_FacilityInfoSubsystem::HandlePanelLightingRollbackRequested(const FGuid
 
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPaidProgramPickerClassPath()
 {
-	return FSoftClassPath(TEXT(
-		"/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker."
-		"WBP_FF_FacilityPaidProgramPicker_C"));
+	return FSoftClassPath(FFBuildUIAssetPaths::FacilityPaidProgramPickerClass);
 }
 
 void UFF_FacilityInfoSubsystem::HandlePanelProgramScheduleRequested()
@@ -1757,18 +1719,6 @@ void UFF_FacilityInfoSubsystem::HandlePaidProgramPickerCloseRequested()
 	if (PaidProgramPicker)
 	{
 		SetPaidProgramPickerOpen(false);
-	}
-}
-
-void UFF_FacilityInfoSubsystem::HandlePanelMinigameRequested()
-{
-	if (bPauseMenuPresentationSuppressed)
-	{
-		return;
-	}
-	if (SelectionContext == EFF_FacilityInfoContext::Live && SelectedFacilityId.IsValid())
-	{
-		OnMinigameRequested.Broadcast(SelectedFacilityId);
 	}
 }
 

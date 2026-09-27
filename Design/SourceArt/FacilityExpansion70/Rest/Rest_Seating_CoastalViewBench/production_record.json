@@ -1,0 +1,55 @@
+{
+  "number": 33,
+  "category": "Rest",
+  "subtype": "Seating",
+  "name_ko": "해안 전망 벤치",
+  "slug": "CoastalViewBench",
+  "id": "Rest_Seating_CoastalViewBench",
+  "footprint_cm": [
+    300,
+    130
+  ],
+  "height_cm": 125,
+  "description_ko": "바다를 향하는 좁고 긴 휴식 시설.",
+  "emphasis_ko": "등받이 방향·팔걸이·목재 판재를 강조. 시설 전면과 실제 전망 방향의 관계를 제작 기록에 표시한다.",
+  "reference_image": "Design/Facitilies/33 해안 전망 벤치.png",
+  "exploded_reference_image": "Design/Facitilies/33 해안 전망 벤치 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Seating_Seating",
+  "followup_features": [
+    "NPC 착석 애니메이션과 실제 전망 배치는 별도 확인한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Seating_CoastalViewBench\\SM_FF_Rest_Seating_CoastalViewBench.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\33_Rest_Seating_CoastalViewBench.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Seating_CoastalViewBench\\iso.png",
+  "bounds_m": [
+    3.0,
+    0.6382978558540344,
+    1.1542552709579468
+  ],
+  "bounds_min_m": [
+    -1.5,
+    -0.3191489279270172,
+    0.0
+  ],
+  "bounds_max_m": [
+    1.5,
+    0.3191489279270172,
+    1.1542552709579468
+  ],
+  "triangles": 1296,
+  "material_names": [
+    "M_F70_Wood",
+    "M_F70_Teal"
+  ],
+  "collision_count": 2,
+  "editable_parts": 12,
+  "fbx_sha256": "ad1ede9c73132b417c08f3526f59520ca00fef848ac996f7f99217d044e9ab7c",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

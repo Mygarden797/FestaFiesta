@@ -1,5 +1,8 @@
+// FF_FFZSOrientedGeometry.cpp
+// 역할: 자유 각도로 회전한 사각형의 꼭짓점, 포함, 교차를 계산한다. 배치 판정과 표시가 함께 사용한다.
 #include "FF_FFZSOrientedGeometry.h"
 
+#include "FF_FFZSTypes.h"
 #include <cfloat>
 
 namespace

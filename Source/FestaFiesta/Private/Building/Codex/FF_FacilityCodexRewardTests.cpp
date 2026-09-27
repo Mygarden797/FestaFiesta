@@ -1,9 +1,14 @@
+// FF_FacilityCodexRewardTests.cpp
+// 역할: FacilityCodexReward 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Codex.Rewards.DiscoveryRequiresExplicitOneTimeClaim, FestaFiesta.Building.Codex.Rewards.ProfileReloadPreservesUnclaimedAndMigratesPaidHistory).
+
 #include "Building/Codex/FF_FacilityCodexProgressSubsystem.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/Codex/FF_FacilityCodexModel.h"
+#include "Building/Codex/FF_FacilityCodexSettings.h"
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
+#include "Building/Codex/FF_FacilityCodexTestObserver.h"
 #include "Building/FF_FacilityUpgradeTestPolicy.h"
 #include "Building/Synergy/FF_FacilitySynergySettings.h"
 #include "DataTables/FF_FacilityCostRow.h"
@@ -264,6 +269,9 @@ bool FFF_FacilityCodexRewardStartupWorldTest::RunTest(const FString& Parameters)
 	Row.PartnerFacilityId = Row.TargetFacilityId;
 	Row.DiscoveryRewardGold = 333;
 	Rules->AddRow(TEXT("CodexStartupPair"), Row);
+	FFF_FacilitySynergyRow RoadRecipe = Row;
+	RoadRecipe.PartnerFacilityId = TEXT("Road_Surface_CodexRecipeAutomation");
+	Rules->AddRow(TEXT("CodexAuthoredRoadPair"), RoadRecipe);
 	TGuardValue<TSoftObjectPtr<UDataTable>> TableSetting(
 		GetMutableDefault<UFF_FacilitySynergySettings>()->SynergyTable, TSoftObjectPtr<UDataTable>(Rules.Get()));
 	FTestWorldWrapper TestWorld;
@@ -341,6 +349,225 @@ bool FFF_FacilityCodexRewardStartupWorldTest::RunTest(const FString& Parameters)
 	TArray<FText> Errors;
 	TestTrue(TEXT("The installed layout can be restored"), Zones->RestoreWorldSnapshot(Snapshot, Errors));
 	TestEqual(TEXT("Snapshot restore cannot grant a second reward"), Economy->GetGold(), 1333);
+
+	TStrongObjectPtr<UFF_FacilityCodexTestObserver> Observer(NewObject<UFF_FacilityCodexTestObserver>());
+	Codex->OnCodexChanged.AddDynamic(Observer.Get(), &UFF_FacilityCodexTestObserver::HandleCodexChanged);
+	FFFZSFacilitySpec Road;
+	Road.FacilityDefinitionId = TEXT("Road_Surface_CodexUnrelatedAutomation");
+	Road.DisplayName = FText::FromString(TEXT("Codex road regression"));
+	Road.Category = EFFZSFacilityCategory::Road;
+	Road.FootprintSizeCells = FIntPoint(400, 400);
+	Road.ClearanceCells = 0;
+	Road.PlacementObstacleHeightCm = 8.f;
+	Road.QueueRules.MaxWaitingAgents = 0;
+	Road.QueueRules.ServiceCapacity = 0;
+	Road.InstallCostKey = CostKey;
+	TArray<FGuid> RoadIds;
+	for (const int32 X : {1000, 1500, 2000})
+	{
+		FFFZSGridPlacement Placement;
+		Placement.OriginCell = FIntPoint(X, 4000);
+		const FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommand(Road, ZoneId, Placement, Zones->GetWorldRevision());
+		const FFFZSCommandResult Result = Zones->ExecuteCommand(Command);
+		if (!TestTrue(*FString::Printf(TEXT("Unrelated surface installs: %s"), *Result.Message.ToString()), Result.bSucceeded)) { return false; }
+		RoadIds.Add(Command.FacilityInstanceId);
+	}
+	TestEqual(TEXT("Dragging unrelated roads never republishes the codex"), Observer->NotificationCount, 0);
+	TestEqual(TEXT("Unrelated roads preserve existing discoveries"), Codex->GetSummary().DiscoveredCount, 1);
+	FFFZSCommand MoveRoad;
+	MoveRoad.CommandId = FGuid::NewGuid();
+	MoveRoad.TransactionId = FGuid::NewGuid();
+	MoveRoad.Type = EFFZSCommandType::Move;
+	MoveRoad.FacilityInstanceId = RoadIds[2];
+	MoveRoad.ZoneId = ZoneId;
+	MoveRoad.Placement.OriginCell = FIntPoint(2000, 4500);
+	MoveRoad.ExpectedWorldRevision = Zones->GetWorldRevision();
+	TestTrue(TEXT("Unrelated road can move"), Zones->ExecuteCommand(MoveRoad).bSucceeded);
+	TestEqual(TEXT("Moving an unrelated road never republishes the codex"), Observer->NotificationCount, 0);
+
+	FFFZSCommand RemoveRoad;
+	RemoveRoad.CommandId = FGuid::NewGuid();
+	RemoveRoad.TransactionId = FGuid::NewGuid();
+	RemoveRoad.Type = EFFZSCommandType::Remove;
+	RemoveRoad.FacilityInstanceId = RoadIds[0];
+	RemoveRoad.ExpectedWorldRevision = Zones->GetWorldRevision();
+	TestTrue(TEXT("Unrelated road can be removed"), Zones->ExecuteCommand(RemoveRoad).bSucceeded);
+	TestEqual(TEXT("Removing an unrelated road never republishes the codex"), Observer->NotificationCount, 0);
+
+	const FFFZSWorldSnapshot RoadSnapshot = Zones->CaptureWorldSnapshot();
+	TestTrue(TEXT("Surface snapshot restores and reconciles the codex"), Zones->RestoreWorldSnapshot(RoadSnapshot, Errors));
+	const int32 NotificationsAfterRestore = Observer->NotificationCount;
+	TestTrue(TEXT("Snapshot restore publishes the reconciled entries"), NotificationsAfterRestore > 0);
+	RemoveRoad.CommandId = FGuid::NewGuid();
+	RemoveRoad.FacilityInstanceId = RoadIds[1];
+	RemoveRoad.ExpectedWorldRevision = Zones->GetWorldRevision();
+	TestTrue(TEXT("Restored unrelated road can be removed"), Zones->ExecuteCommand(RemoveRoad).bSucceeded);
+	TestEqual(TEXT("Restored unrelated IDs remain excluded from repeated refresh"), Observer->NotificationCount, NotificationsAfterRestore);
+
+	Road.FacilityDefinitionId = RoadRecipe.PartnerFacilityId;
+	FFFZSGridPlacement RecipePlacement;
+	RecipePlacement.OriginCell = FIntPoint(2500, 4000);
+	const FFFZSCommand RecipeCommand = UFFZSGridLibrary::MakeInstallCommand(Road, ZoneId, RecipePlacement, Zones->GetWorldRevision());
+	TestTrue(TEXT("A road explicitly authored into a recipe installs"), Zones->ExecuteCommand(RecipeCommand).bSucceeded);
+	TestTrue(TEXT("Authored road recipes still publish immediately"), Observer->NotificationCount > NotificationsAfterRestore);
+	TestTrue(TEXT("A road recipe discovery persists synchronously"), Progress->IsDiscovered(TEXT("CodexAuthoredRoadPair")));
+	RemoveRoad.CommandId = FGuid::NewGuid();
+	RemoveRoad.FacilityInstanceId = RecipeCommand.FacilityInstanceId;
+	RemoveRoad.ExpectedWorldRevision = Zones->GetWorldRevision();
+	TestTrue(TEXT("Recipe road can be removed in the same frame"), Zones->ExecuteCommand(RemoveRoad).bSucceeded);
+	TestTrue(TEXT("Same-frame removal cannot lose a transient recipe discovery"), Progress->IsDiscovered(TEXT("CodexAuthoredRoadPair")));
+	Codex->OnCodexChanged.RemoveDynamic(Observer.Get(), &UFF_FacilityCodexTestObserver::HandleCodexChanged);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityCodexCollectionSettingsTest,
+	"FestaFiesta.Building.Codex.Rewards.CollectionSettingsRejectDuplicateAndUnreachableStages",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFF_FacilityCodexCollectionSettingsTest::RunTest(const FString& Parameters)
+{
+	TStrongObjectPtr<UFF_FacilityCodexSettings> Settings(NewObject<UFF_FacilityCodexSettings>());
+	TestEqual(TEXT("The shipped 100-recipe catalog has four collection stages"), Settings->GetValidCollectionRewards(100).Num(), 4);
+	Settings->CollectionRewards.Reset();
+	const auto Add = [&](FName Id, int32 Count, int32 Gold)
+	{
+		FFF_FacilityCodexCollectionReward& Reward = Settings->CollectionRewards.AddDefaulted_GetRef();
+		Reward.MilestoneId = Id;
+		Reward.RequiredDiscoveries = Count;
+		Reward.RewardGold = Gold;
+	};
+	Add(TEXT("Later"), 4, 40);
+	Add(TEXT("First"), 2, 20);
+	Add(TEXT("First"), 3, 30);
+	Add(TEXT("RepeatedThreshold"), 2, 99);
+	Add(NAME_None, 1, 10);
+	Add(TEXT("Impossible"), 5, 50);
+	Add(TEXT("ZeroGold"), 1, 0);
+	Add(TEXT("NoDiscoveries"), 0, 10);
+	const TArray<FFF_FacilityCodexCollectionReward> Stages = Settings->GetValidCollectionRewards(4);
+	if (!TestEqual(TEXT("Only reachable stages with unique IDs and thresholds are published"), Stages.Num(), 2)) { return false; }
+	TestEqual(TEXT("Stages are sorted by required discoveries"), Stages[0].MilestoneId, FName(TEXT("First")));
+	TestEqual(TEXT("The first authored amount wins a duplicate"), Stages[0].RewardGold, 20);
+	TestEqual(TEXT("The last stage retains its authored amount"), Stages[1].RewardGold, 40);
+	TestTrue(TEXT("An empty collection publishes no unreachable stages"), Settings->GetValidCollectionRewards(0).IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityCodexCollectionRewardPersistenceTest,
+	"FestaFiesta.Building.Codex.Rewards.CollectionClaimSurvivesReloadAndWalletReentry",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFF_FacilityCodexCollectionRewardPersistenceTest::RunTest(const FString& Parameters)
+{
+	FFF_CodexRewardTests::FHarness H;
+	const TSet<FName> CurrentRecipes = {TEXT("One"), TEXT("Two"), TEXT("Three"), TEXT("Four")};
+	H.Progress->RecordDiscoveries({TEXT("One"), TEXT("RemovedRecipe"), TEXT("AnotherRemovedRecipe")});
+	TestFalse(TEXT("Collection claims wait for festival startup"),
+		H.Progress->ClaimCollectionReward(TEXT("First"), 1, 200, CurrentRecipes, H.Economy));
+	H.Economy->StartFestival(H.Definition);
+	TestFalse(TEXT("Old removed recipes do not count toward current collection progress"),
+		H.Progress->ClaimCollectionReward(TEXT("First"), 2, 200, CurrentRecipes, H.Economy));
+	TestFalse(TEXT("Failed collection claim remains available"), H.Progress->IsCollectionRewardClaimed(TEXT("First")));
+	H.Progress->RecordDiscoveries({TEXT("Two")});
+	TStrongObjectPtr<UFF_FacilityUpgradeTestPolicy> Observer(NewObject<UFF_FacilityUpgradeTestPolicy>(H.Game.Get()));
+	Observer->ObserveGoldChanged = [&]()
+	{
+		TestTrue(TEXT("Collection claim is spent before wallet listeners run"), H.Progress->IsCollectionRewardClaimed(TEXT("First")));
+		TestFalse(TEXT("Wallet listener cannot claim a collection stage recursively"),
+			H.Progress->ClaimCollectionReward(TEXT("First"), 2, 200, CurrentRecipes, H.Economy));
+	};
+	H.Economy->OnGoldChanged.AddDynamic(Observer.Get(), &UFF_FacilityUpgradeTestPolicy::HandleGoldChanged);
+	TestTrue(TEXT("Reached collection stage credits its authored Gold once"),
+		H.Progress->ClaimCollectionReward(TEXT("First"), 2, 200, CurrentRecipes, H.Economy));
+	TestEqual(TEXT("Collection emits one wallet notification"), Observer->GoldNotificationCount, 1);
+	H.Economy->OnGoldChanged.RemoveDynamic(Observer.Get(), &UFF_FacilityUpgradeTestPolicy::HandleGoldChanged);
+	TestEqual(TEXT("Collection reward uses the existing Gold wallet"), H.Economy->GetGold(), 1200);
+	TestEqual(TEXT("Collection rewards are not sales income"), H.Economy->GetTotalRevenue(), 0);
+	TestEqual(TEXT("Collection rewards are not demolition refunds"), H.Economy->GetDayLedger().GetTotalRefund(), 0);
+	TestTrue(TEXT("Individual discovery reward is still available independently"), H.Progress->ClaimDiscoveryReward(TEXT("One"), 100, H.Economy));
+	TestEqual(TEXT("Both reward types share one currency"), H.Economy->GetGold(), 1300);
+	GConfig->UnloadFile(GGameUserSettingsIni);
+	TStrongObjectPtr<UFF_FacilityCodexProgressSubsystem> Reloaded(NewObject<UFF_FacilityCodexProgressSubsystem>(H.Game.Get()));
+	Reloaded->Initialize(H.Collection);
+	TestTrue(TEXT("Reload retains collection claim independently of discovery claims"), Reloaded->IsCollectionRewardClaimed(TEXT("First")));
+	TestTrue(TEXT("Reload also retains the recipe reward"), Reloaded->IsDiscoveryRewardClaimed(TEXT("One")));
+	TestFalse(TEXT("Changing a claimed stage amount cannot repay it"),
+		Reloaded->ClaimCollectionReward(TEXT("First"), 1, 999, CurrentRecipes, H.Economy));
+	H.Economy->RestartFestival();
+	TestFalse(TEXT("Festival restart does not reset profile collection claims"),
+		Reloaded->ClaimCollectionReward(TEXT("First"), 2, 200, CurrentRecipes, H.Economy));
+	TestFalse(TEXT("A later stage remains locked until enough current recipes are discovered"),
+		Reloaded->ClaimCollectionReward(TEXT("Second"), 4, 500, CurrentRecipes, H.Economy));
+	Reloaded->RecordDiscoveries({TEXT("Three"), TEXT("Four")});
+	TestTrue(TEXT("Reaching the next stage makes it independently claimable"),
+		Reloaded->ClaimCollectionReward(TEXT("Second"), 4, 500, CurrentRecipes, H.Economy));
+	TestEqual(TEXT("Only the new collection reward is paid after restart"), H.Economy->GetGold(), 1500);
+	Reloaded->Deinitialize();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityCodexCollectionWorldApiTest,
+	"FestaFiesta.Building.Codex.Rewards.CollectionWorldApiUsesGlobalProgressAndAuthoredAmounts",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFF_FacilityCodexCollectionWorldApiTest::RunTest(const FString& Parameters)
+{
+	FFF_CodexRewardTests::FScopedProfile Profile;
+	TStrongObjectPtr<UDataTable> Rules(NewObject<UDataTable>());
+	Rules->RowStruct = FFF_FacilitySynergyRow::StaticStruct();
+	for (int32 Index = 1; Index <= 4; ++Index)
+	{
+		FFF_FacilitySynergyRow Row;
+		Row.TargetFacilityId = TEXT("CollectionTarget");
+		Row.PartnerFacilityId = FName(*FString::Printf(TEXT("CollectionPartner%d"), Index));
+		Rules->AddRow(FName(*FString::Printf(TEXT("CollectionRule%d"), Index)), Row);
+	}
+	TGuardValue<TSoftObjectPtr<UDataTable>> TableSetting(
+		GetMutableDefault<UFF_FacilitySynergySettings>()->SynergyTable, TSoftObjectPtr<UDataTable>(Rules.Get()));
+	FFF_FacilityCodexCollectionReward First;
+	First.MilestoneId = TEXT("First"); First.RequiredDiscoveries = 2; First.RewardGold = 240;
+	FFF_FacilityCodexCollectionReward Second;
+	Second.MilestoneId = TEXT("Second"); Second.RequiredDiscoveries = 4; Second.RewardGold = 480;
+	TGuardValue<TArray<FFF_FacilityCodexCollectionReward>> StageSettings(
+		GetMutableDefault<UFF_FacilityCodexSettings>()->CollectionRewards, {First, Second});
+	FTestWorldWrapper TestWorld;
+	if (!TestWorld.CreateTestWorld(EWorldType::Game)) { TestWorld.ForwardErrorMessages(this); return false; }
+	UWorld* World = TestWorld.GetTestWorld();
+	UGameInstance* Game = World->GetGameInstance();
+	UFF_FacilityCodexSubsystem* Codex = World->GetSubsystem<UFF_FacilityCodexSubsystem>();
+	UFF_FacilityCodexProgressSubsystem* Progress = Game->GetSubsystem<UFF_FacilityCodexProgressSubsystem>();
+	UFF_FestivalProgressionSubsystem* Economy = Game->GetSubsystem<UFF_FestivalProgressionSubsystem>();
+	if (!TestNotNull(TEXT("World codex exists"), Codex) || !TestNotNull(TEXT("Profile exists"), Progress)
+		|| !TestNotNull(TEXT("Existing Gold wallet exists"), Economy)) { return false; }
+	UFF_FestivalDefinition* Definition = NewObject<UFF_FestivalDefinition>(Game);
+	UDataTable* Costs = NewObject<UDataTable>(Game);
+	Costs->RowStruct = FFF_FacilityCostRow::StaticStruct();
+	Costs->AddRow(TEXT("Cost.Booth.FoodStall"), FFF_FacilityCostRow());
+	Definition->FacilityCostTable = Costs;
+	Definition->FestivalId = TEXT("CollectionWorldAutomation");
+	Definition->InitialGold = 1000;
+	Economy->StartFestival(Definition);
+	Progress->RecordDiscoveries({TEXT("CollectionRule1"), TEXT("CollectionRule2"), TEXT("RemovedRecipe")});
+	Codex->Refresh();
+	TArray<FFF_FacilityCodexCollectionMilestone> Milestones = Codex->GetCollectionMilestones();
+	if (!TestEqual(TEXT("World publishes configured collection stages"), Milestones.Num(), 2)) { return false; }
+	TestEqual(TEXT("Current table discoveries determine progress"), Milestones[0].DiscoveredCount, 2);
+	TestTrue(TEXT("First stage is reached before wallet startup completes"), Milestones[0].bReached);
+	TestFalse(TEXT("UI cannot claim during the startup reset boundary"), Milestones[0].bCanClaim);
+	TestFalse(TEXT("Startup claim is rejected without consuming it"), Codex->ClaimCollectionReward(TEXT("First")));
+	Codex->OnWorldBeginPlay(*World);
+	World->GetTimerManager().Tick(0.016f);
+	Milestones = Codex->GetCollectionMilestones();
+	TestTrue(TEXT("Startup completion exposes an available stage"), Milestones[0].bCanClaim);
+	FFF_FacilityCodexFilter Filter;
+	Filter.SearchText = TEXT("NoMatchingRecipe");
+	Codex->GetFilteredEntries(Filter);
+	TestEqual(TEXT("Screen filtering does not alter global collection progress"), Codex->GetCollectionMilestones()[0].DiscoveredCount, 2);
+	TestFalse(TEXT("Unknown stage IDs cannot request arbitrary currency"), Codex->ClaimCollectionReward(TEXT("NotAuthored")));
+	TestFalse(TEXT("Unreached authored stages remain locked"), Codex->ClaimCollectionReward(TEXT("Second")));
+	TestTrue(TEXT("World API claims the reached authored stage"), Codex->ClaimCollectionReward(TEXT("First")));
+	TestEqual(TEXT("World API selects reward amount from configuration"), Economy->GetGold(), 1240);
+	Milestones = Codex->GetCollectionMilestones();
+	TestTrue(TEXT("The UI immediately sees the stage as claimed"), Milestones[0].bClaimed);
+	TestFalse(TEXT("Claimed stage is no longer clickable"), Milestones[0].bCanClaim);
+	TestFalse(TEXT("Repeated world API calls cannot pay again"), Codex->ClaimCollectionReward(TEXT("First")));
 	return true;
 }
 

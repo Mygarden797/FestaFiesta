@@ -1,3 +1,6 @@
+# audit_helpers.py
+# 역할: Blender 시설 메시의 내보내기 및 형상 검증 함수를 제공한다.
+
 """Blender MCP festival-light export and executable geometry QA.
 
 Call export_asset(scene, sources, root, name, mats) in Blender. Geometry is in

@@ -1,3 +1,6 @@
+// FF_FacilityInfoTypes.h
+// 역할: 시설 정보 화면에 전달할 값과 비용·상태·수입의 표시 규칙을 정의한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
@@ -322,17 +325,6 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	/** One-line today/total summary for compact or legacy designer layouts. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
 	FText RevenueSummaryText;
-
-	/** True when a data-authored minigame is mapped to this installed facility type. */
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
-	bool bHasMinigame = false;
-
-	/** The button is visible for mapped facilities, but enabled only while the session may start. */
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
-	bool bCanStartMinigame = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
-	FText MinigameActionText;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	bool bFeedbackIsError = false;

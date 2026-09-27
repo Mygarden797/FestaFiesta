@@ -1,3 +1,6 @@
+// FF_BuildNoRoadPlacementTests.cpp
+// 역할: BuildNoRoadPlacement 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Placement.NoRoadRequiredByProjectDefault).
+
 // Product placement contract: roads and baked navigation are optional for
 // construction; authored zone, protected-area and occupancy rules still apply.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS

@@ -1,3 +1,6 @@
+// FF_BuildPlacementPointerPolicyTests.cpp
+// 역할: 다음 기능의 정상 동작과 오류 처리를 자동 검사한다: 실제 조작 UI를 향한 포인터 입력이 바닥 설치로 새지 않게 판정한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "FF_BuildPlacementPointerPolicy.h"

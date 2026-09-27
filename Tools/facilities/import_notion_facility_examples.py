@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# import_notion_facility_examples.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 제작 결과를 Unreal 에셋으로 가져오고 연결한다.
+
 """Import only missing Notion reference-art meshes and thumbnails.
 
 Run only from an unattended UnrealEditor-Cmd Python commandlet. Existing

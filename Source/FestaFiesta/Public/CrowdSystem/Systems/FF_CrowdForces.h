@@ -26,6 +26,9 @@ namespace FFF_CrowdWalls
 	void AppendOrientedRect(TArray<FFF_CrowdWallSegment>& OutWalls,
 	                        const FVector2f& CenterMeters, float YawRadians,
 	                        float HalfExtentXMeters, float HalfExtentYMeters);
+
+	bool IsSegmentClear(const TArray<FFF_CrowdWallSegment>& Walls,
+	                    const FVector2f& FromMeters, const FVector2f& ToMeters, float ClearanceMeters);
 }
 
 // 한 개체가 받는 힘(N)을 비접촉/접촉으로 나눠 담는다.

@@ -1,3 +1,5 @@
+// FF_FFZSSpatialHashTests.cpp
+// 역할: 공간 검색이 경계·거대 영역·잘못된 좌표에서도 후보를 놓치지 않는지 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
@@ -52,6 +54,8 @@ bool FFFZSSpatialHashMutationTest::RunTest(const FString& Parameters)
     const FBox2D OldBounds = SpatialBox(-100, -100, 100, 100);
     const FBox2D NewBounds = SpatialBox(10000, 10000, 10100, 10100);
     Index.InsertOrUpdate(Id, OldBounds);
+    TestTrue(TEXT("같은 위치를 다시 등록해도 성공한다"), Index.InsertOrUpdate(Id, OldBounds));
+    TestEqual(TEXT("같은 위치 재등록이 시설 수를 늘리지 않는다"), Index.Num(), 1);
     Index.InsertOrUpdate(Id, NewBounds);
     TestEqual(TEXT("Moving replaces the original record"), Index.Num(), 1);
     TArray<FGuid> Found;
