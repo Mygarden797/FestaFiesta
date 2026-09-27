@@ -38,6 +38,10 @@ namespace FFF_FinaleDefaults
 
 			// 레벨에 놓인 시점을 전부 돈다. 이게 등급 차이의 핵심이다.
 			Spec.TourViewpointLimit = 0;
+
+			// 최고 등급만 3막이다. 축제장을 한 바퀴 돌고 돌아와 일제 발사로 끝낸다.
+			Spec.bSiteTour = true;
+			Spec.FinalSalvoShells = 36;
 			Spec.Volleys = FFF_FinaleDefaults::MakeVolleys(Grade);
 			Spec.BurstHeightMin = 14000.f;
 			Spec.BurstHeightMax = 34000.f;
