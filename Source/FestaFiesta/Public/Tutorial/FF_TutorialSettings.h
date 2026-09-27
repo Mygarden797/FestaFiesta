@@ -11,6 +11,7 @@
 
 class UDataTable;
 class UFF_DialogueScriptData;
+class UTexture2D;
 
 // 튜토리얼의 프로젝트 기본값.
 // Project Settings > Game > FestaFiesta Tutorial 에서 지정한다.
@@ -50,6 +51,19 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
 		meta = (DisplayName = "Tutorial Festival Id"))
 	FName TutorialFestivalId = TEXT("Tutorial");
+
+	/* 화자 이름 → 초상화. 대사의 Speaker 칸과 글자가 똑같아야 한다(예: 삼촌).
+
+	   대사 줄마다 그림을 적지 않고 화자로 찾는 이유: 한 사람이 수십 줄을 말하는데
+	   줄마다 같은 경로를 적으면 오타 하나로 그 줄만 그림이 빠진다. 화자가 바뀔 때만
+	   그림이 바뀌면 되는 지금은 이름 하나로 묶는 편이 CSV 를 안 건드려서 낫다.
+	   표정이 여러 개 필요해지면 그때 줄 단위 지정 칸을 더한다.
+
+	   목록에 없는 화자는 초상화를 숨긴다. 내레이션(화자 없음)도 숨긴다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Portrait",
+		meta = (DisplayName = "Speaker Portraits"))
+	TMap<FString, TSoftObjectPtr<UTexture2D>> SpeakerPortraits;
 
 	// 어느 레벨에서든 시작할 대사. 보통 비워둔다.
 	//
