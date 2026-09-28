@@ -39,16 +39,15 @@ public:
 
 	// 일일 목표 방문객 수. 달성하면 DailyGoalBonusGold 를 받는다. [밸런스]
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival", meta = (ClampMin = "0"))
-	int32 DailyVisitorGoal = 500;
+	int32 DailyVisitorGoal = 900;
 
 	/**
-	 * 홍보 전 하루 방문객. 여기에 홍보 배수를 곱한 값이 `GetExpectedVisitors()` 다.
-	 *
-	 * 🔴 지금은 `AFF_SpawnActor::UnitCount` 와 같은 값을 저작해야 한다.
-	 * crowd 가 `GetExpectedVisitors()` 를 읽게 되면 이 값이 출처가 된다.
+	 * 하루 방문객(누적)의 기준. 홍보·입장료·화제성 배수를 곱한 값이 `GetExpectedVisitors()` 이고,
+	 * Crowd 는 그 값으로 그날 도착 인원을 정한다. `AFF_SpawnActor::UnitCount` 는 경제가 없을 때의 폴백이다.
+	 * Agent 풀은 누적이 아니라 동시 인원 상한이다. Day1 실측으로 누적 776명일 때 동시 607명, 1493명일 때 735명이었다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival", meta = (ClampMin = "0"))
-	int32 BaseDailyVisitors = 500;
+	int32 BaseDailyVisitors = 1000;
 
 	// Setup 완료 및 운영 진입에 필요한 시설. 기본은 SunsetMainStage 1개. 빈 목록이면 조건 없음.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Setup", meta = (TitleProperty = "FacilityDefinition"))
