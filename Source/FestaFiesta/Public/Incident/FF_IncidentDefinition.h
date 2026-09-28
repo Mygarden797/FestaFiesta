@@ -6,6 +6,7 @@
 #include "FF_IncidentTypes.h"
 #include "GameplayTagContainer.h"
 #include "Engine/DataAsset.h"
+#include "Incident/FF_IncidentOption.h"
 #include "FF_IncidentDefinition.generated.h"
 
 /**
@@ -39,5 +40,14 @@ public:
 	//심화 조건
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Identity")
 	FGameplayTag EscalateTo;
-	
+
+	//클릭 시 선택지. 비어 있으면 확인만 하는 사건이다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Instanced, Category = "Incident|Options")
+	TArray<TObjectPtr<UFF_IncidentOption>> Options;
+
+	const UFF_IncidentOption* GetOption(int32 OptionIndex) const
+	{
+		return Options.IsValidIndex(OptionIndex) ? Options[OptionIndex].Get() : nullptr;
+	}
+
 };

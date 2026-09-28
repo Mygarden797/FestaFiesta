@@ -66,6 +66,22 @@ void UFF_IncidentSubsystem::WithdrawIncident(FName DedupeKey)
 	
 }
 
+bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex)
+{
+	if (!FindSlot(Handle))
+	{
+		FF_INCIDENT_LOG("ResolveIncident: handle %d/%d is not active", Handle.Index, Handle.Serial);
+		return false;
+	}
+
+	float Now = 0.f;
+	TryGetNowMinutes(Now);
+
+	IncidentSlots[Handle.Index].ChosenOptionIndex = OptionIndex;
+	CloseSlot(Handle.Index, EFF_IncidentState::Resolved, Now);
+	return true;
+}
+
 bool UFF_IncidentSubsystem::IsHandleValid(FFF_IncidentHandle Handle) const
 {
 	
@@ -345,8 +361,6 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 	Slot.MinutesUntilLapse = IncDef->MinuteUntileLapse;
 	Slot.OccurredAtMinutes = Now;
 	Slot.LastSeenMinutes = Now;
-	
-	
 	
 	
 

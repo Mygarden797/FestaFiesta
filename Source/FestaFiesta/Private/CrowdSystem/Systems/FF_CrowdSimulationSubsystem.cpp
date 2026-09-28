@@ -4775,22 +4775,39 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 		? (DistToSlotSq > FMath::Square(ReleaseRadius))
 		: (DistToSlotSq > FMath::Square(CatchUpRadius));
 	
-	if (Unit.MissingCount > MissingThreshholdSteps)
+	const bool bPartyLeaving = PartyDecisionStates.IsValidIndex(LeaderIndex)
+		&& (PartyDecisionStates[LeaderIndex].bIsLeaving
+			|| PartyDecisionStates[LeaderIndex].AudiencePhase == EFF_PartyAudiencePhase::Exiting);
+
+	if (bPartyLeaving)
 	{
-		
+		if (Unit.bMissing)
+		{
+			QueueMissingEvent(AgentIndex, Unit, EFF_CrowdMissingChange::Returned);
+		}
+
+		Unit.bMissing = false;
+		Unit.MissingCount = 0;
+	}
+	else if (Unit.MissingCount > MissingThreshholdSteps)
+	{
+
 		if (!Unit.bMissing )
 		{
 			QueueMissingEvent(AgentIndex,Unit,EFF_CrowdMissingChange::Started);
 		}
-		
+
 		Unit.bMissing = true;
-	
+
 	}
 
 	if (Unit.bCatchingUpToLeader)
 	{
 		Unit.Speed = Unit.MaxSpeed;
-		Unit.MissingCount++;
+		if (!bPartyLeaving)
+		{
+			Unit.MissingCount++;
+		}
 
 		if (bLeaderStopped)
 		{
