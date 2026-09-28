@@ -38,18 +38,66 @@ void AFF_FinaleViewpoint::BeginPlay()
 		SetActorRotation(ResolveLookRotation());
 	}
 
-	SetActorTickEnabled(bTrackTargetEveryFrame);
+	RefreshTickEnabled();
 }
 
 void AFF_FinaleViewpoint::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (!bTrackTargetEveryFrame || !LookTarget.IsValid())
+	if (bDrifting)
 	{
-		return;
+		DriftElapsed += DeltaSeconds;
+		const float Alpha = DriftDuration > 0.f ? FMath::Clamp(DriftElapsed / DriftDuration, 0.f, 1.f) : 1.f;
+
+		// 시작과 끝을 부드럽게 한다. 등속으로 움직이면 컷이 바뀌는 순간 덜컥 멈춘다.
+		const float Eased = FMath::InterpEaseInOut(0.f, 1.f, Alpha, 2.f);
+		SetActorLocation(DriftHome + DriftDelta * Eased);
+
+		if (Alpha >= 1.f)
+		{
+			bDrifting = false;
+			RefreshTickEnabled();
+		}
 	}
-	SetActorRotation(ResolveLookRotation());
+
+	if (bTrackTargetEveryFrame && LookTarget.IsValid())
+	{
+		SetActorRotation(ResolveLookRotation());
+	}
+}
+
+void AFF_FinaleViewpoint::BeginTourDrift(const float Seconds)
+{
+	if (!bHasDriftHome)
+	{
+		DriftHome = GetActorLocation();
+		bHasDriftHome = true;
+	}
+	else
+	{
+		SetActorLocation(DriftHome);
+	}
+
+	// 제자리에서 다시 겨눈다. 대상을 추적하는 자리라면 옮긴 위치 기준으로 방향이 바뀐다.
+	if (LookTarget.IsValid())
+	{
+		SetActorRotation(ResolveLookRotation());
+	}
+
+	DriftElapsed = 0.f;
+	DriftDuration = FMath::Max(0.f, Seconds);
+	bDrifting = !TourDriftOffset.IsNearlyZero() && DriftDuration > 0.f;
+
+	// 방향은 여기서 한 번만 정한다. 대상을 매 프레임 겨누는 자리라도 이동 경로는 곧게 간다.
+	DriftDelta = bDrifting ? GetActorRotation().RotateVector(TourDriftOffset) : FVector::ZeroVector;
+
+	RefreshTickEnabled();
+}
+
+void AFF_FinaleViewpoint::RefreshTickEnabled()
+{
+	SetActorTickEnabled(bDrifting || bTrackTargetEveryFrame);
 }
 
 void AFF_FinaleViewpoint::SetLookTarget(AActor* NewTarget)
@@ -122,7 +170,9 @@ AFF_FinaleViewpoint* AFF_FinaleViewpoint::FindBest(const UWorld* World)
 	for (TActorIterator<AFF_FinaleViewpoint> It(const_cast<UWorld*>(World)); It; ++It)
 	{
 		AFF_FinaleViewpoint* Candidate = *It;
-		if (!IsValid(Candidate))
+
+		// 축제장 순회 자리는 땅을 본다. 불꽃을 보여줄 한 자리로는 쓰지 않는다.
+		if (!IsValid(Candidate) || Candidate->TourAct == EFF_FinaleTourAct::SiteTour)
 		{
 			continue;
 		}

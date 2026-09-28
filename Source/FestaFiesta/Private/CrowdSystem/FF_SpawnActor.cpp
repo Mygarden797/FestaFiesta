@@ -30,6 +30,16 @@ void AFF_SpawnActor::BeginPlay()
 
 	// 서브시스템의 OnWorldBeginPlay는 이 BeginPlay보다 먼저 끝났지만(UWorld::BeginPlay 순서)
 	// 거기서는 풀을 만들지 않는다. 어떤 Actor 클래스를 쓸지 아는 건 이쪽이므로 초기화도 여기서 건다.
+#if !UE_BUILD_SHIPPING
+	// 측정용. 맵에 놓인 인스턴스 값을 건드리지 않고 두 풀을 같은 크기로 바꾼다. 예) -FFCrowdPool=1100
+	int32 PoolOverride = 0;
+	if (FParse::Value(FCommandLine::Get(), TEXT("FFCrowdPool="), PoolOverride) && PoolOverride > 0)
+	{
+		ActorPoolSize = PoolOverride;
+		AgentPoolSize = PoolOverride;
+	}
+#endif
+
 	 FVector Origin = GetActorLocation();
 	CrowdSim->InitializeSimulation(Origin, ActorPoolSize, AgentPoolSize, CrowdActorClass);
 

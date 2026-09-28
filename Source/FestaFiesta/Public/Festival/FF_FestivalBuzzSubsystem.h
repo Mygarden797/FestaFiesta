@@ -71,7 +71,8 @@ public:
 	virtual FName GetSaveKey() const override { return TEXT("FestivalBuzz"); }
 
 private:
-	void SetBuzz(float NewBuzz, FName Reason);
+	// bAlwaysBroadcast: 값이 그대로여도 알린다. 오늘 아침 기준만 바뀐 경우(하루 경계·복원)에 쓴다.
+	void SetBuzz(float NewBuzz, FName Reason, bool bAlwaysBroadcast = false);
 
 	float Buzz = 50.f;
 	float BuzzAtDayStart = 50.f;

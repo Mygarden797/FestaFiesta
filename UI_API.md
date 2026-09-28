@@ -1727,7 +1727,7 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 빗나감·놓친
 | **뒷정리 등급 효과 계수** | 김시리 | Day 마감 시트. 가격 3개만 있음(`FF_FestivalDefinition.h:110` TODO) — 지금은 `효과 계수 미확정` 배지 |
 | **최종 점수 산식·등급 가중치** | 김시리 | 최종 결산 — 지금은 `가중치 잠정` 문구 |
 | **저장 슬롯 목록 + 저장·불러오기 Command** | 김시리 | ESC 수동 저장, 플레이 허브 |
-| ~~**SNS 반응 Read Model** + `MessageTemplateId` → 현지화 문장 매핑~~ | 김시리 (+ 백종태 UI 연결) | 🟡 **값은 준비 완료, UI 연결만 남음(2026-09-16).** `UFF_CrowdInsightsSubsystem`이 3~10초마다 화제·문장을 결정론적으로 골라 글을 만듭니다. `UFF_FestivalViewModelSubsystem::GetRecentSnsPosts()`(`TArray<FFF_LiveSocialPost>`, 최신이 `[0]`)와 `OnSnsPostAdded`(`FFF_LiveSocialPost`)가 이미 있습니다 — Gold·SimSatisfaction과 같은 Bind+Sync 패턴이라 `FF_LivePanelSNS`의 `Debug_SetPosts` 자리를 이걸로 바꾸시면 됩니다. `SentimentScore`는 화제가 그 순간 얼마나 두드러졌는지(0~100)를 그대로 부호만 붙여 보냅니다. 시설 표기(`{시설}` 문장 12개)는 `FFFZSFacilityReadModel`에 `DisplayName`이 아직 안 실려서 당분간 후보에서 뺐습니다 — 필요하시면 한광훈 님께 스레딩 요청 부탁드립니다 |
+| ~~**SNS 반응 Read Model** + `MessageTemplateId` → 현지화 문장 매핑~~ | 김시리 (+ 백종태 UI 연결) | 🟡 **값은 준비 완료, UI 연결만 남음(2026-09-16).** `UFF_CrowdInsightsSubsystem`이 3~10초마다 화제·문장을 결정론적으로 골라 글을 만듭니다. `UFF_FestivalViewModelSubsystem::GetRecentSnsPosts()`(`TArray<FFF_LiveSocialPost>`, 최신이 `[0]`)와 `OnSnsPostAdded`(`FFF_LiveSocialPost`)가 이미 있습니다 — Gold·SimSatisfaction과 같은 Bind+Sync 패턴이라 `FF_LivePanelSNS`의 `Debug_SetPosts` 자리를 이걸로 바꾸시면 됩니다. `SentimentScore`는 화제가 그 순간 얼마나 두드러졌는지(0~100)를 그대로 부호만 붙여 보냅니다. 시설 표기(`{시설}` 문장)는 가리킬 시설이 분명한 화제(1·7·10·14)에서 실제 시설 이름으로 치환되어 나옵니다. 나머지 화제의 `{시설}` 문장은 후보에서 빠집니다 |
 | **준비 단계 관객 수** | 이정원 | 하단 바 `관객` 칸. 준비 단계에 관객이 없는 것은 정상이고, **값이 없으면 칸을 숨깁니다** — `0` 을 띄우면 틀린 사실이 됩니다 |
 
 PrepHUD의 예상 방문객 범위와 관객 수는 아직 `Debug_SetPlaceholders()`로만 채웁니다.
@@ -2074,6 +2074,32 @@ SNS 입장료 글(화제 15·16)은 **기존 SNS 피드에 그대로 섞여 나�
 `OnBuzzChanged` 는 SNS 글이 올라올 때마다(수 초 간격) 나갑니다. 숫자를 매번 애니메이션하면 산만하니
 게이지는 보간해서 따라가게 하시는 걸 권합니다.
 
+#### ✅ ViewModel 경로 — 위젯은 이쪽을 쓰세요 (2026-09-28)
+
+위 두 표의 API 를 **`UFF_FestivalViewModelSubsystem` 에 전부 중계해 두었습니다.** 다른 값과 같은 원칙입니다 —
+현재값 getter + 변경 델리게이트 쌍, 명령은 `Request*`, 성공해도 낙관적 갱신 없이 결과 이벤트로 다시 그립니다.
+
+| 화면 | ViewModel API |
+|---|---|
+| 입장료 슬라이더 | `GetAdmissionFeeGold()` + `OnAdmissionFeeChanged` · `GetAdmissionFeeRange(Min, Max, Reference)` · `CanSetAdmissionFeeNow()`(Live 중 false — 슬라이더 비활성) · **`RequestSetAdmissionFee(int32)` → `EFF_AdmissionFeeResult`** |
+| 예보·미리보기 | `GetVisitorForecast()` · `PreviewVisitorForecast(EFF_PromotionChoice, int32 Fee)`(상태 안 바뀜) · `GetExpectedVisitors()` + `OnExpectedVisitorsChanged` |
+| 화제성 게이지 | `GetBuzz()` · `GetBuzzAtDayStart()` · `GetBuzzChangeToday()`("오늘 +N" 그대로) + `OnBuzzChanged(NewBuzz, PreviousBuzz)`. 하루가 바뀌어 아침 기준만 바뀌어도 옵니다 |
+| 일일 목표 진행도 | `GetAdmittedVisitorsToday()` + `OnAdmittedVisitorsTodayChanged` · `GetDailyVisitorGoal()` · `GetDailyGoalBonusGold()` · `IsDailyGoalBonusPaid()` · `GetTotalAdmittedVisitors()`(축제 누적). `Debug_SetVisitorCount` 자리를 이걸로 바꾸시면 됩니다 |
+| 축제 평가 화면 | `GetFestivalEvaluation()` · `GetDailySatisfactionHistory()` |
+| 스태프 승급 | `GetStaffRoster()` · `CanPromoteStaff(StaffId)`(행별 버튼 활성) · `RequestPromoteStaff(StaffId)` + `OnStaffRosterChanged` |
+
+**표시 문자열** — `UFF_EconomyDisplayTextLibrary` 에 추가했습니다. enum `DisplayName` 을 읽지 마세요(패키징에서 영문이 뜹니다).
+
+| 함수 | 용도 |
+|---|---|
+| `GetAdmissionFeeResultText(EFF_AdmissionFeeResult)` | 입장료 변경 실패 문구 |
+| `GetPromotionGradeText(EFF_PromotionGrade)` | 홍보 등급 이름 |
+| `GetFestivalEvaluationGradeText(EFF_FestivalEvaluationGrade)` | 평가 등급 S~D (피날레 등급 문자열과 따로) |
+| `GetFestivalEvaluationAxisText(EFF_FestivalEvaluationAxis)` | 평가 항목 이름(만족도·방문객·재무·화제성) |
+
+**최종 결산 화면 자리** — 축제가 끝나면 `UFF_UIFlowSubsystem` 이 `Project Settings > FestaFiesta UI Flow > Final Report Screen Class`
+를 띄웁니다. 지금 `WBP_FF_FlowStub` 이 들어 있으니, 평가 화면 위젯을 만드시면 그 칸만 바꿔 주세요.
+
 #### 구조체
 
 `FFF_VisitorForecast` (`Economy/FF_FestivalEconomyTypes.h`)
@@ -2237,6 +2263,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 | 날짜         | 작성자 | 내용                                                                                             |
 | ---------- | --- | ---------------------------------------------------------------------------------------------- |
+| 2026-09-28 | 김시리 | 입장료·예보·화제성·일일 목표·축제 평가·스태프 승급을 **ViewModel 에 전부 중계**("✅ ViewModel 경로" 절). 입장료 변경 명령 `RequestSetAdmissionFee` 신설, 표시 문자열 4종 추가. SNS `{시설}` 문장은 화제 1·7·10·14 에서 실제 시설 이름으로 나옵니다(아래 9/16 기록의 전부 제외 서술은 지난 것) |
 | 2026-09-23 | 김시리 | 홍보 기획 결정 반영(4등급·홍보 없음 ×0.85). 매일 입장료 설정·예보 미리보기·화제성(Buzz)·축제 평가·일일 목표 진행도 API 와 필요한 화면 5가지를 "🆕 홍보 4등급 · 입장료 · 화제성 · 축제 평가" 절에 정리 |
 | 2026-09-02 | Codex | 홍보 구매·예상 방문객 원본과 UI/스폰 미연동 경계를 반영. 가용 스태프·프로그램 패널·표시 문자열·Crowd 테스트 상태 정정. 예약자 전용 및 실제 참여 인원 미노출, 재시작 홍보 캐시 주의사항 추가 |
 | 2026-08-06 | 백종태 | 문서 신설. 현재 리포에서 확인한 API를 초기 채움                                                                  |

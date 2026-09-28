@@ -78,6 +78,27 @@ enum class EFF_FinaleShapePlane : uint8
 	Vertical UMETA(DisplayName = "수직면")
 };
 
+/* 최고 등급 연출의 막. 시점마다 어느 막에 쓰일지 정한다.
+
+   불꽃만 90초 보여주면 중간부터 지루하다. 그래서 불꽃을 보다가 사흘 동안 지은
+   축제장을 한 바퀴 돌고, 다시 하늘로 돌아와 마무리를 본다.
+
+   영상으로 미리 만들어 끼우지 않는 이유는 플레이어가 놓은 시설과 관객이 화면에
+   나와야 하기 때문이다. 미리 만든 영상에는 그 판의 축제장이 없다.
+*/
+UENUM(BlueprintType)
+enum class EFF_FinaleTourAct : uint8
+{
+	// 하늘을 보는 자리. 기본값이라 예전에 놓은 시점은 전부 여기에 든다.
+	Fireworks    UMETA(DisplayName = "불꽃 관람"),
+
+	// 축제장을 보는 자리. 이 막 동안은 발사를 멈추고 엔딩곡을 튼다.
+	SiteTour     UMETA(DisplayName = "축제장 순회"),
+
+	// 마무리를 보는 자리. 하나도 없으면 첫 불꽃 관람 자리로 돌아온다.
+	GrandFinale  UMETA(DisplayName = "마무리")
+};
+
 /* 한 차례의 자리를 정할 때 필요한 바깥 사정.
 
    패턴이 월드를 직접 뒤지지 않게 값으로 받는다. 자리 계산을 순수하게 두면
@@ -234,6 +255,40 @@ struct FFF_FinaleGradeSpec
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0"))
 	int32 TourViewpointLimit = 1;
 
+	/* 불꽃 관람 → 축제장 순회 → 마무리 3막으로 진행할지.
+
+	   레벨에 불꽃 관람 시점과 축제장 순회 시점이 하나 이상씩 있어야 막이 선다.
+	   하나라도 없으면 예전처럼 하늘 시점만 돈다. 3막일 때는 TourViewpointLimit 를 보지 않는다.
+
+	   최고 등급에만 켠다. 순회 동안 발사를 멈추므로 발수가 적은 등급에서 켜면
+	   하늘이 비어 보인다. 기본값을 false 로 둔 이유도 같다. 데이터 애셋은 기본값과
+	   다른 값만 저장하므로, 기본값이 true 면 이미 만든 애셋의 모든 등급이 켜진다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막")
+	bool bSiteTour = false;
+
+	// 마무리 막 몫으로 남겨둘 발수 비율(0~1).
+	// 1막에서 다 써버리면 돌아와서 볼 게 없다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bSiteTour"))
+	float GrandFinaleShare = 0.5f;
+
+	// 마무리 막의 발사 간격 배수. 0.5 면 두 배 빠르게 쏜다.
+	// 끝으로 갈수록 몰아쳐야 끝난다는 느낌이 난다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막",
+		meta = (ClampMin = "0.1", ClampMax = "1.0", EditCondition = "bSiteTour"))
+	float GrandFinaleIntervalScale = 0.5f;
+
+	/* 마지막에 모든 발사대에서 한꺼번에 올릴 발수. 0 이면 일제 발사 없이 끝난다.
+
+	   남은 발수가 이 값 이하로 내려오면 나머지를 한 번에 쏜다. 마지막이 한 발씩
+	   잦아들면 플레이어는 끝났는지 몰라 계속 기다린다.
+	   마무리 몫보다 크게 잡으면 마무리 막에 들어서자마자 전부 터진다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막",
+		meta = (ClampMin = "0", EditCondition = "bSiteTour"))
+	int32 FinalSalvoShells = 0;
+
 	/* 이 등급에서 쓸 발사 패턴.
 
 	   비어 있으면 단발만 쏜다. 여러 개 넣으면 차례마다 무작위로 고른다.
@@ -364,6 +419,18 @@ struct FFF_FinaleGradeSpec
 	bool IsPlayable() const
 	{
 		return BurstCount > 0 && DurationSeconds > 0.f;
+	}
+
+	// 3막일 때 마무리 막 몫으로 남겨둘 발수. 3막이 아니면 0 이다.
+	int32 GetGrandFinaleReserve() const
+	{
+		if (!bSiteTour || BurstCount <= 0)
+		{
+			return 0;
+		}
+
+		const float Share = FMath::Clamp(GrandFinaleShare, 0.f, 1.f);
+		return FMath::Clamp(FMath::CeilToInt(static_cast<float>(BurstCount) * Share), 0, BurstCount);
 	}
 };
 

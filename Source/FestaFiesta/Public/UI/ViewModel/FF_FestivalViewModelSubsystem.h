@@ -6,6 +6,8 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
+#include "Economy/Rules/FF_FestivalEvaluationRules.h"
+#include "Economy/Rules/FF_StaffPool.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "NPC/Party/FF_NeedState.h"
 #include "NPC/Insights/FF_SnsTypes.h"
@@ -18,6 +20,7 @@ class UFF_FestivalProgressionSubsystem;
 class UFF_StageEconomyBridgeSubsystem;
 class UFF_SatisfactionMetricsSubsystem;
 class UFF_CrowdInsightsSubsystem;
+class UFF_FestivalBuzzSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIntMetricChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_FestivalStage, NewStage, int32, NewDay);
@@ -28,6 +31,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsSocialPostChanged, FFF_Live
 
 // 편성 목록이 바뀌었다. 원본과 같이 인자를 싣지 않는다 — 무엇이 바뀌었는지는 다시 읽는다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
+
+// 화제성(0~100)이 바뀌었다. 오늘 아침 기준만 바뀌어도 온다 — 그때는 두 값이 같다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnBuzzViewChanged, float, NewBuzz, float, PreviousBuzz);
+
+// 스태프 명단이 바뀌었다(고용·승급). 무엇이 바뀌었는지는 GetStaffRoster 로 다시 읽는다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnStaffRosterViewChanged);
 
 /**
  * 홍보 등급.
@@ -264,8 +273,8 @@ struct FESTAFIESTA_API FFF_PrepFacilityOption
  * 대략 `Gold ≒ 초기자금 + TotalRevenue - 누적지출`이지만, **UI가 이 식을 계산하지 않는다.**
  * 셋 다 소유자에게서 그대로 받는다. 근거: docs/design/game-overview.md 5절
  *
- * Buzz는 여기 없다. 기획서에서 Utility AI의 점수 항이며 dev-schedule 기준 9월 투입 대상이다.
- * 좋고 나쁨 구간은 아직 미정이라 UI에서 색을 칠하지 않는다. 상세는 리포 루트 UI_API.md 참고.
+ * Buzz(화제성)는 `UFF_FestivalBuzzSubsystem` 을 중계한다 — `GetBuzz()` · `OnBuzzChanged`.
+ * 0~100 이고 50 이 중립이다. 상세는 리포 루트 UI_API.md 참고.
  *
  * === 갱신 주기 (2026-08-06 결정) ===
  * 지표는 **일정 틱마다** 바뀐다. 소스가 매 틱 흔들려도 위젯을 매 틱 갱신하면 안 되므로
@@ -432,6 +441,28 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	int32 GetMaxHiredStaffCount() const;
 
+	/** 개인별 명단(기본 팀 + 고용). 축제 전이면 빈 배열. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	TArray<FFF_StaffMember> GetStaffRoster() const;
+
+	/**
+	 * 이 사람을 지금 승급시킬 수 있는지. 이미 Lv3 · 고용 당일 · 오늘 이미 승급했으면 false.
+	 * 행마다 승급 버튼 활성 판정에 쓴다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	bool CanPromoteStaff(int32 StaffId) const;
+
+	/**
+	 * 한 사람을 한 단계 승급해 달라고 **요청한다.** 거부되면 아무것도 바뀌지 않는다.
+	 * 화면은 `OnStaffRosterChanged` 결과 이벤트로만 갱신된다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	bool RequestPromoteStaff(int32 StaffId);
+
+	/** 명단이 바뀔 때(고용·승급). 승급은 인원수가 안 바뀌어 `OnTotalStaffCountChanged` 로는 안 온다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Staff")
+	FFF_OnStaffRosterViewChanged OnStaffRosterChanged;
+
 	// --- 환경: 날씨 (2026-08-26 추가 — U5 점검 패널) ---
 	//
 	// 🔴 이 API 는 원래부터 있었다. `UI_API.md` 의 `필요한데 아직 없는 것` 표에 `날씨 없음` 으로
@@ -464,9 +495,100 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
 	int32 GetDailyGoalBonusGold() const;
 
-	/** 1인당 입장료. 고정값이라 화면에 슬라이더를 두지 않는다. */
+	/**
+	 * 오늘 실제로 입장한 인원(누적). 일일 목표 진행도의 분자다. 축제 전이면 `INDEX_NONE`.
+	 * 동시 인원(`GetConcurrentVisitorCount`)과 다른 값이다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetAdmittedVisitorsToday() const;
+
+	/** 축제 시작부터 지금까지 입장한 인원. 축제 전이면 `INDEX_NONE`. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetTotalAdmittedVisitors() const;
+
+	/** 오늘 목표 보너스를 이미 받았는지. `OnAdmittedVisitorsTodayChanged` 를 받은 뒤 다시 읽는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	bool IsDailyGoalBonusPaid() const;
+
+	/** 오늘 입장 인원이 바뀔 때. 새 값을 싣는다. 하루가 바뀌어 0 으로 돌아갈 때도 온다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
+	FFF_OnIntMetricChanged OnAdmittedVisitorsTodayChanged;
+
+	// --- 입장료 (매일 아침 플레이어가 정한다. Live 중에는 잠긴다) ---
+
+	/** 오늘 입장료(Gold). 축제 전이면 `INDEX_NONE`. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
 	int32 GetAdmissionFeeGold() const;
+
+	/**
+	 * 슬라이더 범위와 기준값(방문객 배수 1.0 지점). 축제 전이면 셋 다 `INDEX_NONE`.
+	 * 숫자를 화면에 복제하지 않는다 — 밸런싱으로 바뀐다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	void GetAdmissionFeeRange(int32& OutMinGold, int32& OutMaxGold, int32& OutReferenceGold) const;
+
+	/**
+	 * 지금 입장료를 바꿀 수 있는지. 축제 중이고 Live 가 아니면 true.
+	 * 슬라이더 활성 판정에 쓴다. 실제 판정은 `RequestSetAdmissionFee` 의 결과가 최종이다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	bool CanSetAdmissionFeeNow() const;
+
+	/**
+	 * 입장료를 바꿔 달라고 **요청한다.** 실패하면 아무것도 바뀌지 않는다.
+	 * 성공하면 `OnAdmissionFeeChanged` · `OnExpectedVisitorsChanged` 가 온다 — 낙관적 갱신을 하지 않는다.
+	 * 실패 문구는 `UFF_EconomyDisplayTextLibrary::GetAdmissionFeeResultText()` 로 만든다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	EFF_AdmissionFeeResult RequestSetAdmissionFee(int32 NewFeeGold);
+
+	/** 지금 상태(산 홍보 · 오늘 입장료 · 지금 화제성)의 방문객 예보. 축제 전이면 전부 0. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	FFF_VisitorForecast GetVisitorForecast() const;
+
+	/**
+	 * "이 홍보를 사고 이 입장료였다면" 의 예보. **상태를 안 바꾼다.**
+	 * 슬라이더를 끄는 동안 · 홍보 카드에 마우스를 올렸을 때 부른다.
+	 * 이미 산 등급과 달라도 그 등급의 화제성 시작값까지 얹어서 계산한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	FFF_VisitorForecast PreviewVisitorForecast(EFF_PromotionChoice Choice, int32 AdmissionFeeGold) const;
+
+	// --- 화제성 (Buzz) ---
+
+	/** 0~100, 50 이 중립. 축제 전에는 50. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Buzz")
+	float GetBuzz() const;
+
+	/** 오늘 아침 값. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Buzz")
+	float GetBuzzAtDayStart() const;
+
+	/** 오늘 아침 대비 변화. "오늘 +4.2" 표시에 그대로 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Buzz")
+	float GetBuzzChangeToday() const;
+
+	/**
+	 * 화제성이 바뀔 때. SNS 글마다(수 초 간격) 온다 — 게이지는 보간해서 따라가게 한다.
+	 * 하루가 바뀌어 오늘 아침 기준만 바뀌어도 온다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Buzz")
+	FFF_OnBuzzViewChanged OnBuzzChanged;
+
+	// --- 축제 평가 (최종 결산 화면) ---
+
+	/**
+	 * 지금까지의 성과로 매긴 축제 평가. 축제 도중에 불러도 된다.
+	 * `Grade` 는 피날레 구매 등급(`EFF_FinaleGrade`)과 다른 것이다.
+	 * 등급·항목 이름은 `UFF_EconomyDisplayTextLibrary` 의 `GetFestivalEvaluationGradeText` ·
+	 * `GetFestivalEvaluationAxisText` 로 만든다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Evaluation")
+	FFF_FestivalEvaluation GetFestivalEvaluation() const;
+
+	/** 끝난 날의 만족도(1일차부터). 날짜별 그래프용. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Evaluation")
+	TArray<int32> GetDailySatisfactionHistory() const;
 
 	// --- 피날레 (점검 패널 요약 + U5 피날레 구매 패널) ---
 	//
@@ -575,9 +697,8 @@ public:
 	 * 그 목표는 하루 동안 들어온 총 인원이라, 동시 80명을 넣으면 진행률이 16% 에서
 	 * 영원히 안 올라간다. 그럴듯해 보여서 눈으로는 안 걸린다.
 	 *
-	 * 누적 방문객 API 는 아직 없다 (`UI_API.md` 요청 목록). 그래서 일일 목표 진행은
-	 * 여전히 `모름` 이고, 이 값은 **상태 바의 `관객` 칸에만** 쓴다 — 지금 얼마나 붐비는지는
-	 * 그 자체로 볼 값이다.
+	 * 일일 목표 진행도는 `GetAdmittedVisitorsToday()` 를 쓴다. 이 값은 **상태 바의 `관객` 칸에만**
+	 * 쓴다 — 지금 얼마나 붐비는지는 그 자체로 볼 값이다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Crowd")
 	int32 GetConcurrentVisitorCount() const;
@@ -585,16 +706,16 @@ public:
 	/**
 	 * 오늘 예상 방문객. 못 읽었으면 `INDEX_NONE`.
 	 *
-	 * 경제가 `floor(기본 방문객 × 홍보 배수)` 로 계산한다. 홍보를 사면 이 값이 오른다.
+	 * 경제가 `기본 방문객 × 홍보 × 입장료 × 화제성` 으로 계산하고, Crowd 가 Live 시작 순간의
+	 * 이 값으로 그날 도착 인원을 정한다. 세 배수의 분해는 `GetVisitorForecast()` 에 있다.
 	 *
-	 * 🔴 **하루 단일 예상치다.** 3일 합계도, 범위도, 최대 동시 인원도 아니다.
-	 * 그리고 **실제 입장 인원과 다르다** — 스폰은 아직 `AFF_SpawnActor::UnitCount` 를
-	 * 쓰기 때문에 홍보 배수가 안 걸린다 (2026-09-02 김시리 확인).
+	 * **하루 단일 예상치다.** 3일 합계도, 범위도, 최대 동시 인원도 아니다.
+	 * 동시 인원 상한에 막히면 실제 입장은 더 적을 수 있다 — 실제 값은 `GetAdmittedVisitorsToday()`.
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Crowd")
 	int32 GetExpectedVisitors() const { return ExpectedVisitors; }
 
-	/** 예상 방문객이 바뀔 때. 홍보를 사면 온다. */
+	/** 예상 방문객이 바뀔 때. 홍보 구매 · 입장료 변경 · 화제성 변화 어느 쪽이든 온다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Crowd")
 	FFF_OnIntMetricChanged OnExpectedVisitorsChanged;
 
@@ -632,17 +753,8 @@ public:
 
 	// --- 홍보 (2026-08-27 추가 — U5 홍보 패널) ---
 	//
-	// 🔴 **여기만 절반이 더미다.** 인력·프로그램·피날레와 다르다.
-	//
-	// | 조각 | 어디 것인가 |
-	// | --- | --- |
-	// | 등급 비용·배수 | 경제 데이터 (`UFF_FestivalDefinition`) — **진짜** |
-	// | Gold 차감·원장 기록 | 소유자 `TrySpend(..., EFF_SpendReason::Promotion)` — **진짜** |
-	// | 어느 등급을 샀는가 | **이 클래스가 들고 있는 더미** |
-	// | 배수가 방문객에 먹는 것 | **아무도 소비하지 않는다** |
-	//
-	// 마지막 줄이 중요하다 — 사도 방문객이 늘지 않는다. **그 사실을 화면에 적어야 한다.**
-	// 김시리님 API 가 오면 아래 넷의 구현만 갈아끼운다 (`UI_API.md` 요청 표).
+	// 판정·차감·등급 보관은 경제의 `TryPurchasePromotion` 이 한다. 여기는 UI enum 으로 옮겨 담는다.
+	// 산 등급의 배수는 예상 방문객을 거쳐 실제 도착 인원에 걸린다.
 
 	/** 고를 수 있는 등급 전체. `안 함` 을 첫 줄로 포함한다. 축제 전에는 빈 배열이다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Promotion")
@@ -937,6 +1049,15 @@ protected:
 	UFUNCTION()
 	void HandleOwnerAdmissionFeeChanged(int32 NewValue);
 
+	UFUNCTION()
+	void HandleOwnerAdmittedVisitorsTodayChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleOwnerStaffRosterChanged();
+
+	UFUNCTION()
+	void HandleOwnerBuzzChanged(float NewBuzz, float PreviousBuzz);
+
 	/**
 	 * 환경 상태를 받아 **날씨만** 중계한다.
 	 *
@@ -994,6 +1115,7 @@ private:
 
 	/** SNS Insights 구독을 시도한다. */
 	void TryBindInsightsSubsystem();
+	void TryBindBuzzSubsystem();
 
 	/**
 	 * `ScoreSatisfaction = Clamp(SimSatisfaction + FinaleBonus, 0, 100)`을 다시 잰다.
@@ -1109,6 +1231,11 @@ private:
 
 	/** SNS Insights 시스템을 못 찾았을 때 재시도한 횟수. */
 	int32 InsightsBindRetryCount = 0;
+
+	UPROPERTY()
+	TObjectPtr<UFF_FestivalBuzzSubsystem> CachedBuzzSubsystem;
+
+	int32 BuzzBindRetryCount = 0;
 
 	/** 최신 글이 [0]. Insights 링버퍼 용량(80)과 맞춘다 — 몇 건을 화면에 그릴지는 위젯 몫이다. */
 	UPROPERTY()

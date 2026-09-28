@@ -274,8 +274,8 @@ FVector UFF_QueueSubsystem::GetFacilityExitLocation(int32 FacilityId) const
 bool UFF_QueueSubsystem::IsFestivalLive() const
 {
 	const UWorld* World = GetWorld();
-	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-	const UFF_FestivalStageSubsystem* Stage = GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage =
+		UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(World ? World->GetGameInstance() : nullptr);
 
 	// 스테이지 서브시스템이 없는 맵(테스트 레벨 등)에서는 게이팅하지 않는다.
 	return Stage ? (Stage->CurrentStage == EFF_FestivalStage::Live) : true;

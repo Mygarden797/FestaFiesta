@@ -8,7 +8,6 @@
 #include "Components/AudioComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/GameModeBase.h"
-#include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
@@ -277,6 +276,13 @@ void UFF_AudioSubsystem::SetAmbience(const EFF_AudioAmbience Ambience)
 	}
 }
 
+bool UFF_AudioSubsystem::HasAmbienceTrack(const EFF_AudioAmbience Ambience) const
+{
+	const UFF_AudioBankData* Bank = ResolveBank();
+	const FFF_AudioAmbienceTrack* Track = Bank ? Bank->FindAmbience(Ambience) : nullptr;
+	return Track && Track->IsValid();
+}
+
 void UFF_AudioSubsystem::StopAmbience()
 {
 	if (AmbienceComponent)
@@ -319,85 +325,56 @@ void UFF_AudioSubsystem::SetAudioEnabled(const bool bEnabled)
 
 void UFF_AudioSubsystem::RegisterDebugConsoleCommands()
 {
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
-
 	// 콘솔 이름은 프로세스 전역인데 이 서브시스템은 월드마다 생긴다.
-	// 이미 있는 이름이면 손대지 않고, 해제할 때도 내가 등록한 것만 지운다.
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Audio.Stat")))
-	{
-		StatConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Audio.Stat"),
-			TEXT("사운드 재생 상태와 사용 중인 뱅크를 출력한다."),
-			FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
-			{
-				const UFF_AudioBankData* Bank = ResolveBank();
-				UE_LOG(LogFestaFiestaAudio, Display,
-					TEXT("[사운드] 켜짐=%s 재생=%d 누락=%d 억제=%d 배경음=%d"),
-					bAudioEnabled ? TEXT("예") : TEXT("아니오"),
-					PlayedCues, MissingCues, SuppressedCues, static_cast<int32>(CurrentAmbience));
-				UE_LOG(LogFestaFiestaAudio, Display,
-					TEXT("  뱅크: %s / 등록된 효과음 %d개 / 배경음 %d개"),
-					Bank ? *Bank->GetName() : TEXT("없음"),
-					Bank ? Bank->Cues.Num() : 0,
-					Bank ? Bank->Ambiences.Num() : 0);
-			}));
-	}
+	// 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
+	DebugCommands.Add(
+		TEXT("FF.Audio.Stat"),
+		TEXT("사운드 재생 상태와 사용 중인 뱅크를 출력한다."),
+		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+		{
+			const UFF_AudioBankData* Bank = ResolveBank();
+			UE_LOG(LogFestaFiestaAudio, Display,
+				TEXT("[사운드] 켜짐=%s 재생=%d 누락=%d 억제=%d 배경음=%d"),
+				bAudioEnabled ? TEXT("예") : TEXT("아니오"),
+				PlayedCues, MissingCues, SuppressedCues, static_cast<int32>(CurrentAmbience));
+			UE_LOG(LogFestaFiestaAudio, Display,
+				TEXT("  뱅크: %s / 등록된 효과음 %d개 / 배경음 %d개"),
+				Bank ? *Bank->GetName() : TEXT("없음"),
+				Bank ? Bank->Cues.Num() : 0,
+				Bank ? Bank->Ambiences.Num() : 0);
+		}));
 
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Audio.Play")))
-	{
-		PlayConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Audio.Play"),
-			TEXT("이벤트 번호로 소리를 재생한다. 사용법: FF.Audio.Play 10"),
-			FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
+	DebugCommands.Add(
+		TEXT("FF.Audio.Play"),
+		TEXT("이벤트 번호로 소리를 재생한다. 사용법: FF.Audio.Play 10"),
+		FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
+		{
+			if (Args.Num() == 0)
 			{
-				if (Args.Num() == 0)
-				{
-					UE_LOG(LogFestaFiestaAudio, Warning,
-						TEXT("[사운드] 이벤트 번호가 필요하다. EFF_AudioEvent 값을 넣을 것."));
-					return;
-				}
-				const int32 Value = FCString::Atoi(*Args[0]);
-				const bool bPlayed = PlayEvent2D(static_cast<EFF_AudioEvent>(Value));
-				UE_LOG(LogFestaFiestaAudio, Display,
-					TEXT("[사운드] 이벤트 %d 재생 %s"), Value, bPlayed ? TEXT("성공") : TEXT("실패"));
-			}));
-	}
+				UE_LOG(LogFestaFiestaAudio, Warning,
+					TEXT("[사운드] 이벤트 번호가 필요하다. EFF_AudioEvent 값을 넣을 것."));
+				return;
+			}
+			const int32 Value = FCString::Atoi(*Args[0]);
+			const bool bPlayed = PlayEvent2D(static_cast<EFF_AudioEvent>(Value));
+			UE_LOG(LogFestaFiestaAudio, Display,
+				TEXT("[사운드] 이벤트 %d 재생 %s"), Value, bPlayed ? TEXT("성공") : TEXT("실패"));
+		}));
 
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Audio.Mute")))
-	{
-		MuteConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Audio.Mute"),
-			TEXT("소리를 끄거나 켠다. 사용법: FF.Audio.Mute 1"),
-			FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
-			{
-				const bool bMute = Args.Num() == 0 || FCString::Atoi(*Args[0]) != 0;
-				SetAudioEnabled(!bMute);
-				UE_LOG(LogFestaFiestaAudio, Display,
-					TEXT("[사운드] %s"), bMute ? TEXT("음소거") : TEXT("켜짐"));
-			}));
-	}
+	DebugCommands.Add(
+		TEXT("FF.Audio.Mute"),
+		TEXT("소리를 끄거나 켠다. 사용법: FF.Audio.Mute 1"),
+		FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
+		{
+			const bool bMute = Args.Num() == 0 || FCString::Atoi(*Args[0]) != 0;
+			SetAudioEnabled(!bMute);
+			UE_LOG(LogFestaFiestaAudio, Display,
+				TEXT("[사운드] %s"), bMute ? TEXT("음소거") : TEXT("켜짐"));
+		}));
 }
 
 void UFF_AudioSubsystem::UnregisterDebugConsoleCommands()
 {
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
-
-	// 내가 등록한 것만 지운다. 다른 월드가 주인이면 그쪽이 정리한다.
-	if (StatConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(StatConsoleCommand);
-	}
-	StatConsoleCommand = nullptr;
-
-	if (PlayConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(PlayConsoleCommand);
-	}
-	PlayConsoleCommand = nullptr;
-
-	if (MuteConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(MuteConsoleCommand);
-	}
-	MuteConsoleCommand = nullptr;
+	// 내가 건 것만 지운다. 규칙은 FFF_DebugConsoleCommands 주석 참고.
+	DebugCommands.UnregisterAll();
 }

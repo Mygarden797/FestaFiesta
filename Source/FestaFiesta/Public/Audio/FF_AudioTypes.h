@@ -66,7 +66,11 @@ enum class EFF_AudioAmbience : uint8
 	DayLive         UMETA(DisplayName = "축제 - 낮"),
 	NightLive       UMETA(DisplayName = "축제 - 밤"),
 	Finale          UMETA(DisplayName = "피날레"),
-	Closing         UMETA(DisplayName = "정리 - 폐장")
+	Closing         UMETA(DisplayName = "정리 - 폐장"),
+
+	// 최고 등급 3막 연출의 엔딩곡. 축제장 순회부터 끝까지 흐른다. 반복 재생을 끈 곡을 넣는다.
+	// 맨 뒤에 붙인 이유는 뱅크가 이 값을 키로 저장해서, 중간에 끼우면 뒤의 곡이 한 칸씩 밀리기 때문이다.
+	FinaleEnding    UMETA(DisplayName = "피날레 - 엔딩곡")
 };
 
 // 소리 갈래. 볼륨을 따로 조절하려면 재생 시점에 이걸 넘겨야 한다.
