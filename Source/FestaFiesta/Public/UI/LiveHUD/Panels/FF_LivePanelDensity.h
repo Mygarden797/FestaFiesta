@@ -8,6 +8,7 @@
 #include "FF_LivePanelDensity.generated.h"
 
 class UButton;
+class UBorder;
 class UTextBlock;
 class UVerticalBox;
 
@@ -85,17 +86,16 @@ struct FESTAFIESTA_API FFF_DensityRules
 /**
  * 라이브 `밀집` 패널 — 히트맵 토글 · 범례 · 지금 상태.
  *
- * === 🔴 지금은 에디터에서만 켜진다 ===
+ * === 현재 히트맵은 디버그 표시다 ===
  * 바닥에 깔리는 히트맵은 `FCrowdDensityGrid::DrawDebug()` 이고 그 안은 `DrawDebugSolidBox`
- * 다. **`DrawDebug*` 는 셰이핑 빌드에서 컴파일 아웃되므로 패키징에는 안 나온다.**
+ * 다. `ENABLE_DRAW_DEBUG`가 켜진 에디터·개발 빌드에서만 지원하며 출시 빌드는 미지원이다.
  * 제품용 렌더링과 토글 API 를 `UI_API.md` 11번으로 요청해 뒀다 (이정원 님).
  *
- * 그때까지 이 패널은 콘솔 변수(`FF.Crowd.Debug`)를 대신 켠다. API 가 오면 **토글 한 줄만**
- * 갈아끼우면 되고 범례·요약은 그대로 쓴다.
+ * 그때까지 `bDrawDebugDensity` 표시 플래그만 켠다. API가 오면 토글 경로를 교체한다.
  *
  * === UI 가 밀도를 계산하지 않는다 ===
  * 최댓값·혼잡 셀 수는 Crowd 가 이미 세어 둔 값을 그대로 읽는다 (C-009 규칙).
- * 셀 면적이나 등급 경계를 UI 에서 다시 만들지 않는다.
+ * 셀 크기·면적과 등급 색도 같은 Grid에서 읽는다. 격자가 준비되지 않으면 0으로 표시하지 않는다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Live Panel - Density"))
 class FESTAFIESTA_API UFF_LivePanelDensity : public UFF_LivePanelBase
@@ -122,15 +122,23 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Density")
 	TObjectPtr<UVerticalBox> Box_Legend;
 
-	/** `가장 붐비는 곳 1.4명/㎡ · E (매우 혼잡)`. 못 읽으면 접힌다. */
+	/** 최대 밀도. Text_PeakGrade가 없는 구 WBP에는 등급까지 한 줄로 표시한다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Density")
 	TObjectPtr<UTextBlock> Text_Peak;
 
-	/** `위험 구간 3칸`. 0 이면 없다고 적는다 — 접지 않는다. */
+	/** `E · 매우 혼잡`. 새 요약 카드에서는 밀도 숫자와 등급을 구분한다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Density")
+	TObjectPtr<UTextBlock> Text_PeakGrade;
+
+	/** 혼잡 칸 수는 Crowd 집계값 그대로 쓴다. 0이어도 숨기지 않는다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Density")
 	TObjectPtr<UTextBlock> Text_Congested;
 
-	/** 히트맵이 에디터 전용이라는 사실. **지운다고 문제가 사라지지 않는다.** */
+	/** 실제 격자의 한 변(m)과 면적(㎡). 2m 같은 가정값을 복사하지 않는다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Density")
+	TObjectPtr<UTextBlock> Text_CellSize;
+
+	/** 현재 빌드의 히트맵 지원 여부. 숫자 조회는 바닥 표시와 독립적이다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Density")
 	TObjectPtr<UTextBlock> Text_MissingNote;
 
@@ -142,6 +150,16 @@ private:
 	void RebuildLegend();
 	void RefreshSummary();
 	void RefreshToggleLabel();
+	void RefreshLegendHighlight(TOptional<ECrowdLOS> PeakGrade);
+
+	/** 현재 최대 등급이 바뀔 때 위젯을 재생성하지 않고 행 강조만 갱신한다. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UBorder>> LegendRowBorders;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> LegendPeakLabels;
+
+	TArray<ECrowdLOS> LegendGrades;
 
 	/** 마지막 갱신 이후 흐른 시간. */
 	float TimeSinceRefresh = 0.f;

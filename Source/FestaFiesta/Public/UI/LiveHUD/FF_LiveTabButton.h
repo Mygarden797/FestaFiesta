@@ -31,8 +31,19 @@ class FESTAFIESTA_API UFF_LiveTabButton : public UFF_HudTabButtonBase
 public:
 	void Configure(EFF_LiveTab InTab, const FText& InLabel, const FSlateBrush& InIconBrush)
 	{
-		ConfigureTab(static_cast<int32>(InTab), InLabel, InIconBrush);
+		ConfigureTab(static_cast<int32>(InTab), DisplayLabelOverride.IsEmpty() ? InLabel : DisplayLabelOverride,
+			DesignerIcon.GetResourceObject() ? DesignerIcon : InIconBrush);
 	}
 
 	EFF_LiveTab GetTab() const { return static_cast<EFF_LiveTab>(GetTabId()); }
+
+	/** 부모 HUD Designer에서 각 탭의 문구와 아이콘을 바꾼다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Live|Text")
+	FText DisplayLabelOverride;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Live|Appearance")
+	FSlateBrush DesignerIcon;
+
+protected:
+	virtual void NativePreConstruct() override;
 };

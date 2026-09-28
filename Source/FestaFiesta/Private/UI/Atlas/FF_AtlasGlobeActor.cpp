@@ -8,12 +8,18 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
+#include "Hash/xxhash.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialParameterCollectionInstance.h"
+#include "Misc/ScopeExit.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UI/Atlas/FF_AtlasSettings.h"
+#include "UI/Atlas/FF_AtlasCountryRegions.h"
 #include "UI/Atlas/FF_AtlasCameraRig.h"
 #include "UI/Atlas/FF_FestivalAtlasCatalog.h"
 #include "UI/Core/FF_UIAccessibilitySubsystem.h"
@@ -37,6 +43,25 @@ namespace
 
 	/** 이 각도 이상 어긋나면 정면 규약이 깨진 것으로 보고 진단에 적는다. */
 	constexpr float FrontAxisWarnDegrees = 45.f;
+
+	/** UE 5.7의 XXH3 스트리밍 해시. 화면 진입 때만 읽고 매 프레임 hover에서는 계산하지 않는다. */
+	uint64 ComputeRegionSurfaceSignature(const UFF_AtlasCountryRegions& Data)
+	{
+		FXxHash64Builder Hash;
+		const auto HashArray = [&Hash](const auto& Array)
+		{
+			const int32 Count = Array.Num();
+			Hash.Update(&Count, sizeof(Count));
+			Hash.Update(Array.GetData(), static_cast<uint64>(Count) * sizeof(Array[0]));
+		};
+		HashArray(Data.SurfaceVertices);
+		HashArray(Data.SurfaceUVs);
+		HashArray(Data.SurfaceWeights);
+		HashArray(Data.SurfaceIndices);
+		const float Shape[] = { Data.SourceRadius, Data.BaseLandThickness, Data.BaseMountainHeight };
+		Hash.Update(Shape, sizeof(Shape));
+		return Hash.Finalize().Hash;
+	}
 
 	/** 메시 하나가 목표 높이가 되도록 등비 스케일을 구한다. 바운드가 0 이면 1 을 돌려준다. */
 	float ComputeUniformScaleForHeight(const UStaticMesh& Mesh, float TargetHeight)
@@ -198,6 +223,8 @@ void AFF_AtlasGlobeActor::BeginPlay()
 
 void AFF_AtlasGlobeActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	SetCountryRegionMode(false);
+	InvalidateRegionSurfaceCache();
 	// 해제는 조건부, 정리는 무조건이다 (안티패턴 3).
 	DestroyPins();
 	Accessibility.Reset();
@@ -234,6 +261,7 @@ AFF_AtlasGlobeActor* AFF_AtlasGlobeActor::Find(const UObject* WorldContextObject
 
 void AFF_AtlasGlobeActor::SetGlobeActive(bool bActive)
 {
+	if (!bActive) { SetCountryRegionMode(false); }
 	SetActorHiddenInGame(!bActive);
 	SetActorTickEnabled(bActive);
 
@@ -303,12 +331,14 @@ void AFF_AtlasGlobeActor::Tick(float DeltaSeconds)
 
 	ApplyOrientationToScene();
 	UpdatePinPresentation();
+	ApplyRegionMotionVisuals();
 }
 
 // --- 조작 ---
 
 void AFF_AtlasGlobeActor::AddDragInput(const FVector2D& DragPixels)
 {
+	SetHoveredCountry(NAME_None);
 	SetSelectedCountry(NAME_None, true);
 	if (AFF_AtlasCameraRig* Rig = AFF_AtlasCameraRig::Find(this, false)) { Rig->PauseCountryInspection(); }
 	const UFF_AtlasSettings& Settings = GetAtlasSettings();
@@ -730,6 +760,9 @@ const UFF_FestivalAtlasCatalog* AFF_AtlasGlobeActor::ResolveCatalog() const
 
 void AFF_AtlasGlobeActor::ApplyGlobeVisuals()
 {
+	const bool bRestoreRegionMode = bCountryRegionMode;
+	if (bRestoreRegionMode) { SetCountryRegionMode(false); }
+	ON_SCOPE_EXIT { if (bRestoreRegionMode) { SetCountryRegionMode(true); } };
 	for (int32 Index = 0; Index < LandLayerComponents.Num(); ++Index)
 	{
 		UStaticMeshComponent* Layer = LandLayerComponents[Index];
@@ -800,6 +833,9 @@ void AFF_AtlasGlobeActor::DestroyPins()
 
 void AFF_AtlasGlobeActor::RebuildPins()
 {
+	const bool bRestoreRegionMode = bCountryRegionMode;
+	if (bRestoreRegionMode) { SetCountryRegionMode(false); }
+	ON_SCOPE_EXIT { if (bRestoreRegionMode) { SetCountryRegionMode(true); } };
 	DestroyPins();
 
 	const UFF_FestivalAtlasCatalog* Catalog = ResolveCatalog();
@@ -950,6 +986,7 @@ void AFF_AtlasGlobeActor::ReconcileStateWithPins()
 		// 구독자에게 선택이 사라졌음을 알려야 한다. 조용히 지우면 화면이 stale 상태를 못 안다.
 		SetSelectedCountry(NAME_None);
 	}
+	if (FindPinIndex(HoveredCountryId) == INDEX_NONE) { SetHoveredCountry(NAME_None); }
 }
 
 void AFF_AtlasGlobeActor::ApplyOrientationToScene()
@@ -1065,6 +1102,7 @@ void AFF_AtlasGlobeActor::UpdatePinPresentation()
 	for (const FFF_AtlasPinInstance& Pin : Pins)
 	{
 		const bool bSelected = (Pin.CountryId == SelectedCountryId);
+		const bool bUseRegion = HasCountryRegion(Pin.CountryId);
 		const FVector SurfaceDirection = Pin.Anchor
 			? (Pin.Anchor->GetComponentLocation() - GetActorLocation()).GetSafeNormal() : ViewDirection;
 		const float Facing = FMath::Clamp(static_cast<float>(FVector::DotProduct(SurfaceDirection, ViewDirection)), 0.f, 1.f);
@@ -1084,7 +1122,7 @@ void AFF_AtlasGlobeActor::UpdatePinPresentation()
 		if (Pin.Anchor)
 		{
 			// 앵커를 숨기면 자식(조형물·조명)까지 함께 숨는다.
-			Pin.Anchor->SetVisibility(bLandmarkVisible, /*bPropagateToChildren=*/true);
+			Pin.Anchor->SetVisibility(bLandmarkVisible && !bUseRegion, /*bPropagateToChildren=*/true);
 		}
 		if (Pin.Landmark && Pin.Landmark->GetStaticMesh())
 		{
@@ -1102,7 +1140,7 @@ void AFF_AtlasGlobeActor::UpdatePinPresentation()
 			Pin.Light->SetIntensity(SelectionLightIntensity * FMath::Square(SizeRatio) * GetAtlasSettings().LandmarkSelectionLightScale);
 			Pin.Light->SetRelativeLocation(FVector(0, 0, EffectiveHeight));
 			Pin.Light->SetAttenuationRadius(FMath::Max(EffectiveHeight * 4.f, 1.f));
-			Pin.Light->SetVisibility(bSurfaceVisible && bSelected);
+			Pin.Light->SetVisibility(bSurfaceVisible && bSelected && !bUseRegion);
 		}
 	}
 }
@@ -1111,6 +1149,7 @@ void AFF_AtlasGlobeActor::ApplySelectionVisuals()
 {
 	// 회전과 선택이 같은 크기·밑면 보정 경로를 사용한다.
 	UpdatePinPresentation();
+	ApplyRegionSelectionVisuals();
 }
 
 void AFF_AtlasGlobeActor::SetHoveredCountry(FName CountryId)
@@ -1118,11 +1157,224 @@ void AFF_AtlasGlobeActor::SetHoveredCountry(FName CountryId)
 	if (HoveredCountryId == CountryId) { return; }
 	HoveredCountryId = CountryId;
 	UpdatePinPresentation();
+	ApplyRegionSelectionVisuals();
+}
+
+bool AFF_AtlasGlobeActor::HasCountryRegion(FName CountryId) const
+{
+	return bCountryRegionMode && RenderedRegionCountries.Contains(CountryId);
+}
+
+void AFF_AtlasGlobeActor::RestoreRegionMaterials()
+{
+	for (const FFF_AtlasRegionMaterialSnapshot& Snapshot : RegionMaterialSnapshots)
+	{
+		if (!IsValid(Snapshot.Component)) { continue; }
+		// OverrideMaterials에 직접 대입하면 렌더 스레드/GC와 경합한다. 엔진의 변경 API만 쓴다.
+		Snapshot.Component->EmptyOverrideMaterials();
+		for (int32 Index = 0; Index < Snapshot.Overrides.Num(); ++Index)
+		{
+			Snapshot.Component->SetMaterial(Index, Snapshot.Overrides[Index]);
+		}
+		// UE 5.7의 EmptyOverrideMaterials는 슬롯별 Overlay 배열도 비운다.
+		// Overlay에는 개별 변경 API가 없으므로 공개 설정을 되돌린 뒤 렌더 상태를 갱신한다.
+		Snapshot.Component->MaterialSlotsOverlayMaterial = Snapshot.SlotOverlays;
+		Snapshot.Component->MarkRenderStateDirty();
+	}
+	RegionMaterialSnapshots.Reset();
+	RegionMaterialInstance = nullptr;
+	ActiveRegionData = nullptr;
+	RenderedRegionCountries.Reset();
+	// 표면과 BVH는 이 액터의 다음 화면 진입에서 재사용한다. 재질 수명과 분리한다.
+}
+
+void AFF_AtlasGlobeActor::InvalidateRegionSurfaceCache()
+{
+	RegionSurfaceVertices.Reset();
+	RegionSurfaceBounds = FBox(ForceInit);
+	RegionSurfaceIndex.Reset();
+	RegionCachedData.Reset();
+	RegionCachedSurfaceSignature = 0;
+}
+
+void AFF_AtlasGlobeActor::SetCountryRegionMode(bool bEnabled)
+{
+	if (bEnabled && bCountryRegionMode && ActiveRegionData == RegionData) { return; }
+	bCountryRegionMode = false;
+	RestoreRegionMaterials();
+	HoveredCountryId = NAME_None;
+	if (bEnabled && RegionData && RegionData->SelectionMaterial && RegionData->HasValidSurface())
+	{
+		const uint64 SurfaceSignature = ComputeRegionSurfaceSignature(*RegionData);
+		if (RegionCachedData.Get() != RegionData.Get() || RegionCachedSurfaceSignature != SurfaceSignature)
+		{
+			InvalidateRegionSurfaceCache();
+			RegionCachedData = RegionData.Get();
+			RegionCachedSurfaceSignature = SurfaceSignature;
+		}
+		ActiveRegionData = RegionData;
+		for (const FFF_AtlasCountryRegion& Region : ActiveRegionData->Regions)
+		{
+			if (RenderedRegionCountries.Num() >= UFF_AtlasCountryRegions::MaxRenderingRegions) { break; }
+			if (!RenderedRegionCountries.Contains(Region.CountryId) && ActiveRegionData->FindRegion(Region.CountryId)
+				&& FindPinIndex(Region.CountryId) != INDEX_NONE) { RenderedRegionCountries.Add(Region.CountryId); }
+		}
+		RegionMaterialInstance = UMaterialInstanceDynamic::Create(RegionData->SelectionMaterial, this);
+		if (RegionMaterialInstance)
+		{
+			RegionMaterialInstance->SetScalarParameterValue(TEXT("RegionEnabled"), 0.f);
+			for (UStaticMeshComponent* Layer : LandLayerComponents)
+			{
+				if (!Layer || !Layer->GetStaticMesh()) { continue; }
+				TArray<int32> Slots;
+				for (int32 Index = 0; Index < Layer->GetNumMaterials(); ++Index)
+				{
+					const bool bTarget = RegionData->TargetMaterial
+						? Layer->GetMaterial(Index) == RegionData->TargetMaterial
+						: Layer->GetStaticMesh()->GetName().Contains(TEXT("_Top"));
+					if (bTarget) { Slots.Add(Index); }
+				}
+				if (Slots.IsEmpty()) { continue; }
+				FFF_AtlasRegionMaterialSnapshot& Snapshot = RegionMaterialSnapshots.AddDefaulted_GetRef();
+				Snapshot.Component = Layer;
+				Snapshot.Overrides = Layer->OverrideMaterials;
+				Snapshot.SlotOverlays = Layer->MaterialSlotsOverlayMaterial;
+				for (int32 Slot : Slots) { Layer->SetMaterial(Slot, RegionMaterialInstance); }
+			}
+			bCountryRegionMode = !RegionMaterialSnapshots.IsEmpty() && !RenderedRegionCountries.IsEmpty();
+		}
+		if (!bCountryRegionMode) { RestoreRegionMaterials(); }
+	}
+	// 처음/원본 변경 때 구축하고 화면 왕복에는 재사용한다. WPO 값만 달라졌다면 refit한다.
+	if (bCountryRegionMode) { UpdateRegionSurfaceCache(); }
+	ApplySelectionVisuals();
+}
+
+void AFF_AtlasGlobeActor::ApplyRegionSelectionVisuals()
+{
+	if (!bCountryRegionMode || !RegionMaterialInstance || !ActiveRegionData) { return; }
+	// 모든 등록 국가의 대기 표시를 유지한다. 선택된 나라와 호버한 나라는 서로 독립적이다.
+	for (int32 Slot = 0; Slot < UFF_AtlasCountryRegions::MaxRenderingRegions; ++Slot)
+	{
+		const FFF_AtlasCountryRegion* Region = RenderedRegionCountries.IsValidIndex(Slot)
+			? ActiveRegionData->FindRegion(RenderedRegionCountries[Slot]) : nullptr;
+		const auto Parameter = [Slot](const TCHAR* Suffix) { return FName(FString::Printf(TEXT("Region%d%s"), Slot, Suffix)); };
+		if (Region)
+		{
+			RegionMaterialInstance->SetTextureParameterValue(Parameter(TEXT("Mask")), Region->Mask);
+			RegionMaterialInstance->SetVectorParameterValue(Parameter(TEXT("Bounds")), Region->Bounds);
+		}
+		RegionMaterialInstance->SetScalarParameterValue(Parameter(TEXT("Enabled")), Region ? 1.f : 0.f);
+		RegionMaterialInstance->SetScalarParameterValue(Parameter(TEXT("Hovered")), Region && Region->CountryId == HoveredCountryId ? 1.f : 0.f);
+		RegionMaterialInstance->SetScalarParameterValue(Parameter(TEXT("Selected")), Region && Region->CountryId == SelectedCountryId ? 1.f : 0.f);
+	}
+	// 한국 시범 재질을 쓰는 기존 에셋의 단일 슬롯 계약도 유지한다.
+	const auto FindUsableRegion = [this](FName CountryId) -> const FFF_AtlasCountryRegion*
+	{
+		const FFF_AtlasCountryRegion* Candidate = ActiveRegionData->FindRegion(CountryId);
+		return Candidate && RenderedRegionCountries.Contains(CountryId) ? Candidate : nullptr;
+	};
+	const FFF_AtlasCountryRegion* Region = FindUsableRegion(SelectedCountryId);
+	if (!Region) { Region = FindUsableRegion(HoveredCountryId); }
+	if (!Region)
+	{
+		for (const FFF_AtlasCountryRegion& Candidate : ActiveRegionData->Regions)
+		{
+			if (FindUsableRegion(Candidate.CountryId)) { Region = &Candidate; break; }
+		}
+	}
+	if (Region)
+	{
+		RegionMaterialInstance->SetTextureParameterValue(TEXT("RegionMask"), Region->Mask);
+		RegionMaterialInstance->SetVectorParameterValue(TEXT("RegionBounds"), Region->Bounds);
+	}
+	RegionMaterialInstance->SetScalarParameterValue(TEXT("RegionEnabled"), Region ? 1.f : 0.f);
+	// 선택과 호버를 섞으면 이미 선택한 한국에 마우스를 올려도 아무 변화가 없다.
+	RegionMaterialInstance->SetScalarParameterValue(TEXT("RegionHovered"),
+		Region && Region->CountryId == HoveredCountryId ? 1.f : 0.f);
+	RegionMaterialInstance->SetScalarParameterValue(TEXT("RegionSelected"),
+		Region && Region->CountryId == SelectedCountryId ? 1.f : 0.f);
+	ApplyRegionMotionVisuals();
+}
+
+void AFF_AtlasGlobeActor::ApplyRegionMotionVisuals()
+{
+	if (!bCountryRegionMode || !RegionMaterialInstance) { return; }
+	// 개인 접근성 설정을 그대로 따른다. 선택 상태가 바뀌지 않아도 옵션 변경 즉시 멈춘다.
+	const bool bReduceMotion = Accessibility.IsValid() && Accessibility->IsReduceMotionEnabled();
+	RegionMaterialInstance->SetScalarParameterValue(TEXT("RegionMotionEnabled"), bReduceMotion ? 0.f : 1.f);
+}
+
+bool AFF_AtlasGlobeActor::UpdateRegionSurfaceCache() const
+{
+	if (!ActiveRegionData || !GlobeRoot || !GetWorld()) { return false; }
+	const UFF_AtlasCountryRegions& Data = *ActiveRegionData;
+	float Thickness = Data.BaseLandThickness, Mountain = Data.BaseMountainHeight;
+	if (Data.ShapeParameters)
+	{
+		if (const UMaterialParameterCollectionInstance* Parameters = GetWorld()->GetParameterCollectionInstance(Data.ShapeParameters))
+		{
+			Parameters->GetScalarParameterValue(TEXT("LandThickness"), Thickness);
+			Parameters->GetScalarParameterValue(TEXT("MountainHeight"), Mountain);
+		}
+	}
+	const FTransform RootTransform = GlobeRoot->GetComponentTransform();
+	const FVector Scale = RootTransform.GetScale3D();
+	const FVector ActorCenter = RootTransform.InverseTransformPosition(GetActorLocation());
+	if (!FMath::IsFinite(Thickness) || !FMath::IsFinite(Mountain) || !FMath::IsFinite(GlobeRadius)
+		|| GlobeRadius <= 0.f || RootTransform.ContainsNaN() || Scale.GetAbsMin() <= UE_DOUBLE_SMALL_NUMBER
+		|| Data.SurfaceVertices.Num() != Data.SurfaceWeights.Num() || Data.SourceRadius <= 0.f) { return false; }
+	if (RegionSurfaceVertices.Num() == Data.SurfaceVertices.Num() && !RegionSurfaceVertices.IsEmpty()
+		&& RegionCachedRadius == GlobeRadius && RegionCachedThickness == Thickness && RegionCachedMountain == Mountain
+		&& RegionCachedScale.Equals(Scale, 1.e-9) && RegionCachedActorCenter.Equals(ActorCenter, 1.e-9)) { return true; }
+
+	RegionSurfaceBounds = FBox(ForceInit);
+	RegionSurfaceVertices.SetNumUninitialized(Data.SurfaceVertices.Num());
+	const double MeshScale = GlobeRadius / Data.SourceRadius;
+	for (int32 I = 0; I < RegionSurfaceVertices.Num(); ++I)
+	{
+		const double Delta = Thickness - Data.BaseLandThickness + Data.SurfaceWeights[I] * (Mountain - Data.BaseMountainHeight);
+		RegionSurfaceVertices[I] = FFF_AtlasRegionPicking::DisplaceVertex(Data.SurfaceVertices[I] * MeshScale, Scale, Delta, ActorCenter);
+		RegionSurfaceBounds += RegionSurfaceVertices[I];
+	}
+	RegionCachedRadius = GlobeRadius;
+	RegionCachedThickness = Thickness;
+	RegionCachedMountain = Mountain;
+	RegionCachedScale = Scale;
+	RegionCachedActorCenter = ActorCenter;
+	if (RegionSurfaceIndex.IsValid()) { RegionSurfaceIndex.Refit(RegionSurfaceVertices, Data.SurfaceIndices); }
+	else { RegionSurfaceIndex.Build(RegionSurfaceVertices, Data.SurfaceIndices); }
+	return RegionSurfaceBounds.IsValid != 0;
+}
+
+FName AFF_AtlasGlobeActor::PickCountryRegion(const FVector& RayOrigin, const FVector& RayDirection) const
+{
+	if (!bCountryRegionMode || IsHidden() || RayOrigin.ContainsNaN() || RayDirection.ContainsNaN()
+		|| RayDirection.IsNearlyZero() || !UpdateRegionSurfaceCache()) { return NAME_None; }
+	const FTransform Transform = GlobeRoot->GetComponentTransform();
+	const FVector Origin = Transform.InverseTransformPosition(RayOrigin);
+	// 정규화는 월드에서 한 번만 한다. 역변환 뒤 길이를 유지해야 거리·바다 가림이 같은 단위다.
+	const FVector Direction = Transform.InverseTransformVector(RayDirection.GetSafeNormal());
+	const double MaxDistance = FFF_AtlasRegionPicking::WaterOcclusionDistance(Origin, Direction, GlobeRadius);
+	FVector2D UV;
+	double Distance = 0.0;
+	if (!RegionSurfaceIndex.Trace(RegionSurfaceVertices, ActiveRegionData->SurfaceUVs,
+		ActiveRegionData->SurfaceIndices, Origin, Direction, MaxDistance, UV, Distance)) { return NAME_None; }
+	// 가장 가까운 육지가 국경 밖이면 종료한다. 뒤에 있는 영역 삼각형으로 재시도하지 않는다.
+	const FName Country = ActiveRegionData->FindCountryAtUV(UV);
+	return HasCountryRegion(Country) ? Country : NAME_None;
+}
+
+FName AFF_AtlasGlobeActor::PickCountry(const FVector& RayOrigin, const FVector& RayDirection) const
+{
+	const FName Region = PickCountryRegion(RayOrigin, RayDirection);
+	if (!Region.IsNone()) { return Region; }
+	return PickLandmark(RayOrigin, RayDirection);
 }
 
 FName AFF_AtlasGlobeActor::PickLandmark(const FVector& RayOrigin, const FVector& RayDirection) const
 {
-	if (IsHidden() || RayDirection.IsNearlyZero()) { return NAME_None; }
+	if (IsHidden() || RayOrigin.ContainsNaN() || RayDirection.ContainsNaN() || RayDirection.IsNearlyZero()) { return NAME_None; }
 	const FVector Direction = RayDirection.GetSafeNormal();
 	const FVector ToCenter = GetActorLocation() - RayOrigin;
 	const double Radius = GlobeRadius * GetActorScale3D().GetAbsMax();
@@ -1136,6 +1388,7 @@ FName AFF_AtlasGlobeActor::PickLandmark(const FVector& RayOrigin, const FVector&
 	FName Result;
 	for (const FFF_AtlasPinInstance& Pin : Pins)
 	{
+		if (HasCountryRegion(Pin.CountryId)) { continue; }
 		if (!Pin.Landmark || !Pin.Landmark->IsVisible() || !Pin.Landmark->GetStaticMesh()) { continue; }
 		const FTransform Transform = Pin.Landmark->GetComponentTransform();
 		const FVector Start = Transform.InverseTransformPosition(RayOrigin);

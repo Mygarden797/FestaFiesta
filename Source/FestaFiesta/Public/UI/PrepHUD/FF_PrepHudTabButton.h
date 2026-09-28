@@ -26,8 +26,20 @@ class FESTAFIESTA_API UFF_PrepHudTabButton : public UFF_HudTabButtonBase
 public:
 	void Configure(EFF_PrepHudTab InTab, const FText& InLabel, const FSlateBrush& InIconBrush)
 	{
-		ConfigureTab(static_cast<int32>(InTab), InLabel, InIconBrush);
+		ConfigureTab(static_cast<int32>(InTab), DisplayLabelOverride.IsEmpty() ? InLabel : DisplayLabelOverride,
+			DesignerIcon.GetResourceObject() ? DesignerIcon : InIconBrush);
 	}
 
 	EFF_PrepHudTab GetTab() const { return static_cast<EFF_PrepHudTab>(GetTabId()); }
+
+	/** 부모 HUD Designer에서 탭별 문구를 바꾼다. 비워 두면 공통 번역 문구를 사용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Text")
+	FText DisplayLabelOverride;
+
+	/** 부모 HUD Designer에서 탭마다 다른 아이콘을 지정한다. 크기는 자식 Image_Icon에서 조절한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Appearance")
+	FSlateBrush DesignerIcon;
+
+protected:
+	virtual void NativePreConstruct() override;
 };

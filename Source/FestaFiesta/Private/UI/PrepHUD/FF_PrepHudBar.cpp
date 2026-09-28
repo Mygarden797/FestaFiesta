@@ -11,6 +11,7 @@
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/PanelWidget.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "HAL/IConsoleManager.h"
@@ -60,6 +61,10 @@ namespace FFPrepHudBarLocal
 UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+	GoldTextFormat = LOCTEXT("PrepStatus_GoldFormat", "{Amount} Gold");
+	StaffTextFormat = LOCTEXT("PrepStatus_StaffFormat", "{Count}명");
+	DayStageTextFormat = LOCTEXT("PrepStatus_DayStageFormat", "{Day}일차 · {Stage}");
+
 	// === CTA 문구 기본값 ===
 	// `{Day}` 는 현재 일차로 치환된다. 문구에 `Day 1` 을 박으면 2·3일차에 거짓말이 된다.
 	//
@@ -125,6 +130,10 @@ UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 void UFF_PrepHudBar::NativePreConstruct()
 {
 	Super::NativePreConstruct();
+	if (bUseDesignerStyle)
+	{
+		return;
+	}
 
 	// 색은 팔레트가 소유한다. 디자이너에서 손으로 바꾼 색은 여기서 매번 덮인다 —
 	// 크기·패딩·폰트는 그대로 두므로 마감은 에디터에서 계속 할 수 있다.
@@ -197,11 +206,7 @@ void UFF_PrepHudBar::NativeOnInitialized()
 	{
 		Button_Cta->OnClicked.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleCtaClicked);
 	}
-	else
-	{
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] Button_Cta 가 없어 단계를 넘길 버튼이 없다."), *GetName());
-	}
+	// 하단 바에는 사유만 표시하고 진행 버튼은 기존 점검 패널이 소유한다.
 
 	// 도킹은 **패널을 열 때** 정한다. 탭마다 방향이 다르므로 여기서 한 번 맞춰 두면 틀린다.
 
@@ -794,6 +799,29 @@ FFF_PrepPanelLayout UFF_PrepHudBar::ResolveLayout(EFF_PrepHudTab Tab) const
 	return Layout;
 }
 
+float UFF_PrepHudBar::GetBottomStatusRowHeight() const
+{
+	if (SizeBox_StatusRow)
+	{
+		return SizeBox_StatusRow->IsHeightOverride()
+			? SizeBox_StatusRow->GetHeightOverride()
+			: SizeBox_StatusRow->GetDesiredSize().Y;
+	}
+	return StatusRowHeight;
+}
+
+float UFF_PrepHudBar::GetBottomBarHeight() const
+{
+	if (SizeBox_StatusRow && SizeBox_MenuRow)
+	{
+		const float MenuHeight = Border_MenuRow && Border_MenuRow->GetVisibility() == ESlateVisibility::Collapsed
+			? 0.f : (SizeBox_MenuRow->IsHeightOverride()
+				? SizeBox_MenuRow->GetHeightOverride() : SizeBox_MenuRow->GetDesiredSize().Y);
+		return GetBottomStatusRowHeight() + MenuHeight;
+	}
+	return BarHeight;
+}
+
 void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 {
 	if (!Panel_PanelHost)
@@ -837,7 +865,7 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 			//    바 위에 **동동 떠 있었고**, 가운데 패널들(`CenterNudge` = -29)과 아래 끝이
 			//    어긋났다 (2026-09-03 백종태 지적). 상태 행 높이만 띄워 다른 패널과 맞춘다 —
 			//    패널 아래 끝이 탭 줄 밑으로 들어가서 버튼이 패널에 얹힌 것처럼 보인다.
-			-StatusRowHeight + static_cast<float>(Layout.Offset.Y),
+			-GetBottomStatusRowHeight() + static_cast<float>(Layout.Offset.Y),
 
 			PanelMargin,													// 오른쪽 여백
 			static_cast<float>(Layout.Size.Y)));							// 높이
@@ -850,7 +878,7 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 		CanvasSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 		CanvasSlot->SetOffsets(FMargin(
 			static_cast<float>(Layout.Offset.X),	// X 위치 (중앙 정렬 기준)
-			static_cast<float>(Layout.Offset.Y),	// Y 위치
+			static_cast<float>(Layout.Offset.Y) - (SizeBox_StatusRow ? GetBottomStatusRowHeight() - StatusRowHeight : 0.f),
 			static_cast<float>(Layout.Size.X),		// 폭
 			static_cast<float>(Layout.Size.Y)));	// 높이
 		break;
@@ -864,7 +892,7 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 			-PanelMargin + static_cast<float>(Layout.Offset.X),	// X 위치 (오른쪽 정렬이라 음수)
 			PanelMargin,										// 위쪽 여백
 			static_cast<float>(Layout.Size.X),					// 폭
-			BarHeight + PanelMargin));							// 아래쪽 여백
+			GetBottomBarHeight() + PanelMargin));
 		break;
 
 	case EFF_PrepPanelDock::Left:
@@ -875,7 +903,7 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 			PanelMargin + static_cast<float>(Layout.Offset.X),
 			PanelMargin,
 			static_cast<float>(Layout.Size.X),
-			BarHeight + PanelMargin));
+			GetBottomBarHeight() + PanelMargin));
 		break;
 	}
 }
@@ -1077,6 +1105,10 @@ void UFF_PrepHudBar::RefreshCta()
 		}
 	}
 	SetGroupTextOrHide(nullptr, Text_CtaReason, Reason);
+	if (Text_CtaReason)
+	{
+		Text_CtaReason->SetToolTipText(Reason);
+	}
 
 	// 버튼을 접었으니 사유가 없으면 줄째 접는다. 안 그러면 빈 띠가 남는다.
 	if (Box_Cta)
@@ -1171,26 +1203,24 @@ void UFF_PrepHudBar::HandleGoldChanged(int32 NewValue)
 {
 	if (Text_Gold)
 	{
-		Text_Gold->SetText(FormatGold(NewValue));
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("Amount"), FormatGold(NewValue));
+		Text_Gold->SetText(FText::Format(GoldTextFormat, Args));
 	}
 }
 
 void UFF_PrepHudBar::HandleStaffCountChanged(int32 NewValue)
 {
-	// !! 인자를 쓰지 않는다 !! 내역까지 다시 읽어야 한 프레임 어긋나지 않는다.
+	// 총원은 ViewModel이 소유한다. 세부 인원은 인력 패널에서 보여준다.
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	const int32 Total = ViewModel ? ViewModel->GetTotalStaffCount() : INDEX_NONE;
-	const int32 Base = ViewModel ? ViewModel->GetBaseStaffCount() : INDEX_NONE;
-	const int32 Hired = ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE;
 
 	FText StaffText;
 	if (Total >= 0)
 	{
-		StaffText = (Base >= 0 && Hired >= 0)
-			? FText::Format(
-				LOCTEXT("PrepStatus_StaffDetailed", "{0}명 (기본 {1} · 고용 {2})"),
-				FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Hired))
-			: FText::Format(LOCTEXT("PrepStatus_Staff", "{0}명"), FText::AsNumber(Total));
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("Count"), FText::AsNumber(Total));
+		StaffText = FText::Format(StaffTextFormat, Args);
 	}
 
 	SetGroupTextOrHide(Box_Staff, Text_Staff, StaffText);
@@ -1221,10 +1251,10 @@ void UFF_PrepHudBar::RefreshDayStageText(EFF_FestivalStage Stage, int32 Day)
 	// Stage 표시명은 ViewModel 이 소유한다. 위젯이 enum 을 문자열로 바꾸지 않는다 —
 	// 기획 7단계와 코드 8단계가 아직 다르고, 모르는 값이 와도 빈 화면이 되면 안 된다.
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
-	Text_DayStage->SetText(FText::Format(
-		LOCTEXT("PrepStatus_DayStage", "{0}일차 · {1}"),
-		FText::AsNumber(Day),
-		ViewModel ? ViewModel->GetCurrentStageDisplayText() : FText::GetEmpty()));
+	FFormatNamedArguments Args;
+	Args.Add(TEXT("Day"), FText::AsNumber(Day));
+	Args.Add(TEXT("Stage"), ViewModel ? ViewModel->GetCurrentStageDisplayText() : FText::GetEmpty());
+	Text_DayStage->SetText(FText::Format(DayStageTextFormat, Args));
 }
 
 void UFF_PrepHudBar::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)

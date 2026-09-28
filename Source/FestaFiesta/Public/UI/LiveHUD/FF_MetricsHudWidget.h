@@ -104,6 +104,13 @@ protected:
 	 *  `GetFinaleSatisfactionBonus()`로 읽을 수 있다.)
 	 * ScoreSatisfaction은 Report(분해식)와 Finale 구매 화면(예상치)에서 쓴다.
 	 *
+	 * **2026-09-18 갱신 — ScoreSatisfaction도 실값이 됐다.** 산식은
+	 * `Clamp(SimSatisfaction + FinaleBonus, 0, 100)`이고 두 원본 중 하나가 바뀔 때마다 재계산된다.
+	 * A안 판단은 그대로 유효하다 — 피날레를 사기 전에는 보너스가 0이라 여전히 같은 숫자다.
+	 * ⚠️ UI 문구가 말하는 **"연출 보정" 항은 빠져 있다** — 정의도 계수도 없어 소유자가 넣지 않았고,
+	 * 문구가 백종태 소유라 별도 결정이 필요하다. 보정을 안 넣을 거면 `FF_LivePanelReport`의
+	 * 설명에서 그 항을 지워야 한다.
+	 *
 	 * 이 스텁 HUD는 배선 확인용이라 있으면 표시하고 없어도 통과시킨다.
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
