@@ -31,6 +31,15 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
 	float DefaultMasterVolume = 0.8f;
 
+	// 배경음·효과음은 마스터에 곱해지는 비율이다. 기본 1 이면 마스터만 움직여도 예전과 같다.
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Audio",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float DefaultMusicVolume = 1.f;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Audio",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float DefaultEffectsVolume = 1.f;
+
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Gameplay|Camera")
 	bool bDefaultZoomToCursor = true;
 
@@ -59,6 +68,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Settings")
 	float GetMasterVolume() const { return MasterVolume; }
 
+	// 배경음 비율(0~1). 실제 적용은 UFF_AudioSubsystem 이 OnSettingsChanged 를 받아 한다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Settings")
+	float GetMusicVolume() const { return MusicVolume; }
+
+	// 효과음 비율(0~1). UI·환경음도 여기에 묶인다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Settings")
+	float GetEffectsVolume() const { return EffectsVolume; }
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Settings")
 	bool IsZoomToCursorEnabled() const { return bZoomToCursor; }
 
@@ -67,6 +84,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
 	void SetMasterVolume(float NewValue);
+
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
+	void SetMusicVolume(float NewValue);
+
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
+	void SetEffectsVolume(float NewValue);
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
 	void SetZoomToCursorEnabled(bool bEnabled);
@@ -82,6 +105,12 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
 	void CommitSettings(float NewMasterVolume, bool bNewZoomToCursor, bool bNewEdgeScrollEnabled);
+
+	// 배경음·효과음까지 다섯 값을 한 번에 확정한다. 두 설정 화면은 이쪽을 쓴다.
+	// 위 CommitSettings 를 고치지 않고 새로 둔 이유는 그 노드를 쓰는 BP 가 핀이 바뀌어 깨지지 않게 하려는 것이다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
+	void CommitAllSettings(float NewMasterVolume, float NewMusicVolume, float NewEffectsVolume,
+		bool bNewZoomToCursor, bool bNewEdgeScrollEnabled);
 
 	/** 프로젝트 기본값으로 돌아가고 한 번만 저장·방송한다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
@@ -100,6 +129,8 @@ private:
 	void NotifyChanged();
 
 	float MasterVolume = 0.8f;
+	float MusicVolume = 1.f;
+	float EffectsVolume = 1.f;
 	bool bZoomToCursor = true;
 	bool bEdgeScrollEnabled = true;
 };

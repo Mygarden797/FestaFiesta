@@ -199,6 +199,8 @@ bool UFF_FestivalSettingsScreen::FSettingsDraft::Equals(const FSettingsDraft& Ot
 		ResolutionScalePercent == Other.ResolutionScalePercent &&
 		FrameRateLimit == Other.FrameRateLimit && GraphicsPreset == Other.GraphicsPreset &&
 		bVSync == Other.bVSync && FMath::IsNearlyEqual(MasterVolume, Other.MasterVolume) &&
+		FMath::IsNearlyEqual(MusicVolume, Other.MusicVolume) &&
+		FMath::IsNearlyEqual(EffectsVolume, Other.EffectsVolume) &&
 		bZoomToCursor == Other.bZoomToCursor && bEdgeScroll == Other.bEdgeScroll &&
 		bReduceMotion == Other.bReduceMotion;
 }
@@ -491,6 +493,8 @@ void UFF_FestivalSettingsScreen::CaptureDraft()
 	if (const UFF_RuntimeSettingsSubsystem* Runtime = UFF_RuntimeSettingsSubsystem::Get(this))
 	{
 		Draft.MasterVolume = Runtime->GetMasterVolume();
+		Draft.MusicVolume = Runtime->GetMusicVolume();
+		Draft.EffectsVolume = Runtime->GetEffectsVolume();
 		Draft.bZoomToCursor = Runtime->IsZoomToCursorEnabled();
 		Draft.bEdgeScroll = Runtime->IsEdgeScrollEnabled();
 	}
@@ -653,6 +657,20 @@ void UFF_FestivalSettingsScreen::BuildBasicRows()
 		Draft.MasterVolume, 0.f, 1.f, 0.05f))
 	{
 		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleMasterVolumeChanged);
+	}
+	if (UFF_SettingSliderRow* Row = AddSliderRow(
+		LOCTEXT("MusicVolume", "배경음 음량"),
+		LOCTEXT("MusicVolumeDesc", "축제 배경음과 피날레 음악의 크기를 조절합니다"),
+		Draft.MusicVolume, 0.f, 1.f, 0.05f))
+	{
+		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleMusicVolumeChanged);
+	}
+	if (UFF_SettingSliderRow* Row = AddSliderRow(
+		LOCTEXT("EffectsVolume", "효과음 음량"),
+		LOCTEXT("EffectsVolumeDesc", "불꽃·건설·대기열·UI 소리의 크기를 조절합니다"),
+		Draft.EffectsVolume, 0.f, 1.f, 0.05f))
+	{
+		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleEffectsVolumeChanged);
 	}
 	AddSectionHeader(LOCTEXT("BasicCameraSection", "카메라 조작"));
 	if (UFF_SettingToggleRow* Row = AddToggleRow(
@@ -1479,7 +1497,8 @@ void UFF_FestivalSettingsScreen::CommitDraft()
 	}
 	if (UFF_RuntimeSettingsSubsystem* Runtime = UFF_RuntimeSettingsSubsystem::Get(this))
 	{
-		Runtime->CommitSettings(Draft.MasterVolume, Draft.bZoomToCursor, Draft.bEdgeScroll);
+		Runtime->CommitAllSettings(Draft.MasterVolume, Draft.MusicVolume, Draft.EffectsVolume,
+			Draft.bZoomToCursor, Draft.bEdgeScroll);
 	}
 	if (UFF_UIAccessibilitySubsystem* Accessibility = UFF_UIAccessibilitySubsystem::Get(this))
 	{
@@ -1597,6 +1616,26 @@ void UFF_FestivalSettingsScreen::HandleMasterVolumeChanged(const float Value)
 		return;
 	}
 	Draft.MasterVolume = FMath::Clamp(Value, 0.f, 1.f);
+	UpdateDirtyState();
+}
+
+void UFF_FestivalSettingsScreen::HandleMusicVolumeChanged(const float Value)
+{
+	if (bAwaitingVideoModeConfirmation)
+	{
+		return;
+	}
+	Draft.MusicVolume = FMath::Clamp(Value, 0.f, 1.f);
+	UpdateDirtyState();
+}
+
+void UFF_FestivalSettingsScreen::HandleEffectsVolumeChanged(const float Value)
+{
+	if (bAwaitingVideoModeConfirmation)
+	{
+		return;
+	}
+	Draft.EffectsVolume = FMath::Clamp(Value, 0.f, 1.f);
 	UpdateDirtyState();
 }
 
