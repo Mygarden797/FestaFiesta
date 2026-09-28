@@ -145,22 +145,7 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 	CachedSynergyEntries.Reset();
 	CachedSynergySummary = FText::GetEmpty();
 	SelectionContext = EFF_FacilityInfoContext::None;
-	if (Panel)
-	{
-		Panel->OnFavoriteRequested.RemoveAll(this);
-		Panel->OnMoveRequested.RemoveAll(this);
-		Panel->OnRemoveRequested.RemoveAll(this);
-		Panel->OnProgramScheduleRequested.RemoveAll(this);
-		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->CancelLightingEdit();
-        Panel->OnLightingRollbackRequested.RemoveAll(this);
-        Panel->OnLightingRequested.RemoveAll(this);
-		Panel->OnLightingResetRequested.RemoveAll(this);
-		Panel->OnCloseRequested.RemoveAll(this);
-		Panel->OnRevenueRankingRequested.RemoveAll(this);
-		Panel->RemoveFromParent();
-		Panel = nullptr;
-	}
+	ReleasePanel();
 	OwningController.Reset();
 	Super::Deinitialize();
 }
@@ -268,21 +253,8 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 			return true;
 		}
 
-		// Seamless controller replacement is uncommon in this single-player project, but keeping
-		// the panel bound to a stale LocalPlayer would route input and viewport ownership incorrectly.
-		Panel->OnFavoriteRequested.RemoveAll(this);
-		Panel->OnMoveRequested.RemoveAll(this);
-		Panel->OnRemoveRequested.RemoveAll(this);
-		Panel->OnProgramScheduleRequested.RemoveAll(this);
-		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->CancelLightingEdit();
-        Panel->OnLightingRollbackRequested.RemoveAll(this);
-        Panel->OnLightingRequested.RemoveAll(this);
-		Panel->OnLightingResetRequested.RemoveAll(this);
-		Panel->OnCloseRequested.RemoveAll(this);
-		Panel->OnRevenueRankingRequested.RemoveAll(this);
-		Panel->RemoveFromParent();
-		Panel = nullptr;
+		// 플레이어가 교체되면 이전 플레이어에게 연결된 화면과 입력도 함께 정리한다.
+		ReleasePanel();
 		ClosePaidProgramPicker();
 		OwningController.Reset();
 	}
@@ -326,23 +298,35 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	{
 		UE_LOG(LogFestaFiestaFacilityInfo, Error,
 			TEXT("시설 정보 패널을 Viewport 화면에 추가하지 못했습니다."));
-		Panel->OnFavoriteRequested.RemoveAll(this);
-		Panel->OnMoveRequested.RemoveAll(this);
-		Panel->OnRemoveRequested.RemoveAll(this);
-		Panel->OnProgramScheduleRequested.RemoveAll(this);
-		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->CancelLightingEdit();
-        Panel->OnLightingRollbackRequested.RemoveAll(this);
-        Panel->OnLightingRequested.RemoveAll(this);
-		Panel->OnLightingResetRequested.RemoveAll(this);
-		Panel->OnCloseRequested.RemoveAll(this);
-		Panel->OnRevenueRankingRequested.RemoveAll(this);
-		Panel = nullptr;
+		ReleasePanel();
 		return false;
 	}
 	Panel->SetPanelOpen(false);
 	OwningController = &InOwningController;
 	return true;
+}
+
+void UFF_FacilityInfoSubsystem::ReleasePanel()
+{
+	if (!Panel)
+	{
+		return;
+	}
+
+	Panel->OnFavoriteRequested.RemoveAll(this);
+	Panel->OnMoveRequested.RemoveAll(this);
+	Panel->OnRemoveRequested.RemoveAll(this);
+	Panel->OnProgramScheduleRequested.RemoveAll(this);
+	Panel->OnUpgradeRequested.RemoveAll(this);
+	// 취소 시 원래 조명으로 되돌리는 이벤트가 필요하므로 연결을 끊기 전에 취소한다.
+	Panel->CancelLightingEdit();
+	Panel->OnLightingRollbackRequested.RemoveAll(this);
+	Panel->OnLightingRequested.RemoveAll(this);
+	Panel->OnLightingResetRequested.RemoveAll(this);
+	Panel->OnCloseRequested.RemoveAll(this);
+	Panel->OnRevenueRankingRequested.RemoveAll(this);
+	Panel->RemoveFromParent();
+	Panel = nullptr;
 }
 
 bool UFF_FacilityInfoSubsystem::EnsurePaidProgramPicker(APlayerController& InOwningController)

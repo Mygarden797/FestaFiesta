@@ -7,6 +7,7 @@
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Materials/MaterialInterface.h"
 #include "UI/FacilityCodex/FF_FacilityCodexPresentation.h"
 
@@ -129,7 +130,8 @@ void UFF_FacilityCodexCard::RefreshDiscoveryAppearance()
 			Brush.OutlineSettings.Color = FSlateColor(UndiscoveredOutlineColor);
 		}
 		CardBackground->SetBrush(Brush);
-		CardBackground->SetBrushColor(bUndiscovered ? FLinearColor::White : AuthoredCardBrushColor);
+		CardBackground->SetBrushColor(bUndiscovered && Cast<UMaterialInterface>(Brush.GetResourceObject())
+			? UndiscoveredBackgroundColor : bUndiscovered ? FLinearColor::White : AuthoredCardBrushColor);
 	}
 	if (StateBackground)
 	{
@@ -201,9 +203,28 @@ void UFF_FacilityCodexCard::RefreshPresentation()
 	if (Text_Name) Text_Name->SetText(Entry.DisplayName);
 	if (Text_Recipe) Text_Recipe->SetText(FText::Format(LOCTEXT("Recipe", "{0} + {1}"), Entry.TargetName, Entry.PartnerName));
 	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("Bonus", "수수료 +{0}%"), Number(Entry.ConfiguredBonusPercent)));
-	if (Text_State) Text_State->SetText(Entry.bEffectApplied
-		? LOCTEXT("AppliedCompact", "효과 적용 중") : Entry.bDiscovered
-		? LOCTEXT("Discovered", "발견 완료") : LOCTEXT("UndiscoveredCompact", "미발견"));
+	if (Text_State)
+	{
+		const bool bClaimed = Entry.bDiscovered && Entry.bDiscoveryRewardClaimed;
+		if (Entry.DiscoveryRewardGold > 0 || bClaimed)
+		{
+			const FText RewardState = bClaimed ? LOCTEXT("ClaimedCompact", "수령 완료")
+				: Entry.bDiscovered ? LOCTEXT("ReadyCompact", "수령 가능")
+					: LOCTEXT("UndiscoveredCompact", "미발견");
+			Text_State->SetText(Entry.DiscoveryRewardGold <= 0
+				? LOCTEXT("ClaimedWithoutCurrentAmount", "보상 수령 완료")
+				: Image_CardRewardGold
+					? FText::Format(LOCTEXT("CardRewardStateWithIcon", "{0} G · {1}"),
+						FText::AsNumber(Entry.DiscoveryRewardGold), RewardState)
+					: FText::Format(LOCTEXT("CardRewardState", "보상 {0} G · {1}"),
+						FText::AsNumber(Entry.DiscoveryRewardGold), RewardState));
+		}
+		else
+		{
+			Text_State->SetText(Entry.bEffectApplied ? LOCTEXT("AppliedCompact", "효과 적용 중")
+				: Entry.bDiscovered ? LOCTEXT("Discovered", "발견 완료") : LOCTEXT("Undiscovered", "미발견"));
+		}
+	}
 	Thumbnail(Image_Target, Text_TargetFallback, Entry.TargetThumbnail, ShownTarget);
 	Thumbnail(Image_Partner, Text_PartnerFallback, Entry.PartnerThumbnail, ShownPartner);
 	if (Border_Selection) Border_Selection->SetVisibility(IsListItemSelected() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
@@ -213,54 +234,50 @@ void UFF_FacilityCodexCard::RefreshRewardPresentation()
 {
 	const bool bDiscovered = Item && Item->Entry.bDiscovered;
 	const bool bClaimed = bDiscovered && Item->Entry.bDiscoveryRewardClaimed;
-	// A later reward-table change must not hide an existing claim from the player's history.
-	const bool bHasReward = bDiscovered && (Item->Entry.DiscoveryRewardGold > 0 || bClaimed);
-	const bool bHasClaimedBadge = Border_RewardClaimed != nullptr;
-	const bool bShowLockedReward = Border_RewardLocked && Item && !bDiscovered && Item->Entry.DiscoveryRewardGold > 0;
+	const bool bReady = bDiscovered && !bClaimed && Item->Entry.DiscoveryRewardGold > 0;
+	// The bottom state line already names paid and undiscovered rewards with their amount.
+	// This strip also owns the fee percentage, so keep it for every populated card.
+	if (UWidget* RewardRow = GetWidgetFromName(TEXT("Scale_RewardActions")))
+	{
+		RewardRow->SetVisibility(Item ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (Image_CardRewardGold)
+	{
+		const bool bShowGold = Item && (Item->Entry.DiscoveryRewardGold > 0 || bClaimed);
+		Image_CardRewardGold->SetVisibility(bShowGold ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		Image_CardRewardGold->SetColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, bDiscovered ? 1.f : .55f));
+	}
 	if (Size_RewardState)
 	{
-		Size_RewardState->SetVisibility(bHasReward || bShowLockedReward
-			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+		Size_RewardState->SetVisibility(bReady ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	}
 	if (Button_ClaimReward)
 	{
-		Button_ClaimReward->SetVisibility(bHasReward && !(bClaimed && bHasClaimedBadge)
-			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-		Button_ClaimReward->SetIsEnabled(bHasReward && !bClaimed);
-		Button_ClaimReward->SetToolTipText(!bHasReward ? FText::GetEmpty() : bClaimed
-			? LOCTEXT("RewardClaimedTip", "발견 보상 수령 완료")
-			: FText::Format(LOCTEXT("RewardTip", "발견 보상 {0} 골드 받기 (1회)"), FText::AsNumber(Item->Entry.DiscoveryRewardGold)));
+		Button_ClaimReward->SetVisibility(bReady ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		Button_ClaimReward->SetIsEnabled(bReady);
+		Button_ClaimReward->SetToolTipText(bReady
+			? FText::Format(LOCTEXT("RewardTip", "발견 보상 {0} 골드 받기 (1회)"), FText::AsNumber(Item->Entry.DiscoveryRewardGold))
+			: FText::GetEmpty());
 	}
 	if (Border_RewardClaimed)
 	{
-		// A passive badge keeps the check and completion label at full contrast, without
-		// looking like a dimmed gift that might become available again. Visible permits its tooltip.
-		Border_RewardClaimed->SetVisibility(bClaimed ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-		Border_RewardClaimed->SetIsEnabled(true);
-		Border_RewardClaimed->SetToolTipText(bClaimed
-			? LOCTEXT("RewardClaimedTip", "발견 보상 수령 완료") : FText::GetEmpty());
+		Border_RewardClaimed->SetVisibility(ESlateVisibility::Collapsed);
+		Border_RewardClaimed->SetToolTipText(FText::GetEmpty());
 	}
 	if (Border_RewardLocked)
 	{
-		// Show the future reward without exposing a claim action before discovery.
-		// This passive surface stays enabled so its prerequisite and amount are readable.
-		Border_RewardLocked->SetVisibility(bShowLockedReward ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-		Border_RewardLocked->SetIsEnabled(true);
-		Border_RewardLocked->SetToolTipText(bShowLockedReward
-			? FText::Format(LOCTEXT("RewardLockedTip", "발견하면 보상 {0} 골드 수령 가능 (1회)"),
-				FText::AsNumber(Item->Entry.DiscoveryRewardGold)) : FText::GetEmpty());
+		Border_RewardLocked->SetVisibility(ESlateVisibility::Collapsed);
+		Border_RewardLocked->SetToolTipText(FText::GetEmpty());
 	}
-	// Child images never intercept interaction. Older assets retain their disabled-gift fallback.
+	// The action icon never intercepts the button's click.
 	if (Image_ClaimReward) Image_ClaimReward->SetVisibility(ESlateVisibility::HitTestInvisible);
-	if (Image_RewardClaimed) Image_RewardClaimed->SetVisibility(ESlateVisibility::HitTestInvisible);
+	if (Image_RewardClaimed) Image_RewardClaimed->SetVisibility(ESlateVisibility::Collapsed);
 	if (Text_ClaimReward)
 	{
-		// The new layout reserves room for a compact caption; older icon-only buttons do not.
-		Text_ClaimReward->SetVisibility(bHasClaimedBadge || !Image_ClaimReward
-			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-		Text_ClaimReward->SetText(bHasClaimedBadge ? LOCTEXT("ClaimRewardCompact", "받기")
-			: bClaimed ? LOCTEXT("RewardClaimed", "수령 완료") : LOCTEXT("ClaimReward", "보상 받기"));
-		Text_ClaimReward->SetColorAndOpacity(bClaimed ? FSlateColor(ClaimedRewardTextColor) : AuthoredClaimRewardColor);
+		Text_ClaimReward->SetVisibility(bReady ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		Text_ClaimReward->SetText(Image_CardRewardGold ? LOCTEXT("ClaimRewardCompact", "받기")
+			: LOCTEXT("ClaimReward", "보상 받기"));
+		Text_ClaimReward->SetColorAndOpacity(AuthoredClaimRewardColor);
 	}
 }
 
@@ -268,6 +285,14 @@ void UFF_FacilityCodexCard::HandleClaimReward()
 {
 	if (!Item || !Item->Entry.bDiscovered || Item->Entry.bDiscoveryRewardClaimed || Item->Entry.DiscoveryRewardGold <= 0) return;
 	Item->OnClaimRewardRequested.ExecuteIfBound(Item->Entry.RuleId);
+}
+
+bool UFF_FacilityCodexCard::IsClaimActionUnderCursorFor(const UObject* ExpectedItem) const
+{
+	if (Item.Get() != ExpectedItem || !Button_ClaimReward || !Button_ClaimReward->IsVisible()
+		|| !Button_ClaimReward->GetIsEnabled()) return false;
+	return Button_ClaimReward->IsHovered() || (FSlateApplication::IsInitialized()
+		&& Button_ClaimReward->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos()));
 }
 
 #undef LOCTEXT_NAMESPACE

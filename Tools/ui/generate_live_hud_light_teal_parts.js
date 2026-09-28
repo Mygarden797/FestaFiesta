@@ -1,10 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const sharp = require('C:/Users/jt/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/sharp');
+const os = require('os');
+let sharp;
+try { sharp = require('sharp'); }
+catch (_) { sharp = require(path.join(os.homedir(), '.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/sharp')); }
 
 const root = path.resolve(__dirname, '../../SourceArt/UI/LiveHUD/LightTealParts_v1');
 const vectorRoot = path.join(root, 'VectorSource');
+const goldCoinSource = path.join(__dirname, 'assets/StarEmbossedGoldCoin.png');
 const records = [];
 
 const C = {
@@ -81,6 +85,37 @@ async function writeIcon(group, name, content, usage, target = '18-24px') {
   await writeAsset(`Icons/${group}`, name, 256, 256, body, {
     tintable: true,
     target,
+    usage
+  });
+}
+
+// Gold is full-colour authored artwork. Keep its original RGBA pixels in the
+// generated source pack; Unreal limits the resident UI texture to 256px.
+async function writeGoldCoinAsset(category, name, usage, target) {
+  const metadata = await sharp(goldCoinSource).metadata();
+  if (!metadata.hasAlpha || metadata.width !== metadata.height || metadata.width < 256) {
+    throw new Error(`Invalid Gold coin source: ${goldCoinSource}`);
+  }
+  const pngDir = path.join(root, category);
+  const svgDir = path.join(vectorRoot, category);
+  await fs.promises.mkdir(pngDir, { recursive: true });
+  await fs.promises.mkdir(svgDir, { recursive: true });
+  const pngPath = path.join(pngDir, `${name}.png`);
+  const svgPath = path.join(svgDir, `${name}.svg`);
+  await fs.promises.copyFile(goldCoinSource, pngPath);
+  const encoded = (await fs.promises.readFile(goldCoinSource)).toString('base64');
+  await fs.promises.writeFile(svgPath, svg(metadata.width, metadata.height,
+    `<image width="${metadata.width}" height="${metadata.height}" href="data:image/png;base64,${encoded}"/>`), 'utf8');
+  records.push({
+    file: path.relative(root, pngPath).replace(/\\/g, '/'),
+    source_svg: path.relative(root, svgPath).replace(/\\/g, '/'),
+    width: metadata.width,
+    height: metadata.height,
+    draw_as: 'Image',
+    margin_px: null,
+    tintable: false,
+    tileable: false,
+    target_size_1080p: target,
     usage
   });
 }
@@ -201,7 +236,6 @@ async function makeNavigationIcons() {
 
 async function makeMetricAndActionIcons() {
   const metrics = [
-    ['T_FF_LH_Icon_Gold_White_256', '<circle cx="32" cy="32" r="25"/><path d="M39 23C36 19 27 19 24 23C20 28 25 32 32 32C39 32 44 36 40 42C37 47 27 46 23 42M32 14V50"/>', '보유 골드'],
     ['T_FF_LH_Icon_Visitors_White_256', '<circle cx="22" cy="22" r="9"/><circle cx="45" cy="24" r="7"/><path d="M5 56C5 40 11 33 22 33S39 40 39 56M38 39C50 39 57 45 57 56"/>', '현재 관객'],
     ['T_FF_LH_Icon_StaffCount_White_256', '<circle cx="32" cy="21" r="10"/><path d="M9 57C9 41 18 33 32 33S55 41 55 57"/>', '스태프 수'],
     ['T_FF_LH_Icon_Clock_White_256', '<circle cx="32" cy="32" r="25"/><path d="M32 17V34L44 41"/>', '현재 시각'],
@@ -214,6 +248,8 @@ async function makeMetricAndActionIcons() {
     ['T_FF_LH_Icon_Assigned_White_256', '<circle cx="25" cy="21" r="9"/><path d="M7 56C7 40 14 33 25 33S43 40 43 56M45 32H58M51.5 25V39"/>', '배치 중 상태']
   ];
   for (const [name, body, usage] of metrics) await writeIcon('Metrics', name, body, usage);
+  await writeGoldCoinAsset('Icons/Metrics', 'T_FF_LH_Icon_Gold_White_256',
+    '보유 골드. 원본 컬러를 유지하고 Tint하지 않는다.', '18-24px');
 
   const actions = [
     ['T_FF_LH_Icon_Close_White_256', '<path d="M14 14L50 50M50 14L14 50"/>', '닫기'],
@@ -330,9 +366,8 @@ async function makeBadges() {
   await writeAsset('Badges', 'T_FF_LH_Badge_FF_256', 256, 256,
     `<circle cx="128" cy="128" r="112" fill="${C.teal}" stroke="${C.white}" stroke-width="12"/><circle cx="128" cy="128" r="96" fill="none" stroke="${C.tealDeep}" stroke-width="6"/><text x="128" y="138" text-anchor="middle" dominant-baseline="middle" fill="#FFFFFF" font-family="Georgia" font-size="68" font-weight="800">FF</text>`,
     { target: '20-28px', usage: '하단 상태바 FF 배지.' });
-  await writeAsset('Badges', 'T_FF_LH_Badge_Gold_256', 256, 256,
-    `<circle cx="128" cy="128" r="112" fill="${C.amber}" stroke="${C.white}" stroke-width="12"/><circle cx="128" cy="128" r="96" fill="none" stroke="#A96912" stroke-width="6"/><path d="M154 91C143 75 112 76 102 91C89 110 105 126 128 126C151 126 168 143 155 164C144 183 111 181 99 164M128 61V195" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"/>`,
-    { target: '20-28px', usage: '하단 상태바 Gold 배지.' });
+  await writeGoldCoinAsset('Badges', 'T_FF_LH_Badge_Gold_256',
+    '하단 상태바 Gold 배지. 원본 컬러를 유지하고 Tint하지 않는다.', '20-28px');
 }
 
 async function makePreview() {
@@ -370,7 +405,8 @@ async function makePreview() {
     ['Metrics', 'Gold'], ['Metrics', 'Visitors'], ['Metrics', 'StaffCount'], ['Metrics', 'Clock'], ['Metrics', 'Satisfaction'], ['Metrics', 'Safety'], ['Metrics', 'Revenue'], ['Metrics', 'Wait'],
     ['Actions', 'Locate'], ['Actions', 'AssignStaff'], ['Actions', 'Play'], ['Actions', 'Pause'], ['Actions', 'FastForward'], ['Status', 'StatusWarning'], ['Status', 'StatusDanger']
   ];
-  for (let i = 0; i < rows.length; i++) await add(`Icons/${rows[i][0]}/T_FF_LH_Icon_${rows[i][1]}_White_256.png`, 80 + i * 155, 985, 92, 92, i >= 13 ? (i === 13 ? C.amber : C.danger) : C.tealDeep);
+  for (let i = 0; i < rows.length; i++) await add(`Icons/${rows[i][0]}/T_FF_LH_Icon_${rows[i][1]}_White_256.png`, 80 + i * 155, 985, 92, 92,
+    i === 0 ? null : (i >= 13 ? (i === 13 ? C.amber : C.danger) : C.tealDeep));
 
   text('HEAT MAP / WORLD MARKERS', 70, 1140, 28, C.teal);
   await add('HeatMap/T_FF_LH_HeatMap_SafeDots_512_Tile.png', 80, 1195, 160, 160, '#4F9E70');
@@ -420,6 +456,7 @@ async function writeManifest() {
 
 async function writeReadme() {
   const readme = `# FestaFiesta Live HUD Light Teal 파츠 v1\n\n` +
+`Gold 코인 2종은 Tools/ui/assets/StarEmbossedGoldCoin.png 정본을 원본 RGBA 그대로 복사한다. 파일명에 White_256이 있어도 컬러 코인이므로 UMG Tint는 흰색을 사용하고, Unreal Max Texture Size만 256으로 제한한다.\n\n` +
 `최종 58px HUD 목업을 Unreal UMG에서 재조립하기 위한 프로젝트 자체 제작 원본 팩이다. 화면 캡처를 잘라 키운 파일이 아니라 SVG 도형에서 각 PNG를 직접 렌더링했다.\n\n` +
 `## 포함 범위\n\n- 공통 패널·헤더·푸터·알림·툴팁\n- 메뉴/액션/칩/시간 제어 버튼 상태\n- 카드·구분선·진행바\n- 메뉴 9종, 지표, 행동, 시설, 상태 아이콘\n- 밀집도 반복 패턴과 월드 라벨·핀·연결선\n- 모든 PNG의 SVG 원본(\`VectorSource/\`)\n\n` +
 `## 핵심 원칙\n\n- 문구·숫자는 텍스처에 굽지 않는다. Unreal \`TextBlock\`으로 배치한다.\n- 이름에 \`_White_\`가 있는 아이콘과 \`WhiteMask\` 진행바는 \`Color and Opacity\`로 Tint한다.\n- \`_9Slice\` 파일은 Brush \`Draw As = Box\`로 설정하고 \`asset-manifest.json\`의 \`margin_px\`를 적용한다.\n- HeatMap의 \`_Tile\` 3종만 Address X/Y를 \`Wrap\`, Mip Gen을 \`FromTextureGroup\`으로 둔다.\n- Preview는 검토용이며 Unreal에 임포트하지 않는다. \`VectorSource\`도 임포트 대상이 아니다.\n\n` +

@@ -274,8 +274,8 @@ FVector UFF_QueueSubsystem::GetFacilityExitLocation(int32 FacilityId) const
 bool UFF_QueueSubsystem::IsFestivalLive() const
 {
 	const UWorld* World = GetWorld();
-	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-	const UFF_FestivalStageSubsystem* Stage = GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage =
+		UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(World ? World->GetGameInstance() : nullptr);
 
 	// 스테이지 서브시스템이 없는 맵(테스트 레벨 등)에서는 게이팅하지 않는다.
 	return Stage ? (Stage->CurrentStage == EFF_FestivalStage::Live) : true;
@@ -315,12 +315,21 @@ void UFF_QueueSubsystem::AdvanceFixedSteps(int32 NumSteps)
 
 void UFF_QueueSubsystem::Tick(float DeltaTime)
 {
-	if (bPaused || Queues.Num() == 0)
+	// 일시정지는 전부 멈춘다. 알림도 풀릴 때 한꺼번에 나간다.
+	if (bPaused)
 	{
 		return;
 	}
-	if (bAdvanceOnlyDuringLiveStage && !IsFestivalLive())
+
+	/* 시뮬레이션을 안 돌리는 동안에도 쌓인 알림은 내보낸다.
+
+	   알림은 Tick 밖(합류·취소·시설 폐쇄)에서도 쌓인다. 예전에는 여기서 먼저 돌아가서,
+	   마지막 시설이 철거돼 대기열이 0개가 되거나 Live 가 끝난 뒤에 취소된 손님은
+	   그 알림을 다음 Live 까지 못 받았다. 그동안 줄이 없어진 자리에 서 있었다.
+	*/
+	if (Queues.Num() == 0 || (bAdvanceOnlyDuringLiveStage && !IsFestivalLive()))
 	{
+		FlushPendingEvents();
 		return;
 	}
 

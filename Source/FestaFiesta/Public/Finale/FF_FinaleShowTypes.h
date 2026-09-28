@@ -78,6 +78,27 @@ enum class EFF_FinaleShapePlane : uint8
 	Vertical UMETA(DisplayName = "수직면")
 };
 
+/* 최고 등급 연출의 막. 시점마다 어느 막에 쓰일지 정한다.
+
+   불꽃만 90초 보여주면 중간부터 지루하다. 그래서 불꽃을 보다가 사흘 동안 지은
+   축제장을 한 바퀴 돌고, 다시 하늘로 돌아와 마무리를 본다.
+
+   영상으로 미리 만들어 끼우지 않는 이유는 플레이어가 놓은 시설과 관객이 화면에
+   나와야 하기 때문이다. 미리 만든 영상에는 그 판의 축제장이 없다.
+*/
+UENUM(BlueprintType)
+enum class EFF_FinaleTourAct : uint8
+{
+	// 하늘을 보는 자리. 기본값이라 예전에 놓은 시점은 전부 여기에 든다.
+	Fireworks    UMETA(DisplayName = "불꽃 관람"),
+
+	// 축제장을 보는 자리. 이 막 동안은 발사를 멈추고 엔딩곡을 튼다.
+	SiteTour     UMETA(DisplayName = "축제장 순회"),
+
+	// 마무리를 보는 자리. 하나도 없으면 첫 불꽃 관람 자리로 돌아온다.
+	GrandFinale  UMETA(DisplayName = "마무리")
+};
+
 /* 한 차례의 자리를 정할 때 필요한 바깥 사정.
 
    패턴이 월드를 직접 뒤지지 않게 값으로 받는다. 자리 계산을 순수하게 두면
@@ -234,6 +255,40 @@ struct FFF_FinaleGradeSpec
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0"))
 	int32 TourViewpointLimit = 1;
 
+	/* 불꽃 관람 → 축제장 순회 → 마무리 3막으로 진행할지.
+
+	   레벨에 불꽃 관람 시점과 축제장 순회 시점이 하나 이상씩 있어야 막이 선다.
+	   하나라도 없으면 예전처럼 하늘 시점만 돈다. 3막일 때는 TourViewpointLimit 를 보지 않는다.
+
+	   최고 등급에만 켠다. 순회 동안 발사를 멈추므로 발수가 적은 등급에서 켜면
+	   하늘이 비어 보인다. 기본값을 false 로 둔 이유도 같다. 데이터 애셋은 기본값과
+	   다른 값만 저장하므로, 기본값이 true 면 이미 만든 애셋의 모든 등급이 켜진다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막")
+	bool bSiteTour = false;
+
+	// 마무리 막 몫으로 남겨둘 발수 비율(0~1).
+	// 1막에서 다 써버리면 돌아와서 볼 게 없다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bSiteTour"))
+	float GrandFinaleShare = 0.5f;
+
+	// 마무리 막의 발사 간격 배수. 0.5 면 두 배 빠르게 쏜다.
+	// 끝으로 갈수록 몰아쳐야 끝난다는 느낌이 난다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막",
+		meta = (ClampMin = "0.1", ClampMax = "1.0", EditCondition = "bSiteTour"))
+	float GrandFinaleIntervalScale = 0.5f;
+
+	/* 마지막에 모든 발사대에서 한꺼번에 올릴 발수. 0 이면 일제 발사 없이 끝난다.
+
+	   남은 발수가 이 값 이하로 내려오면 나머지를 한 번에 쏜다. 마지막이 한 발씩
+	   잦아들면 플레이어는 끝났는지 몰라 계속 기다린다.
+	   마무리 몫보다 크게 잡으면 마무리 막에 들어서자마자 전부 터진다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막",
+		meta = (ClampMin = "0", EditCondition = "bSiteTour"))
+	int32 FinalSalvoShells = 0;
+
 	/* 이 등급에서 쓸 발사 패턴.
 
 	   비어 있으면 단발만 쏜다. 여러 개 넣으면 차례마다 무작위로 고른다.
@@ -283,22 +338,30 @@ struct FFF_FinaleGradeSpec
 	   Seed 를 받는 이유는 한 패턴 안에서 같은 이펙트로 맞추고 싶을 때가 있어서다.
 	   모양이 있는 패턴은 종류가 섞이면 모양이 안 보인다.
 
+	   빈 칸은 건너뛴다. 배열에 None 이 섞여 있으면 그 칸이 뽑힐 때마다 이펙트 없이
+	   신호만 나가서, "지정했는데 가끔 안 터진다" 로 보인다.
+	   Seed 를 부호 없는 수로 받는 이유는 Abs(INT_MIN) 이 음수로 남기 때문이다.
+
 	   구현을 헤더에 두지 않는 이유는 로드에 UNiagaraSystem 의 정의가 필요한데,
 	   그것 때문에 이 헤더를 포함하는 모든 곳이 Niagara 를 같이 끌고 오게 되기 때문이다.
 	*/
-	FESTAFIESTA_API UNiagaraSystem* PickEffect(int32 Seed) const;
+	FESTAFIESTA_API UNiagaraSystem* PickEffect(uint32 Seed) const;
 
-	bool HasAnyEffect() const
+	// 비어 있지 않은 이펙트 칸 수. 진단용이다.
+	int32 CountAssignedEffects() const
 	{
+		int32 Count = 0;
 		for (const TSoftObjectPtr<UNiagaraSystem>& Effect : BurstEffects)
 		{
 			if (!Effect.IsNull())
 			{
-				return true;
+				++Count;
 			}
 		}
-		return false;
+		return Count;
 	}
+
+	bool HasAnyEffect() const { return CountAssignedEffects() > 0; }
 
 	// 발사 간격. 총 발수와 지속 시간에서 계산한다.
 	// 발수가 0 이거나 하나뿐이면 간격이 의미 없으므로 전체 길이를 돌려준다.
@@ -313,16 +376,61 @@ struct FFF_FinaleGradeSpec
 		return FMath::Max(0.05f, DurationSeconds / static_cast<float>(VolleyCount));
 	}
 
-	// 몇 번에 나눠 쏘는가. 동시 발사 수가 크면 횟수가 줄어든다.
+	/* 한 차례에 평균 몇 발이 나가는가.
+
+	   실제 발수는 max(SimultaneousShells, 패턴의 ShellCount) 라서 동시 발사 수만으로
+	   나누면 틀린다. 예전에 그렇게 나눴더니 S 등급은 차례당 6발로 잡혀 100차례가
+	   됐는데, 실제로는 평균 8발 남짓이라 70차례쯤에 발이 동났다. 남은 30차례는
+	   빈 하늘로 흘렀다 — 연출의 마지막 3분의 1이 정적이었다.
+
+	   가중치로 기댓값을 낸다. PickVolley 가 뽑는 확률과 같은 식이다.
+	*/
+	float GetExpectedShellsPerVolley() const
+	{
+		const int32 Base = FMath::Max(1, SimultaneousShells);
+		if (Volleys.Num() == 0)
+		{
+			return static_cast<float>(Base);
+		}
+
+		float TotalWeight = 0.f;
+		float WeightedShells = 0.f;
+		for (const FFF_FinaleVolley& Volley : Volleys)
+		{
+			const float Weight = FMath::Max(0.01f, Volley.Weight);
+			TotalWeight += Weight;
+			WeightedShells += Weight * static_cast<float>(FMath::Max(Base, Volley.ShellCount));
+		}
+
+		return TotalWeight > 0.f ? WeightedShells / TotalWeight : static_cast<float>(Base);
+	}
+
+	/* 몇 번에 나눠 쏘는가. 간격을 정하는 데만 쓴다.
+
+	   기댓값이라 실제 차례 수와 조금 어긋난다. 그래서 연출이 언제 끝나는지는 이
+	   값이 아니라 남은 발수로 정한다(UFF_FinaleShowSubsystem::Tick).
+	*/
 	int32 GetVolleyCount() const
 	{
-		const int32 PerVolley = FMath::Max(1, SimultaneousShells);
-		return FMath::DivideAndRoundUp(FMath::Max(0, BurstCount), PerVolley);
+		const float PerVolley = FMath::Max(1.f, GetExpectedShellsPerVolley());
+		return FMath::CeilToInt(static_cast<float>(FMath::Max(0, BurstCount)) / PerVolley);
 	}
 
 	bool IsPlayable() const
 	{
 		return BurstCount > 0 && DurationSeconds > 0.f;
+	}
+
+	// 3막일 때 마무리 막 몫으로 남겨둘 발수. 3막이 아니면 0 이다.
+	int32 GetGrandFinaleReserve() const
+	{
+		if (!bSiteTour || BurstCount <= 0)
+		{
+			return 0;
+		}
+
+		const float Share = FMath::Clamp(GrandFinaleShare, 0.f, 1.f);
+		return FMath::Clamp(FMath::CeilToInt(static_cast<float>(BurstCount) * Share), 0, BurstCount);
 	}
 };
 
@@ -387,8 +495,8 @@ public:
 
 // 데이터 애셋이 없을 때 쓰는 기본 수치.
 //
-// 미구매 등급도 최소 연출을 남긴다. 아무것도 안 터지면 "축제가 그냥 끝났다" 가 되는데,
-// 그건 예산을 못 쓴 결과이지 축제가 없었던 건 아니다.
+// 미구매 등급은 불꽃을 쏘지 않는다(BurstCount 0). 예산을 못 모은 결과를 빈 하늘로
+// 보여준다. 연출 쪽은 이 등급을 재생 불가로 보고 시작하지 않는다.
 namespace FFF_FinaleDefaults
 {
 	FESTAFIESTA_API FFF_FinaleGradeSpec MakeSpec(EFF_FinaleGrade Grade);

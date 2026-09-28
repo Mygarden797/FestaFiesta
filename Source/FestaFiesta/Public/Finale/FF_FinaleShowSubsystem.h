@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Debug/FF_DebugConsole.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
 #include "Time/FF_FestivalStage.h"
 #include "Finale/FF_FinaleShowTypes.h"
@@ -11,13 +12,8 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_FinaleShowSubsystem.generated.h"
 
-#if !UE_BUILD_SHIPPING
-struct IConsoleCommand;
-#endif
-
 class AFF_FinaleViewpoint;
 class AFF_FinaleLaunchSite;
-class AFF_FinaleViewpoint;
 class AFF_FestivalPlayerController;
 
 // 연출 진행 상태가 바뀔 때. UI 가 표시를 바꾸거나 다른 시스템이 멈출 때 쓴다.
@@ -25,6 +21,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleShowStateChanged, bool, 
 
 // 한 발 터질 때마다. 사운드나 화면 흔들림을 붙이고 싶으면 여기에 건다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnFinaleBurst, FVector, WorldLocation, FLinearColor, Color);
+
+// 3막 연출에서 막이 바뀔 때. 엔딩곡처럼 막에 맞춰 바뀌어야 하는 것을 여기에 건다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleTourActChanged, EFF_FinaleTourAct, NewAct);
 
 // 피날레 불꽃 연출을 실행한다.
 //
@@ -68,6 +67,26 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
 	float GetElapsedSeconds() const { return ElapsedSeconds; }
 
+	/* 카메라 순회를 끊고 원래 시점으로 돌아간다. 불꽃은 계속 터진다.
+
+	   두 번째 플레이부터는 영상을 다시 보고 싶지 않다. 그렇다고 연출을 통째로
+	   끝내면 마지막을 못 보므로, 카메라만 놓아준다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Finale")
+	void SkipCinematicCamera();
+
+	// 지금 카메라 순회 중인지. 스킵 안내를 띄울지 정하는 데 쓴다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
+	bool IsCinematicTourActive() const { return TourViewpoints.Num() > 1 && !bTourSkipped; }
+
+	// 이번 연출이 3막(불꽃 관람 → 축제장 순회 → 마무리)으로 도는지.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
+	bool IsActTourActive() const { return bActMode; }
+
+	// 지금 막. 3막이 아니면 늘 불꽃 관람이다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
+	EFF_FinaleTourAct GetCurrentAct() const { return CurrentAct; }
+
 	// 축제가 피날레 단계에 들어가면 자동으로 시작할지.
 	//
 	// 끄면 StartShow 를 직접 불러야 한다. 연출을 다듬는 동안에는 꺼두고 콘솔로
@@ -84,6 +103,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Finale")
 	FFF_OnFinaleBurst OnBurst;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Finale")
+	FFF_OnFinaleTourActChanged OnTourActChanged;
 
 	// 등급별 수치를 직접 지정한다. 보통은 비워두고 GameMode 나 Project Settings 를 쓴다.
 	//
@@ -134,10 +156,8 @@ private:
 	// 문자열을 등급으로 바꾼다. "S" "a" "none" 전부 받는다.
 	static bool TryParseGrade(const FString& Token, EFF_FinaleGrade& OutGrade);
 
-	IConsoleCommand* PlayConsoleCommand = nullptr;
-	IConsoleCommand* StopConsoleCommand = nullptr;
-	IConsoleCommand* StatConsoleCommand = nullptr;
-	IConsoleCommand* SkipCameraConsoleCommand = nullptr;
+	// 개발용 콘솔 명령. 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
+	FFF_DebugConsoleCommands DebugCommands;
 #endif
 
 	// 이펙트에 우리가 넣으려는 User 파라미터가 실제로 있는지 확인하고, 없으면 알린다.
@@ -170,7 +190,24 @@ private:
 	void BuildTour();
 
 	// 다음 시점으로 옮긴다. 마지막이면 첫 자리로 돌아간다.
+	// 3막이면 돌아가지 않고 마지막(마무리) 자리에 머문다.
 	void AdvanceTour();
+
+	// 막을 바꾸고 알린다. 같은 막이면 아무것도 하지 않는다.
+	void SetCurrentAct(EFF_FinaleTourAct NewAct);
+
+	/* 지금 발사해도 되는지.
+
+	   3막이 아니면 남은 발이 있는 한 열려 있다. 3막이면 축제장 순회 동안 닫히고,
+	   불꽃 관람 막에서는 마무리 몫을 남기고 닫힌다.
+	*/
+	bool IsFiringGateOpen() const;
+
+	// 마무리 막이면 간격을 줄인다. 그 밖에는 1.
+	float GetActIntervalScale() const;
+
+	// 남은 발을 모든 발사대에서 한꺼번에 올린다. 3막 마무리의 마지막 한 방이다.
+	void FireFinalSalvo();
 
 	// 지금 시점으로 카메라를 옮긴다.
 	void ApplyTourViewpoint(float BlendSeconds);
@@ -185,6 +222,12 @@ private:
 
 	// 한 발을 실제로 띄운다. 패턴이 정한 자리든 흩뿌린 자리든 여기로 모인다.
 	void SpawnShell(const FVector& Location, const FLinearColor& Color, class UNiagaraSystem* Effect);
+
+	// 아직 쏘지도 예약하지도 않은 발수. 연출의 끝을 이것으로 정한다.
+	int32 GetRemainingShells() const;
+
+	// 이펙트 칸 상태를 한 줄로. 콘솔과 경고 로그가 같은 표기를 쓰게 한다.
+	static FString DescribeEffects(const FFF_FinaleGradeSpec& Spec);
 
 	// 지연 발사 대기열. 일렬이나 부챗살은 한 프레임에 다 쏘지 않는다.
 	struct FPendingShell
@@ -211,24 +254,37 @@ private:
 	// 지금 자리에 머문 시간. 체류 시간을 채우면 다음으로 넘어간다.
 	float TourHeldSeconds = 0.f;
 
+	// 이번 연출에서 카메라 순회를 끊었는지. 끊은 뒤에는 다시 잡지 않는다.
+	bool bTourSkipped = false;
+
+	// TourViewpoints 와 같은 순서로 각 자리의 막을 든다.
+	// 마무리 시점이 없으면 첫 불꽃 관람 자리를 마무리로 한 번 더 쓰므로, 자리의 설정값과 다를 수 있다.
+	TArray<EFF_FinaleTourAct> TourActs;
+
+	// 이번 연출이 3막인지. BuildTour 에서 정한다.
+	bool bActMode = false;
+
+	EFF_FinaleTourAct CurrentAct = EFF_FinaleTourAct::Fireworks;
+
+	// 불꽃 관람 막에서 쏠 수 있는 발수. 나머지는 마무리 막 몫이다.
+	int32 ActOneQuota = 0;
+
+	/* 발사용 시계. 발사가 열려 있거나 예약된 발이 남아 있을 때만 흐른다.
+
+	   축제장 순회 동안 발사를 멈추려면 발사 간격 계산도 같이 멈춰야 한다.
+	   전체 경과 시간으로 재면 순회를 마치고 돌아온 순간 밀린 간격을 한꺼번에 따라잡으려 든다.
+	   3막이 아니면 발사가 끝날 때까지 늘 열려 있어 전체 경과 시간과 같게 흐른다.
+	*/
+	float FiringClock = 0.f;
+
 	// 동시 발수가 지나치게 많을 때 한 번만 알린다.
 	bool bWarnedHighShellCount = false;
 
-public:
-	/* 카메라 순회를 끊고 원래 시점으로 돌아간다. 불꽃은 계속 터진다.
+	// 이펙트 없이 쏘고 있다는 것을 한 번만 알린다.
+	bool bWarnedMissingEffect = false;
 
-	   두 번째 플레이부터는 영상을 다시 보고 싶지 않다. 그렇다고 연출을 통째로
-	   끝내면 마지막을 못 보므로, 카메라만 놓아준다.
-	*/
-	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Finale")
-	void SkipCinematicCamera();
-
-	// 지금 카메라 순회 중인지. 스킵 안내를 띄울지 정하는 데 쓴다.
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
-	bool IsCinematicTourActive() const { return TourViewpoints.Num() > 1 && !bTourSkipped; }
-
-private:
-	bool bTourSkipped = false;
+	// 발사 시간 상한을 넘겼다는 것을 한 번만 알린다.
+	bool bWarnedDeadline = false;
 
 	// 발사 지점을 구한다. 레벨에 발사대가 없으면 원점 위를 쓴다.
 	FVector ResolveLaunchOrigin() const;
@@ -252,8 +308,7 @@ private:
 	SubsystemType* GetGameInstanceSubsystem() const
 	{
 		const UWorld* World = GetWorld();
-		UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-		return GameInstance ? GameInstance->GetSubsystem<SubsystemType>() : nullptr;
+		return UGameInstance::GetSubsystem<SubsystemType>(World ? World->GetGameInstance() : nullptr);
 	}
 
 	bool bShowInProgress = false;

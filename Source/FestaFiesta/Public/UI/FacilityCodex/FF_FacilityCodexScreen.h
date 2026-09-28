@@ -15,6 +15,7 @@ class UButton;
 class UBorder;
 class UComboBoxString;
 class UEditableTextBox;
+class UImage;
 class UProgressBar;
 class UFF_FacilityCodexImage;
 class UTextBlock;
@@ -25,6 +26,9 @@ class UFF_FacilityCodexItem;
 class UFF_FacilityCodexSubsystem;
 class UFF_FacilityCodexTileView;
 class UFF_FacilityCodexPreview;
+class UFF_PrepChoiceButton;
+class UVerticalBox;
+class UHorizontalBox;
 
 UCLASS(Abstract, Blueprintable, meta=(DisplayName="FF Facility Codex Screen"))
 class FESTAFIESTA_API UFF_FacilityCodexScreen : public UUserWidget
@@ -48,6 +52,10 @@ public:
 	FName GetSelectedRuleId() const { return SelectedRuleId; }
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
 	int32 GetVisibleEntryCount() const { return VisibleItems.Num(); }
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
+	void OpenCombinationDetail(FName RuleId);
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
+	bool IsCombinationDetailOpen() const { return bCollectionDetailOpen; }
 #if WITH_EDITOR || WITH_DEV_AUTOMATION_TESTS
 	/** Deterministic editor/test presentation without changing gameplay or discovery saves. */
 	void SetPreviewEntries(const TArray<FFF_FacilityCodexEntry>& Entries);
@@ -110,8 +118,12 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_PreviewHint;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ShowcaseDistance;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_DetailRewardAmount;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UImage> Image_DetailRewardGold;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_DetailRewardLabel;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_DetailRewardHint;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_DetailClaimReward;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_DetailRewardClaimed;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_DetailRewardLocked;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_PreviewTarget;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_PreviewPartner;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_ShowcaseCatalog;
@@ -139,7 +151,27 @@ protected:
 	FLinearColor SelectedFilterTextColor = FLinearColor::White;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Appearance|Tabs")
 	FLinearColor InactiveFilterTextColor = FLinearColor::FromSRGBColor(FColor(0x20, 0x4c, 0x36));
+	UPROPERTY(EditDefaultsOnly, Category="Collection") TSubclassOf<UFF_PrepChoiceButton> CollectionCategoryClass;
+	UPROPERTY(EditDefaultsOnly, Category="Collection") TSubclassOf<UFF_PrepChoiceButton> CollectionMilestoneClass;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UVerticalBox> Column_CollectionCategories;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UHorizontalBox> Row_CollectionMilestones;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_CollectionPrevious;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_CollectionNext;
 private:
+	void RefreshCollectionNavigation();
+	bool UpdateCollectionLayout(const FVector2D& Viewport);
+	void RefreshCollectionMilestones();
+	void HandleCollectionCategory(int32 Index);
+	void HandleCollectionMilestone(int32 Index);
+	void HandleCollectionClicked(UObject* Item);
+	void SetCollectionDetailOpen(bool bOpen);
+	UFUNCTION() void HandleCollectionPrevious();
+	UFUNCTION() void HandleCollectionNext();
+	void NavigateCollectionDetail(int32 Direction);
+	UPROPERTY(Transient) TArray<TObjectPtr<UFF_PrepChoiceButton>> CollectionCategories;
+	UPROPERTY(Transient) TArray<TObjectPtr<UFF_PrepChoiceButton>> CollectionMilestones;
+	TArray<FName> CollectionMilestoneIds;
+	bool bCollectionDetailOpen = false;
 	void UpdateResponsiveLayout();
 	UFUNCTION() void RefreshFromSubsystem();
 	UFUNCTION() void HandleClose();

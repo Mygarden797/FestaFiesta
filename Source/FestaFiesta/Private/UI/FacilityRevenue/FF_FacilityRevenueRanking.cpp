@@ -24,13 +24,16 @@
 #define LOCTEXT_NAMESPACE "FFFacilityRevenueRanking"
 int64 FFFacilityRevenueRanking::Rank(TArray<UFF_FacilityRevenueRankItem *> &Items, bool bCumulative)
 {
+	// 표시용 복사본에만 순위와 비율을 기록한다. 원본 수입 장부는 변경하지 않는다.
 	for (UFF_FacilityRevenueRankItem* Item : Items)
 		Item->Amount = FMath::Max(0, bCumulative ? Item->TotalGold : Item->TodayGold);
 	Items.Sort([](const UFF_FacilityRevenueRankItem &A, const UFF_FacilityRevenueRankItem &B) {
 		if (A.Amount != B.Amount)
 			return A.Amount > B.Amount;
 		const int32 Names = A.Name.ToString().Compare(B.Name.ToString());
-		return Names != 0 ? Names < 0 : A.FacilityId.ToString() < B.FacilityId.ToString();
+		// 같은 이름과 수입인 시설은 고유 번호로 정렬해 매번 같은 순서를 유지한다.
+		// 번호를 직접 비교하면 비교할 때마다 임시 문자열을 만들 필요가 없다.
+		return Names != 0 ? Names < 0 : A.FacilityId < B.FacilityId;
 	});
 	int64 Sum = 0;
 	for (const auto *Item : Items)
@@ -123,7 +126,7 @@ void UFF_FacilityRevenueRankingPanel::UpdateFrameSize(const FVector2D& Viewport)
 	if (!Size_ClarityFrame || Viewport.GetMin() <= 1.f) return;
 	// The frame is a right-side floating surface. Leave the upper and lower HUD clear;
 	// only the virtualized list uses the remaining space when there are many facilities.
-	const float Width = FMath::Min(500.f, FMath::Max(1.f, Viewport.X - 48.f));
+	const float Width = FMath::Min(600.f, FMath::Max(1.f, Viewport.X - 48.f));
 	const float Height = FMath::Min(DesiredFrameHeight, FMath::Max(1.f, Viewport.Y - 176.f));
 	if (!FMath::IsNearlyEqual(Size_ClarityFrame->GetWidthOverride(), Width)) Size_ClarityFrame->SetWidthOverride(Width);
 	if (!FMath::IsNearlyEqual(Size_ClarityFrame->GetHeightOverride(), Height)) Size_ClarityFrame->SetHeightOverride(Height);
@@ -172,6 +175,7 @@ void UFF_FacilityRevenueRankingPanel::Present(const TArray<UFF_FacilityRevenueRa
 											  bool bAvailable, FGuid Preferred)
 {
 	TArray<UObject *> Objects;
+	Objects.Reserve(Rows.Num());
 	for (auto *Item : Rows)
 		Objects.Add(Item);
 	List_Ranking->SetListItems(Objects);
@@ -190,11 +194,10 @@ void UFF_FacilityRevenueRankingPanel::Present(const TArray<UFF_FacilityRevenueRa
 	if (Border_FirstRevenue)
 		Border_FirstRevenue->SetVisibility(bAvailable && !Rows.IsEmpty() && Sum == 0
 			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
-	// The saved title, tabs, total, outer padding, and inspect action occupy up to
-	// 279 logical pixels at the project font/DPI. Reserve 290 so sparse lists keep
-	// each 88px row whole after text metrics and pixel rounding are applied.
-	DesiredFrameHeight = FMath::Min(600.f, 290.f + FMath::Clamp(Rows.Num(), 1, 4) * 88.f
-		+ (bAvailable && !Rows.IsEmpty() && Sum == 0 ? 42.f : 0.f));
+	// The Pearl title, tabs, total, padding, and inspect action use 300 logical
+	// pixels. Leave two full 88px rows and a small rounding reserve in sparse lists.
+	DesiredFrameHeight = FMath::Min(600.f, 302.f + FMath::Clamp(Rows.Num(), 1, 4) * 88.f
+		+ (bAvailable && !Rows.IsEmpty() && Sum == 0 ? 60.f : 0.f));
 	UpdateFrameSize(GetCachedGeometry().GetLocalSize());
 	UFF_FacilityRevenueRankItem *Selected = nullptr;
 	for (auto *Item : Rows)
@@ -410,10 +413,13 @@ void UFF_FacilityRevenueRankingSubsystem::Refresh()
 	if (!Selected.IsValid() && Info)
 		Selected = Info->GetSelectedFacilityId();
 	const bool bAvailable = Progression && Progression->GetDefinition();
+	// 기존 행 객체를 재사용하면 수입이 바뀔 때 선택 상태와 가상 목록을 유지할 수 있다.
 	TMap<FGuid, UFF_FacilityRevenueRankItem *> Existing;
+	Existing.Reserve(Items.Num());
 	for (UFF_FacilityRevenueRankItem* Item : Items)
 		Existing.Add(Item->FacilityId, Item);
 	TArray<UFF_FacilityRevenueRankItem *> Rows;
+	Rows.Reserve(Items.Num());
 	auto *Zones = GetWorld()->GetSubsystem<UFFZSWorldSubsystem>();
 	if (bAvailable && Zones)
 		for (const auto &Facility : Zones->BuildReadModel().Facilities)

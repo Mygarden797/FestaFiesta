@@ -15,6 +15,11 @@
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
 
+bool UFF_QueueEconomyBridgeSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
+{
+	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
+}
+
 void UFF_QueueEconomyBridgeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	// Queue 가 이 브리지보다 먼저 초기화되는 것을 보장한다.

@@ -18,6 +18,12 @@ void UFF_SkipConfirmWidget::NativeConstruct()
 	{
 		CancelButton->OnClicked.AddDynamic(this, &UFF_SkipConfirmWidget::HandleCancelClicked);
 	}
+
+	if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
+	{
+		Tutorial->OnDialogueActiveChanged.AddUniqueDynamic(
+			this, &UFF_SkipConfirmWidget::HandleDialogueActiveChanged);
+	}
 }
 
 void UFF_SkipConfirmWidget::NativeDestruct()
@@ -32,7 +38,21 @@ void UFF_SkipConfirmWidget::NativeDestruct()
 		CancelButton->OnClicked.RemoveDynamic(this, &UFF_SkipConfirmWidget::HandleCancelClicked);
 	}
 
+	if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
+	{
+		Tutorial->OnDialogueActiveChanged.RemoveDynamic(
+			this, &UFF_SkipConfirmWidget::HandleDialogueActiveChanged);
+	}
+
 	Super::NativeDestruct();
+}
+
+void UFF_SkipConfirmWidget::HandleDialogueActiveChanged(const bool bActive)
+{
+	if (!bActive)
+	{
+		Close(false);
+	}
 }
 
 void UFF_SkipConfirmWidget::HandleSkipClicked()

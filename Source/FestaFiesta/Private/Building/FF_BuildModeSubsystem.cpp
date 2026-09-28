@@ -7,6 +7,7 @@
 
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/FF_BuildingSettings.h"
+#include "Building/FF_BuildMultiSelectionModel.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "FF_BuildPlacementPointerPolicy.h"
 
@@ -15,6 +16,7 @@
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
+#include "Building/Presentation/FF_BuildMultiSelectionWidget.h"
 #include "Building/Presentation/FF_BuildFeedback.h"
 #include "Building/Presentation/FF_BuildSynergyWidget.h"
 #include "Building/Synergy/FF_FacilitySynergySubsystem.h"
@@ -70,9 +72,17 @@ FFFZSGridPlacement FFBuildModeModel::ResolveWorldSnappedPlacement(
 
 namespace
 {
-	bool IsPointerBlockedByUi()
+	bool IsPointerBlockedByUi(const APlayerController* Controller = nullptr)
 	{
 		if (!FSlateApplication::IsInitialized()) { return false; }
+		// Raw player input belongs to that player's Slate viewport. An automation
+		// viewport has no SViewport; editor controls under the OS cursor are unrelated.
+		if (Controller)
+		{
+			const ULocalPlayer* Player = Controller->GetLocalPlayer();
+            if (Player && Player->ViewportClient &&
+                !Player->ViewportClient->GetGameViewportWidget().IsValid()) return false;
+		}
 		FSlateApplication& Slate = FSlateApplication::Get();
 		const FWidgetPath Path = Slate.LocateWindowUnderMouse(
 			Slate.GetCursorPos(), Slate.GetInteractiveTopLevelWindows());
@@ -116,7 +126,7 @@ namespace
 		const TSharedPtr<SViewport> Viewport = Player && Player->ViewportClient
 			? Player->ViewportClient->GetGameViewportWidget() : nullptr;
 		if (Viewport && !Viewport->GetCachedGeometry().IsUnderLocation(Slate.GetCursorPos())) { return false; }
-		return !IsPointerBlockedByUi();
+		return !IsPointerBlockedByUi(&Controller);
 	}
 
 	bool IsSlateWidgetOnVisiblePath(const TSharedPtr<SWidget>& Widget)
@@ -140,6 +150,8 @@ UFF_BuildModeSubsystem::UFF_BuildModeSubsystem()
 {
 	BuildToolsWidgetClass = TSoftClassPtr<UFF_BuildToolsWidget>(FSoftObjectPath(FFBuildUIAssetPaths::DefaultBuildToolsWidgetClassPath));
 	BuildSynergyWidgetClass = TSoftClassPtr<UFF_BuildSynergyWidget>(FSoftObjectPath(FFBuildUIAssetPaths::DefaultBuildSynergyWidgetClassPath));
+	MultiSelectionWidgetClass = TSoftClassPtr<UFF_BuildMultiSelectionWidget>(FSoftObjectPath(
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildMultiSelection.WBP_FF_BuildMultiSelection_C")));
 }
 
 bool UFF_BuildModeSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -327,6 +339,10 @@ bool UFF_BuildModeSubsystem::SuspendInputForPauseMenu()
 
 	const bool bWasAlreadySuspended = bInputSuspendedForPauseMenu;
 	EndDragPlacement();
+	bMultiSelectionPointerArmed = false;
+	bMultiSelectionMarqueeVisible = false;
+	if (MultiSelectionWidget)
+		MultiSelectionWidget->SetMarquee(false, MultiSelectionDragStartPixels, MultiSelectionDragCurrentPixels);
 	// 닫았다가 같은 프레임에 다시 연 경우 이전 resume 예약이 최신 Pause 세션을 깨우지 않게 무효화한다.
 	if (UWorld* World = GetWorld(); World && PauseMenuResumeTimerHandle.IsValid())
 	{
@@ -345,6 +361,10 @@ bool UFF_BuildModeSubsystem::SuspendInputForPauseMenu()
 		PauseMenuFocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget();
 	}
 	ResetPlacementRotationInput();
+	// Viewport tools sit above the CommonUI root. Hide them synchronously before
+	// Pause/Options takes over; their expanded panels and selection stay intact.
+	if (BuildToolsWidget) { BuildToolsWidget->RefreshTools(); }
+	RefreshBuildModeGuide();
 	return true;
 }
 
@@ -377,13 +397,17 @@ void UFF_BuildModeSubsystem::RestoreInputAfterPauseMenu()
 		return;
 	}
 
+	// Restore visibility before validating the saved Slate focus path. The path
+	// was intentionally hidden while Pause owned input, rather than removed.
+	bInputSuspendedForPauseMenu = false;
+	if (BuildToolsWidget) { BuildToolsWidget->RefreshTools(); }
+	RefreshBuildModeGuide();
 	TSharedPtr<SWidget> FocusToRestore = PauseMenuFocusedWidget.Pin();
 	PauseMenuFocusedWidget.Reset();
 	if (!IsSlateWidgetOnVisiblePath(FocusToRestore))
 	{
 		FocusToRestore.Reset();
 	}
-	bInputSuspendedForPauseMenu = false;
 	if (bIsExitingBuildMode)
 	{
 		return;
@@ -472,6 +496,7 @@ void UFF_BuildModeSubsystem::SetState(const EFF_BuildModeState NewState)
 
 	const EFF_BuildModeState PreviousState = State;
 	State = NewState;
+	if (State != EFF_BuildModeState::BuildMode && bMultiSelectionActive) { EndMultiSelection(); }
 	if (State != EFF_BuildModeState::CatalogOpen) { PendingCatalogFacilityId = NAME_None; }
 	if (!FFBuildModeModel::IsPreviewActive(State))
 	{
@@ -751,6 +776,7 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 	SelectedFacilityDefinitionId = FacilityDefinitionId;
 	DismissPlacementFailureFeedback();
 	SelectedSpec = Definition->Spec;
+	PendingQueueLayout = Definition->Spec.QueueLayout;
 	CurrentPlacement = FFFZSGridPlacement{};
 	CurrentZoneId = NAME_None;
 	bHasPlacementTarget = false;
@@ -774,7 +800,7 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 	}
 	// 첫 프레임부터 현재 커서 위치와 회전을 명령에 반영하기 위해 위치 변화 여부와 무관하게 강제 갱신한다.
 	UpdatePlacementFromCursor(true);
-	ShowStatus(TEXT("좌클릭 설치 · Q/E 회전 · Ctrl 정밀 · Alt 자유 · G 격자 · 우클릭 목록 · ESC/F5 일시정지"));
+	ShowStatus(TEXT("시설을 놓을 위치를 선택하세요. 회전과 위치 조정은 건축 도구에서 사용할 수 있습니다."));
 	return PlacementPreview != nullptr;
 }
 
@@ -971,7 +997,7 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 		return false;
 	}
 	if (bIsMoving && CurrentZoneId == MoveOriginZoneId &&
-		CurrentPlacement == MoveOriginPlacement)
+		CurrentPlacement == MoveOriginPlacement && PendingQueueLayout == MoveTarget->GetQueueLayout())
 	{
 		ShowStatus(TEXT("기존 위치와 방향이 같습니다. 다른 위치로 이동해 주세요."), true);
 		return false;
@@ -1132,18 +1158,51 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	const bool bPointerOverFacilityInfo = FacilityInfo && FacilityInfo->IsPointerOverPanel();
 	const bool bControlDown = Controller.IsInputKeyDown(EKeys::LeftControl) ||
 		Controller.IsInputKeyDown(EKeys::RightControl);
+	if (bControlDown && !IsEditableSlateTextFocused() && FFBuildModeModel::IsBuildSessionActive(State))
+	{
+		const bool bShiftDown = Controller.IsInputKeyDown(EKeys::LeftShift) || Controller.IsInputKeyDown(EKeys::RightShift);
+		if (Controller.WasInputKeyJustPressed(EKeys::Y) || (bShiftDown && Controller.WasInputKeyJustPressed(EKeys::Z)))
+		{
+			RedoBuildEdit();
+			return;
+		}
+		if (Controller.WasInputKeyJustPressed(EKeys::Z))
+		{
+			UndoBuildEdit();
+			return;
+		}
+	}
 	if (FFBuildModeModel::ShouldShowPlacementGrid(State) && !bControlDown &&
 		!IsEditableSlateTextFocused() && Controller.WasInputKeyJustPressed(EKeys::G))
 	{
 		TogglePlacementGrid();
 		return;
 	}
+	const bool bQueueModifierDown = bControlDown || Controller.IsInputKeyDown(EKeys::LeftShift) ||
+		Controller.IsInputKeyDown(EKeys::RightShift) || Controller.IsInputKeyDown(EKeys::LeftAlt) ||
+		Controller.IsInputKeyDown(EKeys::RightAlt) || Controller.IsInputKeyDown(EKeys::LeftCommand) ||
+		Controller.IsInputKeyDown(EKeys::RightCommand);
+	if (CanChooseQueueLayout())
+	{
+		for (const FKey Key : {EKeys::Seven, EKeys::Eight, EKeys::Nine, EKeys::Zero})
+		{
+			EFFZSQueueLayout Layout = EFFZSQueueLayout::Authored;
+			if (Controller.WasInputKeyJustPressed(Key) && FFBuildModeModel::TryResolveQueueLayoutShortcut(
+				Key, IsEditableSlateTextFocused(), bQueueModifierDown, bInputSuspendedForPauseMenu, Layout))
+			{
+				SetSelectedFacilityQueueLayout(Layout);
+				return;
+			}
+		}
+	}
+	if (bMultiSelectionActive && HandleMultiSelectionInput(Controller, bBlockWorldClickThisFrame,
+		bPointerOverTools, bPointerOverDebugPanel, bPointerOverFacilityInfo)) return;
 	// Pointer inspection has separate ownership from keyboard editing and demolition.
 	// A world click can leave a catalog search field, but never passes through catalog UI.
 	if (Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton) &&
 		FFBuildModeModel::CanInspectFromWorldPointer(State,
 			bBlockWorldClickThisFrame || bPointerOverTools || bPointerOverDebugPanel || bPointerOverFacilityInfo,
-			!IsPointerBlockedByUi(), CanInspectClosedPreparation(Controller)))
+			!IsPointerBlockedByUi(&Controller), CanInspectClosedPreparation(Controller)))
 	{
 		HandleFacilityInspectionClick(Controller);
 		return;
@@ -1206,7 +1265,7 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 		return;
 	}
 	if (HandlePlacementGizmoInput(Controller, bBlockWorldClickThisFrame || bPointerOverDebugPanel ||
-		bPointerOverTools || bPointerOverFacilityInfo || IsPointerBlockedByUi())) return;
+		bPointerOverTools || bPointerOverFacilityInfo || IsPointerBlockedByUi(&Controller))) return;
 	// 회전과 설치 입력은 독립적으로 검사하므로 같은 프레임에 들어오면 최신 회전을 포함한 배치를 설치한다.
 	HandlePlacementRotationInput(Controller, DeltaTime);
 	// PlayerController has already received this press through GameAndUI routing.
@@ -1271,6 +1330,120 @@ void UFF_BuildModeSubsystem::SetPlacementGridVisible(const bool bVisible)
 	ShowStatus(bPlacementGridVisible
 		? TEXT("격자 켜짐 · 주변의 빈 건축 공간과 경계를 표시합니다.")
 		: TEXT("격자 숨김 · 자동 맞춤은 유지됩니다."), false, 1.8f);
+}
+
+bool UFF_BuildModeSubsystem::HandleBuildToolbarKey(const FKey& Key)
+{
+	// Retained for serialized callers. Function keys no longer activate tools.
+	return false;
+}
+
+void UFF_BuildModeSubsystem::ToggleBuildSettings()
+{
+	if (!bInputSuspendedForPauseMenu && !bIsExitingBuildMode &&
+		FFBuildModeModel::IsBuildSessionActive(State) && BuildToolsWidget)
+		BuildToolsWidget->ToggleBuildSettings();
+}
+
+bool UFF_BuildModeSubsystem::IsBuildSettingsOpen() const
+{
+	return BuildToolsWidget && BuildToolsWidget->IsBuildSettingsOpen();
+}
+
+
+bool UFF_BuildModeSubsystem::HandleMultiSelectionInput(APlayerController& Controller,
+	const bool bBlockWorldClick, const bool bPointerOverTools,
+	const bool bPointerOverDebugPanel, const bool bPointerOverFacilityInfo)
+{
+	if (!bMultiSelectionActive || State != EFF_BuildModeState::BuildMode) return false;
+	const bool bPointerOverStrip = MultiSelectionWidget && MultiSelectionWidget->IsPointerOverStrip();
+	const bool bBlockedByUi = bPointerOverTools || bPointerOverDebugPanel ||
+		bPointerOverFacilityInfo || bPointerOverStrip || IsPointerBlockedByUi(&Controller);
+	if (HandleGroupPlacementInput(Controller, bBlockWorldClick || bBlockedByUi ||
+		IsEditableSlateTextFocused() || !IsPlacementPointerInsideViewport(Controller))) return true;
+
+	if (bMultiSelectionPointerArmed)
+	{
+		float X = 0.0f, Y = 0.0f;
+		const bool bHasPointer = Controller.GetMousePosition(X, Y);
+		if (bHasPointer) MultiSelectionDragCurrentPixels = FVector2D(X, Y);
+		const bool bReleased = !Controller.IsInputKeyDown(EKeys::LeftMouseButton);
+		if (bReleased)
+		{
+			bMultiSelectionPointerArmed = false;
+			const bool bWasMarquee = bMultiSelectionMarqueeVisible;
+			bMultiSelectionMarqueeVisible = false;
+			if (MultiSelectionWidget)
+				MultiSelectionWidget->SetMarquee(false, MultiSelectionDragStartPixels, MultiSelectionDragCurrentPixels);
+			if (!bHasPointer || bBlockedByUi || bBlockWorldClick ||
+				!IsPlacementPointerInsideViewport(Controller)) return true;
+			if (bWasMarquee)
+			{
+				SelectFacilitiesInScreenRect(Controller, FFBuildMultiSelectionModel::MakeScreenRect(
+					MultiSelectionDragStartPixels, MultiSelectionDragCurrentPixels));
+			}
+			else if (UFF_FacilityInfoSubsystem* Info = GetFacilityInfoSubsystem())
+			{
+				if (AFFZSFacilityActor* Facility = Info->ResolveFacilityUnderCursor(Controller))
+					ToggleMultiSelectedFacility(Facility);
+				else ClearMultiSelection();
+			}
+			return true;
+		}
+		if (!bHasPointer || !IsPlacementPointerInsideViewport(Controller))
+		{
+			bMultiSelectionPointerArmed = false;
+			bMultiSelectionMarqueeVisible = false;
+			if (MultiSelectionWidget)
+				MultiSelectionWidget->SetMarquee(false, MultiSelectionDragStartPixels, MultiSelectionDragCurrentPixels);
+			return true;
+		}
+		if (FFBuildMultiSelectionModel::IsMarqueeDrag(
+			MultiSelectionDragStartPixels, MultiSelectionDragCurrentPixels))
+		{
+			bMultiSelectionMarqueeVisible = true;
+			if (MultiSelectionWidget)
+				MultiSelectionWidget->SetMarquee(true, MultiSelectionDragStartPixels, MultiSelectionDragCurrentPixels);
+		}
+		return true;
+	}
+
+	if (Controller.WasInputKeyJustPressed(EKeys::RightMouseButton))
+	{
+		if (!bBlockedByUi) ClearMultiSelection();
+		return true;
+	}
+	if (Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton) && !bBlockWorldClick &&
+		!bBlockedByUi && IsPlacementPointerInsideViewport(Controller))
+	{
+		float X = 0.0f, Y = 0.0f;
+		if (Controller.GetMousePosition(X, Y))
+		{
+			bMultiSelectionPointerArmed = true;
+			MultiSelectionDragStartPixels = FVector2D(X, Y);
+			MultiSelectionDragCurrentPixels = MultiSelectionDragStartPixels;
+		}
+	}
+	return true;
+}
+
+void UFF_BuildModeSubsystem::SetFacilityRangesVisible(const bool bVisible)
+{
+	if (bInputSuspendedForPauseMenu || !FFBuildModeModel::IsBuildSessionActive(State) ||
+		bFacilityRangesVisible == bVisible) return;
+	bFacilityRangesVisible = bVisible;
+	SetFacilityRangeVisibility(true);
+	OnBuildToolsChanged.Broadcast();
+}
+
+void UFF_BuildModeSubsystem::SetSynergyPreviewVisible(const bool bVisible)
+{
+	if (bInputSuspendedForPauseMenu || !FFBuildModeModel::IsBuildSessionActive(State) ||
+		bSynergyPreviewVisible == bVisible) return;
+	bSynergyPreviewVisible = bVisible;
+	if (bVisible) RefreshBuildSynergyPreview();
+	else ClearBuildSynergyPreview();
+	OnBuildToolsChanged.Broadcast();
 }
 
 int32 UFF_BuildModeSubsystem::GetPreferredPositionSnapCm() const
@@ -1747,6 +1920,8 @@ void UFF_BuildModeSubsystem::BeginBuildSession(APlayerController& Controller)
 
 	bBuildSessionActive = true;
 	bPlacementGridVisible = true;
+	bFacilityRangesVisible = true;
+	bSynergyPreviewVisible = true;
 	PreferredPositionSnapCm = 0;
 	CurrentPositionSnapCm = DefaultPlacementPositionSnapCm;
 	bPreviousShowMouseCursor = Controller.bShowMouseCursor;
@@ -1773,7 +1948,9 @@ void UFF_BuildModeSubsystem::CreateBuildTools(APlayerController& Controller)
 	BuildToolsWidget = CreateWidget<UFF_BuildToolsWidget>(&Controller, WidgetClass);
 	if (BuildToolsWidget)
 	{
-		BuildToolsWidget->AddToPlayerScreen(95);
+		// The catalog lives in the viewport UI layer. Keep the settings drawer
+		// above its lower dock when opened, while the codex remains above both.
+		BuildToolsWidget->AddToViewport(95);
 	}
 }
 
@@ -1793,7 +1970,7 @@ void UFF_BuildModeSubsystem::RefreshBuildToolsOcclusion()
 
 void UFF_BuildModeSubsystem::RefreshBuildSynergyPreview()
 {
-	if (bInputSuspendedForPauseMenu || !FFBuildModeModel::IsPreviewActive(State) ||
+	if (bInputSuspendedForPauseMenu || !bSynergyPreviewVisible || !FFBuildModeModel::IsPreviewActive(State) ||
 		(BuildToolsWidget && BuildToolsWidget->IsAuxiliaryPanelOpen()) ||
 		!bHasPlacementTarget || !LastValidation.bIsValid || !IsValid(PlacementPreview))
 	{
@@ -1895,7 +2072,8 @@ void UFF_BuildModeSubsystem::RefreshBuildModeGuide()
 	// PrepHUD 배치 패널은 같은 조작 안내를 자체 표시한다. 외부 표현이 활성인 동안 레거시
 	// 좌하단 가이드를 함께 띄우면 하단 도킹 패널 뒤에 겹치므로 한 표현 소유자만 남긴다.
 	BuildModeGuideWidget->SetVisibility(
-		(State == EFF_BuildModeState::CatalogOpen || bExternalCatalogPresentationActive || BuildToolsWidget)
+		(bInputSuspendedForPauseMenu || State == EFF_BuildModeState::CatalogOpen ||
+			bExternalCatalogPresentationActive || BuildToolsWidget)
 		? ESlateVisibility::Collapsed
 		: ESlateVisibility::HitTestInvisible);
 	BuildModeGuideWidget->SetPlacementGuideState(
@@ -2052,6 +2230,7 @@ void UFF_BuildModeSubsystem::ResetPlacementSelection()
 	ResetPlacementAssistance();
 	SelectedFacilityDefinitionId = NAME_None;
 	SelectedSpec = FFFZSFacilitySpec{};
+	PendingQueueLayout = EFFZSQueueLayout::Authored;
 	CurrentPlacement = FFFZSGridPlacement{};
 	LastValidation = FFFZSPlacementValidation{};
 	CurrentZoneId = NAME_None;
@@ -2087,7 +2266,7 @@ void UFF_BuildModeSubsystem::SetFacilityRangeVisibility(const bool bVisible) con
 	{
 		if (IsValid(*It))
 		{
-			It->SetBuildModeRangeVisible(bVisible);
+			It->SetBuildModeRangeVisible(bVisible && bFacilityRangesVisible);
 		}
 	}
 }
@@ -2444,6 +2623,7 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
 	MoveOriginPlacement = SourcePlacement;
 	MoveTransactionId = FGuid::NewGuid();
 	SelectedSpec = FacilitySpec;
+	PendingQueueLayout = Facility->GetQueueLayout();
 	CurrentZoneId = SourceZoneId;
 	CurrentPlacement = SourcePlacement;
 	ClearPendingRemovalSelection();
@@ -2559,7 +2739,9 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 			ShowStatus(TEXT("선택한 시설 정의를 사용할 수 없습니다."), true);
 			return false;
 		}
-		SelectedSpec = SelectedDefinition->Spec;
+		FFFZSFacilitySpec Base = SelectedDefinition->Spec;
+		Base.QueueLayout = PendingQueueLayout;
+		SelectedSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Base, 1, 1.0f);
 	}
 	else
 	{
@@ -2740,6 +2922,8 @@ void UFF_BuildModeSubsystem::RebuildPreviewCommand()
 		MoveCommand.FacilityInstanceId = MovingFacilityInstanceId;
 		// 프리뷰 Actor가 FacilitySpec.VisualMesh를 직접 읽으므로 기존 액터에서 복사한 전체 Spec을 반드시 담는다.
 		MoveCommand.FacilitySpec = SelectedSpec;
+		MoveCommand.bChangeQueueLayout = MovingFacility.IsValid() && PendingQueueLayout != MovingFacility->GetQueueLayout();
+		MoveCommand.QueueLayout = PendingQueueLayout;
 		MoveCommand.ZoneId = CurrentZoneId;
 		MoveCommand.Placement = CurrentPlacement;
 		PlacementPreview->PreviewCommand = MoveTemp(MoveCommand);
@@ -2760,12 +2944,13 @@ void UFF_BuildModeSubsystem::RebuildPreviewCommand()
 	}
 
 	// 월드 revision을 명령에 넣어 프리뷰 이후 다른 설치/철거가 발생한 오래된 명령이 Commit에서 통과하지 않게 한다.
-	SelectedSpec = Definition->Spec;
 	PlacementPreview->PreviewCommand = UFFZSGridLibrary::MakeInstallCommandFromDefinition(
 		Definition,
 		CurrentZoneId,
 		CurrentPlacement,
 		ZoneSystem->GetWorldRevision());
+	PlacementPreview->PreviewCommand.FacilitySpec.QueueLayout = PendingQueueLayout;
+	SelectedSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(PlacementPreview->PreviewCommand.FacilitySpec, 1, 1.0f);
 }
 
 float UFF_BuildModeSubsystem::GetPlacementRotationSnapDegrees() const
@@ -2912,6 +3097,7 @@ void UFF_BuildModeSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Eve
 	{
 		return;
 	}
+	if (bMultiSelectionActive) PruneMultiSelectedFacilities();
 
 	if (FFBuildModeModel::IsPreviewActive(State))
 	{
@@ -2954,7 +3140,7 @@ void UFF_BuildModeSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Eve
 		if (AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(Event.FacilityInstanceId))
 		{
 			// 전체 시설을 다시 훑지 않고 새로 설치되거나 이동한 한 시설의 선 캐시만 동기화한다.
-			Facility->SetBuildModeRangeVisible(true);
+			Facility->SetBuildModeRangeVisible(bFacilityRangesVisible);
 		}
 	}
 }
@@ -2963,6 +3149,7 @@ void UFF_BuildModeSubsystem::HandleWorldSnapshotRestored()
 {
 	ClearSynergyCatalogContext();
 	EndDragPlacement();
+	ClearMultiSelection();
 	if (!FFBuildModeModel::IsBuildSessionActive(State))
 	{
 		return;

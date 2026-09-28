@@ -1,5 +1,13 @@
 # FF_ZoneSystem 기능 상세 가이드
 
+> **2026-09-26 빌드·성능 정리:** 단순 기하 API는 필요한 타입만 선언하고, 관객 조회 API는 관람 데이터만 포함한다.
+> 해당 타입의 값을 직접 만들거나 멤버를 읽는 `.cpp`는 `FF_FFZSTypes.h`를 직접 포함한다.
+> 실행 코드가 없던 `FF_FFZSExternalPolicy.cpp`, `FF_FFZSQueueAgent.cpp`, `FF_FFZSFacilityAnchorComponent.cpp`는 제거했다.
+> 이 타입들의 헤더와 블루프린트 API는 유지되며 리플렉션 연결 코드는 UHT가 생성한다.
+> 대기열은 여러 명을 서비스로 옮길 때 대기 배열을 한 번만 당기고, 공간 검색은 같은 좌표의 재등록을 재사용한다.
+> 수정 시 `FF_ZoneSystem.Unit.Queue`와 `FF_ZoneSystem.Unit.SpatialHash` 자동화 테스트로 선착순·좌표 경계 계약을 확인한다.
+> 테스트는 실제 동작을 검증하므로 유지한다. 테스트가 꺼진 빌드에서는 공용 테스트 데이터 헤더의 의존성도 제외한다.
+
 > **2026-09-22 유지보수 안내:** [담당 기능·설정 변경법·전체 파일 지도](../../Collaboration/Refactor_Plugin_Notes_KO.md)를 먼저 읽으세요.
 > 현재 월드 저장 스키마는 8이며 1cm 좌표, 자유 회전, 시설 등급, Road/Tile 구분을 포함합니다.
 > 아래 문서의 오래된 마이그레이션 절은 당시 이행 과정을 설명합니다. 저장 호환의 최신 기준은 `FFFZSWorldSnapshot::CurrentSchemaVersion`과 `UFFZSWorldSubsystem`입니다.

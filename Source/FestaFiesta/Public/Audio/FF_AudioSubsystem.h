@@ -4,12 +4,12 @@
 
 #include "Audio/FF_AudioTypes.h"
 #include "CoreMinimal.h"
+#include "Debug/FF_DebugConsole.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_AudioSubsystem.generated.h"
 
 class UAudioComponent;
 class UFF_AudioBankData;
-struct IConsoleCommand;
 
 // 축제 전반의 소리를 담당한다.
 //
@@ -64,6 +64,11 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Audio")
 	EFF_AudioAmbience GetCurrentAmbience() const { return CurrentAmbience; }
+
+	// 뱅크에 이 상황의 곡이 들어 있는지.
+	// 없는 곡으로 갈아타면 지금 곡만 꺼지고 조용해진다. 그걸 피하고 싶은 호출부가 먼저 본다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Audio")
+	bool HasAmbienceTrack(EFF_AudioAmbience Ambience) const;
 
 	// ── 진단 ────────────────────────────────────────────────────────────────
 
@@ -123,7 +128,6 @@ private:
 	int32 MissingCues = 0;
 	int32 SuppressedCues = 0;
 
-	IConsoleCommand* StatConsoleCommand = nullptr;
-	IConsoleCommand* PlayConsoleCommand = nullptr;
-	IConsoleCommand* MuteConsoleCommand = nullptr;
+	// 개발용 콘솔 명령. 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
+	FFF_DebugConsoleCommands DebugCommands;
 };

@@ -63,7 +63,8 @@ bool FFFacilityWorldBadgeLayout::Place(const FVector2D& Anchor, const FVector2D&
 	{
 		Position.X = FMath::Clamp(Position.X, SafeBounds.Min.X, SafeBounds.Max.X - Size.X);
 		Position.Y = FMath::Clamp(Position.Y, SafeBounds.Min.Y, SafeBounds.Max.Y - Size.Y);
-		if (FVector2D::Distance(Position, Desired) > Limit) return false;
+		// 제곱 거리끼리 비교하면 같은 배치 결과를 제곱근 계산 없이 얻는다.
+		if ((Position - Desired).SizeSquared() > FMath::Square(Limit)) return false;
 		const FBox2D Candidate(Position - FVector2D(Gap * .5), Position + Size + FVector2D(Gap * .5));
 		for (const FBox2D& Rect : Occupied) if (Candidate.Intersect(Rect)) return false;
 		OutPosition = Position;
@@ -236,8 +237,10 @@ void UFF_FacilityProgramMarkerSubsystem::Tick(const float DeltaTime)
 	{
 		RefreshPresentation(Controller);
 	}
+	// 표시할 배지가 없으면 전체 화면 위젯 검색과 좌표 계산도 필요 없다.
+	if (Markers.IsEmpty()) return;
 
-	// Only projection and UI geometry update per frame. Revenue/program data is event-driven.
+	// 매 프레임에는 화면 좌표만 갱신하고 수입과 프로그램 정보는 변경 이벤트로 갱신한다.
 	OcclusionRefreshSeconds += FMath::Max(0.f, DeltaTime);
 	if (OcclusionRefreshSeconds >= .2f || bControllerChanged)
 	{
@@ -352,6 +355,7 @@ void UFF_FacilityProgramMarkerSubsystem::RefreshPresentation(APlayerController* 
 		{
 			if (IsValid(Marker)) Marker->RemoveFromParent();
 			It.RemoveCurrent();
+			bMarkerOrderDirty = true;
 		}
 	}
 	if (!Controller) return;
@@ -370,6 +374,7 @@ void UFF_FacilityProgramMarkerSubsystem::RefreshPresentation(APlayerController* 
 			Marker->SetAlignmentInViewport(FVector2D::ZeroVector);
 			Marker->AddToViewport(-10);
 			Markers.Add(Entry.Key, Marker);
+			bMarkerOrderDirty = true;
 		}
 		Marker->SetMarkerState(Entry.Value.ProgramState);
 		Marker->SetRevenue(Entry.Value.bShowRevenue, Entry.Value.bEconomyAvailable, Entry.Value.TodayGold);
@@ -381,7 +386,7 @@ void UFF_FacilityProgramMarkerSubsystem::RefreshPresentation(APlayerController* 
 void UFF_FacilityProgramMarkerSubsystem::RefreshOcclusionWidgets()
 {
 	OcclusionWidgets.Reset();
-	if (!OwningController.IsValid()) return;
+	if (!OwningController.IsValid() || Markers.IsEmpty()) return;
 	TArray<UUserWidget*> Widgets;
 	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(GetWorld(), Widgets, UUserWidget::StaticClass(), false);
 	for (UUserWidget* Widget : Widgets)
@@ -411,6 +416,25 @@ void UFF_FacilityProgramMarkerSubsystem::RefreshOcclusionWidgets()
 	}
 }
 
+void UFF_FacilityProgramMarkerSubsystem::RefreshMarkerOrder(const FGuid SelectedFacilityId)
+{
+	if (!bMarkerOrderDirty && OrderedSelection == SelectedFacilityId) return;
+
+	if (bMarkerOrderDirty)
+	{
+		MarkerOrder.Reset(Markers.Num());
+		Markers.GetKeys(MarkerOrder);
+	}
+	// 선택한 시설에 먼저 공간을 배정하고 나머지는 고유 번호 순서로 고정해 깜빡임을 막는다.
+	MarkerOrder.Sort([SelectedFacilityId](const FGuid& A, const FGuid& B)
+	{
+		if ((A == SelectedFacilityId) != (B == SelectedFacilityId)) return A == SelectedFacilityId;
+		return A < B;
+	});
+	OrderedSelection = SelectedFacilityId;
+	bMarkerOrderDirty = false;
+}
+
 void UFF_FacilityProgramMarkerSubsystem::UpdateMarkerLocations()
 {
 	APlayerController* Controller = OwningController.Get();
@@ -422,6 +446,7 @@ void UFF_FacilityProgramMarkerSubsystem::UpdateMarkerLocations()
 	const FVector2D ViewportSize = UWidgetLayoutLibrary::GetViewportSize(GetWorld()) /
 		FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(GetWorld()));
 	TArray<FBox2D> Occupied;
+	Occupied.Reserve(OcclusionWidgets.Num() + Markers.Num());
 	for (const TWeakObjectPtr<UWidget>& WeakWidget : OcclusionWidgets)
 	{
 		const UWidget* Widget = WeakWidget.Get();
@@ -431,16 +456,10 @@ void UFF_FacilityProgramMarkerSubsystem::UpdateMarkerLocations()
 		Occupied.Add(FBox2D(ViewportGeometry.AbsoluteToLocal(Geometry.LocalToAbsolute(FVector2D::ZeroVector)),
 			ViewportGeometry.AbsoluteToLocal(Geometry.LocalToAbsolute(Geometry.GetLocalSize()))));
 	}
-	TArray<FGuid> Order;
-	Markers.GetKeys(Order);
 	const UFF_FacilityInfoSubsystem* Info = GetWorld()->GetSubsystem<UFF_FacilityInfoSubsystem>();
 	const FGuid Selected = Info ? Info->GetSelectedFacilityId() : FGuid();
-	Order.Sort([Selected](const FGuid& A, const FGuid& B)
-	{
-		if ((A == Selected) != (B == Selected)) return A == Selected;
-		return A < B;
-	});
-	for (const FGuid& Id : Order)
+	RefreshMarkerOrder(Selected);
+	for (const FGuid& Id : MarkerOrder)
 	{
 		UFF_FacilityProgramMarkerWidget* Marker = Markers.FindRef(Id);
 		AFFZSFacilityActor* Facility = MarkerActors.FindRef(Id).Get();
@@ -488,6 +507,9 @@ void UFF_FacilityProgramMarkerSubsystem::ClearPresentation()
 		if (IsValid(Entry.Value)) Entry.Value->RemoveFromParent();
 	}
 	Markers.Reset();
+	MarkerOrder.Reset();
+	OrderedSelection.Invalidate();
+	bMarkerOrderDirty = true;
 	OcclusionWidgets.Reset();
 	OwningController.Reset();
 }

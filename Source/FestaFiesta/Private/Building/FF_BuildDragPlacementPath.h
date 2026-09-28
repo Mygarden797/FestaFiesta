@@ -6,15 +6,16 @@
 #include "CoreMinimal.h"
 
 /**
- * Constant-space, incremental rasterization on the facility's footprint lattice.
- * The caller owns world/lattice conversion, cursor-sample queues and its per-tick budget.
- * Reset starts on an already processed cell; TryStep emits one cardinal neighbor only.
- * Diagonal corner ties use a canonical direction so retracing visits the same tiles.
+ * 마우스로 그린 선을 시설 크기의 격자 한 칸씩 따라가며 설치 위치를 만든다.
+ * 경로 전체를 저장하지 않으므로 길이가 늘어도 이 계산기의 메모리 사용량은 같다.
+ * 실제 월드 좌표 변환과 프레임당 작업량 제한은 호출하는 쪽에서 관리한다.
+ * Reset의 시작 칸은 이미 처리한 칸이다. TryStep은 상하좌우 이웃 한 칸만 반환한다.
+ * 대각선을 되짚어도 같은 칸을 지나도록 모서리를 통과하는 방향을 일정하게 정한다.
  */
 class FFF_BuildDragPlacementPath final
 {
 public:
-	/** Merge only forward, axis-aligned samples; bends and retracing must stay queued. */
+	/** 같은 가로줄·세로줄을 계속 전진할 때만 경로를 합친다. 꺾거나 되돌아가는 지점은 남긴다. */
 	static bool CanExtendCardinalSegment(const FIntPoint& Start, const FIntPoint& End, const FIntPoint& Next)
 	{
 		if (Start.Y == End.Y && End.Y == Next.Y)
@@ -36,7 +37,7 @@ public:
 		StepX = StepY = 0;
 	}
 
-	/** Retarget from the last emitted cell. Repeating the current target preserves progress. */
+	/** 마지막으로 반환한 칸에서 새 목적지로 이어 간다. 같은 목적지는 진행 상태를 초기화하지 않는다. */
 	void SetTarget(const FIntPoint& InTargetCell)
 	{
 		if (TargetCell == InTargetCell)
@@ -52,13 +53,13 @@ public:
 		StepX = SignedX < 0 ? -1 : SignedX > 0 ? 1 : 0;
 		StepY = SignedY < 0 ? -1 : SignedY > 0 ? 1 : 0;
 
-		// Difference between the next X/Y grid-boundary crossing times, scaled
-		// by 2*DeltaX*DeltaY. Incrementing it avoids overflowing cross products
-		// even for opposite int32 limits, and keeps each emitted cell O(1).
+		// 다음 가로·세로 경계 중 어느 쪽을 먼저 만나는지 나타내는 누적 차이다.
+		// 큰 좌표끼리 곱하지 않고 차이를 더하고 빼므로 정수 범위를 넘지 않으며,
+		// 경로 길이와 관계없이 다음 칸 하나를 일정한 계산량으로 구한다.
 		CrossingError = DeltaY - DeltaX;
 	}
 
-	/** O(1), no allocations. Does not modify OutCell when the segment is complete. */
+	/** 메모리 할당 없이 다음 칸을 반환한다. 도착한 상태면 OutCell을 바꾸지 않고 false를 반환한다. */
 	bool TryStep(FIntPoint& OutCell)
 	{
 		if (!HasPendingCells())
@@ -66,8 +67,8 @@ public:
 			return false;
 		}
 
-		// Use the same side of a corner when walking the segment backwards.
-		// An unconditional X-first tie would widen a diagonal road on retrace.
+		// 모서리에 정확히 걸려도 왕복할 때 같은 쪽 칸을 선택한다.
+		// 항상 가로 이동을 먼저 하면 되돌아갈 때 다른 칸을 지나 도로 폭이 넓어진다.
 		const bool bCrossXFirst = CrossingError < 0 || (CrossingError == 0 && StepX > 0);
 		if (CurrentCell.X != TargetCell.X
 			&& (CurrentCell.Y == TargetCell.Y || bCrossXFirst))

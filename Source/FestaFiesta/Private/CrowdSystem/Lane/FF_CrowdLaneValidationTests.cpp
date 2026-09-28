@@ -2,6 +2,9 @@
 
 #if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 
+// 역할: 이동 경로 템플릿과 실제 배치 인스턴스의 서로 다른 검증 조건을 검사한다.
+// 템플릿에는 배치 ID가 없어도 되지만, 실제 경로에는 유효한 ID와 너비가 있어야 한다.
+
 #include "Components/SplineComponent.h"
 #include "CrowdSystem/Lane/FF_CrowdLane.h"
 #include "Engine/World.h"

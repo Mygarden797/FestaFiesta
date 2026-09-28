@@ -14,6 +14,7 @@
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_CrowdAvoidanceConfig.h"
 #include "CrowdSystem/Types/FF_CrowdCongestionSnapshot.h"
+#include "CrowdSystem/Types/FF_CrowdMemberMissingEvent.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "Math/RandomStream.h"
 #include "NPC/IndividualVariation/FF_DeterministicRandom.h"
@@ -60,6 +61,9 @@ DECLARE_DELEGATE_RetVal_TwoParams(bool, FFF_OnPartyNeedsDecision,
 // 받을 쪽이 사건 판정·Heat Map·디버그로 여럿이다. 싱글캐스트면 나중에 붙는 쪽이 앞 구독을 조용히 덮어쓴다.
 DECLARE_MULTICAST_DELEGATE_OneParam(FFF_OnCrowdCongestionSampled,
 	const FFF_CrowdCongestionSnapshot& );
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FFF_OnCrowdMemberMissingChanged,
+	const TArray<FFF_CrowdMemberMissingEvent>& );
 
 // "도착해서 서 있는가, 가려는데 못 가는가"를 가른 집계.
 //
@@ -285,6 +289,10 @@ public:
 
 	// 중간에 붙은 구독자가 첫 발행을 기다리지 않고 현재 상태를 읽을 때 쓴다
 	const FFF_CrowdCongestionSnapshot& GetCongestionSnapshot() const { return CongestionSnapshot; }
+
+	FFF_OnCrowdMemberMissingChanged OnMemberMissingChanged;
+
+	AActor* GetAgentActor(int32 AgentIndex) const;
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Metrics")
 	int32 GetSnapshotCount() const { return SnapshotCount; }
@@ -563,6 +571,15 @@ public:
 	// 통행 상한에 막혀 되돌린 스텝 수. 0이면 상한이 한 번도 안 걸린 것이다
 	UFUNCTION(BlueprintPure, Category = "Crowd|Terrain")
 	int32 GetHeightBlockedSteps() const { return HeightBlockedSteps; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Party")
+	int32 GetFormationBlockEvents() const { return FormationBlockEvents; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Party")
+	int32 GetFormationBlockedMemberCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Party")
+	int32 GetFormationPathQueries() const { return FormationPathQueries; }
 
 	// 목적지를 못 받았을 때 배회할 반경, UU. 리더의 현재 위치 기준이다.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Decision")
@@ -947,6 +964,9 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
 	float PartyMemberSpeedMultiplier = 1.3f;
 	
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
+	int32 MissingThreshholdSteps = 30;
+	
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite,Category = "Crowd|Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float InitialNeedMaxFraction = 0.5f;
@@ -1103,6 +1123,8 @@ private:
 
 	bool BuildPathForAgent(int32 AgentIndex);
 
+	bool BuildNavMeshPath(int32 AgentIndex, const FVector& Goal);
+
 	void InvalidatePathsOnLayoutChange();
 
 	bool TryBuildLanePathForAgent(int32 AgentIndex);
@@ -1173,6 +1195,10 @@ private:
 	FVector GetPartyFormationOffset(int32 SlotIndex) const;
 
 	bool UpdatePartyMemberTarget(int32 AgentIndex, FUnitData& Unit);
+
+	void UpdateFormationBlockState(int32 AgentIndex, FUnitData& Unit);
+
+	void UpdateBlockedMemberPath(int32 AgentIndex, int32& Budget, int32& Backlog, float MinQueryDistSq);
 
 	bool AdvancePartyQueueOnArrival(int32 LeaderAgentIndex);
 
@@ -1314,7 +1340,9 @@ private:
 
 	// 시뮬레이션 누적 시간, 초
 	float SimTimeSeconds = 0.f;
-	
+
+	uint32 SimStepIndex = 0;
+
 	//라이브가 시작된 시간
 	float LiveStartSimTime = 0.f;
 
@@ -1536,6 +1564,10 @@ private:
 	// 상한이 목적지를 감싸고 있다는 뜻이다 — 상한을 올리거나 목적지 쪽을 봐야 한다
 	int32 HeightBlockedSteps = 0;
 
+	int32 FormationBlockEvents = 0;
+
+	int32 FormationPathQueries = 0;
+
 	// 큐 진행 감시. SampleQueueLiveness가 매 스텝 갱신한다
 	float LastObservedQueueSimTime = -1.f;
 	float LastQueueAdvanceSimTime = 0.f;
@@ -1600,4 +1632,13 @@ private:
 
 	UFUNCTION()
 	void HandleMainProgramEnded(FString EventLabel);
+	
+	
+	void FlushMissingEvent();
+	
+	void QueueMissingEvent(int32 AgentIndex, const FUnitData& Unit, EFF_CrowdMissingChange Change);
+	
+	//이벤트 관련
+private:
+	TArray<FFF_CrowdMemberMissingEvent> CrowdMemberMissingEvents;
 };

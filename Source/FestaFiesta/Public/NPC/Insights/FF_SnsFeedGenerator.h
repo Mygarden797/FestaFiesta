@@ -31,7 +31,7 @@ struct FFF_SnsFeedSignals
 	int32 CurrentDay = 1;
 
 	// 이하 넷은 UFFZSWorldSubsystem::BuildReadModel().Facilities에서 뽑는다
-	// 화제10·12 점수와 화제1·10의 {시설} 치환에 쓴다. 설치된 시설이 하나도 없으면 전부 기본값(0·빈 문자열)
+	// 화제10·12 점수와 화제1·7·10·14의 {시설} 치환에 쓴다. 설치된 시설이 하나도 없으면 전부 기본값(0·빈 문자열)
 
 	// 화제12(축제 초반 시설 부족) 점수 산출용 — 설치된 시설 총 수
 	int32 FacilityCount = 0;
@@ -39,9 +39,15 @@ struct FFF_SnsFeedSignals
 	// 화제1(대기시간 김)의 {시설} 치환용 — AverageCompletedWaitSeconds가 가장 큰 시설의 이름
 	FString WorstWaitFacilityDisplayName;
 
-	// 화제10(인기 시설) 점수 산출 + {시설} 치환용 — WaitingCount가 가장 큰 시설과 그 값
+	// 화제10(인기 시설) 점수 산출 + 화제7·10·14 {시설} 치환용 — WaitingCount가 가장 큰 시설과 그 값
 	FString MostQueuedFacilityDisplayName;
 	int32 MaxWaitingCount = 0;
+
+	// 화제15(입장료 비쌈)·16(입장료 가성비) 점수용. 기준값보다 비쌀수록 15, 쌀수록 16 이 높다.
+	// 셋 다 0 이면(축제 전) 두 화제 점수가 0 이다
+	int32 AdmissionFeeGold = 0;
+	int32 ReferenceAdmissionFeeGold = 0;
+	int32 MaxAdmissionFeeGold = 0;
 };
 
 // SNS 피드 화제 선택·문장 선택의 순수 계산기.
@@ -92,6 +98,15 @@ public:
 	
 	// 화제별로 "지금 이게 얼마나 뽑힐 만한가"를 0~100 숫자로
 	static float ComputeTopicScore(int32 TopicId, const FFF_SnsFeedSignals& Signals);
+
+	// 입장료가 기준값에서 얼마나 벗어났나(0~100). bExpensive 면 비싼 쪽(상한에서 100), 아니면 싼 쪽(0 Gold 에서 100).
+	static float CalcAdmissionFeeTension(const FFF_SnsFeedSignals& Signals, bool bExpensive);
+
+	// 긍정/부정 추첨에 쓰는 만족도. 입장료가 상한이면 ExpensivePolarityPenalty 만큼 깎고, 0 이면 CheapPolarityBonus 만큼 더한다.
+	static int32 CalcPolaritySatisfaction(const FFF_SnsFeedSignals& Signals);
+
+	static constexpr float ExpensivePolarityPenalty = 25.f;
+	static constexpr float CheapPolarityBonus = 10.f;
 	
 	// 극성이 정해진 다음 화제를 고르는 함수
 	static int32 ChooseTopicId(

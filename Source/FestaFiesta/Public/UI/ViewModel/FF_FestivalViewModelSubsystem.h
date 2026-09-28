@@ -36,8 +36,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
  * `UFF_FestivalDefinition` 이 `PromotionBasic`·`PromotionFocused` 두 필드를 따로 들고 있을 뿐이다.
  * 차감은 `RequestPurchasePromotion` 이 `TrySpend(.., Promotion)` 으로 하고 있다.
  *
- * 🔴 **다만 `VisitorMultiplier`(1.08·1.18) 를 소비하는 곳이 아직 0곳이다** — 사면 돈만 나가고
- * 방문객은 안 늘어난다. 곱할 대상인 "오늘 예상 방문객"이 경제에 없기 때문이다.
+ * `VisitorMultiplier` 는 경제의 `GetExpectedVisitors()` 가 곱하고, Crowd 가 그 값으로 스폰한다.
  *
  * 김시리님이 `EFF_PromotionGrade` 와 구매 API 를 만들면 **이 enum 을 지우고 그것으로 바꾼다.**
  * 그때 고칠 곳은 이 파일과 홍보 패널뿐이다 — 위젯 트리는 그대로다.
@@ -45,11 +44,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
 UENUM(BlueprintType)
 enum class EFF_PromotionChoice : uint8
 {
-	/** 안 함. 데이터가 아니라 미구매 상태다 (0 Gold · 배수 1.0). */
+	/** 홍보 없음. 데이터가 아니라 미구매 상태다 (0 Gold · NoPromotionVisitorMultiplier). */
 	None		UMETA(DisplayName = "안 함"),
 
-	Basic		UMETA(DisplayName = "기본"),
-	Focused		UMETA(DisplayName = "집중")
+	Basic		UMETA(DisplayName = "지역 SNS"),
+	Focused		UMETA(DisplayName = "전국 홍보"),
+	Influencer	UMETA(DisplayName = "인플루언서")
 };
 
 /** 등급이 바뀌었다. 지금은 UI 안에서만 도는 값이다. */
@@ -238,8 +238,8 @@ struct FESTAFIESTA_API FFF_PrepFacilityOption
  * | └ 분해값 4종           | 김시리           | **진짜 값** — SimSatisfaction과 같은 1초 주기에 같이 갱신된다 |
  * | ScoreSatisfaction      | 김시리           | **진짜 값** — `Clamp(SimSatisfaction + FinaleBonus, 0, 100)`. `OnSimSatisfactionChanged`·`OnFinaleGradeChanged` 둘 다 바뀔 때 재계산한다. UI 문구의 "연출 보정" 항은 정의·계수가 없어 이번엔 포함하지 않았다(`FF_LivePanelReport.h` 참고, 백종태 소유 문구라 별도 결정 필요) |
  * | Safety                 | 이정원           | 더미 (소유자 API 없음) |
- * | TotalRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
- * | TodayRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
+ * | TotalRevenue           | 김시리           | **진짜 값** (`OnTotalRevenueChanged` 구독) |
+ * | TodayRevenue           | 김시리           | **진짜 값** (`OnTodayRevenueChanged` 구독) |
  *
  * `GetTotalRevenue()`/`GetTodayRevenue()`와 `OnTotalRevenueChanged`/`OnTodayRevenueChanged`가
  * `UFF_FestivalProgressionSubsystem`에 이미 있다. Gold와 같은 모양이므로 같은 Bind + Sync로 붙인다.
@@ -535,6 +535,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
 	EFF_ProgramPurchaseResult CanScheduleProgram(FName ProgramId) const;
 
+	// 이 시설에 이 카드를 오늘 편성할 수 있는지. "하루 한 번" 은 시설 단위다 — 공방이 여러 개면 같은 카드를 따로 연다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
+	EFF_ProgramPurchaseResult CanScheduleProgramAtFacility(FName ProgramId, FGuid FacilityInstanceId) const;
+
+	// 이 시설에 오늘 편성한 카드들. 카드의 "✓ 편성함" 표시는 선택한 시설 기준이어야 한다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
+	TArray<FName> GetScheduledProgramIdsAtFacility(FGuid FacilityInstanceId) const;
+
 	/**
 	 * 지금이 편성할 수 있는 단계인지 (셋업 · 개장 준비).
 	 *
@@ -589,6 +597,10 @@ public:
 	/** 예상 방문객이 바뀔 때. 홍보를 사면 온다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Crowd")
 	FFF_OnIntMetricChanged OnExpectedVisitorsChanged;
+
+	/** 오늘 입장료가 바뀔 때. 새 입장료(Gold)를 싣는다. 값은 GetAdmissionFeeGold 로도 읽는다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
+	FFF_OnIntMetricChanged OnAdmissionFeeChanged;
 
 	/**
 	 * 관객 욕구 5종의 미해소율. 순서는 `EFF_NeedType` 과 같다.
@@ -921,6 +933,9 @@ protected:
 
 	UFUNCTION()
 	void HandleOwnerExpectedVisitorsChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleOwnerAdmissionFeeChanged(int32 NewValue);
 
 	/**
 	 * 환경 상태를 받아 **날씨만** 중계한다.

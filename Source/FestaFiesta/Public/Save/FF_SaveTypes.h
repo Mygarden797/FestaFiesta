@@ -54,10 +54,16 @@ struct FESTAFIESTA_API FFF_FestivalRecord
 	}
 };
 
-/* 축제 사이에 남는 것들.
+/* 축제 사이에 남는 것들. 어느 파트에도 속하지 않아서 저장 시스템이 직접 들고 있는다.
 
-   게임을 껐다 켜도 유지돼야 하는 진행 상태다. 축제 도중의 상태와 달리
-   어느 파트에도 속하지 않아서 저장 시스템이 직접 들고 있는다.
+   ─── 전부 판 단위다 ────────────────────────────────────────────────────────
+   튜토리얼 기록·깬 축제·최고 기록 모두 세이브 파일 안에 담긴다. 새 게임을 누르면
+   전부 비우고, 이어하기를 하면 그 세이브에 담긴 값으로 돌아간다.
+
+   계정 단위로 남기는 값은 없다. 기획이 "새 게임은 말 그대로 새 게임" 이라서다 —
+   튜토리얼부터 축제 진행까지 처음부터 다시 한다. 예전에는 기록·깬 축제를
+   FF_MetaStore 에 따로 두고 판과 상관없이 쌓았는데, 그러면 새 게임에 이전 판의
+   진행이 따라온다. 그 파일은 이제 읽지도 쓰지도 않는다.
 */
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_MetaSave
@@ -67,7 +73,7 @@ struct FESTAFIESTA_API FFF_MetaSave
 	/* 로비 인트로를 끝까지 봤는가.
 
 	   축제를 고르기 전에 로비에서 도는 오프닝이라 축제별로 나눌 수 없다.
-	   계정 단위로 한 번만 보여준다.
+	   새 게임마다 한 번 보여준다.
 	*/
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
 	bool bLobbyIntroSeen = false;
@@ -75,7 +81,8 @@ struct FESTAFIESTA_API FFF_MetaSave
 	/* 안내를 통째로 껐는가.
 
 	   건너뛰기는 "이번 것만 넘긴다" 가 아니라 "안내 없이 운영만 하겠다" 는 선언이다.
-	   그래서 축제가 바뀌어도 되살아나지 않는다. 끝까지 본 것과 달리 전역이다.
+	   그래서 같은 판 안에서는 축제가 바뀌어도 되살아나지 않는다.
+	   새 게임을 누르면 풀린다.
 
 	   끝까지 본 것과 나눠 두는 이유는, 둘 다 "다시 안 보여준다" 는 같지만
 	   건너뛴 사람에게는 나중에 다시 볼 기회를 주고 싶어질 수 있어서다.
@@ -130,16 +137,12 @@ struct FESTAFIESTA_API FFF_MetaSave
 
 /* 축제 도중의 상태.
 
-   ─── 지금은 읽기만 한다 ────────────────────────────────────────────────────
-   각 파트의 공개 API 로 값을 긁어 담는다. 목록 화면에 "3일차 셋업" 을 보여주는
-   데는 이걸로 충분하다.
+   ─── 목록 표시용 요약이다 ──────────────────────────────────────────────────
+   각 파트의 공개 API 로 값을 긁어 담는다. 목록 화면에 "3일차 셋업" 을 보여주고,
+   이어하기가 어느 레벨을 열지 정하는 데 쓴다.
 
-   되돌리는 것은 아직 안 된다. 돈이나 장부를 직접 설정하는 API 가 없어서,
-   지금 있는 수단으로 우겨넣으면 장부에 가짜 기록이 남는다. 이어하기는 각 파트가
-   복원 수단을 열어준 다음의 일이다.
-
-   그때가 오면 이 구조체에 파트별 항목이 붙는다. 지금 자리를 만들어 두는 이유는,
-   저장 형식이 나중에 통째로 바뀌면 그 전에 만든 저장이 전부 무효가 되기 때문이다.
+   실제로 되돌리는 값(돈·시설·장부)은 여기가 아니라 각 파트가 IFF_Saveable 로 담은
+   PartData 에 있다. 여기 Gold 를 고쳐도 게임 속 돈은 바뀌지 않는다.
 */
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_SessionSave
@@ -171,7 +174,24 @@ struct FESTAFIESTA_API FFF_SessionSave
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
 	int32 Satisfaction = 0;
 
-	bool IsValid() const { return !FestivalId.IsNone() && Day > 0; }
+	/* 로비에서 찍은 세이브인가. 축제와 축제 사이, 레벨 선택 화면에 있던 때다.
+
+	   축제가 끝나면 판은 로비로 돌아가 다음 축제를 고른다. 축제가 늘어날수록 이
+	   지점이 판의 진행(어디까지 깼는지)을 담는 자리가 된다. 이때는 축제 도중의
+	   상태(돈·시설·날짜)가 없으므로 위 값들은 비어 있고, 파트 데이터도 담지 않는다.
+	*/
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	bool bAtLobby = false;
+
+	// 로비 세이브일 때 어느 나라의 레벨 선택 화면이었는가. 이어하면 그 화면으로 돌아간다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	FName CountryId;
+
+	// 축제 도중의 세이브인가. 이어하면 그 축제 레벨을 연다.
+	bool IsFestivalInProgress() const { return !bAtLobby && !FestivalId.IsNone() && Day > 0; }
+
+	// 이어할 수 있는 세이브인가. 축제 도중이거나 로비다.
+	bool IsValid() const { return bAtLobby || IsFestivalInProgress(); }
 };
 
 /* 목록에 보여줄 값만 모은 것.
@@ -272,7 +292,7 @@ class FESTAFIESTA_API UFF_SaveGame : public USaveGame
 	GENERATED_BODY()
 
 public:
-	/* 저장 형식의 판번호.
+	/* 지금 코드가 쓰는 판번호.
 
 	   구조가 바뀌면 올린다. 올리지 않으면 옛 저장을 새 코드가 읽을 때
 	   빠진 값이 기본값으로 들어가고, 그게 정상인지 오류인지 구분할 수 없다.
@@ -280,8 +300,21 @@ public:
 	   판 2: 튜토리얼 판정을 전역 bool 두 개에서 축제별 목록으로 바꿨다.
 	         FFF_MetaSave 의 `판 1 에서만 쓰던 값` 항목을 볼 것.
 	*/
+	static constexpr int32 CurrentVersion = 2;
+
+	/* 이 파일이 쓰인 판번호. 기본값은 일부러 0 이다.
+
+	   SaveGame 은 CDO 기본값과 같은 값을 파일에 쓰지 않는다. 기본값을 지금 판으로
+	   두면 판번호가 한 번도 파일에 안 들어가고, 읽을 때는 그때 코드의 기본값이
+	   채워진다. 판 1 저장을 판 2 코드가 읽으면 2 로 보여서 옮기기가 건너뛰어졌다.
+
+	   기본값을 0 으로 두고 저장할 때마다 CurrentVersion 을 직접 넣는다. 그러면
+	   0 은 "판번호를 모르는 옛 파일" 이라는 뜻만 남는다. 이 수정 전에 쓴 파일은
+	   판 1 이든 판 2 든 전부 0 으로 읽히므로, 옮기기는 판번호가 아니라 옛 값이
+	   남아 있는지로 판단한다(UFF_SaveSubsystem::MigrateMeta).
+	*/
 	UPROPERTY()
-	int32 Version = 2;
+	int32 Version = 0;
 
 	UPROPERTY()
 	FFF_MetaSave Meta;

@@ -8,6 +8,8 @@
 
 #pragma once
 
+// 리플렉션 연결 코드는 UHT가 생성한다. 이동 콜백은 게임 측 AI가 구현하므로 빈 .cpp는 필요 없다.
+
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
 #include "FF_FFZSTypes.h"

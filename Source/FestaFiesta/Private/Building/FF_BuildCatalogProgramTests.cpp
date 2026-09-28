@@ -7,6 +7,7 @@
 
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/FF_BuildCatalogModel.h"
+#include "Economy/FF_FestivalEconomyTypes.h"
 #include "Engine/GameInstance.h"
 #include <limits>
 

@@ -1,4 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
+// 역할: 프로그램 구매·편성 명령이 시설 조건, 잔액, 다음 날 재사용 규칙을 지키는지 검사한다.
+// 실제 비용표의 이용료 변경과 잔액 상한까지 확인하여 화면 안내와 결제 결과가 어긋나지 않게 한다.
 
 #include "Economy/FF_ProgramSchedulingSubsystem.h"
 

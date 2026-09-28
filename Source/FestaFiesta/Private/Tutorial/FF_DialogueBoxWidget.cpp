@@ -6,6 +6,7 @@
 #include "Components/Image.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
+#include "Engine/Texture2D.h"
 #include "Tutorial/FF_SkipConfirmWidget.h"
 #include "Tutorial/FF_TutorialSettings.h"
 #include "Tutorial/FF_TutorialSubsystem.h"
@@ -104,6 +105,7 @@ void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
 
 	ApplyClickArea(Line);
 	ApplyBackground(Line);
+	ApplyPortrait(Line);
 
 	BP_OnLineChanged(Line);
 }
@@ -127,6 +129,13 @@ void UFF_DialogueBoxWidget::HandleDialogueActiveChanged(const bool bActive)
 		{
 			BackgroundImage->SetVisibility(ESlateVisibility::Collapsed);
 		}
+
+		// 초상화도 치운다. 다음 대사가 다른 사람으로 시작하면 한 프레임 옛 얼굴이 보인다.
+		if (PortraitImage)
+		{
+			PortraitImage->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		CurrentPortraitSpeaker.Reset();
 	}
 
 	BP_OnDialogueActiveChanged(bActive);
@@ -147,6 +156,16 @@ void UFF_DialogueBoxWidget::HandleSkipClicked()
 	//
 	// 확인 창을 여기서 띄우는 이유는, BP 그래프에 로직을 두면 깃에서 병합도
 	// 리뷰도 안 되기 때문이다. BP 는 배치와 모양만 맡는다.
+
+	// 이미 떠 있으면 또 만들지 않는다. 겹친 창은 하나를 닫아도 뒤에 하나가 남는다.
+	if (const UFF_SkipConfirmWidget* Existing = OpenSkipConfirm.Get())
+	{
+		if (Existing->IsInViewport())
+		{
+			return;
+		}
+	}
+
 	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
 	UClass* ConfirmClass = Settings ? Settings->SkipConfirmWidgetClass.LoadSynchronous() : nullptr;
 
@@ -163,6 +182,7 @@ void UFF_DialogueBoxWidget::HandleSkipClicked()
 	if (Confirm)
 	{
 		Confirm->AddToViewport(Settings->SkipConfirmZOrder);
+		OpenSkipConfirm = Confirm;
 	}
 
 	BP_OnSkipRequested();
@@ -257,6 +277,65 @@ void UFF_DialogueBoxWidget::ApplyBackground(const FFF_DialogueLine& Line)
 
 	BackgroundImage->SetBrushFromTexture(Texture, false);
 	BackgroundImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+void UFF_DialogueBoxWidget::ApplyPortrait(const FFF_DialogueLine& Line)
+{
+	if (!PortraitImage)
+	{
+		return;
+	}
+
+	/* 선택지 줄은 건드리지 않는다.
+
+	   선택지는 주인공의 대답이라 화자 칸이 비어 있다. 여기서 숨기면 대화 상대가
+	   대답을 고르는 순간 사라졌다가 다음 줄에 다시 나타나 깜빡인다.
+	*/
+	if (Line.Kind == EFF_DialogueLineKind::Choice)
+	{
+		return;
+	}
+
+	const FString Speaker = Line.Speaker.ToString().TrimStartAndEnd();
+
+	// 내레이션이다. 얼굴을 띄울 사람이 없다.
+	if (Speaker.IsEmpty())
+	{
+		PortraitImage->SetVisibility(ESlateVisibility::Collapsed);
+		CurrentPortraitSpeaker.Reset();
+		return;
+	}
+
+	// 같은 사람이 이어서 말한다. 그대로 둔다.
+	if (Speaker == CurrentPortraitSpeaker)
+	{
+		return;
+	}
+
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	const TSoftObjectPtr<UTexture2D>* Entry = Settings ? Settings->SpeakerPortraits.Find(Speaker) : nullptr;
+	UTexture2D* Texture = Entry ? Entry->LoadSynchronous() : nullptr;
+
+	if (!Texture)
+	{
+		// 목록에 없거나 경로가 틀렸다. 한 번만 알린다. 그림이 아직 없는 화자는 정상이다.
+		if (!WarnedMissingSpeakers.Contains(Speaker))
+		{
+			WarnedMissingSpeakers.Add(Speaker);
+			UE_LOG(LogFestaFiestaTutorial, Log,
+				TEXT("[대사] 화자 '%s' 의 초상화가 없어 숨긴다. Project Settings > FestaFiesta Tutorial > Speaker Portraits."),
+				*Speaker);
+		}
+
+		PortraitImage->SetVisibility(ESlateVisibility::Collapsed);
+		CurrentPortraitSpeaker.Reset();
+		return;
+	}
+
+	// 원본 크기로 맞추지 않는다(false). 크기는 BP 에서 잡은 박스를 따른다.
+	PortraitImage->SetBrushFromTexture(Texture, false);
+	PortraitImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+	CurrentPortraitSpeaker = Speaker;
 }
 
 void UFF_DialogueBoxWidget::ApplyClickArea(const FFF_DialogueLine& Line)

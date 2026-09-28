@@ -3,12 +3,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Debug/FF_DebugConsole.h"
 #include "GameFramework/Pawn.h"
 #include "Camera/FF_CameraTypes.h"
 #include "Camera/FF_OverviewCameraRig.h"
 #include "FF_OverviewCameraPawn.generated.h"
 
-struct IConsoleCommand;
 
 class UCameraComponent;
 class USceneComponent;
@@ -164,6 +164,6 @@ private:
 	int32 ConstrainBlockCount = 0;
 	int32 ConstrainSlideCount = 0;
 
-	IConsoleCommand* BoundsConsoleCommand = nullptr;
-	IConsoleCommand* BoundsRefreshCommand = nullptr;
+	// 개발용 콘솔 명령. 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
+	FFF_DebugConsoleCommands DebugCommands;
 };

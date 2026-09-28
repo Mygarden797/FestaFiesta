@@ -206,10 +206,25 @@ bool FFF_SnsFeedGenerator_SalienceReflectsChosenTopicScore::RunTest(const FStrin
 	return true;
 }
 
-// {시설} 자리표시자는 화제1·10만 통과한다 — 이 둘만 가리킬 시설이 신호로 분명하기 때문
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForTopic1And10, "FestaFiesta.NPC.SnsFeedGenerator.FacilityPlaceholderOnlyForTopic1And10", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForTopic1And10::RunTest(const FString& Parameters)
+// {시설} 자리표시자는 가리킬 시설이 신호로 분명한 화제(1·7·10·14)만 통과한다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForSignaledTopics, "FestaFiesta.NPC.SnsFeedGenerator.FacilityPlaceholderOnlyForSignaledTopics", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForSignaledTopics::RunTest(const FString& Parameters)
 {
+	for (const int32 TopicId : {7, 14})
+	{
+		FFF_SnsPostTemplateRow Row;
+		Row.TopicId = TopicId;
+		Row.bUsesFacilityPlaceholder = true;
+		TestTrue(FString::Printf(TEXT("화제%d의 {시설} 문장은 포함된다"), TopicId),
+			FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(Row));
+
+		Row.Text = FText::FromString(TEXT("{시설} 또 올래"));
+		FFF_SnsFeedSignals Signals;
+		Signals.MostQueuedFacilityDisplayName = TEXT("타코 트럭");
+		TestEqual(FString::Printf(TEXT("화제%d는 줄이 가장 긴 시설로 치환된다"), TopicId),
+			FFF_SnsFeedGenerator::ResolveBodyText(Row, Signals).ToString(), FString(TEXT("타코 트럭 또 올래")));
+	}
+
 	FFF_SnsPostTemplateRow Topic1;
 	Topic1.TopicId = 1;
 	Topic1.bUsesFacilityPlaceholder = true;
@@ -308,6 +323,34 @@ bool FFF_SnsFeedGenerator_DetectsSentimentMismatch::RunTest(const FString& Param
 	Empty.Sentiment = NAME_None; // 값이 아예 비어있는 상황
 	TestFalse(TEXT("Sentiment가 비어있으면 불일치로 취급"), FFF_SnsFeedGenerator::DoesSentimentMatchTopic(Empty));
 
+	return true;
+}
+
+// SNS 입장료 화제 — 비쌀 때만 15, 쌀 때만 16. 비싸면 부정 글이 는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_Sns_AdmissionFeeTopics, "FestaFiesta.NPC.SnsFeedGenerator.AdmissionFeeTopics", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_Sns_AdmissionFeeTopics::RunTest(const FString& Parameters)
+{
+	FFF_SnsFeedSignals Signals;
+	Signals.SimSatisfaction0To100 = 60;
+	Signals.ReferenceAdmissionFeeGold = 5;
+	Signals.MaxAdmissionFeeGold = 15;
+
+	Signals.AdmissionFeeGold = 5;
+	TestFalse(TEXT("기준값이면 비쌈 화제가 안 나온다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(15, Signals));
+	TestFalse(TEXT("기준값이면 가성비 화제가 안 나온다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(16, Signals));
+	TestEqual(TEXT("기준값이면 극성 추첨 만족도가 그대로"), FFF_SnsFeedGenerator::CalcPolaritySatisfaction(Signals), 60);
+
+	Signals.AdmissionFeeGold = 15;
+	TestTrue(TEXT("상한이면 비쌈 화제"), FFF_SnsFeedGenerator::IsTopicEligibleNow(15, Signals));
+	TestEqual(TEXT("상한이면 점수 100"), FFF_SnsFeedGenerator::ComputeTopicScore(15, Signals), 100.f, 1e-3f);
+	TestEqual(TEXT("상한이면 부정 쪽으로 25 기운다"), FFF_SnsFeedGenerator::CalcPolaritySatisfaction(Signals), 35);
+	TestEqual(TEXT("비쌈은 부정 화제"), FFF_SnsFeedGenerator::GetTopicPolarity(15), EFF_SnsSentiment::Negative);
+
+	Signals.AdmissionFeeGold = 0;
+	TestTrue(TEXT("0 Gold 면 가성비 화제"), FFF_SnsFeedGenerator::IsTopicEligibleNow(16, Signals));
+	TestEqual(TEXT("0 Gold 면 점수 100"), FFF_SnsFeedGenerator::ComputeTopicScore(16, Signals), 100.f, 1e-3f);
+	TestEqual(TEXT("가성비는 긍정 화제"), FFF_SnsFeedGenerator::GetTopicPolarity(16), EFF_SnsSentiment::Positive);
+	TestEqual(TEXT("0 Gold 면 긍정 쪽으로 10 기운다"), FFF_SnsFeedGenerator::CalcPolaritySatisfaction(Signals), 70);
 	return true;
 }
 

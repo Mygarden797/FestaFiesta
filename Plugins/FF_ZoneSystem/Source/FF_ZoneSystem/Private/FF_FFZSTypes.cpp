@@ -124,6 +124,11 @@ FFFZSFacilitySpec FFZSFacilityUpgradeRules::BuildEffectiveSpec(
     // Unspecified tier visuals always fall back to Lv.1, and identity scale preserves legacy geometry byte for byte.
     if (SizeMultiplier == 1.0f)
     {
+        FText LayoutError;
+        if (!FFFZSQueueGeometry::ApplySelectedLayout(Result, LayoutError))
+        {
+            Result.FootprintSizeCells = FIntPoint::ZeroValue;
+        }
         return Result;
     }
     const auto ScaleCoordinate = [SizeMultiplier](const int32 Input, const bool bUpperBound, int32& Output)
@@ -218,6 +223,11 @@ FFFZSFacilitySpec FFZSFacilityUpgradeRules::BuildEffectiveSpec(
     {
         Anchor.LocalTransform.SetTranslation(Anchor.LocalTransform.GetTranslation() * SizeMultiplier);
     }
+    FText LayoutError;
+    if (!FFFZSQueueGeometry::ApplySelectedLayout(Result, LayoutError))
+    {
+        Result.FootprintSizeCells = FIntPoint::ZeroValue;
+    }
     return Result;
 }
 
@@ -306,6 +316,11 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
     const bool bHasNoService = Category == EFFZSFacilityCategory::Lighting || IsGroundSurface();
+    if (!StaticEnum<EFFZSQueueLayout>()->IsValidEnumValue(static_cast<int64>(QueueLayout)) ||
+        (bHasNoService && QueueLayout != EFFZSQueueLayout::Authored))
+    {
+        OutErrors.Add(LOCTEXT("InvalidQueueLayout", "이 시설에서는 선택한 대기열 형태를 사용할 수 없습니다."));
+    }
     Audience.IsValid(OutErrors);
     FText UpgradeError;
     // Disabled levels keep authored data, so malformed tiers still fail validation before re-enabling.

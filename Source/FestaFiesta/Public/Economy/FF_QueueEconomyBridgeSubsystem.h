@@ -25,6 +25,8 @@ class FESTAFIESTA_API UFF_QueueEconomyBridgeSubsystem : public UWorldSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+	// Queue 와 같은 월드에만 생긴다. 에디터 월드에 생기면 Queue 가 없어 매번 경고가 난다.
+	virtual bool DoesSupportWorldType(EWorldType::Type WorldType) const override;
 	
 	// 이 퇴장 유형이 매출을 만드는가.
 	// Served 만 이용 완료다 — Abandoned·Cancelled 는 줄을 섰다 나간 것이라 결제가 없다.

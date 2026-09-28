@@ -11,6 +11,7 @@
 
 class UDataTable;
 class UFF_DialogueScriptData;
+class UTexture2D;
 
 // 튜토리얼의 프로젝트 기본값.
 // Project Settings > Game > FestaFiesta Tutorial 에서 지정한다.
@@ -38,6 +39,31 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
 		meta = (DisplayName = "Lobby Intro Table"))
 	TSoftObjectPtr<UDataTable> LobbyIntroTable;
+
+	/* 튜토리얼 레벨의 축제 이름. 아틀라스 카탈로그의 FestivalId 와 같아야 한다.
+
+	   튜토리얼 레벨은 대사만이 아니라 레벨 자체가 튜토리얼이다. 그래서 건너뛰면
+	   레벨도 끝내고 레벨 선택으로 돌려보낸다. 이미 봤거나 건너뛴 판으로 이 레벨에
+	   들어와도 마찬가지다. 어느 레벨이 그런 레벨인지 여기서 정한다.
+
+	   비우면 그런 레벨이 없는 것으로 보고 레벨을 끝내지 않는다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
+		meta = (DisplayName = "Tutorial Festival Id"))
+	FName TutorialFestivalId = TEXT("Tutorial");
+
+	/* 화자 이름 → 초상화. 대사의 Speaker 칸과 글자가 똑같아야 한다(예: 삼촌).
+
+	   대사 줄마다 그림을 적지 않고 화자로 찾는 이유: 한 사람이 수십 줄을 말하는데
+	   줄마다 같은 경로를 적으면 오타 하나로 그 줄만 그림이 빠진다. 화자가 바뀔 때만
+	   그림이 바뀌면 되는 지금은 이름 하나로 묶는 편이 CSV 를 안 건드려서 낫다.
+	   표정이 여러 개 필요해지면 그때 줄 단위 지정 칸을 더한다.
+
+	   목록에 없는 화자는 초상화를 숨긴다. 내레이션(화자 없음)도 숨긴다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Portrait",
+		meta = (DisplayName = "Speaker Portraits"))
+	TMap<FString, TSoftObjectPtr<UTexture2D>> SpeakerPortraits;
 
 	// 어느 레벨에서든 시작할 대사. 보통 비워둔다.
 	//
@@ -85,8 +111,22 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial")
 	int32 OverlayZOrder = 100;
 
+	/* 축제 레벨에서 대사창의 화면 순서.
+
+	   튜토리얼 레벨에서는 다른 UI(준비 HUD 등)를 대사창 위에서 눌러야 해서 음수로
+	   내려 쓴다. 그 값을 로비에 그대로 쓰면 UI 루트(0) 밑에 깔려 대사가 안 보이므로
+	   로비는 아래 LobbyDialogueBoxZOrder 를 따로 쓴다.
+	*/
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial")
 	int32 DialogueBoxZOrder = 110;
+
+	/* 로비 인트로에서 대사창의 화면 순서.
+
+	   로비는 지구본 화면이 UI 루트(z 0) 위에 꽉 차게 뜬다. 대사가 그 위에 얹혀야
+	   하므로 0 보다 커야 한다. 로비에서는 대사 말고 누를 UI 가 없어서 위로 올려도 된다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial")
+	int32 LobbyDialogueBoxZOrder = 110;
 
 	// 건너뛰기를 눌렀을 때 물어볼 문구.
 	//

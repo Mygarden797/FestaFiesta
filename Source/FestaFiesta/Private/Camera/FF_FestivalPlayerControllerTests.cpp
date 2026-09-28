@@ -1,5 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
+// 역할: 건설·캐릭터 조종·연출 상태에서 카메라 회전과 시설 선택이 올바르게 차단되는지 검증한다.
+
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS

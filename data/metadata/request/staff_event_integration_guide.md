@@ -1,6 +1,58 @@
 # 스태프 ↔ 사건 시스템 연동 안내
 
-정원님께 전달할 요청과 변경 사항입니다. 갱신: 2026-09-22.
+정원님께 전달할 요청과 변경 사항입니다. 갱신: 2026-09-23.
+
+## 📌 2026-09-23 추가 요청 — 사건 시스템 머지(`ffff4752`·`30e57b9a`) 이후
+
+머지된 `UFF_IncidentSubsystem` 을 읽어 보고, 경제·만족도·SNS·스태프를 붙이려면 필요한 것을
+정리했습니다. 작업 중이신 부분과 겹치면 무시해 주세요.
+
+**일정 부탁:** 개발 완료가 9/30(수)이라, **1~3번이 9/26(금)까지** 오면 제 쪽 연결을 9/29(월)까지
+끝낼 수 있습니다. 그 이후면 스태프 기능은 이번 릴리스에서 빼고 UI 문구로 막는 쪽으로 가겠습니다.
+
+### 지금 코드에서 확인한 것
+
+| 항목 | 현재 | 위치 |
+|---|---|---|
+| 알림 델리게이트 | `DECLARE_DELEGATE`(싱글캐스트) — 한 곳만 구독 가능 | `FF_IncidentSubsystem.h:15-16` |
+| 알림 발행 | `ReportIncident`·`CloseSlot` 어디에도 `Execute`/`Broadcast` 가 없다 | `FF_IncidentSubsystem.cpp:177-309` |
+| 사건 발생원 | `ReportIncident` 호출부 0곳. Crowd 의 `OnCongestionSampled` 도 구독자 0곳 | `FF_CrowdSimulationSubsystem.cpp` `PublishCongestionSnapshot` |
+| 조회 | 핸들 목록(`GetActiveHandle`)만 있고, 핸들로 태그·위치·상태를 읽는 공개 함수가 없다 | — |
+| 상태 전이 | `EFF_IncidentState` 에 확인·해소·포착이 있지만 그리로 가는 공개 API 가 없다(시간 소멸만 있음) | — |
+| 스태프 연결 | `UFF_IncidentDefinition` 에 인원·작업량 필드가 없다 | `FF_IncidentDefinition.h` |
+
+### 요청
+
+| # | 요청 | 왜 필요한가 | 급함 |
+|---|---|---|---|
+| 1 | **알림을 멀티캐스트로 바꾸고 실제로 발행** (`DECLARE_MULTICAST_DELEGATE`, 가능하면 BP 용 Dynamic 도) | 경제(벌금)·만족도·SNS·UI 트레이가 동시에 들어야 한다. 싱글캐스트면 마지막으로 붙은 한 곳만 받는다 | 🔴 |
+| 2 | **닫힘 알림에 결과를 싣기** — `OnIncidentClosed(Handle, EFF_IncidentState FinalState)` 형태 | 해소·포착은 보상, 방치·놓침은 만족도 감점(설계 §5)으로 반응이 갈린다. 닫힌 뒤에는 슬롯이 재사용돼 핸들로 다시 못 읽는다 | 🔴 |
+| 3 | **핸들로 읽는 조회 함수** — 태그·Anchor(ZoneId·WorldPoint)·Tone·Urgency·State·남은 분·Intensity 를 담은 읽기 구조체 하나 | SNS 문장(`{구역}` 치환), 만족도 감점 대상 구역, UI 트레이 표시가 전부 이 값을 쓴다 | 🔴 |
+| 4 | **스태프 연결 방식 합의** — 제안: 사건 정의에 `MinStaff`·`MaxStaff`·`WorkAmount`(사람-분)·`MaxOverduePenalty` 를 두고, 배정 상태와 진행률은 사건 시스템이 들고, 소요 시간은 제 `FFF_StaffEventRules::CalcResolveSeconds` 를 호출 | 스태프는 지금 고용비만 빠지고 할 일이 없다. 판정 함수는 이미 테스트까지 있다(아래 §3). `FFF_FestivalEventCard` 는 필드를 정의에 옮기시면 지워도 된다 | 🟡 |
+| 5 | **해소 API** — 배정·확인·해소(또는 선택지 고르기)를 부를 공개 함수 | 스태프 배치 UI(백종태)와 자동 안전망이 부를 입구 | 🟡 |
+| 6 | **사건 발생원 결정** — 밀집(`OnCongestionSampled`)은 정원님 쪽에서 구독하시는지. 경제 발 사건(`Incident.Economy.Bankrupt` 태그)은 제가 `ReportIncident` 를 부르면 되는지 | 태그만 있고 올리는 쪽이 없다 | 🟡 |
+| 7 | **Safety 지표** — 사건 처리율 등으로 실값을 주실지, 이번엔 UI 에서 뺄지 | ViewModel 이 아직 88 고정 | ⚪ |
+
+### 제 쪽이 받는 즉시 할 일
+
+- 닫힘 결과별 만족도 감점(방치·놓침) — 설계 §5 ⓐ다음날 방문객 배수 + ⓑ3일 평균
+- SNS 사건 화제 문장(구역 치환)
+- 경제 쪽 사건 보고(6번에서 제가 올리기로 하면)
+- 승급 비용 확정(현재 무료) — 경제 밸런싱과 같이
+
+### 9/22 질문 중 닫힌 것
+
+- **1번 `ZoneId` 타입 — 해결.** `FFF_IncidentAnchor::ZoneId` 가 `FName` 이라 그대로 맞습니다.
+- **2번 발생/완료 알림** → 위 요청 1·2 로 구체화했습니다.
+- **3번 Safety** → 위 요청 7.
+- **4번 `AgentPoolSize`** — 여전히 500 입니다. 실제 맵 `Test_Main` 의 SpawnActor **인스턴스 값**이
+  코드 기본값을 덮어쓰고 있어서 에디터에서 바꿔야 합니다. 기본 방문객 500 = 일일 목표 500 = 풀 500 이라
+  홍보를 안 산 날은 목표 달성이 사실상 불가능합니다. 풀을 650 정도로 올려도 되는지 여쭙니다
+  (안 되면 제가 목표를 낮추겠습니다).
+
+---
+
+## (9/22) 최초 안내
 
 > 오늘 스태프를 "사건 대응 전담 축"으로 확정하면서(설계는 `staff_event_design.md`),
 > 사건 시스템 착수 전에 **인터페이스부터 맞춰두면 서로 안 기다려도 된다**고 판단해

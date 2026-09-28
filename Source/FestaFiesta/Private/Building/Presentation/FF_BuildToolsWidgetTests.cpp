@@ -8,6 +8,29 @@
 #include "Components/TextBlock.h"
 #include "Misc/AutomationTest.h"
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsHelpClearanceTest,
+    "FestaFiesta.Building.BuildTools.HelpCatalogClearance",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFBuildToolsHelpClearanceTest::RunTest(const FString& Parameters)
+{
+    // The catalog reserves its complete 326px tray plus the persistent navigation,
+    // and resized/dragged trays can supply their measured top edge instead.
+    for (const float ViewHeight : {540.f, 720.f, 900.f, 1080.f})
+        for (const float ContentHeight : {240.f, 330.f, 470.f})
+        {
+            const float CatalogTop = ViewHeight - 326.f - 84.f;
+            const FVector2D Bounds = FFBuildToolsModel::ResolveHelpVerticalBounds(ContentHeight, CatalogTop - 16.f);
+            TestTrue(TEXT("Help and catalog retain a 16px gap even when content needs scrolling"),
+                Bounds.X + Bounds.Y <= CatalogTop - 16.f + .1f);
+            TestTrue(TEXT("Help never expands beyond its content or above the viewport"),
+                Bounds.X >= 0.f && Bounds.Y >= 0.f && Bounds.Y <= ContentHeight);
+            if (CatalogTop >= 120.f)
+                TestTrue(TEXT("The top toolbar keeps its own clear space"), Bounds.X >= 104.f);
+        }
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsAngleInputTest,
     "FestaFiesta.Building.BuildTools.AngleInput",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -70,7 +93,12 @@ bool FFFBuildToolsDesignerStyleTest::RunTest(const FString& Parameters)
 #include "Blueprint/WidgetTree.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Components/Border.h"
+#include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/EditableTextBox.h"
+#include "Components/HorizontalBox.h"
+#include "Components/Image.h"
+#include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Editor.h"
@@ -90,7 +118,7 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
 {
     UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr,
         FFBuildUIAssetPaths::BuildToolsObject);
-    if (!TestNotNull(TEXT("Run FF.ApplyBuildModeClarityTools to migrate the editable toolbar"), Blueprint) ||
+    if (!TestNotNull(TEXT("Run FF.ApplyBuildReferenceTools after the Clarity migration"), Blueprint) ||
         !TestNotNull(TEXT("Toolbar has a designer widget tree"), Blueprint ? Blueprint->WidgetTree.Get() : nullptr))
     {
         return false;
@@ -98,11 +126,32 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("The WBP uses the native controller contract"), Blueprint->GeneratedClass &&
         Blueprint->GeneratedClass->IsChildOf(UFF_BuildToolsWidget::StaticClass()));
     UWidgetTree* Tree = Blueprint->WidgetTree;
-    TestNotNull(TEXT("Only the visible toolbar panel receives pointer hits"),
+    TestNotNull(TEXT("The placement dock remains an independent pointer surface"),
         Cast<UBorder>(Tree->FindWidget(TEXT("Border_Tools"))));
+    TestNotNull(TEXT("Catalog browsing and placement share an authored top toolbar"),
+        Cast<UBorder>(Tree->FindWidget(TEXT("Border_BuildTopBar"))));
+    TestNotNull(TEXT("Build mode has an authored upper-left back action"),
+        Cast<UBorder>(Tree->FindWidget(TEXT("Border_BuildBack"))));
+    UBorder* Settings = Cast<UBorder>(Tree->FindWidget(TEXT("Panel_BuildSettings")));
+    if (TestNotNull(TEXT("Build settings have their own authored drawer"), Settings))
+        TestTrue(TEXT("The settings drawer starts closed"), Settings->GetVisibility() == ESlateVisibility::Collapsed);
     const FName ButtonNames[] = { TEXT("Button_Confirm"), TEXT("Button_Catalog"),
         TEXT("Button_Help"), TEXT("Button_Facts"), TEXT("Button_DirectAdjustment"),
-        TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem") };
+        TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo"),
+        TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem"),
+        TEXT("Button_Grid"), TEXT("Button_SnapMeter"), TEXT("Button_SnapPrecision"),
+        TEXT("Button_SnapFree"), TEXT("Button_BuildSettings"), TEXT("Button_BuildSettingsClose"),
+        TEXT("Button_MultiSelect"), TEXT("Button_SnapCycle"), TEXT("Button_ToolbarRanges"),
+        TEXT("Button_ToolbarCatalog"), TEXT("Button_ToolbarHelp"),
+        TEXT("Button_BuildBack"), TEXT("Button_SettingsGrid"),
+        TEXT("Button_SettingsSnapMeter"), TEXT("Button_SettingsSnapPrecision"),
+        TEXT("Button_SettingsSnapFree"), TEXT("Button_SettingsDirectAdjustment"),
+        TEXT("Button_SettingsFacilityRanges"), TEXT("Button_SettingsSynergyPreview"),
+        TEXT("Button_SettingsZoomToCursor"), TEXT("Button_SettingsEdgeScroll"),
+        TEXT("Button_RotateLeft"), TEXT("Button_RotateRight"),
+        TEXT("Button_FreeRotateLeft"), TEXT("Button_FreeRotateRight"),
+        TEXT("Button_NudgeLeft"), TEXT("Button_NudgeUp"),
+        TEXT("Button_NudgeDown"), TEXT("Button_NudgeRight") };
     for (const FName Name : ButtonNames)
     {
         const UFF_BuildToolsActionButton* Button = Cast<UFF_BuildToolsActionButton>(Tree->FindWidget(Name));
@@ -113,14 +162,21 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
         }
     }
     for (const FName Name : { TEXT("Button_Radial"), TEXT("Panel_Radial"), TEXT("Panel_Details"),
-        TEXT("Button_Details"), TEXT("Button_Grid"), TEXT("Button_SnapMeter"), TEXT("Button_SnapPrecision"),
-        TEXT("Button_SnapFree"), TEXT("Button_RotateLeft"), TEXT("Button_RotateRight"),
-        TEXT("Button_NudgeLeft"), TEXT("Button_NudgeUp"), TEXT("Button_NudgeDown"), TEXT("Button_NudgeRight"),
-        TEXT("Button_FreeRotateLeft"), TEXT("Button_FreeRotateRight"), TEXT("Editable_Angle"), TEXT("Text_RotationHint") })
-        TestNull(*FString::Printf(TEXT("Removed tool menu has no remaining Designer control: %s"), *Name.ToString()),
+        TEXT("Button_Details") })
+        TestNull(*FString::Printf(TEXT("Retired radial menu has no remaining Designer control: %s"), *Name.ToString()),
             Tree->FindWidget(Name));
+    TestNotNull(TEXT("The settings drawer retains precise angle editing"),
+        Cast<UEditableTextBox>(Tree->FindWidget(TEXT("Editable_Angle"))));
+    TestNotNull(TEXT("The settings drawer explains rotation shortcuts"),
+        Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_RotationHint"))));
     TestNotNull(TEXT("Mode has a state-driven text binding"), Tree->FindWidget(TEXT("Text_Mode")));
     TestNotNull(TEXT("Status has a state-driven text binding"), Tree->FindWidget(TEXT("Text_Legend")));
+    const UTextBlock* CatalogAction = Cast<UTextBlock>(Tree->FindWidget(TEXT("Label_Catalog")));
+    const UTextBlock* DirectAction = Cast<UTextBlock>(Tree->FindWidget(TEXT("Label_DirectAdjustment")));
+    TestTrue(TEXT("Catalog action names the action without a keycap"),
+        CatalogAction && CatalogAction->GetText().ToString() == TEXT("시설 목록"));
+    TestTrue(TEXT("Direct placement action names the action without a keycap"),
+        DirectAction && DirectAction->GetText().ToString() == TEXT("직접 조정"));
     for (const FName Name : { FName(TEXT("Text_FacilityName")), FName(TEXT("Text_Cost")),
         FName(TEXT("Text_ActiveSnap")) })
     {
@@ -133,14 +189,98 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
     const UCanvasPanelSlot* Slot = Size ? Cast<UCanvasPanelSlot>(Size->Slot) : nullptr;
     if (TestNotNull(TEXT("Toolbar has an editable canvas placement"), Slot))
     {
-        TestTrue(TEXT("Compact tools dock to the lower right, clear of the placement center"),
+        TestTrue(TEXT("Placement actions dock to the lower right, clear of the placement center"),
             Slot->GetAnchors().Minimum.Equals(FVector2D(1, 1)) && Slot->GetAlignment().Equals(FVector2D(1, 1)));
         TestTrue(TEXT("Tool dock reserves space above the persistent bottom navigation"), Slot->GetPosition().Y <= -80.f);
     }
+    const USizeBox* TopSize = Cast<USizeBox>(Tree->FindWidget(TEXT("Size_BuildTopBar")));
+    const UCanvasPanelSlot* TopSlot = TopSize ? Cast<UCanvasPanelSlot>(TopSize->Slot) : nullptr;
+    if (TestNotNull(TEXT("Top toolbar has an editable canvas placement"), TopSlot))
+    {
+        TestTrue(TEXT("Top toolbar is centered along the upper edge"),
+            TopSlot->GetAnchors().Minimum.Equals(FVector2D(0.5f, 0.f)) &&
+            TopSlot->GetAlignment().Equals(FVector2D(0.5f, 0.f)));
+        TestTrue(TEXT("Top toolbar leaves a small margin from the edge"), TopSlot->GetPosition().Y >= 12.f);
+    }
+    TestTrue(TEXT("Seven pictogram buttons have a generous floating surface"),
+        TopSize && TopSize->GetWidthOverride() >= 580.f);
+    TestNotNull(TEXT("One real gold currency value lives in the floating toolbar"),
+        Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_ToolbarGold"))));
+    TestNotNull(TEXT("The toolbar uses the project gold badge"),
+        Cast<UImage>(Tree->FindWidget(TEXT("Image_BuildToolbarGold"))));
+    const USizeBox* GoldIcon = Cast<USizeBox>(Tree->FindWidget(TEXT("Size_BuildToolbarGoldIcon")));
+    TestTrue(TEXT("Currency artwork is large yet bounded"), GoldIcon &&
+        GoldIcon->GetWidthOverride() >= 34.f && GoldIcon->GetWidthOverride() <= 38.f &&
+        GoldIcon->GetHeightOverride() >= 34.f && GoldIcon->GetHeightOverride() <= 38.f);
+    const UBorder* GoldBadge = Cast<UBorder>(Tree->FindWidget(TEXT("Border_BuildToolbarGold")));
+    const UCanvasPanelSlot* GoldSlot = GoldBadge ? Cast<UCanvasPanelSlot>(GoldBadge->Slot) : nullptr;
+    TestTrue(TEXT("One independent currency badge is sized for icon, name and value"),
+        GoldSlot && GoldSlot->GetSize().X >= 210.f && GoldSlot->GetSize().Y >= 54.f);
+    TestNotNull(TEXT("Currency badge names the resource"),
+        Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_ToolbarGoldCaption"))));
+    const UHorizontalBox* Keycaps = Cast<UHorizontalBox>(Tree->FindWidget(TEXT("Row_BuildToolbarKeycaps")));
+    TestTrue(TEXT("Function key captions are removed from the visible toolbar"),
+        Keycaps && Keycaps->GetVisibility() == ESlateVisibility::Collapsed);
+    for (int32 Index = 1; Index <= 7; ++Index)
+    {
+        const FName CanvasName = Index == 1 ? FName(TEXT("Canvas_BuildToolbarFacilityPlus"))
+            : FName(*FString::Printf(TEXT("Canvas_BuildToolbarLine%d"), Index));
+        const UCanvasPanel* Icon = Cast<UCanvasPanel>(Tree->FindWidget(CanvasName));
+        TestTrue(*FString::Printf(TEXT("Toolbar action %d uses editable simple vector strokes"), Index),
+            Icon && Icon->GetChildrenCount() >= 2 && Icon->GetChildrenCount() <= 12);
+        TestNull(TEXT("Complex raster toolbar artwork is retired"),
+            Tree->FindWidget(FName(*FString::Printf(TEXT("Image_ToolbarF%d"), Index))));
+    }
+    const USizeBox* SettingsSize = Cast<USizeBox>(Tree->FindWidget(TEXT("Size_BuildSettings")));
+    const UCanvasPanelSlot* SettingsSlot = SettingsSize ? Cast<UCanvasPanelSlot>(SettingsSize->Slot) : nullptr;
+    if (TestNotNull(TEXT("Settings drawer has an independent canvas placement"), SettingsSlot))
+        TestTrue(TEXT("Settings drawer opens from the upper left"),
+            SettingsSlot->GetAnchors().Minimum.Equals(FVector2D::ZeroVector) &&
+            SettingsSlot->GetPosition().X >= 0.f && SettingsSlot->GetPosition().Y >= 0.f);
     TestNotNull(TEXT("The cost and queue summary has a distinct pointer-safe panel"),
         Cast<UBorder>(Tree->FindWidget(TEXT("Border_PlacementInfo"))));
-    TestNotNull(TEXT("Dismissible help is authored beneath the left facility summary"),
+    TestNotNull(TEXT("Dismissible help is authored as a world overlay"),
         Cast<UBorder>(Tree->FindWidget(TEXT("Border_PlacementHelp"))));
+    const USizeBox* HelpSize = Cast<USizeBox>(Tree->FindWidget(TEXT("Size_BuildWorldHelp")));
+    TestNotNull(TEXT("World shortcuts have their own canvas placement"),
+        HelpSize ? Cast<UCanvasPanelSlot>(HelpSize->Slot) : nullptr);
+    TestNotNull(TEXT("Short viewports can scroll the guide inside the available space"),
+        Cast<UScrollBox>(Tree->FindWidget(TEXT("Scroll_BuildHelp"))));
+    for (const TCHAR* Key : {TEXT("Q"), TEXT("E"), TEXT("W"), TEXT("A"), TEXT("S"),
+        TEXT("D"), TEXT("Ctrl"), TEXT("G"), TEXT("B"), TEXT("Esc"),
+        TEXT("Z"), TEXT("Y")})
+    {
+        const FString Name = FString(TEXT("Text_BuildHelpKey_")) + Key;
+        const UTextBlock* KeyText = Cast<UTextBlock>(Tree->FindWidget(FName(*Name)));
+        TestTrue(*FString::Printf(TEXT("The guide shows the actual %s keyboard key in a readable keycap"), Key),
+            KeyText && KeyText->GetText().ToString() == Key && KeyText->GetFont().Size >= 14);
+    }
+    const TCHAR* QueueKeys[] = {TEXT("7"), TEXT("8"), TEXT("9"), TEXT("0")};
+    for (int32 Index = 0; Index < 4; ++Index)
+    {
+        // Existing Designer names are stable; their displayed shortcuts are migrated.
+        const FName Name(*FString::Printf(TEXT("Text_BuildHelpKey_%d"), Index + 1));
+        const UTextBlock* KeyText = Cast<UTextBlock>(Tree->FindWidget(Name));
+        TestTrue(*FString::Printf(TEXT("Queue shortcut %s is shown in the preserved keycap"), QueueKeys[Index]),
+            KeyText && KeyText->GetText().ToString() == QueueKeys[Index] && KeyText->GetFont().Size >= 14);
+    }
+    const UTextBlock* QueueHint = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_BuildHelpQueueHint")));
+    TestTrue(TEXT("Saved queue mapping matches the active number shortcuts"),
+        QueueHint && QueueHint->GetText().ToString() == TEXT("7 기본 · 8 좌측 · 9 우측 · 0 U자"));
+    for (const TCHAR* Name : {TEXT("Text_BuildHelpUndo"), TEXT("Text_BuildHelpRedo"), TEXT("Text_BuildHelpQueue"), TEXT("Text_BuildHelpQueueHint")})
+        TestNotNull(*FString::Printf(TEXT("Editing guidance belongs to the existing help: %s"), Name), Tree->FindWidget(Name));
+    const UWidget* QueueHelp = Tree->FindWidget(TEXT("Row_BuildHelpQueue"));
+    TestTrue(TEXT("Queue guidance starts hidden until a supported facility is selected"),
+        QueueHelp && QueueHelp->GetVisibility() == ESlateVisibility::Collapsed);
+    const UTextBlock* LegacyHelp = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_ControlHelp")));
+    TestTrue(TEXT("Letter-by-letter help is retained only as a hidden compatibility binding"),
+        LegacyHelp && LegacyHelp->GetVisibility() == ESlateVisibility::Collapsed);
+    for (const FName Name : {FName(TEXT("Size_BuildHelpMouseIcon")),
+        FName(TEXT("Size_BuildHelpArrowsIcon")), FName(TEXT("Size_BuildHelpRotateIcon")),
+        FName(TEXT("Size_BuildHelpGridIcon")), FName(TEXT("Size_BuildHelpCatalogIcon")),
+        FName(TEXT("Size_BuildHelpPauseIcon"))})
+        TestNotNull(*FString::Printf(TEXT("Icon guide contains %s"), *Name.ToString()),
+            Cast<USizeBox>(Tree->FindWidget(Name)));
     for (const FName Name : { FName(TEXT("Text_Queue")), FName(TEXT("Text_Footprint")), FName(TEXT("Text_Balance")) })
         TestNotNull(*Name.ToString(), Cast<UTextBlock>(Tree->FindWidget(Name)));
     for (const FName Name : {TEXT("Text_PlacementAdvice"), TEXT("Text_PlacementObstruction"), TEXT("Text_AssistanceMessage")})
@@ -192,9 +332,39 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
             TestNull(*FString::Printf(TEXT("Removed tool entry cannot be recreated at runtime: %s"), *Name.ToString()),
                 Widget->GetWidgetFromName(Name));
         TestFalse(TEXT("The compatibility query never reports an open tool menu"), Widget->IsRadialMenuOpen());
-        TestFalse(TEXT("Removed detail panels cannot capture auxiliary-panel input"), Widget->IsAuxiliaryPanelOpen());
     };
+    UBorder* Settings = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Panel_BuildSettings")));
+    if (!TestNotNull(TEXT("Settings drawer instance"), Settings)) return false;
     MenuRemainsRemoved();
+    TestFalse(TEXT("A closed settings drawer does not capture auxiliary input"), Widget->IsAuxiliaryPanelOpen());
+    for (FName Name : {TEXT("Button_BuildBack"), TEXT("Button_BuildSettings"), TEXT("Button_BuildSettingsClose"),
+        TEXT("Button_MultiSelect"), TEXT("Button_SnapCycle"), TEXT("Button_ToolbarRanges"),
+        TEXT("Button_ToolbarCatalog"), TEXT("Button_ToolbarHelp"),
+        TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo"),
+        TEXT("Button_SettingsGrid"), TEXT("Button_SettingsSnapMeter"),
+        TEXT("Button_SettingsSnapPrecision"), TEXT("Button_SettingsSnapFree"),
+        TEXT("Button_SettingsDirectAdjustment"), TEXT("Button_SettingsFacilityRanges"),
+        TEXT("Button_SettingsSynergyPreview"), TEXT("Button_SettingsZoomToCursor"),
+        TEXT("Button_SettingsEdgeScroll")})
+    {
+        UButton* Button = Cast<UButton>(Widget->GetWidgetFromName(Name));
+        if (TestNotNull(*Name.ToString(), Button))
+            TestTrue(*FString::Printf(TEXT("The new settings action is connected: %s"), *Name.ToString()),
+                Button->OnClicked.IsBound());
+    }
+    for (FName Name : {TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo")})
+        if (const UButton* Button = Cast<UButton>(Widget->GetWidgetFromName(Name)))
+            TestFalse(TEXT("History actions remain disabled without an active editable session"), Button->GetIsEnabled());
+    TestFalse(TEXT("Queue keys remain contextual without a queue-capable target"), Open(TEXT("Row_BuildHelpQueue")));
+    // This playerless fixture has no active build session. Exercise the independent
+    // drawer surface without starting placement or bypassing the runtime session guard.
+    Settings->SetVisibility(ESlateVisibility::Visible);
+    TestTrue(TEXT("An open settings drawer reserves auxiliary input"), Widget->IsAuxiliaryPanelOpen());
+    Widget->ToggleRadialMenu();
+    MenuRemainsRemoved();
+    TestTrue(TEXT("Legacy radial calls leave the settings drawer open"), Settings->IsVisible());
+    Settings->SetVisibility(ESlateVisibility::Collapsed);
+    TestFalse(TEXT("Closing settings releases auxiliary input"), Widget->IsAuxiliaryPanelOpen());
     Widget->ToggleRadialMenu();
     Widget->ToggleRadialMenu();
     MenuRemainsRemoved();
@@ -202,12 +372,25 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("R is no longer consumed by a removed menu entry"),
         Slate->OnPreviewKeyDown(FGeometry(), RemovedToolKey).IsEventHandled());
     MenuRemainsRemoved();
+    TestFalse(TEXT("Function keys do not act without an active build session"), Widget->HandleToolbarKey(EKeys::F5));
     Click(TEXT("Button_Help"));
     TestTrue(TEXT("Help opens independently beneath the left summary"), Open(TEXT("Border_PlacementHelp")));
     auto* HelpLabel = Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Label_Help")));
     TestTrue(TEXT("Visible help has a clear close action"), HelpLabel && HelpLabel->GetText().ToString() == TEXT("안내 닫기"));
     Click(TEXT("Button_Help"));
     TestFalse(TEXT("The help close action dismisses only the instructions"), Open(TEXT("Border_PlacementHelp")));
+    if (auto* HelpBounds = Cast<USizeBox>(Widget->GetWidgetFromName(TEXT("Size_BuildWorldHelp"))))
+    {
+        // NativeTick keeps this height after the guide is closed. The empty SBox
+        // must not remain a hit-test target above the world or catalog.
+        HelpBounds->SetHeightOverride(240.f);
+        const TSharedRef<SWidget> HelpSlate = HelpBounds->TakeWidget();
+        TestFalse(TEXT("Closed help's retained layout bounds never intercept pointer input"),
+            HelpSlate->GetVisibility().IsHitTestVisible());
+        TestTrue(TEXT("Reopening the guide still permits its scroll surface to receive input"),
+            HelpSlate->GetVisibility().AreChildrenHitTestVisible());
+    }
+    else AddError(TEXT("Help has independently authored layout bounds"));
     TestTrue(TEXT("Closed instructions can be reopened by the same action"), HelpLabel && HelpLabel->GetText().ToString() == TEXT("조작 안내"));
     Click(TEXT("Button_Help"));
     Widget->ToggleRadialMenu();

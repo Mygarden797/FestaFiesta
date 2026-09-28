@@ -45,6 +45,14 @@ private:
 	UFUNCTION()
 	void HandleCancelClicked();
 
+	/* 대사가 끝나면 창도 닫는다.
+
+	   창이 떠 있는 사이에 대사가 끝까지 가거나 다른 경로로 멈출 수 있다. 창이
+	   남아 있으면 끝까지 본 사람이 `건너뛰기` 를 눌러 안내를 전역으로 끄게 된다.
+	*/
+	UFUNCTION()
+	void HandleDialogueActiveChanged(bool bActive);
+
 	void Close(bool bSkipped);
 
 	// 두 번 눌러도 한 번만 처리한다. 클릭이 빨리 두 번 들어오면

@@ -8,6 +8,7 @@
 #include "Building/UI/FF_BuildCatalogScreen.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Building/Presentation/FF_BuildTypography.h"
+#include "Building/FF_BuildToolbarInput.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Building/FF_FacilityNamingLibrary.h"
@@ -26,6 +27,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
@@ -816,6 +818,11 @@ FReply UFF_BuildCatalogScreen::NativeOnPreviewKeyDown(
 	const FGeometry& InGeometry,
 	const FKeyEvent& InKeyEvent)
 {
+	if (FFBuildToolbarInput::IsRetiredShortcut(InKeyEvent.GetKey()))
+	{
+		// Focused catalog search must not route former toolbar keys to pause or gameplay.
+		return FReply::Handled();
+	}
 	if (InKeyEvent.GetKey() == EKeys::B && !InKeyEvent.IsRepeat())
 	{
 		// UI가 먼저 처리한 B가 같은 프레임의 PlayerController 폴링과 중복되지 않도록 별도 의도로 전달한다.
@@ -827,7 +834,7 @@ FReply UFF_BuildCatalogScreen::NativeOnPreviewKeyDown(
 	if (Settings && Settings->OpenCloseKeys.Contains(InKeyEvent.GetKey()) &&
 		!InKeyEvent.IsRepeat())
 	{
-		// 카탈로그/검색창이 GameAndUI 포커스를 소유해도 ESC/F5가 게임 입력으로 유실되지 않게 전달한다.
+		// 카탈로그/검색창이 GameAndUI 포커스를 소유해도 Escape가 유실되지 않게 전달한다.
 		OnPauseMenuKeyRequested.Broadcast();
 		return FReply::Handled();
 	}

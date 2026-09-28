@@ -38,6 +38,10 @@ namespace FFF_FinaleDefaults
 
 			// 레벨에 놓인 시점을 전부 돈다. 이게 등급 차이의 핵심이다.
 			Spec.TourViewpointLimit = 0;
+
+			// 최고 등급만 3막이다. 축제장을 한 바퀴 돌고 돌아와 일제 발사로 끝낸다.
+			Spec.bSiteTour = true;
+			Spec.FinalSalvoShells = 36;
 			Spec.Volleys = FFF_FinaleDefaults::MakeVolleys(Grade);
 			Spec.BurstHeightMin = 14000.f;
 			Spec.BurstHeightMax = 34000.f;
@@ -97,10 +101,14 @@ namespace FFF_FinaleDefaults
 			break;
 
 		default:
-			// 미구매. 축제가 끝났다는 신호는 남긴다.
+			/* 미구매. 아무것도 안 나온다. 예산을 못 모은 결과 자체를 보여준다.
+
+			   BurstCount 가 0 이라 IsPlayable 이 false 고, 연출은 시작하지 않는다.
+			   "그래도 한 발은" 같은 위로 연출은 두지 않는다. 안 샀으면 빈 하늘이 결과다.
+			   아래 크기·색 값은 쓰이지 않지만, 칸을 비워두면 애셋 편집 화면에 0 이 떠서 남겨둔다.
+			*/
 			Spec.BurstScale = 0.7f;
 			Spec.TrailLength = 0.8f;
-			// 아무것도 안 나온다. 예산을 못 모은 결과 자체를 보여준다.
 			Spec.BurstCount = 0;
 			Spec.DurationSeconds = 1.f;
 			Spec.SimultaneousShells = 1;
@@ -231,7 +239,14 @@ namespace
 				Facing = FVector::ForwardVector;
 			}
 
-			const FVector Right = FVector::CrossProduct(FVector::UpVector, Facing);
+			/* 관객이 보는 오른쪽. Facing 은 관객 쪽을 향하므로 관객의 시선은 -Facing 이다.
+
+			   언리얼은 왼손 좌표계라 시선이 F 일 때 오른쪽은 Up × F 다. 여기에 -Facing 을
+			   넣으면 Facing × Up 이 된다. 예전에는 Up × Facing 으로 써서 좌우가 뒤집혔다 —
+			   하트·원·별은 좌우 대칭이라 안 보였을 뿐이다.
+			   저작 쪽 약속은 EFF_FinaleShapeAuthorPlane::LocalXZ 주석에 있다.
+			*/
+			const FVector Right = FVector::CrossProduct(Facing, FVector::UpVector);
 
 			return Right * (Local.X * Extent) + FVector::UpVector * (Local.Y * Extent);
 		}
@@ -311,13 +326,27 @@ void FFF_FinaleVolley::BuildShellLayout(
 	}
 }
 
-UNiagaraSystem* FFF_FinaleGradeSpec::PickEffect(const int32 Seed) const
+UNiagaraSystem* FFF_FinaleGradeSpec::PickEffect(const uint32 Seed) const
 {
-	if (BurstEffects.Num() == 0)
+	const int32 Assigned = CountAssignedEffects();
+	if (Assigned == 0)
 	{
 		return nullptr;
 	}
 
-	const int32 Index = FMath::Abs(Seed) % BurstEffects.Num();
-	return BurstEffects[Index].LoadSynchronous();
+	// 채워진 칸 중에서 n 번째를 고른다. 빈 칸은 세지 않는다.
+	int32 Target = static_cast<int32>(Seed % static_cast<uint32>(Assigned));
+	for (const TSoftObjectPtr<UNiagaraSystem>& Effect : BurstEffects)
+	{
+		if (Effect.IsNull())
+		{
+			continue;
+		}
+		if (Target-- == 0)
+		{
+			return Effect.LoadSynchronous();
+		}
+	}
+
+	return nullptr;
 }
