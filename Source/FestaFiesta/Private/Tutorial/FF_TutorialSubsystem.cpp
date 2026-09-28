@@ -5,8 +5,6 @@
 #include "Blueprint/UserWidget.h"
 #include "Components/Widget.h"
 #include "Engine/World.h"
-#include "HAL/IConsoleManager.h"
-#include "Blueprint/UserWidget.h"
 #include "Camera/FF_FestivalGameMode.h"
 #include "Camera/FF_OverviewCameraPawn.h"
 #include "EngineUtils.h"
@@ -268,17 +266,29 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 		}
 	}
 
-	/* 로비 버튼 구독을 주기적으로 시도한다.
+	/* 로비 버튼 구독. 플레이 허브 화면이 뜬 틱에 바로 훑는다.
 
-	   플레이 허브는 타이틀에서 넘어올 때 만들어져서, 월드가 시작하는 시점에는
-	   아직 없다. 매 틱 훑으면 낭비라 한 번씩만 두드린다.
+	   예전에는 1초마다 한 번 훑고, 한 번 물면 더 훑지 않았다. 그래서 두 경우에 새 게임
+	   신호를 놓쳤다. 플레이 허브가 뜨고 1초 안에 새 게임을 누르면 아직 구독 전이었고,
+	   허브가 새로 만들어지면 옛 허브만 물고 있었다. 신호를 놓치면 기록도 안 비워지고
+	   로비 인트로도 안 뜬다. "빨리 넘기면 대사창이 안 켜진다" 가 이것이었다.
+
+	   화면이 바뀐 순간을 잡으면 플레이어가 누를 수 있기 전에 구독이 끝난다. 화면을
+	   띄우는 것과 누르는 것 사이에 적어도 한 틱은 있기 때문이다. 그래도 허브가 떠 있는
+	   동안 0.5초마다 한 번 더 훑는다. 허브가 화면 전환 없이 다시 만들어지는 경우를 위한 것이다.
 	*/
-	if (!bDialogueActive && !BoundPlayHub.IsValid())
+	if (!bDialogueActive)
 	{
+		const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+		const uint8 Screen = Flow ? static_cast<uint8>(Flow->GetFrontendScreen()) : 0;
+		const bool bScreenChanged = Screen != LastSeenFrontendScreen;
+		LastSeenFrontendScreen = Screen;
+
 		PlayHubScanCountdown -= DeltaTime;
-		if (PlayHubScanCountdown <= 0.f)
+		if (Screen == static_cast<uint8>(EFF_UIFlowScreen::PlayHub)
+			&& (bScreenChanged || PlayHubScanCountdown <= 0.f))
 		{
-			PlayHubScanCountdown = 1.f;
+			PlayHubScanCountdown = 0.5f;
 			TryBindPlayHub();
 		}
 	}
@@ -309,9 +319,8 @@ void UFF_TutorialSubsystem::BindGameSignals()
 
 	if (!bBoundStage)
 	{
-		const UGameInstance* GameInstance = World->GetGameInstance();
 		if (UFF_FestivalStageSubsystem* Stage =
-			GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+			UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(World->GetGameInstance()))
 		{
 			Stage->OnStageChanged.AddDynamic(this, &UFF_TutorialSubsystem::HandleStageChanged);
 			bBoundStage = true;
@@ -347,9 +356,8 @@ void UFF_TutorialSubsystem::UnbindGameSignals()
 
 	if (bBoundStage)
 	{
-		const UGameInstance* GameInstance = World->GetGameInstance();
 		if (UFF_FestivalStageSubsystem* Stage =
-			GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+			UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(World->GetGameInstance()))
 		{
 			Stage->OnStageChanged.RemoveDynamic(this, &UFF_TutorialSubsystem::HandleStageChanged);
 		}
@@ -549,11 +557,6 @@ void UFF_TutorialSubsystem::RemoveWidgets()
 
 void UFF_TutorialSubsystem::TryBindPlayHub()
 {
-	if (BoundPlayHub.IsValid())
-	{
-		return;
-	}
-
 	/* 봤든 안 봤든 늘 구독한다.
 
 	   예전에는 로비 인트로를 봤으면 구독하지 않았다. 지금은 이 버튼이 "새 게임" 의
@@ -572,12 +575,19 @@ void UFF_TutorialSubsystem::TryBindPlayHub()
 			continue;
 		}
 
+		// 찾은 허브를 전부 문다. 화면 스택이 옛 허브를 들고 있으면 둘 다 살아 있을 수 있는데,
+		// 어느 쪽이 지금 보이는지 여기서는 모른다.
+		// 이미 문 허브는 건너뛴다. 0.5초마다 훑을 때마다 로그가 찍히지 않게 한다.
+		if (PlayHub->OnNewFestivalRequested.IsAlreadyBound(this, &UFF_TutorialSubsystem::HandleNewGameRequested))
+		{
+			continue;
+		}
+
 		PlayHub->OnNewFestivalRequested.AddUniqueDynamic(
 			this, &UFF_TutorialSubsystem::HandleNewGameRequested);
 		BoundPlayHub = PlayHub;
 
-		UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 새 게임 버튼을 구독했다."));
-		return;
+		UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 새 게임 버튼을 구독했다. (%s)"), *PlayHub->GetName());
 	}
 }
 
@@ -694,6 +704,9 @@ void UFF_TutorialSubsystem::TryAutoStart()
 		{
 			UE_LOG(LogFestaFiestaTutorial, Log,
 				TEXT("[튜토리얼] 안내를 꺼둔 상태라 시작하지 않는다."));
+
+			// 튜토리얼 레벨이면 레벨도 볼 이유가 없다. 레벨 선택으로 돌려보낸다.
+			LeaveIfTutorialLevel(FestivalId);
 			return;
 		}
 
@@ -702,6 +715,8 @@ void UFF_TutorialSubsystem::TryAutoStart()
 			UE_LOG(LogFestaFiestaTutorial, Log,
 				TEXT("[튜토리얼] %s 튜토리얼은 이미 봤으므로 시작하지 않는다."),
 				*FestivalId.ToString());
+
+			LeaveIfTutorialLevel(FestivalId);
 			return;
 		}
 	}
@@ -1168,6 +1183,41 @@ void UFF_TutorialSubsystem::SkipTutorial()
 	}
 
 	OnTutorialSkipped.Broadcast();
+
+	// 튜토리얼 레벨에서 건너뛰었으면 레벨도 끝낸다. 방송 뒤에 한다 — 레벨을 떠나면
+	// 이 월드의 구독자들이 곧 사라지므로, 알릴 것은 그 전에 알린다.
+	LeaveIfTutorialLevel(ResolveCurrentFestivalId());
+}
+
+bool UFF_TutorialSubsystem::LeaveIfTutorialLevel(const FName FestivalId)
+{
+	/* 튜토리얼 레벨이면 레벨을 끝내고 레벨 선택으로 돌아간다.
+
+	   튜토리얼 레벨은 그 자체가 안내라서, 안내를 건너뛴 사람에게 레벨만 남겨두면
+	   할 일 없는 축제를 억지로 치르게 된다.
+
+	   흐름을 타고 들어온 경우(UIFlow 가 축제 중)에만 돌려보낸다. 에디터에서 레벨을
+	   직접 열어 테스트할 때 쫓겨나면 튜토리얼 레벨을 고칠 수가 없다.
+	*/
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	if (!Settings || Settings->TutorialFestivalId.IsNone() || FestivalId != Settings->TutorialFestivalId)
+	{
+		return false;
+	}
+
+	UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!Flow || Flow->GetMode() != EFF_UIFlowMode::Festival)
+	{
+		UE_LOG(LogFestaFiestaTutorial, Log,
+			TEXT("[튜토리얼] 튜토리얼 레벨이지만 흐름 밖에서 열려 레벨 선택으로 돌아가지 않는다."));
+		return false;
+	}
+
+	UE_LOG(LogFestaFiestaTutorial, Log,
+		TEXT("[튜토리얼] 튜토리얼을 건너뛰었거나 이미 봤다. 튜토리얼 레벨을 끝내고 레벨 선택으로 돌아간다."));
+
+	Flow->ReturnToAtlas();
+	return true;
 }
 
 void UFF_TutorialSubsystem::StopScript()
@@ -1196,334 +1246,4 @@ void UFF_TutorialSubsystem::StopScript()
 	OnDialogueActiveChanged.Broadcast(false);
 
 	UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 대사 종료."));
-}
-
-void UFF_TutorialSubsystem::ApplyHighlight(const FName AnchorId)
-{
-	if (CurrentAnchor == AnchorId)
-	{
-		return;
-	}
-
-	// 화면이 닫히면 위젯이 사라진다. 약참조라 크래시는 안 나지만 등록은 남아 있어서
-	// 다시 훑지 않게 된다. 가리킬 대상을 바꾸는 이 시점에 치운다.
-	if (!AnchorId.IsNone())
-	{
-		if (const TWeakObjectPtr<UWidget>* Found = AnchorWidgets.Find(AnchorId))
-		{
-			if (!Found->IsValid())
-			{
-				AnchorWidgets.Remove(AnchorId);
-			}
-		}
-
-		// 아직 등록되지 않았으면 지금 훑는다.
-		//
-		// 매 프레임 훑으면 낭비고, 시작할 때 한 번만 하면 화면이 나중에 뜰 때 놓친다.
-		// 필요해진 순간에만 찾으면 둘 다 피한다.
-		if (!AnchorWidgets.Contains(AnchorId))
-		{
-			ScanPrepHudAnchors();
-		}
-
-		// 훑고도 없고 레벨 마커에도 없으면 대사에 적은 이름이 틀린 것이다.
-		// 조용히 넘어가면 강조가 왜 안 뜨는지 알 수가 없다.
-		if (!AnchorWidgets.Contains(AnchorId))
-		{
-			FVector Unused = FVector::ZeroVector;
-			float UnusedRadius = 0.f;
-			if (!FindAnchorWorldPoint(AnchorId, Unused, UnusedRadius))
-			{
-				UE_LOG(LogFestaFiestaTutorial, Warning,
-					TEXT("[튜토리얼] 강조 대상 '%s' 를 UI 에서도 레벨에서도 찾지 못했다."),
-					*AnchorId.ToString());
-			}
-		}
-	}
-
-	CurrentAnchor = AnchorId;
-	OnHighlightAnchorChanged.Broadcast(AnchorId);
-}
-
-void UFF_TutorialSubsystem::RegisterAnchor(const FName AnchorId, UWidget* Widget)
-{
-	if (AnchorId.IsNone() || !Widget)
-	{
-		return;
-	}
-	// 같은 이름이 이미 있으면 덮는다. 화면이 다시 뜨면 위젯이 새로 만들어지므로
-	// 옛 참조를 그대로 두면 사라진 위젯을 가리킨다.
-	AnchorWidgets.Add(AnchorId, Widget);
-
-	// 지금 가리키려던 대상이 방금 들어왔으면 다시 알린다.
-	// 화면이 대사보다 늦게 뜨는 경우가 있어서, 그때 강조가 조용히 빠진다.
-	if (CurrentAnchor == AnchorId)
-	{
-		OnHighlightAnchorChanged.Broadcast(AnchorId);
-	}
-}
-
-void UFF_TutorialSubsystem::UnregisterAnchor(const FName AnchorId)
-{
-	AnchorWidgets.Remove(AnchorId);
-}
-
-UWidget* UFF_TutorialSubsystem::FindAnchorWidget(const FName AnchorId) const
-{
-	// 조회는 읽기만 한다. 죽은 참조 정리는 ApplyHighlight 에서 한다.
-	//
-	// 조회 함수가 상태를 바꾸면 어디서 무엇이 지워지는지 추적하기 어렵다.
-	const TWeakObjectPtr<UWidget>* Found = AnchorWidgets.Find(AnchorId);
-	return Found ? Found->Get() : nullptr;
-}
-
-namespace
-{
-	// 탭 종류를 대사에서 쓸 이름으로. 열거형 이름을 그대로 따서 오타가 끼지 않게 한다.
-	FName MakePrepTabAnchorId(const EFF_PrepHudTab Tab)
-	{
-		const UEnum* EnumClass = StaticEnum<EFF_PrepHudTab>();
-		if (!EnumClass)
-		{
-			return NAME_None;
-		}
-
-		// "EFF_PrepHudTab::Build" 가 아니라 "Build" 만 쓴다.
-		const FString Short = EnumClass->GetNameStringByValue(static_cast<int64>(Tab));
-		return Short.IsEmpty() ? NAME_None : FName(*FString::Printf(TEXT("PrepTab_%s"), *Short));
-	}
-}
-
-int32 UFF_TutorialSubsystem::ScanPrepHudAnchors()
-{
-	TArray<UUserWidget*> FoundWidgets;
-	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(
-		this, FoundWidgets, UFF_PrepHudTabButton::StaticClass(), false);
-
-	int32 Registered = 0;
-
-	for (UUserWidget* Widget : FoundWidgets)
-	{
-		UFF_PrepHudTabButton* TabButton = Cast<UFF_PrepHudTabButton>(Widget);
-		if (!TabButton)
-		{
-			continue;
-		}
-
-		const FName AnchorId = MakePrepTabAnchorId(TabButton->GetTab());
-		if (AnchorId.IsNone())
-		{
-			continue;
-		}
-
-		RegisterAnchor(AnchorId, TabButton);
-		++Registered;
-	}
-
-	if (Registered > 0)
-	{
-		UE_LOG(LogFestaFiestaTutorial, Log,
-			TEXT("[튜토리얼] 준비 화면 탭 %d개를 강조 대상으로 등록했다."), Registered);
-	}
-
-	return Registered;
-}
-
-bool UFF_TutorialSubsystem::FindAnchorWorldPoint(
-	const FName AnchorId, FVector& OutLocation, float& OutRadius) const
-{
-	if (AnchorId.IsNone())
-	{
-		return false;
-	}
-
-	const UWorld* World = GetWorld();
-	if (!World)
-	{
-		return false;
-	}
-
-	// 마커는 몇 개 안 되므로 매번 훑어도 된다. 캐시해두면 레벨 스트리밍으로
-	// 마커가 늦게 뜰 때 영영 못 찾는다.
-	for (TActorIterator<AFF_TutorialMarker> It(const_cast<UWorld*>(World)); It; ++It)
-	{
-		const AFF_TutorialMarker* Marker = *It;
-		if (!IsValid(Marker) || Marker->ResolveAnchorId() != AnchorId)
-		{
-			continue;
-		}
-
-		OutLocation = Marker->GetActorLocation();
-		OutRadius = Marker->RadiusCm;
-		return true;
-	}
-
-	return false;
-}
-
-void UFF_TutorialSubsystem::RegisterDebugConsoleCommands()
-{
-	// 개발용이다. 배포 빌드에서 콘솔로 건너뛰면 안내가 전역으로 꺼진 채 저장된다.
-#if !UE_BUILD_SHIPPING
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
-	UnregisterDebugConsoleCommands();
-
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Tutorial.Skip")))
-	{
-		SkipConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Tutorial.Skip"),
-			TEXT("진행 중인 대사를 끝낸다."),
-			FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
-			{
-				StopScript();
-			}));
-	}
-
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Tutorial.SkipAll")))
-	{
-		SkipAllConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Tutorial.SkipAll"),
-			TEXT("튜토리얼을 통째로 건너뛴다. 확인 없이 바로 끝난다."),
-			FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
-			{
-				SkipTutorial();
-			}));
-	}
-
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Tutorial.Highlight")))
-	{
-		HighlightConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Tutorial.Highlight"),
-			TEXT("강조를 직접 켜본다. 사용법: FF.Tutorial.Highlight PrepTab_Build (인자 없으면 해제)"),
-			FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
-			{
-				// 대사 흐름과 상관없이 강조만 확인할 수 있어야 한다.
-				// 대사를 끝까지 넘겨가며 확인하면 한 번 보는 데 시간이 오래 걸린다.
-				const FName AnchorId = Args.Num() > 0 ? FName(*Args[0]) : NAME_None;
-				ApplyHighlight(AnchorId);
-
-				// 로그 인자 안에서 함수를 부르면 형식 문자열 검사에 걸린다.
-				// 값을 먼저 구해두고 넘긴다.
-				FVector MarkerLocation = FVector::ZeroVector;
-				float MarkerRadius = 0.f;
-				const bool bHasMarker = FindAnchorWorldPoint(AnchorId, MarkerLocation, MarkerRadius);
-				const bool bHasWidget = FindAnchorWidget(AnchorId) != nullptr;
-
-				UE_LOG(LogFestaFiestaTutorial, Display,
-					TEXT("[튜토리얼] 강조 = %s / UI 등록 %s / 레벨 마커 %s"),
-					AnchorId.IsNone() ? TEXT("해제") : *AnchorId.ToString(),
-					bHasWidget ? TEXT("있음") : TEXT("없음"),
-					bHasMarker ? TEXT("있음") : TEXT("없음"));
-			}));
-	}
-
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Tutorial.Stat")))
-	{
-		StatConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Tutorial.Stat"),
-			TEXT("대사 진행 상태를 출력한다."),
-			FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
-			{
-				UE_LOG(LogFestaFiestaTutorial, Display,
-					TEXT("[튜토리얼] 진행=%s Script=%s 줄=%d/%d"),
-					bDialogueActive ? TEXT("예") : (bTutorialSkipped ? TEXT("건너뜀") : TEXT("아니오")),
-					ActiveScriptId.IsNone() ? TEXT("없음") : *ActiveScriptId.ToString(),
-					CurrentLineIndex,
-					ActiveLines.Num());
-
-				UE_LOG(LogFestaFiestaTutorial, Display,
-					TEXT("  조작 대기=%s 조건=%d 강조=%s 등록된 UI 대상 %d개"),
-					IsWaitingForAction() ? TEXT("예") : TEXT("아니오"),
-					static_cast<int32>(GetCurrentLine().WaitCondition),
-					CurrentAnchor.IsNone() ? TEXT("없음") : *CurrentAnchor.ToString(),
-					AnchorWidgets.Num());
-
-				// 무엇을 구독했는지 본다. 안 붙었으면 조작해도 안 넘어간다.
-				// 어디서 대사를 가져왔는지 본다. 두 군데서 올 수 있어 헷갈리기 쉽다.
-				const UWorld* World = GetWorld();
-				const AFF_FestivalGameMode* GameMode =
-					World ? Cast<AFF_FestivalGameMode>(World->GetAuthGameMode()) : nullptr;
-				const bool bLevelTable = GameMode && !GameMode->TutorialStartTable.IsNull();
-				const bool bLevelScript = GameMode && !GameMode->TutorialStartScript.IsNull();
-
-				UE_LOG(LogFestaFiestaTutorial, Display,
-					TEXT("  시작 대사 출처: %s"),
-					bLevelTable ? TEXT("GameMode 표")
-					: bLevelScript ? TEXT("GameMode 애셋")
-					: TEXT("Project Settings 또는 없음"));
-
-				// 레벨에 마커가 몇 개 있는지. 강조가 안 될 때 여기부터 본다.
-				int32 MarkerCount = 0;
-				if (const UWorld* MarkerWorld = GetWorld())
-				{
-					for (TActorIterator<AFF_TutorialMarker> It(const_cast<UWorld*>(MarkerWorld)); It; ++It)
-					{
-						if (IsValid(*It))
-						{
-							++MarkerCount;
-						}
-					}
-				}
-
-				UE_LOG(LogFestaFiestaTutorial, Display,
-					TEXT("  레벨의 세계 마커 %d개"), MarkerCount);
-
-				// 어떤 이름이 등록됐는지 본다. 대사에 적은 이름과 다르면 강조가 안 된다.
-				if (AnchorWidgets.Num() > 0)
-				{
-					TArray<FString> Names;
-					Names.Reserve(AnchorWidgets.Num());
-					for (const TPair<FName, TWeakObjectPtr<UWidget>>& Pair : AnchorWidgets)
-					{
-						Names.Add(FString::Printf(TEXT("%s%s"),
-							*Pair.Key.ToString(),
-							Pair.Value.IsValid() ? TEXT("") : TEXT("(죽음)")));
-					}
-					UE_LOG(LogFestaFiestaTutorial, Display,
-						TEXT("  등록된 이름: %s"), *FString::Join(Names, TEXT(", ")));
-				}
-
-				UE_LOG(LogFestaFiestaTutorial, Display,
-					TEXT("  탭 바 구독=%s"),
-					BoundPrepHudBar.IsValid() ? TEXT("예") : TEXT("아니오"));
-
-				UE_LOG(LogFestaFiestaTutorial, Display,
-					TEXT("  구독: Zone=%s 단계=%s / 카메라 기준점=%s"),
-					bBoundZoneWorld ? TEXT("예") : TEXT("아니오"),
-					bBoundStage ? TEXT("예") : TEXT("아니오"),
-					bCameraBaselineValid ? TEXT("있음") : TEXT("없음"));
-			}));
-	}
-#endif
-}
-
-void UFF_TutorialSubsystem::UnregisterDebugConsoleCommands()
-{
-#if !UE_BUILD_SHIPPING
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
-
-	if (SkipConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(SkipConsoleCommand);
-	}
-	SkipConsoleCommand = nullptr;
-
-	if (StatConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(StatConsoleCommand);
-	}
-	StatConsoleCommand = nullptr;
-
-	if (HighlightConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(HighlightConsoleCommand);
-	}
-	HighlightConsoleCommand = nullptr;
-
-	if (SkipAllConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(SkipAllConsoleCommand);
-	}
-	SkipAllConsoleCommand = nullptr;
-#endif
 }
