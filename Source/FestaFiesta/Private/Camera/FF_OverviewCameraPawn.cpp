@@ -60,6 +60,10 @@ void AFF_OverviewCameraPawn::BeginPlay()
 void AFF_OverviewCameraPawn::InitializeOverview(const FVector& FocusLocation, float SuggestedArmLength)
 {
 	Rig.Initialize(CameraSettings, FocusLocation, SuggestedArmLength);
+	StopCameraMotion();
+	bHasValidFocus = false;
+	LastZoneId = NAME_None;
+	bNeedsInitialPlacement = true;
 	bInitialized = true;
 	ApplyRigToComponents();
 }
@@ -86,14 +90,26 @@ void AFF_OverviewCameraPawn::AddEdgeScrollInput(const FVector2D& ScreenInput)
 
 void AFF_OverviewCameraPawn::AddZoomInput(float Steps)
 {
-	Rig.Zoom(Steps);
+	if (FMath::IsNearlyZero(Steps))
+	{
+		return;
+	}
+	SetFollowTarget(nullptr);
+	if (Rig.Zoom(Steps))
+	{
+		RequestTransition(EFF_CameraMotionChannel::Focus | EFF_CameraMotionChannel::Zoom);
+	}
 }
 
 void AFF_OverviewCameraPawn::AddZoomInputAtAnchor(float Steps, const FVector& WorldAnchor)
 {
 	if (!CameraSettings.bZoomToCursor)
 	{
-		Rig.Zoom(Steps);
+		AddZoomInput(Steps);
+		return;
+	}
+	if (FMath::IsNearlyZero(Steps))
+	{
 		return;
 	}
 
@@ -104,7 +120,10 @@ void AFF_OverviewCameraPawn::AddZoomInputAtAnchor(float Steps, const FVector& Wo
 		SetFollowTarget(nullptr);
 	}
 
-	Rig.ZoomTowards(Steps, WorldAnchor);
+	if (Rig.ZoomTowards(Steps, WorldAnchor))
+	{
+		RequestTransition(EFF_CameraMotionChannel::Focus | EFF_CameraMotionChannel::Zoom);
+	}
 }
 
 float AFF_OverviewCameraPawn::GetFocusPlaneZ() const
@@ -114,21 +133,41 @@ float AFF_OverviewCameraPawn::GetFocusPlaneZ() const
 
 void AFF_OverviewCameraPawn::AddRotateInput(float Direction)
 {
+	if (!FMath::IsNearlyZero(Direction))
+	{
+		SetFollowTarget(nullptr);
+	}
 	PendingRotateInput += Direction;
 }
 
 void AFF_OverviewCameraPawn::SnapRotate(int32 Direction)
 {
+	if (Direction == 0)
+	{
+		return;
+	}
+	SetFollowTarget(nullptr);
 	Rig.SnapRotate(Direction);
+	RequestTransition(EFF_CameraMotionChannel::Rotation);
 }
 
 void AFF_OverviewCameraPawn::FocusOnLocation(const FVector& WorldLocation)
 {
+	SetFollowTarget(nullptr);
 	Rig.FocusOn(WorldLocation);
+	RequestTransition(EFF_CameraMotionChannel::Focus);
 }
 
 void AFF_OverviewCameraPawn::SetFollowTarget(AActor* NewTarget)
 {
+	if (FollowTarget.Get() == NewTarget)
+	{
+		return;
+	}
+	Rig.HoldChannels(EFF_CameraMotionChannel::Focus);
+	TransitionChannels &= ~EFF_CameraMotionChannel::Focus;
+	GroundHeightSample.Reset();
+	bRefreshGroundRequested = IsValid(NewTarget);
 	FollowTarget = NewTarget;
 }
 
@@ -136,6 +175,45 @@ void AFF_OverviewCameraPawn::ResetView()
 {
 	SetFollowTarget(nullptr);
 	Rig.ResetToInitial();
+	RequestTransition(EFF_CameraMotionChannel::All);
+}
+
+void AFF_OverviewCameraPawn::StopCameraMotion()
+{
+	PendingPanInput = FVector2D::ZeroVector;
+	PendingEdgeScrollInput = FVector2D::ZeroVector;
+	PendingRotateInput = 0.f;
+	FollowTarget.Reset();
+	TransitionChannels = EFF_CameraMotionChannel::None;
+	GroundHeightSample.Reset();
+	bRefreshGroundRequested = false;
+	Rig.HoldChannels(EFF_CameraMotionChannel::All);
+	MotionState = EFF_OverviewCameraMotionState::Idle;
+}
+
+void AFF_OverviewCameraPawn::RequestTransition(const EFF_CameraMotionChannel Channels)
+{
+	TransitionChannels |= Channels;
+	bRefreshGroundRequested |= EnumHasAnyFlags(Channels, EFF_CameraMotionChannel::Focus);
+}
+
+void AFF_OverviewCameraPawn::CompleteSettledTransitions()
+{
+	for (const EFF_CameraMotionChannel Channel : { EFF_CameraMotionChannel::Focus,
+		EFF_CameraMotionChannel::Rotation, EFF_CameraMotionChannel::Zoom })
+	{
+		if (!EnumHasAnyFlags(TransitionChannels, Channel) || !Rig.HasReachedTarget(Channel))
+		{
+			continue;
+		}
+		if (Channel == EFF_CameraMotionChannel::Focus && GroundHeightSample.IsSet()
+			&& !Rig.HasReachedGroundHeight(GroundHeightSample.GetValue()))
+		{
+			continue;
+		}
+		Rig.SnapChannelsToTarget(Channel);
+		TransitionChannels &= ~Channel;
+	}
 }
 
 bool AFF_OverviewCameraPawn::HasActiveCamera() const
@@ -146,44 +224,77 @@ bool AFF_OverviewCameraPawn::HasActiveCamera() const
 void AFF_OverviewCameraPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-
-	if (PendingRotateInput != 0.f)
+	if (!bInitialized || DeltaSeconds <= 0.f)
 	{
-		Rig.Rotate(PendingRotateInput, DeltaSeconds);
-		PendingRotateInput = 0.f;
+		return;
 	}
 
-	if (!PendingPanInput.IsNearlyZero())
+	// 최초 배치는 입력을 기다리지 않는다. 로드 직후 한 번만 지면에 맞춘다.
+	if (bNeedsInitialPlacement)
 	{
-		Rig.Pan(PendingPanInput, DeltaSeconds);
+		ApplyZoneBoundsIfNeeded(DeltaSeconds);
+		ConstrainFocusToZones();
+		UpdateGroundHeight(0.f, true);
+		Rig.SnapToTarget();
+		ApplyRigToComponents();
+		bNeedsInitialPlacement = false;
+	}
+
+	const bool bPan = !PendingPanInput.IsNearlyZero() || !PendingEdgeScrollInput.IsNearlyZero();
+	const bool bRotate = !FMath::IsNearlyZero(PendingRotateInput);
+	const AActor* FollowActor = FollowTarget.Get();
+	EFF_CameraMotionChannel DirectChannels = EFF_CameraMotionChannel::None;
+	if (bPan || FollowActor)
+	{
+		DirectChannels |= EFF_CameraMotionChannel::Focus;
+	}
+	if (bRotate)
+	{
+		DirectChannels |= EFF_CameraMotionChannel::Rotation;
+	}
+
+	// 직접 입력은 같은 항목의 일회성 명령을 대체한다. 줌 중 이동 키를 놓아도
+	// 이동 보간이 줌 전환에 딸려 남지 않으며, 거리/각도 전환은 계속 완료된다.
+	Rig.HoldChannels(TransitionChannels & DirectChannels);
+	TransitionChannels &= ~DirectChannels;
+	const EFF_CameraMotionChannel ActiveChannels = DirectChannels | TransitionChannels;
+	Rig.HoldChannels(EFF_CameraMotionChannel::All & ~ActiveChannels);
+	if (ActiveChannels == EFF_CameraMotionChannel::None)
+	{
 		PendingPanInput = FVector2D::ZeroVector;
-	}
-
-	if (!PendingEdgeScrollInput.IsNearlyZero())
-	{
-		Rig.EdgeScroll(PendingEdgeScrollInput, DeltaSeconds);
 		PendingEdgeScrollInput = FVector2D::ZeroVector;
+		PendingRotateInput = 0.f;
+		MotionState = EFF_OverviewCameraMotionState::Idle;
+		GroundHeightSample.Reset();
+		bRefreshGroundRequested = false;
+		return;
 	}
 
-	// 추적은 팬보다 뒤에 둔다. 같은 프레임에 둘 다 들어오면 추적이 이긴다.
-	if (const AActor* Target = FollowTarget.Get())
+	Rig.Rotate(PendingRotateInput, DeltaSeconds);
+	Rig.Pan(PendingPanInput, DeltaSeconds);
+	Rig.EdgeScroll(PendingEdgeScrollInput, DeltaSeconds);
+	PendingRotateInput = 0.f;
+	PendingPanInput = FVector2D::ZeroVector;
+	PendingEdgeScrollInput = FVector2D::ZeroVector;
+	if (FollowActor)
 	{
-		Rig.FocusOn(Target->GetActorLocation());
+		Rig.FocusOn(FollowActor->GetActorLocation());
 	}
 
-	// Zone 은 레벨이 다 뜬 뒤에야 잡힌다. BeginPlay 시점엔 아직 없을 수 있어
-	// 처음 성공할 때까지 매 틱 시도한다.
 	ApplyZoneBoundsIfNeeded(DeltaSeconds);
-
-	// 사각형 경계를 통과했어도 Zone 사이 빈 공간에 있을 수 있다. 실제 모양으로 한 번 더 막는다.
-	ConstrainFocusToZones();
-
-	// 팬과 추적이 초점을 옮긴 뒤에 지면을 잡는다. 순서를 바꾸면 한 프레임 늦은 위치의
-	// 지면을 따라가서 경사에서 카메라가 뒤처진다.
-	UpdateGroundHeight(DeltaSeconds);
-
+	if (EnumHasAnyFlags(ActiveChannels, EFF_CameraMotionChannel::Focus))
+	{
+		ConstrainFocusToZones();
+		UpdateGroundHeight(DeltaSeconds, bPan || FollowActor || bRefreshGroundRequested);
+	}
+	bRefreshGroundRequested = false;
 	Rig.AdvanceInterpolation(DeltaSeconds);
+	CompleteSettledTransitions();
 	ApplyRigToComponents();
+	MotionState = FollowActor ? EFF_OverviewCameraMotionState::Following
+		: (bPan || bRotate) ? EFF_OverviewCameraMotionState::DirectInput
+		: TransitionChannels != EFF_CameraMotionChannel::None ? EFF_OverviewCameraMotionState::Transition
+		: EFF_OverviewCameraMotionState::Idle;
 }
 
 void AFF_OverviewCameraPawn::LogBoundsState() const
@@ -361,12 +472,37 @@ bool AFF_OverviewCameraPawn::TraceGroundAt(const FVector2D& Where, float AroundZ
 	return true;
 }
 
-void AFF_OverviewCameraPawn::UpdateGroundHeight(const float DeltaSeconds)
+void AFF_OverviewCameraPawn::UpdateGroundHeight(const float DeltaSeconds, const bool bRefreshSample)
 {
 	if (!CameraSettings.bFollowGroundHeight)
 	{
+		GroundHeightSample.Reset();
 		return;
 	}
+	if (bRefreshSample)
+	{
+		float GroundZ = 0.f;
+		if (SampleGroundHeight(GroundZ))
+		{
+			GroundHeightSample = GroundZ;
+		}
+		else
+		{
+			GroundHeightSample.Reset();
+		}
+	}
+	if (GroundHeightSample.IsSet())
+	{
+		Rig.ApplyGroundHeight(GroundHeightSample.GetValue(), DeltaSeconds);
+	}
+	else
+	{
+		Rig.OnGroundHeightUnavailable();
+	}
+}
+
+bool AFF_OverviewCameraPawn::SampleGroundHeight(float& OutGroundZ) const
+{
 
 	// 초점의 수평 위치를 기준으로 위아래를 훑는다. 목표 위치를 쓰는 이유는
 	// 표시 위치를 쓰면 보간 중인 값을 따라가면서 서로를 쫓는 진동이 생기기 때문이다.
@@ -378,8 +514,7 @@ void AFF_OverviewCameraPawn::UpdateGroundHeight(const float DeltaSeconds)
 	if (!TraceGroundAt(Center, static_cast<float>(Focus.Z), CenterZ))
 	{
 		// 절벽, 물 위, 콜리전이 없는 구역. 마지막 높이를 유지한다.
-		Rig.OnGroundHeightUnavailable();
-		return;
+		return false;
 	}
 
 	double Sum = CenterZ;
@@ -420,7 +555,8 @@ void AFF_OverviewCameraPawn::UpdateGroundHeight(const float DeltaSeconds)
 		}
 	}
 
-	Rig.ApplyGroundHeight(static_cast<float>(Sum / Count), DeltaSeconds);
+	OutGroundZ = static_cast<float>(Sum / Count);
+	return true;
 }
 
 void AFF_OverviewCameraPawn::ApplyRigToComponents()
@@ -465,8 +601,10 @@ void AFF_OverviewCameraPawn::RegisterDebugConsoleCommands()
 			bZoneBoundsApplied = false;
 			bZoneBoundsWarned = false;
 			ZoneBoundsWaitSeconds = 0.f;
-			ApplyZoneBoundsIfNeeded(0.f);
-			LogBoundsState();
+			// 경계 적용도 명시적인 명령으로 보낸다. Idle 중 Rig의 Display만 바꾸면
+			// 실제 컴포넌트와 상태가 어긋나므로 다음 활성 Tick에서 함께 반영한다.
+			RequestTransition(EFF_CameraMotionChannel::All);
+			UE_LOG(LogFestaFiestaCamera, Log, TEXT("[카메라] 다음 카메라 갱신에서 Zone 경계를 다시 계산한다."));
 		}));
 }
 
