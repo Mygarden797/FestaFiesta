@@ -1,3 +1,6 @@
+# unreal_material_test.py
+# 역할: 캐릭터 가져오기 도우미로 /Game/MainManQA 에셋을 갱신하고 모든 재질 슬롯의 연결 상태를 기록한다.
+
 import sys,json,unreal
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]/'SourceArt/MainMan_20260911'

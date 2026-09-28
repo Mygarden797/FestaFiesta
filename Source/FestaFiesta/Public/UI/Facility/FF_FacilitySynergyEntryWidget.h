@@ -1,3 +1,6 @@
+// FF_FacilitySynergyEntryWidget.h
+// 역할: 시설 정보의 조합 효과 한 행과 상대 시설로 이동하는 버튼을 표시한다.
+
 #pragma once
 
 #include "Blueprint/UserWidget.h"

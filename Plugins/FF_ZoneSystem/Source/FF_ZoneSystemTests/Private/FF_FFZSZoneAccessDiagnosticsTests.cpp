@@ -1,3 +1,4 @@
+// FF_FFZSZoneAccessDiagnosticsTests.cpp
 // ZoneAccess 진단은 존이 없는 Frontend와 NavMesh가 누락된 게임플레이 맵을 구분해야 한다.
 
 #if WITH_DEV_AUTOMATION_TESTS

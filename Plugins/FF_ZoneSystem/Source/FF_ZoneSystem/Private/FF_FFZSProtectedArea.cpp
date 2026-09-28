@@ -101,17 +101,10 @@ bool AFFZSProtectedArea::IntersectsWorldBox(const FBox& WorldBox) const
         WorldBox.GetCenter(), WorldBox.GetExtent(), FQuat::Identity);
 }
 
-bool AFFZSProtectedArea::IntersectsWorldOrientedBox(
-    const FVector& WorldCenter,
-    const FVector& WorldHalfExtent,
-    const FQuat& WorldRotation) const
+bool AFFZSProtectedArea::GetEffectiveWorldBox(
+    FVector& OutCenter, FVector& OutHalfExtent, FQuat& OutRotation) const
 {
-    if (!AreaBounds || WorldCenter.ContainsNaN() || WorldHalfExtent.ContainsNaN() ||
-        WorldRotation.ContainsNaN() || WorldHalfExtent.GetMin() < 0.0)
-    {
-        return false;
-    }
-
+    if (!AreaBounds) return false;
     FVector LocalExtent = AreaBounds->GetScaledBoxExtent();
     const double RequiredHalfWidth = FMath::Max(0.0, static_cast<double>(GetEffectiveRequiredClearWidthCm()) * 0.5);
     // RequiredClearWidth는 World AABB 축이 아니라 보호 Actor의 Local 단축 방향을 확장.
@@ -124,7 +117,22 @@ bool AFFZSProtectedArea::IntersectsWorldOrientedBox(
         LocalExtent.Y = FMath::Max(LocalExtent.Y, RequiredHalfWidth);
     }
 
-    const FVector ProtectedCenter = AreaBounds->GetComponentLocation();
+    OutCenter = AreaBounds->GetComponentLocation();
+    OutHalfExtent = LocalExtent;
+    OutRotation = AreaBounds->GetComponentQuat();
+    return true;
+}
+
+bool AFFZSProtectedArea::IntersectsWorldOrientedBox(
+    const FVector& WorldCenter,
+    const FVector& WorldHalfExtent,
+    const FQuat& WorldRotation) const
+{
+    if (WorldCenter.ContainsNaN() || WorldHalfExtent.ContainsNaN() ||
+        WorldRotation.ContainsNaN() || WorldHalfExtent.GetMin() < 0.0) return false;
+    FVector ProtectedCenter, LocalExtent;
+    FQuat ProtectedRotation;
+    if (!GetEffectiveWorldBox(ProtectedCenter, LocalExtent, ProtectedRotation)) return false;
     if (FMath::Abs(ProtectedCenter.Z - WorldCenter.Z) >
         LocalExtent.Z + WorldHalfExtent.Z)
     {

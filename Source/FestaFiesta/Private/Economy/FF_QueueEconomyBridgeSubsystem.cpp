@@ -4,7 +4,6 @@
 #include "Economy/FF_QueueEconomyBridgeSubsystem.h"
 #include "Building/FF_FacilityNamingLibrary.h"
 #include "Building/Synergy/FF_FacilitySynergySubsystem.h"
-#include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "Economy/Rules/FF_BoothRevenueRules.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSWorldSubsystem.h"
@@ -15,6 +14,11 @@
 #include "Engine/World.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
+
+bool UFF_QueueEconomyBridgeSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
+{
+	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
+}
 
 void UFF_QueueEconomyBridgeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -30,7 +34,7 @@ void UFF_QueueEconomyBridgeSubsystem::Initialize(FSubsystemCollectionBase& Colle
 		return;
 	}
 
-	Queue->OnPartyExited.AddDynamic(this, &UFF_QueueEconomyBridgeSubsystem::HandlePartyExited);
+	Queue->OnPartyServiceCompleted.AddDynamic(this, &UFF_QueueEconomyBridgeSubsystem::HandlePartyServiceCompleted);
 }
 
 void UFF_QueueEconomyBridgeSubsystem::Deinitialize()
@@ -38,21 +42,21 @@ void UFF_QueueEconomyBridgeSubsystem::Deinitialize()
 	// 월드가 죽을 때 Queue 도 같이 죽으므로 구독도 같은 시점에 사라져야 한다.
 	if (Queue != nullptr)
 	{
-		Queue->OnPartyExited.RemoveDynamic(this, &UFF_QueueEconomyBridgeSubsystem::HandlePartyExited);
+		Queue->OnPartyServiceCompleted.RemoveDynamic(this, &UFF_QueueEconomyBridgeSubsystem::HandlePartyServiceCompleted);
 		Queue = nullptr;
 	}
 
 	Super::Deinitialize();
 }
 
-void UFF_QueueEconomyBridgeSubsystem::HandlePartyExited(
+void UFF_QueueEconomyBridgeSubsystem::HandlePartyServiceCompleted(
 	int32 FacilityId,
 	int32 PartyId,
-	EFF_QueueExit ExitType,
+	int32 ServedMemberCount,
 	float WaitedSeconds)
 {
-	// 결제가 없는 퇴장은 여기서 끝낸다.
-	if (!IsPaidExit(ExitType)) return;
+	// 취소·포기는 완료 신호를 만들지 않는다. 정산은 Queue가 확정한 이용 인원만 받는다.
+	if (ServedMemberCount <= 0) return;
 
 	UWorld* World = GetWorld();
 	if (World == nullptr) return;
@@ -78,10 +82,12 @@ void UFF_QueueEconomyBridgeSubsystem::HandlePartyExited(
 
 	const FFFZSFacilitySpec& Spec = Facility->GetFacilitySpec();
 	
-	//   [3] FacilityDefinitionId → 소분류 토큰
+	const UDataTable* RevenueTable = Definition->GetFacilityRevenueTable();
+	//   [3] 시설별 표와 개별 설정이 없는 기존 시설만 소분류 이름을 확인한다.
 	FFF_FacilityNameParts Parts;
 	FString FailureReason;
-	if (!UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+	if (!FFF_BoothRevenueRules::HasFacilityRevenueRow(Spec, RevenueTable)
+		&& !Spec.bOverrideRevenuePerUseGold && !UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
 			Spec.Category, Spec.FacilityDefinitionId, Parts, FailureReason))
 	{
 		// 이 부스는 앞으로도 계속 매출이 0 이다. 조용히 두면 "인기 없는 부스" 로 보인다.
@@ -95,31 +101,21 @@ void UFF_QueueEconomyBridgeSubsystem::HandlePartyExited(
 		return;
 	}
 	
-	//   [4] 소분류 → 객단가. 0 은 무료 시설이라 정상 경로다(휴식·포토존·공연)
-	const int32 RevenuePerUse = FFF_BoothRevenueRules::FindRevenuePerUse(
-		Definition->RevenuePerUseByMinorToken, Parts.MinorToken);
+	//   [4] 시설별 표 → Data Asset의 개별 설정 → 소분류 기본값. 명시한 0은 무료다.
+	const int32 RevenuePerUse = FFF_BoothRevenueRules::ResolveRevenuePerUse(
+		Spec, Definition->RevenuePerUseByMinorToken, RevenueTable);
 	if (RevenuePerUse <= 0) return;
 
-	//   [5] 인원
-	// Served 는 퇴장이 아니라 이용 종료라 이 시점에 파티가 살아 있어야 한다.
-	const UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
-	if (Crowd == nullptr) return;
-
-	const int32 MemberCount = Crowd->GetPartyMembers(PartyId).Num();
-	if (MemberCount <= 0)
-	{
-		// 결제 한 건이 통째로 사라진다. 여기는 매번 알린다 — 반복되면 그 자체가 신호다.
-		UE_LOG(LogFestaFiestaEconomy, Warning,
-			TEXT("[경제] 파티 %d 가 시설 '%s' 이용을 마쳤는데 인원을 찾을 수 없다. 수수료를 못 받는다."),
-			PartyId, *Spec.FacilityDefinitionId.ToString());
-		return;
-	}
-	
-	// [6] 수수료 → 원장.
+	// [5] 가입 때 확정한 팀 인원 × 1인 요금 × 수수료율 × 시설 효과 → 원장.
+	// 완료 시점에 Crowd를 다시 조회하지 않으므로 팀 정리·변경 순서가 금액을 바꾸지 않는다.
 	const UFF_FacilitySynergySubsystem* Synergies = World->GetSubsystem<UFF_FacilitySynergySubsystem>();
 	const float SynergyMultiplier = Synergies ? Synergies->GetRevenueMultiplier(ZoneFacilityId) : 1.f;
+	const float CommissionRate = FFF_BoothRevenueRules::ResolveCommissionRate(
+		Spec, Definition->BoothCommissionRate, RevenueTable);
+	const float RevenueMultiplier = FFF_BoothRevenueRules::ResolveRevenueMultiplier(
+		Spec, Facility->GetUpgradeLevel(), Facility->GetUpgradeRevenueMultiplier(), RevenueTable);
 	const int32 Commission = FFF_BoothRevenueRules::ResolveCommission(
-		RevenuePerUse, MemberCount, Definition->BoothCommissionRate, Facility->GetUpgradeRevenueMultiplier() * SynergyMultiplier);
+		RevenuePerUse, ServedMemberCount, CommissionRate, static_cast<double>(RevenueMultiplier) * SynergyMultiplier);
 	if (Commission <= 0) return;
 
 	// 종류(FacilityDefinitionId)는 결산 표로, 인스턴스(ZoneFacilityId)는 시설 정보 패널의 시설별 장부로 간다.

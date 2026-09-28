@@ -1,0 +1,74 @@
+{
+  "number": 59,
+  "category": "Lighting",
+  "subtype": "Decorative",
+  "name_ko": "해파리 조명 군락",
+  "slug": "JellyfishLightCluster",
+  "id": "Lighting_Decorative_JellyfishLightCluster",
+  "footprint_cm": [
+    450,
+    350
+  ],
+  "height_cm": 460,
+  "description_ko": "몽환적인 야간 장식.",
+  "emphasis_ko": "반구 갓과 길이가 다른 촉수를 강조. 촉수 수·투명 겹침을 줄이고 군락 전체를 소수 광원으로 표현한다.",
+  "reference_image": "Design/Facitilies/59 해파리 조명 군락.png",
+  "exploded_reference_image": "Design/Facitilies/59 해파리 조명 군락 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/PDA_FFZS_Lighting_Decorative_Festoon",
+  "followup_features": [
+    "실제 조명 리그·밝기·색 제어·저장 복원과 촉수 움직임은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Decorative_JellyfishLightCluster\\SM_FF_Lighting_Decorative_JellyfishLightCluster.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\59_Lighting_Decorative_JellyfishLightCluster.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Decorative_JellyfishLightCluster\\iso.png",
+  "bounds_m": [
+    3.986417293548584,
+    3.4010415077209473,
+    4.599999904632568
+  ],
+  "bounds_min_m": [
+    -1.993208646774292,
+    -1.7005207538604736,
+    0.0
+  ],
+  "bounds_max_m": [
+    1.993208646774292,
+    1.7005207538604736,
+    4.599999904632568
+  ],
+  "triangles": 7298,
+  "material_names": [
+    "M_F70_Wood",
+    "M_F70_Teal",
+    "M_F70_Metal",
+    "M_F70_Cream",
+    "M_F70_Amber"
+  ],
+  "collision_count": 2,
+  "editable_parts": 35,
+  "fbx_sha256": "92d5b731c77affc3025ca71128d16316b2c3ee6f0d470d46841027fcb98750eb",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": [
+    [
+      8.897824354044289e-17,
+      0.9973958730697632,
+      3.347916603088379
+    ],
+    [
+      -1.2584431171417236,
+      -0.6979166865348816,
+      3.6354165077209473
+    ],
+    [
+      1.2584431171417236,
+      -0.6979166865348816,
+      3.347916603088379
+    ]
+  ]
+}

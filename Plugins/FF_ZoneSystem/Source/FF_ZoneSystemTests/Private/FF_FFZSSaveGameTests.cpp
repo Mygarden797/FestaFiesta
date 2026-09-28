@@ -1,4 +1,4 @@
-//  FF_FFZSSaveGameTests.cpp
+// FF_FFZSSaveGameTests.cpp
 
 // Schema 5 Snapshot의 자유 Yaw와 1cm 압축 Region 값 그래프가 실제 SaveGame 바이트 왕복에서 손실되지 않는지 검증한다.
 // Spec, Transform, FText, SoftObjectPath, Queue의 Waiting/Service/Exit, Receipt와 CurrentPhase를
@@ -92,6 +92,8 @@ namespace
         Spec.AllowedZoneIds = {TEXT("GZ_SaveGameRoundTrip"), TEXT("GZ_Overflow")};
         Spec.InstallCostKey = TEXT("Cost.SaveProbe");
         Spec.RevenueRuleKey = TEXT("Revenue.SaveProbe");
+        Spec.bOverrideRevenuePerUseGold = true;
+        Spec.RevenuePerUseGold = 375;
         Spec.ExperienceEffectKey = TEXT("Experience.SaveProbe");
         Spec.VisualMesh = TSoftObjectPtr<UStaticMesh>(
             FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")));
@@ -368,6 +370,10 @@ bool FFFZSSaveGameByteRoundTripTest::RunTest(const FString& Parameters)
     const FFFZSFacilitySpec& SourceSpec = SourceFacility.FacilitySpec;
     const FFFZSFacilitySpec& LoadedSpec = LoadedFacility.FacilitySpec;
     TestEqual(TEXT("시설 명세 스키마가 보존된다"), LoadedSpec.SchemaVersion, SourceSpec.SchemaVersion);
+    TestEqual(TEXT("시설별 매출 사용 여부가 실제 SaveGame 바이트 왕복에서 보존된다"),
+        LoadedSpec.bOverrideRevenuePerUseGold, SourceSpec.bOverrideRevenuePerUseGold);
+    TestEqual(TEXT("시설별 이용 1회 매출이 실제 SaveGame 바이트 왕복에서 보존된다"),
+        LoadedSpec.RevenuePerUseGold, SourceSpec.RevenuePerUseGold);
     TestEqual(TEXT("레벨 사용 여부가 보존된다"), LoadedSpec.bUsesFacilityLevels, SourceSpec.bUsesFacilityLevels);
     TestEqual(TEXT("시설별 강화 단계 개수가 보존된다"), LoadedSpec.UpgradeTiers.Num(), 2);
     if (LoadedSpec.UpgradeTiers.Num() == 2)

@@ -1,6 +1,10 @@
+// FF_PrepBuildWidgetContractTests.cpp
+// 역할: 준비 단계 건설 화면의 동작과 저장된 화면 연결을 자동 검증한다.
+
 // Generated PrepBuild WBP assets and cook-label contracts.
 
 #include "Misc/AutomationTest.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -15,18 +19,17 @@
 namespace FFPrepBuildWidgetContractTest
 {
 	constexpr const TCHAR* TileClassPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C");
+		FFBuildUIAssetPaths::PrepBuildTileClass;
 	constexpr const TCHAR* PanelClassPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C");
+		FFBuildUIAssetPaths::BuildPanelClass;
 	constexpr const TCHAR* CookLabelPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/PAL_FF_PrepBuildUI.PAL_FF_PrepBuildUI");
+		FFBuildUIAssetPaths::PAL_FF_PrepBuildUIObject;
 	constexpr const TCHAR* ChoiceClassPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton_C");
+		FFBuildUIAssetPaths::PrepChoiceButtonClass;
 	constexpr const TCHAR* ChoiceAssetPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton");
+		FFBuildUIAssetPaths::PrepChoiceButtonObject;
 	constexpr const TCHAR* CategoryDependencyCookLabelPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/PAL_FF_PrepBuildCategoryDependencies."
-			"PAL_FF_PrepBuildCategoryDependencies");
+		FFBuildUIAssetPaths::PAL_FF_PrepBuildCategoryDependenciesObject;
 
 	UWidgetTree* ResolveWidgetTree(UClass* WidgetClass)
 	{
@@ -59,7 +62,7 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 	TestTrue(TEXT("검색창 child보다 먼저 ESC를 Pause Hub 입력으로 처리한다"),
 		FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
 			EKeys::Escape, false, true, false, EFF_BuildModeState::CatalogOpen, PauseKeys));
-	TestTrue(TEXT("검색창 child보다 먼저 F5를 Pause Hub 입력으로 처리한다"),
+	TestFalse(TEXT("건축 중 F5는 Pause Hub 단축키로 처리하지 않는다"),
 		FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
 			EKeys::F5, false, true, false, EFF_BuildModeState::CatalogOpen, PauseKeys));
 	TestFalse(TEXT("키 반복은 Pause Hub를 중복 요청하지 않는다"),
@@ -89,6 +92,12 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 			FName(TEXT("Text_State")),
 			FName(TEXT("Button_Favorite")),
 			FName(TEXT("Text_Favorite")),
+			FName(TEXT("Border_RequiredMissing")),
+			FName(TEXT("Text_RequiredMissing")),
+			FName(TEXT("Border_RequiredSatisfied")),
+			FName(TEXT("Text_RequiredSatisfied")),
+			FName(TEXT("Border_ProgramBadge")),
+			FName(TEXT("Text_ProgramBadge")),
 			FName(TEXT("SizeBox_Card")) })
 		{
 			TestNotNull(
@@ -108,6 +117,11 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 	{
 		for (const FName RequiredName : {
 			FName(TEXT("Text_PanelTitle")),
+			FName(TEXT("HorizontalBox_CatalogEmphasisGuide")),
+			FName(TEXT("Border_CatalogRequiredGuide")),
+			FName(TEXT("Border_CatalogProgramLegend")),
+			FName(TEXT("Text_CatalogProgramLegend")),
+			FName(TEXT("Text_CatalogProgramGuide")),
 			FName(TEXT("Button_Close")),
 			FName(TEXT("Panel_Catalog")),
 			FName(TEXT("Panel_PlacementCompact")),

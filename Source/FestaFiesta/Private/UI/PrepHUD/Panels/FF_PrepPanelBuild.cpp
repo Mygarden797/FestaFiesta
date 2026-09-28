@@ -1,6 +1,10 @@
+// FF_PrepPanelBuild.cpp
+// 역할: 건설 카탈로그의 검색·분류·선택과 배치 상태를 표시한다.
+
 // LightTeal PrepHUD build panel runtime presentation.
 
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
+#include "Building/FF_BuildToolbarInput.h"
 
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
@@ -9,16 +13,20 @@
 #include "TimerManager.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/Presentation/FF_BuildFavoritesSubsystem.h"
+#include "Building/Presentation/FF_BuildFeedback.h"
 #include "Building/Presentation/FF_BuildCategoryIcons.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -29,6 +37,7 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/Data/FF_UIPalette.h"
+#include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"
@@ -79,6 +88,18 @@ void UFF_PrepPanelBuild::NativeOnInitialized()
 void UFF_PrepPanelBuild::NativeConstruct()
 {
 	Super::NativeConstruct();
+	MatchCatalogHeaderActions();
+	// Preserve legacy named bindings while retiring the redundant confirmation strip.
+	if (UWidget* Selection = GetWidgetFromName(TEXT("Border_AuroraSelection")))
+		Selection->SetVisibility(ESlateVisibility::Collapsed);
+	if (UButton* RankingButton = WidgetTree ? Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_RevenueRanking"))) : nullptr)
+	{
+		if (UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
+			? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
+		{
+			RankingButton->OnClicked.AddUniqueDynamic(Ranking, &UFF_FacilityRevenueRankingSubsystem::Open);
+		}
+	}
 	LastResponsiveListWidth = -1.0f;
 	LastResponsiveColumnCount = 0;
 	if (Button_PreviousPage) Button_PreviousPage->OnClicked.AddUniqueDynamic(this, &ThisClass::PreviousCatalogPage);
@@ -88,11 +109,12 @@ void UFF_PrepPanelBuild::NativeConstruct()
 	{
 		// UListView applies scrollbar visibility to its live Slate widget, not a saved
 		// property. NativeConstruct runs after Slate creation, including viewport reattach.
-		TileView_Facilities->SetScrollbarVisibility(bUsePagination
-			? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		TileView_Facilities->SetScrollbarVisibility(ESlateVisibility::Collapsed);
 		// NativeConstruct can run again on the same panel instance after a viewport reattach.
 		TileView_Facilities->OnItemClicked().RemoveAll(this);
 		TileView_Facilities->OnItemClicked().AddUObject(this, &ThisClass::HandleTileClicked);
+		TileView_Facilities->OnItemSelectionChanged().RemoveAll(this);
+		TileView_Facilities->OnItemSelectionChanged().AddUObject(this, &ThisClass::HandleTileSelectionChanged);
 	}
 	else
 	{
@@ -148,6 +170,15 @@ void UFF_PrepPanelBuild::NativeConstruct()
 
 void UFF_PrepPanelBuild::NativeDestruct()
 {
+	ResetCatalogDrag();
+	if (UButton* RankingButton = WidgetTree ? Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_RevenueRanking"))) : nullptr)
+	{
+		if (UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
+			? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
+		{
+			RankingButton->OnClicked.RemoveAll(Ranking);
+		}
+	}
 	if (Button_PreviousPage) Button_PreviousPage->OnClicked.RemoveDynamic(this, &ThisClass::PreviousCatalogPage);
 	if (Button_NextPage) Button_NextPage->OnClicked.RemoveDynamic(this, &ThisClass::NextCatalogPage);
 	if (Button_FavoritesOnly) { Button_FavoritesOnly->OnClicked.RemoveDynamic(this, &ThisClass::HandleFavoritesOnlyClicked); }
@@ -158,6 +189,7 @@ void UFF_PrepPanelBuild::NativeDestruct()
 	if (TileView_Facilities)
 	{
 		TileView_Facilities->OnItemClicked().RemoveAll(this);
+		TileView_Facilities->OnItemSelectionChanged().RemoveAll(this);
 	}
 	if (Button_ReturnToCatalog)
 	{
@@ -212,6 +244,43 @@ void UFF_PrepPanelBuild::NativeDestruct()
 void UFF_PrepPanelBuild::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (!bUsePagination && Size_ClarityCatalogDock && BuildModeSubsystem &&
+		BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen)
+	{
+		const float ViewportScale = FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(this));
+		const float LogicalViewportWidth = UWidgetLayoutLibrary::GetViewportSize(this).X / ViewportScale;
+		if (LogicalViewportWidth > 64.f)
+		{
+			const float DockWidth = LogicalViewportWidth - 64.f;
+			if (!Size_ClarityCatalogDock->IsWidthOverride() ||
+				!FMath::IsNearlyEqual(Size_ClarityCatalogDock->GetWidthOverride(), DockWidth, .5f))
+			{
+				Size_ClarityCatalogDock->SetWidthOverride(DockWidth);
+			}
+		}
+		if (Border_PanelRoot)
+		{
+			const bool bSettingsOpen = BuildModeSubsystem->IsBuildSettingsOpen();
+			const ESlateVisibility Desired = bSettingsOpen
+				? ESlateVisibility::Collapsed : ESlateVisibility::Visible;
+			if (Border_PanelRoot->GetVisibility() != Desired) Border_PanelRoot->SetVisibility(Desired);
+			if (bSettingsOpen)
+			{
+				ResetCatalogDrag();
+				CatalogScrollVelocity = 0.f;
+			}
+		}
+	}
+	if (!bUsePagination && TileView_Facilities && TileView_Facilities->IsVisible())
+	{
+		if (!bCatalogPointerDown && FMath::Abs(CatalogScrollVelocity) > 0.01f)
+		{
+			const float Decay = FMath::Exp(-8.f * FMath::Min(InDeltaTime, .05f));
+			ScrollCatalogBy(CatalogScrollVelocity * (1.f - Decay) / 8.f);
+			CatalogScrollVelocity *= Decay;
+		}
+		return;
+	}
 	if (!bUsePagination || !TileView_Facilities || !TileView_Facilities->IsVisible()) return;
 	const float Width = TileView_Facilities->GetCachedGeometry().GetLocalSize().X;
 	const int32 Columns = FMath::Max(1, CardsPerPage);
@@ -224,6 +293,175 @@ void UFF_PrepPanelBuild::NativeTick(const FGeometry& MyGeometry, const float InD
 	const float EntryWidth = FMath::Max(1.0f,
 		(Width - 2.0f) / Columns - TileView_Facilities->GetHorizontalEntrySpacing());
 	TileView_Facilities->SetEntryWidth(EntryWidth);
+}
+
+void UFF_PrepPanelBuild::MatchCatalogHeaderActions()
+{
+	// The launcher is a nested WBP. The saved catalog places it either in the
+	// original header or as the pinned combination-codex tab beside category filters.
+	auto* Ranking = Cast<UButton>(GetWidgetFromName(TEXT("Button_RevenueRanking")));
+	auto* RankingText = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_RevenueRanking")));
+	auto* Launcher = Cast<UUserWidget>(GetWidgetFromName(TEXT("Widget_FacilityCodexCatalogLauncher")));
+	if (!Ranking || !RankingText || !Launcher) return;
+	const auto* RankingSlot = Cast<UButtonSlot>(RankingText->Slot);
+	const bool bBottomCodexTab = Launcher->GetParent() == GetWidgetFromName(TEXT("Row_BuildCodexCategory"));
+	if (auto* Bounds = Cast<USizeBox>(Launcher->GetWidgetFromName(TEXT("Size_Launcher"))))
+	{
+		Bounds->SetWidthOverride(bBottomCodexTab ? 150.f : 112.f);
+		Bounds->SetHeightOverride(bBottomCodexTab ? 34.f : 40.f);
+	}
+	if (auto* Button = Cast<UButton>(Launcher->GetWidgetFromName(TEXT("Button_OpenCodex"))))
+	{
+		auto* CategoryTab = Cast<UButton>(GetWidgetFromName(TEXT("Button_FilterAll")));
+		FButtonStyle Style = bBottomCodexTab && CategoryTab ? CategoryTab->GetStyle() : Ranking->GetStyle();
+		if (bBottomCodexTab)
+		{
+			Style.NormalPadding = FMargin(10.f, 3.f);
+			Style.PressedPadding = FMargin(10.f, 3.f);
+		}
+		Button->SetStyle(Style);
+		if (auto* Label = Cast<UTextBlock>(Button->GetContent()))
+		{
+			Label->SetText(bBottomCodexTab ? LOCTEXT("CombinationCodexTab", "조합 도감") : Label->GetText());
+			Label->SetFont(RankingText->GetFont());
+			Label->SetMinDesiredWidth(bBottomCodexTab ? 90.f : RankingText->GetMinDesiredWidth());
+			Label->SetColorAndOpacity(bBottomCodexTab ? FSlateColor(FLinearColor::White) : RankingText->GetColorAndOpacity());
+			Label->SetJustification(ETextJustify::Center);
+			Label->SetAutoWrapText(false);
+			if (auto* ButtonContentSlot = Cast<UButtonSlot>(Label->Slot))
+			{
+				ButtonContentSlot->SetPadding(bBottomCodexTab ? FMargin(0) : RankingSlot ? RankingSlot->GetPadding() : FMargin(0));
+				ButtonContentSlot->SetHorizontalAlignment(HAlign_Center);
+				ButtonContentSlot->SetVerticalAlignment(bBottomCodexTab ? VAlign_Center : RankingSlot ? RankingSlot->GetVerticalAlignment() : VAlign_Fill);
+			}
+		}
+	}
+}
+
+bool UFF_PrepPanelBuild::IsPointerOverCatalog(const FVector2D& ScreenPosition) const
+{
+	return TileView_Facilities && TileView_Facilities->IsVisible() &&
+		TileView_Facilities->GetCachedGeometry().IsUnderLocation(ScreenPosition);
+}
+
+void UFF_PrepPanelBuild::ResetCatalogDrag()
+{
+	bCatalogPointerDown = false;
+	bCatalogPointerMoved = false;
+	CatalogPressedItem.Reset();
+}
+
+void UFF_PrepPanelBuild::ScrollCatalogBy(const float ItemDelta)
+{
+	if (!TileView_Facilities || !FMath::IsFinite(ItemDelta)) return;
+	const float Pitch = FMath::Max(1.f, TileView_Facilities->GetEntryWidth());
+	const float VisibleCount = TileView_Facilities->GetCachedGeometry().GetLocalSize().X / Pitch;
+	const float MaxOffset = FMath::Max(0.f, TileView_Facilities->GetNumItems() - VisibleCount);
+	const float Requested = TileView_Facilities->GetScrollOffset() + ItemDelta;
+	const float Offset = FMath::Clamp(Requested, 0.f, MaxOffset);
+	if (!FMath::IsNearlyEqual(Requested, Offset)) CatalogScrollVelocity = 0.f;
+	TileView_Facilities->SetScrollOffset(Offset);
+}
+
+FReply UFF_PrepPanelBuild::NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
+{
+	if (Event.GetEffectingButton() != EKeys::LeftMouseButton || !IsPointerOverCatalog(Event.GetScreenSpacePosition()))
+		return Super::NativeOnPreviewMouseButtonDown(Geometry, Event);
+	CatalogPressedItem.Reset();
+	for (UUserWidget* Entry : TileView_Facilities->GetDisplayedEntryWidgets())
+	{
+		auto* Tile = Cast<UFF_PrepBuildTileWidget>(Entry);
+		if (!Tile || !Tile->GetCachedGeometry().IsUnderLocation(Event.GetScreenSpacePosition())) continue;
+		// Starring remains its own button action, with no list selection or swipe capture.
+		const UWidget* Favorite = Tile->GetWidgetFromName(TEXT("Button_Favorite"));
+		if (Favorite && Favorite->IsVisible() && Favorite->GetCachedGeometry().IsUnderLocation(Event.GetScreenSpacePosition()))
+			return Super::NativeOnPreviewMouseButtonDown(Geometry, Event);
+		CatalogPressedItem = Tile->GetPresentedItem();
+		break;
+	}
+	CatalogDragOrigin = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition());
+	CatalogDragLastPosition = CatalogDragOrigin;
+	CatalogDragLastTime = FPlatformTime::Seconds();
+	CatalogDragStartOffset = TileView_Facilities->GetScrollOffset();
+	CatalogScrollVelocity = 0.f;
+	bCatalogPointerDown = true;
+	bCatalogPointerMoved = false;
+	return FReply::Handled().CaptureMouse(TakeWidget()).SetUserFocus(TileView_Facilities->TakeWidget());
+}
+
+FReply UFF_PrepPanelBuild::NativeOnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event)
+{
+	if (!bCatalogPointerDown) return Super::NativeOnMouseMove(Geometry, Event);
+	const FVector2D Delta = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition()) - CatalogDragOrigin;
+	bCatalogPointerMoved |= Delta.SizeSquared() >= FMath::Square(10.0);
+	if (!bUsePagination && bCatalogPointerMoved && TileView_Facilities)
+	{
+		const FVector2D Position = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition());
+		const double Now = FPlatformTime::Seconds();
+		const float Pitch = FMath::Max(1.f, TileView_Facilities->GetEntryWidth());
+		const float DesiredOffset = CatalogDragStartOffset - Delta.X / Pitch;
+		ScrollCatalogBy(DesiredOffset - TileView_Facilities->GetScrollOffset());
+		const float Seconds = FMath::Clamp(static_cast<float>(Now - CatalogDragLastTime), .001f, .1f);
+		CatalogScrollVelocity = FMath::Clamp(static_cast<float>(CatalogDragLastPosition.X - Position.X) / Pitch / Seconds, -24.f, 24.f);
+		CatalogDragLastPosition = Position;
+		CatalogDragLastTime = Now;
+	}
+	return FReply::Handled();
+}
+
+FReply UFF_PrepPanelBuild::NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event)
+{
+	if (!bCatalogPointerDown || Event.GetEffectingButton() != EKeys::LeftMouseButton)
+		return Super::NativeOnMouseButtonUp(Geometry, Event);
+	const FVector2D Delta = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition()) - CatalogDragOrigin;
+	const bool bMoved = bCatalogPointerMoved || Delta.SizeSquared() >= FMath::Square(10.0);
+	UFF_PrepBuildTileData* PressedItem = CatalogPressedItem.Get();
+	ResetCatalogDrag();
+	if (!bUsePagination && bMoved)
+	{
+		if (FPlatformTime::Seconds() - CatalogDragLastTime > .1) CatalogScrollVelocity = 0.f;
+	}
+	else if (bUsePagination && FMath::Abs(Delta.X) >= 42.0 && FMath::Abs(Delta.X) > FMath::Abs(Delta.Y) * 1.25)
+	{
+		if (Delta.X < 0) NextCatalogPage(); else PreviousCatalogPage();
+	}
+	else if (bUsePagination && FMath::Abs(Delta.Y) >= 42.0 && FMath::Abs(Delta.Y) > FMath::Abs(Delta.X) * 1.25)
+	{
+		if (Delta.Y < 0) NextCatalogPage(); else PreviousCatalogPage();
+	}
+	else if (!bMoved && PressedItem && TileView_Facilities && IsPointerOverCatalog(Event.GetScreenSpacePosition()))
+	{
+		for (UUserWidget* Entry : TileView_Facilities->GetDisplayedEntryWidgets())
+		{
+			auto* Tile = Cast<UFF_PrepBuildTileWidget>(Entry);
+			if (Tile && Tile->GetPresentedItem() == PressedItem && Tile->GetCachedGeometry().IsUnderLocation(Event.GetScreenSpacePosition()))
+			{
+				TileView_Facilities->SetSelectedItem(PressedItem);
+				HandleTileClicked(PressedItem);
+				break;
+			}
+		}
+	}
+	return FReply::Handled().ReleaseMouseCapture();
+}
+
+FReply UFF_PrepPanelBuild::NativeOnMouseWheel(const FGeometry& Geometry, const FPointerEvent& Event)
+{
+	if (!IsPointerOverCatalog(Event.GetScreenSpacePosition()) || FMath::IsNearlyZero(Event.GetWheelDelta()))
+		return Super::NativeOnMouseWheel(Geometry, Event);
+	if (!bUsePagination)
+	{
+		CatalogScrollVelocity = FMath::Clamp(CatalogScrollVelocity - Event.GetWheelDelta() * 12.f, -30.f, 30.f);
+	}
+	else if (Event.GetWheelDelta() < 0) NextCatalogPage(); else PreviousCatalogPage();
+	return FReply::Handled();
+}
+
+void UFF_PrepPanelBuild::NativeOnMouseCaptureLost(const FCaptureLostEvent& Event)
+{
+	if (bCatalogPointerDown) CatalogScrollVelocity = 0.f;
+	ResetCatalogDrag();
+	Super::NativeOnMouseCaptureLost(Event);
 }
 
 int32 UFF_PrepPanelBuild::GetCatalogPageCount() const
@@ -244,8 +482,10 @@ TArray<UObject*> UFF_PrepPanelBuild::GetCatalogPageItems() const
 	if (!PresentationModel) return PageItems;
 	const TArray<TObjectPtr<UFF_PrepBuildTileData>>& FilteredItems = PresentationModel->GetVisibleTiles();
 	const int32 Start = bUsePagination ? GetCatalogPageIndex() * FMath::Max(1, CardsPerPage) : 0;
+	// Advance one full row at a time, retaining the next row below the viewport's
+	// clipping edge so its partial cards show that more facilities are available.
 	const int32 Count = bUsePagination
-		? FMath::Min(FMath::Max(1, CardsPerPage), FilteredItems.Num() - Start) : FilteredItems.Num();
+		? FMath::Min(FMath::Max(1, CardsPerPage) * 2, FilteredItems.Num() - Start) : FilteredItems.Num();
 	PageItems.Reserve(Count);
 	for (int32 Index = Start; Index < Start + Count; ++Index) PageItems.Add(FilteredItems[Index]);
 	return PageItems;
@@ -475,6 +715,8 @@ void UFF_PrepPanelBuild::UnbindExternalSources()
 	ZoneSystem = nullptr;
 	bRevealSynergyOnCatalogOpen = false;
 	PendingCatalogFocusId = NAME_None;
+	SelectedCatalogFacilityId = NAME_None;
+	ClearCodexFocus();
 }
 
 void UFF_PrepPanelBuild::HandleCatalogChanged()
@@ -512,7 +754,11 @@ void UFF_PrepPanelBuild::HandleBuildModeStateChanged(
 		TEXT("[%s] 배치 표현 상태 전환: %s -> %s"),
 		*GetName(), *UEnum::GetValueAsString(PreviousState), *UEnum::GetValueAsString(NewState));
 
-	if (NewState != EFF_BuildModeState::CatalogOpen) { PendingCatalogFocusId = NAME_None; }
+	if (NewState != EFF_BuildModeState::CatalogOpen)
+	{
+		PendingCatalogFocusId = NAME_None;
+		ClearCodexFocus();
+	}
 	if (!bPanelOpen || bClosingPanel)
 	{
 		return;
@@ -543,6 +789,21 @@ FReply UFF_PrepPanelBuild::NativeOnPreviewKeyDown(
 	const EFF_BuildModeState CurrentState = BuildModeSubsystem
 		? BuildModeSubsystem->GetBuildModeState()
 		: EFF_BuildModeState::Closed;
+	// Directional navigation only focuses a card. Enter/Space/accept is an explicit
+	// activation, and only while the list itself has focus (never a search or star button).
+	if (!InKeyEvent.IsRepeat() && CurrentState == EFF_BuildModeState::CatalogOpen &&
+		TileView_Facilities && TileView_Facilities->HasKeyboardFocus() &&
+		(InKeyEvent.GetKey() == EKeys::Enter || InKeyEvent.GetKey() == EKeys::SpaceBar ||
+		 InKeyEvent.GetKey() == EKeys::Gamepad_FaceButton_Bottom))
+	{
+		HandleTileClicked(TileView_Facilities->GetSelectedItem<UObject>());
+		return FReply::Handled();
+	}
+	if (CurrentState != EFF_BuildModeState::Closed &&
+		FFBuildToolbarInput::IsRetiredShortcut(InKeyEvent.GetKey()))
+	{
+		return FReply::Handled();
+	}
 	if (Settings && FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
 		InKeyEvent.GetKey(),
 		InKeyEvent.IsRepeat(),
@@ -551,7 +812,7 @@ FReply UFF_PrepPanelBuild::NativeOnPreviewKeyDown(
 		CurrentState,
 		Settings->OpenCloseKeys))
 	{
-		// Preview 단계에서 child 검색창보다 먼저 받아 ESC/F5가 텍스트 편집 동작으로 소실되지 않게 한다.
+		// Escape remains available while the catalog search field has focus.
 		if (UGameInstance* GameInstance = GetGameInstance())
 		{
 			if (UFF_FestivalSettingsSubsystem* SettingsSubsystem =
@@ -569,6 +830,7 @@ FReply UFF_PrepPanelBuild::NativeOnPreviewKeyDown(
 void UFF_PrepPanelBuild::HandleSynergyCatalogContextChanged()
 {
 	if (!bPanelOpen || bClosingPanel || !BuildModeSubsystem) { return; }
+	ClearCodexFocus();
 	bRevealSynergyOnCatalogOpen = !BuildModeSubsystem->GetSynergyCatalogFacilityIds().IsEmpty();
 	if (BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen)
 	{
@@ -586,7 +848,12 @@ void UFF_PrepPanelBuild::HandleCatalogFacilityFocusRequested(const FName Facilit
 
 void UFF_PrepPanelBuild::RequestFacilityFocus(const FName FacilityDefinitionId)
 {
-	if (FacilityDefinitionId.IsNone()) { return; }
+	if (FacilityDefinitionId.IsNone())
+	{
+		PendingCatalogFocusId = NAME_None;
+		ClearCodexFocus();
+		return;
+	}
 	PendingCatalogFocusId = FacilityDefinitionId;
 	ReconcilePresentation();
 }
@@ -611,6 +878,9 @@ void UFF_PrepPanelBuild::RefreshRequiredFacilitiesPresentation()
 	if (bRequiredFacilitiesDirty && bPanelOpen && !bClosingPanel && BuildModeSubsystem &&
 		BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen)
 	{
+		// The same notification also covers switching festivals. Refresh program
+		// compatibility and prices before reusing the existing pooled card objects.
+		RefreshPricedEntries();
 		ReconcilePresentation();
 	}
 }
@@ -626,6 +896,21 @@ void UFF_PrepPanelBuild::ApplyRequiredFacilitiesSnapshot()
 		bRequiredFacilitiesDirty = false;
 	}
 	FFBuildCatalogModel::ApplyRequiredFacilities(PricedEntries, RequiredFacilitiesSnapshot);
+	RefreshRequiredFacilityGuide(RequiredFacilitiesSnapshot);
+}
+
+void UFF_PrepPanelBuild::RefreshRequiredFacilityGuide(const FFF_RequiredFacilitiesStatus& Status)
+{
+	// Older saved panels did not expose the guide as a variable. Their existing
+	// Designer widget still supports the same presentation without regenerating it.
+	UBorder* Guide = Border_CatalogRequiredGuide ? Border_CatalogRequiredGuide.Get()
+		: Cast<UBorder>(GetWidgetFromName(TEXT("Border_CatalogRequiredGuide")));
+	if (Guide)
+	{
+		const bool bNeedsInstallation = !Status.Facilities.IsEmpty() && !Status.bCanProceed;
+		Guide->SetVisibility(bNeedsInstallation
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 }
 
 void UFF_PrepPanelBuild::RevealSynergyRecommendations()
@@ -685,12 +970,41 @@ void UFF_PrepPanelBuild::HandleZoneWorldSnapshotRestored()
 
 void UFF_PrepPanelBuild::HandleTileClicked(UObject* ItemObject)
 {
+	if (const auto* Tile = Cast<UFF_PrepBuildTileData>(ItemObject))
+		ActivateCatalogFacility(Tile->GetFacilityDefinitionId());
+}
+
+void UFF_PrepPanelBuild::HandleTileSelectionChanged(UObject* ItemObject)
+{
 	UFF_PrepBuildTileData* Tile = Cast<UFF_PrepBuildTileData>(ItemObject);
-	if (!Tile || !BuildModeSubsystem ||
-		BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen)
-	{
-		return;
-	}
+	// SetListItems briefly clears selection during reconciliation. Only a real focus
+	// transition updates the candidate; visibility reconciliation clears stale IDs.
+	if (!Tile) return;
+	if (!bApplyingCatalogFocus && PresentationModel &&
+		Tile->GetFacilityDefinitionId() != PresentationModel->GetCodexFocusId()) { ClearCodexFocus(); }
+	SelectedCatalogFacilityId = Tile->GetFacilityDefinitionId();
+	RefreshSelectedFacilityPresentation();
+}
+
+void UFF_PrepPanelBuild::BeginSelectedFacilityPlacement()
+{
+	ActivateCatalogFacility(SelectedCatalogFacilityId);
+}
+
+bool UFF_PrepPanelBuild::ActivateCatalogFacility(const FName FacilityDefinitionId)
+{
+	if (FacilityDefinitionId.IsNone() || !PresentationModel || !BuildModeSubsystem ||
+		BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen) return false;
+	const auto* Candidate = PresentationModel->FindTile(FacilityDefinitionId);
+	if (!Candidate || !GetCatalogPageItems().Contains(const_cast<UFF_PrepBuildTileData*>(Candidate))) return false;
+	if (FacilityDefinitionId != PresentationModel->GetCodexFocusId()) { ClearCodexFocus(); }
+	SelectedCatalogFacilityId = FacilityDefinitionId;
+	// Re-read authoritative prices/limits at activation, never use the selection-time copy.
+	const FName SelectedId = FacilityDefinitionId;
+	RefreshPricedEntries();
+	ReconcilePresentation();
+	const UFF_PrepBuildTileData* Tile = PresentationModel->FindTile(SelectedId);
+	if (!Tile || SelectedId != SelectedCatalogFacilityId) return false;
 
 	if (!Tile->IsAffordable())
 	{
@@ -701,11 +1015,7 @@ void UFF_PrepPanelBuild::HandleTileClicked(UObject* ItemObject)
 				? LOCTEXT("UnavailableTile", "지금은 이 시설을 선택할 수 없습니다.")
 				: Reason);
 		}
-		if (TileView_Facilities)
-		{
-			TileView_Facilities->SetSelectedItem(nullptr);
-		}
-		return;
+		return false;
 	}
 
 	if (!BuildModeSubsystem->StartPlacement(Tile->GetFacilityDefinitionId()))
@@ -716,7 +1026,7 @@ void UFF_PrepPanelBuild::HandleTileClicked(UObject* ItemObject)
 		if (Text_Status)
 		{
 			const UFF_PrepBuildTileData* RefreshedTile = PresentationModel
-				? PresentationModel->FindTile(Tile->GetFacilityDefinitionId())
+				? PresentationModel->FindTile(SelectedId)
 				: nullptr;
 			const FText Reason = RefreshedTile ? RefreshedTile->GetStateText() : FText::GetEmpty();
 			Text_Status->SetText(Reason.IsEmpty()
@@ -724,11 +1034,51 @@ void UFF_PrepPanelBuild::HandleTileClicked(UObject* ItemObject)
 					"PlacementStartFailed", "배치를 시작하지 못했습니다. 현재 단계와 건축 가능 구역을 확인하세요.")
 				: Reason);
 		}
-		if (TileView_Facilities)
+		return false;
+	}
+	FFBuildFeedback::Pulse(GetOwningPlayer());
+	return true;
+}
+
+void UFF_PrepPanelBuild::ClearCodexFocus()
+{
+	if (!PresentationModel || PresentationModel->GetCodexFocusId().IsNone()) { return; }
+	PresentationModel->SetCodexFocusId(NAME_None);
+	if (TileView_Facilities)
+	{
+		for (UUserWidget* Row : TileView_Facilities->GetDisplayedEntryWidgets())
 		{
-			TileView_Facilities->SetSelectedItem(nullptr);
+			if (auto* Tile = Cast<UFF_PrepBuildTileWidget>(Row)) { Tile->RefreshItemPresentation(); }
 		}
 	}
+}
+
+void UFF_PrepPanelBuild::RefreshSelectedFacilityPresentation()
+{
+	const UFF_PrepBuildTileData* Tile = PresentationModel ? PresentationModel->FindTile(SelectedCatalogFacilityId) : nullptr;
+	const bool bVisible = Tile && GetCatalogPageItems().Contains(const_cast<UFF_PrepBuildTileData*>(Tile));
+	if (!bVisible)
+	{
+		SelectedCatalogFacilityId = NAME_None;
+		Tile = nullptr;
+	}
+	if (TileView_Facilities && TileView_Facilities->GetSelectedItem<UObject>() != Tile)
+		TileView_Facilities->SetSelectedItem(const_cast<UFF_PrepBuildTileData*>(Tile));
+	if (Text_SelectedFacility) Text_SelectedFacility->SetText(Tile ? Tile->GetDisplayName() : LOCTEXT("SelectFacility", "시설을 선택하세요"));
+	if (Text_SelectedCost) Text_SelectedCost->SetText(Tile ? Tile->GetCostText() : FText::FromString(TEXT("—")));
+	const bool bKnownGold = EconomyReadModel && EconomyReadModel->HasAuthoritativeGold();
+	if (Text_AfterPlacementGold) Text_AfterPlacementGold->SetText(Tile && Tile->HasResolvedCost() && bKnownGold
+		? FText::Format(LOCTEXT("BalanceAfterPlacement", "{0} Gold"), FText::AsNumber(EconomyReadModel->GetGold() - Tile->GetInstallCost()))
+		: FText::FromString(TEXT("—")));
+	const bool bAvailable = Tile && Tile->IsAffordable();
+	if (Button_PlaceSelected)
+	{
+		Button_PlaceSelected->SetIsEnabled(false);
+		Button_PlaceSelected->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (Text_SelectionHint) Text_SelectionHint->SetText(Tile
+		? (bAvailable ? LOCTEXT("ClarityChargedOnConfirm", "위치를 정하고 확정할 때 결제됩니다") : Tile->GetStateText())
+		: LOCTEXT("ClarityActivateCard", "카드를 누르면 배치할 위치를 정할 수 있습니다"));
 }
 
 void UFF_PrepPanelBuild::HandleReturnToCatalogClicked()
@@ -1271,6 +1621,9 @@ void UFF_PrepPanelBuild::ReconcilePresentation()
 	{
 		return;
 	}
+	// Restoring selection after list reconciliation is not a new player choice.
+	// In particular, filtering the destination away must retain its identity accent.
+	TGuardValue<bool> SelectionGuard(bApplyingCatalogFocus, true);
 
 	const EFF_BuildCatalogLoadState LoadState = CatalogSubsystem
 		? CatalogSubsystem->GetLoadState()
@@ -1294,6 +1647,7 @@ void UFF_PrepPanelBuild::ReconcilePresentation()
 			return Entry.FacilityDefinitionId == FocusId;
 		});
 		bFocusTargetMissing = !Target;
+		PresentationModel->SetCodexFocusId(Target ? FocusId : NAME_None);
 		if (Target)
 		{
 			TGuardValue<bool> FocusGuard(bApplyingCatalogFocus, true);
@@ -1334,6 +1688,8 @@ void UFF_PrepPanelBuild::ReconcilePresentation()
 		if (FocusTile && TileView_Facilities)
 		{
 			TileView_Facilities->SetSelectedItem(FocusTile);
+			SelectedCatalogFacilityId = FocusTile->GetFacilityDefinitionId();
+			RefreshSelectedFacilityPresentation();
 			TileView_Facilities->RequestNavigateToItem(FocusTile);
 		}
 		if (BuildModeSubsystem) { BuildModeSubsystem->AcknowledgeCatalogFacilityFocus(FocusId); }
@@ -1346,6 +1702,7 @@ void UFF_PrepPanelBuild::ReconcilePresentation()
 
 void UFF_PrepPanelBuild::RefreshVisibleTiles()
 {
+	RefreshSelectedFacilityPresentation();
 	if (TileView_Facilities)
 	{
 		for (UUserWidget* Entry : TileView_Facilities->GetDisplayedEntryWidgets())
@@ -1385,7 +1742,7 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 	}
 	if (Text_PanelTitle)
 	{
-		Text_PanelTitle->SetText(LOCTEXT("ApprovedBuildTitle", "시설 배치"));
+		Text_PanelTitle->SetText(LOCTEXT("AuroraBuildTitle", "시설 건축"));
 	}
 	if (Text_FavoritesOnly)
 	{
@@ -1432,6 +1789,8 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 	{
 		if (bReplaceListItems || bPageClamped)
 		{
+			CatalogScrollVelocity = 0.f;
+			ResetCatalogDrag();
 			const TArray<UObject*> PageItems = GetCatalogPageItems();
 			TileView_Facilities->SetListItems(PageItems);
 			if (PageItems.IsEmpty())
@@ -1481,7 +1840,7 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 			Status = (ThumbnailState == EFF_BuildCatalogThumbnailLoadState::Loading ||
 				ThumbnailState == EFF_BuildCatalogThumbnailLoadState::WaitingForCatalog)
 				? LOCTEXT("ThumbnailsLoading", "시설 이미지를 불러오는 중입니다. 목록은 먼저 선택할 수 있습니다.")
-				: LOCTEXT("ApprovedCatalogReady", "카드 선택 → 배치 시작  ·  ☆ 즐겨찾기  ·  B 시설 확인");
+				: LOCTEXT("PearlCatalogReady", "카드 선택 → 위치 지정  ·  확정 시 결제  ·  좌우 드래그 / 휠로 넘기기  ·  ☆ 즐겨찾기");
 		}
 		const FText SynergySource = BuildModeSubsystem
 			? BuildModeSubsystem->GetSynergyCatalogSourceName() : FText::GetEmpty();
@@ -1505,13 +1864,28 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 		}
 		Text_Status->SetText(Status);
 	}
+	RefreshSelectedFacilityPresentation();
 }
 
 void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 {
+	ResetCatalogDrag();
+	RefreshSelectedFacilityPresentation();
 	const bool bShowCatalog = State == EFF_BuildModeState::CatalogOpen;
-	const bool bShowCompact = State == EFF_BuildModeState::BuildMode;
+	const bool bShowCompact = bUsePagination && State == EFF_BuildModeState::BuildMode;
 	const bool bShowSeparateTools = State == EFF_BuildModeState::Placing || State == EFF_BuildModeState::Moving;
+	if (Size_ClarityCatalogDock)
+	{
+		Size_ClarityCatalogDock->SetHeightOverride(bShowCatalog ? CatalogHeight : CompactHeight);
+		float CatalogWidth = 1560.f;
+		if (!bUsePagination && bShowCatalog)
+		{
+			const float Scale = FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(this));
+			const float LogicalWidth = UWidgetLayoutLibrary::GetViewportSize(this).X / Scale;
+			if (LogicalWidth > 64.f) CatalogWidth = LogicalWidth - 64.f;
+		}
+		Size_ClarityCatalogDock->SetWidthOverride(bShowCatalog ? CatalogWidth : 1080.f);
+	}
 
 	if (Panel_Catalog)
 	{
@@ -1533,15 +1907,17 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 	// The WBP owns padding; C++ changes only which surface is visible.
 	if (Border_PanelRoot)
 	{
-		// Placement tools have their own WBP and viewport host. Do not leave an empty catalog rectangle behind.
-		Border_PanelRoot->SetVisibility(bShowSeparateTools ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		// The continuous ribbon is catalog-only; the floating tools WBP handles the rest of the session.
+		// Retain the legacy compact surface only for authored paginated catalogs.
+		Border_PanelRoot->SetVisibility(bShowCatalog || (bUsePagination && !bShowSeparateTools)
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 	if (Text_PlacementGuide)
 	{
 		FText Guide;
 		switch (State)
 		{
-		case EFF_BuildModeState::Placing: 
+		case EFF_BuildModeState::Placing:
 			// 🔴 **한 줄로 쓴다.** 네 줄로 쌓으면 그만큼 지면을 가리는데, 배치 중에는
 			//   지면이 보여야 시설을 놓을 수 있다 (2026-09-03 백종태 요청).
 			Guide = BuildModeSubsystem && BuildModeSubsystem->IsDragPlacementEnabled()

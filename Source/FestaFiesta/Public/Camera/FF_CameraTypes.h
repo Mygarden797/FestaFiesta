@@ -24,6 +24,17 @@ enum class EFF_CameraViewMode : uint8
 	Character UMETA(DisplayName = "캐릭터 시점")
 };
 
+// Idle에서는 표시 상태와 목표 상태가 같으며 지면/보간을 갱신하지 않는다.
+// 휠, 스냅, 초기화처럼 한 번 누르는 명령은 Transition을 마친 뒤 Idle로 돌아간다.
+UENUM(BlueprintType)
+enum class EFF_OverviewCameraMotionState : uint8
+{
+	Idle        UMETA(DisplayName = "고정"),
+	DirectInput UMETA(DisplayName = "직접 조작"),
+	Transition  UMETA(DisplayName = "명령 전환 중"),
+	Following   UMETA(DisplayName = "대상 추적 중")
+};
+
 // 카메라 입력을 눌러둬야 하는 이유.
 // 건축 모드가 커서와 클릭을 쓰고 있는데 카메라가 같은 입력을 먹으면
 // 배치 클릭이 드래그로 먹히거나 커서 표시가 서로 덮어써진다.
@@ -45,7 +56,9 @@ enum class EFF_CameraInputBlock : uint8
 	//
 	// 지금은 조작을 전부 막는다. 연출을 보는 시간이라 그게 맞다고 봤는데,
 	// 나중에 "구경하면서 돌려보고 싶다" 가 되면 회전만 열어주면 된다.
-	Scripted        UMETA(DisplayName = "연출 중")
+	Scripted        UMETA(DisplayName = "연출 중"),
+	// 기존 Blueprint enum 값이 바뀌지 않도록 새 항목은 끝에 추가한다.
+	InactiveViewport UMETA(DisplayName = "게임 화면 비활성")
 };
 
 namespace FFCameraInputModel
@@ -54,6 +67,7 @@ namespace FFCameraInputModel
 	inline bool IsMovementAllowed(const EFF_CameraInputBlock Reason)
 	{
 		return Reason != EFF_CameraInputBlock::ModalUi
+			&& Reason != EFF_CameraInputBlock::InactiveViewport
 			&& Reason != EFF_CameraInputBlock::ActorView
 			&& Reason != EFF_CameraInputBlock::CharacterControl
 			&& Reason != EFF_CameraInputBlock::Scripted;
@@ -167,6 +181,17 @@ struct FFF_OverviewCameraSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Feel", meta = (ClampMin = "0.0"))
 	float InterpSpeed = 12.f;
 
+	/* 줌에만 쓰는 보간 속도. 0 이하면 InterpSpeed 를 쓴다.
+
+	   이동과 줌을 같은 속도로 두면 줌이 늘어지게 느껴진다. 이동은 목표가
+	   계속 바뀌어서 따라가는 느낌이 자연스러운데, 줌은 한 번 굴리면 목표가
+	   정해져서 그 자리에 빨리 닿아야 조작한 만큼 움직였다고 느낀다.
+
+	   느리면 굴린 뒤에도 한참 더 들어가서 과하게 확대된 것처럼 보인다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0.0"))
+	float ZoomInterpSpeed = 22.f;
+
 	// true 면 커서 아래 지점을 향해 줌한다. false 면 화면 중앙 기준이다.
 	// 배치 작업에서는 커서 기준이 훨씬 편하다. "저기 확대해서 보자"가 한 동작으로 끝난다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zoom")
@@ -178,7 +203,8 @@ struct FFF_OverviewCameraSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zoom", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float ZoomToCursorStrength = 0.85f;
 
-	// 마우스를 화면 가장자리에 대면 그쪽으로 팬한다. 배치 게임의 표준 조작이다.
+	// 휠 버튼을 누른 채 화면 가장자리에 대면 그쪽으로 팬한다.
+	// 커서만 가장자리에 둔 대기 상태에서는 이동하지 않는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Edge Scroll")
 	bool bEnableEdgeScroll = true;
 
@@ -203,7 +229,18 @@ struct FFF_OverviewCameraSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Edge Scroll", meta = (ClampMin = "0.05", ClampMax = "1.0"))
 	float EdgeScrollMinSpeedScale = 0.6f;
 
-	// 초점을 지형 표면에 붙여 다닐지.
+	/* 화면 아래쪽 이만큼은 가장자리로 치지 않는다.
+
+	   하단에 탭 바와 패널이 있어서, 그것들을 누르려고 마우스를 내릴 때마다
+	   카메라가 밀린다. UI 를 조작하는 것과 화면을 미는 것이 같은 자리에서
+	   일어나면 둘 중 하나는 늘 방해가 된다.
+
+	   위와 좌우는 가릴 것이 없으므로 그대로 둔다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Edge Scroll", meta = (ClampMin = "0.0"))
+	float EdgeScrollBottomDeadZonePixels = 120.f;
+
+	// 조작 중 초점을 지형 표면에 붙여 다닐지. 대기 중에는 마지막 높이를 고정한다.
 	//
 	// 끄면 초점 높이가 고정이라 팬으로 언덕을 넘어갈 때 카메라가 지형을 파고든다.
 	// 평지 테스트 맵에서는 안 드러나고 실제 지형에서만 나타난다.

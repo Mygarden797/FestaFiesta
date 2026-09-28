@@ -1,3 +1,6 @@
+// FF_FacilitySynergyEvaluator.h
+// 역할: 주변 시설을 공간 색인으로 조회해 조합 보너스와 이동 전후 효과를 계산한다.
+
 #pragma once
 
 #include "CoreMinimal.h"

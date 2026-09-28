@@ -26,6 +26,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FFF_OnQueueServiceStarted,
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FFF_OnQueuePartyExited,
 	int32, FacilityId, int32, PartyId, EFF_QueueExit, ExitType, float, WaitedSeconds);
 
+// 이용 완료 1건의 정산 자료. 가입 때 확정한 팀 인원을 전달해 Crowd의 이후 상태에 의존하지 않는다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FFF_OnQueuePartyServiceCompleted,
+	int32, FacilityId, int32, PartyId, int32, ServedMemberCount, float, WaitedSeconds);
+
 // ── Queue → Crowd ───────────────────────────────────────────────────────────
 // 슬롯 목표 위치 배열. Crowd가 이 위치까지 "걸어서" 데려간다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnQueueSlotTargetsUpdated,
@@ -100,7 +104,7 @@ public:
 	float GetExpectedWaitMinutes(int32 FacilityId, int32 IncomingMemberCount) const;
 
 	/**
-	 * 이 시설의 실측 처리율(분당 인원).
+	 * 이 시설의 설정 처리율(분당 팀).
 	 * 시설 정적 규칙에서 처리율을 뽑는 경로가 프로젝트에 따로 있는데 그쪽은 분당이고
 	 * FFF_QueueState::ServiceRate 는 초당이다. 비교할 일이 생기면 같은 단위로 놓고 보라고 둔다.
 	 * 미등록 시설은 0("모름")이다 — 이걸로 나누지 말 것.
@@ -160,6 +164,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Queue|Events")
 	FFF_OnQueuePartyExited OnPartyExited;
+
+	UPROPERTY(BlueprintAssignable, Category = "Queue|Events")
+	FFF_OnQueuePartyServiceCompleted OnPartyServiceCompleted;
 
 	UPROPERTY(BlueprintAssignable, Category = "Queue|Events")
 	FFF_OnQueueSlotTargetsUpdated OnSlotTargetsUpdated;

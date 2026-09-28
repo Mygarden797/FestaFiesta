@@ -50,6 +50,7 @@ void UFF_AudioEventLink::BindAll()
 		{
 			Finale->OnBurst.AddDynamic(this, &UFF_AudioEventLink::HandleFinaleBurst);
 			Finale->OnShowStateChanged.AddDynamic(this, &UFF_AudioEventLink::HandleFinaleShowStateChanged);
+			Finale->OnTourActChanged.AddDynamic(this, &UFF_AudioEventLink::HandleFinaleTourActChanged);
 			bBoundFinale = true;
 		}
 	}
@@ -57,16 +58,18 @@ void UFF_AudioEventLink::BindAll()
 	if (!bBoundStage)
 	{
 		// 단계는 게임 인스턴스가 소유한다. 월드가 바뀌어도 축제는 이어지기 때문이다.
-		const UGameInstance* GameInstance = World->GetGameInstance();
 		if (UFF_FestivalStageSubsystem* Stage =
-			GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+			UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(World->GetGameInstance()))
 		{
 			Stage->OnStageChanged.AddDynamic(this, &UFF_AudioEventLink::HandleStageChanged);
 			Stage->OnEnvironmentStateChanged.AddDynamic(this, &UFF_AudioEventLink::HandleEnvironmentChanged);
 			bBoundStage = true;
 
 			// 신호는 바뀔 때만 온다. 지금 상태를 한 번 읽어서 배경음을 맞춘다.
+			// 밤낮도 같이 읽는다. 빠뜨리면 밤에 레벨이 열렸을 때 다음 밤 신호가 올 때까지
+			// 낮 곡이 돈다 — 그 신호는 하루에 한 번뿐이다.
 			LastStage = Stage->CurrentStage;
+			bLastIsNight = Stage->GetIsNightActive();
 			RefreshAmbience();
 		}
 	}
@@ -124,15 +127,15 @@ void UFF_AudioEventLink::UnbindAll()
 		{
 			Finale->OnBurst.RemoveDynamic(this, &UFF_AudioEventLink::HandleFinaleBurst);
 			Finale->OnShowStateChanged.RemoveDynamic(this, &UFF_AudioEventLink::HandleFinaleShowStateChanged);
+			Finale->OnTourActChanged.RemoveDynamic(this, &UFF_AudioEventLink::HandleFinaleTourActChanged);
 		}
 		bBoundFinale = false;
 	}
 
 	if (bBoundStage)
 	{
-		const UGameInstance* GameInstance = World->GetGameInstance();
 		if (UFF_FestivalStageSubsystem* Stage =
-			GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+			UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(World->GetGameInstance()))
 		{
 			Stage->OnStageChanged.RemoveDynamic(this, &UFF_AudioEventLink::HandleStageChanged);
 			Stage->OnEnvironmentStateChanged.RemoveDynamic(this, &UFF_AudioEventLink::HandleEnvironmentChanged);
@@ -212,10 +215,39 @@ void UFF_AudioEventLink::HandleFinaleShowStateChanged(const bool bInProgress)
 
 	// 연출이 끝나면 배경음을 되돌린다. 어느 단계로 갈지는 진행 쪽이 알고 있으므로
 	// 여기서는 피날레 곡만 걷어내고 다음 요청을 기다린다.
-	if (Audio->GetCurrentAmbience() == EFF_AudioAmbience::Finale)
+	if (IsFinaleAmbience(Audio->GetCurrentAmbience()))
 	{
 		Audio->SetAmbience(EFF_AudioAmbience::Closing);
 	}
+}
+
+void UFF_AudioEventLink::HandleFinaleTourActChanged(const EFF_FinaleTourAct NewAct)
+{
+	// 불꽃 관람 막은 피날레 곡 그대로 둔다. 엔딩곡은 축제장 순회에서 시작해 끝까지 간다.
+	// 마무리 막에서도 거는 이유는 카메라를 건너뛰면 순회 없이 바로 마무리로 오기 때문이다.
+	if (!bLinkEnabled || NewAct == EFF_FinaleTourAct::Fireworks)
+	{
+		return;
+	}
+
+	UFF_AudioSubsystem* Audio = GetAudio();
+	if (!Audio)
+	{
+		return;
+	}
+
+	// 엔딩곡이 아직 뱅크에 없으면 피날레 곡을 그대로 둔다. 갈아타면 순회 내내 무음이 된다.
+	if (!Audio->HasAmbienceTrack(EFF_AudioAmbience::FinaleEnding))
+	{
+		return;
+	}
+
+	Audio->SetAmbience(EFF_AudioAmbience::FinaleEnding);
+}
+
+bool UFF_AudioEventLink::IsFinaleAmbience(const EFF_AudioAmbience Ambience)
+{
+	return Ambience == EFF_AudioAmbience::Finale || Ambience == EFF_AudioAmbience::FinaleEnding;
 }
 
 void UFF_AudioEventLink::HandleQueuePartyJoined(
@@ -359,7 +391,7 @@ void UFF_AudioEventLink::RefreshAmbience()
 
 	// 연출 중에는 건드리지 않는다. 피날레 곡이 걸려 있는데 단계 신호가 오면
 	// 그 위에 덮어써서 연출이 끊긴다.
-	if (Audio->GetCurrentAmbience() == EFF_AudioAmbience::Finale)
+	if (IsFinaleAmbience(Audio->GetCurrentAmbience()))
 	{
 		return;
 	}

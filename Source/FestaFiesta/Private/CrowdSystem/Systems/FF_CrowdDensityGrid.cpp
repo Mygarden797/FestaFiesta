@@ -40,7 +40,7 @@ void FCrowdDensityGrid::Build(const FVector& InOriginUU, const FVector2D& InSize
 	LastCellIndexByAgent.Reset();
 
 	MaxDensity = 0.f;
-	CongestedCellCount = 0;
+	CongestedCells.Reset();
 	SampledUnitCount = 0;
 
 	UE_LOG(LogTemp, Log,
@@ -65,7 +65,7 @@ void FCrowdDensityGrid::Reset()
 	LastCellIndexByAgent.Reset();
 
 	MaxDensity = 0.f;
-	CongestedCellCount = 0;
+	CongestedCells.Reset();
 	SampledUnitCount = 0;
 }
 
@@ -160,7 +160,9 @@ void FCrowdDensityGrid::Update(const TArray<FUnitData>& Units)
 
 	// 2) 카운트를 밀도로 환산하고 요약 통계를 뽑는다.
 	MaxDensity = 0.f;
-	CongestedCellCount = 0;
+
+	// 어느 셀인지를 버리면 그 자리를 알아야 하는 쪽이 같은 배열을 한 번 더 훑게 된다
+	CongestedCells.Reset();
 
 	for (int32 i = 0; i < CellCounts.Num(); ++i)
 	{
@@ -174,7 +176,7 @@ void FCrowdDensityGrid::Update(const TArray<FUnitData>& Units)
 
 		if (CellDensity > CrowdDensity::LOS_D_Max)
 		{
-			++CongestedCellCount;
+			CongestedCells.Add(i);
 		}
 	}
 }

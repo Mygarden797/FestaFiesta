@@ -1,3 +1,5 @@
+// FF_FFZSBuildableGridComponent.h
+// 역할: 건설 가능 격자를 렌더링하고 월드·설정 변경 때만 표시 캐시를 갱신한다.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -22,7 +24,9 @@ public:
 
     void RefreshGrid(UFFZSWorldSubsystem& WorldSystem, const FFFZSCommand& Command,
         const FVector2D& CenterLocalCm, const FVector2D& HalfExtentCm, int32 GridStepCm,
-        const FVector& SurfacePointWorld, const FVector& SurfaceNormalWorld, int32 SurfaceSampleBudget = 512);
+        const FVector& SurfacePointWorld, const FVector& SurfaceNormalWorld,
+        int32 SurfaceSampleBudget = FFZSBuildGridSurface::MaximumTracesPerUpdate,
+        FName SelectionCoordinateZoneId = NAME_None);
     void HideGrid();
     void InvalidateGrid() { bCacheValid = false; }
     // Changes only when visible line geometry changes, not when background checks run.
@@ -31,6 +35,7 @@ public:
 private:
     bool bCacheValid = false;
     uint32 CachedContextHash = 0;
+    uint32 CachedPresentationHash = 0;
     int64 CachedRevision = -1;
     uint64 CachedRegistryRevision = 0;
     uint64 PresentationRevision = 0;

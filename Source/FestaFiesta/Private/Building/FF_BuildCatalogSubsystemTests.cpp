@@ -78,7 +78,18 @@ bool FFF_BuildCatalogInstallCostProjectionTest::RunTest(const FString& Parameter
 
 	CostRow.InstallCost = 0;
 	CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), CostRow);
-	TestFalse(TEXT("A non-positive price is not displayable"),
+	TestTrue(TEXT("An authored zero price is displayable"),
+		FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, CostTable, 0.5f, FailureReason));
+	TestTrue(TEXT("A free facility has a valid resolved price"), Entry.HasValidInstallCost());
+	TestEqual(TEXT("A free facility projects zero Gold"), Entry.InstallCost, 0);
+	TestTrue(TEXT("A free facility has a resolved recovery price"), Entry.bHasResolvedRecoveryCost);
+	TestEqual(TEXT("A free facility refunds zero Gold"), Entry.RecoveryCost, 0);
+	TestEqual(TEXT("A free facility retains the authored row"),
+		Entry.MatchedInstallCostRow, FName(TEXT("Cost.Booth.FoodStall")));
+
+	CostRow.InstallCost = -1;
+	CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), CostRow);
+	TestFalse(TEXT("A negative price is not displayable"),
 		FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, CostTable, 0.5f, FailureReason));
 	TestFalse(TEXT("A failed projection clears the resolved flag"),
 		Entry.bHasResolvedInstallCost);
@@ -87,6 +98,17 @@ bool FFF_BuildCatalogInstallCostProjectionTest::RunTest(const FString& Parameter
 	TestEqual(TEXT("A failed projection clears the recovery cost"), Entry.RecoveryCost, 0);
 	TestEqual(TEXT("A failed projection never leaves a misleading zero-price row"),
 		Entry.MatchedInstallCostRow, NAME_None);
+	TestFalse(TEXT("A failed projection is not a valid free price"), Entry.HasValidInstallCost());
+
+	CostRow.InstallCost = 0;
+	CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), CostRow);
+	TestTrue(TEXT("A corrected free price recovers without stale failure state"),
+		FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, CostTable, 0.5f, FailureReason));
+	CostTable->EmptyTable();
+	TestFalse(TEXT("Removing the free row makes its price unavailable"),
+		FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, CostTable, 0.5f, FailureReason));
+	TestFalse(TEXT("A missing row does not leave the old free price valid"), Entry.HasValidInstallCost());
+	TestFalse(TEXT("A missing row also invalidates its refund"), Entry.bHasResolvedRecoveryCost);
 	return true;
 }
 
@@ -109,6 +131,12 @@ bool FFF_BuildCatalogDeterministicSortAndGroupingTest::RunTest(const FString& Pa
 		MakeCatalogEntry(TEXT("Booth_ActivityGame_RingToss"), EFFZSFacilityCategory::Booth, TEXT("ActivityGame"), TEXT("Ring Toss")),
 		MakeCatalogEntry(TEXT("Booth_FoodStall_AlphaA"), EFFZSFacilityCategory::Booth, TEXT("FoodStall"), TEXT("Alpha")),
 	};
+	// 정렬용 키와 실제 항목을 분리해도 금액과 안내 문구가 다른 시설로 섞이면 안 된다.
+	for (int32 Index = 0; Index < Entries.Num(); ++Index)
+	{
+		Entries[Index].InstallCost = (Index + 1) * 100;
+		Entries[Index].CompatibleProgramNames = FText::FromString(Entries[Index].FacilityDefinitionId.ToString());
+	}
 
 	FFBuildCatalogModel::SortEntries(Entries);
 
@@ -120,6 +148,7 @@ bool FFF_BuildCatalogDeterministicSortAndGroupingTest::RunTest(const FString& Pa
 		TEXT("Booth_FoodStall_Zulu"),
 		TEXT("Toilet_Standard_Alpha"),
 	};
+	const TArray<int32> ExpectedCosts = {400, 500, 300, 200, 100};
 	// 정렬은 순서만 바꿔야 하므로 먼저 항목 수 보존을 검증한 뒤 안전한 공통 범위에서 각 ID를 비교합니다.
 	TestEqual(TEXT("all entries remain after sorting"), Entries.Num(), ExpectedOrder.Num());
 	for (int32 Index = 0; Index < FMath::Min(Entries.Num(), ExpectedOrder.Num()); ++Index)
@@ -128,6 +157,9 @@ bool FFF_BuildCatalogDeterministicSortAndGroupingTest::RunTest(const FString& Pa
 			FString::Printf(TEXT("entry %d has deterministic order"), Index),
 			Entries[Index].FacilityDefinitionId,
 			ExpectedOrder[Index]);
+		TestEqual(TEXT("정렬 후 금액은 원래 시설에 남는다"), Entries[Index].InstallCost, ExpectedCosts[Index]);
+		TestEqual(TEXT("정렬 후 프로그램 안내는 원래 시설에 남는다"),
+			Entries[Index].CompatibleProgramNames.ToString(), ExpectedOrder[Index].ToString());
 	}
 
 	TArray<FFF_BuildCatalogCategoryGroup> Groups;
@@ -148,6 +180,19 @@ bool FFF_BuildCatalogDeterministicSortAndGroupingTest::RunTest(const FString& Pa
 		}
 	}
 
+	// 빈 목록과 단일 항목에서도 정렬을 안전하게 호출할 수 있다.
+	TArray<FFF_BuildCatalogEntry> Empty;
+	FFBuildCatalogModel::SortEntries(Empty);
+	TestTrue(TEXT("빈 목록 정렬은 항목을 만들지 않는다"), Empty.IsEmpty());
+	TArray<FFF_BuildCatalogEntry> Single = {
+		MakeCatalogEntry(TEXT("Booth_FoodStall_Only"), EFFZSFacilityCategory::Booth, TEXT("FoodStall"), TEXT("Only"))};
+	Single[0].InstallCost = 400;
+	FFBuildCatalogModel::SortEntries(Single);
+	TestEqual(TEXT("단일 항목 정렬은 개수를 보존한다"), Single.Num(), 1);
+	if (Single.Num() == 1)
+	{
+		TestEqual(TEXT("단일 항목 정렬은 금액을 보존한다"), Single[0].InstallCost, 400);
+	}
 	return true;
 }
 

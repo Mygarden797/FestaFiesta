@@ -1,3 +1,6 @@
+# build_character.py
+# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 원본 모델이나 결과물을 생성한다.
+
 """Non-destructive reconstruction from MainMan source. Run in background Blender."""
 import bpy,bmesh,math,json
 from pathlib import Path

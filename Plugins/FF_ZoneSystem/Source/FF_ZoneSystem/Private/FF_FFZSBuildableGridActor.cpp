@@ -1,3 +1,5 @@
+// FF_FFZSBuildableGridActor.cpp
+// 역할: 건축 모드의 전체 격자를 여러 Zone에 나누어 표시하고 지면 추적 예산을 분배한다.
 #include "FF_FFZSBuildableGridActor.h"
 
 #include "Components/SceneComponent.h"
@@ -59,7 +61,8 @@ void AFFZSBuildableGridActor::UpdateGrid(UFFZSWorldSubsystem& WorldSystem,
         Overview.ZoneId = UnifiedCoordinateZoneId;
         const FVector Local = Region->GetActorTransform().InverseTransformPosition(SurfacePointWorld);
         UnifiedGrid->RefreshGrid(WorldSystem, Overview, FVector2D(Local.X, Local.Y), FVector2D(Radius),
-            GridStepCm, SurfacePointWorld, SurfaceNormalWorld, 512);
+            GridStepCm, SurfacePointWorld, SurfaceNormalWorld, FFZSBuildGridSurface::MaximumTracesPerUpdate,
+            PlacementContext ? PlacementContext->ZoneId : NAME_None);
         SetActorHiddenInGame(false);
         return;
     }
@@ -102,7 +105,8 @@ void AFFZSBuildableGridActor::UpdateGrid(UFFZSWorldSubsystem& WorldSystem,
     }
     // Share the trace budget across nearby zones; adjacent lots must not each spend a full
     // 512 traces in the same overview update. Surface lifetime adapts to this smaller slice.
-    const int32 SamplesPerZone = FMath::Max(1, 512 / FMath::Max(1, VisibleCenters.Num()));
+    const int32 SamplesPerZone = FMath::Max(1,
+        FFZSBuildGridSurface::MaximumTracesPerUpdate / FMath::Max(1, VisibleCenters.Num()));
     for (const TPair<FName, FVector2D>& Visible : VisibleCenters)
     {
         const FName ZoneId = Visible.Key;
@@ -117,7 +121,8 @@ void AFFZSBuildableGridActor::UpdateGrid(UFFZSWorldSubsystem& WorldSystem,
         FFFZSCommand Overview = PlacementContext ? *PlacementContext : FFFZSCommand();
         Overview.ZoneId = ZoneId;
         Grid->RefreshGrid(WorldSystem, Overview, Visible.Value, FVector2D(Radius), GridStepCm,
-            SurfacePointWorld, SurfaceNormalWorld, SamplesPerZone);
+            SurfacePointWorld, SurfaceNormalWorld, SamplesPerZone,
+            PlacementContext ? PlacementContext->ZoneId : NAME_None);
     }
     SetActorHiddenInGame(false);
 }

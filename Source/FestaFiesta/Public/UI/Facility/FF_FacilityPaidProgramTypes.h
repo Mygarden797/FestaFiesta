@@ -1,3 +1,6 @@
+// FF_FacilityPaidProgramTypes.h
+// 역할: 유료 프로그램 선택 화면에서 사용하는 표시 데이터를 정의한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
@@ -31,8 +34,6 @@ struct FESTAFIESTA_API FFF_FacilityPaidProgramCardViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
 	FText CostText;
 
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
-	FText StaffText;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
 	FText CapacityText;
@@ -46,8 +47,6 @@ struct FESTAFIESTA_API FFF_FacilityPaidProgramCardViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
 	int32 CostGold = 0;
 
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
-	int32 RequiredStaff = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
 	int32 CapacityPeople = 0;
@@ -78,8 +77,6 @@ struct FESTAFIESTA_API FFF_FacilityPaidProgramPickerViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
 	int32 AvailableGold = 0;
 
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
-	int32 AvailableStaff = 0;
 
 	/** Only facility-compatible cards are projected into this array. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")

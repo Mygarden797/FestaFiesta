@@ -21,6 +21,8 @@ namespace FFF_PromotionPurchaseTestHelpers
 {
 	constexpr int32 InitialGold = 10000;
 	constexpr int32 BaseVisitors = 500;
+	// 홍보 없음은 ×0.85 다(안 하면 손해). 생성자 기본값 기준.
+	constexpr int32 NoPromotionVisitors = 425;
 
 	struct FPromotionHarness
 	{
@@ -40,7 +42,6 @@ namespace FFF_PromotionPurchaseTestHelpers
 
 			Definition->FestivalId = TEXT("PromotionAutomationFestival");
 			Definition->InitialGold = Gold;
-			Definition->DailyVenueRentGold = 0;
 			Definition->BaseDailyVisitors = BaseVisitors;
 
 			Progression->StartFestival(Definition);
@@ -63,8 +64,8 @@ bool FFF_Promotion_PurchaseRaisesExpectedVisitors::RunTest(const FString& Parame
 	FPromotionHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize())) return false;
 
-	TestEqual(TEXT("홍보 전에는 기본값 그대로다"),
-		Harness.Progression->GetExpectedVisitors(), BaseVisitors);
+	TestEqual(TEXT("홍보 전에는 홍보 없음 배수(×0.85)다"),
+		Harness.Progression->GetExpectedVisitors(), NoPromotionVisitors);
 
 	const int32 GoldBefore = Harness.Progression->GetGold();
 	const int32 Cost = Harness.Definition->PromotionFocused.CostGold;
@@ -103,8 +104,8 @@ bool FFF_Promotion_HigherGradeBringsMoreVisitors::RunTest(const FString& Paramet
 	Basic.Progression->TryPurchasePromotion(EFF_PromotionGrade::Basic);
 	Focused.Progression->TryPurchasePromotion(EFF_PromotionGrade::Focused);
 
-	TestTrue(TEXT("기본 홍보도 기본값보다 많다"),
-		Basic.Progression->GetExpectedVisitors() > BaseVisitors);
+	TestTrue(TEXT("지역 SNS 도 홍보 없음보다 많다"),
+		Basic.Progression->GetExpectedVisitors() > NoPromotionVisitors);
 	TestTrue(TEXT("집중이 기본보다 많다"),
 		Focused.Progression->GetExpectedVisitors() > Basic.Progression->GetExpectedVisitors());
 	TestTrue(TEXT("집중이 더 비싸다"),
@@ -157,7 +158,7 @@ bool FFF_Promotion_FailedPurchaseChangesNothing::RunTest(const FString& Paramete
 	TestEqual(TEXT("등급이 안 바뀐다"),
 		Poor.Progression->GetPurchasedPromotionGrade(), EFF_PromotionGrade::None);
 	TestEqual(TEXT("예상 방문객이 안 늘어난다"),
-		Poor.Progression->GetExpectedVisitors(), BaseVisitors);
+		Poor.Progression->GetExpectedVisitors(), NoPromotionVisitors);
 
 	// `안 함` 은 구매 행위가 아니다. 통과시키면 그 뒤로 진짜 홍보를 못 산다.
 	FPromotionHarness Rich;
@@ -209,8 +210,8 @@ bool FFF_Promotion_RestartClearsPromotion::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("등급이 비워진다"),
 		Harness.Progression->GetPurchasedPromotionGrade(), EFF_PromotionGrade::None);
-	TestEqual(TEXT("예상 방문객이 기본값으로 돌아온다"),
-		Harness.Progression->GetExpectedVisitors(), BaseVisitors);
+	TestEqual(TEXT("예상 방문객이 홍보 없음 값으로 돌아온다"),
+		Harness.Progression->GetExpectedVisitors(), NoPromotionVisitors);
 	TestEqual(TEXT("다시 살 수 있다"),
 		Harness.Progression->TryPurchasePromotion(EFF_PromotionGrade::Basic),
 		EFF_PromotionPurchaseResult::Success);

@@ -1,3 +1,6 @@
+// FF_BuildDragPlacementTests.cpp
+// 역할: 다음 기능의 정상 동작과 오류 처리를 자동 검사한다: 마우스로 그린 경로를 중복 없이 제한된 작업량으로 연속 설치한다.
+
 // Exercises drag input through the real installation, occupancy and economy boundaries.
 // Only cursor sampling and initial selection are seeded; no install result is mocked.
 
@@ -8,17 +11,21 @@
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
+#include "Components/LineBatchComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Economy/FF_ZoneSystemEconomyBridgeSubsystem.h"
 #include "Engine/AssetManager.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
+#include "Engine/HitResult.h"
 #include "Engine/StreamableManager.h"
 #include "Engine/World.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "Festival/FF_FestivalDefinition.h"
@@ -156,7 +163,6 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     Festival->FestivalId = TEXT("BuildDragPlacementAutomation");
     Festival->FacilityCostTable = Costs.Get();
     Festival->InitialGold = 100000;
-    Festival->DailyVenueRentGold = 0;
     Economy->StartFestival(Festival.Get());
 
     const FName ZoneId(TEXT("GZ_DadaPocha"));
@@ -239,6 +245,51 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     {
         return Zones->CountFacilitiesByDefinitionId(Definition->Spec.FacilityDefinitionId);
     };
+
+    // The ghost follows every sampled target without spending money or running the
+    // expensive preview policy pass. Its old verdict must not color the new target.
+    {
+        SelectAt(Road.Get(), FIntPoint(1000, 1000));
+        Build->RefreshCurrentPlacementValidation();
+        AFFZSPlacementPreviewActor* Preview = Build->PlacementPreview.Get();
+        TestTrue(TEXT("Initial preview is validated"), Build->LastValidation.bIsValid);
+        const FTransform ValidatedTransform = Build->LastValidation.PlacementTransform;
+        const FGuid ValidatedCommandId = Preview->PreviewCommand.CommandId;
+        const double ValidatedTime = Build->LastPreviewValidationTimeSeconds;
+        const int64 PreviewRevision = Zones->GetWorldRevision();
+        const int32 PreviewGold = Economy->GetGold();
+        Build->BeginDragPlacement(true);
+        for (const int32 X : { 1400, 1800, 2200 })
+        {
+            const FVector Cursor = CursorAt(FIntPoint(X, 1000));
+            Preview->SetPlacementGridSurface(Cursor + FVector(0, 0, 37), FVector::UpVector);
+            Build->UpdateDragPlacement(Cursor);
+            Build->RefreshDragPlacementPreview(false, false);
+            TestTrue(TEXT("Ghost follows the latest snapped center before periodic validation"),
+                Preview->GetActorLocation().Equals(Cursor + FVector(0, 0, 37), 0.01));
+            TestTrue(TEXT("A moved target is explicitly awaiting validation"), Preview->HasUnvalidatedPreviewTransform());
+            TestFalse(TEXT("An unvalidated target never keeps the previous success stencil"), Preview->PreviewMesh->bRenderCustomDepth);
+            TestEqual(TEXT("Old validated range geometry is removed"), Preview->RangeLines->BatchedLines.Num(), 0);
+        }
+        TestEqual(TEXT("Pose updates retain the validated command"), Preview->PreviewCommand.CommandId, ValidatedCommandId);
+        TestEqual(TEXT("Pose updates do not run preview validation"), Build->LastPreviewValidationTimeSeconds, ValidatedTime);
+        TestTrue(TEXT("Build validation remains attached to the previous validated pose"),
+            Build->LastValidation.PlacementTransform.Equals(ValidatedTransform));
+        TestTrue(TEXT("Actor validation remains attached to the previous validated pose"),
+            Preview->GetLastValidation().PlacementTransform.Equals(ValidatedTransform));
+        Build->RefreshDragPlacementPreview(false);
+        TestFalse(TEXT("Periodic refresh validates the latest pose even though CurrentPlacement already moved"),
+            Preview->HasUnvalidatedPreviewTransform());
+        TestEqual(TEXT("Periodic refresh rebuilds the command at the latest sampled origin"),
+            Preview->PreviewCommand.Placement.OriginCell, FIntPoint(2200, 1000));
+        TestTrue(TEXT("Periodic refresh restores the authoritative ground height and pose"),
+            Preview->GetActorTransform().Equals(Build->LastValidation.PlacementTransform));
+        TestTrue(TEXT("Periodic refresh restores validated feedback"), Preview->PreviewMesh->bRenderCustomDepth);
+        TestTrue(TEXT("Periodic refresh restores current footprint geometry"), Preview->RangeLines->BatchedLines.Num() > 0);
+        TestEqual(TEXT("Presentation never changes the world revision"), Zones->GetWorldRevision(), PreviewRevision);
+        TestEqual(TEXT("Presentation never spends gold"), Economy->GetGold(), PreviewGold);
+        Build->EndDragPlacement();
+    }
 
     SelectAt(Single.Get(), FIntPoint(3000, 1000));
     TestFalse(TEXT("Existing definitions remain single-click by default"), Build->IsDragPlacementEnabled());
@@ -394,6 +445,30 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("The occupied initial tile is never charged again"), Economy->GetGold(), GoldBeforeRoadClick - InstallCost);
     TestEqual(TEXT("The occupied initial tile makes no authority commit"), Zones->GetWorldRevision(), RevisionBeforeRoadClick + 1);
     Build->UpdateDragPlacement(CursorAt(FIntPoint(5000, 1000)));
+    AFFZSFacilityActor* OccupiedRoad = Zones->FindFacilityAtWorldPoint(CursorAt(FIntPoint(4200, 1000)), ZoneId);
+    if (!TestNotNull(TEXT("Occupied road supplies a registered pavement hit"), OccupiedRoad)) return false;
+    const FVector PavementPoint = CursorAt(FIntPoint(5000, 1000)) +
+        FVector(0, 0, OccupiedRoad->GetFacilitySpec().PlacementObstacleHeightCm);
+    const FHitResult PavementHit(OccupiedRoad, nullptr, PavementPoint, FVector::UpVector);
+    Build->PlacementPreview->SetPlacementGridSurface(PavementPoint, FVector::UpVector);
+    Build->RefreshDragPlacementPreview(false, false, &PavementHit);
+    TestTrue(TEXT("Lightweight road preview uses the installed pavement base instead of its mesh top"),
+        FMath::IsNearlyEqual(Build->PlacementPreview->GetActorLocation().Z, OccupiedRoad->GetActorLocation().Z, 0.01));
+    FVector RetainedGridPoint, RetainedGridNormal;
+    TestTrue(TEXT("Correcting the ghost height preserves the actual traced surface for the grid"),
+        Build->PlacementPreview->GetPlacementGridSurface(RetainedGridPoint, RetainedGridNormal) &&
+        RetainedGridPoint.Equals(PavementPoint));
+    TestFalse(TEXT("Moving from occupied road drops the stale failure stencil"),
+        Build->PlacementPreview->PreviewMesh->bRenderCustomDepth);
+    for (const UStaticMeshComponent* Surface : Build->PlacementPreview->FailureSurfaces)
+    {
+        TestFalse(TEXT("Moving to a new target hides each old blocked-area surface"), Surface->IsVisible());
+    }
+    TestFalse(TEXT("Moving the ghost preserves the actual previous failure until validation"), Build->LastValidation.bIsValid);
+    Build->RefreshDragPlacementPreview(false);
+    TestTrue(TEXT("Periodic validation replaces the old occupied-road verdict at the new empty target"), Build->LastValidation.bIsValid);
+    TestTrue(TEXT("Periodic road validation does not bounce the ghost down from the pavement top"),
+        FMath::IsNearlyEqual(Build->PlacementPreview->GetActorLocation().Z, OccupiedRoad->GetActorLocation().Z, 0.01));
     Drain();
     TestEqual(TEXT("Holding from existing road installs the next two empty tiles"), Count(Road.Get()), 7);
     TestEqual(TEXT("Extending existing road charges only the two new tiles"), Economy->GetGold(), GoldBeforeRoadClick - 3 * InstallCost);
@@ -416,6 +491,31 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Long cursor jumps retain work for later frames"), AfterPass - BeforeBudget < 14);
     Drain();
     TestEqual(TEXT("Bounded processing eventually fills the complete line"), Count(Road.Get()) - BeforeBudget, 14);
+
+    // Redundant straight samples must not overflow the 128-target backlog. The
+    // following bend and retrace stay explicit, even before any queued work runs.
+    SelectAt(Road.Get(), FIntPoint(1000, 2800));
+    Build->BeginDragPlacement();
+    for (int32 Sample = 1; Sample <= 160; ++Sample)
+    {
+        Build->UpdateDragPlacement(CursorAt(FIntPoint(1000 + Sample * 400, 2800)));
+    }
+    TestTrue(TEXT("A straight input burst coalesces without cancelling the stroke"), Build->DragPlacementSession.IsValid());
+    Build->EndDragPlacement();
+
+    SelectAt(Road.Get(), FIntPoint(8200, 1000));
+    const int32 BeforeBend = Count(Road.Get());
+    Build->BeginDragPlacement();
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(8600, 1000)));
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(9000, 1000)));
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(9000, 1400)));
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(9000, 1800)));
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(8600, 1800)));
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(8200, 1800)));
+    Drain();
+    TestEqual(TEXT("Coalesced input retains every tile along both turns"), Count(Road.Get()) - BeforeBend, 7);
+    TestNull(TEXT("Coalescing does not fill the unpainted interior of a bend"),
+        Zones->FindFacilityAtWorldPoint(CursorAt(FIntPoint(8600, 1400)), ZoneId));
 
     // Failed positions are remembered for this stroke, even if occupancy changes later.
     FFFZSGridPlacement BlockedPlacement;
@@ -541,7 +641,7 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("The real economy never overspends"), Economy->GetGold(), 0);
     TestEqual(TEXT("Money rejection reaches the real failure presenter"),
         Build->PlacementFailureFeedback->GetFailureType(), EFF_BuildPlacementFailureType::InsufficientGold);
-    Economy->AddRevenue(10 * InstallCost, EFF_EarnReason::MinigameReward);
+    Economy->AddRevenue(10 * InstallCost, EFF_EarnReason::DailyGoalBonus);
     Build->UpdateDragPlacement(CursorAt(FIntPoint(2600, 9000)));
     Drain();
     TestEqual(TEXT("New income does not silently restart the cancelled stroke"), Count(Road.Get()) - BeforeMoney, 2);
@@ -560,7 +660,7 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     Build->HandlePlacementPrimaryPress(true);
     TestFalse(TEXT("An unaffordable initial click never arms a held purchase session"), Build->DragPlacementSession.IsValid());
     TestEqual(TEXT("An unaffordable initial click never commits"), Zones->GetWorldRevision(), RevisionBeforeUnaffordableClick);
-    Economy->AddRevenue(3 * InstallCost, EFF_EarnReason::MinigameReward);
+    Economy->AddRevenue(3 * InstallCost, EFF_EarnReason::DailyGoalBonus);
     Build->UpdateDragPlacement(CursorAt(FIntPoint(4200, 9000)));
     Drain();
     TestEqual(TEXT("Income after an unaffordable initial click requires a fresh press"),

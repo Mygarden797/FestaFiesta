@@ -1,13 +1,21 @@
+// FF_FFZSQueueGeometry.h
+// 역할: 대기 경로를 실제 줄 서는 위치로 바꾸고 경로·간격·예약 영역의 유효성을 검사한다.
 #pragma once
 
 #include "CoreMinimal.h"
 
 struct FFFZSCellRect;
+struct FFFZSFacilitySpec;
 
 // Shared, side-effect-free geometry operations for the piecewise-linear queue path stored in
 // FFFZSFacilitySpec. Distances and points use Unreal centimeters.
 struct FF_ZONESYSTEM_API FFFZSQueueGeometry
 {
+    // Applies the selected layout to a disposable, already size-adjusted spec. Authored is a no-op.
+    // Service/Exit anchors and capacity stay unchanged; Entry[0], queue slots and reservations move together.
+    // Failure leaves the spec unchanged and provides a player-facing reason.
+    static bool ApplySelectedLayout(FFFZSFacilitySpec& InOutSpec, FText& OutError);
+
     // Canonical segment predicate shared by length, sampling, runtime projection, and editor tools.
     static bool IsUsableLinearSegmentLengthCm(double SegmentLengthCm);
 

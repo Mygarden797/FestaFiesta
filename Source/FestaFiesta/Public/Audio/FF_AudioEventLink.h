@@ -6,6 +6,7 @@
 #include "CoreMinimal.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "FF_FFZSTypes.h"
+#include "Finale/FF_FinaleShowTypes.h"
 #include "Queue/FF_QueueTypes.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -47,6 +48,12 @@ private:
 
 	UFUNCTION()
 	void HandleFinaleShowStateChanged(bool bInProgress);
+
+	UFUNCTION()
+	void HandleFinaleTourActChanged(EFF_FinaleTourAct NewAct);
+
+	// 피날레 곡이 걸려 있는지. 엔딩곡도 피날레 곡이다. 단계 신호가 덮어쓰면 안 된다.
+	static bool IsFinaleAmbience(EFF_AudioAmbience Ambience);
 
 	UFUNCTION()
 	void HandleQueuePartyJoined(int32 FacilityId, int32 PartyId, int32 SlotIndex, float EstimatedWaitSeconds);

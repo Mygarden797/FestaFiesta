@@ -1,3 +1,6 @@
+// FF_FestivalSettingsSubsystem.h
+// 역할: 일시정지·설정 화면의 열기·닫기, 입력 차단과 기존 건설 화면 복구를 관리한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

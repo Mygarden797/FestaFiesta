@@ -31,9 +31,6 @@ namespace
 		return true;
 	}
 
-	// 큰 DeltaSeconds 하나로 무한 루프에 빠지지 않게 하는 안전장치.
-	// 고정 스텝(1/30초)에서는 절대 닿지 않는다 — 닿았다면 호출자가 스텝을 안 쪼갠 것이다.
-	constexpr int32 MaxServiceCyclesPerAdvance = 64;
 }
 
 void FFF_FacilityQueue::Configure(int32 InFacilityId, const FFF_QueueConfig& InConfig, const FFF_QueueLaneGeometry& InLane)
@@ -42,11 +39,12 @@ void FFF_FacilityQueue::Configure(int32 InFacilityId, const FFF_QueueConfig& InC
 	Config = InConfig;
 	Lane = InLane;
 
-	Config.MaxCapacityMembers = FMath::Clamp(
-		Config.MaxCapacityMembers, 0, UFFZSDeveloperSettings::MaxQueueWaitingAgents);
+	Config.MaxCapacityParties = FMath::Clamp(
+		Config.MaxCapacityParties, 0, UFFZSDeveloperSettings::MaxQueueWaitingAgents);
 	Config.ConcurrentServiceSlots = FMath::Clamp(
 		Config.ConcurrentServiceSlots, 1, UFFZSDeveloperSettings::MaxFacilityServiceCapacity);
-	Config.ServiceSecondsPerMember = FMath::Max(Config.ServiceSecondsPerMember, KINDA_SMALL_NUMBER);
+	Config.ServiceSecondsPerParty = FMath::Max(Config.ServiceSecondsPerParty, KINDA_SMALL_NUMBER);
+	Config.PartyFormationSpacing = FMath::Max(Config.PartyFormationSpacing, 0.f);
 
 	Lane.SlotSpacingCm = FMath::Max(Lane.SlotSpacingCm, 1.f);
 	// 방향이 0벡터면 슬롯이 전부 같은 자리에 겹친다. 조용히 틀리느니 기본축으로 되돌린다.
@@ -60,6 +58,8 @@ void FFF_FacilityQueue::Configure(int32 InFacilityId, const FFF_QueueConfig& InC
 	Parties.Reset();
 	PendingEvents.Reset();
 	PendingLogs.Reset();
+	CompletedPartyCount = 0;
+	TotalCompletedWaitSeconds = 0.0;
 	bIsOpen = true;
 	bSlotTargetsDirty = true;
 }
@@ -83,36 +83,41 @@ bool FFF_FacilityQueue::ContainsParty(int32 PartyId) const
 
 int32 FFF_FacilityQueue::GetOccupiedMemberCount() const
 {
-	// 서비스를 마친 멤버도 Party 전원이 끝날 때까지 슬롯을 비우지 않는다.
-	// 그래서 점유량은 MembersServed와 무관하게 MemberCount 총합이다.
+	// 실제 인원 통계는 팀 용량과 별개다. 여러 큰 팀의 인원을 팀 자리 상한으로 자르지 않는다.
 	int64 Total = 0;
 	for (const FFF_QueuedParty& Party : Parties)
 	{
 		Total += Party.MemberCount;
 	}
 	return static_cast<int32>(FMath::Clamp<int64>(
-		Total, 0, UFFZSDeveloperSettings::MaxQueueWaitingAgents));
+		Total, 0, MAX_int32));
 }
 
 int32 FFF_FacilityQueue::GetRemainingServiceMemberCount() const
 {
-	int64 Total = 0;
+	// 팀 전원이 같은 시점에 이용을 완료한다.
+	return GetOccupiedMemberCount();
+}
+
+int32 FFF_FacilityQueue::GetActiveServicePartyCount() const
+{
+	int32 Count = 0;
 	for (const FFF_QueuedParty& Party : Parties)
 	{
-		Total += FMath::Max(0, Party.MemberCount - Party.MembersServed);
+		Count += Party.bServiceStarted ? 1 : 0;
 	}
-	return static_cast<int32>(FMath::Clamp<int64>(
-		Total, 0, UFFZSDeveloperSettings::MaxQueueWaitingAgents));
+	return Count;
 }
 
 float FFF_FacilityQueue::GetServiceRate() const
 {
-	return static_cast<float>(Config.ConcurrentServiceSlots) / Config.ServiceSecondsPerMember;
+	return static_cast<float>(FMath::Min(Config.ConcurrentServiceSlots, Config.MaxCapacityParties))
+		/ Config.ServiceSecondsPerParty;
 }
 
 bool FFF_FacilityQueue::IsAcceptingNew() const
 {
-	return bIsOpen && (GetOccupiedMemberCount() < Config.MaxCapacityMembers);
+	return bIsOpen && (Parties.Num() < Config.MaxCapacityParties);
 }
 
 float FFF_FacilityQueue::GetExpectedWaitSeconds(int32 IncomingMemberCount) const
@@ -122,10 +127,41 @@ float FFF_FacilityQueue::GetExpectedWaitSeconds(int32 IncomingMemberCount) const
 	{
 		return FFF_QueueTimings::UnreachableWaitSeconds;
 	}
-	const int64 Ahead = GetRemainingServiceMemberCount();
-	const int64 Incoming = FMath::Clamp<int64>(
-		IncomingMemberCount, 0, UFFZSDeveloperSettings::MaxQueueWaitingAgents);
-	return static_cast<float>(Ahead + Incoming) / Rate;
+	// 호환용 인원 인자는 팀 크기로 시간을 늘리지 않는다. 조회 대상은 항상 다음 한 팀이다.
+	(void)IncomingMemberCount;
+	TArray<float, TInlineAllocator<32>> SlotAvailableSeconds;
+	SlotAvailableSeconds.Init(0.f, FMath::Min(Config.ConcurrentServiceSlots, Config.MaxCapacityParties));
+	int32 ActiveSlot = 0;
+	for (const FFF_QueuedParty& Party : Parties)
+	{
+		if (Party.bServiceStarted)
+		{
+			SlotAvailableSeconds[ActiveSlot++] = FMath::Max(0.f,
+				Config.ServiceSecondsPerParty - Party.ServiceElapsedSeconds);
+		}
+	}
+	for (const FFF_QueuedParty& Party : Parties)
+	{
+		if (Party.bServiceStarted)
+		{
+			continue;
+		}
+		int32 EarliestSlot = 0;
+		for (int32 Index = 1; Index < SlotAvailableSeconds.Num(); ++Index)
+		{
+			if (SlotAvailableSeconds[Index] < SlotAvailableSeconds[EarliestSlot])
+			{
+				EarliestSlot = Index;
+			}
+		}
+		SlotAvailableSeconds[EarliestSlot] += Config.ServiceSecondsPerParty;
+	}
+	float WaitSeconds = SlotAvailableSeconds[0];
+	for (const float AvailableSeconds : SlotAvailableSeconds)
+	{
+		WaitSeconds = FMath::Min(WaitSeconds, AvailableSeconds);
+	}
+	return WaitSeconds;
 }
 
 FFF_QueueState FFF_FacilityQueue::GetState() const
@@ -135,7 +171,13 @@ FFF_QueueState FFF_FacilityQueue::GetState() const
 	State.WaitingPartyCount = Parties.Num();
 	State.OccupiedMemberCount = GetOccupiedMemberCount();
 	State.RemainingServiceMemberCount = GetRemainingServiceMemberCount();
-	State.MaxCapacityMembers = Config.MaxCapacityMembers;
+	State.RemainingServicePartyCount = Parties.Num();
+	State.ActiveServicePartyCount = GetActiveServicePartyCount();
+	State.CompletedPartyCount = CompletedPartyCount;
+	State.AverageCompletedWaitSeconds = CompletedPartyCount > 0
+		? static_cast<float>(TotalCompletedWaitSeconds / CompletedPartyCount) : 0.f;
+	State.NextServiceStartWaitSeconds = GetExpectedWaitSeconds(1);
+	State.MaxCapacityParties = Config.MaxCapacityParties;
 	State.ServiceRate = GetServiceRate();
 	State.bIsOpen = bIsOpen;
 	State.bAcceptingNew = IsAcceptingNew();
@@ -180,21 +222,24 @@ void FFF_FacilityQueue::BuildSlotAssignments(TArray<FFF_SlotAssignment>& OutAssi
 	OutAssignments.Reset();
 	OutAssignments.Reserve(GetOccupiedMemberCount());
 
-	// 일행당 자리 하나. 멤버 배치는 Crowd 의 포메이션이 맡는다.
-	// 여기서 멤버마다 다른 좌표를 주면 그 포메이션과 싸워서 일행이 흩어진다.
+	// 한 팀은 저작된 자리 하나를 쓴다. Crowd의 멤버별 queue column을 위해
+	// 리더는 그 자리, 멤버는 그 자리 양옆에 둔다. 다음 팀 자리를 소비하지 않는다.
 	int32 SlotCursor = 0;
 	for (const FFF_QueuedParty& Party : Parties)
 	{
-		// 리더가 없으면 첫 멤버를 대신 쓴다. 둘 다 없으면 INDEX_NONE 이 나가고
-		// 받는 쪽이 무시한다.
-		
-		for (int32 i =0;i< Party.MemberCount;++i)
+		const FFF_SlotAssignment TeamAnchor = ResolveSlot(INDEX_NONE, Party.PartyId, SlotCursor);
+		const FVector TeamRight = FRotator(0.f, TeamAnchor.TargetYaw, 0.f).RotateVector(FVector::RightVector);
+		for (int32 i = 0; i < Party.MemberCount; ++i)
 		{
 			const int32 AgentId = Party.MemberAgentIds.IsValidIndex(i) ? Party.MemberAgentIds[i] : INDEX_NONE;
-			FFF_SlotAssignment& A = OutAssignments.Add_GetRef(ResolveSlot(AgentId, Party.PartyId,SlotCursor++));
+			FFF_SlotAssignment& A = OutAssignments.Add_GetRef(TeamAnchor);
+			A.AgentId = AgentId;
 			A.PartyMemberIndex = i;
+			const int32 SideStep = (i + 1) / 2;
+			const float Side = (i % 2 == 1) ? 1.f : -1.f;
+			A.TargetLocation += TeamRight * (Side * SideStep * Config.PartyFormationSpacing);
 		}
-		
+		++SlotCursor;
 	}
 }
 
@@ -255,9 +300,7 @@ EFF_QueueJoinResult FFF_FacilityQueue::TryJoin(const FFF_JoinRequest& Request, f
 	}
 
 	// 전부 아니면 전무. 부분 수락은 되돌리기 어려운 상태를 만든다.
-	const int32 OccupiedMemberCount = GetOccupiedMemberCount();
-	if (OccupiedMemberCount > Config.MaxCapacityMembers ||
-		Request.MemberCount > Config.MaxCapacityMembers - OccupiedMemberCount)
+	if (Parties.Num() >= Config.MaxCapacityParties)
 	{
 		return Reject(EFF_QueueJoinResult::RejectedFull);
 	}
@@ -271,7 +314,7 @@ EFF_QueueJoinResult FFF_FacilityQueue::TryJoin(const FFF_JoinRequest& Request, f
 	Party.JoinSimTime = SimTimeSeconds;
 	Party.EstimatedWaitAtJoinSeconds = GetExpectedWaitSeconds(Request.MemberCount);
 
-	OutSlotIndex = OccupiedMemberCount;   // 이 Party의 선두 멤버가 설 슬롯
+	OutSlotIndex = Parties.Num();   // 인원수와 관계없는 팀 자리 번호
 	OutEstimatedWaitSeconds = Party.EstimatedWaitAtJoinSeconds;
 
 	FFF_QueueEvent Event;
@@ -294,7 +337,7 @@ EFF_QueueJoinResult FFF_FacilityQueue::TryJoin(const FFF_JoinRequest& Request, f
 void FFF_FacilityQueue::NotifyPartyArrived(int32 PartyId)
 {
 	const int32 Index = FindPartyIndex(PartyId);
-	if (Index != INDEX_NONE)
+	if (Index != INDEX_NONE && Index < Config.ConcurrentServiceSlots)
 	{
 		Parties[Index].bArrivedAtServicePoint = true;
 	}
@@ -319,6 +362,11 @@ void FFF_FacilityQueue::RecordExit(const FFF_QueuedParty& Party, EFF_QueueExit E
 	Log.ExitType = ExitType;
 	Log.CauseId = Party.CauseId;
 	PendingLogs.Add(Log);
+	if (ExitType == EFF_QueueExit::Served)
+	{
+		++CompletedPartyCount;
+		TotalCompletedWaitSeconds += Log.ActualWaitSeconds;
+	}
 
 	FFF_QueueEvent Event;
 	Event.Type = EFF_QueueEventType::PartyExited;
@@ -326,6 +374,7 @@ void FFF_FacilityQueue::RecordExit(const FFF_QueuedParty& Party, EFF_QueueExit E
 	Event.PartyId = Party.PartyId;
 	Event.WaitSeconds = Log.ActualWaitSeconds;
 	Event.ExitType = ExitType;
+	Event.ServedMemberCount = ExitType == EFF_QueueExit::Served ? Party.MemberCount : 0;
 	PendingEvents.Add(Event);
 
 	UE_LOG(LogFestaFiestaQueue, Verbose,
@@ -343,6 +392,7 @@ bool FFF_FacilityQueue::LeaveQueue(int32 PartyId, float SimTimeSeconds)
 	}
 	RecordExit(Parties[Index], EFF_QueueExit::Cancelled, SimTimeSeconds);
 	Parties.RemoveAt(Index);
+	InvalidateShiftedArrivals(Index);
 	bSlotTargetsDirty = true;
 	return true;
 }
@@ -373,9 +423,20 @@ void FFF_FacilityQueue::ReopenFacility()
 	bSlotTargetsDirty = true;
 }
 
+void FFF_FacilityQueue::InvalidateShiftedArrivals(int32 FirstShiftedIndex)
+{
+	for (int32 Index = FirstShiftedIndex; Index < Parties.Num(); ++Index)
+	{
+		if (!Parties[Index].bServiceStarted)
+		{
+			Parties[Index].bArrivedAtServicePoint = false;
+		}
+	}
+}
+
 void FFF_FacilityQueue::Advance(float DeltaSeconds, float SimTimeSeconds)
 {
-	if (!bIsOpen || Parties.Num() == 0)
+	if (!bIsOpen || Parties.Num() == 0 || DeltaSeconds <= 0.f)
 	{
 		return;
 	}
@@ -409,6 +470,7 @@ void FFF_FacilityQueue::Advance(float DeltaSeconds, float SimTimeSeconds)
 		}
 		if (AbandonIndices.Num() > 0)
 		{
+			InvalidateShiftedArrivals(AbandonIndices[0]);
 			bSlotTargetsDirty = true;
 		}
 	}
@@ -418,44 +480,81 @@ void FFF_FacilityQueue::Advance(float DeltaSeconds, float SimTimeSeconds)
 		return;
 	}
 
-	// ── 2. 선두 Party 서비스 ──────────────────────────────────────
-	FFF_QueuedParty& Head = Parties[0];
-
-	if (!Head.bServiceStarted)
+	// ── 2. 앞쪽 팀을 각각 독립된 이용 자리에서 동시에 처리 ────────────────
+	// 완료 시각까지 스텝을 나누므로 남은 시간이 다음 팀에도 정확히 전달된다.
+	float RemainingStep = DeltaSeconds;
+	float StepTime = SimTimeSeconds - DeltaSeconds;
+	const int32 MaxPasses = Parties.Num() + 1; // 매 반복에서 완료하거나 남은 스텝을 모두 소비한다.
+	for (int32 Pass = 0; Pass < MaxPasses && RemainingStep > 0.f && Parties.Num() > 0; ++Pass)
 	{
-		if (Config.bRequireArrivalConfirmation && !Head.bArrivedAtServicePoint)
+		for (int32 Index = 0; Index < FMath::Min(Config.ConcurrentServiceSlots, Parties.Num()); ++Index)
 		{
-			// 아직 걸어오는 중. Crowd의 NotifyPartyArrived를 기다린다.
-			return;
+			FFF_QueuedParty& Party = Parties[Index];
+			if (Party.bServiceStarted)
+			{
+				continue;
+			}
+			if (Config.bRequireArrivalConfirmation && !Party.bArrivedAtServicePoint)
+			{
+				break; // 앞팀이 이용 자리에 도착하기 전에 뒷팀이 추월하지 않는다.
+			}
+			Party.bServiceStarted = true;
+			Party.ServiceStartSimTime = FMath::Max(StepTime, Party.JoinSimTime);
+			FFF_QueueEvent Event;
+			Event.Type = EFF_QueueEventType::ServiceStarted;
+			Event.FacilityId = FacilityId;
+			Event.PartyId = Party.PartyId;
+			Event.WaitSeconds = FMath::Max(0.f, Party.ServiceStartSimTime - Party.JoinSimTime);
+			PendingEvents.Add(Event);
 		}
-		Head.bServiceStarted = true;
-		Head.ServiceStartSimTime = SimTimeSeconds;
 
-		FFF_QueueEvent Event;
-		Event.Type = EFF_QueueEventType::ServiceStarted;
-		Event.FacilityId = FacilityId;
-		Event.PartyId = Head.PartyId;
-		Event.WaitSeconds = SimTimeSeconds - Head.JoinSimTime;
-		PendingEvents.Add(Event);
-	}
+		float SliceSeconds = RemainingStep;
+		bool bHasActiveService = false;
+		for (const FFF_QueuedParty& Party : Parties)
+		{
+			if (Party.bServiceStarted)
+			{
+				bHasActiveService = true;
+				SliceSeconds = FMath::Min(SliceSeconds,
+					FMath::Max(0.f, Party.ServiceStartSimTime - StepTime)
+					+ FMath::Max(0.f, Config.ServiceSecondsPerParty - Party.ServiceElapsedSeconds));
+			}
+		}
+		if (!bHasActiveService)
+		{
+			break;
+		}
+		const float SliceEnd = StepTime + SliceSeconds;
+		for (FFF_QueuedParty& Party : Parties)
+		{
+			if (Party.bServiceStarted)
+			{
+				Party.ServiceElapsedSeconds += FMath::Max(0.f,
+					SliceEnd - FMath::Max(StepTime, Party.ServiceStartSimTime));
+			}
+		}
+		StepTime = SliceEnd;
+		RemainingStep = FMath::Max(0.f, RemainingStep - SliceSeconds);
 
-	Head.ServiceElapsedSeconds += DeltaSeconds;
-
-	// 한 사이클에 ConcurrentServiceSlots 명씩 처리한다. 기본 1 명이면 4인 가족은 4사이클.
-	int32 Guard = 0;
-	while (Head.ServiceElapsedSeconds >= Config.ServiceSecondsPerMember
-		&& Head.MembersServed < Head.MemberCount
-		&& Guard++ < MaxServiceCyclesPerAdvance)
-	{
-		Head.ServiceElapsedSeconds -= Config.ServiceSecondsPerMember;
-		Head.MembersServed = FMath::Min(Head.MemberCount, Head.MembersServed + Config.ConcurrentServiceSlots);
-	}
-
-	// ── 3. 전원 완료 시에만 슬롯 반납 ────────────────
-	if (Head.MembersServed >= Head.MemberCount)
-	{
-		RecordExit(Head, EFF_QueueExit::Served, SimTimeSeconds);
-		Parties.RemoveAt(0);
-		bSlotTargetsDirty = true;
+		TArray<int32, TInlineAllocator<32>> CompletedIndices;
+		for (int32 Index = 0; Index < Parties.Num(); ++Index)
+		{
+			const FFF_QueuedParty& Party = Parties[Index];
+			if (Party.bServiceStarted
+				&& Party.ServiceElapsedSeconds + KINDA_SMALL_NUMBER >= Config.ServiceSecondsPerParty)
+			{
+				RecordExit(Party, EFF_QueueExit::Served, StepTime);
+				CompletedIndices.Add(Index);
+			}
+		}
+		for (int32 Cursor = CompletedIndices.Num() - 1; Cursor >= 0; --Cursor)
+		{
+			Parties.RemoveAt(CompletedIndices[Cursor]);
+		}
+		if (CompletedIndices.Num() > 0)
+		{
+			InvalidateShiftedArrivals(CompletedIndices[0]);
+			bSlotTargetsDirty = true;
+		}
 	}
 }

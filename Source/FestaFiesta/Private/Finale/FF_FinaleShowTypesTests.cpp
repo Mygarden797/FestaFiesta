@@ -41,20 +41,20 @@ bool FFF_FinaleGradeScalesUpward::RunTest(const FString& Parameters)
 	return true;
 }
 
-// 2. 미구매 등급도 최소 연출이 남는다.
-//    아무것도 안 터지면 축제가 그냥 끊긴 것처럼 보인다.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinaleNoneGradeStillPlays, "FestaFiesta.Finale.Spec.NoneGradeStillPlays", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_FinaleNoneGradeStillPlays::RunTest(const FString& Parameters)
+// 2. 미구매 등급은 불꽃을 쏘지 않는다.
+//    예산을 못 모은 결과를 빈 하늘로 보여준다. 가장 싼 등급이라도 사면 터진다.
+//    (예전 테스트는 "미구매도 한 발은 터진다" 였다. 기본값이 0 으로 바뀐 뒤 갱신했다.)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinaleNoneGradeIsSilent, "FestaFiesta.Finale.Spec.NoneGradeIsSilent", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FinaleNoneGradeIsSilent::RunTest(const FString& Parameters)
 {
 	const FFF_FinaleGradeSpec None = FFF_FinaleDefaults::MakeSpec(EFF_FinaleGrade::None);
 
-	TestTrue(TEXT("미구매도 재생 가능하다"), None.IsPlayable());
-	TestTrue(TEXT("최소한 한 발은 터진다"), None.BurstCount > 0);
-	TestTrue(TEXT("색이 최소 하나는 있다"), None.Colors.Num() > 0);
+	TestFalse(TEXT("미구매는 재생하지 않는다"), None.IsPlayable());
+	TestEqual(TEXT("미구매는 한 발도 안 쏜다"), None.BurstCount, 0);
 
-	// 다만 가장 낮은 등급보다는 작아야 한다. 안 그러면 살 이유가 없다.
+	// 가장 낮은 등급은 재생된다. 안 그러면 사도 달라지는 게 없다.
 	const FFF_FinaleGradeSpec C = FFF_FinaleDefaults::MakeSpec(EFF_FinaleGrade::C);
-	TestTrue(TEXT("미구매가 C 등급보다 작다"), None.BurstCount < C.BurstCount);
+	TestTrue(TEXT("C 등급은 재생된다"), C.IsPlayable());
 	return true;
 }
 
@@ -94,6 +94,17 @@ bool FFF_FinaleIntervalIsSafe::RunTest(const FString& Parameters)
 	Single.DurationSeconds = 5.f;
 	Single.SimultaneousShells = 1;
 	TestTrue(TEXT("한 발짜리도 간격이 양수다"), Single.GetIntervalSeconds() > 0.f);
+
+	// 패턴이 있으면 차례당 발수는 패턴 쪽이 크다. 동시 발사 수로만 나누면 발이 먼저 동난다.
+	FFF_FinaleGradeSpec Patterned;
+	Patterned.BurstCount = 100;
+	Patterned.DurationSeconds = 10.f;
+	Patterned.SimultaneousShells = 1;
+	FFF_FinaleVolley Ring;
+	Ring.ShellCount = 10;
+	Ring.Weight = 1.f;
+	Patterned.Volleys.Add(Ring);
+	TestEqual(TEXT("10발짜리 패턴만 있으면 100발은 10차례"), Patterned.GetVolleyCount(), 10);
 	return true;
 }
 
@@ -165,6 +176,31 @@ bool FFF_FinaleParamNamesAreValid::RunTest(const FString& Parameters)
 	TestNotEqual(TEXT("색과 크기 이름이 다르다"), FFF_FinaleParams::BurstColor, FFF_FinaleParams::BurstScale);
 	TestNotEqual(TEXT("크기와 궤적 이름이 다르다"), FFF_FinaleParams::BurstScale, FFF_FinaleParams::TrailLength);
 	TestNotEqual(TEXT("색과 궤적 이름이 다르다"), FFF_FinaleParams::BurstColor, FFF_FinaleParams::TrailLength);
+	return true;
+}
+
+// 7. 3막 마무리 몫은 총 발수를 넘지 않고, 3막이 아니면 남기지 않는다.
+//    몫이 총 발수를 넘으면 1막에서 한 발도 못 쏘고, 3막이 아닌데 남기면 연출이 끝나지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinaleGrandFinaleReserve, "FestaFiesta.Finale.Spec.GrandFinaleReserve", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FinaleGrandFinaleReserve::RunTest(const FString& Parameters)
+{
+	const FFF_FinaleGradeSpec S = FFF_FinaleDefaults::MakeSpec(EFF_FinaleGrade::S);
+	TestTrue(TEXT("S 등급은 3막이다"), S.bSiteTour);
+	TestTrue(TEXT("S 등급은 마무리 몫이 있다"), S.GetGrandFinaleReserve() > 0);
+	TestTrue(TEXT("마무리 몫이 총 발수보다 적다"), S.GetGrandFinaleReserve() < S.BurstCount);
+
+	const FFF_FinaleGradeSpec A = FFF_FinaleDefaults::MakeSpec(EFF_FinaleGrade::A);
+	TestEqual(TEXT("3막이 아니면 남기지 않는다"), A.GetGrandFinaleReserve(), 0);
+
+	FFF_FinaleGradeSpec Edge = S;
+	Edge.GrandFinaleShare = 1.f;
+	TestEqual(TEXT("비율 1 이면 전부 마무리 몫"), Edge.GetGrandFinaleReserve(), Edge.BurstCount);
+
+	Edge.GrandFinaleShare = 5.f;
+	TestEqual(TEXT("비율이 1 을 넘어도 총 발수에서 멈춘다"), Edge.GetGrandFinaleReserve(), Edge.BurstCount);
+
+	Edge.GrandFinaleShare = 0.f;
+	TestEqual(TEXT("비율 0 이면 남기지 않는다"), Edge.GetGrandFinaleReserve(), 0);
 	return true;
 }
 

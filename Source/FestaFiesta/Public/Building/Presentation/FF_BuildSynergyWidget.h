@@ -1,10 +1,12 @@
+// FF_BuildSynergyWidget.h
+// 역할: 시설 조합의 예상 효과와 거리, 연결선을 표시한다.
+
 #pragma once
 
 #include "Blueprint/UserWidget.h"
 #include "Building/Synergy/FF_FacilitySynergyTypes.h"
 #include "FF_BuildSynergyWidget.generated.h"
 
-class UFont;
 class UBorder;
 class UTextBlock;
 
@@ -72,7 +74,6 @@ private:
     static constexpr int32 MaxVisibleRows = 3;
     static constexpr int32 CircleSegments = 48;
 
-    UPROPERTY(Transient) TObjectPtr<UFont> PresentationFont;
     UPROPERTY(Transient) TArray<TObjectPtr<UTextBlock>> RowTitles;
     UPROPERTY(Transient) TArray<TObjectPtr<UTextBlock>> RowDetails;
     UPROPERTY(Transient) TObjectPtr<UTextBlock> Footer;
@@ -82,6 +83,7 @@ private:
     TArray<FVector> RangePoints;
     FVector CandidateWorldLocation = FVector::ZeroVector;
     bool bFirstRangeActive = false;
+    bool bPearlStyleApplied = false;
 
     void BuildNativeTree();
     void ResolveBindings();

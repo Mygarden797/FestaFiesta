@@ -1,0 +1,61 @@
+{
+  "number": 31,
+  "category": "Info",
+  "subtype": "Translation",
+  "name_ko": "다국어 안내 라운지",
+  "slug": "MultilingualInformationLounge",
+  "id": "Info_Translation_MultilingualInformationLounge",
+  "footprint_cm": [
+    600,
+    450
+  ],
+  "height_cm": 440,
+  "description_ko": "여러 언어의 안내 제공.",
+  "emphasis_ko": "언어 아이콘·지도 선반·상담 테이블을 강조. 긴 문구는 모델링하지 않고 교체 가능한 텍스처나 UI로 둔다.",
+  "reference_image": "Design/Facitilies/31 다국어 안내 라운지.png",
+  "exploded_reference_image": "Design/Facitilies/31 다국어 안내 라운지 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/PDA_FFZS_Info_Translation_Translation",
+  "followup_features": [
+    "언어 전환·번역·상담 UI는 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_Translation_MultilingualInformationLounge\\SM_FF_Info_Translation_MultilingualInformationLounge.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\31_Info_Translation_MultilingualInformationLounge.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_Translation_MultilingualInformationLounge\\iso.png",
+  "bounds_m": [
+    5.704928398132324,
+    4.5,
+    4.166296482086182
+  ],
+  "bounds_min_m": [
+    -2.852464199066162,
+    -2.25,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.852464437484741,
+    2.25,
+    4.166296482086182
+  ],
+  "triangles": 25700,
+  "material_names": [
+    "M_F70_Wood",
+    "M_F70_Teal",
+    "M_F70_Metal",
+    "M_F70_Cream",
+    "M_F70_Screen",
+    "M_F70_DarkTeal",
+    "M_F70_DarkWood",
+    "M_F70_Green"
+  ],
+  "collision_count": 16,
+  "editable_parts": 66,
+  "fbx_sha256": "44fc056a2710a6bba8e65d18b692586b8c1bbf58974cb6a58213754b0c88344e",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

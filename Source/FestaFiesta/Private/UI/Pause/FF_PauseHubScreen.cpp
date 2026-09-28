@@ -1,3 +1,6 @@
+// FF_PauseHubScreen.cpp
+// 역할: 일시정지 메뉴에서 재개·설정·도움말·나가기 항목을 연결한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Pause/FF_PauseHubScreen.h"
@@ -290,7 +293,7 @@ void UFF_PauseHubScreen::SetContextCopy(const EFF_PauseHubAction Action)
 		Eyebrow = LOCTEXT("KeyboardEyebrow", "CONTROLS");
 		Title = LOCTEXT("KeyboardTitle", "조작 가이드");
 		Description = LOCTEXT("KeyboardDescription",
-			"관찰 카메라, 건축, 캐릭터와 미니게임에서 사용하는 실제 키를 문맥별로 확인합니다.");
+			"관찰 카메라, 건축, 캐릭터에서 사용하는 실제 키를 문맥별로 확인합니다.");
 		break;
 	case EFF_PauseHubAction::Account:
 		Eyebrow = LOCTEXT("AccountEyebrow", "PROFILE");

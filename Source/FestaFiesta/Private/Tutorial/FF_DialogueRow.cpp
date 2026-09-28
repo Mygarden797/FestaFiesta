@@ -76,6 +76,20 @@ namespace FFF_DialogueTable
 
 		Line.ExpectedTab = Row.ExpectedTab.IsEmpty() ? NAME_None : FName(*Row.ExpectedTab);
 
+		/* 배경 그림. "None" 은 지우라는 뜻이다.
+
+		   빈 칸과 구분하는 이유는, 빈 칸이 "앞 그림을 그대로" 를 뜻하기 때문이다.
+		   한 장면이 여러 줄로 이어질 때 매 줄에 같은 경로를 적지 않아도 된다.
+		*/
+		if (Row.BackgroundImage.Equals(TEXT("None"), ESearchCase::IgnoreCase))
+		{
+			Line.bClearBackground = true;
+		}
+		else if (!Row.BackgroundImage.IsEmpty())
+		{
+			Line.BackgroundImage = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(Row.BackgroundImage));
+		}
+
 		Line.HighlightAnchor = Row.HighlightAnchor.IsEmpty()
 			? NAME_None : FName(*Row.HighlightAnchor);
 

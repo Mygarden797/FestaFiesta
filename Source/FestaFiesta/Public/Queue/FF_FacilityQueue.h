@@ -22,10 +22,9 @@ struct FFF_QueuedParty
 	// 서비스 시작 전에는 -1
 	float ServiceStartSimTime = -1.f;
 	float ServiceElapsedSeconds = 0.f;
-	int32 MembersServed = 0;
 
 	bool bServiceStarted = false;
-	// Crowd가 "슬롯 0에 도착했다"고 통지했는지. Config.bRequireArrivalConfirmation이 false면 무시된다.
+	// Crowd가 현재 이용 자리 도착을 확인했는지. 자리 이동 시 대기 팀의 확인은 초기화한다.
 	bool bArrivedAtServicePoint = false;
 };
 
@@ -48,7 +47,7 @@ public:
 
 	/**
 	 * Party 단위 전부-아니면-전무 가입.
-	 * 4인 가족인데 슬롯이 2칸 남았다면 2명만 넣지 않고 전원 거절한다.
+	 * 한 팀은 인원수에 관계없이 팀 자리 한 칸을 차지한다.
 	 * 도착 판정(Crowd의 Arrived)과 가입 판정은 반드시 분리되어야 한다 — 걸어가는 동안 줄이 찰 수 있다.
 	 */
 	EFF_QueueJoinResult TryJoin(const FFF_JoinRequest& Request, float SimTimeSeconds,
@@ -57,7 +56,7 @@ public:
 	/** Decision이 능동적으로 줄을 뺄 때 (목적지 재평가 등). ExitType = Cancelled. */
 	bool LeaveQueue(int32 PartyId, float SimTimeSeconds);
 
-	/** Crowd가 "이 Party의 리더가 슬롯 0에 도착했다"고 알려줄 때. */
+	/** Crowd가 이 Party의 리더가 현재 이용 자리에 도착했다고 알려줄 때. */
 	void NotifyPartyArrived(int32 PartyId);
 
 	/**
@@ -77,8 +76,9 @@ public:
 	FFF_QueueState GetState() const;
 
 	/**
-	 * : (대기인원 + 내 일행) / 처리율. 정확할 필요는 없고,
-	 * "결정 시점에 알 수 있는 정보로만 계산"되는 게 중요하다.
+	 * 한 팀이 추가되면 이용을 시작할 때까지의 시간(자기 이용 시간 제외).
+	 * IncomingMemberCount는 호환용 인자이며 양수인 일행은 모두 한 팀으로 계산한다.
+	 * 현재 이용 중인 팀의 남은 시간은 반영하고 미래 이동 시간·포기는 예측하지 않는다.
 	 */
 	float GetExpectedWaitSeconds(int32 IncomingMemberCount) const;
 
@@ -91,7 +91,7 @@ public:
 		return GetExpectedWaitSeconds(IncomingMemberCount) / FFF_QueueUnits::SecondsPerDecisionMinute;
 	}
 
-	//Slot은 개개인 별로 할당되도록 수정
+	// 한 팀 자리 안에 멤버별 목표를 배치한다. 같은 팀은 같은 SlotIndex를 공유한다.
 	void BuildSlotAssignments(TArray<FFF_SlotAssignment>& OutAssignments) const;
 
 
@@ -111,6 +111,7 @@ public:
 	int32 GetWaitingPartyCount() const { return Parties.Num(); }
 	int32 GetOccupiedMemberCount() const;
 	int32 GetRemainingServiceMemberCount() const;
+	int32 GetActiveServicePartyCount() const;
 	float GetServiceRate() const;
 
 	/** 슬롯 인덱스 → 월드 목표. 스플라인 도입 시 교체할 유일한 지점이다. */
@@ -121,6 +122,7 @@ private:
 
 	/** 퇴장 이벤트 + QueueLog 레코드를 함께 쌓는다. 실제 배열 제거는 호출자가 한다. */
 	void RecordExit(const FFF_QueuedParty& Party, EFF_QueueExit ExitType, float SimTimeSeconds);
+	void InvalidateShiftedArrivals(int32 FirstShiftedIndex);
 
 	int32 FacilityId = INDEX_NONE;
 	FFF_QueueConfig Config;
@@ -131,6 +133,8 @@ private:
 
 	bool bIsOpen = true;
 	bool bSlotTargetsDirty = false;
+	int32 CompletedPartyCount = 0;
+	double TotalCompletedWaitSeconds = 0.0;
 
 	TArray<FFF_QueueEvent> PendingEvents;
 	TArray<FFF_QueueLog> PendingLogs;

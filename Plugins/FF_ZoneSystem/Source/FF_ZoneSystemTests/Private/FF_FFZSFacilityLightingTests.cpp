@@ -1,3 +1,5 @@
+// FF_FFZSFacilityLightingTests.cpp
+// 역할: 시설에 조명 리그가 생성되고 운영 상태에 맞게 적용되는지 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

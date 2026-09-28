@@ -1,3 +1,6 @@
+# restore_skeleton.py
+# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+
 """Restore MainMan's deleted Skeleton from the mesh's retained reference bones."""
 import hashlib
 import json

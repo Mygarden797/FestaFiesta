@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Debug/FF_DebugConsole.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Tickable.h"
 #include "FF_FFZSTypes.h"
@@ -16,7 +17,6 @@ class UDataTable;
 class UFF_DialogueScriptData;
 class UUserWidget;
 class UWidget;
-struct IConsoleCommand;
 
 // 지금 줄이 바뀌었다. UI 가 이걸 받아 대사창을 갱신한다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnDialogueLineChanged, const FFF_DialogueLine&, Line);
@@ -27,8 +27,39 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnDialogueActiveChanged, bool, b
 // 튜토리얼을 건너뛰었다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnTutorialSkipped);
 
+// 튜토리얼을 끝까지 봤다.
+//
+// 건너뛴 것과 나눠 두는 이유는, 둘 다 "다시 안 보여준다" 는 같지만
+// 건너뛴 사람에게는 나중에 다시 볼 기회를 주고 싶어질 수 있어서다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnTutorialCompleted);
+
 // 어디를 강조할지 바뀌었다. 비어 있으면 강조를 끈다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnHighlightAnchorChanged, FName, AnchorId);
+
+/* 지금 재생 중인 것이 어디에 속하는가.
+
+   끝까지 봤을 때 저장의 어디에 남길지가 이걸로 갈린다. 재생 자체는 같은 길을 타지만
+   "다시 안 보여준다" 의 범위가 서로 다르다.
+
+   범위를 재생 시점에 정해 두는 이유는, 끝나는 시점에는 판단할 근거가 남아 있지 않기
+   때문이다. 대사가 이어지는 씬으로 넘어가거나 축제가 끝나면 그 사이에 문맥이 바뀐다.
+*/
+UENUM()
+enum class EFF_TutorialScope : uint8
+{
+	/* 어디에도 기록하지 않는다.
+
+	   콘솔이나 UI 가 직접 재생한 경우다. 여기서 기록하면 안 본 튜토리얼까지
+	   봤다고 남는다.
+	*/
+	None,
+
+	// 로비 인트로. 축제를 고르기 전이라 계정 단위로 한 번만 본다.
+	LobbyIntro,
+
+	// 축제 레벨의 튜토리얼. 축제마다 배울 것이 달라 축제별로 남긴다.
+	Festival,
+};
 
 // 튜토리얼 대사를 굴리고 조작을 기다린다.
 //
@@ -116,8 +147,30 @@ public:
 	// 이번 판에서 튜토리얼을 건너뛰었는지.
 	//
 	// 한 번 건너뛰면 다시 시작하지 않는다. 레벨을 다시 들어와도 마찬가지다.
+	//
+	// [주의] 이건 이번 월드의 기억이다. 게임을 껐다 켠 뒤까지 유지되는 값은
+	//        UFF_SaveSubsystem::IsTutorialOptedOut() 이 답한다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
 	bool WasTutorialSkipped() const { return bTutorialSkipped; }
+
+	/* 지금 축제의 식별자. 튜토리얼을 봤는지 묻고 남길 때의 열쇠다.
+
+	   UIFlow 가 답이다. 아틀라스에서 고른 값을 들고 있고 GameInstance 스코프라
+	   레벨을 넘어 살아남는다.
+
+	   진행 서브시스템의 Definition 을 쓰지 않는 이유는, 그쪽이 Initialize 에서
+	   프로젝트 설정의 DefaultFestival 을 무조건 물기 때문이다. 실제로 고른 축제와
+	   다를 수 있어 판정 기준으로 쓸 수 없다.
+
+	   흐름을 타지 않고 레벨을 직접 열면 비어 있다(PIE 에서 흔하다). 그때는 레벨
+	   이름으로 대신한다 — 레벨과 축제가 1:1 이라 실용적으로 같은 값이고, 적어도
+	   레벨끼리는 구분된다.
+
+	   규칙은 저장 쪽(UFF_SaveSubsystem::ResolveCurrentFestivalId)이 들고 여기는
+	   그걸 부른다. 저장도 같은 이름으로 판을 담으므로 규칙이 한 곳에 있어야 한다.
+	*/
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
+	FName ResolveCurrentFestivalId() const;
 
 	// 지금 건너뛸 수 있는지. 버튼을 보일지 말지 정하는 데 쓴다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
@@ -194,6 +247,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Tutorial")
 	FFF_OnTutorialSkipped OnTutorialSkipped;
 
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Tutorial")
+	FFF_OnTutorialCompleted OnTutorialCompleted;
+
 private:
 	// 시설이 설치·철거되면 온다. Zone 이 확정한 뒤에만 방송되므로 실제 성공만 잡힌다.
 	UFUNCTION()
@@ -208,10 +264,22 @@ private:
 
 	/* 탭 바를 구독한다. 화면이 만들어진 뒤에야 가능하므로 여러 번 시도한다.
 
-	   탭 바는 축제 레벨에 들어온 뒤에 만들어지고, 레벨을 옮기면 다시 만들어진다.
-	   한 번만 시도하면 그 사이에 놓친다.
+	   탭 바는 축제 레벨에 들어온 뒤에 만들어지고, 단계가 바뀌면 다시 만들어진다.
+	   예전에는 탭 대기 줄에 들어가는 순간 한 번만 찾아서, 그때 화면이 없거나 뒤에
+	   새로 만들어지면 탭을 열어도 안 넘어가는 채로 멈췄다. 그래서 대기 중에는
+	   Tick 에서 주기적으로 다시 확인한다.
+
+	   화면에 올라가 있는 것을 먼저 고른다. 풀에 남은 옛 인스턴스를 물면 신호가 안 온다.
+	   새로 물었으면 true.
 	*/
-	void TryBindPrepHudBar();
+	bool TryBindPrepHudBar();
+
+	/* 원하는 탭이 이미 열려 있으면 바로 통과시킨다.
+
+	   탭 신호는 바뀔 때만 온다. 대사보다 먼저 탭을 열어둔 사람은 닫았다 다시
+	   열어야 넘어가는데, 무엇을 해야 하는지 알 수 없어 멈춘 것처럼 보인다.
+	*/
+	void CheckPrepTabAlreadyOpen();
 
 	void BindGameSignals();
 	void UnbindGameSignals();
@@ -219,14 +287,45 @@ private:
 	// 줄 배열로 재생을 시작한다. 애셋과 표가 여기로 모인다.
 	bool StartLines(const TArray<FFF_DialogueLine>& Lines, FName ScriptId);
 
+	/* 이제부터 재생할 것이 무엇에 속하는지 정한다. PlayTable/PlayScript 직전에 부른다.
+
+	   재생 함수의 인자로 받지 않는 이유는, 대사가 이어지는 씬으로 넘어갈 때
+	   FinishScript 가 PlayScript 를 다시 부르기 때문이다. 인자로 받으면 그 자리에서
+	   범위를 또 정해야 하고, 빠뜨리면 조용히 None 이 된다. 범위는 재생 한 묶음에
+	   한 번만 정하고 StopScript 에서 지운다.
+	*/
+	void SetPlaybackScope(EFF_TutorialScope Scope, FName FestivalId);
+
+	// 끝까지 본 것을 저장에 남긴다. 범위에 따라 남기는 자리가 다르다.
+	void RecordScopeCompleted();
+
 	// 라벨로 줄을 찾는다. 행 이름이 곧 라벨이다.
 	int32 FindLineIndexByLabel(FName Label) const;
 
 	// 지금 줄 다음에 갈 자리. NextLabel 이 있으면 그리로, 없으면 바로 다음 줄로.
 	int32 ResolveNextLineIndex() const;
 
+	/* 새 게임 버튼을 구독한다. 화면이 만들어진 뒤에야 가능하다.
+
+	   플레이 허브는 타이틀에서 넘어올 때 만들어지므로, 월드가 시작하는 시점에는
+	   아직 없다. 매 틱 훑으면 낭비라 화면이 바뀌는 신호에 맞춰 시도한다.
+	*/
+	void TryBindPlayHub();
+
+	UFUNCTION()
+	void HandleNewGameRequested();
+
+	// 레벨 선택 화면이 떠 있으면 로비 인트로를 튼다. 새 게임을 누른 뒤 Tick 에서 부른다.
+	void TryStartPendingLobbyIntro();
+
+	// 새 게임을 눌렀고 아직 로비 인트로를 틀지 않았다. 레벨 선택 화면이 뜨면 튼다.
+	bool bLobbyIntroPending = false;
+
 	// 레벨이 뜨면 설정에 지정된 대사를 시작한다. 지정이 없으면 아무것도 하지 않는다.
 	void TryAutoStart();
+
+	// 튜토리얼 레벨이면 레벨을 끝내고 레벨 선택으로 돌아간다. 돌아갔으면 true.
+	bool LeaveIfTutorialLevel(FName FestivalId);
 
 	// 카메라 조작을 감시한다.
 	//
@@ -250,9 +349,6 @@ private:
 	// 인덱스로 이동하고 신호를 보낸다. 범위를 벗어나면 스크립트를 끝낸다.
 	void GoToLine(int32 LineIndex);
 
-	// 연출 줄처럼 멈출 필요가 없는 것들을 지나친다.
-	void SkipNonStoppingLines();
-
 	// 이어질 스크립트가 있으면 재생하고, 없으면 끝낸다.
 	void FinishScript();
 
@@ -273,6 +369,16 @@ private:
 
 	// 지금 재생 중인 것의 이름. 로그에만 쓴다.
 	FName ActiveScriptId;
+
+	// 지금 재생 중인 것이 속한 범위. 끝났을 때 무엇을 기록할지 정한다.
+	EFF_TutorialScope ActiveScope = EFF_TutorialScope::None;
+
+	/* ActiveScope 가 Festival 일 때 어느 축제인가. 재생을 시작할 때 굳혀 둔다.
+
+	   끝나는 시점에 다시 묻지 않는 이유는, 그 사이에 축제가 끝나 UIFlow 가 값을
+	   비웠을 수 있기 때문이다. 그러면 방금 본 튜토리얼이 기록되지 않는다.
+	*/
+	FName ActiveScopeFestivalId;
 
 	int32 CurrentLineIndex = INDEX_NONE;
 	bool bDialogueActive = false;
@@ -303,8 +409,30 @@ private:
 	// 확인용으로 만든 줄. 데이터에 없는 줄이라 여기서 들고 있는다.
 	FFF_DialogueLine SkipConfirmLine;
 
+	/* 확인 창이 떠 있는 동안 원래 줄이 기다리던 조작이 들어왔다.
+
+	   확인 중에는 GetCurrentLine 이 확인 줄을 돌려줘서 NotifyAction 이 그 조작을
+	   버린다. 단계 전환처럼 시간이 가면 저절로 일어나는 것은 그 사이에 지나가
+	   버려서, 취소하고 돌아오면 다시는 안 올 신호를 기다리며 멈춘다.
+	   그래서 기억해뒀다가 취소할 때 통과시킨다.
+	*/
+	bool bActionArrivedDuringSkipConfirm = false;
+
 	// 지금 구독 중인 탭 바. 화면이 다시 만들어지면 바뀐다.
 	TWeakObjectPtr<class UFF_PrepHudBar> BoundPrepHudBar;
+
+	// 마지막으로 구독한 허브. 로그와 디버그 확인용이다. 구독 여부는 허브 쪽 델리게이트로 판단한다.
+	TWeakObjectPtr<class UFF_PlayHubScreen> BoundPlayHub;
+
+	// 다음 구독 시도까지 남은 시간. 매 틱 훑지 않기 위한 것이다.
+	float PlayHubScanCountdown = 0.f;
+
+	// 지난 틱의 프론트엔드 화면(EFF_UIFlowScreen 값). 플레이 허브가 막 뜬 틱을 잡는 데 쓴다.
+	// 화면 타입 헤더를 여기서 끌어오지 않으려고 숫자로 든다.
+	uint8 LastSeenFrontendScreen = 0;
+
+	// 탭 대기 중 탭 바를 다시 확인할 때까지 남은 시간.
+	float PrepBarScanCountdown = 0.f;
 
 	bool bBoundZoneWorld = false;
 	bool bBoundStage = false;
@@ -312,11 +440,12 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> DialogueBoxWidget;
 
+	// 대사창을 올릴 때 쓴 화면 순서. 로비와 축제가 달라서 바뀌면 다시 올린다.
+	int32 DialogueBoxAppliedZOrder = 0;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> OverlayWidget;
 
-	IConsoleCommand* SkipConsoleCommand = nullptr;
-	IConsoleCommand* StatConsoleCommand = nullptr;
-	IConsoleCommand* HighlightConsoleCommand = nullptr;
-	IConsoleCommand* SkipAllConsoleCommand = nullptr;
+	// 개발용 콘솔 명령. 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
+	FFF_DebugConsoleCommands DebugCommands;
 };

@@ -1,3 +1,5 @@
+# build_claw_machine_test_asset.py
+# 역할: 일반 건설 시설인 인형뽑기 부스의 3D 외형과 충돌 모양을 Blender에서 만든다.
 """Build the production-reference 3D claw-machine facility with Blender 5.1+.
 
 Run from the repository root::
@@ -8,7 +10,9 @@ Run from the repository root::
 The FBX follows the FFZS contract: metres in Blender, centimetres in Unreal,
 ground-centred pivot, local +Y facing the guest, shared FF_* material slots,
 and one explicit UCX collision hull. The generated ImageGen catalog art is
-imported separately by ``import_claw_machine_content.py``.
+imported separately by ``Tools/facilities/import_claw_machine_facility.py``.
+Then run ``Tools/facilities/verify_claw_machine_facility.py`` in a fresh Unreal
+Python commandlet to check the saved mesh, thumbnail, and facility links.
 """
 
 from __future__ import annotations

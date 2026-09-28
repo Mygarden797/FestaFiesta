@@ -121,8 +121,15 @@ struct FUnitData
 	// 추격 중이 아닐 때 내는 속도, UU/s. Speed가 MaxSpeed로 덮이므로 역산할 수 없다
 	float CruiseSpeed = 150.f;
 
+	// 스폰 시점의 MaxSpeed. 공연 집결처럼 일시적으로 속도를 올린 뒤 되돌릴 기준값이다.
+	// Velocity 가 MaxSpeed 로 잘리므로 Speed 만 올리면 실제로는 안 빨라진다.
+	float CruiseMaxSpeed = 150.f;
+
 	// 멤버가 리더를 따라붙는 중인가. 켜는 임계와 푸는 임계가 다르다(히스테리시스)
 	bool bCatchingUpToLeader = false;
+
+	bool bFormationPathBlocked = false;
+	int32 FormationClearStreak = 0;
 
 	//Animation
 	
@@ -132,6 +139,12 @@ struct FUnitData
 	int32 EntryGateIndex = INDEX_NONE;
 	
 	EFF_CrowdRole CrowdRole = EFF_CrowdRole::Undefined;
+	
+	
+	
+	int32 MissingCount = 0;
+	
+	bool bMissing = false;
 	
 	
 	
@@ -202,14 +215,7 @@ struct FFF_PartyDecisionResult
 	EFF_PartyFallbackAction FallbackAction = EFF_PartyFallbackAction::Wander;
 	bool bCountAsNoChoice = false;
 
-	/**
-	 * 고른 시설이 해소하는 Need 성분. 이용 완료 시점에 FFF_NeedRules::Relieve 로 넘어간다.
-	 *
-	 * 왜 결정 시점에 실어 나르는가: 완료 통지(HandlePartyExited)가 받는 것은 int32 FacilityId 뿐이라
-	 * 거기서 GetNeedReliefFlags 를 부르려면 (카테고리, DefinitionId) 역조회 경로가 새로 필요하다.
-	 * 후보에는 이미 BuildCandidates 가 채워 둔 값이 있으므로 그것을 그대로 들고 간다 —
-	 * 같은 판정이 두 곳에서 일어나지 않게 하려는 것이기도 하다(FF_NeedRules.h Relieve 주석).
-	 */
+	//시설이 해소하는 Need 성분
 	FFF_NeedReliefFlags NeedRelief;
 };
 /**
@@ -347,6 +353,19 @@ enum class EFF_PartyProgramPhase : uint8
 	Participating   // 참여 중
 };
 
+// 일반 Queue 및 유료 프로그램과 독립적인 공연 관람 상태.
+// Audience 자리는 사람 단위지만 행동 잠금은 파티 리더가 소유한다.
+UENUM()
+enum class EFF_PartyAudiencePhase : uint8
+{
+	None,
+	GoingToEntry,
+	GoingToSlot,
+	Waiting,
+	Spectating,
+	Exiting
+};
+
 USTRUCT()
 struct FPartyDecisionState
 {
@@ -396,6 +415,15 @@ struct FPartyDecisionState
 	float ProgramStartMinutes = 0.f;
 	float ProgramEndMinutes = 0.f;
 	FVector ProgramWaitingLocation = FVector::ZeroVector;
+
+	// --- 공연 관람 -----------------------------------------------------------------------
+	EFF_PartyAudiencePhase AudiencePhase = EFF_PartyAudiencePhase::None;
+	FGuid AudienceFacilityId;
+	int32 AudienceFirstSlotIndex = INDEX_NONE;
+	int32 AudienceSlotCount = 0;
+	FVector AudienceEntryLocation = FVector::ZeroVector;
+	FVector AudienceExitLocation = FVector::ZeroVector;
+	float AudienceArrivalTolerance = 0.f;
 };
 
 // 입장, 퇴장 게이트 하나. 저작 데이터만 담고, 배열 순서가 곧 게이트 인덱스라 저작 순서가 결정성의 계약이다.

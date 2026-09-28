@@ -1,3 +1,6 @@
+// FF_PrepBuildPresentationRules.cpp
+// 역할: 건설 목록의 필터·가격·빈 목록 안내를 순수 규칙으로 계산한다.
+
 // Prep HUD 배치 패널의 순수 표현 규칙 구현.
 
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
@@ -170,7 +173,7 @@ EFF_PrepBuildTileState FFF_PrepBuildPresentationRules::ResolveTileState(
 	}
 
 	// 가격과 잔액 중 어느 값을 못 읽었는지 보존해야 UI가 잘못된 해결 방법을 안내하지 않습니다.
-	if (!Entry.bHasResolvedInstallCost || Entry.InstallCost <= 0)
+	if (!Entry.HasValidInstallCost())
 	{
 		return EFF_PrepBuildTileState::PriceUnavailable;
 	}
@@ -186,7 +189,7 @@ EFF_PrepBuildTileState FFF_PrepBuildPresentationRules::ResolveTileState(
 
 FText FFF_PrepBuildPresentationRules::ResolveCostText(const FFF_BuildCatalogEntry& Entry)
 {
-	if (!Entry.bHasResolvedInstallCost || Entry.InstallCost <= 0)
+	if (!Entry.HasValidInstallCost())
 	{
 		return LOCTEXT("PricePending", "가격 확인 중");
 	}

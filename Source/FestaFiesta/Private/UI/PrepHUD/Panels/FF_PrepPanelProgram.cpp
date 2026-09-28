@@ -12,8 +12,11 @@
 #include "Components/WrapBox.h"
 #include "Economy/FF_EconomyDisplayTextLibrary.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
+#include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Festival/FF_FestivalDefinition.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/PrepHUD/Panels/FF_ProgramFacilityGuide.h"
 
@@ -60,7 +63,7 @@ EFF_PrepProgramBlockReason FFF_PrepProgramRules::ResolveBlockReason(
 		break;
 	}
 
-	// ⑤ 열 장소가 없으면 알바를 고용하거나 돈을 모아도 이 카드를 못 연다.
+	// ⑤ 열 장소가 없으면 돈을 모아도 이 카드를 못 연다.
 	//    `INDEX_NONE` 은 아직 못 읽은 것이라 "시설이 없다"로 단정하지 않는다.
 	if (EligibleFacilityCount == INDEX_NONE)
 	{
@@ -71,13 +74,10 @@ EFF_PrepProgramBlockReason FFF_PrepProgramRules::ResolveBlockReason(
 		return EFF_PrepProgramBlockReason::NoEligibleFacility;
 	}
 
-	// ⑥⑦ 남은 것은 소유자가 낸 인원·잔액 판정이다. **순서도 소유자 것을 그대로 따른다** —
-	//     인원이 잔액보다 먼저다 (알바 고용이 더 가까운 행동이라서).
+	// ⑥ 남은 것은 소유자가 낸 잔액 판정이다. 인원은 보지 않는다 —
+	//    프로그램은 Staff 를 쓰지 않는다(Staff 는 사건 대응 축).
 	switch (OwnerResult)
 	{
-	case EFF_ProgramPurchaseResult::NotEnoughStaff:
-		return EFF_PrepProgramBlockReason::NotEnoughStaff;
-
 	case EFF_ProgramPurchaseResult::InsufficientGold:
 		return EFF_PrepProgramBlockReason::NotEnoughGold;
 
@@ -100,8 +100,7 @@ FFF_PrepProgramQuote FFF_PrepProgramRules::BuildQuote(
 	EFF_ProgramPurchaseResult OwnerResult,
 	bool bCanScheduleNow,
 	int32 EligibleFacilityCount,
-	int32 CurrentGold,
-	int32 AvailableStaffCount)
+	int32 CurrentGold)
 {
 	FFF_PrepProgramQuote Result;
 	Result.EligibleFacilityCount = EligibleFacilityCount;
@@ -116,7 +115,6 @@ FFF_PrepProgramQuote FFF_PrepProgramRules::BuildQuote(
 
 	Result.ProgramId = Card->ProgramId;
 	Result.CostGold = Card->CostGold;
-	Result.RequiredStaff = Card->RequiredStaff;
 	Result.MaxRevenue = Card->CalcMaxRevenue();
 
 	if (CurrentGold != INDEX_NONE)
@@ -124,12 +122,6 @@ FFF_PrepProgramQuote FFF_PrepProgramRules::BuildQuote(
 		// 음수가 될 수 있다. 그대로 둔다 — "얼마나 모자란지" 가 화면에 필요한 정보다.
 		Result.GoldAfterSchedule = CurrentGold - Card->CostGold;
 		Result.bHasGoldAfterSchedule = true;
-	}
-
-	if (AvailableStaffCount != INDEX_NONE)
-	{
-		Result.AvailableStaffAfter = AvailableStaffCount - Card->RequiredStaff;
-		Result.bHasAvailableStaffAfter = true;
 	}
 
 	return Result;
@@ -192,6 +184,12 @@ void UFF_PrepPanelProgram::NativeOnPanelClosed()
 	Super::NativeOnPanelClosed();
 }
 
+void UFF_PrepPanelProgram::NativeDestruct()
+{
+	UnbindViewModel();
+	Super::NativeDestruct();
+}
+
 // =============================================================================
 // 구독
 // =============================================================================
@@ -209,12 +207,19 @@ UFF_FestivalViewModelSubsystem* UFF_PrepPanelProgram::GetViewModel() const
 
 void UFF_PrepPanelProgram::BindViewModel()
 {
+	UnbindViewModel();
 	UGameInstance* GI = GetGameInstance();
 	if (UFF_BuildCatalogSubsystem* BuildCatalog = GI ? GI->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr)
 	{
 		BuildCatalog->OnCatalogChanged.AddUniqueDynamic(this, &ThisClass::HandleBuildCatalogChanged);
 	}
 	CachedViewModel = GI ? GI->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
+	BoundProgression = GI ? GI->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+	if (BoundProgression)
+	{
+		BoundProgression->OnFestivalDefinitionChanged.AddUniqueDynamic(this, &ThisClass::HandleFestivalDefinitionChanged);
+	}
+	BindRevenueTable();
 
 	if (!CachedViewModel)
 	{
@@ -223,11 +228,9 @@ void UFF_PrepPanelProgram::BindViewModel()
 		return;
 	}
 
-	// 잔액이 바뀌면 살 수 있는 카드가 바뀐다. 인원이 바뀌면 편성 가능 여부가 바뀐다.
-	// 편성이 바뀌면 카드 잠금이 바뀐다. 셋 다 받아야 화면이 따라간다.
+	// 잔액이 바뀌면 살 수 있는 카드가 바뀌고, 편성이 바뀌면 카드 잠금이 바뀐다.
+	// 둘 다 받아야 화면이 따라간다.
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_PrepPanelProgram::HandleGoldChanged);
-	CachedViewModel->OnAvailableStaffCountChanged.AddUniqueDynamic(
-		this, &UFF_PrepPanelProgram::HandleAvailableStaffCountChanged);
 	CachedViewModel->OnScheduledProgramsChanged.AddUniqueDynamic(
 		this, &UFF_PrepPanelProgram::HandleScheduledProgramsChanged);
 
@@ -237,6 +240,16 @@ void UFF_PrepPanelProgram::BindViewModel()
 
 void UFF_PrepPanelProgram::UnbindViewModel()
 {
+	if (BoundRevenueTable)
+	{
+		BoundRevenueTable->OnDataTableChanged().RemoveAll(this);
+		BoundRevenueTable = nullptr;
+	}
+	if (BoundProgression)
+	{
+		BoundProgression->OnFestivalDefinitionChanged.RemoveAll(this);
+		BoundProgression = nullptr;
+	}
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UFF_BuildCatalogSubsystem* BuildCatalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>())
@@ -248,13 +261,43 @@ void UFF_PrepPanelProgram::UnbindViewModel()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_PrepPanelProgram::HandleGoldChanged);
-		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(
-			this, &UFF_PrepPanelProgram::HandleAvailableStaffCountChanged);
 		CachedViewModel->OnScheduledProgramsChanged.RemoveDynamic(
 			this, &UFF_PrepPanelProgram::HandleScheduledProgramsChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepPanelProgram::HandleStageViewChanged);
 	}
 	CachedViewModel = nullptr;
+}
+
+void UFF_PrepPanelProgram::BindRevenueTable()
+{
+	const UFF_FestivalDefinition* Definition = BoundProgression ? BoundProgression->GetDefinition() : nullptr;
+	UDataTable* RevenueTable = Definition ? Definition->GetFacilityRevenueTable() : nullptr;
+	if (BoundRevenueTable == RevenueTable) return;
+	if (BoundRevenueTable)
+	{
+		BoundRevenueTable->OnDataTableChanged().RemoveAll(this);
+	}
+	BoundRevenueTable = RevenueTable;
+	if (BoundRevenueTable)
+	{
+		BoundRevenueTable->OnDataTableChanged().AddUObject(this, &ThisClass::HandleRevenueTableChanged);
+	}
+}
+
+void UFF_PrepPanelProgram::HandleRevenueTableChanged()
+{
+	// 금액만 다시 조회하여 프로그램과 시설 선택은 그대로 유지한다.
+	RefreshAll();
+}
+
+void UFF_PrepPanelProgram::HandleFestivalDefinitionChanged()
+{
+	BindRevenueTable();
+	SelectedCardIndex = INDEX_NONE;
+	SelectedFacilityIndex = INDEX_NONE;
+	RebuildCards();
+	RebuildFacilityChoices();
+	RefreshAll();
 }
 
 // =============================================================================
@@ -306,6 +349,7 @@ void UFF_PrepPanelProgram::RebuildCards()
 		}
 
 		CardWidget->ConfigureCard(Index, Card, TimeRange);
+		CardWidget->SetRevenuePreview(nullptr);
 		CardWidget->OnHudTabButtonClicked.BindUObject(this, &UFF_PrepPanelProgram::HandleCardClicked);
 
 		Box_ProgramCards->AddChild(CardWidget);
@@ -447,26 +491,45 @@ const FFF_ProgramCard* UFF_PrepPanelProgram::FindSelectedCard() const
 
 void UFF_PrepPanelProgram::RefreshAll()
 {
+	BindRevenueTable();
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	const FFF_ProgramCard* SelectedCard = FindSelectedCard();
+	const bool bHasFacility = FacilityOptions.IsValidIndex(SelectedFacilityIndex);
+	const TArray<FFF_ProgramCard> FacilityCatalog = ViewModel && bHasFacility
+		? ViewModel->GetProgramCatalogForFacility(FacilityOptions[SelectedFacilityIndex].FacilityInstanceId)
+		: TArray<FFF_ProgramCard>();
+	const FFF_ProgramCard* FacilityCard = SelectedCard
+		? FFF_ProgramScheduleRules::FindCard(FacilityCatalog, SelectedCard->ProgramId) : nullptr;
 
 	const bool bCanScheduleNow = ViewModel ? ViewModel->CanScheduleProgramNow() : false;
 	const int32 Gold = ViewModel ? ViewModel->GetGold() : INDEX_NONE;
-	const int32 AvailableStaff = ViewModel ? ViewModel->GetAvailableStaffCount() : INDEX_NONE;
 
 	// 시설 수는 카드를 골랐을 때만 의미가 있다. 안 골랐으면 `모름` 이다 — 0 을 넣으면
 	// 카드도 안 골랐는데 `부스를 먼저 지으세요` 가 뜬다.
 	const int32 FacilityCount = SelectedCard ? FacilityOptions.Num() : INDEX_NONE;
 
+	// "하루 한 번" 은 시설 단위다. 시설을 골랐으면 그 시설 기준으로 묻는다.
 	const EFF_ProgramPurchaseResult OwnerResult = (ViewModel && SelectedCard)
-		? ViewModel->CanScheduleProgram(SelectedCard->ProgramId)
+		? (bHasFacility
+			? ViewModel->CanScheduleProgramAtFacility(
+				SelectedCard->ProgramId, FacilityOptions[SelectedFacilityIndex].FacilityInstanceId)
+			: ViewModel->CanScheduleProgram(SelectedCard->ProgramId))
 		: (ViewModel ? EFF_ProgramPurchaseResult::Success : EFF_ProgramPurchaseResult::FestivalNotStarted);
 
 	Quote = FFF_PrepProgramRules::BuildQuote(
-		SelectedCard, OwnerResult, bCanScheduleNow, FacilityCount, Gold, AvailableStaff);
+		FacilityCard ? FacilityCard : SelectedCard, OwnerResult, bCanScheduleNow, FacilityCount, Gold);
+	if (!FacilityCard)
+	{
+		// 한 프로그램도 시설마다 참가비가 다를 수 있다. 장소를 고르기 전에는 금액을 확정하지 않는다.
+		Quote.MaxRevenue = INDEX_NONE;
+	}
+
 
 	// --- 카드 상태 ---
-	const TArray<FName> ScheduledIds = ViewModel ? ViewModel->GetScheduledProgramIds() : TArray<FName>();
+	// 선택한 시설에 편성한 카드만 "✓ 편성함" 이다. 다른 공방에 연 카드는 여기서 또 열 수 있다.
+	const TArray<FName> ScheduledIds = (ViewModel && bHasFacility)
+		? ViewModel->GetScheduledProgramIdsAtFacility(FacilityOptions[SelectedFacilityIndex].FacilityInstanceId)
+		: TArray<FName>();
 
 	for (int32 Index = 0; Index < CardWidgets.Num(); ++Index)
 	{
@@ -477,6 +540,7 @@ void UFF_PrepPanelProgram::RefreshAll()
 		}
 
 		const FFF_ProgramCard& Card = Catalog[Index];
+		CardWidget->SetRevenuePreview(Index == SelectedCardIndex ? FacilityCard : nullptr);
 
 		// 상태를 매번 전부 다시 정한다. 부분 갱신하면 편성 뒤에도 선택 표시가 남는다.
 		if (ScheduledIds.Contains(Card.ProgramId))
@@ -525,10 +589,10 @@ void UFF_PrepPanelProgram::RefreshAll()
 	SetTextOrHide(Text_FacilityNotice, FacilityNotice);
 
 	// --- 견적 ---
-	SetTextOrHide(Text_CostPreview, (Quote.CostGold != INDEX_NONE && Quote.RequiredStaff != INDEX_NONE)
+	SetTextOrHide(Text_CostPreview, (Quote.CostGold != INDEX_NONE)
 		? FText::Format(
-			LOCTEXT("PrepProgram_CostPreview", "{0} Gold · 인원 {1}명"),
-			FText::AsNumber(Quote.CostGold), FText::AsNumber(Quote.RequiredStaff))
+			LOCTEXT("PrepProgram_CostPreview", "{0} Gold"),
+			FText::AsNumber(Quote.CostGold))
 		: FText::GetEmpty());
 
 	// 🔴 `!= INDEX_NONE` 로 검사하지 않는다. 편성 후 잔액이 정확히 -1 인 경우가 실제로 있고
@@ -539,22 +603,14 @@ void UFF_PrepPanelProgram::RefreshAll()
 			FText::AsNumber(Quote.GoldAfterSchedule))
 		: FText::GetEmpty());
 
-	// 같은 이유. `가용 1명 - 필요 2명 = -1` 은 흔한 값이다.
-	SetTextOrHide(Text_StaffAfter, Quote.bHasAvailableStaffAfter
-		? FText::Format(
-			LOCTEXT("PrepProgram_StaffAfter", "편성 후 사용 가능 {0}명"),
-			FText::AsNumber(Quote.AvailableStaffAfter))
-		: FText::GetEmpty());
-
 	SetTextOrHide(Text_RevenuePreview, (Quote.MaxRevenue != INDEX_NONE)
 		? FText::Format(
-			LOCTEXT("PrepProgram_Revenue", "확정 매출 {0}"),
+			LOCTEXT("PrepProgram_FacilityRevenue", "선택 시설 최대 매출 {0} Gold"),
 			FText::AsNumber(Quote.MaxRevenue))
-		: FText::GetEmpty());
+		: (SelectedCard ? LOCTEXT("PrepProgram_RevenueAfterFacility", "시설 선택 후 매출을 확인할 수 있습니다.") : FText::GetEmpty()));
 
 	// --- 편성 버튼 ---
 	// 시설을 골랐는지는 규칙 struct 가 모른다 — 그건 화면의 상태이지 경제 판정이 아니다.
-	const bool bHasFacility = FacilityOptions.IsValidIndex(SelectedFacilityIndex);
 	if (Button_Schedule)
 	{
 		Button_Schedule->SetIsEnabled(Quote.CanSchedule() && bHasFacility);
@@ -602,13 +658,6 @@ FText UFF_PrepPanelProgram::BuildBlockReasonText() const
 
 	case EFF_PrepProgramBlockReason::NoEligibleFacility:
 		return LOCTEXT("PrepProgram_NoFacilityReason", "이 프로그램을 열 수 있는 시설이 없습니다. `배치` 탭에서 먼저 지으세요.");
-
-	case EFF_PrepProgramBlockReason::NotEnoughStaff:
-		return (Quote.RequiredStaff != INDEX_NONE)
-			? FText::Format(
-				LOCTEXT("PrepProgram_NoStaff", "인원 {0}명이 필요합니다. `인력` 탭에서 알바를 고용하세요."),
-				FText::AsNumber(Quote.RequiredStaff))
-			: LOCTEXT("PrepProgram_NoStaffNoCount", "쓸 수 있는 인원이 모자랍니다. `인력` 탭에서 알바를 고용하세요.");
 
 	case EFF_PrepProgramBlockReason::NotEnoughGold:
 		return (Quote.CostGold != INDEX_NONE)
@@ -718,11 +767,6 @@ void UFF_PrepPanelProgram::HandleScheduleClicked()
 // =============================================================================
 
 void UFF_PrepPanelProgram::HandleGoldChanged(int32 NewValue)
-{
-	RefreshAll();
-}
-
-void UFF_PrepPanelProgram::HandleAvailableStaffCountChanged(int32 NewValue)
 {
 	RefreshAll();
 }

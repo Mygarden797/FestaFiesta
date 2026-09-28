@@ -9,6 +9,8 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "Economy/Rules/FF_StaffEventRules.h"
+#include "Festival/FF_FestivalBuzzSubsystem.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "HAL/IConsoleManager.h"
@@ -33,6 +35,7 @@ void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collec
 	TryBindProgressionSubsystem();
 	TryBindSatisfactionSubsystem();
 	TryBindInsightsSubsystem();
+	TryBindBuzzSubsystem();
 }
 
 void UFF_FestivalViewModelSubsystem::Deinitialize()
@@ -54,13 +57,21 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedProgressionSubsystem->OnTotalRevenueChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged);
 		CachedProgressionSubsystem->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTodayRevenueChanged);
 		CachedProgressionSubsystem->OnExpectedVisitorsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged);
-		CachedProgressionSubsystem->OnTotalArrearsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerArrearsChanged);
+		CachedProgressionSubsystem->OnAdmissionFeeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerAdmissionFeeChanged);
 		CachedProgressionSubsystem->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
 		CachedProgressionSubsystem->OnScheduledProgramsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
 		CachedProgressionSubsystem->OnFinaleGradeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged);
 		CachedProgressionSubsystem->OnPromotionGradeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerPromotionGradeChanged);
+		CachedProgressionSubsystem->OnAdmittedVisitorsTodayChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerAdmittedVisitorsTodayChanged);
+		CachedProgressionSubsystem->OnStaffRosterChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffRosterChanged);
 	}
 	CachedProgressionSubsystem = nullptr;
+
+	if (CachedBuzzSubsystem)
+	{
+		CachedBuzzSubsystem->OnBuzzChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerBuzzChanged);
+	}
+	CachedBuzzSubsystem = nullptr;
 
 	if (CachedSatisfactionSubsystem)
 	{
@@ -270,11 +281,13 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 	CachedProgressionSubsystem->OnTotalRevenueChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged);
 	CachedProgressionSubsystem->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTodayRevenueChanged);
 	CachedProgressionSubsystem->OnExpectedVisitorsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged);
-	CachedProgressionSubsystem->OnTotalArrearsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerArrearsChanged);
+	CachedProgressionSubsystem->OnAdmissionFeeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerAdmissionFeeChanged);
 	CachedProgressionSubsystem->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
 	CachedProgressionSubsystem->OnScheduledProgramsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
 	CachedProgressionSubsystem->OnFinaleGradeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged);
 	CachedProgressionSubsystem->OnPromotionGradeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerPromotionGradeChanged);
+	CachedProgressionSubsystem->OnAdmittedVisitorsTodayChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerAdmittedVisitorsTodayChanged);
+	CachedProgressionSubsystem->OnStaffRosterChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffRosterChanged);
 
 	// 구독 전에 이미 샀을 수 있다. 현재값을 한 번 맞춘다.
 	PurchasedPromotion = ToPromotionChoice(CachedProgressionSubsystem->GetPurchasedPromotionGrade());
@@ -288,7 +301,6 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 		HandleOwnerTotalRevenueChanged(CachedProgressionSubsystem->GetTotalRevenue());
 		HandleOwnerTodayRevenueChanged(CachedProgressionSubsystem->GetTodayRevenue());
 		HandleOwnerExpectedVisitorsChanged(CachedProgressionSubsystem->GetExpectedVisitors());
-		HandleOwnerArrearsChanged(CachedProgressionSubsystem->GetTotalArrears());
 		HandleOwnerStaffCountChanged(CachedProgressionSubsystem->GetTotalStaffCount());
 
 		// 피날레는 이어하기로 들어오면 이미 사 둔 상태일 수 있다. 방송을 놓쳤으므로 현재값을
@@ -443,58 +455,28 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged(int32 Ne
 	ApplyIntMetric(ExpectedVisitors, NewValue, OnExpectedVisitorsChanged);
 }
 
-void UFF_FestivalViewModelSubsystem::HandleOwnerArrearsChanged(int32 NewValue)
+void UFF_FestivalViewModelSubsystem::HandleOwnerAdmissionFeeChanged(int32 NewValue)
 {
-	ApplyIntMetric(Arrears, NewValue, OnArrearsChanged);
+	// 값은 캐시하지 않는다 — GetAdmissionFeeGold 가 소유자를 바로 읽는다. 알리기만 한다.
+	OnAdmissionFeeChanged.Broadcast(NewValue);
 }
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged(int32 NewValue)
 {
 	// 내역을 먼저 채운 뒤 총원을 방송한다. 순서가 반대면 위젯이 총원 방송을 받고 다시 그릴 때
-	// 기본·알바가 아직 이전 값이라 "총 6명 · 기본 4 + 알바 0" 같은 한 프레임이 나온다.
+	// 기본·고용가 아직 이전 값이라 "총 6명 · 기본 4 + 고용 0" 같은 한 프레임이 나온다.
 	if (const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem())
 	{
 		BaseStaffCount = Progression->GetBaseStaffCount();
-		TemporaryStaffCount = Progression->GetTemporaryStaffCount();
+		HiredStaffCount = Progression->GetHiredStaffCount();
 	}
 
 	ApplyIntMetric(TotalStaffCount, NewValue, OnTotalStaffCountChanged);
-
-	// 알바를 고용하면 편성이 그대로여도 쓸 수 있는 사람이 늘어난다.
-	// 편성 델리게이트는 이때 울리지 않으므로 여기서 함께 갱신해야 한다.
-	RefreshAvailableStaffCount();
 }
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged()
 {
-	// 가용 인원을 **먼저** 맞춘 뒤 편성 변경을 알린다. 순서가 반대면 프로그램 패널이
-	// 편성 방송을 받고 다시 그릴 때 인원이 아직 이전 값이라 한 프레임 어긋난다.
-	RefreshAvailableStaffCount();
 	OnScheduledProgramsChanged.Broadcast();
-}
-
-void UFF_FestivalViewModelSubsystem::RefreshAvailableStaffCount()
-{
-	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
-
-	// 소유자 쪽 `GetAvailableStaffCount()` 에는 시작 전 가드가 없어 0 을 돌려준다.
-	// 그 0 을 그대로 쓰면 "쓸 사람이 없다"는 확정 사실이 되므로 여기서 `모름`으로 올린다.
-	const int32 NewValue = (Progression && Progression->IsFestivalStarted())
-		? Progression->GetAvailableStaffCount()
-		: INDEX_NONE;
-
-	ApplyIntMetric(AvailableStaffCount, NewValue, OnAvailableStaffCountChanged);
-}
-
-int32 UFF_FestivalViewModelSubsystem::GetStaffAssignedToPrograms() const
-{
-	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
-	if (!Progression || !Progression->IsFestivalStarted())
-	{
-		return INDEX_NONE;
-	}
-
-	return Progression->GetStaffAssignedToPrograms();
 }
 
 EFF_WeatherType UFF_FestivalViewModelSubsystem::GetSelectedWeather() const
@@ -545,9 +527,151 @@ int32 UFF_FestivalViewModelSubsystem::GetDailyGoalBonusGold() const
 
 int32 UFF_FestivalViewModelSubsystem::GetAdmissionFeeGold() const
 {
+	// 기준값이 아니라 오늘 입장료다. 플레이어가 매일 바꾼다.
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
-	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
-	return Definition ? Definition->AdmissionFeeGold : INDEX_NONE;
+	return Progression ? Progression->GetAdmissionFee() : INDEX_NONE;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetAdmittedVisitorsToday() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression && Progression->IsFestivalStarted() ? Progression->GetAdmittedVisitorsToday() : INDEX_NONE;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetTotalAdmittedVisitors() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression && Progression->IsFestivalStarted() ? Progression->GetTotalAdmittedVisitors() : INDEX_NONE;
+}
+
+bool UFF_FestivalViewModelSubsystem::IsDailyGoalBonusPaid() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->IsDailyGoalBonusPaid() : false;
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerAdmittedVisitorsTodayChanged(int32 NewValue)
+{
+	// 값은 캐시하지 않는다 — getter 가 소유자를 바로 읽는다.
+	OnAdmittedVisitorsTodayChanged.Broadcast(NewValue);
+}
+
+void UFF_FestivalViewModelSubsystem::GetAdmissionFeeRange(
+	int32& OutMinGold, int32& OutMaxGold, int32& OutReferenceGold) const
+{
+	OutMinGold = OutMaxGold = OutReferenceGold = INDEX_NONE;
+	if (const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem())
+	{
+		Progression->GetAdmissionFeeRange(OutMinGold, OutMaxGold, OutReferenceGold);
+	}
+}
+
+bool UFF_FestivalViewModelSubsystem::CanSetAdmissionFeeNow() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted())
+	{
+		return false;
+	}
+
+	// 소유자의 TrySetAdmissionFee 가 Live 만 막는다. 같은 조건을 미리 보여 줄 뿐이다.
+	return GetCurrentStage() != EFF_FestivalStage::Live;
+}
+
+EFF_AdmissionFeeResult UFF_FestivalViewModelSubsystem::RequestSetAdmissionFee(int32 NewFeeGold)
+{
+	UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression)
+	{
+		UE_LOG(LogFestaFiestaUI, Error, TEXT("[ViewModel] 경제 시스템이 없어 입장료를 바꿀 수 없다."));
+		return EFF_AdmissionFeeResult::FestivalNotStarted;
+	}
+
+	// 방송은 소유자의 OnAdmissionFeeChanged 를 받아서 한다 — 여기서 또 쏘면 두 번 온다.
+	const EFF_AdmissionFeeResult Result = Progression->TrySetAdmissionFee(NewFeeGold);
+	if (Result != EFF_AdmissionFeeResult::Success)
+	{
+		UE_LOG(LogFestaFiestaUI, Log,
+			TEXT("[ViewModel] 입장료 변경 거부(%d Gold): %s"), NewFeeGold, *UEnum::GetValueAsString(Result));
+	}
+	return Result;
+}
+
+FFF_VisitorForecast UFF_FestivalViewModelSubsystem::GetVisitorForecast() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetVisitorForecast() : FFF_VisitorForecast();
+}
+
+FFF_VisitorForecast UFF_FestivalViewModelSubsystem::PreviewVisitorForecast(
+	EFF_PromotionChoice Choice, int32 AdmissionFeeGold) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression
+		? Progression->PreviewVisitorForecast(ToPromotionGrade(Choice), AdmissionFeeGold)
+		: FFF_VisitorForecast();
+}
+
+void UFF_FestivalViewModelSubsystem::TryBindBuzzSubsystem()
+{
+	if (CachedBuzzSubsystem)
+	{
+		return;
+	}
+
+	UGameInstance* GI = GetGameInstance();
+	if (!GI)
+	{
+		return;
+	}
+
+	UFF_FestivalBuzzSubsystem* Buzz = GI->GetSubsystem<UFF_FestivalBuzzSubsystem>();
+	if (!Buzz)
+	{
+		++BuzzBindRetryCount;
+		if (BuzzBindRetryCount == MaxStageBindRetry)
+		{
+			UE_LOG(LogFestaFiestaUI, Error,
+				TEXT("[ViewModel] UFF_FestivalBuzzSubsystem을 %d회 시도해도 찾지 못했다. 화제성이 중립값으로 남는다."),
+				MaxStageBindRetry);
+		}
+		return;
+	}
+
+	CachedBuzzSubsystem = Buzz;
+	CachedBuzzSubsystem->OnBuzzChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerBuzzChanged);
+}
+
+float UFF_FestivalViewModelSubsystem::GetBuzz() const
+{
+	return CachedBuzzSubsystem ? CachedBuzzSubsystem->GetBuzz() : 50.f;
+}
+
+float UFF_FestivalViewModelSubsystem::GetBuzzAtDayStart() const
+{
+	return CachedBuzzSubsystem ? CachedBuzzSubsystem->GetBuzzAtDayStart() : 50.f;
+}
+
+float UFF_FestivalViewModelSubsystem::GetBuzzChangeToday() const
+{
+	return GetBuzz() - GetBuzzAtDayStart();
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerBuzzChanged(float NewBuzz, float PreviousBuzz)
+{
+	OnBuzzChanged.Broadcast(NewBuzz, PreviousBuzz);
+}
+
+FFF_FestivalEvaluation UFF_FestivalViewModelSubsystem::GetFestivalEvaluation() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetFestivalEvaluation() : FFF_FestivalEvaluation();
+}
+
+TArray<int32> UFF_FestivalViewModelSubsystem::GetDailySatisfactionHistory() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetDailySatisfactionHistory() : TArray<int32>();
 }
 
 EFF_FinaleGrade UFF_FestivalViewModelSubsystem::GetPurchasedFinaleGrade() const
@@ -613,6 +737,13 @@ TArray<FFF_ProgramCard> UFF_FestivalViewModelSubsystem::GetProgramCatalog() cons
 	return Progression ? Progression->GetProgramCatalog() : TArray<FFF_ProgramCard>();
 }
 
+TArray<FFF_ProgramCard> UFF_FestivalViewModelSubsystem::GetProgramCatalogForFacility(
+	const FGuid FacilityInstanceId) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetProgramCatalogForFacility(FacilityInstanceId) : TArray<FFF_ProgramCard>();
+}
+
 TArray<FName> UFF_FestivalViewModelSubsystem::GetScheduledProgramIds() const
 {
 	TArray<FName> Ids;
@@ -644,6 +775,21 @@ EFF_ProgramPurchaseResult UFF_FestivalViewModelSubsystem::CanScheduleProgram(FNa
 	}
 
 	return Progression->CanScheduleProgram(ProgramId);
+}
+
+EFF_ProgramPurchaseResult UFF_FestivalViewModelSubsystem::CanScheduleProgramAtFacility(
+	FName ProgramId, FGuid FacilityInstanceId) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression
+		? Progression->CanScheduleProgramAtFacility(ProgramId, FacilityInstanceId)
+		: EFF_ProgramPurchaseResult::FestivalNotStarted;
+}
+
+TArray<FName> UFF_FestivalViewModelSubsystem::GetScheduledProgramIdsAtFacility(FGuid FacilityInstanceId) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetScheduledProgramIdsAtFacility(FacilityInstanceId) : TArray<FName>();
 }
 
 bool UFF_FestivalViewModelSubsystem::CanScheduleProgramNow() const
@@ -858,12 +1004,20 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 			? FMath::RoundToInt(Facility.AverageCompletedWaitSeconds)
 			: INDEX_NONE;
 
-		// --- 예상 대기: 지금 한 명이 서면 얼마나 기다리나 ---
+		// --- 게임 대기열의 팀 수와 지금 한 팀이 서면 기다릴 시간 ---
 		if (QueueBridge && Queue)
 		{
 			const int32 QueueFacilityId = QueueBridge->FindQueueFacilityId(Facility.FacilityInstanceId);
-			if (QueueFacilityId != INDEX_NONE)
+			if (QueueFacilityId != INDEX_NONE && Queue->IsFacilityRegistered(QueueFacilityId))
 			{
+				const FFF_QueueState TeamQueue = QueueBridge->GetZoneFacilityQueueState(Facility.FacilityInstanceId);
+				View.WaitingCount = FMath::Max(0, TeamQueue.WaitingPartyCount - TeamQueue.ActiveServicePartyCount);
+				View.ActiveServiceCount = FMath::Max(0, TeamQueue.ActiveServicePartyCount);
+				View.QueueState = !TeamQueue.bIsOpen
+					? (TeamQueue.WaitingPartyCount > 0 ? EFF_LiveFacilityQueueState::Draining : EFF_LiveFacilityQueueState::Closed)
+					: (TeamQueue.bAcceptingNew ? EFF_LiveFacilityQueueState::Open : EFF_LiveFacilityQueueState::Full);
+				View.AverageWaitSeconds = TeamQueue.CompletedPartyCount > 0
+					? FMath::Max(0, FMath::RoundToInt(TeamQueue.AverageCompletedWaitSeconds)) : INDEX_NONE;
 				const float WaitSeconds = Queue->GetExpectedWaitSeconds(QueueFacilityId, /*IncomingMemberCount=*/1);
 
 				// 🔴 `UnreachableWaitSeconds` 는 **시간이 아니라 표식**이다. Queue 쪽 주석에
@@ -932,22 +1086,19 @@ TArray<FFF_PromotionOptionView> UFF_FestivalViewModelSubsystem::GetPromotionOpti
 		return Options;
 	}
 
-	// `안 함` 은 데이터가 아니라 미구매 상태다. 0 Gold · 배수 1.0 을 여기서 만든다 —
-	// 데이터에 0원짜리 등급을 넣으면 검증(`IsDefinitionValid`)이 그것을 오류로 잡는다.
-	FFF_PromotionOptionView& NoneOption = Options.AddDefaulted_GetRef();
-	NoneOption.Choice = EFF_PromotionChoice::None;
-	NoneOption.CostGold = 0;
-	NoneOption.VisitorMultiplier = 1.f;
-
-	FFF_PromotionOptionView& BasicOption = Options.AddDefaulted_GetRef();
-	BasicOption.Choice = EFF_PromotionChoice::Basic;
-	BasicOption.CostGold = Definition->PromotionBasic.CostGold;
-	BasicOption.VisitorMultiplier = Definition->PromotionBasic.VisitorMultiplier;
-
-	FFF_PromotionOptionView& FocusedOption = Options.AddDefaulted_GetRef();
-	FocusedOption.Choice = EFF_PromotionChoice::Focused;
-	FocusedOption.CostGold = Definition->PromotionFocused.CostGold;
-	FocusedOption.VisitorMultiplier = Definition->PromotionFocused.VisitorMultiplier;
+	// 비용·배수는 경제의 GetPromotionTier 가 준다. `홍보 없음` 도 거기서 0 Gold · NoPromotionVisitorMultiplier(1.0 미만) 로 온다 —
+	// 숫자를 여기서 만들면 "안 사면 손해" 가 화면에 안 드러난다.
+	const EFF_PromotionChoice Choices[] = {
+		EFF_PromotionChoice::None, EFF_PromotionChoice::Basic,
+		EFF_PromotionChoice::Focused, EFF_PromotionChoice::Influencer };
+	for (const EFF_PromotionChoice Choice : Choices)
+	{
+		const FFF_PromotionTier Tier = Progression->GetPromotionTier(ToPromotionGrade(Choice));
+		FFF_PromotionOptionView& Option = Options.AddDefaulted_GetRef();
+		Option.Choice = Choice;
+		Option.CostGold = Tier.CostGold;
+		Option.VisitorMultiplier = Tier.VisitorMultiplier;
+	}
 
 	return Options;
 }
@@ -1003,9 +1154,10 @@ EFF_PromotionGrade UFF_FestivalViewModelSubsystem::ToPromotionGrade(EFF_Promotio
 {
 	switch (Choice)
 	{
-	case EFF_PromotionChoice::Basic:   return EFF_PromotionGrade::Basic;
-	case EFF_PromotionChoice::Focused: return EFF_PromotionGrade::Focused;
-	default:                           return EFF_PromotionGrade::None;
+	case EFF_PromotionChoice::Basic:      return EFF_PromotionGrade::Basic;
+	case EFF_PromotionChoice::Focused:    return EFF_PromotionGrade::Focused;
+	case EFF_PromotionChoice::Influencer: return EFF_PromotionGrade::Influencer;
+	default:                              return EFF_PromotionGrade::None;
 	}
 }
 
@@ -1013,9 +1165,10 @@ EFF_PromotionChoice UFF_FestivalViewModelSubsystem::ToPromotionChoice(EFF_Promot
 {
 	switch (Grade)
 	{
-	case EFF_PromotionGrade::Basic:   return EFF_PromotionChoice::Basic;
-	case EFF_PromotionGrade::Focused: return EFF_PromotionChoice::Focused;
-	default:                          return EFF_PromotionChoice::None;
+	case EFF_PromotionGrade::Basic:      return EFF_PromotionChoice::Basic;
+	case EFF_PromotionGrade::Focused:    return EFF_PromotionChoice::Focused;
+	case EFF_PromotionGrade::Influencer: return EFF_PromotionChoice::Influencer;
+	default:                             return EFF_PromotionChoice::None;
 	}
 }
 
@@ -1059,7 +1212,7 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged(EFF_WeatherTy
 	OnWeatherChanged.Broadcast(NewWeather);
 }
 
-int32 UFF_FestivalViewModelSubsystem::GetAffordableTemporaryStaffCount() const
+int32 UFF_FestivalViewModelSubsystem::GetAffordableHireCount() const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	if (!Progression || !Progression->IsFestivalStarted())
@@ -1068,10 +1221,10 @@ int32 UFF_FestivalViewModelSubsystem::GetAffordableTemporaryStaffCount() const
 		return INDEX_NONE;
 	}
 
-	return Progression->GetAffordableTemporaryStaffCount();
+	return Progression->GetAffordableHireCount();
 }
 
-int32 UFF_FestivalViewModelSubsystem::GetRemainingTemporaryStaffCap() const
+int32 UFF_FestivalViewModelSubsystem::GetRemainingHireCap() const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	if (!Progression || !Progression->IsFestivalStarted())
@@ -1088,49 +1241,96 @@ int32 UFF_FestivalViewModelSubsystem::GetRemainingTemporaryStaffCap() const
 
 	// 식을 여기서 다시 쓰지 않는다 — 상한 규칙의 소유자는 경제다.
 	// **고용 가능 판정은 여기서 하지 않는다** — 이 값은 막힌 이유를 화면에 쓰기 위한 것이고,
-	// 실제 허용 여부는 `TryHireTemporaryStaff` 가 정한다.
+	// 실제 허용 여부는 `TryHireStaff` 가 정한다.
 	return Progression->GetRemainingHireCap();
 }
 
-int32 UFF_FestivalViewModelSubsystem::GetDailyStaffWageGold() const
+int32 UFF_FestivalViewModelSubsystem::GetStaffHireCostGold() const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
-	return Definition ? Definition->DailyStaffWageGold : INDEX_NONE;
+	return Definition ? Definition->StaffHireCostGold : INDEX_NONE;
 }
 
-int32 UFF_FestivalViewModelSubsystem::GetMaxTemporaryStaffPerDay() const
+int32 UFF_FestivalViewModelSubsystem::GetTodayStaffHireCostGold() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted())
+	{
+		return INDEX_NONE;
+	}
+
+	return Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::StaffHire);
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetMaxHiredStaffCount() const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
-	return Definition ? Definition->MaxHiredStaffPerDay : INDEX_NONE;
+	return Definition ? Definition->MaxHiredStaffCount : INDEX_NONE;
 }
 
-int32 UFF_FestivalViewModelSubsystem::GetDailyVenueRentGold() const
+TArray<FFF_StaffMember> UFF_FestivalViewModelSubsystem::GetStaffRoster() const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
-	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
-	return Definition ? Definition->DailyVenueRentGold : INDEX_NONE;
+	return Progression && Progression->IsFestivalStarted() ? Progression->GetStaffRoster() : TArray<FFF_StaffMember>();
 }
 
-bool UFF_FestivalViewModelSubsystem::RequestHireTemporaryStaff(int32 Count)
+bool UFF_FestivalViewModelSubsystem::CanPromoteStaff(int32 StaffId) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted())
+	{
+		return false;
+	}
+
+	// 소유자 TryPromoteStaff 와 같은 날짜(열린 날)로 같은 규칙을 부른다.
+	for (const FFF_StaffMember& Member : Progression->GetStaffRoster())
+	{
+		if (Member.StaffId == StaffId)
+		{
+			return FFF_StaffEventRules::CanPromote(Member, Progression->GetLastProcessedDay());
+		}
+	}
+	return false;
+}
+
+bool UFF_FestivalViewModelSubsystem::RequestPromoteStaff(int32 StaffId)
+{
+	UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression)
+	{
+		UE_LOG(LogFestaFiestaUI, Error, TEXT("[ViewModel] 경제 시스템이 없어 스태프를 승급할 수 없다."));
+		return false;
+	}
+
+	// 방송은 소유자의 OnStaffRosterChanged 를 받아서 한다.
+	return Progression->TryPromoteStaff(StaffId);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerStaffRosterChanged()
+{
+	OnStaffRosterChanged.Broadcast();
+}
+
+bool UFF_FestivalViewModelSubsystem::RequestHireStaff(int32 Count)
 {
 	UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	if (!Progression)
 	{
 		UE_LOG(LogFestaFiestaUI, Error,
-			TEXT("[ViewModel] 경제 시스템이 없어 알바를 고용할 수 없다."));
+			TEXT("[ViewModel] 경제 시스템이 없어 인원을 고용할 수 없다."));
 		return false;
 	}
 
 	// 여기서 미리 막지 않는다. 상한·잔액 판정의 소유자는 경제 시스템이고, UI 가 한 번 더
 	// 판정하면 두 곳의 규칙이 갈라진다 (UI 규칙 2).
-	const bool bAccepted = Progression->TryHireTemporaryStaff(Count);
+	const bool bAccepted = Progression->TryHireStaff(Count);
 	if (!bAccepted)
 	{
 		// 거부 사유는 경제 쪽 로그에 남는다. 여기서는 요청이 실패한 사실만 남긴다.
 		UE_LOG(LogFestaFiestaUI, Log,
-			TEXT("[ViewModel] 알바 %d명 고용 요청이 거부됐다. 상한/잔액은 경제 로그를 본다."), Count);
+			TEXT("[ViewModel] 인원 %d명 고용 요청이 거부됐다. 상한/잔액은 경제 로그를 본다."), Count);
 	}
 	return bAccepted;
 }
@@ -1301,9 +1501,8 @@ void UFF_FestivalViewModelSubsystem::Debug_SetMetrics(int32 InSimSatisfaction, i
 void UFF_FestivalViewModelSubsystem::Debug_SetEconomy(int32 InGold, int32 InTotalRevenue, int32 InTodayRevenue)
 {
 	// 금액이라 0~100 상한을 두지 않는다.
-	// Gold는 음수가 되지 않는 것으로 확정됐다 (2026-08-18, `FFF_FestivalFunds` 주석) — 잔액이 모자라면
-	// 구매를 거부한다. 임대료처럼 거절할 수 없는 의무비용만 있는 만큼 내고 부족분이
-	// `FFF_FixedCostArrears`에 미납으로 쌓인다. 그래도 여기서 클램프하지는 않는다 — 값의 주인은 소유자다.
+	// Gold는 음수가 되지 않는다 (`FFF_FestivalFunds` 주석) — 잔액이 모자라면 그 지출이 거부되고
+	// 화면에서는 버튼이 막힌다. 그래도 여기서 클램프하지는 않는다 — 값의 주인은 소유자다.
 	ApplyIntMetric(Gold, InGold, OnGoldChanged);
 	ApplyIntMetric(TotalRevenue, InTotalRevenue, OnTotalRevenueChanged);
 	ApplyIntMetric(TodayRevenue, InTodayRevenue, OnTodayRevenueChanged);
@@ -1367,6 +1566,11 @@ void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
 	if (!CachedInsightsSubsystem)
 	{
 		TryBindInsightsSubsystem();
+	}
+
+	if (!CachedBuzzSubsystem)
+	{
+		TryBindBuzzSubsystem();
 	}
 
 	// 남은 시간은 여기서 폴링하지 않는다.

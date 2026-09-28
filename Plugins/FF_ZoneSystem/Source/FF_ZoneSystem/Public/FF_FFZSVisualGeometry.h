@@ -1,9 +1,11 @@
+// FF_FFZSVisualGeometry.h
+// 역할: 메시의 중심과 크기를 시설 표시 규격에 맞추는 변환을 계산한다. 실제 점유 규칙은 변경하지 않는다.
 #pragma once
 
 #include "CoreMinimal.h"
-#include "FF_FFZSTypes.h"
 
 class UStaticMesh;
+struct FFFZSFacilitySpec;
 
 /**
  * FacilitySpec의 권위 크기에서 표시 전용 메시 transform을 결정하는 순수 계산 모음이다.
@@ -11,10 +13,10 @@ class UStaticMesh;
  */
 namespace FFZSVisualGeometry
 {
-    /** Non-source sizing requires finite, positive extents on all three axes. */
+    /** 시설 크기에 맞춰 표시하려면 원본 메시의 가로·세로·높이가 모두 유한한 양수여야 한다. */
     FF_ZONESYSTEM_API bool HasUsableSourceBounds(const FBox& SourceBounds);
 
-    /** Checked resolver used by validators and tools. Failure never falls back to source sizing. */
+    /** 검증 도구용 계산이다. 실패하면 임의의 원본 크기로 대신 표시하지 않고 false를 반환한다. */
     FF_ZONESYSTEM_API bool TryResolveVisualTransformFromBounds(
         const FFFZSFacilitySpec& Spec,
         const FBox& SourceBounds,

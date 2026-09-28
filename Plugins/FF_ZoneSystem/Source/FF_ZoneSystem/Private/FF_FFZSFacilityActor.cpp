@@ -27,6 +27,8 @@
 #include "FF_FFZSFacilityAnchorComponent.h"
 #include "FF_FFZSFacilityLightingRig.h"
 #include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSBuildPresentationSettings.h"
+#include "FF_FFZSBuildRangePresentation.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSNavArea_QueueLane.h"
 #include "FF_FFZSQueueComponent.h"
@@ -353,6 +355,31 @@ bool AFFZSFacilityActor::ApplyUpgradeState(const int32 NewLevel, const float New
     SetActorScale3D(FVector::OneVector);
     RebuildRuntimePresentation();
     QueueComponent->Configure(GetEffectiveQueueRules());
+    SetNavigationObstacleEnabled(bNavigationWasEnabled);
+    return true;
+}
+
+bool AFFZSFacilityActor::ApplyQueueLayout(const EFFZSQueueLayout Layout)
+{
+    if (!CanMoveOrRemove() || !QueueComponent || QueueComponent->IsOccupied())
+    {
+        return false;
+    }
+    FFFZSFacilitySpec NewBase = GetBaseFacilitySpec();
+    NewBase.QueueLayout = Layout;
+    FFFZSFacilitySpec EffectiveSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+        NewBase, UpgradeLevel, UpgradeSizeMultiplier);
+    TArray<FText> Errors;
+    if (!EffectiveSpec.IsValid(Errors))
+    {
+        return false;
+    }
+    const bool bNavigationWasEnabled = NavigationObstacleBounds && NavigationObstacleBounds->CanEverAffectNavigation();
+    SetNavigationObstacleEnabled(false);
+    BaseFacilitySpec = MoveTemp(NewBase);
+    FacilitySpec = MoveTemp(EffectiveSpec);
+    RebuildRuntimePresentation();
+    // Preserve completed/abandoned queue statistics; only its spatial targets changed.
     SetNavigationObstacleEnabled(bNavigationWasEnabled);
     return true;
 }
@@ -844,7 +871,9 @@ void AFFZSFacilityActor::RebuildBuildModeRangePresentation()
         return;
     }
 
-    constexpr float RangeHeightCm = 10.0f;
+    const UFFZSBuildPresentationSettings& Style = *GetDefault<UFFZSBuildPresentationSettings>();
+    const double RangeHeightCm = FMath::Clamp(Style.RangeSurfaceLiftCm, 0.5f, 20.0f);
+    TArray<FBatchedLine> Lines;
     // 비정상적으로 조각난 콘텐츠도 건축 모드 진입을 멈추지 않게 한다. 일반 콘텐츠는 정확한
     // canonical rect를 모두 그리고, 상한을 넘는 그룹만 합집합 외접 박스로 안전하게 축약한다.
     // [하드코딩 제거] 배치 Preview와 같은 상한을 공유해 두 화면의 표시 규칙이 갈라지지 않게 한다.
@@ -855,31 +884,29 @@ void AFFZSFacilityActor::RebuildBuildModeRangePresentation()
     const FTransform ActorTransform = GetActorTransform();
     BuildModeRangeLines->SetHiddenInGame(false);
 
-    const auto DrawRect = [this, CellSizeCm, FootprintExtent, RangeHeightCm, ActorTransform](
+    const auto DrawRect = [&Lines, &Style, CellSizeCm, FootprintExtent, RangeHeightCm, ActorTransform](
         const FFFZSCellRect& Rect,
-        const FLinearColor& Color)
+        const FLinearColor& Color, const bool bDashed, const bool bAccentCorners)
     {
         const FVector LowerLeft(
             Rect.Min.X * CellSizeCm - FootprintExtent.X,
             Rect.Min.Y * CellSizeCm - FootprintExtent.Y,
-            0.0f);
+            RangeHeightCm);
         const FVector UpperRight(
             Rect.Max.X * CellSizeCm - FootprintExtent.X,
             Rect.Max.Y * CellSizeCm - FootprintExtent.Y,
             RangeHeightCm);
-        BuildModeRangeLines->DrawBox(
-            ActorTransform.TransformPosition((LowerLeft + UpperRight) * 0.5),
-            (UpperRight - LowerLeft) * 0.5,
-            ActorTransform.GetRotation(),
-            Color,
-            0.0f,
-            SDPG_World,
-            2.0f);
+        FFZSBuildRangePresentation::FWorldCorners Corners;
+        Corners[0] = ActorTransform.TransformPosition(LowerLeft);
+        Corners[1] = ActorTransform.TransformPosition(FVector(UpperRight.X, LowerLeft.Y, RangeHeightCm));
+        Corners[2] = ActorTransform.TransformPosition(UpperRight);
+        Corners[3] = ActorTransform.TransformPosition(FVector(LowerLeft.X, UpperRight.Y, RangeHeightCm));
+        FFZSBuildRangePresentation::AppendOutline(Lines, Corners, Color, bDashed, bAccentCorners, Style);
     };
 
     const auto AddRangeGroup = [&DrawRect](
         const TArray<FFFZSCellRect>& Rects,
-        const FColor Color)
+        const FLinearColor Color, const bool bDashed, const bool bAccentCorners = false)
     {
         if (Rects.Num() <= MaxDisplayedRectsPerGroup)
         {
@@ -887,7 +914,7 @@ void AFFZSFacilityActor::RebuildBuildModeRangePresentation()
             {
                 if (Rect.IsValid())
                 {
-                    DrawRect(Rect, FLinearColor(Color));
+                    DrawRect(Rect, Color, bDashed && Rects.Num() <= 64, bAccentCorners);
                 }
             }
             return;
@@ -916,13 +943,15 @@ void AFFZSFacilityActor::RebuildBuildModeRangePresentation()
         }
         if (bHasBounds)
         {
-            DrawRect(Bounds, FLinearColor(Color));
+            DrawRect(Bounds, Color, true, false);
         }
     };
 
     const FFFZSGridPlacement LocalPlacement;
-    AddRangeGroup(UFFZSGridLibrary::GetClearanceRects(FacilitySpec, LocalPlacement), FColor::Cyan);
-    AddRangeGroup(UFFZSGridLibrary::GetQueueRects(FacilitySpec, LocalPlacement), FColor::Yellow);
+    AddRangeGroup(UFFZSGridLibrary::GetFootprintRects(FacilitySpec, LocalPlacement), Style.FootprintColor, false, true);
+    AddRangeGroup(UFFZSGridLibrary::GetClearanceRects(FacilitySpec, LocalPlacement), Style.ClearanceColor, true);
+    AddRangeGroup(UFFZSGridLibrary::GetQueueRects(FacilitySpec, LocalPlacement), Style.QueueColor, false);
+    BuildModeRangeLines->DrawLines(Lines);
 }
 
 void AFFZSFacilityActor::DestroyBuildModeRangePresentation()

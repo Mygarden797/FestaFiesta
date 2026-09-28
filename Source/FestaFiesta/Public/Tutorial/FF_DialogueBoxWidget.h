@@ -8,6 +8,7 @@
 #include "FF_DialogueBoxWidget.generated.h"
 
 class UButton;
+class UImage;
 class UPanelWidget;
 class UTextBlock;
 class UFF_DialogueChoiceButton;
@@ -75,6 +76,26 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
 	TObjectPtr<UPanelWidget> ChoiceContainer;
 
+	/* 장면 배경. 화면 전체를 덮는 그림이다.
+
+	   대사창 뒤가 아니라 화면 전체를 덮는 이유는, 로비에서 지구본 위에 사무실
+	   장면을 얹어야 하기 때문이다. 새 게임을 누르면 지구본이 먼저 뜨는데
+	   그 순서를 우리가 막을 수 없어서, 덮어 가리는 편이 단순하다.
+
+	   그림이 없는 줄에서는 숨긴다.
+	*/
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
+	TObjectPtr<UImage> BackgroundImage;
+
+	/* 화자 초상화. 화자 이름으로 튜토리얼 설정의 Speaker Portraits 에서 찾는다.
+
+	   없어도 동작한다. 배치(대사창 왼쪽 위에 걸치게 등)는 BP 에서 정한다.
+	   이미지 크기는 그림 원본 비율을 따르도록 Size To Content 대신 박스 크기를 고정해 두는 편이
+	   화자가 바뀔 때 대사창이 흔들리지 않는다.
+	*/
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
+	TObjectPtr<UImage> PortraitImage;
+
 	// 건너뛰기 버튼. 없어도 동작한다.
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
 	TObjectPtr<UButton> SkipButton;
@@ -110,8 +131,23 @@ private:
 	// 어느 클릭 판을 켤지 정한다. 선택지나 조작 대기 줄에서는 둘 다 끈다.
 	void ApplyClickArea(const FFF_DialogueLine& Line);
 
+	// 배경 그림을 바꾼다. 줄에 지정이 없으면 앞 그림을 그대로 둔다.
+	void ApplyBackground(const FFF_DialogueLine& Line);
+
+	// 화자 초상화를 바꾼다. 선택지 줄은 앞 사람을 그대로 둔다.
+	void ApplyPortrait(const FFF_DialogueLine& Line);
+
+	// 목록에 없다고 이미 알린 화자. 같은 화자가 수십 줄 말할 때 경고가 줄마다 쌓이지 않게 한다.
+	TSet<FString> WarnedMissingSpeakers;
+
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UFF_DialogueChoiceButton>> ChoiceButtons;
+
+	// 지금 띄운 초상화의 화자. 같은 사람이면 브러시를 다시 넣지 않는다.
+	FString CurrentPortraitSpeaker;
+
+	// 지금 떠 있는 건너뛰기 확인 창. 연타로 창이 여러 겹 뜨는 것을 막는다.
+	TWeakObjectPtr<class UFF_SkipConfirmWidget> OpenSkipConfirm;
 
 	bool bBound = false;
 };

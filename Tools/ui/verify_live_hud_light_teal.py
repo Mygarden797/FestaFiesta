@@ -9,6 +9,10 @@ import unreal
 
 MANIFEST_REL = "SourceArt/UI/LiveHUD/LightTealParts_v1/asset-manifest.json"
 DESTINATION_ROOT = "/Game/FestaFiesta/UI/LiveHUD/Themes/LightTeal"
+GOLD_COIN_FILES = {
+    "Icons/Metrics/T_FF_LH_Icon_Gold_White_256.png",
+    "Badges/T_FF_LH_Badge_Gold_256.png",
+}
 
 
 def project_dir():
@@ -57,6 +61,14 @@ def run():
             "address_x": enum_name(texture.get_editor_property("address_x")) == expected_address,
             "address_y": enum_name(texture.get_editor_property("address_y")) == expected_address,
         }
+        if entry["file"] in GOLD_COIN_FILES:
+            checks["gold_max_size"] = int(texture.get_editor_property("max_texture_size")) == 256
+            # Blueprint dimensions reflect the built UI resource, not the RGBA
+            # source dimensions recorded by the art generator.
+            built_width = int(texture.blueprint_get_size_x())
+            built_height = int(texture.blueprint_get_size_y())
+            checks["width"] = 0 < built_width <= 256
+            checks["height"] = built_height == built_width
         bad = [name for name, passed in checks.items() if not passed]
         if bad:
             failures.append(asset_path + " failed: " + ", ".join(bad))

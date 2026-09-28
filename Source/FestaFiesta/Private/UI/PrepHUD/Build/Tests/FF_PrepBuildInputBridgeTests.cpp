@@ -1,6 +1,10 @@
+// FF_PrepBuildInputBridgeTests.cpp
+// 역할: 준비 단계 건설 화면의 동작과 저장된 화면 연결을 자동 검증한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/PanelWidget.h"
 #include "Editor.h"
@@ -11,7 +15,7 @@
 namespace FFPrepBuildInputBridgeTest
 {
 	constexpr const TCHAR* HudBarClassPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepHudBar.WBP_FF_PrepHudBar_C");
+		FFBuildUIAssetPaths::PrepHudBarClass;
 
 	UWidgetTree* ResolveWidgetTree(UClass* WidgetClass)
 	{

@@ -1,4 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
+// 역할: 시설 설치비가 한 번만 차감되고 철거 시 설정한 비율만큼 환급되는지 검사한다.
+// 무료·잘못된 비용·잔액 부족·명령 취소를 함께 확인하며, 이동과 개폐가 돈을 쓰지 않는지도 검사한다.
 
 #include "Economy/FF_ZoneSystemEconomyBridgeSubsystem.h"
 
@@ -21,6 +23,7 @@
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Festival/FF_FestivalSettings.h"
 #include "Misc/AutomationTest.h"
+#include "Building/FF_FacilityUpgradeTestPolicy.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 
@@ -128,10 +131,7 @@ namespace
 			Definition->InitialGold = InitialGold;
 			Definition->FacilityCostTable = CostTable;
 
-			// 이 테스트들은 **설치비·환급**만 본다. StartFestival 이 Day1 임대료를 징수하므로
-			// (economy_spec.md §5 S6) 임대료를 0 으로 두지 않으면 잔액 기대값에 2,400 이
 			// 섞여 들어온다. 하루 경계 정산 자체는 FF_DayBoundaryTests.cpp 가 검증한다.
-			Definition->DailyVenueRentGold = 0;
 
 			Progression->StartFestival(Definition);
 
@@ -319,7 +319,8 @@ bool FFFZoneSystemEconomyContentContractTest::RunTest(const FString& Parameters)
 					Definition->Spec, CostTable, ResolvedCost, MatchedRow, OverrideFailure));
 			TestEqual(TEXT("Explicit override resolves its exact row without a fallback"), MatchedRow, ExplicitKey);
 			TestEqual(TEXT("Explicit override preserves the live table price"), ResolvedCost, ExplicitRow->InstallCost);
-			TestTrue(TEXT("Production override prices are nonnegative"), ResolvedCost >= 0);
+			TestTrue(TEXT("Production override prices satisfy the shared installation cost rule"),
+				FFF_FacilityCostResolver::IsValidInstallCost(ResolvedCost));
 			continue;
 		}
 
@@ -367,7 +368,7 @@ bool FFFZoneSystemEconomyContentContractTest::RunTest(const FString& Parameters)
 	const UFFZSFacilityDefinition* FoodTruckDefinition =
 		LoadObject<UFFZSFacilityDefinition>(
 			nullptr,
-			TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+			TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
 				"PDA_FFZS_Booth_FoodStall_Taco."
 				"PDA_FFZS_Booth_FoodStall_Taco"));
 	if (!TestNotNull(TEXT("The production FoodTruck FacilityDefinition loads"),
@@ -401,7 +402,8 @@ bool FFFZoneSystemEconomyContentContractTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	TestTrue(TEXT("The live FoodTruck installation cost is positive"), ProductionRow->InstallCost > 0);
+	TestTrue(TEXT("The live FoodTruck installation cost satisfies the shared cost rule"),
+		FFF_FacilityCostResolver::IsValidInstallCost(ProductionRow->InstallCost));
 	TestEqual(TEXT("The resolver returns the authoritative table price without a hardcoded balance value"),
 		InstallCost, ProductionRow->InstallCost);
 	return true;
@@ -449,6 +451,108 @@ bool FFFZoneSystemEconomyInstallAndReplayTest::RunTest(const FString& Parameters
 		ReplayResult.bSucceeded && ReplayResult.bWasDuplicateReplay);
 	TestEqual(TEXT("A duplicate replay does not spend the installation cost twice"),
 		Harness.Progression->GetGold(), HarnessStartingGold - FoodStallInstallCost);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFFZoneSystemEconomyZeroCostInstallTest,
+	"FestaFiesta.Economy.ZoneSystemBridge.ZeroCostInstallsWithoutGoldAndRefundsZero",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZoneSystemEconomyZeroCostInstallTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FScopedEconomyBridgeTestSettings SettingsGuard;
+	FZoneEconomyTestHarness Harness;
+	if (!TestTrue(TEXT("An isolated Zone/economy test world initializes"),
+		Harness.Initialize(this, HarnessStartingGold)))
+	{
+		return false;
+	}
+	// Festival authoring requires positive initial funds; spend them before testing a free install.
+	if (!TestTrue(TEXT("Existing spending empties the wallet before the free installation"),
+		Harness.Progression->TrySpend(HarnessStartingGold, EFF_SpendReason::Promotion)))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The free installation starts with no Gold"), Harness.Progression->GetGold(), 0);
+
+	FFF_FacilityCostRow FreeRow;
+	FreeRow.InstallCost = 0;
+	Harness.CostTable->AddRow(AutomationFoodStallCostKey, FreeRow);
+	const FFFZSCommand InstallCommand =
+		MakeInstallCommand(Harness, MakeDerivedCostFoodStallSpec());
+	TestTrue(TEXT("A free facility passes placement preview with no Gold"),
+		Harness.ZoneSystem->ValidatePlacement(InstallCommand).bIsValid);
+	if (!TestTrue(TEXT("An authored zero-cost facility installs with no Gold"),
+		Harness.ZoneSystem->ExecuteCommand(InstallCommand).bSucceeded))
+	{
+		return false;
+	}
+	TestNotNull(TEXT("The free installation registers a Facility"),
+		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
+	TestEqual(TEXT("A free installation preserves the zero balance"),
+		Harness.Progression->GetGold(), 0);
+	TestEqual(TEXT("A free installation records no installation expense"),
+		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::FacilityInstall), 0);
+
+	const FFFZSCommandResult ReplayResult =
+		Harness.ZoneSystem->ExecuteCommand(InstallCommand);
+	TestTrue(TEXT("A free installation still has an idempotency receipt"),
+		ReplayResult.bSucceeded && ReplayResult.bWasDuplicateReplay);
+	TestEqual(TEXT("Replaying a free installation preserves the zero balance"),
+		Harness.Progression->GetGold(), 0);
+
+	if (!TestTrue(TEXT("Removing the free facility succeeds"),
+		Harness.ZoneSystem->ExecuteCommand(
+			MakeRemoveCommand(Harness, InstallCommand.FacilityInstanceId)).bSucceeded))
+	{
+		return false;
+	}
+	TestNull(TEXT("Removing the free facility unregisters it"),
+		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
+	TestEqual(TEXT("Removing a free facility grants no Gold"),
+		Harness.Progression->GetGold(), 0);
+	TestEqual(TEXT("Removing a free facility records no refund"),
+		Harness.Progression->GetDayLedger().GetTotalRefund(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFFZoneSystemEconomyNegativeCostTest,
+	"FestaFiesta.Economy.ZoneSystemBridge.NegativeCostFailsClosed",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZoneSystemEconomyNegativeCostTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FScopedEconomyBridgeTestSettings SettingsGuard;
+	FZoneEconomyTestHarness Harness;
+	if (!TestTrue(TEXT("An isolated Zone/economy test world initializes"),
+		Harness.Initialize(this, HarnessStartingGold)))
+	{
+		return false;
+	}
+
+	FFF_FacilityCostRow NegativeRow;
+	NegativeRow.InstallCost = -1;
+	Harness.CostTable->AddRow(AutomationFoodStallCostKey, NegativeRow);
+	const FFFZSCommand InstallCommand =
+		MakeInstallCommand(Harness, MakeDerivedCostFoodStallSpec());
+	const FFFZSPlacementValidation PreviewValidation =
+		Harness.ZoneSystem->ValidatePlacement(InstallCommand);
+	TestFalse(TEXT("A negative installation cost is rejected in the placement preview"),
+		PreviewValidation.bIsValid);
+	TestTrue(TEXT("A negative cost preview reports invalid configuration"),
+		PreviewValidation.Reasons.Contains(EFFZSPlacementFailure::DataInvalid));
+	const FFFZSCommandResult Result = Harness.ZoneSystem->ExecuteCommand(InstallCommand);
+	TestFalse(TEXT("A negative installation cost cannot install a facility"), Result.bSucceeded);
+	TestEqual(TEXT("A negative installation cost reports invalid configuration"),
+		Result.FailureReason, EFFZSPlacementFailure::DataInvalid);
+	TestEqual(TEXT("A negative installation cost does not grant or spend Gold"),
+		Harness.Progression->GetGold(), HarnessStartingGold);
+	TestNull(TEXT("A negative installation cost never creates a Facility"),
+		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
 	return true;
 }
 
@@ -593,6 +697,12 @@ bool FFFZoneSystemEconomyMissingCostTest::RunTest(const FString& Parameters)
 	FFFZSFacilitySpec Spec = MakeDerivedCostFoodStallSpec();
 	Spec.InstallCostKey = TEXT("Cost.Booth.UnconfiguredAutomationPrice");
 	const FFFZSCommand InstallCommand = MakeInstallCommand(Harness, Spec);
+	const FFFZSPlacementValidation PreviewValidation =
+		Harness.ZoneSystem->ValidatePlacement(InstallCommand);
+	TestFalse(TEXT("A missing installation cost is rejected in the placement preview"),
+		PreviewValidation.bIsValid);
+	TestTrue(TEXT("A missing cost preview reports invalid configuration"),
+		PreviewValidation.Reasons.Contains(EFFZSPlacementFailure::DataInvalid));
 	const FFFZSCommandResult Result = Harness.ZoneSystem->ExecuteCommand(InstallCommand);
 	TestFalse(TEXT("An Install with no exact or category-default cost row fails closed"),
 		Result.bSucceeded);
@@ -602,6 +712,19 @@ bool FFFZoneSystemEconomyMissingCostTest::RunTest(const FString& Parameters)
 		Harness.Progression->GetGold(), HarnessStartingGold);
 	TestNull(TEXT("Cost resolution failure does not create a Facility"),
 		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
+
+	Harness.Definition->FacilityCostTable = nullptr;
+	const FFFZSCommand MissingTableCommand =
+		MakeInstallCommand(Harness, MakeDerivedCostFoodStallSpec());
+	const FFFZSCommandResult MissingTableResult =
+		Harness.ZoneSystem->ExecuteCommand(MissingTableCommand);
+	TestFalse(TEXT("A missing cost table cannot make a facility free"), MissingTableResult.bSucceeded);
+	TestEqual(TEXT("A missing cost table reports invalid configuration"),
+		MissingTableResult.FailureReason, EFFZSPlacementFailure::DataInvalid);
+	TestEqual(TEXT("A missing cost table leaves Gold unchanged"),
+		Harness.Progression->GetGold(), HarnessStartingGold);
+	TestNull(TEXT("A missing cost table never creates a Facility"),
+		Harness.ZoneSystem->FindFacility(MissingTableCommand.FacilityInstanceId));
 	return true;
 }
 
@@ -732,6 +855,109 @@ bool FFFZoneSystemEconomyDemolitionRefundTest::RunTest(const FString& Parameters
 	TestEqual(TEXT("Both demolitions accumulate in the same day's refund total"),
 		Harness.Progression->GetDayLedger().GetTotalRefund(), HalfRefund + EightyPercentRefund);
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFConstructionHistoryEconomyTest,
+	"FestaFiesta.Economy.ZoneSystemBridge.ConstructionHistory.ExactReceipts",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFConstructionHistoryEconomyTest::RunTest(const FString& Parameters)
+{
+	FScopedEconomyBridgeTestSettings Settings;
+	FZoneEconomyTestHarness Harness;
+	if (!Harness.Initialize(this, HarnessStartingGold)) return false;
+	const int32 InitialGold = Harness.Progression->GetGold();
+	const FFFZSCommand Install = MakeInstallCommand(Harness, MakeDerivedCostFoodStallSpec());
+	if (!TestTrue(TEXT("Install succeeds"), Harness.ZoneSystem->ExecuteCommand(Install).bSucceeded)) return false;
+	Harness.Progression->TrySpend(25, EFF_SpendReason::Cleanup);
+	FText Error;
+	TestTrue(TEXT("Undo install succeeds"), Harness.ZoneSystem->UndoConstruction(Error));
+	TestEqual(TEXT("Exact purchase refund preserves unrelated spending"), Harness.Progression->GetGold(), InitialGold - 25);
+	TestEqual(TEXT("Undo removes install ledger entry"), Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::FacilityInstall), 0);
+	TestEqual(TEXT("Undo purchase is not demolition income"), Harness.Progression->GetDayLedger().GetTotalRefund(), 0);
+	TestTrue(TEXT("Redo install succeeds"), Harness.ZoneSystem->RedoConstruction(Error));
+	TestEqual(TEXT("Redo charges original price"), Harness.Progression->GetGold(), InitialGold - 25 - FoodStallInstallCost);
+	Harness.Definition->FacilityDemolitionRefundRate = 0.5f;
+	TestTrue(TEXT("Remove succeeds"), Harness.ZoneSystem->ExecuteCommand(MakeRemoveCommand(Harness, Install.FacilityInstanceId)).bSucceeded);
+	Harness.Definition->FacilityDemolitionRefundRate = 0.8f;
+	TestTrue(TEXT("Undo remove succeeds after refund rate changes"), Harness.ZoneSystem->UndoConstruction(Error));
+	TestEqual(TEXT("Undo takes back original refund only"), Harness.Progression->GetGold(), InitialGold - 25 - FoodStallInstallCost);
+	TestEqual(TEXT("Undo removes refund ledger entry"), Harness.Progression->GetDayLedger().GetTotalRefund(), 0);
+	TestTrue(TEXT("Redo remove succeeds"), Harness.ZoneSystem->RedoConstruction(Error));
+	TestEqual(TEXT("Redo uses exact original refund"), Harness.Progression->GetDayLedger().GetTotalRefund(), FoodStallInstallCost / 2);
+	Harness.Progression->TrySpend(Harness.Progression->GetGold(), EFF_SpendReason::Cleanup);
+	TestFalse(TEXT("Spent refund blocks undo without mutation"), Harness.ZoneSystem->UndoConstruction(Error));
+	TestNull(TEXT("Rejected undo leaves facility demolished"), Harness.ZoneSystem->FindFacility(Install.FacilityInstanceId));
+	TestEqual(TEXT("Rejected undo preserves Gold"), Harness.Progression->GetGold(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFConstructionBatchEconomyTest,
+	"FestaFiesta.Economy.ZoneSystemBridge.ConstructionHistory.BatchAffordability",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFConstructionBatchEconomyTest::RunTest(const FString& Parameters)
+{
+	FScopedEconomyBridgeTestSettings Settings;
+	FZoneEconomyTestHarness Harness;
+	if (!Harness.Initialize(this, HarnessStartingGold)) return false;
+	Harness.Progression->TrySpend(Harness.Progression->GetGold() - FoodStallInstallCost, EFF_SpendReason::Cleanup);
+	TArray<FFFZSCommand> Commands;
+	Commands.Add(MakeInstallCommand(Harness, MakeDerivedCostFoodStallSpec(), FIntPoint(1000,1000)));
+	Commands.Add(MakeInstallCommand(Harness, MakeDerivedCostFoodStallSpec(), FIntPoint(5000,1000)));
+	Commands[1].TransactionId = Commands[0].TransactionId;
+	TestTrue(TEXT("Both group targets individually validate"), Harness.ZoneSystem->ValidatePlacement(Commands[0]).bIsValid && Harness.ZoneSystem->ValidatePlacement(Commands[1]).bIsValid);
+	FText PreviewError;
+	TestFalse(TEXT("Group preview checks total affordability"), Harness.ZoneSystem->ValidateConstructionBatch(Commands, PreviewError));
+	TestEqual(TEXT("Rejected preview never reserves or spends Gold"), Harness.Progression->GetGold(), FoodStallInstallCost);
+	TestFalse(TEXT("Two purchases cannot spend the same remaining Gold"), Harness.ZoneSystem->ExecuteConstructionBatch(Commands).bSucceeded);
+	TestEqual(TEXT("Rejected group preserves Gold"), Harness.Progression->GetGold(), FoodStallInstallCost);
+	TestNull(TEXT("Rejected group has no first facility"), Harness.ZoneSystem->FindFacility(Commands[0].FacilityInstanceId));
+	TestNull(TEXT("Rejected group has no second facility"), Harness.ZoneSystem->FindFacility(Commands[1].FacilityInstanceId));
+	TestTrue(TEXT("Rollback releases reservations for the next purchase"), Harness.ZoneSystem->ExecuteCommand(Commands[0]).bSucceeded);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFConstructionBatchGoldPublicationTest,
+    "FestaFiesta.Economy.ZoneSystemBridge.ConstructionHistory.PublishAfterAllReceipts",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFFConstructionBatchGoldPublicationTest::RunTest(const FString& Parameters)
+{
+    FScopedEconomyBridgeTestSettings Settings;
+    FZoneEconomyTestHarness Harness;
+    if (!Harness.Initialize(this, FoodStallInstallCost * 2 + 50)) return false;
+    TArray<FFFZSCommand> Commands;
+    Commands.Add(MakeInstallCommand(Harness, MakeDerivedCostFoodStallSpec(), FIntPoint(1000, 1000)));
+    Commands.Add(MakeInstallCommand(Harness, MakeDerivedCostFoodStallSpec(), FIntPoint(5000, 1000)));
+    Commands[1].TransactionId = Commands[0].TransactionId;
+    FText PreviewError;
+    TestTrue(TEXT("Affordable whole group preview passes"), Harness.ZoneSystem->ValidateConstructionBatch(Commands, PreviewError));
+    TestEqual(TEXT("Successful preview leaves wallet unchanged"), Harness.Progression->GetGold(), FoodStallInstallCost * 2 + 50);
+    UFF_FacilityUpgradeTestPolicy* Observer = NewObject<UFF_FacilityUpgradeTestPolicy>(Harness.Progression);
+    bool bObserved = false;
+    int32 FirstObservedGold = -1;
+    int32 FirstObservedInstallSpend = -1;
+    Observer->ObserveGoldChanged = [&]()
+    {
+        if (bObserved) return;
+        bObserved = true;
+        FirstObservedGold = Harness.Progression->GetGold();
+        FirstObservedInstallSpend = Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::FacilityInstall);
+        // Spend every available coin from the callback. Both facilities must already be paid.
+        Harness.Progression->TrySpend(Harness.Progression->GetGold(), EFF_SpendReason::Cleanup);
+    };
+    Harness.Progression->OnGoldChanged.AddDynamic(Observer, &UFF_FacilityUpgradeTestPolicy::HandleGoldChanged);
+    const FFFZSCommandResult Result = Harness.ZoneSystem->ExecuteConstructionBatch(Commands);
+    Harness.Progression->OnGoldChanged.RemoveDynamic(Observer, &UFF_FacilityUpgradeTestPolicy::HandleGoldChanged);
+    TestTrue(TEXT("Reentrant observer cannot interrupt payment"), Result.bSucceeded);
+    TestTrue(TEXT("Gold notification received"), bObserved);
+    TestEqual(TEXT("First notification contains complete group balance"), FirstObservedGold, 50);
+    TestEqual(TEXT("First notification contains complete group ledger"), FirstObservedInstallSpend, FoodStallInstallCost * 2);
+    TestEqual(TEXT("Independent listener spending preserved"), Harness.Progression->GetGold(), 0);
+    TestEqual(TEXT("Both purchases remain recorded"), Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::FacilityInstall), FoodStallInstallCost * 2);
+    TestNotNull(TEXT("First paid facility exists"), Harness.ZoneSystem->FindFacility(Commands[0].FacilityInstanceId));
+    TestNotNull(TEXT("Second paid facility exists"), Harness.ZoneSystem->FindFacility(Commands[1].FacilityInstanceId));
+    return true;
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS

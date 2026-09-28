@@ -87,8 +87,8 @@ FFF_LiveQueueSummary FFF_LiveQueueRules::BuildSummary(const TArray<FFF_LiveFacil
 			static_cast<int32>(WaitSecondsSum / Result.AverageSampleCount);
 	}
 
-	// 🔴 줄이 하나도 없는 것과 시설이 없는 것을 구분한다. 대기 0 명인 시설만 있으면
-	//    `가장 긴 줄` 은 0 명짜리가 되는데, 그것을 이름과 함께 띄우면 거기가 붐비는
+	// 🔴 줄이 하나도 없는 것과 시설이 없는 것을 구분한다. 대기 0 팀인 시설만 있으면
+	//    `가장 긴 줄` 은 0 팀짜리가 되는데, 그것을 이름과 함께 띄우면 거기가 붐비는
 	//    것처럼 읽힌다. 대기가 아예 없으면 없는 것으로 둔다.
 	if (Result.TotalWaiting <= 0)
 	{
@@ -124,7 +124,7 @@ void UFF_LivePanelQueues::NativeOnPanelOpened()
 
 	// ★ 아직 못 보여주는 것을 적는다. 안 적으면 빠진 줄 모른다.
 	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveQueue_MissingNote",
-		"예상 대기 시간과 줄을 포기한 손님 수는 아직 읽을 수 없습니다."));
+		"대기·이용 수는 팀 기준입니다. 줄을 포기한 팀 수는 아직 읽을 수 없습니다."));
 
 	// 열자마자 한 번 읽는다. 첫 갱신을 주기까지 기다리면 빈 목록이 한 번 보인다.
 	TimeSinceRefresh = 0.f;
@@ -177,10 +177,10 @@ void UFF_LivePanelQueues::RefreshAll()
 
 	// --- 요약 ---
 	SetTextOrHide(Text_TotalWaiting, FText::Format(
-		LOCTEXT("LiveQueue_TotalWaiting", "{0}명"), FText::AsNumber(Summary.TotalWaiting)));
+		LOCTEXT("LiveQueue_TotalWaiting", "{0}팀"), FText::AsNumber(Summary.TotalWaiting)));
 
 	SetTextOrHide(Text_InService, FText::Format(
-		LOCTEXT("LiveQueue_InService", "{0}명"), FText::AsNumber(Summary.TotalInService)));
+		LOCTEXT("LiveQueue_InService", "{0}팀"), FText::AsNumber(Summary.TotalInService)));
 
 	SetTextOrHide(Text_AverageWait, (Summary.AverageWaitSeconds != INDEX_NONE)
 		? FText::Format(LOCTEXT("LiveQueue_AvgWait", "{0}초"), FText::AsNumber(Summary.AverageWaitSeconds))
@@ -195,7 +195,7 @@ void UFF_LivePanelQueues::RefreshAll()
 
 	SetTextOrHide(Text_Longest, Summary.HasAnyQueue()
 		? FText::Format(
-			LOCTEXT("LiveQueue_Longest", "가장 긴 줄 · {0} {1}명"),
+			LOCTEXT("LiveQueue_Longest", "가장 긴 줄 · {0} {1}팀"),
 			Summary.LongestQueueName, FText::AsNumber(Summary.LongestQueueWaiting))
 		: LOCTEXT("LiveQueue_NoQueue", "줄 서 있는 손님이 없습니다."));
 
@@ -247,10 +247,10 @@ void UFF_LivePanelQueues::RefreshAll()
 				FText::AsNumber(Facility.AverageWaitSeconds))
 			: FText::GetEmpty();
 
-		// !! 숫자만 두지 않는다 !! 대기 0 명이 "한산하다" 인지 "닫혀 있다" 인지
+		// !! 숫자만 두지 않는다 !! 대기 0 팀이 "한산하다" 인지 "닫혀 있다" 인지
 		// 숫자로는 알 수 없다 (AT-011).
 		Line->SetText(FText::Format(
-			LOCTEXT("LiveQueue_Row", "{0}  대기 {1} · 이용 {2}{3}  —  {4}"),
+			LOCTEXT("LiveQueue_Row", "{0}  대기 {1}팀 · 이용 {2}팀{3}  —  {4}"),
 			Facility.DisplayName,
 			FText::AsNumber(Facility.WaitingCount),
 			FText::AsNumber(Facility.ActiveServiceCount),

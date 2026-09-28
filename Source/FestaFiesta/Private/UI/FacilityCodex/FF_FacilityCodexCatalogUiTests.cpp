@@ -1,11 +1,17 @@
+// FF_FacilityCodexCatalogUiTests.cpp
+// 역할: 시설 도감의 동작과 저장된 화면 연결을 자동 검증한다.
+
 // Verifies the additive codex button in the saved production facility catalog.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
+#include "Components/ScrollBox.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Editor.h"
 #include "Engine/Texture2D.h"
@@ -74,9 +80,9 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 	{
 		return Cast<UWidgetBlueprintGeneratedClass>(FSoftClassPath(Path).TryLoadClass<UUserWidget>());
 	};
-	auto* PanelClass = LoadWbp(TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
-	auto* LauncherClass = LoadWbp(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher.WBP_FF_FacilityCodexCatalogLauncher_C"));
-	auto* TileClass = LoadWbp(TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C"));
+	auto* PanelClass = LoadWbp(FFBuildUIAssetPaths::BuildPanelClass);
+	auto* LauncherClass = LoadWbp(FFBuildUIAssetPaths::FacilityCodexCatalogLauncherClass);
+	auto* TileClass = LoadWbp(FFBuildUIAssetPaths::PrepBuildTileClass);
 	if (!TestNotNull(TEXT("Isolated editor world"), World) || !TestNotNull(TEXT("Saved facility catalog WBP"), PanelClass) ||
 		!TestNotNull(TEXT("Saved compact codex launcher WBP"), LauncherClass) || !TestNotNull(TEXT("Saved facility tile WBP"), TileClass)) return false;
 	FPlayerlessInitialization PanelContext(*PanelClass), LauncherContext(*LauncherClass), TileContext(*TileClass);
@@ -97,23 +103,44 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 	if (UWidget* Compact = Panel->GetWidgetFromName(TEXT("Panel_PlacementCompact"))) Compact->SetVisibility(ESlateVisibility::Collapsed);
 
 	auto* Header = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_CatalogHeader")));
+	auto* CodexRow = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("Row_BuildCodexCategory")));
+	auto* CategoryScroll = Cast<UScrollBox>(Panel->GetWidgetFromName(TEXT("ScrollBox_Categories")));
+	auto* CategorySize = Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_CategoryRow")));
 	auto* Search = Cast<UEditableTextBox>(Panel->GetWidgetFromName(TEXT("Search_Facilities")));
 	auto* Gold = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_Gold")));
 	auto* Launcher = Cast<UFF_FacilityCodexLauncher>(Panel->GetWidgetFromName(TEXT("Widget_FacilityCodexCatalogLauncher")));
+	auto* Ranking = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_RevenueRanking")));
+	auto* SubcategoryHeader = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_SubcategoryHeader")));
+	auto* SearchBounds = Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_PearlSearch")));
+	auto* RankingBounds = Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_PearlRevenueRanking")));
 	auto* Tiles = Cast<UFF_PrepBuildTileView>(Panel->GetWidgetFromName(TEXT("TileView_Facilities")));
-	if (!TestNotNull(TEXT("Authored catalog header"), Header) || !TestNotNull(TEXT("Existing search field"), Search) ||
+	if (!TestNotNull(TEXT("Authored catalog header"), Header) ||
+		!TestNotNull(TEXT("Pinned bottom codex tab row"), CodexRow) ||
+		!TestNotNull(TEXT("Category filters retain their scrollbox"), CategoryScroll) ||
+		!TestNotNull(TEXT("Category row retains its designer sizebox"), CategorySize) ||
+		!TestNotNull(TEXT("Existing search field"), Search) ||
 		!TestNotNull(TEXT("Existing gold balance"), Gold) || !TestNotNull(TEXT("Added catalog codex launcher"), Launcher) ||
+		!TestNotNull(TEXT("Added revenue ranking action"), Ranking) ||
+		!TestNotNull(TEXT("Pearl search and ranking row"), SubcategoryHeader) ||
+		!TestNotNull(TEXT("Search bounds"), SearchBounds) ||
+		!TestNotNull(TEXT("Ranking bounds"), RankingBounds) ||
 		!TestNotNull(TEXT("Actual facility tile view"), Tiles)) return false;
 	TestTrue(TEXT("Additive entry is the saved compact launcher class"), Launcher->GetClass() == LauncherClass);
-	TestTrue(TEXT("Search and launcher share the original header"), Search->GetParent() == Header && Launcher->GetParent() == Header);
-	TestEqual(TEXT("Codex entry sits immediately after search"), Header->GetChildIndex(Launcher), Header->GetChildIndex(Search) + 1);
+	TestTrue(TEXT("Search and ranking share the subcategory row; codex stays beside category filters"),
+		Search->GetParent() == SearchBounds && SearchBounds->GetParent() == SubcategoryHeader &&
+		Ranking->GetParent() == RankingBounds && RankingBounds->GetParent() == SubcategoryHeader &&
+		Launcher->GetParent() == CodexRow &&
+		CategoryScroll->GetParent() == Panel->GetWidgetFromName(TEXT("Size_BuildCodexCategoryViewport")) &&
+		CodexRow->GetParent() == CategorySize);
+	TestEqual(TEXT("Revenue ranking immediately follows search"),
+		SubcategoryHeader->GetChildIndex(RankingBounds), SubcategoryHeader->GetChildIndex(SearchBounds) + 1);
 	auto* Button = Cast<UButton>(Launcher->GetWidgetFromName(TEXT("Button_OpenCodex")));
 	auto* Label = Button ? Cast<UTextBlock>(Button->GetContent()) : nullptr;
 	if (!TestNotNull(TEXT("Compact launcher button"), Button) || !TestNotNull(TEXT("Authored button label"), Label)) return false;
 	TestTrue(TEXT("Catalog codex button is usable"), Button->GetIsEnabled() && Button->IsVisible());
-	TestTrue(TEXT("Button label identifies the codex"), Label->GetText().ToString().Contains(TEXT("도감")));
+	TestTrue(TEXT("Pinned button identifies the combination codex"),
+		Label->GetText().ToString().Contains(TEXT("조합")) && Label->GetText().ToString().Contains(TEXT("도감")));
 	TestFalse(TEXT("Compact button label stays on one line"), Label->GetAutoWrapText());
-	Gold->SetText(FText::FromString(TEXT("보유 7,500 Gold")));
 	const UWidgetTree* AuthoredTree = PanelClass->GetWidgetTreeArchetype();
 	if (auto* Status = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_Status"))))
 	{
@@ -123,10 +150,10 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 
 	// Real source thumbnails make the surrounding palette visible; entries are transient view data.
 	const TCHAR* Definitions[] = {
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_IceCream.PDA_FFZS_Booth_FoodStall_IceCream"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade") };
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"),
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_IceCream.PDA_FFZS_Booth_FoodStall_IceCream"),
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"),
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade") };
 	TArray<UObject*> Items;
 	TArray<UTexture*> Textures;
 	for (const TCHAR* Path : Definitions)
@@ -180,20 +207,30 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 				const FSlateRect Viewport(0, 0, Resolution.X, Resolution.Y);
 				const FSlateRect SearchRect = Search->GetPaintSpaceGeometry().GetLayoutBoundingRect();
 				const FSlateRect ButtonRect = Button->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-				const FSlateRect GoldRect = Gold->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+				const FSlateRect RankingRect = Ranking->GetPaintSpaceGeometry().GetLayoutBoundingRect();
 				const FSlateRect LabelRect = Label->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-				TestTrue(TEXT("Search, codex button and gold stay inside the viewport"), Contains(Viewport, SearchRect) && Contains(Viewport, ButtonRect) && Contains(Viewport, GoldRect));
+				TestTrue(TEXT("Search, codex and ranking actions stay inside the viewport"),
+					Contains(Viewport, SearchRect) && Contains(Viewport, ButtonRect) && Contains(Viewport, RankingRect) &&
+					RankingRect.GetSize().X >= 60.f * Dpi && RankingRect.GetSize().Y >= 20.f * Dpi);
 				TestTrue(TEXT("Search remains wide enough to type a facility name"), SearchRect.GetSize().X >= 100.f * Dpi);
 				TestTrue(TEXT("Codex button remains a visible click target"), ButtonRect.GetSize().X >= 50.f * Dpi && ButtonRect.GetSize().Y >= 20.f * Dpi);
 				TestFalse(TEXT("Codex button does not overlap search"), Overlaps(SearchRect, ButtonRect));
-				TestFalse(TEXT("Codex button does not overlap gold"), Overlaps(ButtonRect, GoldRect));
-				TestFalse(TEXT("Search does not overlap gold"), Overlaps(SearchRect, GoldRect));
-				TestTrue(TEXT("Codex stays to the right of the search field"), ButtonRect.Left >= SearchRect.Right - 1.f);
+				TestFalse(TEXT("Codex button does not overlap ranking"), Overlaps(ButtonRect, RankingRect));
+				TestFalse(TEXT("Search does not overlap ranking"), Overlaps(SearchRect, RankingRect));
+				TestTrue(TEXT("Codex tab occupies the category row above search"), ButtonRect.Bottom <= SearchRect.Top + 1.f);
+				TestTrue(TEXT("Codex tab remains inside the category row"),
+					Contains(CategorySize->GetPaintSpaceGeometry().GetLayoutBoundingRect(), ButtonRect));
 				TestTrue(TEXT("Complete button label stays inside its button"), Contains(ButtonRect, LabelRect));
-				const FVector2D TextSize = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Label->GetText(), Label->GetFont());
-				TestTrue(TEXT("Button label has enough unscaled space for all glyphs"), Label->GetCachedGeometry().GetLocalSize().X + 1.f >= TextSize.X && Label->GetCachedGeometry().GetLocalSize().Y + 1.f >= TextSize.Y);
+				for (UTextBlock* ActionLabel : { Label, Cast<UTextBlock>(Ranking->GetContent()) })
+				{
+					if (!TestNotNull(TEXT("Header action retains its readable text label"), ActionLabel)) continue;
+					const FVector2D TextSize = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(ActionLabel->GetText(), ActionLabel->GetFont());
+					const FVector2D Allotted = ActionLabel->GetCachedGeometry().GetLocalSize();
+					TestTrue(*FString::Printf(TEXT("%s label has space for every glyph: allotted %.2fx%.2f, measured %.2fx%.2f"),
+						*ActionLabel->GetName(), Allotted.X, Allotted.Y, TextSize.X, TextSize.Y),
+						Allotted.X + 1.f >= TextSize.X && Allotted.Y + 1.f >= TextSize.Y);
+				}
 			};
-			Gold->SetText(FText::FromString(TEXT("보유 7,500 Gold")));
 			Paint();
 			CheckBounds();
 			TArray<FColor> Pixels;
@@ -207,8 +244,7 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 			const FString Path = Directory / FString::Printf(TEXT("FacilityCodexCatalog%d.png"), Resolution.Y);
 			TestTrue(TEXT("Catalog header screenshot saved"), FFileHelper::SaveArrayToFile(Png, *Path));
 			AddInfo(FString::Printf(TEXT("Saved catalog header: %s (project DPI %.3f)"), *FPaths::ConvertRelativePathToFull(Path), Dpi));
-			// A larger balance must shrink flexible search space without hiding the new button.
-			Gold->SetText(FText::FromString(TEXT("보유 9,999,999 Gold")));
+			// Repeated paints must preserve both adjacent actions and their labels.
 			Paint();
 			CheckBounds();
 		}

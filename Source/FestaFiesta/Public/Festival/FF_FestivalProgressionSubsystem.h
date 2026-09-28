@@ -1,20 +1,22 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Save/FF_Saveable.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Economy/Rules/FF_FestivalFunds.h"
 #include "Economy/Rules/FF_DayLedger.h"
 #include "Economy/Rules/FF_FacilityRevenueBook.h"
-#include "Economy/Rules/FF_FixedCostArrears.h"
 #include "Economy/Rules/FF_StaffPool.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
 #include "NPC/Party/FF_ProgramReservation.h"
 #include "NPC/Party/FF_VisitorDistributionBuilder.h"
+#include "Economy/Rules/FF_FestivalEvaluationRules.h"
 #include "FF_FestivalProgressionSubsystem.generated.h"
 
 class UFF_ProgramReservationSubsystem;
+class UFF_FestivalBuzzSubsystem;
 
 class UFF_FestivalDefinition;
 
@@ -22,6 +24,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnEconomyValueChanged, int32, Ne
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeChanged, EFF_FinaleGrade, NewGrade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnPromotionGradeChanged, EFF_PromotionGrade, NewGrade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnStaffRosterChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnFestivalDefinitionChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFacilityRevenueChanged, FGuid, FacilityInstanceId);
 
@@ -32,13 +35,54 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFacilityRevenueChanged, FGuid,
  * [참고] Getter + 변경 델리게이트를 쌍으로 준다
  * [참고] 전부 Gold(int32)이고 상한이 없다.
  */
+ 
+USTRUCT()
+struct FFF_ProgressionSave
+{
+	GENERATED_BODY()
+	
+ 	UPROPERTY() int32 Gold = 0;
+ 	UPROPERTY() int32 TotalRevenue = 0;
+ 	UPROPERTY() int32 LastProcessedDay = 0;
+	UPROPERTY() int32 EndedDay = 0;
+	UPROPERTY() int32 AdmittedVisitorsToday = 0;
+	UPROPERTY() bool bDailyGoalBonusPaid = false;
+	// 하루 경계로 안 지워진다 — 축제 전체 누적. 새 축제(StartFestival)에서만 0으로 돌아간다.
+	UPROPERTY() int32 TotalAdmittedVisitors = 0;
+	// 기본 팀 + 고용 인원 전체 명단. 개인별 레벨·승급 이력이 여기 담긴다.
+	UPROPERTY() TArray<FFF_StaffMember> StaffRoster;
+	UPROPERTY() EFF_FinaleGrade PurchasedFinaleGrade = EFF_FinaleGrade::None;
+	UPROPERTY() EFF_PromotionGrade PurchasedPromotionGrade = EFF_PromotionGrade::None;
+	// INDEX_NONE 이면 입장료가 없던 옛 저장이다. 기준값으로 되돌린다.
+	UPROPERTY() int32 AdmissionFeeGold = INDEX_NONE;
+	// 끝난 날의 만족도(0~100). 축제 평가가 평균을 낸다.
+	UPROPERTY() TArray<int32> DailySatisfaction;
+};
+ 
 UCLASS()
-class FESTAFIESTA_API UFF_FestivalProgressionSubsystem : public UGameInstanceSubsystem
+class FESTAFIESTA_API UFF_FestivalProgressionSubsystem
+	: public UGameInstanceSubsystem, public IFF_Saveable
 {
 	GENERATED_BODY()
 
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
+	// ── 저장 참여 ───────────────────────────────────────────────────────────
+
+	virtual FName GetSaveKey() const override { return TEXT("Progression"); }
+
+	/* 다른 것이 기대는 값이라 가장 먼저 복원한다.
+
+	   시설을 되돌릴 때 설치 비용을 치르므로, 돈이 먼저 들어와 있어야 한다.
+	*/
+	virtual EFF_SaveLoadPhase GetSaveLoadPhase() const override
+	{
+		return EFF_SaveLoadPhase::Global;
+	}
+
+	virtual void WriteSaveData(TArray<uint8>& OutBytes) const override;
+	virtual void ReadSaveData(const TArray<uint8>& InBytes) override;
 
 	// --- 축제 시작 -------------------------------------------------------
 
@@ -99,6 +143,30 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void AddRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId = NAME_None);
 
+	// 실제 입장 인원을 하루 단위로 기록하고 목표를 처음 달성했을 때만 보너스를 지급한다.
+	void RecordAdmittedVisitorsForDailyGoal(int32 AdmittedCount);
+
+	// 오늘 입장한 인원. 하루 경계에서 0 으로 돌아간다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetAdmittedVisitorsToday() const { return AdmittedVisitorsToday; }
+
+	// 하루 방문객 목표. 축제가 시작되지 않았거나 목표가 없으면 INDEX_NONE("목표 없음").
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetDailyVisitorGoal() const;
+
+	// 오늘 목표 보너스를 이미 받았는지. 달성 여부와 같다 — 보너스는 처음 달성할 때 한 번만 준다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	bool IsDailyGoalBonusPaid() const { return bDailyGoalBonusPaid; }
+
+	// 오늘 입장 인원이 바뀌면 새 값을 알린다. 달성 여부는 IsDailyGoalBonusPaid 로 다시 읽는다.
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnEconomyValueChanged OnAdmittedVisitorsTodayChanged;
+
+	// 축제 시작부터 지금까지 입장한 누적 인원. 하루 경계로 안 지워진다.
+	// 결산·저장 기록(최고 방문객 수)이 읽는다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetTotalAdmittedVisitors() const { return TotalAdmittedVisitors; }
+
 	// 설치 시설 한 곳에 귀속되는 매출. FacilityId(종류)는 부스별 표로, FacilityInstanceId(Zone 인스턴스)는
 	// 시설별 장부로 간다. 자금·원장은 AddRevenue 와 같은 경로라 세 장부의 합이 항상 맞는다.
 	// 부스 수수료(Queue 브리지)와 유료 프로그램 체험비가 부른다.
@@ -119,6 +187,15 @@ public:
 	// TotalRevenue는 안 건드린다 — 환급은 새 매출이 아니라 이미 쓴 돈이 되돌아온 것이다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void Refund(int32 Amount);
+
+	// Authority economy bridge only: apply the exact original build receipt, including undo.
+	bool CanApplyConstructionDelta(int64 InstallSpendDelta, int64 RefundDelta) const;
+	bool ApplyConstructionDelta(int32 InstallSpendDelta, int32 RefundDelta, bool bPublish = true);
+	void PublishConstructionGoldChange(int32 PreviousGold);
+
+	/** Credits a one-time codex reward without counting it as facility sales or demolition refunds.
+	 * The codex progress subsystem owns the persistent first-discovery check. */
+	void GrantDiscoveryGold(int32 Amount);
 
 	// Report·테스트가 원인별·부스별 분해와 환급 총액을 읽는 창구.
 	const FFF_DayLedger& GetDayLedger() const { return DayLedger; }
@@ -153,7 +230,6 @@ public:
 	TArray<FFF_LedgerRow> GetEarnRowsForDay(int32 Day) const;
 
 	// 지출 사유를 enum 선언 순서로. 값 0 인 사유는 줄을 만들지 않는다.
-	// [주의] 장소 임대료는 하루치(2,400)를 넘을 수 있다 — 어제 못 낸 몫을 오늘 갚으면 합산된다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	TArray<FFF_LedgerRow> GetSpendRowsForDay(int32 Day) const;
 
@@ -173,13 +249,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void BeginNewDay(int32 NewDay);
 	
-	// 임대료를 마지막으로 정산한 날. 축제 시작 전이면 0.
+	// 하루 경계를 마지막으로 처리한 날. 축제 시작 전이면 0.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetLastProcessedDay() const { return LastProcessedDay; }
 	
 	
 	// --- Staff ------------------------------------------------------------
-	
+	//
+	// 고용은 1회 구매이고 축제가 끝날 때까지 남는다. 하루 경계에서 줄지 않는다.
+	// [주의] 스태프는 시설 성능(회전율·객단가)에도, 유료 프로그램 편성에도 관여하지 않는다.
+	//        시설은 시설 강화가 올리고, 프로그램은 Gold 로만 산다. 스태프가 쓰일 곳은
+	//        앞으로 붙을 사건 대응뿐이다.
+
 	// 무페이 기본 Staff.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetBaseStaffCount() const
@@ -187,39 +268,55 @@ public:
 		return StaffPool.GetBaseStaffCount();
 	}
 
-	// 오늘 고용한 알바. 임금을 낸 만큼이다.
+	// 이번 축제에 고용한 인원. 돈을 낸 만큼이고 남은 날 내내 유지된다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
-	int32 GetTemporaryStaffCount() const
+	int32 GetHiredStaffCount() const
 	{
-		return StaffPool.GetTemporaryStaffCount();
+		return StaffPool.GetHiredStaffCount();
 	}
 
-	// 오늘 실제로 일하는 전체 인원.
+	// 지금 일하는 전체 인원.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetTotalStaffCount() const
 	{
 		return StaffPool.GetTotalStaffCount();
 	}
-	
-	// 오늘 알바를 RequestedCount 명 고용하고 임금 지불
+
+	// RequestedCount 명을 고용하고 비용을 지불한다. 축제가 끝날 때까지 남는다.
+	// 잔액이 모자라거나 총원 상한을 넘으면 거부하고 상태를 전혀 바꾸지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
-	bool TryHireTemporaryStaff(int32 RequestedCount);
-	
+	bool TryHireStaff(int32 RequestedCount);
+
 	// 지금 잔액으로 추가 고용할 수 있는 최대 인원. 상태를 바꾸지 않는다.
 	// UI 슬라이더 상한과 버튼 비활성화 판정용.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
-	int32 GetAffordableTemporaryStaffCount() const;
+	int32 GetAffordableHireCount() const;
 
-	// 오늘 하루 상한까지 남은 고용 가능 인원. 잔액은 보지 않는다.
-	// `GetAffordableTemporaryStaffCount()`과 다르면 막은 것이 상한인지 돈인지 화면에서 구분할 수 있다.
-	// [주의] "왜 더 못 뽑는가"를 화면에 쓰기 위한 것이다. 고용 가능 판정에 쓰지 말 것. 
+	// 축제 총원 상한까지 남은 고용 가능 인원. 잔액은 보지 않는다.
+	// `GetAffordableHireCount()`과 다르면 막은 것이 상한인지 돈인지 화면에서 구분할 수 있다.
+	// [주의] "왜 더 못 뽑는가"를 화면에 쓰기 위한 것이다. 고용 가능 판정에 쓰지 말 것.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetRemainingHireCap() const;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
 	FFF_OnEconomyValueChanged OnTotalStaffCountChanged;
-	
-	
+
+	// 개인별 명단(기본 + 고용). 사건 UI·사건 시스템이 능력치 계산에 이 값을 그대로 쓴다.
+	// [참고] FFF_StaffEventRules(순수 함수)가 이 목록으로 능력치 합·소요시간을 계산한다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	TArray<FFF_StaffMember> GetStaffRoster() const { return StaffPool.GetAllStaff(); }
+
+	// StaffId 한 명을 승급시킨다. 고용 당일이거나, 오늘 이미 승급했거나, 이미 Lv3 면 거부하고
+	// 상태를 바꾸지 않는다. 가능 여부 판정은 FFF_StaffEventRules::CanPromote 를 따른다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	bool TryPromoteStaff(int32 StaffId);
+
+	// 명단이 바뀌면(고용·승급) 알린다. 인원 수만 바뀌는 게 아니라 레벨만 바뀌어도 쏜다 —
+	// OnTotalStaffCountChanged 는 승급으론 안 움직이므로 목록 화면은 이 델리게이트를 따로 듣는다.
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnStaffRosterChanged OnStaffRosterChanged;
+
+
 	// --- 피날레 -----------------------------------------------------------
 
 	// 피날레를 구매한다. 실패 이유를 결과로 돌려주고, 실패 시 상태를 전혀 바꾸지 않는다.
@@ -254,15 +351,59 @@ public:
 	FFF_OnPromotionGradeChanged OnPromotionGradeChanged;
 
 	/**
-	 * 홍보를 반영한 하루 예상 방문객. 축제가 시작되지 않았으면 `INDEX_NONE`("모름").
+	 * 하루 예상 방문객 = 기본 × 홍보 × 입장료 × 화제성. 축제가 시작되지 않았으면 `INDEX_NONE`("모름").
 	 * [주의] 0 과 `INDEX_NONE` 은 다르다. 0 은 "아무도 안 온다", `INDEX_NONE` 은 "알 수 없다" 다.
-	 * 🔴 crowd 가 `AFF_SpawnActor::UnitCount` 를 쓰므로, 그쪽이 이 창구를 읽기 전까지 홍보를 사도 손님은 안 늘어난다.
+	 * Crowd 는 UFF_CrowdEconomyBridgeSubsystem 을 거쳐 이 값으로 스폰 인원을 정한다.
+	 * 화제성은 Live 중에도 움직이지만 Crowd 는 Live 시작 순간의 값으로 그날 도착 일정을 짠다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetExpectedVisitors() const;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
 	FFF_OnEconomyValueChanged OnExpectedVisitorsChanged;
+
+	// 지금 상태(구매한 홍보·현재 입장료·현재 화제성)의 예보. 축제 전이면 전부 0.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	FFF_VisitorForecast GetVisitorForecast() const;
+
+	// 가정값으로 묻는 예보. 홍보 카드·입장료 슬라이더를 움직이는 동안 미리보기에 쓴다. 상태를 안 바꾼다.
+	// Grade 는 "이 등급을 샀다면" 이다 — 이미 산 등급과 달라도 계산한다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	FFF_VisitorForecast PreviewVisitorForecast(EFF_PromotionGrade Grade, int32 AdmissionFeeGold) const;
+
+	// 홍보 등급 1종의 비용·배수·화제성 시작값. None 이면 비용 0 · NoPromotionVisitorMultiplier.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	FFF_PromotionTier GetPromotionTier(EFF_PromotionGrade Grade) const;
+
+
+	// --- 입장료 -----------------------------------------------------------
+
+	// 오늘 입장료 (Gold). 축제 전이면 INDEX_NONE.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetAdmissionFee() const { return Definition != nullptr ? CurrentAdmissionFeeGold : INDEX_NONE; }
+
+	// 슬라이더 범위와 기준값(수요 배수 1.0 지점). 축제 전이면 셋 다 INDEX_NONE.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	void GetAdmissionFeeRange(int32& OutMinGold, int32& OutMaxGold, int32& OutReferenceGold) const;
+
+	// 입장료를 바꾼다. Live 중에는 거부한다(이미 들어온 손님과 값이 달라진다). 실패 시 상태를 안 바꾼다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	EFF_AdmissionFeeResult TrySetAdmissionFee(int32 NewFeeGold);
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnEconomyValueChanged OnAdmissionFeeChanged;
+
+
+	// --- 축제 평가(엔딩) ----------------------------------------------------
+
+	// 지금까지의 성과로 매긴 축제 평가. 축제 도중에 불러도 된다(진행 중 평가).
+	// 마지막 날은 아직 하루 경계를 안 넘었으므로 현재 만족도를 그날 값으로 쓴다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	FFF_FestivalEvaluation GetFestivalEvaluation() const;
+
+	// 끝난 날의 만족도 기록(1일차부터). 결과 화면의 날짜별 그래프용.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	TArray<int32> GetDailySatisfactionHistory() const { return DailySatisfaction; }
 
 
 	// --- 유료 프로그램 -----------------------------------------------------
@@ -271,22 +412,26 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	TArray<FFF_ProgramCard> GetProgramCatalog() const;
 
+	// 선택 시설의 최신 수익 표 참가비를 적용한 카드 전체. 비용·정원·허용 시설은 그대로다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	TArray<FFF_ProgramCard> GetProgramCatalogForFacility(FGuid FacilityInstanceId) const;
+
 	// 오늘 편성한 카드와 그 예약 핸들. 하루 경계에서 비워진다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	TArray<FFF_ScheduledProgram> GetScheduledPrograms() const { return ScheduledPrograms; }
 
-	// 오늘 프로그램에 묶여 있는 인원.
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
-	int32 GetStaffAssignedToPrograms() const;
-
-	// vent 대응에 쓸 수 있는 인원 = 전체 − 프로그램에 묶인 인원.
-	// 즉, 프로그램을 편성하면 줄어든다.
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
-	int32 GetAvailableStaffCount() const;
-
-	// 편성 가능한지만 본다. 상태를 바꾸지 않으므로 버튼 활성화·툴팁에 그대로 쓴다.
+	// 편성 가능한지만 본다(카드·Gold). 상태를 바꾸지 않으므로 버튼 활성화·툴팁에 그대로 쓴다.
+	// "같은 카드는 하루 한 번" 은 시설 단위다 — 시설을 알면 CanScheduleProgramAtFacility 를 쓴다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	EFF_ProgramPurchaseResult CanScheduleProgram(FName ProgramId) const;
+
+	// 이 시설에 이 카드를 오늘 편성할 수 있는가. 같은 카드라도 다른 시설이면 따로 열 수 있다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	EFF_ProgramPurchaseResult CanScheduleProgramAtFacility(FName ProgramId, FGuid FacilityInstanceId) const;
+
+	// 이 시설에 오늘 편성한 카드들.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	TArray<FName> GetScheduledProgramIdsAtFacility(FGuid FacilityInstanceId) const;
 
 	/**
 	 * 프로그램을 오늘 편성한다. 실패 시 상태를 바꾸지 않는다.
@@ -338,16 +483,6 @@ public:
 	// 오늘 편성 목록이 바뀌면 쏜다. 인원 표시도 같이 갱신해야 한다.
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
 	FFF_OnProgramScheduleChanged OnScheduledProgramsChanged;
-	
-	
-	// --- 미납 -------------------------------------------------------------
-	
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
-	int32 GetTotalArrears() const { return Arrears.GetTotalArrears(); }
-
-	// 미납 총액이 바뀌면 쏜다. 자금난 경고·엔딩 평가가 붙을 자리다 (E-24).
-	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
-	FFF_OnEconomyValueChanged OnTotalArrearsChanged;
 
 private:
 	friend class UFF_FacilityUpgradeSubsystem;
@@ -369,6 +504,8 @@ private:
 	// 시설 종류를 ZoneSystem 에서 읽어 카드의 허용 목록과 대조한다.
 	bool IsFacilityTypeAllowedForCard(const FFF_ProgramCard& Card, const FGuid& FacilityInstanceId) const;
 
+	FName ResolveFacilityDefinitionId(FGuid FacilityInstanceId) const;
+
 	/**
 	 * 프로그램 하나의 체험비를 원장에 넣고 `bFeeSettled` 를 켠다.
 	 * 시작 시각 정산과 Closing 안전망이 같은 계산을 쓰게 하는 유일한 구현이다.
@@ -383,7 +520,6 @@ private:
 	void BroadcastGoldIfChanged(int32 PreviousGold);
 	void BroadcastTotalRevenueIfChanged(int32 PreviousTotalRevenue);
 	void BroadcastTodayRevenueIfChanged(int32 PreviousTodayRevenue);
-	void BroadcastTotalArrearsIfChanged(int32 PreviousTotalArrears);
 	void BroadcastTotalStaffCountIfChanged(int32 PreviousTotalStaffCount);
 	
 	// 하루 경제 정산을 수행한다.
@@ -392,14 +528,6 @@ private:
 	
 	// Day 에 해당하는 원장을 찾는다. 안 들고 있으면 nullptr.
 	const FFF_DayLedger* FindLedgerForDay(int32 Day) const;
-
-	// 당일 임대료를 정산한다.
-	// 잔액이 부족해도 거부하지 않으며, 낼 수 있는 만큼 차감하고 부족분은 미납으로 남긴다.
-	void SettleVenueRent();
-
-	// 현재 Gold 로 기존 미납을 상환하고 실제 상환액을 반환한다.
-	// 미납이 남아 있는 동안 Gold 가 잔액으로 남지 않도록 가능한 만큼 전액 상환에 사용한다.
-	int32 RepayArrearsFromGold();
 
 	// 잔액 규칙의 소유자. UObject 가 아니라 값 타입이다.
 	FFF_FestivalFunds Funds;
@@ -419,15 +547,15 @@ private:
 	// EndedDayLedger 가 담고 있는 날짜. 0 = 아직 끝난 하루 없음.
 	// LastProcessedDay 와 하루 어긋난다 (닫힌 날 vs 열린 날). 둘을 섞어 쓰지 않는다.
 	int32 EndedDay = 0;
-	
-	// 임대료 미납. 하루 경계에서 리셋되지 않는다.
-	FFF_FixedCostArrears Arrears;
 
-	// 무페이 기본 팀 + 오늘 고용한 알바.
+	// 무페이 기본 팀 + 지금까지 고용한 인원.
 	FFF_StaffPool StaffPool;
-	
-	// 임대료를 마지막으로 정산한 날. 같은 날 중복 정산을 막는 수단이다.
+
+	// 하루 경계를 마지막으로 처리한 날. 같은 날 중복 처리를 막는 수단이다.
 	int32 LastProcessedDay = 0;
+	int32 AdmittedVisitorsToday = 0;
+	bool bDailyGoalBonusPaid = false;
+	int32 TotalAdmittedVisitors = 0;
 	
 	// 구매한 피날레 등급. 축제당 1회이고 되돌릴 수 없다.
 	EFF_FinaleGrade PurchasedFinaleGrade = EFF_FinaleGrade::None;
@@ -441,6 +569,24 @@ private:
 	// 예약 슬롯의 소유자. GameInstance 스코프로 수명이 같아서 캐시해도 된다.
 	UPROPERTY()
 	TObjectPtr<UFF_ProgramReservationSubsystem> ProgramReservations;
+
+	// 화제성. 같은 GameInstance 스코프다.
+	UPROPERTY()
+	TObjectPtr<UFF_FestivalBuzzSubsystem> Buzz;
+
+	UFUNCTION()
+	void HandleBuzzChanged(float NewBuzz, float PreviousBuzz);
+
+	float GetCurrentBuzz() const;
+
+	// 현재 만족도(0~100). 만족도 서브시스템이 없으면 중립 50.
+	int32 ReadCurrentSatisfaction() const;
+
+	// 오늘 입장료. 축제 시작 시 기준값으로 초기화된다.
+	int32 CurrentAdmissionFeeGold = 0;
+
+	// 끝난 날의 만족도. TryProcessNewDay 가 직전 날 값을 쌓는다.
+	TArray<int32> DailySatisfaction;
 
 	// 편성된 카드의 ProgramId 만 뽑는다. 순수 판정 함수가 그 형태를 받는다.
 	TArray<FName> GetScheduledProgramIds() const;

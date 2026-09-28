@@ -23,19 +23,17 @@ public class FestaFiesta : ModuleRules
 
 		// OpenLevel의 블로킹 구간에서도 로딩 화면을 유지한다. 런타임 cpp에서만 사용한다.
 		PrivateDependencyModuleNames.Add("MoviePlayer");
-		// The opt-in packaged startup probe records the RHI that actually initialized.
+		// 패키지 시작 진단에서 실제로 선택된 그래픽 API를 기록한다.
 		PrivateDependencyModuleNames.Add("RHI");
 		
-		// The WBP builder is compiled only into the Editor target. Runtime/Game
-		// packaging remains free of UnrealEd and UMGEditor dependencies.
+		// 제작 도구는 FestaFiestaEditor에 있다. 여기에는 기존 회귀 테스트와
+		// 런타임 타입의 에디터 전용 검증 함수가 직접 사용하는 의존성만 둔다.
 		if (Target.bBuildEditor)
 		{
-			// BlueprintGraph: 생성기가 복사본에 남은 레거시 K2 노드(OpenLevel)를 찾아 지운다.
-			// UnrealEd가 public으로 끌고 오지만, 직접 include하므로 명시적으로 적는다.
 			PrivateDependencyModuleNames.AddRange(new string[]
 			{
-				// Input integration tests host a lightweight FViewport (FRenderResource).
-				"AssetTools", "UnrealEd", "UMGEditor", "BlueprintGraph", "RenderCore"
+				// 입력 테스트는 가벼운 FViewport를, 콘텐츠 테스트는 에셋 목록을 사용한다.
+				"AssetTools", "UnrealEd", "UMGEditor", "RenderCore", "AssetRegistry"
 			});
 		}
 	}

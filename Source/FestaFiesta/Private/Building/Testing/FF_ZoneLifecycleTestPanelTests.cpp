@@ -6,6 +6,7 @@
 // 실패/성능: 핵심 루트 계약이 없으면 조기 종료하고 각 자식 누락은 이름별 assertion으로 누적한다.
 
 #include "Building/Testing/FF_ZoneLifecycleTestPanel.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "FF_ZoneLifecycleDebugDayControl.h"
 
@@ -30,8 +31,7 @@ bool FFFZoneLifecycleTestPanelAssetContractTest::RunTest(const FString& Paramete
 	// 루트 계약이 깨진 경우 자식 순회를 중단해 null 접근보다 실제 에셋 원인을 먼저 보고한다.
 	(void)Parameters;
 	static const TCHAR* PanelAssetPath =
-		TEXT("/Game/FestaFiesta/Building/Debug/WBP_FF_ZoneLifecycleTestPanel."
-			"WBP_FF_ZoneLifecycleTestPanel");
+		FFBuildUIAssetPaths::ZoneLifecycleTestPanelObject;
 	UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr, PanelAssetPath);
 	if (!TestNotNull(TEXT("시설 Lifecycle 테스트 WBP가 존재한다"), Blueprint)
 		|| !TestNotNull(TEXT("WBP에 WidgetTree가 존재한다"),

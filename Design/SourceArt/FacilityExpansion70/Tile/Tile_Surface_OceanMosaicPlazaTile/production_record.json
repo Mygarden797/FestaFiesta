@@ -1,0 +1,56 @@
+{
+  "number": 68,
+  "category": "Tile",
+  "subtype": "Surface",
+  "name_ko": "바다 모자이크 광장 타일",
+  "slug": "OceanMosaicPlazaTile",
+  "id": "Tile_Surface_OceanMosaicPlazaTile",
+  "footprint_cm": [
+    400,
+    400
+  ],
+  "height_cm": 8,
+  "description_ko": "랜드마크 주변의 파도 문양 바닥.",
+  "emphasis_ko": "멀리서 읽히는 큰 파도 패턴과 연결 경계를 강조. 모자이크 조각을 별도 메시로 쪼개지 않는다.",
+  "reference_image": "Design/Facitilies/68 바다 모자이크 광장 타일.png",
+  "exploded_reference_image": "Design/Facitilies/68 바다 모자이크 광장 타일 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Tile/PDA_FFZS_Tile_Surface_Stone",
+  "followup_features": [
+    "파도 문양 연결·상부 시설 설치·NPC 통행은 실제 배치로 검증한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Tile\\Tile_Surface_OceanMosaicPlazaTile\\SM_FF_Tile_Surface_OceanMosaicPlazaTile.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\68_Tile_Surface_OceanMosaicPlazaTile.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Tile\\Tile_Surface_OceanMosaicPlazaTile\\iso.png",
+  "bounds_m": [
+    4.0,
+    4.0,
+    0.07999999821186066
+  ],
+  "bounds_min_m": [
+    -2.0,
+    -2.0,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.0,
+    2.0,
+    0.07999999821186066
+  ],
+  "triangles": 524,
+  "material_names": [
+    "M_F70_Sand",
+    "M_F70_Blue",
+    "M_F70_Teal"
+  ],
+  "collision_count": 1,
+  "editable_parts": 5,
+  "fbx_sha256": "1318cf37da3557efc2a301a6db31f35bda6c758adff44bc96b2854253368549c",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

@@ -1,3 +1,6 @@
+# sample_colors.py
+# 역할: 열린 원본 이미지를 512픽셀로 줄이고 피부·머리·옷·신발 영역의 대표 색을 추출한다. 파일은 저장하지 않는다.
+
 import bpy,numpy as np,json
 im=bpy.data.images['tripo_image_29ed07d1_0'];im.scale(512,512);a=np.array(im.pixels[:]).reshape(512,512,4)
 o=next(o for o in bpy.data.objects if o.type=='MESH');m=o.data;uv=m.uv_layers.active.data;groups={x:[] for x in ['skin','hair','cloth','sole']}

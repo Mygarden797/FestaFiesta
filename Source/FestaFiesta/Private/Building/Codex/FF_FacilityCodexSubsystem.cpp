@@ -1,13 +1,21 @@
+// FF_FacilityCodexSubsystem.cpp
+// 역할: 월드·카탈로그·발견 기록 변경을 도감 화면과 보상 청구로 연결한다.
+
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
 
 #include "Building/Codex/FF_FacilityCodexProgressSubsystem.h"
+#include "Building/Codex/FF_FacilityCodexSettings.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/Synergy/FF_FacilitySynergySettings.h"
+#include "Building/Synergy/FF_FacilitySynergyRulePolicy.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Subsystems/SubsystemCollection.h"
+#include "TimerManager.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityCodex"
 DEFINE_LOG_CATEGORY_STATIC(LogFacilityCodex, Log, All);
@@ -18,20 +26,23 @@ void UFF_FacilityCodexSubsystem::Initialize(FSubsystemCollectionBase& Collection
 	Super::Initialize(Collection);
 	const UFF_FacilitySynergySettings* Settings = GetDefault<UFF_FacilitySynergySettings>();
 	LoadedTable = Settings->SynergyTable.LoadSynchronous();
-	TArray<FFF_FacilitySynergyRule> Rules;
-	if (LoadedTable && LoadedTable->GetRowStruct() == FFF_FacilitySynergyRow::StaticStruct())
+	TArray<FString> Warnings;
+	TArray<FFF_FacilitySynergyRule> Rules = FFFacilitySynergyRulePolicy::ReadTable(LoadedTable, Warnings);
+	if (!LoadedTable && !Settings->SynergyTable.IsNull())
 	{
-		for (const auto& Pair : LoadedTable->GetRowMap())
-		{
-			const FFF_FacilitySynergyRow& Row = *reinterpret_cast<const FFF_FacilitySynergyRow*>(Pair.Value);
-			if (Row.bEnabled && Row.IsUsable()) { Rules.Add({Pair.Key, Row}); }
-		}
+		Warnings.Add(FString::Printf(TEXT("시설 조합 데이터표를 읽을 수 없습니다: %s"), *Settings->SynergyTable.ToString()));
 	}
-	else if (!Settings->SynergyTable.IsNull())
+	for (const FString& Warning : Warnings)
 	{
-		UE_LOG(LogFacilityCodex, Warning, TEXT("시설 도감의 조합 데이터표를 읽을 수 없습니다: %s"), *Settings->SynergyTable.ToString());
+		UE_LOG(LogFacilityCodex, Warning, TEXT("%s"), *Warning);
 	}
 	Model.SetRules(MoveTemp(Rules), Settings->MaxTotalBonusPercent);
+	ReferencedDefinitionIds.Reset();
+	for (const FFF_FacilityCodexEntry& Entry : Model.GetEntries())
+	{
+		ReferencedDefinitionIds.Add(Entry.TargetFacilityId);
+		ReferencedDefinitionIds.Add(Entry.PartnerFacilityId);
+	}
 	if (ZoneSystem)
 	{
 		ZoneSystem->OnWorldChanged.AddUniqueDynamic(this, &ThisClass::HandleWorldChanged);
@@ -45,6 +56,16 @@ void UFF_FacilityCodexSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	Super::OnWorldBeginPlay(InWorld);
 	// Some test/transition worlds receive their GameInstance after subsystem initialization.
 	Refresh();
+	// Player login resets the configured festival during startup. Accept claims only after
+	// that reset finishes; discovery itself can safely persist before the economy is ready.
+	StartupRewardTimer = InWorld.GetTimerManager().SetTimerForNextTick(
+		FTimerDelegate::CreateUObject(this, &ThisClass::CompleteStartup));
+}
+
+void UFF_FacilityCodexSubsystem::CompleteStartup()
+{
+	bReadyToClaimRewards = true;
+	Refresh();
 }
 
 bool UFF_FacilityCodexSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
@@ -52,11 +73,13 @@ bool UFF_FacilityCodexSubsystem::DoesSupportWorldType(const EWorldType::Type Wor
 	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE || WorldType == EWorldType::GamePreview;
 }
 
+// 카탈로그·발견 기록·경제의 실제 소유자를 연결하며 인스턴스가 바뀌면 이전 이벤트 구독을 해제한다.
 void UFF_FacilityCodexSubsystem::BindGameInstance()
 {
 	UGameInstance* Game = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
 	UFF_BuildCatalogSubsystem* CurrentCatalog = Game ? Game->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
 	UFF_FacilityCodexProgressSubsystem* CurrentProgress = Game ? Game->GetSubsystem<UFF_FacilityCodexProgressSubsystem>() : nullptr;
+	UFF_FestivalProgressionSubsystem* CurrentEconomy = Game ? Game->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
 	if (Catalog != CurrentCatalog)
 	{
 		if (Catalog) { Catalog->OnCatalogChanged.RemoveDynamic(this, &ThisClass::HandleCatalogChanged); }
@@ -69,8 +92,15 @@ void UFF_FacilityCodexSubsystem::BindGameInstance()
 		Progress = CurrentProgress;
 		if (Progress) { Progress->OnProgressChanged.AddUniqueDynamic(this, &ThisClass::HandleProgressChanged); }
 	}
+	if (Economy != CurrentEconomy)
+	{
+		if (Economy) { Economy->OnFestivalDefinitionChanged.RemoveDynamic(this, &ThisClass::Refresh); }
+		Economy = CurrentEconomy;
+		if (Economy) { Economy->OnFestivalDefinitionChanged.AddUniqueDynamic(this, &ThisClass::Refresh); }
+	}
 }
 
+// 월드의 현재 배치로 도감을 다시 계산하고 새 발견을 저장한 뒤 UI 읽기 전용 목록을 갱신한다.
 void UFF_FacilityCodexSubsystem::Refresh()
 {
 	if (bRefreshing) { return; }
@@ -80,16 +110,33 @@ void UFF_FacilityCodexSubsystem::Refresh()
 	const FFFZSReadModel WorldModel = ZoneSystem ? ZoneSystem->BuildReadModel() : FFFZSReadModel();
 	CachedRegistryRevision = ZoneSystem ? ZoneSystem->GetFacilityRegistryRevision() : MAX_uint64;
 	EligibleInstanceIds.Reset();
+	UnreferencedInstanceIds.Reset();
 	for (const FFFZSFacilityReadModel& Facility : WorldModel.Facilities)
 	{
 		if (FFF_FacilityCodexModel::IsEligibleFacility(Facility)) { EligibleInstanceIds.Add(Facility.FacilityInstanceId); }
+		if (!ReferencedDefinitionIds.Contains(Facility.FacilityDefinitionId))
+		{
+			UnreferencedInstanceIds.Add(Facility.FacilityInstanceId);
+		}
 	}
 	Model.Evaluate(WorldModel, SessionDiscoveries);
 	SessionDiscoveries.Append(Model.GetNewDiscoveries());
-	if (Progress) { Progress->RecordDiscoveries(SessionDiscoveries); }
+	if (Progress)
+	{
+		TSet<FName> PendingDiscoveries;
+		for (const FFF_FacilityCodexEntry& Entry : Model.GetEntries())
+		{
+			if (SessionDiscoveries.Contains(Entry.RuleId) && !Progress->IsDiscovered(Entry.RuleId))
+			{
+				PendingDiscoveries.Add(Entry.RuleId);
+			}
+		}
+		Progress->RecordDiscoveries(PendingDiscoveries);
+	}
 	PublishEntries();
 }
 
+// 계산 결과에 사람이 읽는 시설 이름·썸네일·보상 수령 상태를 붙여 화면에 전달한다.
 void UFF_FacilityCodexSubsystem::PublishEntries()
 {
 	CachedEntries = Model.GetEntries();
@@ -99,6 +146,7 @@ void UFF_FacilityCodexSubsystem::PublishEntries()
 		FFF_FacilityCodexEntry& Entry = CachedEntries[Index];
 		EntryByRuleId.Add(Entry.RuleId, Index);
 		Entry.bDiscovered |= SessionDiscoveries.Contains(Entry.RuleId);
+		Entry.bDiscoveryRewardClaimed = Progress && Progress->IsDiscoveryRewardClaimed(Entry.RuleId);
 		Entry.TargetName = Catalog ? Catalog->ResolveFacilityDisplayName(Entry.TargetFacilityId) : LOCTEXT("LoadingFacility", "시설 이름 불러오는 중");
 		Entry.PartnerName = Catalog ? Catalog->ResolveFacilityDisplayName(Entry.PartnerFacilityId) : LOCTEXT("LoadingFacility", "시설 이름 불러오는 중");
 		FFF_BuildCatalogEntry Facility;
@@ -113,8 +161,41 @@ void UFF_FacilityCodexSubsystem::PublishEntries()
 	OnCodexChanged.Broadcast();
 }
 
+// 조합 조건에 영향을 줄 수 있는 배치·등록 변경만 다시 계산한다. 단순 영업 열기·닫기는 재계산을 생략한다.
 void UFF_FacilityCodexSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
 {
+	if (ZoneSystem)
+	{
+		const uint64 RegistryRevision = ZoneSystem->GetFacilityRegistryRevision();
+		const AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(Event.FacilityInstanceId);
+		const bool bUnreferencedNow = Facility
+			&& !ReferencedDefinitionIds.Contains(Facility->GetFacilitySpec().FacilityDefinitionId);
+		const bool bWasUnreferenced = UnreferencedInstanceIds.Contains(Event.FacilityInstanceId);
+		const bool bRegistryMutation = Event.Type == EFFZSCommandType::Install || Event.Type == EFFZSCommandType::Remove;
+		// Install/remove changes the registry once. Any other revision change may include an
+		// external registration or revalidation, so retain the full reconciliation in that case.
+		const bool bExpectedRegistryRevision = CachedRegistryRevision != MAX_uint64
+			&& RegistryRevision == CachedRegistryRevision + (bRegistryMutation ? 1 : 0);
+		const bool bUnreferencedChange = Event.Type == EFFZSCommandType::Remove
+			? bWasUnreferenced && !Facility
+			: bUnreferencedNow && (bWasUnreferenced || Event.Type == EFFZSCommandType::Install);
+		if (bExpectedRegistryRevision && bUnreferencedChange)
+		{
+			// Most dragged surfaces never occur in a recipe. Avoid copying and evaluating the
+			// entire world for each tile, while still supporting recipes that explicitly use roads.
+			if (Event.Type == EFFZSCommandType::Remove)
+			{
+				UnreferencedInstanceIds.Remove(Event.FacilityInstanceId);
+				EligibleInstanceIds.Remove(Event.FacilityInstanceId);
+			}
+			else
+			{
+				UnreferencedInstanceIds.Add(Event.FacilityInstanceId);
+			}
+			CachedRegistryRevision = RegistryRevision;
+			return;
+		}
+	}
 	// Open/Close changes no geometry once an instance is eligible. Planned-to-installed transitions still refresh.
 	if (Event.Type == EFFZSCommandType::Install || Event.Type == EFFZSCommandType::Move
 		|| Event.Type == EFFZSCommandType::Remove || Event.Type == EFFZSCommandType::Upgrade
@@ -146,6 +227,55 @@ bool UFF_FacilityCodexSubsystem::FindEntry(const FName RuleId, FFF_FacilityCodex
 	return false;
 }
 
+bool UFF_FacilityCodexSubsystem::ClaimDiscoveryReward(const FName RuleId)
+{
+	if (!bReadyToClaimRewards) { return false; }
+	BindGameInstance();
+	FFF_FacilityCodexEntry Entry;
+	if (!Progress || !FindEntry(RuleId, Entry) || !Entry.bDiscovered || Entry.bDiscoveryRewardClaimed)
+	{
+		return false;
+	}
+	return Progress->ClaimDiscoveryReward(RuleId, Entry.DiscoveryRewardGold, Economy);
+}
+
+TArray<FFF_FacilityCodexCollectionMilestone> UFF_FacilityCodexSubsystem::GetCollectionMilestones() const
+{
+	TArray<FFF_FacilityCodexCollectionMilestone> Result;
+	const TArray<FFF_FacilityCodexCollectionReward> Rewards =
+		GetDefault<UFF_FacilityCodexSettings>()->GetValidCollectionRewards(CachedSummary.TotalCount);
+	Result.Reserve(Rewards.Num());
+	for (const FFF_FacilityCodexCollectionReward& Reward : Rewards)
+	{
+		FFF_FacilityCodexCollectionMilestone& Milestone = Result.AddDefaulted_GetRef();
+		Milestone.MilestoneId = Reward.MilestoneId;
+		Milestone.RequiredDiscoveries = Reward.RequiredDiscoveries;
+		Milestone.RewardGold = Reward.RewardGold;
+		Milestone.DiscoveredCount = CachedSummary.DiscoveredCount;
+		Milestone.bReached = Milestone.DiscoveredCount >= Milestone.RequiredDiscoveries;
+		Milestone.bClaimed = Progress && Progress->IsCollectionRewardClaimed(Reward.MilestoneId);
+		Milestone.bCanClaim = Milestone.bReached && !Milestone.bClaimed && bReadyToClaimRewards
+			&& Progress && Economy && Economy->IsFestivalStarted();
+	}
+	return Result;
+}
+
+bool UFF_FacilityCodexSubsystem::ClaimCollectionReward(const FName MilestoneId)
+{
+	if (!bReadyToClaimRewards || MilestoneId.IsNone()) { return false; }
+	BindGameInstance();
+	if (!Progress) { return false; }
+	const TArray<FFF_FacilityCodexCollectionReward> Rewards =
+		GetDefault<UFF_FacilityCodexSettings>()->GetValidCollectionRewards(CachedSummary.TotalCount);
+	const FFF_FacilityCodexCollectionReward* Reward = Rewards.FindByPredicate(
+		[MilestoneId](const FFF_FacilityCodexCollectionReward& Candidate) { return Candidate.MilestoneId == MilestoneId; });
+	if (!Reward) { return false; }
+	TSet<FName> AuthoredRuleIds;
+	AuthoredRuleIds.Reserve(CachedEntries.Num());
+	for (const FFF_FacilityCodexEntry& Entry : CachedEntries) { AuthoredRuleIds.Add(Entry.RuleId); }
+	return Progress->ClaimCollectionReward(MilestoneId, Reward->RequiredDiscoveries, Reward->RewardGold, AuthoredRuleIds, Economy);
+}
+
 TArray<FFF_FacilityCodexEntry> UFF_FacilityCodexSubsystem::GetFilteredEntries(const FFF_FacilityCodexFilter& Filter) const
 {
 	TArray<FFF_FacilityCodexEntry> Result;
@@ -158,6 +288,8 @@ TArray<FFF_FacilityCodexEntry> UFF_FacilityCodexSubsystem::GetFilteredEntries(co
 
 void UFF_FacilityCodexSubsystem::Deinitialize()
 {
+	if (UWorld* World = GetWorld()) { World->GetTimerManager().ClearTimer(StartupRewardTimer); }
+	bReadyToClaimRewards = false;
 	if (ZoneSystem)
 	{
 		ZoneSystem->OnWorldChanged.RemoveDynamic(this, &ThisClass::HandleWorldChanged);
@@ -165,14 +297,18 @@ void UFF_FacilityCodexSubsystem::Deinitialize()
 	}
 	if (Catalog) { Catalog->OnCatalogChanged.RemoveDynamic(this, &ThisClass::HandleCatalogChanged); }
 	if (Progress) { Progress->OnProgressChanged.RemoveDynamic(this, &ThisClass::HandleProgressChanged); }
+	if (Economy) { Economy->OnFestivalDefinitionChanged.RemoveDynamic(this, &ThisClass::Refresh); }
 	OnCodexChanged.Clear();
 	CachedEntries.Reset();
 	EntryByRuleId.Reset();
 	EligibleInstanceIds.Reset();
+	UnreferencedInstanceIds.Reset();
+	ReferencedDefinitionIds.Reset();
 	SessionDiscoveries.Reset();
 	ZoneSystem = nullptr;
 	Catalog = nullptr;
 	Progress = nullptr;
+	Economy = nullptr;
 	LoadedTable = nullptr;
 	Super::Deinitialize();
 }

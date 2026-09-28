@@ -109,12 +109,8 @@ void UFF_QueueCrowdLink::HandleSlotTargetsUpdated(int32 FacilityId, const TArray
 	TMap<int32, TArray<FVector>> ColumnsByParty;
 	TMap<int32, float> LaneYawByParty;
 
-	// 배정은 일행당 하나다. 멤버 배치는 Crowd 의 포메이션이 맡는다.
-	//
-	// 예전에는 멤버마다 좌표를 따로 쐈는데, Crowd 가 멤버 목적지를 리더에게 되돌리는
-	// 구조라 마지막 멤버 자리만 리더에게 남았다. 그래서 리더가 줄 맨 뒤에 혼자 서고,
-	// 나머지는 포메이션을 따라 그 옆에 붙고, 슬롯이 당겨질 때마다 목표가 튀면서
-	// 뒤처진 멤버가 일행에서 떨어져 나갔다.
+	// 하나의 팀 자리 안에 배치된 멤버별 위치를 Crowd의 queue column으로 묶는다.
+	// 멤버가 늘어도 저작된 다음 팀 자리를 소비하지 않는다.
 	for (const FFF_SlotAssignment& Assignment : Assignments)
 	{
 		TArray<FVector>& Column = ColumnsByParty.FindOrAdd(Assignment.PartyId);
@@ -206,7 +202,8 @@ void UFF_QueueCrowdLink::HandlePartyExited(int32 FacilityId, int32 PartyId, EFF_
 					if (!ExitLocation.IsNearlyZero())
 					{
 						// 리더에게만 준다. 멤버는 포메이션을 따라 함께 빠져나간다.
-						Crowd->SetAgentDestination(Members[0], ExitLocation);
+						// Members[0] 이 리더라는 보장은 없다. 아래 재평가와 같은 방식으로 리더를 찾는다.
+						Crowd->SetAgentDestination(Crowd->GetPartyLeader(Members[0]), ExitLocation);
 						++AppliedSlotTargets;
 						return;
 					}

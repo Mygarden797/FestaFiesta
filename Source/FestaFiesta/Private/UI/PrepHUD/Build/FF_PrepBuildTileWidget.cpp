@@ -1,3 +1,6 @@
+// FF_PrepBuildTileWidget.cpp
+// 역할: 화면에 보이는 시설 카드만 재사용해 이름·가격·선택 상태를 표시한다.
+
 // PrepBuild TileView entry presentation.
 
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
@@ -77,6 +80,21 @@ void UFF_PrepBuildTileView::ConfigureEntryClass(TSubclassOf<UUserWidget> InEntry
 	bEnableFixedLineOffset = false;
 }
 
+void UFF_PrepBuildTileView::ConfigureHorizontalRibbon()
+{
+	Orientation = Orient_Horizontal;
+	EntryWidth = 184.f;
+	EntryHeight = 218.f;
+	SetHorizontalEntrySpacing(10.f);
+	SetVerticalEntrySpacing(0.f);
+	ConsumeMouseWheel = EConsumeMouseWheel::Never;
+	AllowOverscroll = false;
+	bEnableScrollAnimation = false; // The panel owns direct drag + exponential release inertia.
+	bInEnableTouchAnimatedScrolling = false;
+	bEnableFixedLineOffset = false;
+	TileAlignment = EListItemAlignment::LeftAligned;
+}
+
 TSharedRef<STableViewBase> UFF_PrepBuildTileView::RebuildListWidget()
 {
 	// UE's saved "entry size includes spacing" option and runtime size setters use
@@ -113,6 +131,8 @@ void UFF_PrepBuildTileWidget::NativeOnInitialized()
 	// Older saved WBP assets did not mark this SizeBox as a variable. Resolve its stable
 	// Designer name without regenerating the asset or taking ownership of its layout.
 	ThumbnailFrame = Cast<USizeBox>(GetWidgetFromName(TEXT("SizeBox_Thumbnail")));
+	if (!Border_ThumbnailBackdrop)
+		Border_ThumbnailBackdrop = Cast<UBorder>(GetWidgetFromName(TEXT("Border_ThumbnailBackdrop")));
 	if (Button_Favorite)
 	{
 		Button_Favorite->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleFavoriteClicked);
@@ -125,6 +145,7 @@ void UFF_PrepBuildTileWidget::NativePreConstruct()
 	if (!bCapturedAppearance || IsDesignTime())
 	{
 		if (Border_Card) { AuthoredCardBrush = Border_Card->Background; }
+		if (Border_ThumbnailBackdrop) { AuthoredThumbnailBrush = Border_ThumbnailBackdrop->Background; }
 		if (Text_Cost) { AuthoredCostColor = Text_Cost->GetColorAndOpacity(); }
 		if (Text_State) { AuthoredStateColor = Text_State->GetColorAndOpacity(); }
 		if (Text_Favorite) { AuthoredFavoriteColor = Text_Favorite->GetColorAndOpacity(); }
@@ -136,25 +157,33 @@ void UFF_PrepBuildTileWidget::NativePreConstruct()
 
 void UFF_PrepBuildTileWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
 {
+	UFF_PrepBuildTileData* NewItem = Cast<UFF_PrepBuildTileData>(ListItemObject);
+	if (Item != NewItem)
+	{
+		bCardSelected = false;
+		bCardHovered = false;
+	}
+	Item = NewItem;
 	IUserObjectListEntry::NativeOnListItemObjectSet(ListItemObject);
-	Item = Cast<UFF_PrepBuildTileData>(ListItemObject);
 	RefreshItemPresentation();
 }
 
 void UFF_PrepBuildTileWidget::NativeOnItemSelectionChanged(const bool bIsSelected)
 {
+	bCardSelected = bIsSelected;
 	IUserObjectListEntry::NativeOnItemSelectionChanged(bIsSelected);
-	RefreshVisualState(bIsSelected);
+	RefreshVisualState();
 }
 
 void UFF_PrepBuildTileWidget::NativeOnEntryReleased()
 {
 	Item = nullptr;
+	bCardSelected = false;
 	bCardHovered = false;
 	// Released entries retain their fixed layout but no previous data or selection.
 	RefreshFromItem();
-	RefreshVisualState(false);
 	RefreshFavorite();
+	ApplyCodexFocus();
 	SetSynergyHighlighted(false);
 	SetRequiredFacilityStatus(false, false, 0, 0);
 	IUserObjectListEntry::NativeOnEntryReleased();
@@ -163,25 +192,49 @@ void UFF_PrepBuildTileWidget::NativeOnEntryReleased()
 void UFF_PrepBuildTileWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
-	bCardHovered = true;
-	RefreshVisualState(IsListItemSelected());
+	bCardHovered = Item != nullptr;
+	RefreshVisualState();
 }
 
 void UFF_PrepBuildTileWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
 {
 	Super::NativeOnMouseLeave(InMouseEvent);
 	bCardHovered = false;
-	RefreshVisualState(IsListItemSelected());
+	RefreshVisualState();
 }
 
 void UFF_PrepBuildTileWidget::RefreshItemPresentation()
 {
 	RefreshFromItem();
-	RefreshVisualState(Item && IsListItemSelected());
 	RefreshFavorite();
+	ApplyCodexFocus();
 	SetSynergyHighlighted(Item && Item->IsSynergyHighlighted());
 	SetRequiredFacilityStatus(Item && Item->IsRequiredFacility(), Item && Item->IsRequiredFacilitySatisfied(),
 		Item ? Item->GetRequiredFacilityCurrentCount() : 0, Item ? Item->GetRequiredFacilityMinimumCount() : 0);
+}
+
+void UFF_PrepBuildTileWidget::ApplyProgramAvailability()
+{
+	bHasCompatiblePrograms = Item && Item->HasCompatiblePrograms();
+	const ESlateVisibility BadgeVisibility = bHasCompatiblePrograms
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (Border_ProgramBadge) { Border_ProgramBadge->SetVisibility(BadgeVisibility); }
+	if (Text_ProgramBadge) { Text_ProgramBadge->SetVisibility(BadgeVisibility); }
+	if (Border_ThumbnailBackdrop && bCapturedAppearance)
+	{
+		FSlateBrush Brush = AuthoredThumbnailBrush;
+		if (bRequiredFacility)
+		{
+			if (RequiredThumbnailBrush.GetResourceObject()) Brush = RequiredThumbnailBrush;
+			else Brush.TintColor = RequiredCardTint;
+		}
+		else if (bHasCompatiblePrograms)
+		{
+			if (ProgramThumbnailBrush.GetResourceObject()) Brush = ProgramThumbnailBrush;
+			else Brush.TintColor = ProgramCardTint;
+		}
+		Border_ThumbnailBackdrop->SetBrush(Brush);
+	}
 }
 
 void UFF_PrepBuildTileWidget::SetSynergyHighlighted(const bool bHighlighted)
@@ -195,10 +248,19 @@ void UFF_PrepBuildTileWidget::SetSynergyHighlighted(const bool bHighlighted)
 void UFF_PrepBuildTileWidget::ApplySynergyHighlight()
 {
 	// The independent overlay leaves the authored card brush, selection and price state intact.
-	const ESlateVisibility AccentVisibility = bSynergyHighlighted
+	const ESlateVisibility AccentVisibility = bSynergyHighlighted && !bCodexFocused
 		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 	if (Border_SynergyHighlight) { Border_SynergyHighlight->SetVisibility(AccentVisibility); }
 	if (Text_SynergyBadge) { Text_SynergyBadge->SetVisibility(AccentVisibility); }
+}
+
+void UFF_PrepBuildTileWidget::ApplyCodexFocus()
+{
+	bCodexFocused = Item && Item->IsCodexFocused();
+	const ESlateVisibility CodexFocusVisibility = bCodexFocused
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (Image_CodexFocusRim) { Image_CodexFocusRim->SetVisibility(CodexFocusVisibility); }
+	if (Border_CodexFocusBadge) { Border_CodexFocusBadge->SetVisibility(CodexFocusVisibility); }
 }
 
 void UFF_PrepBuildTileWidget::SetRequiredFacilityStatus(const bool bRequired, const bool bSatisfied,
@@ -215,6 +277,8 @@ void UFF_PrepBuildTileWidget::SetRequiredFacilityStatus(const bool bRequired, co
 	RequiredFacilityCurrentCount = NewCurrent;
 	RequiredFacilityMinimumCount = NewMinimum;
 	ApplyRequiredFacilityStatus();
+	ApplyProgramAvailability();
+	RefreshVisualState();
 	if (bChanged) { BP_OnRequiredFacilityStatusChanged(bNewRequired, bNewSatisfied, NewCurrent, NewMinimum); }
 }
 
@@ -287,6 +351,9 @@ void UFF_PrepBuildTileWidget::RefreshFromItem()
 	if (Text_State)
 	{
 		Text_State->SetText(Item ? Item->GetStateLabelText() : FText::GetEmpty());
+		// Keep meaningful limits/failures visible; six identical "available" labels add no information.
+		Text_State->SetVisibility(Item && (Item->GetEntry().MaxInstancesPerWorld > 0 || !Item->IsAffordable())
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 
 	if (Item)
@@ -294,13 +361,6 @@ void UFF_PrepBuildTileWidget::RefreshFromItem()
 		FText NameAndCategory = FText::Format(
 			NSLOCTEXT("FestaFiestaPrepBuild", "TileNameAndCategory", "{0}\n{1}"),
 			Item->GetDisplayName(), Item->GetCategoryPathText());
-		const FString UniqueName = Item->GetUniqueNameToken();
-		if (!UniqueName.IsEmpty() && !UniqueName.Equals(Item->GetDisplayName().ToString(), ESearchCase::IgnoreCase))
-		{
-			NameAndCategory = FText::Format(
-				NSLOCTEXT("FestaFiestaPrepBuild", "TileUniqueName", "{0}\n고유 이름: {1}"),
-				NameAndCategory, FText::FromString(UniqueName));
-		}
 		FText Description = FText::Format(
 			NSLOCTEXT("FestaFiestaPrepBuild", "TileFullDescription", "{0}\n{1} · {2}\n{3}"),
 			NameAndCategory, Item->GetCostText(), Item->GetBuildLimitText(), Item->GetStateText());
@@ -309,6 +369,11 @@ void UFF_PrepBuildTileWidget::RefreshFromItem()
 			Description = FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "TileDescriptionWithRequirement", "{0}\n{1}"),
 				Description, UFF_BuildFacilityCard::MakeRequiredFacilityToolTip(Item->IsRequiredFacilitySatisfied(),
 					Item->GetRequiredFacilityCurrentCount(), Item->GetRequiredFacilityMinimumCount()));
+		}
+		if (Item->HasCompatiblePrograms())
+		{
+			Description = FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "TileDescriptionWithPrograms", "{0}\n{1}"),
+				Description, UFF_BuildFacilityCard::MakeProgramFacilityToolTip(Item->GetEntry()));
 		}
 		SetToolTipText(Description);
 	}
@@ -349,14 +414,22 @@ FVector2D UFF_PrepBuildTileWidget::GetAuthoredThumbnailBounds() const
 	return Bounds;
 }
 
-void UFF_PrepBuildTileWidget::RefreshVisualState(const bool bIsSelected)
+void UFF_PrepBuildTileWidget::RefreshVisualState()
 {
 	const bool bAvailable = Item && Item->IsAffordable();
 	if (Border_Card && bCapturedAppearance)
 	{
 		FSlateBrush Brush = AuthoredCardBrush;
-		if (bIsSelected) { Brush.TintColor = SelectedTint; }
-		else if (bCardHovered) { Brush.TintColor = HoverTint; }
+		const bool bAccented = bRequiredFacility || bHasCompatiblePrograms;
+		const FLinearColor AccentTint = bRequiredFacility ? RequiredCardTint : ProgramCardTint;
+		if (bAccented)
+		{
+			Brush.TintColor = AccentTint;
+			Brush.OutlineSettings.Color = bRequiredFacility ? RequiredOutlineColor : ProgramOutlineColor;
+			Brush.OutlineSettings.Width = 1.f;
+		}
+		if (bCardSelected) { Brush.TintColor = bAccented ? FMath::Lerp(AccentTint, SelectedTint, 0.25f) : SelectedTint; }
+		else if (bCardHovered) { Brush.TintColor = bAccented ? FMath::Lerp(AccentTint, HoverTint, 0.2f) : HoverTint; }
 		Border_Card->SetBrush(Brush);
 	}
 	if (Text_Cost) { Text_Cost->SetColorAndOpacity(Item && !bAvailable ? FSlateColor(UnavailableColor) : AuthoredCostColor); }

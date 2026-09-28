@@ -18,11 +18,11 @@ struct FESTAFIESTA_API FFF_LiveQueueSummary
 {
 	GENERATED_BODY()
 
-	/** 지금 줄 서 있는 총 인원. */
+	/** 지금 줄 서 있는 총 팀 수. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	int32 TotalWaiting = 0;
 
-	/** 지금 이용 중인 총 인원. */
+	/** 지금 이용 중인 총 팀 수. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	int32 TotalInService = 0;
 
@@ -44,7 +44,7 @@ struct FESTAFIESTA_API FFF_LiveQueueSummary
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	FText LongestQueueName;
 
-	/** 가장 긴 줄의 인원. 줄이 하나도 없으면 `INDEX_NONE`. */
+	/** 가장 긴 줄의 팀 수. 줄이 하나도 없으면 `INDEX_NONE`. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	int32 LongestQueueWaiting = INDEX_NONE;
 

@@ -29,6 +29,33 @@ namespace
 		}
 		return V / OutLength;
 	}
+
+	float PointSegmentDistSq(const FVector2f& P, const FVector2f& A, const FVector2f& B)
+	{
+		const FVector2f AB = B - A;
+		const float LenSq = AB.SizeSquared();
+		if (LenSq <= KINDA_SMALL_NUMBER)
+		{
+			return FVector2f::DistSquared(P, A);
+		}
+
+		const float T = FMath::Clamp(FVector2f::DotProduct(P - A, AB) / LenSq, 0.f, 1.f);
+		return FVector2f::DistSquared(P, A + AB * T);
+	}
+
+	bool SegmentsCrossProperly(const FVector2f& P1, const FVector2f& P2, const FVector2f& Q1, const FVector2f& Q2)
+	{
+		const FVector2f R = P2 - P1;
+		const FVector2f S = Q2 - Q1;
+
+		const float D1 = FVector2f::CrossProduct(R, Q1 - P1);
+		const float D2 = FVector2f::CrossProduct(R, Q2 - P1);
+		const float D3 = FVector2f::CrossProduct(S, P1 - Q1);
+		const float D4 = FVector2f::CrossProduct(S, P2 - Q1);
+
+		return ((D1 > 0.f && D2 < 0.f) || (D1 < 0.f && D2 > 0.f))
+			&& ((D3 > 0.f && D4 < 0.f) || (D3 < 0.f && D4 > 0.f));
+	}
 }
 
 FVector2f FFF_CrowdForceSolver::ComputeDrivingForce(const FVector2f& DesiredVel, const FVector2f& Vel,
@@ -287,6 +314,42 @@ void FFF_CrowdWalls::AppendOrientedRect(TArray<FFF_CrowdWallSegment>& OutWalls,
 	}
 }
 
+bool FFF_CrowdWalls::IsSegmentClear(const TArray<FFF_CrowdWallSegment>& Walls,
+                                    const FVector2f& FromMeters, const FVector2f& ToMeters, float ClearanceMeters)
+{
+	const float Clearance = FMath::Max(ClearanceMeters, 0.f);
+	const float ClearanceSq = FMath::Square(Clearance);
+
+	const float MinX = FMath::Min(FromMeters.X, ToMeters.X) - Clearance;
+	const float MaxX = FMath::Max(FromMeters.X, ToMeters.X) + Clearance;
+	const float MinY = FMath::Min(FromMeters.Y, ToMeters.Y) - Clearance;
+	const float MaxY = FMath::Max(FromMeters.Y, ToMeters.Y) + Clearance;
+
+	for (const FFF_CrowdWallSegment& Wall : Walls)
+	{
+		if (FMath::Max(Wall.A.X, Wall.B.X) < MinX || FMath::Min(Wall.A.X, Wall.B.X) > MaxX
+			|| FMath::Max(Wall.A.Y, Wall.B.Y) < MinY || FMath::Min(Wall.A.Y, Wall.B.Y) > MaxY)
+		{
+			continue;
+		}
+
+		if (SegmentsCrossProperly(FromMeters, ToMeters, Wall.A, Wall.B))
+		{
+			return false;
+		}
+
+		if (PointSegmentDistSq(FromMeters, Wall.A, Wall.B) <= ClearanceSq
+			|| PointSegmentDistSq(ToMeters, Wall.A, Wall.B) <= ClearanceSq
+			|| PointSegmentDistSq(Wall.A, FromMeters, ToMeters) <= ClearanceSq
+			|| PointSegmentDistSq(Wall.B, FromMeters, ToMeters) <= ClearanceSq)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
 FVector2f FFF_CrowdForceSolver::ComposeAcceleration(
 	const FFF_CrowdForceTerms& AgentTerms, const FFF_CrowdForceTerms& WallTerms,
 	const FVector2f& Vel, const FVector2f& DesiredVel,
@@ -349,6 +412,7 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 	const bool bUseLaneBias = bHasDesired && (Config.LaneBiasGain > 0.f);
 	const bool bCullWalls = (Config.WallCullRadiusMeters > 0.f);
 	const TArray<FVector2f>* DesiredVel = In.DesiredVelMeters;
+	const TArray<float>* SocialScale = In.SocialScale;
 
 	const int32 N = ActiveIds.Num();
 	if (N == 0)
@@ -409,6 +473,10 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 				++NeighbourCount;
 			}
 
+			// 개인 공간만 좁힌다. Contact 는 그대로라 몸은 여전히 안 겹친다.
+			const float SocialGain = SocialScale ? (*SocialScale)[i] : 1.f;
+			Terms.Social *= SocialGain;
+
 			FFF_CrowdForceTerms WallTerms;
 			{
 				const float CullDist = (bCullWalls ? (Radius[i] + Config.WallCullRadiusMeters) : 0.f);
@@ -445,7 +513,7 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 					? 1.f
 					: static_cast<float>(FMath::Min(U.UnstuckHoldSteps, HoldMax)) / static_cast<float>(HoldMax);
 
-				if (HoldScale > 0.f)
+				if (HoldScale > 0.f && SocialGain > 0.f)
 				{
 					FVector2f Suggested = FVector2f::ZeroVector;
 					FVector2f CellCenter;
@@ -454,7 +522,7 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 						Suggested = CellCenter - Pos[i];
 					}
 					Accel += ComputeUnstuckImpulse(U.StableAgentID, Suggested)
-						* (Config.UnstuckAccelMps2 * HoldScale);
+						* (Config.UnstuckAccelMps2 * HoldScale * SocialGain);
 				}
 			}
 

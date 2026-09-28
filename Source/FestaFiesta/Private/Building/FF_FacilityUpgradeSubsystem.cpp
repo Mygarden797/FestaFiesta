@@ -1,3 +1,6 @@
+// FF_FacilityUpgradeSubsystem.cpp
+// 역할: 강화 견적을 만들고 공간·운영 상태·잔액 확인 후 비용 예약과 확정을 연결한다.
+
 #include "Building/FF_FacilityUpgradeSubsystem.h"
 #include "Building/FF_FacilityNamingLibrary.h"
 #include "Building/Synergy/FF_FacilitySynergySubsystem.h"
@@ -76,6 +79,7 @@ UFF_FestivalProgressionSubsystem* UFF_FacilityUpgradeSubsystem::ResolveProgressi
 	return GameInstance ? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
 }
 
+// 현재 시설과 다음 강화 단계를 비교한다. 표시용 견적이며 이 함수 자체는 돈이나 시설을 바꾸지 않는다.
 bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	const FGuid FacilityInstanceId, FFF_FacilityUpgradePreview& OutPreview) const
 {
@@ -98,29 +102,36 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	const FFFZSQueueRules CurrentRules = Facility->GetEffectiveQueueRules();
 	OutPreview.CurrentServiceDurationSeconds = CurrentRules.ServiceDurationSeconds;
 	OutPreview.NextServiceDurationSeconds = CurrentRules.ServiceDurationSeconds;
-	OutPreview.CurrentThroughputPerMinute = CurrentRules.ServiceCapacity * 60.f / CurrentRules.ServiceDurationSeconds;
+	OutPreview.CurrentThroughputPerMinute = FMath::Min(CurrentRules.ServiceCapacity, CurrentRules.MaxWaitingAgents)
+		* 60.f / CurrentRules.ServiceDurationSeconds;
 	OutPreview.NextThroughputPerMinute = OutPreview.CurrentThroughputPerMinute;
-	OutPreview.CurrentRevenueMultiplier = Facility->GetUpgradeRevenueMultiplier();
-	OutPreview.NextRevenueMultiplier = OutPreview.CurrentRevenueMultiplier;
 	const UFF_FacilitySynergySubsystem* Synergies = World ? World->GetSubsystem<UFF_FacilitySynergySubsystem>() : nullptr;
 	const float SynergyMultiplier = Synergies ? Synergies->GetRevenueMultiplier(FacilityInstanceId) : 1.f;
 	const UFF_FestivalProgressionSubsystem* Progression = ResolveProgression();
 	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
+	const UDataTable* RevenueTable = Definition ? Definition->GetFacilityRevenueTable() : nullptr;
+	const float CommissionRate = Definition ? FFF_BoothRevenueRules::ResolveCommissionRate(
+		BaseSpec, Definition->BoothCommissionRate, RevenueTable) : 0.f;
+	OutPreview.CurrentRevenueMultiplier = FFF_BoothRevenueRules::ResolveRevenueMultiplier(
+		BaseSpec, OutPreview.CurrentLevel, Facility->GetUpgradeRevenueMultiplier(), RevenueTable);
+	OutPreview.NextRevenueMultiplier = OutPreview.CurrentRevenueMultiplier;
 	int32 RevenuePerUse = 0;
 	if (Definition)
 	{
 		FFF_FacilityNameParts Parts;
 		FString NamingError;
-		OutPreview.bRevenueAvailable = UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+		OutPreview.bRevenueAvailable = FFF_BoothRevenueRules::HasFacilityRevenueRow(BaseSpec, RevenueTable)
+			|| BaseSpec.bOverrideRevenuePerUseGold || UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
 			BaseSpec.Category, BaseSpec.FacilityDefinitionId, Parts, NamingError);
 		if (OutPreview.bRevenueAvailable)
 		{
-			RevenuePerUse = FFF_BoothRevenueRules::FindRevenuePerUse(
-				Definition->RevenuePerUseByMinorToken, Parts.MinorToken);
+			RevenuePerUse = FFF_BoothRevenueRules::ResolveRevenuePerUse(
+				BaseSpec, Definition->RevenuePerUseByMinorToken, RevenueTable);
 			OutPreview.BaseRevenuePerUseGold = FFF_BoothRevenueRules::ResolveCommission(
-				RevenuePerUse, 1, Definition->BoothCommissionRate, 1.f);
+				RevenuePerUse, 1, CommissionRate,
+				FFF_BoothRevenueRules::ResolveRevenueMultiplier(BaseSpec, 1, 1.f, RevenueTable));
 			OutPreview.CurrentRevenuePerUseGold = FFF_BoothRevenueRules::ResolveCommission(
-				RevenuePerUse, 1, Definition->BoothCommissionRate, OutPreview.CurrentRevenueMultiplier * SynergyMultiplier);
+				RevenuePerUse, 1, CommissionRate, static_cast<double>(OutPreview.CurrentRevenueMultiplier) * SynergyMultiplier);
 			OutPreview.NextRevenuePerUseGold = OutPreview.CurrentRevenuePerUseGold;
 		}
 	}
@@ -173,12 +184,14 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	const FFFZSQueueRules NextRules = AFFZSFacilityActor::BuildEffectiveQueueRules(
 		BaseSpec.QueueRules, Tier->ServiceDurationMultiplier);
 	OutPreview.NextServiceDurationSeconds = NextRules.ServiceDurationSeconds;
-	OutPreview.NextThroughputPerMinute = NextRules.ServiceCapacity * 60.f / NextRules.ServiceDurationSeconds;
-	OutPreview.NextRevenueMultiplier = Tier->RevenueMultiplier;
+	OutPreview.NextThroughputPerMinute = FMath::Min(NextRules.ServiceCapacity, NextRules.MaxWaitingAgents)
+		* 60.f / NextRules.ServiceDurationSeconds;
+	OutPreview.NextRevenueMultiplier = FFF_BoothRevenueRules::ResolveRevenueMultiplier(
+		BaseSpec, Tier->TargetLevel, Tier->RevenueMultiplier, RevenueTable);
 	if (OutPreview.bRevenueAvailable)
 	{
 		OutPreview.NextRevenuePerUseGold = FFF_BoothRevenueRules::ResolveCommission(
-			RevenuePerUse, 1, Definition->BoothCommissionRate, Tier->RevenueMultiplier * NextSynergyMultiplier);
+			RevenuePerUse, 1, CommissionRate, static_cast<double>(OutPreview.NextRevenueMultiplier) * NextSynergyMultiplier);
 	}
 	int32 InstallCost = 0;
 	FName CostRow;
@@ -245,6 +258,7 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	return true;
 }
 
+// 최신 견적과 사용자가 본 레벨이 일치할 때만 권위 Zone 명령을 보낸다. 중복 구매 중에는 재진입을 막는다.
 bool UFF_FacilityUpgradeSubsystem::TryUpgradeFacility(
 	const FGuid FacilityInstanceId, const int32 ExpectedCurrentLevel, FText& OutFailureReason)
 {
@@ -299,6 +313,7 @@ EFFZSPolicyDomain UFF_FacilityUpgradeSubsystem::GetFFZoneSystemPolicyDomain_Impl
 	return EFFZSPolicyDomain::Custom;
 }
 
+// 외부에서 들어온 강화 명령도 실제 데이터표와 비교해 가격·효과 조작을 차단한다.
 FFFZSPolicyDecision UFF_FacilityUpgradeSubsystem::ValidatePurchase(const FFFZSPolicyContext& Context, int32& OutCost) const
 {
 	OutCost = 0;
@@ -331,6 +346,7 @@ FFFZSPolicyDecision UFF_FacilityUpgradeSubsystem::PreValidateFFZoneSystemChange_
 	return ValidatePurchase(Context, Cost);
 }
 
+// 강화가 실행되기 직전에 비용을 예약한다. 이후 다른 정책이 실패하면 Rollback이 예약을 돌려준다.
 FFFZSPolicyDecision UFF_FacilityUpgradeSubsystem::ApplyTentativeFFZoneSystemChange_Implementation(const FFFZSPolicyContext& Context)
 {
 	int32 Cost = 0;
@@ -348,6 +364,7 @@ FFFZSPolicyDecision UFF_FacilityUpgradeSubsystem::ApplyTentativeFFZoneSystemChan
 	return FFFZSPolicyDecision();
 }
 
+// 권위 시설 변경이 성공했을 때만 예약한 비용을 확정한다. 화면 알림은 월드 변경 확정 뒤 전달한다.
 void UFF_FacilityUpgradeSubsystem::CommitFFZoneSystemChange_Implementation(const FFFZSPolicyContext& Context)
 {
 	if (Context.Command.Type == EFFZSCommandType::Upgrade && PendingPurchaseCommand == Context.Command.CommandId)
@@ -359,6 +376,7 @@ void UFF_FacilityUpgradeSubsystem::CommitFFZoneSystemChange_Implementation(const
 	}
 }
 
+// 강화 명령 실패 시 같은 명령의 비용 예약만 취소하여 다른 구매에 영향을 주지 않는다.
 void UFF_FacilityUpgradeSubsystem::RollbackFFZoneSystemChange_Implementation(const FFFZSPolicyContext& Context)
 {
 	if (Context.Command.Type == EFFZSCommandType::Upgrade && PendingPurchaseCommand == Context.Command.CommandId)
@@ -371,6 +389,7 @@ void UFF_FacilityUpgradeSubsystem::RollbackFFZoneSystemChange_Implementation(con
 	}
 }
 
+// 완료된 강화의 구매 상태를 먼저 정리한 후 잔액 변경을 방송해 재진입에도 중복 차감되지 않게 한다.
 void UFF_FacilityUpgradeSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
 {
 	if (Event.Type == EFFZSCommandType::Upgrade && PendingPurchaseCommand == Event.CommandId)

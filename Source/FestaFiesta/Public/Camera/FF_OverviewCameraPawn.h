@@ -3,12 +3,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Debug/FF_DebugConsole.h"
 #include "GameFramework/Pawn.h"
 #include "Camera/FF_CameraTypes.h"
 #include "Camera/FF_OverviewCameraRig.h"
 #include "FF_OverviewCameraPawn.generated.h"
 
-struct IConsoleCommand;
 
 class UCameraComponent;
 class USceneComponent;
@@ -81,6 +81,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
 	void ResetView();
 
+	// UI 차단, 창 포커스 상실, 시점 전환에서 호출한다. 남은 명령/추적도 취소한다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
+	void StopCameraMotion();
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Camera")
+	EFF_OverviewCameraMotionState GetMotionState() const { return MotionState; }
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Camera")
 	FFF_OverviewCameraState GetCameraState() const { return Rig.GetDisplayState(); }
 
@@ -105,6 +112,8 @@ protected:
 
 private:
 	void ApplyRigToComponents();
+	void RequestTransition(EFF_CameraMotionChannel Channels);
+	void CompleteSettledTransitions();
 
 	// 초점이 Zone 밖으로 나갔으면 되돌린다.
 	//
@@ -131,11 +140,17 @@ private:
 	// 한 지점의 지면 높이를 잰다. 못 찾으면 false.
 	bool TraceGroundAt(const FVector2D& Where, float AroundZ, float& OutGroundZ) const;
 
-	// 초점 아래 지면을 찾아 리그에 알린다. 리그는 월드를 모르므로 트레이스는 여기서 한다.
-	void UpdateGroundHeight(float DeltaSeconds);
+	// 입력 프레임에서만 새 지면을 측정한다. 일회성 명령은 이 표본을 향해 보간한다.
+	void UpdateGroundHeight(float DeltaSeconds, bool bRefreshSample);
+	bool SampleGroundHeight(float& OutGroundZ) const;
 
 
 	FFF_OverviewCameraRig Rig;
+	EFF_OverviewCameraMotionState MotionState = EFF_OverviewCameraMotionState::Idle;
+	EFF_CameraMotionChannel TransitionChannels = EFF_CameraMotionChannel::None;
+	TOptional<float> GroundHeightSample;
+	bool bRefreshGroundRequested = false;
+	bool bNeedsInitialPlacement = false;
 
 	// 이번 프레임에 쌓인 팬 입력. Tick 에서 소비하고 비운다.
 	FVector2D PendingPanInput = FVector2D::ZeroVector;
@@ -164,6 +179,6 @@ private:
 	int32 ConstrainBlockCount = 0;
 	int32 ConstrainSlideCount = 0;
 
-	IConsoleCommand* BoundsConsoleCommand = nullptr;
-	IConsoleCommand* BoundsRefreshCommand = nullptr;
+	// 개발용 콘솔 명령. 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
+	FFF_DebugConsoleCommands DebugCommands;
 };

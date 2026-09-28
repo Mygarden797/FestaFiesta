@@ -26,6 +26,9 @@ namespace FFF_CrowdWalls
 	void AppendOrientedRect(TArray<FFF_CrowdWallSegment>& OutWalls,
 	                        const FVector2f& CenterMeters, float YawRadians,
 	                        float HalfExtentXMeters, float HalfExtentYMeters);
+
+	bool IsSegmentClear(const TArray<FFF_CrowdWallSegment>& Walls,
+	                    const FVector2f& FromMeters, const FVector2f& ToMeters, float ClearanceMeters);
 }
 
 // 한 개체가 받는 힘(N)을 비접촉/접촉으로 나눠 담는다.
@@ -60,6 +63,18 @@ struct FFF_CrowdForceInput
 	// 이번 스텝의 희망 속도(m/s). 세 기능이 이 배열을 필요로 한다.
 	const TArray<FVector2f>* DesiredVelMeters = nullptr;
 
+	/**
+	 * 개체별 사회력 배수. nullptr 이면 전원 1.0 이다.
+	 *
+	 * **Social 항에만 곱한다.** Contact(겹쳤을 때의 강성·마찰)와 벽 반발은 그대로 둬야
+	 * 몸이 관통하지 않고 무대 안으로도 안 들어간다. 이 값을 낮추면 "개인 공간"만 좁아져
+	 * 어깨가 닿을 만큼 붙어 서고, 그 상태에서도 서로를 뚫지는 않는다.
+	 *
+	 * 탈출(unstuck) 가속에도 같은 배수를 건다. 안 걸면 제자리에 선 관객이 진척 0 으로
+	 * 판정돼 매 스텝 옆으로 밀려나며 대열이 흩어진다.
+	 */
+	const TArray<float>* SocialScale = nullptr;
+
 	// 구동력을 합에 넣는다. StepAgent의 Lerp와 배타적이다.
 	bool bApplyDrivingForce = false;
 
@@ -73,7 +88,8 @@ struct FFF_CrowdForceInput
 		return PosMeters && VelMeters && RadiusMeters && ActiveIds
 			&& PosMeters->Num() == VelMeters->Num()
 			&& PosMeters->Num() == RadiusMeters->Num()
-			&& (!DesiredVelMeters || DesiredVelMeters->Num() == PosMeters->Num());
+			&& (!DesiredVelMeters || DesiredVelMeters->Num() == PosMeters->Num())
+			&& (!SocialScale || SocialScale->Num() == PosMeters->Num());
 	}
 
 	bool HasDesiredVelocities() const

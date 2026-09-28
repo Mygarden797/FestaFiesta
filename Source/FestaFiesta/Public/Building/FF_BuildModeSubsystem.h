@@ -8,19 +8,25 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "InputCoreTypes.h"
+#include "Math/Box2D.h"
 #include "FF_FFZSTypes.h"
+#include "Building/FF_BuildLayoutPresetSave.h"
+#include "Building/Presentation/FF_BuildPlacementGuidance.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Time/FF_FestivalStage.h"
 #include "FF_BuildModeSubsystem.generated.h"
 
 class AFFZSFacilityActor;
 class AFFZSPlacementPreviewActor;
+class AFF_BuildPlacementGizmo;
 class AFFZSBuildableGridActor;
 class APlayerController;
 class UFF_BuildCatalogScreen;
 class UFF_BuildCatalogSubsystem;
 class UFF_BuildModeGuide;
 class UFF_BuildToolsWidget;
+class UFF_BuildMultiSelectionWidget;
 class UFF_BuildSynergyWidget;
 class UFF_BuildPlacementFailureFeedback;
 class UFF_FacilityInfoSubsystem;
@@ -54,12 +60,24 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 // 외부 PrepHUD 카탈로그의 exact Slate focus가 사라졌을 때 안정적인 카테고리 버튼으로 복구하도록 요청한다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnBuildCatalogFocusRestoreRequested);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnBuildToolsChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnBuildMultiSelectionChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnSynergyCatalogContextChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnBuildCatalogFacilityFocusRequested, FName, FacilityDefinitionId);
 
 // 입력과 부작용을 분리해 자동화 테스트에서도 실제 B 키 상태표를 검증할 수 있게 한다.
 namespace FFBuildModeModel
 {
+	inline bool TryResolveQueueLayoutShortcut(const FKey Key, const bool bTextFocused,
+		const bool bModifierDown, const bool bSuspended, EFFZSQueueLayout& OutLayout)
+	{
+		if (bTextFocused || bModifierDown || bSuspended) return false;
+		if (Key == EKeys::Seven) OutLayout = EFFZSQueueLayout::Authored;
+		else if (Key == EKeys::Eight) OutLayout = EFFZSQueueLayout::Left;
+		else if (Key == EKeys::Nine) OutLayout = EFFZSQueueLayout::Right;
+		else if (Key == EKeys::Zero) OutLayout = EFFZSQueueLayout::UShape;
+		else return false;
+		return true;
+	}
 	inline bool CanAcceptWorldBuildAction(const bool bInputSuppressed,
 		const bool bEditableTextFocused, const bool bPointerOverTools)
 	{
@@ -341,11 +359,17 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_BuildFacilityInspectionTest;
 	friend class FFF_BuildGridOverviewTest;
+	friend class FFF_AuroraCatalogSelectionTest;
+	friend class FFF_ClarityCatalogDragTest;
 	friend class FFF_BuildDragPlacementTest;
 	friend class FFF_BuildSynergyCatalogContextTest;
+	friend class FFF_BuildMultiSelectionSessionTest;
+	friend class FFF_BuildGroupEditingTest;
+	friend class FFF_BuildQueueLayoutDraftTest;
 #endif
 
 public:
+	UFF_BuildModeSubsystem();
 	// DeveloperSettings가 없거나 런타임 config가 범위를 벗어났을 때 사용하는 조작 안전값.
 	static constexpr float DefaultPlacementRotationSnapDegrees = 45.0f;
 	static constexpr float DefaultFreePlacementRotationSpeedDegreesPerSecond = 90.0f;
@@ -477,6 +501,9 @@ public:
 	FName GetSelectedFacilityDefinitionId() const { return SelectedSpec.FacilityDefinitionId; }
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	FText GetSelectedFacilityDisplayName() const { return SelectedSpec.DisplayName; }
+	/** Current preview spec, including an existing facility's effective size when moving. */
+	const FFFZSFacilitySpec& GetSelectedFacilitySpec() const { return SelectedSpec; }
+	FFFZSQueueRules GetSelectedFacilityQueueRules() const;
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	float GetPlacementRotationSnapDegrees() const;
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
@@ -486,10 +513,78 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Building|Tools")
 	FFF_OnBuildToolsChanged OnBuildToolsChanged;
 
+	/** F1 switches to world selection; the selection never performs a destructive command. */
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	void ToggleMultiSelection();
+	UFUNCTION(BlueprintPure, Category = "Building|Multi Selection")
+	bool IsMultiSelectionActive() const { return bMultiSelectionActive; }
+	UFUNCTION(BlueprintPure, Category = "Building|Multi Selection")
+	int32 GetMultiSelectionCount() const;
+	UFUNCTION(BlueprintPure, Category = "Building|Multi Selection")
+	TArray<AFFZSFacilityActor*> GetMultiSelectedFacilities() const;
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	void ClearMultiSelection();
+	/** Leaves multi-selection and opens the validated single-facility information panel. */
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	bool InspectMultiSelectedFacility(AFFZSFacilityActor* Facility);
+	UPROPERTY(BlueprintAssignable, Category = "Building|Multi Selection")
+	FFF_OnBuildMultiSelectionChanged OnBuildMultiSelectionChanged;
+
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|History")
+	bool UndoBuildEdit();
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|History")
+	bool RedoBuildEdit();
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Queue")
+	bool SetSelectedFacilityQueueLayout(EFFZSQueueLayout Layout);
+	UFUNCTION(BlueprintPure, Category = "Building|Queue")
+	bool CanChooseQueueLayout() const;
+	UFUNCTION(BlueprintPure, Category = "Building|Queue")
+	EFFZSQueueLayout GetEditingQueueLayout() const;
+	UFUNCTION(BlueprintPure, Category = "Building|Queue")
+	FText GetQueueLayoutKeyHint() const;
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	bool BeginGroupMove();
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	bool BeginGroupDuplicate();
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	bool RemoveSelectedGroup();
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	void RotateGroupPlacement(float DeltaDegrees);
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	bool CommitGroupPlacement();
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	void CancelGroupPlacement();
+	UFUNCTION(BlueprintPure, Category = "Building|Multi Selection")
+	bool IsGroupPlacementActive() const { return !GroupEntries.IsEmpty(); }
+	UFUNCTION(BlueprintCallable, Category = "Building|Presets")
+	bool SaveSelectedGroupPreset(const FString& Name);
+	UFUNCTION(BlueprintCallable, Category = "Building|Presets")
+	bool BeginGroupPreset(const FString& Name);
+	UFUNCTION(BlueprintCallable, Category = "Building|Presets")
+	bool DeleteGroupPreset(const FString& Name);
+	UFUNCTION(BlueprintCallable, Category = "Building|Presets")
+	TArray<FString> GetGroupPresetNames();
+	FText GetGroupEditingStatus() const { return GroupEditingStatus; }
+
+	/** Compatibility no-op. Toolbar controls are activated through their buttons. */
+	bool HandleBuildToolbarKey(const FKey& Key);
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void ToggleBuildSettings();
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	bool IsBuildSettingsOpen() const;
+
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	bool IsPlacementGridVisible() const { return bPlacementGridVisible; }
 	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
 	void SetPlacementGridVisible(bool bVisible);
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	bool AreFacilityRangesVisible() const { return bFacilityRangesVisible; }
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void SetFacilityRangesVisible(bool bVisible);
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	bool IsSynergyPreviewVisible() const { return bSynergyPreviewVisible; }
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void SetSynergyPreviewVisible(bool bVisible);
 	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
 	void SetPreferredPositionSnapCm(int32 SnapCm);
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
@@ -499,9 +594,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
 	void NudgePlacement(FIntPoint Direction);
 	void NotifyBuildToolsInteraction();
+	void RefreshBuildToolsOcclusion();
 	bool HasPlacementTarget() const { return bHasPlacementTarget; }
+	bool GetPlacementMarkerLocation(FVector& OutLocation) const;
 	bool IsCurrentPlacementValid() const { return bHasPlacementTarget && LastValidation.bIsValid; }
 	FText GetPlacementStatusText() const;
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	FFF_BuildPlacementGuidance GetPlacementGuidance(int32 ProblemIndex = 0) const;
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void ToggleDirectPlacementAdjustment();
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	bool IsDirectPlacementAdjustment() const { return bDirectPlacementAdjustment; }
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	bool FindNearbyPlacement();
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	bool IsFindingNearbyPlacement() const { return bFindingNearbyPlacement; }
+	FText GetPlacementAssistanceMessage() const { return PlacementAssistanceMessage; }
 
 	// 최신 커서·revision·대상 등록을 재검증한 뒤 PreviewCommand를 Install 또는 Move로 확정한다.
 	// 명령 성공 시만 true. 설치는 연속 배치를 유지하고, 이동은 BuildMode로 복귀하며 실패 시 프리뷰를 유지한다.
@@ -514,6 +622,24 @@ public:
 	bool IsDragPlacementEnabled() const;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_BuildPlacementAssistanceIntegrationTest;
+#endif
+	UPROPERTY(Transient) TObjectPtr<AFF_BuildPlacementGizmo> PlacementGizmo;
+	bool bDirectPlacementAdjustment = false;
+	bool bFindingNearbyPlacement = false;
+	TArray<FIntPoint> NearbyOffsets;
+	int32 NearbyCandidateIndex = 0;
+	FFFZSCommand NearbySearchCommand;
+	FText PlacementAssistanceMessage;
+	FFFZSGridPlacement GizmoStartPlacement;
+	bool bHasGizmoStartPlacement = false;
+	float GizmoStartYawDegrees = 0.0f;
+	void TickPlacementAssistance();
+	void CancelNearbyPlacementSearch();
+	void ResetPlacementAssistance();
+	void RefreshPlacementGizmo();
+	bool HandlePlacementGizmoInput(APlayerController& Controller, bool bPointerBlocked);
 	// A stroke owns bounded path/deduplication data; installed actors remain owned by ZoneSystem.
 	TSharedPtr<FFF_BuildDragPlacementSession> DragPlacementSession;
 	void HandlePlacementPrimaryPress(bool bButtonDown);
@@ -524,7 +650,7 @@ private:
 	bool TryInstallDragCell(const FIntPoint& Cell);
 	bool ResolveDragPlacement(const FIntPoint& Cell, FName& OutZoneId, FFFZSGridPlacement& OutPlacement) const;
 	bool ResolveDragCursorCell(const FVector& CursorWorld, FIntPoint& OutCell) const;
-	void RefreshDragPlacementPreview(bool bForceRefresh);
+	void RefreshDragPlacementPreview(bool bForceRefresh, bool bValidate = true, const FHitResult* GroundHit = nullptr);
 	// 현재 표시 중인 카탈로그 위젯. CatalogOpen 외 상태에서는 원칙적으로 null이다. 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildCatalogScreen> CatalogScreen;
@@ -540,13 +666,43 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildToolsWidget> BuildToolsWidget;
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_BuildMultiSelectionWidget> MultiSelectionWidget;
+	UPROPERTY(Transient) TObjectPtr<UFF_BuildLayoutPresetSave> LayoutPresets;
+	UPROPERTY(Transient) TArray<TObjectPtr<AFFZSPlacementPreviewActor>> GroupPreviews;
+	UPROPERTY(Transient) TArray<FFF_BuildLayoutEntry> GroupEntries;
+	TArray<FGuid> GroupSourceIds;
+	TArray<FFFZSCommand> GroupCommands;
+	FVector GroupTargetCenter = FVector::ZeroVector;
+	float GroupRotationDegrees = 0.f;
+	bool bGroupDuplicate = false;
+	bool bGroupHasTarget = false;
+	bool bGroupTargetValid = false;
+	bool bGroupCommitting = false;
+	double NextGroupPreviewTime = 0.0;
+	int64 GroupSourceRevision = INDEX_NONE;
+	FText GroupEditingStatus;
+	bool EnsureLayoutPresetsLoaded();
+	bool CaptureSelectedGroup(TArray<FFF_BuildLayoutEntry>& OutEntries, FVector& OutCenter) const;
+	bool StartGroupPlacement(bool bDuplicate);
+	void CreateGroupPreviews();
+	bool RefreshGroupPlacement(const FVector& TargetCenter);
+	bool HandleGroupPlacementInput(APlayerController& Controller, bool bBlockedByUi);
+	void SetGroupEditingStatus(const FText& Message, bool bError = false);
+	UPROPERTY(EditDefaultsOnly, Category = "Building|Multi Selection")
+	TSoftClassPtr<UFF_BuildMultiSelectionWidget> MultiSelectionWidgetClass;
+	TArray<TWeakObjectPtr<AFFZSFacilityActor>> MultiSelectedFacilities;
+	bool bMultiSelectionActive = false;
+	bool bMultiSelectionPointerArmed = false;
+	bool bMultiSelectionMarqueeVisible = false;
+	FVector2D MultiSelectionDragStartPixels = FVector2D::ZeroVector;
+	FVector2D MultiSelectionDragCurrentPixels = FVector2D::ZeroVector;
 
 	// Read-only combo presentation shares placement validation cadence and never owns placement authority.
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildSynergyWidget> BuildSynergyWidget;
 	UPROPERTY(EditDefaultsOnly, Category = "Building|Synergy")
-	TSoftClassPtr<UFF_BuildSynergyWidget> BuildSynergyWidgetClass = TSoftClassPtr<UFF_BuildSynergyWidget>(
-		FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildSynergy.WBP_FF_BuildSynergy_C")));
+	TSoftClassPtr<UFF_BuildSynergyWidget> BuildSynergyWidgetClass;
 	bool bHasSynergyPreviewKey = false;
 	FName SynergyPreviewDefinitionId;
 	FGuid SynergyPreviewMovingId;
@@ -555,8 +711,7 @@ private:
 	uint64 SynergyPreviewCatalogRevision = 0;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Building|Tools")
-	TSoftClassPtr<UFF_BuildToolsWidget> BuildToolsWidgetClass = TSoftClassPtr<UFF_BuildToolsWidget>(
-		FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
+	TSoftClassPtr<UFF_BuildToolsWidget> BuildToolsWidgetClass;
 
 	// 첫 클릭으로 선택해 이동·철거·취소 액션을 기다리는 시설이다. 권위 소유권은 WorldSubsystem에 있다.
 	TWeakObjectPtr<AFFZSFacilityActor> PendingRemovalFacility;
@@ -576,6 +731,8 @@ private:
 
 	// 카탈로그에서 선택한 정의와, 프리뷰 명령을 재구성하는 데 필요한 현재 배치 스냅샷이다.
 	FFFZSFacilitySpec SelectedSpec;
+	// A preview owns only this choice; the original authored spec remains unchanged until commit.
+	EFFZSQueueLayout PendingQueueLayout = EFFZSQueueLayout::Authored;
 	FFFZSGridPlacement CurrentPlacement;
 	// 가장 최근 RefreshPreview 결과. CommitPlacement가 설치 가능 여부를 판단할 때 사용한다. 
 	FFFZSPlacementValidation LastValidation;
@@ -630,6 +787,8 @@ private:
 	bool bFreeRotateRightGesture = false;
 	// G 토글은 현재 건축 세션 안에서 유지되고 새 세션은 친숙한 기본값인 표시 상태로 시작한다.
 	bool bPlacementGridVisible = true;
+	bool bFacilityRangesVisible = true;
+	bool bSynergyPreviewVisible = true;
 	// Ctrl/Alt 전환도 커서 위치가 같을 때 프리뷰와 격자를 다시 그리도록 마지막 간격을 기억한다.
 	int32 CurrentPositionSnapCm = DefaultPlacementPositionSnapCm;
 	int32 PreferredPositionSnapCm = 0;
@@ -647,11 +806,19 @@ private:
 	// 같은 프리뷰 상태가 짧은 주기로 반복될 때 로그가 폭증하지 않도록 마지막 문구를 기억한다. 
 	mutable FString LastLoggedStatusMessage;
 
-	// 커서 추적과 전체 Zone 검증의 비용을 제한하면서도 프리뷰가 충분히 부드럽게 보이는 갱신 간격.
-	static constexpr float PreviewRefreshIntervalSeconds = 0.08f;
 
 	// 모든 상태 쓰기를 한곳에서 수행하고 실제 변경일 때만 외부 표현 계층에 방송한다.
 	void SetState(EFF_BuildModeState NewState);
+	void EndMultiSelection();
+	void CreateMultiSelectionWidget(APlayerController& Controller);
+	void RemoveMultiSelectionWidget();
+	bool HandleMultiSelectionInput(APlayerController& Controller, bool bBlockWorldClick,
+		bool bPointerOverTools, bool bPointerOverDebugPanel, bool bPointerOverFacilityInfo);
+	bool IsRegisteredMultiSelectionFacility(const AFFZSFacilityActor* Facility) const;
+	void AddMultiSelectedFacility(AFFZSFacilityActor* Facility);
+	void ToggleMultiSelectedFacility(AFFZSFacilityActor* Facility);
+	void SelectFacilitiesInScreenRect(APlayerController& Controller, const FBox2D& ScreenRect);
+	void PruneMultiSelectedFacilities();
 
 	// B/마우스/Q/E 키의 상태별 의미를 해석해 공개 전환 함수로 전달한다. ESC/F5는 공용 Pause Hub가 소유한다.
 	void HandleInput(APlayerController& Controller, float DeltaTime);

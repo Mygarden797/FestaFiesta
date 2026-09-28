@@ -1,3 +1,5 @@
+// FF_FFZSFacilityDefinitionCustomization.cpp
+// 역할: 시설 데이터 에셋의 상세 창을 편집 목적별로 정리하고 디자이너용 버튼과 미리보기를 제공한다.
 #include "FF_FFZSFacilityDefinitionCustomization.h"
 #include "FF_FFZSAudienceCapacityEditor.h"
 
@@ -310,6 +312,30 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
     // Expose the captured Spec settings at the Data Asset's top level without a second copy.
     const TSharedRef<IPropertyHandle> SpecHandle = DetailBuilder.GetProperty(
         GET_MEMBER_NAME_CHECKED(UFFZSFacilityDefinition, Spec));
+    IDetailCategoryBuilder& RevenueCategory = DetailBuilder.EditCategory(
+        TEXT("FF Zone System|Facility Revenue"), LOCTEXT("FacilityRevenueCategory", "Facility Revenue"),
+        ECategoryPriority::Important);
+    RevenueCategory.SetToolTip(LOCTEXT("FacilityRevenueCategoryTip",
+        "일반 수익 조정은 DT_FacilityRevenues에서 합니다. 아래 값은 표에 해당 시설 행이 없을 때 사용하는 호환 설정입니다."));
+    for (const FName PropertyName : {
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, bOverrideRevenuePerUseGold),
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, RevenuePerUseGold) })
+    {
+        if (const TSharedPtr<IPropertyHandle> RevenueProperty = SpecHandle->GetChildHandle(PropertyName))
+        {
+            DetailBuilder.HideProperty(RevenueProperty);
+            RevenueCategory.AddProperty(RevenueProperty.ToSharedRef());
+        }
+    }
+    RevenueCategory.AddCustomRow(LOCTEXT("FacilityRevenueHelpSearch", "Revenue 매출 수익 이용 금액"))
+    .WholeRowContent()
+    [
+        SNew(STextBlock).AutoWrapText(true).Text(LOCTEXT("FacilityRevenueHelp",
+            "시설별 수익은 Content/FestaFiesta/Data/Economy/DT_FacilityRevenues에서 수정하세요.\n"
+            "Row Name이 이 시설의 Facility Definition ID인 행의 '1인 1회 매출 (Gold)'을 바꾸고 저장합니다. 0은 무료입니다.\n"
+            "표의 금액은 아래 값보다 우선하며 기존 설치·저장 시설에도 다음 정산부터 적용됩니다. 축제 수수료·강화·시너지 배율은 별도로 계산합니다.\n"
+            "표에 해당 행이 없을 때만 아래 설정을 사용합니다. 이 호환 설정의 변경은 새로 설치하는 시설부터 적용됩니다."))
+    ];
     const TSharedPtr<IPropertyHandle> AudienceHandle = SpecHandle->GetChildHandle(
         GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, Audience));
     IDetailCategoryBuilder& AudienceCategory = DetailBuilder.EditCategory(
@@ -533,7 +559,7 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
             .Text(LOCTEXT("QueueRectsFromPathButton", "Queue Rects <- Queue Path"))
             .ToolTipText(LOCTEXT(
                 "QueueRectsFromPathTooltip",
-                "시설 Data Asset 하나만 선택해야 합니다. 최대 대기 인원이 실제로 사용하는 경로 구간만 여백만큼 넓혀 예약 영역을 다시 만듭니다. 경로가 꺾여 있으면 구간마다 사각형을 만들어 회랑처럼 따라가므로 L자·ㄷ자 대기열도 남는 면적 없이 확보합니다. 건물 한 변 바깥을 지나는 구간은 그 변에 붙여 잘라내며, 저작 경로가 필요한 길이보다 길면 남는 꼬리는 예약하지 않습니다. 결과 Spec 전체가 검증을 통과할 때만 적용합니다."))
+                "시설 Data Asset 하나만 선택해야 합니다. 최대 대기 팀 수이 실제로 사용하는 경로 구간만 여백만큼 넓혀 예약 영역을 다시 만듭니다. 경로가 꺾여 있으면 구간마다 사각형을 만들어 회랑처럼 따라가므로 L자·ㄷ자 대기열도 남는 면적 없이 확보합니다. 건물 한 변 바깥을 지나는 구간은 그 변에 붙여 잘라내며, 저작 경로가 필요한 길이보다 길면 남는 꼬리는 예약하지 않습니다. 결과 Spec 전체가 검증을 통과할 때만 적용합니다."))
             .IsEnabled(this, &FFFZSFacilityDefinitionCustomization::CanBuildQueueRectsFromPath)
             .OnClicked(this, &FFFZSFacilityDefinitionCustomization::BuildQueueRectsFromPath)
         ]
@@ -560,7 +586,7 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
             .Text(LOCTEXT("TailFromCapacityButton", "Queue Tail <- Max Capacity"))
             .ToolTipText(LOCTEXT(
                 "TailFromCapacityTooltip",
-                "시설 Data Asset 하나만 선택해야 합니다. 점이 2개 이상이고 슬롯 간격이 양수인 대기열에서 마지막 선분 방향으로 꼬리 점을 이동하거나 새 꼬리 점을 추가해 전체 길이를 (최대 대기 인원 - 1) × 슬롯 간격으로 맞춥니다. 생성되는 모든 슬롯이 대기열 예약 사각형 안에 남을 때만 적용합니다."))
+                "시설 Data Asset 하나만 선택해야 합니다. 점이 2개 이상이고 슬롯 간격이 양수인 대기열에서 마지막 선분 방향으로 꼬리 점을 이동하거나 새 꼬리 점을 추가해 전체 길이를 (최대 대기 팀 수 - 1) × 슬롯 간격으로 맞춥니다. 생성되는 모든 슬롯이 대기열 예약 사각형 안에 남을 때만 적용합니다."))
             .IsEnabled(this, &FFFZSFacilityDefinitionCustomization::CanResizeQueueTailToCapacity)
             .OnClicked(this, &FFFZSFacilityDefinitionCustomization::ResizeQueueTailToCapacity)
         ]
@@ -570,7 +596,7 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
             .Text(LOCTEXT("CapacityFromLengthButton", "Max Capacity <- Queue Length"))
             .ToolTipText(LOCTEXT(
                 "CapacityFromLengthTooltip",
-                "시설 Data Asset 하나만 선택해야 합니다. 점이 2개 이상이고 슬롯 간격이 양수인 현재 대기열에서 들어갈 수 있는 최대 대기 인원을 계산합니다. 줄 머리의 0번 슬롯을 포함해 floor(길이 ÷ 간격) + 1이며, 결과 슬롯이 모두 예약 영역 안에 있을 때만 적용합니다."))
+                "시설 Data Asset 하나만 선택해야 합니다. 점이 2개 이상이고 슬롯 간격이 양수인 현재 대기열에서 들어갈 수 있는 최대 대기 팀 수을 계산합니다. 줄 머리의 0번 슬롯을 포함해 floor(길이 ÷ 간격) + 1이며, 결과 슬롯이 모두 예약 영역 안에 있을 때만 적용합니다."))
             .IsEnabled(this, &FFFZSFacilityDefinitionCustomization::CanSetCapacityFromQueueLength)
             .OnClicked(this, &FFFZSFacilityDefinitionCustomization::SetCapacityFromQueueLength)
         ]
@@ -1001,7 +1027,7 @@ FReply FFFZSFacilityDefinitionCustomization::SetCapacityFromQueueLength()
             return true;
         });
     ShowNotification(
-        FText::Format(LOCTEXT("CapacityUpdated", "시설 정의 {0}개의 최대 대기 인원을 갱신했습니다."), ChangedCount),
+        FText::Format(LOCTEXT("CapacityUpdated", "시설 정의 {0}개의 최대 대기 팀 수을 갱신했습니다."), ChangedCount),
         ChangedCount > 0);
     return FReply::Handled();
 }

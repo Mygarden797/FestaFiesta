@@ -14,11 +14,11 @@ namespace FFF_FacilityQueueTestHelpers
 {
 	constexpr float TestStepSeconds = 1.f / 30.f;
 
-	FFF_QueueConfig MakeConfig(int32 MaxCapacityMembers, float ServiceSecondsPerMember, int32 ConcurrentSlots = 1)
+	FFF_QueueConfig MakeConfig(int32 MaxCapacityParties, float ServiceSecondsPerParty, int32 ConcurrentSlots = 1)
 	{
 		FFF_QueueConfig Config;
-		Config.MaxCapacityMembers = MaxCapacityMembers;
-		Config.ServiceSecondsPerMember = ServiceSecondsPerMember;
+		Config.MaxCapacityParties = MaxCapacityParties;
+		Config.ServiceSecondsPerParty = ServiceSecondsPerParty;
 		Config.ConcurrentServiceSlots = ConcurrentSlots;
 		Config.ExitLocation = FVector(-500.f, 0.f, 0.f);
 		Config.bRequireArrivalConfirmation = false;
@@ -88,22 +88,13 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_PartyJoinIsAllOrNothing, "Fes
 bool FFF_FacilityQueue_PartyJoinIsAllOrNothing::RunTest(const FString& Parameters)
 {
 	FFF_FacilityQueue Queue;
-	Queue.Configure(1, MakeConfig(/*MaxCapacityMembers=*/6, /*ServiceSecondsPerMember=*/100.f), MakeLane());
-
-	TestEqual(TEXT("4인 Party는 빈 줄(6칸)에 들어간다"),
-		Join(Queue, MakeRequest(10, 4), 0.f), EFF_QueueJoinResult::Accepted);
-
-	// 남은 칸은 2. 4인 가족은 절반만 넣지 않고 전원 거절해야 한다.
-	TestEqual(TEXT("남은 칸보다 큰 Party는 전원 거절된다"),
-		Join(Queue, MakeRequest(20, 4), 0.f), EFF_QueueJoinResult::RejectedFull);
-
-	TestEqual(TEXT("거절된 Party는 줄에 흔적을 남기지 않는다"), Queue.GetOccupiedMemberCount(), 4);
-	TestFalse(TEXT("거절된 Party는 대기열에 없다"), Queue.ContainsParty(20));
-
-	TestEqual(TEXT("남은 칸에 딱 맞는 Party는 수락된다"),
-		Join(Queue, MakeRequest(30, 2), 0.f), EFF_QueueJoinResult::Accepted);
+	Queue.Configure(1, MakeConfig(2, 100.f), MakeLane());
+	TestEqual(TEXT("4인 팀도 한 자리에 들어간다"), Join(Queue, MakeRequest(10, 4), 0.f), EFF_QueueJoinResult::Accepted);
+	TestEqual(TEXT("다른 크기의 팀도 남은 한 자리에 들어간다"), Join(Queue, MakeRequest(30, 2), 0.f), EFF_QueueJoinResult::Accepted);
+	TestEqual(TEXT("팀 용량 2칸에 총 6명"), Queue.GetOccupiedMemberCount(), 6);
+	TestEqual(TEXT("만석이면 1인 팀도 거절한다"), Join(Queue, MakeRequest(20, 1), 0.f), EFF_QueueJoinResult::RejectedFull);
+	TestFalse(TEXT("거절된 팀은 흔적이 없다"), Queue.ContainsParty(20));
 	TestFalse(TEXT("만석이면 더 이상 받지 않는다"), Queue.IsAcceptingNew());
-
 	return true;
 }
 
@@ -123,29 +114,27 @@ bool FFF_FacilityQueue_RejectsDuplicateAndInvalidJoin::RunTest(const FString& Pa
 	return true;
 }
 
-// 3. 동시 서비스 1명 — 4인 가족은 4번 순차 처리
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_PartyIsServedMemberByMember, "FestaFiesta.Queue.FacilityQueue.PartyIsServedMemberByMember", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_FacilityQueue_PartyIsServedMemberByMember::RunTest(const FString& Parameters)
+// 3. 일행 인원수와 관계없이 팀당 같은 이용 시간
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_PartyDurationIgnoresMemberCount, "FestaFiesta.Queue.FacilityQueue.PartyDurationIgnoresMemberCount", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_PartyDurationIgnoresMemberCount::RunTest(const FString& Parameters)
 {
 	FFF_FacilityQueue Queue;
-	Queue.Configure(1, MakeConfig(20, /*ServiceSecondsPerMember=*/10.f, /*ConcurrentSlots=*/1), MakeLane());
-
+	Queue.Configure(1, MakeConfig(20, 10.f), MakeLane());
 	float SimTime = 0.f;
 	Join(Queue, MakeRequest(10, 4), SimTime);
-
-	StepFor(Queue, 25.f, SimTime);
-	TestEqual(TEXT("2명만 처리된 시점에도 Party는 줄에 남아 있다"), Queue.GetWaitingPartyCount(), 1);
-	// 서비스를 마친 멤버도 슬롯을 비우지 않는다 — 전원이 끝나야 Recovering으로 넘어간다.
-	TestEqual(TEXT("처리 중에도 슬롯 점유는 4칸 그대로"), Queue.GetOccupiedMemberCount(), 4);
-	TestEqual(TEXT("남은 처리 인원은 줄어든다"), Queue.GetRemainingServiceMemberCount(), 2);
-
-	StepFor(Queue, 20.f, SimTime);
-	TestEqual(TEXT("4인 × 10초 = 40초가 지나면 Party 전체가 빠진다"), Queue.GetWaitingPartyCount(), 0);
-
+	Join(Queue, MakeRequest(20, 1), SimTime);
+	StepFor(Queue, 5.f, SimTime);
+	TestEqual(TEXT("이용 중에도 실제 인원은 전원 유지"), Queue.GetRemainingServiceMemberCount(), 5);
+	TestEqual(TEXT("이용 중인 팀 하나"), Queue.GetState().ActiveServicePartyCount, 1);
+	StepFor(Queue, 16.f, SimTime);
+	TestEqual(TEXT("1인 팀과 4인 팀이 총 20초에 완료"), Queue.GetWaitingPartyCount(), 0);
 	TArray<FFF_QueueLog> Logs;
 	Queue.ConsumePendingLogs(Logs);
-	TestEqual(TEXT("Served 로그가 1건 남는다"), CountExits(Logs, EFF_QueueExit::Served), 1);
-	TestEqual(TEXT("서비스 소요시간이 1인당 시간 × 인원에 근접한다"), Logs.Last().ServiceSeconds, 40.f, 1.f);
+	TestEqual(TEXT("각 팀에 완료 기록 하나"), CountExits(Logs, EFF_QueueExit::Served), 2);
+	for (const FFF_QueueLog& Log : Logs)
+	{
+		TestEqual(TEXT("팀 크기와 관계없이 10초"), Log.ServiceSeconds, 10.f, 0.01f);
+	}
 	return true;
 }
 
@@ -180,7 +169,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_AbandonsAfterMaxWait, "FestaF
 bool FFF_FacilityQueue_AbandonsAfterMaxWait::RunTest(const FString& Parameters)
 {
 	FFF_FacilityQueue Queue;
-	Queue.Configure(1, MakeConfig(20, /*ServiceSecondsPerMember=*/300.f), MakeLane());
+	Queue.Configure(1, MakeConfig(20, /*ServiceSecondsPerParty=*/300.f), MakeLane());
 
 	float SimTime = 0.f;
 	Join(Queue, MakeRequest(10, 1, /*MaxWaitSeconds=*/-1.f), SimTime);   // 앞사람: 무제한 대기 + 긴 서비스
@@ -208,7 +197,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_ServingPartyNeverAbandons, "F
 bool FFF_FacilityQueue_ServingPartyNeverAbandons::RunTest(const FString& Parameters)
 {
 	FFF_FacilityQueue Queue;
-	Queue.Configure(1, MakeConfig(20, /*ServiceSecondsPerMember=*/60.f), MakeLane());
+	Queue.Configure(1, MakeConfig(20, /*ServiceSecondsPerParty=*/60.f), MakeLane());
 
 	float SimTime = 0.f;
 	Join(Queue, MakeRequest(10, 1, /*MaxWaitSeconds=*/1.f), SimTime);   // 인내심 1초지만 바로 선두라 서비스가 시작된다
@@ -279,11 +268,12 @@ bool FFF_FacilityQueue_SlotTargetsAreContiguous::RunTest(const FString& Paramete
 	{
 		TestEqual(TEXT("첫 사람이 슬롯 0을 잡는다"), Assignments[0].SlotIndex, 0);
 		TestEqual(TEXT("배정에 본인 AgentId가 실린다"), Assignments[0].AgentId, 1000);
-		TestEqual(TEXT("같은 일행의 둘째 멤버가 뒤에 선다"), Assignments[1].AgentId, 1001);
+		TestEqual(TEXT("같은 일행의 둘째 멤버도 배정된다"), Assignments[1].AgentId, 1001);
 		TestEqual(TEXT("2인 일행 다음이 두 번째 일행이다"), Assignments[2].PartyId, 20);
-		TestEqual(TEXT("두 번째 일행은 슬롯 2부터 선다"), Assignments[2].SlotIndex, 2);
-		TestEqual(TEXT("슬롯 간격이 115cm다"),
-			Assignments[1].TargetLocation.X - Assignments[0].TargetLocation.X, 115, 0.01);
+		TestEqual(TEXT("두 번째 일행은 팀 슬롯 1이다"), Assignments[2].SlotIndex, 1);
+		TestEqual(TEXT("같은 일행은 같은 팀 슬롯이다"), Assignments[1].SlotIndex, 0);
+		TestEqual(TEXT("같은 팀 멤버는 대기열을 뒤로 늘리지 않는다"),
+			Assignments[1].TargetLocation.X - Assignments[0].TargetLocation.X, 0, 0.01);
 	}
 
 	Queue.LeaveQueue(10, SimTime);
@@ -374,23 +364,14 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_ExpectedWaitIsSecondsAndMonot
 bool FFF_FacilityQueue_ExpectedWaitIsSecondsAndMonotonic::RunTest(const FString& Parameters)
 {
 	FFF_FacilityQueue Queue;
-	// 초당 처리 인원 = 1 / 20 = 0.05
-	Queue.Configure(1, MakeConfig(20, /*ServiceSecondsPerMember=*/20.f, /*ConcurrentSlots=*/1), MakeLane());
-
-	TestEqual(TEXT("빈 줄에 1명이 오면 20초"), Queue.GetExpectedWaitSeconds(1), 20.f, 0.01f);
-	// 분 단위로 그대로 꽂으면 wait_ref_minutes=30 기준으로 60배 과대평가된다 — 어댑터 필수.
-	TestEqual(TEXT("분 어댑터는 60으로 나눈 값을 준다"), Queue.GetExpectedWaitMinutes(1), 20.f / 60.f, 0.001f);
-
-	float SimTime = 0.f;
-	Join(Queue, MakeRequest(10, 3), SimTime);
-	const float WaitWithThreeAhead = Queue.GetExpectedWaitSeconds(1);
-	TestTrue(TEXT("앞에 사람이 늘면 예상 대기가 늘어난다"), WaitWithThreeAhead > 20.f);
-	TestEqual(TEXT("(앞 3명 + 나 1명) / 0.05 = 80초"), WaitWithThreeAhead, 80.f, 0.01f);
-
-	// 처리된 인원은 분자에서 빠져야 한다.
-	StepFor(Queue, 25.f, SimTime);
-	TestTrue(TEXT("앞사람이 처리될수록 예상 대기가 줄어든다"),
-		Queue.GetExpectedWaitSeconds(1) < WaitWithThreeAhead);
+	Queue.Configure(1, MakeConfig(20, 20.f), MakeLane());
+	TestEqual(TEXT("빈 줄은 바로 이용 시작"), Queue.GetExpectedWaitSeconds(1), 0.f, 0.01f);
+	Join(Queue, MakeRequest(10, 3), 0.f);
+	TestEqual(TEXT("앞에 3인 팀 하나면 20초"), Queue.GetExpectedWaitSeconds(1), 20.f, 0.01f);
+	TestEqual(TEXT("들어오는 팀이 4인이어도 같은 대기"), Queue.GetExpectedWaitSeconds(4), 20.f, 0.01f);
+	TestEqual(TEXT("분 변환은 60으로 나눈다"), Queue.GetExpectedWaitMinutes(4), 20.f / 60.f, 0.001f);
+	Queue.Advance(5.f, 5.f);
+	TestEqual(TEXT("현재 팀이 이용한 5초를 빼면 15초"), Queue.GetExpectedWaitSeconds(4), 15.f, 0.01f);
 	return true;
 }
 
@@ -399,10 +380,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_LogsEstimatedAndActualWait, "
 bool FFF_FacilityQueue_LogsEstimatedAndActualWait::RunTest(const FString& Parameters)
 {
 	FFF_FacilityQueue Queue;
-	Queue.Configure(1, MakeConfig(20, /*ServiceSecondsPerMember=*/10.f), MakeLane());
+	Queue.Configure(1, MakeConfig(20, /*ServiceSecondsPerParty=*/10.f), MakeLane());
 
 	float SimTime = 0.f;
-	Join(Queue, MakeRequest(10, 2), SimTime);   // 앞 Party: 2명 × 10초 = 20초
+	Join(Queue, MakeRequest(10, 2), SimTime);   // 앞 팀: 인원수와 관계없이 10초
 	Join(Queue, MakeRequest(20, 1, -1.f), SimTime);
 
 	StepFor(Queue, 40.f, SimTime);
@@ -413,10 +394,8 @@ bool FFF_FacilityQueue_LogsEstimatedAndActualWait::RunTest(const FString& Parame
 	if (Logs.Num() == 2)
 	{
 		const FFF_QueueLog& Second = Logs[1];
-		TestEqual(TEXT("가입 시점 예측이 기록된다"), Second.EstimatedWaitAtJoinSeconds, 30.f, 0.01f);
-		// 앞 Party 2명 × 10초 = 20초 후에 서비스가 시작된다. 예측(30초)과 실제(20초)의 괴리가
-		// 바로 튜닝 지표다 — 예측 분자에 자기 일행을 포함하기 때문에 구조적으로 과대추정된다.
-		TestEqual(TEXT("실제 대기는 서비스 시작 시점 기준으로 기록된다"), Second.ActualWaitSeconds, 20.f, 1.f);
+		TestEqual(TEXT("가입 시점 예측이 기록된다"), Second.EstimatedWaitAtJoinSeconds, 10.f, 0.01f);
+		TestEqual(TEXT("실제 대기는 서비스 시작 시점 기준으로 기록된다"), Second.ActualWaitSeconds, 10.f, 0.01f);
 		TestFalse(TEXT("CauseId가 DecisionLog 조인 키로 보존된다"), Second.CauseId.IsNone());
 		TestEqual(TEXT("CauseId가 가입 요청 값 그대로다"), Second.CauseId, FName(TEXT("cause_20")));
 	}
@@ -509,7 +488,7 @@ bool FFF_FacilityQueue_RejectsUnsafePartyShapesAndClampsConfig::RunTest(
 	FFF_FacilityQueue Queue;
 	Queue.Configure(1, UnsafeConfig, MakeLane());
 	TestEqual(TEXT("Party capacity clamps to the canonical facility safety limit"),
-		Queue.GetConfig().MaxCapacityMembers,
+		Queue.GetConfig().MaxCapacityParties,
 		UFFZSDeveloperSettings::MaxQueueWaitingAgents);
 	TestEqual(TEXT("Concurrent service clamps to the canonical facility safety limit"),
 		Queue.GetConfig().ConcurrentServiceSlots,
@@ -643,12 +622,12 @@ bool FFF_FacilityQueue_SlotAssignmentsAreConsumableByCrowd::RunTest(const FStrin
 		bAllHaveAgent &= (Assignment.AgentId != INDEX_NONE);
 		bAllFinite &= !Assignment.TargetLocation.ContainsNaN()
 			&& FMath::IsFinite(Assignment.TargetYaw);
-		bSlotsAscend &= (Assignment.SlotIndex > PreviousSlot);
+		bSlotsAscend &= (Assignment.SlotIndex >= PreviousSlot);
 		PreviousSlot = Assignment.SlotIndex;
 	}
 	TestTrue(TEXT("모든 배정에 AgentId 가 있다"), bAllHaveAgent);
 	TestTrue(TEXT("모든 좌표가 유한하다"), bAllFinite);
-	TestTrue(TEXT("슬롯 인덱스가 뒤로 갈수록 커진다"), bSlotsAscend);
+	TestTrue(TEXT("팀 슬롯 인덱스는 감소하지 않는다"), bSlotsAscend);
 
 	TMap<int32, int32> CountByParty;
 	for (const FFF_SlotAssignment& Assignment : Assignments)
@@ -662,8 +641,8 @@ bool FFF_FacilityQueue_SlotAssignmentsAreConsumableByCrowd::RunTest(const FStrin
 	if (Assignments.Num() == 6)
 	{
 		TestEqual(TEXT("첫 일행은 슬롯 0 부터"), Assignments[0].SlotIndex, 0);
-		TestEqual(TEXT("2인 일행 뒤는 슬롯 2 부터"), Assignments[2].SlotIndex, 2);
-		TestEqual(TEXT("3인 일행 뒤는 슬롯 5"), Assignments[5].SlotIndex, 5);
+		TestEqual(TEXT("2인 일행 뒤는 팀 슬롯 1"), Assignments[2].SlotIndex, 1);
+		TestEqual(TEXT("3인 일행 뒤는 팀 슬롯 2"), Assignments[5].SlotIndex, 2);
 	}
 	return true;
 }
@@ -714,7 +693,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_RejectionLeavesNoResidue, "Fe
 bool FFF_FacilityQueue_RejectionLeavesNoResidue::RunTest(const FString& Parameters)
 {
 	FFF_FacilityQueue Queue;
-	Queue.Configure(1, MakeConfig(4, 300.f), MakeLane());
+	Queue.Configure(1, MakeConfig(1, 300.f), MakeLane());
 
 	float SimTime = 0.f;
 	Join(Queue, MakeRequest(10, 4), SimTime);
@@ -804,9 +783,9 @@ bool FFF_FacilityQueue_AssignmentsAreGroupedByParty::RunTest(const FString& Para
 	if (Assignments.Num() == 10)
 	{
 		TestEqual(TEXT("3인 일행은 슬롯 0 부터"), Assignments[0].SlotIndex, 0);
-		TestEqual(TEXT("1인 일행은 슬롯 3"), Assignments[3].SlotIndex, 3);
-		TestEqual(TEXT("4인 일행은 슬롯 4 부터"), Assignments[4].SlotIndex, 4);
-		TestEqual(TEXT("2인 일행은 슬롯 8 부터"), Assignments[8].SlotIndex, 8);
+		TestEqual(TEXT("1인 일행은 팀 슬롯 1"), Assignments[3].SlotIndex, 1);
+		TestEqual(TEXT("4인 일행은 팀 슬롯 2"), Assignments[4].SlotIndex, 2);
+		TestEqual(TEXT("2인 일행은 팀 슬롯 3"), Assignments[8].SlotIndex, 3);
 	}
 
 	Queue.LeaveQueue(20, SimTime);
@@ -815,8 +794,124 @@ bool FFF_FacilityQueue_AssignmentsAreGroupedByParty::RunTest(const FString& Para
 	if (Assignments.Num() == 9)
 	{
 		TestEqual(TEXT("맨 앞은 그대로 슬롯 0"), Assignments[0].SlotIndex, 0);
-		TestEqual(TEXT("빈 칸만큼 당겨진다"), Assignments[3].SlotIndex, 3);
+		TestEqual(TEXT("빈 팀 자리만큼 당겨진다"), Assignments[3].SlotIndex, 1);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_ConcurrentTeamsKeepFullDuration,
+	"FestaFiesta.Queue.FacilityQueue.ConcurrentTeamsKeepFullDuration",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_ConcurrentTeamsKeepFullDuration::RunTest(const FString& Parameters)
+{
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, MakeConfig(3, 10.f, 2), MakeLane());
+	Join(Queue, MakeRequest(10, 1), 0.f);
+	Join(Queue, MakeRequest(20, 4), 0.f);
+	TestEqual(TEXT("두 자리가 사용 중이면 다음 팀은 10초 대기"), Queue.GetExpectedWaitSeconds(4), 10.f, 0.001f);
+	Join(Queue, MakeRequest(30, 2), 0.f);
+	Queue.Advance(9.f, 9.f);
+	TestEqual(TEXT("9초에는 두 팀 모두 이용 중"), Queue.GetState().ActiveServicePartyCount, 2);
+	TestEqual(TEXT("시간을 동시 팀 수로 나누어 조기 완료하지 않는다"), Queue.GetWaitingPartyCount(), 3);
+	TestEqual(TEXT("남은 1초 뒤 빈 두 번째 자리에서 다음 외부 팀이 시작 가능"), Queue.GetExpectedWaitSeconds(1), 1.f, 0.001f);
+	Queue.Advance(1.f, 10.f);
+	TestEqual(TEXT("서로 다른 인원의 두 팀이 10초에 같이 완료"), Queue.GetWaitingPartyCount(), 1);
+	Queue.Advance(10.f, 20.f);
+	TestEqual(TEXT("세 번째 팀도 10초를 온전히 이용"), Queue.GetWaitingPartyCount(), 0);
+	TestEqual(TEXT("완료 팀 수 집계"), Queue.GetState().CompletedPartyCount, 3);
+	TestEqual(TEXT("팀 평균 실제 대기: 0초, 0초, 10초"), Queue.GetState().AverageCompletedWaitSeconds, 10.f / 3.f, 0.001f);
+	TArray<FFF_QueueEvent> Events;
+	Queue.ConsumePendingEvents(Events);
+	TMap<int32, int32> ServedCounts;
+	int32 CompletedEvents = 0;
+	for (const FFF_QueueEvent& Event : Events)
+	{
+		if (Event.Type == EFF_QueueEventType::PartyExited && Event.ExitType == EFF_QueueExit::Served)
+		{
+			++CompletedEvents;
+			ServedCounts.Add(Event.PartyId, Event.ServedMemberCount);
+		}
+	}
+	TestEqual(TEXT("각 팀에 정확히 한 번 완료 이벤트"), CompletedEvents, 3);
+	TestEqual(TEXT("1인 팀 정산 인원"), ServedCounts.FindRef(10), 1);
+	TestEqual(TEXT("4인 팀 정산 인원"), ServedCounts.FindRef(20), 4);
+	TestEqual(TEXT("2인 팀 정산 인원"), ServedCounts.FindRef(30), 2);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_OneAuthoredAnchorPerTeam,
+	"FestaFiesta.Queue.FacilityQueue.OneAuthoredAnchorPerTeam",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_OneAuthoredAnchorPerTeam::RunTest(const FString& Parameters)
+{
+	FFF_QueueLaneGeometry Lane = MakeLane();
+	Lane.ExplicitSlotTransforms = {
+		FTransform(FRotator(0.f, 90.f, 0.f), FVector(10.f, 20.f, 0.f)),
+		FTransform(FRotator(0.f, 180.f, 0.f), FVector(100.f, 200.f, 0.f))
+	};
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, MakeConfig(2, 10.f), Lane);
+	Join(Queue, MakeRequest(10, 4), 0.f);
+	Join(Queue, MakeRequest(20, 2), 0.f);
+	TArray<FFF_SlotAssignment> Assignments;
+	Queue.BuildSlotAssignments(Assignments);
+	TestEqual(TEXT("Crowd에 실제 멤버 목표 여섯 개 전달"), Assignments.Num(), 6);
+	if (Assignments.Num() != 6)
+	{
+		return false;
+	}
+	TestEqual(TEXT("첫 리더는 저작된 첫 팀 자리"), Assignments[0].TargetLocation, Lane.ExplicitSlotTransforms[0].GetLocation());
+	TestEqual(TEXT("둘째 리더는 저작된 둘째 팀 자리"), Assignments[4].TargetLocation, Lane.ExplicitSlotTransforms[1].GetLocation());
+	for (int32 Index = 0; Index < Assignments.Num(); ++Index)
+	{
+		TestEqual(TEXT("멤버가 추가 팀 자리를 소비하지 않는다"), Assignments[Index].SlotIndex, Index < 4 ? 0 : 1);
+	}
+	TestFalse(TEXT("리더와 멤버가 동일 지점에 겹치지 않는다"), Assignments[0].TargetLocation.Equals(Assignments[1].TargetLocation));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_ShiftedTeamNeedsFreshArrival,
+	"FestaFiesta.Queue.FacilityQueue.ShiftedTeamNeedsFreshArrival",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_ShiftedTeamNeedsFreshArrival::RunTest(const FString& Parameters)
+{
+	FFF_QueueConfig Config = MakeConfig(3, 10.f, 2);
+	Config.bRequireArrivalConfirmation = true;
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, Config, MakeLane());
+	Join(Queue, MakeRequest(10, 4), 0.f);
+	Join(Queue, MakeRequest(20, 1), 0.f);
+	Join(Queue, MakeRequest(30, 2), 0.f);
+	Queue.NotifyPartyArrived(20);
+	Queue.NotifyPartyArrived(30); // 대기 자리 도착은 이용 자리 도착이 아니다.
+	Queue.Advance(1.f, 1.f);
+	TestEqual(TEXT("도착하지 않은 앞팀을 추월하지 않는다"), Queue.GetState().ActiveServicePartyCount, 0);
+	Queue.NotifyPartyArrived(10);
+	Queue.Advance(10.f, 11.f);
+	TestEqual(TEXT("도착한 앞 두 팀이 함께 완료"), Queue.GetWaitingPartyCount(), 1);
+	Queue.Advance(10.f, 21.f);
+	TestEqual(TEXT("자리 이동 뒤에는 이전 도착 통지로 이용하지 않는다"), Queue.GetState().ActiveServicePartyCount, 0);
+	Queue.NotifyPartyArrived(30);
+	Queue.Advance(10.f, 31.f);
+	TestEqual(TEXT("새 이용 자리 도착 후 온전한 시간으로 완료"), Queue.GetWaitingPartyCount(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_TeamCapacityDoesNotTruncateMembers,
+	"FestaFiesta.Queue.FacilityQueue.TeamCapacityDoesNotTruncateMembers",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_TeamCapacityDoesNotTruncateMembers::RunTest(const FString& Parameters)
+{
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, MakeConfig(2, 10.f, 4), MakeLane());
+	Join(Queue, MakeRequest(10, UFFZSDeveloperSettings::MaxQueueWaitingAgents), 0.f);
+	Join(Queue, MakeRequest(20, 1), 0.f);
+	TestEqual(TEXT("실제 인원 통계는 팀 자리 상한으로 잘리지 않는다"),
+		Queue.GetOccupiedMemberCount(), UFFZSDeveloperSettings::MaxQueueWaitingAgents + 1);
+	TestEqual(TEXT("처리율은 실제 수용 가능한 두 팀 기준"), Queue.GetServiceRate(), 0.2f, 0.001f);
+	Queue.Configure(1, MakeConfig(0, 10.f, 4), MakeLane());
+	TestEqual(TEXT("팀 자리가 없으면 처리율도 0"), Queue.GetServiceRate(), 0.f, 0.001f);
+	TestEqual(TEXT("팀 자리가 없으면 도달 불가 대기"), Queue.GetExpectedWaitSeconds(1), FFF_QueueTimings::UnreachableWaitSeconds, 0.001f);
 	return true;
 }
 

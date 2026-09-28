@@ -1,3 +1,6 @@
+# migrate_catalog_highlights.py
+# 역할: 시설 조합 효과와 표시 작업에서 기존 데이터를 현재 구조로 이관한다.
+
 """Add designer-owned combo accents without replacing existing facility cards."""
 import hashlib
 import json
@@ -7,8 +10,8 @@ import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = {
-    "/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile": "SizeBox_Card",
-    "/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard": "Root_Size",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile": "SizeBox_Card",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard": "Root_Size",
 }
 COMMAND = "FF.AddBuildSynergyCardHighlights"
 

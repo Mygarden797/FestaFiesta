@@ -1,3 +1,5 @@
+// FF_FFZSBuildableGridRenderedPreviewTest.cpp
+// 역할: 실제 격자 렌더러와 지면 충돌로 검토 이미지를 만드는 선택 실행용 시각 확인 테스트다.
 // Opt-in visual fixture: run this filter with -RenderOffscreen instead of -NullRHI.
 // Uses the shipped grid renderer and real visibility collision/ground; it exports a review
 // image without a machine-dependent golden screenshot comparison or production map edits.
@@ -254,18 +256,44 @@ bool FFFZSBuildableGridRenderedPreviewTest::RunTest(const FString& Parameters)
     {
         return false;
     }
-    int32 TealPixels = 0;
+    // Compare the exact scene with only this component hidden. A fixed bright-teal RGB
+    // threshold rejects intentionally subtle, alpha-blended strokes and designer colors.
+    // This still fails if the scene proxy submits no visible grid at all.
+    Grid->SetVisibility(false);
+    World->SendAllEndOfFrameUpdates();
+    FlushRenderingCommands();
+    for (int32 Frame = 0; Frame < 3; ++Frame)
+    {
+        Capture->CaptureScene();
+        FlushRenderingCommands();
+    }
+    TArray<FColor> WithoutGridPixels;
+    const bool bReadWithoutGrid = Resource->ReadPixels(WithoutGridPixels) &&
+        WithoutGridPixels.Num() == Pixels.Num();
+    Grid->SetVisibility(true);
+    if (!TestTrue(TEXT("Same-scene capture without the grid is available"), bReadWithoutGrid))
+    {
+        Capture->TextureTarget = nullptr;
+        return false;
+    }
+    int32 GridPixels = 0;
     uint8 MinLuminance = 255;
     uint8 MaxLuminance = 0;
-    for (const FColor& Pixel : Pixels)
+    for (int32 Index = 0; Index < Pixels.Num(); ++Index)
     {
+        const FColor& Pixel = Pixels[Index];
+        const FColor& WithoutGrid = WithoutGridPixels[Index];
         const uint8 Luminance = static_cast<uint8>((static_cast<int32>(Pixel.R) + Pixel.G + Pixel.B) / 3);
         MinLuminance = FMath::Min(MinLuminance, Luminance);
         MaxLuminance = FMath::Max(MaxLuminance, Luminance);
-        TealPixels += Pixel.G > 100 && Pixel.G > Pixel.R * 1.3 && Pixel.B > Pixel.R * 1.1 ? 1 : 0;
+        const int32 Difference = FMath::Max3(
+            FMath::Abs(static_cast<int32>(Pixel.R) - WithoutGrid.R),
+            FMath::Abs(static_cast<int32>(Pixel.G) - WithoutGrid.G),
+            FMath::Abs(static_cast<int32>(Pixel.B) - WithoutGrid.B));
+        GridPixels += Difference > 3 ? 1 : 0;
     }
     TestTrue(TEXT("Capture contains scene contrast rather than a blank clear color"), MaxLuminance - MinLuminance > 35);
-    TestTrue(TEXT("Teal grid pixels are present in the RHI image"), TealPixels > 100);
+    TestTrue(TEXT("Grid contributes visible pixels compared with the same scene without it"), GridPixels > 100);
     TArray64<uint8> Png;
     FImageUtils::PNGCompressImageArray(Width, Height, Pixels, Png);
     const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation/BuildableGrid"));
@@ -273,8 +301,8 @@ bool FFFZSBuildableGridRenderedPreviewTest::RunTest(const FString& Parameters)
     const FString Path = FPaths::Combine(Directory, TEXT("BuildableGrid.png"));
     const bool bSaved = FFileHelper::SaveArrayToFile(Png, *Path);
     TestTrue(TEXT("Review PNG is written to disk"), bSaved && IFileManager::Get().FileSize(*Path) > 0);
-    AddInfo(FString::Printf(TEXT("Buildable grid RHI preview: %s (teal pixels: %d, lines: %d)"),
-        *FPaths::ConvertRelativePathToFull(Path), TealPixels, Grid->BatchedLines.Num()));
+    AddInfo(FString::Printf(TEXT("Buildable grid RHI preview: %s (grid-contributed pixels: %d, lines: %d)"),
+        *FPaths::ConvertRelativePathToFull(Path), GridPixels, Grid->BatchedLines.Num()));
     Capture->TextureTarget = nullptr;
     return bSaved;
 }

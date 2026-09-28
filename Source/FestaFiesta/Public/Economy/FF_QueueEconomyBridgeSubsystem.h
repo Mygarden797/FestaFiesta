@@ -25,6 +25,8 @@ class FESTAFIESTA_API UFF_QueueEconomyBridgeSubsystem : public UWorldSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+	// Queue 와 같은 월드에만 생긴다. 에디터 월드에 생기면 Queue 가 없어 매번 경고가 난다.
+	virtual bool DoesSupportWorldType(EWorldType::Type WorldType) const override;
 	
 	// 이 퇴장 유형이 매출을 만드는가.
 	// Served 만 이용 완료다 — Abandoned·Cancelled 는 줄을 섰다 나간 것이라 결제가 없다.
@@ -34,12 +36,12 @@ public:
 	}
 	
 private:
-	// 파티가 시설 이용을 마쳤을 때 수수료를 계산해 원장에 넣는다.
+	// 시설 이용을 마친 팀의 확정 인원으로 수수료를 계산해 원장에 넣는다.
 	UFUNCTION()
-	void HandlePartyExited(
+	void HandlePartyServiceCompleted(
 		int32 FacilityId,
 		int32 PartyId,
-		EFF_QueueExit ExitType,
+		int32 ServedMemberCount,
 		float WaitedSeconds);
 	
 	// 경제는 GameInstance 스코프라 호출 시점에 찾는다. 초기화 순서에 기대지 않는다.

@@ -19,7 +19,7 @@ class UFF_FestivalProgressionSubsystem;
 
 /**
  * Test_Main에서 시설 자동 개장/폐쇄를 관찰하고 같은 권위 API를 수동 실행하는 개발용 패널입니다.
- * 레이아웃은 /Game/FestaFiesta/Building/Debug의 파생 WBP가 소유하며 입력 모드는 변경하지 않습니다.
+ * 레이아웃은 /Game/FestaFiesta/Building/FF_WBP_Building/Debug의 파생 WBP가 소유하며 입력 모드는 변경하지 않습니다.
  */
 UCLASS(Blueprintable, meta = (DisplayName = "FF Zone Lifecycle Test Panel"))
 class FESTAFIESTA_API UFF_ZoneLifecycleTestPanel : public UUserWidget

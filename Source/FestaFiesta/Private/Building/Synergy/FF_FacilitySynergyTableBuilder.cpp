@@ -1,14 +1,19 @@
+// FF_FacilitySynergyTableBuilder.cpp
+// 역할: 기존 조합 표 편집을 보존하면서 누락된 기본 행만 추가하는 에디터 도구이다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-// Editor-only authoring: the CSV seeds a missing asset, never rewrites designer changes.
+// Editor-only authoring: create a missing table or explicitly append missing CSV row keys.
+// Neither operation rewrites an existing row, including its designer-authored display name.
 // /Game/FestaFiesta/Data is already included by DirectoriesToAlwaysCook in DefaultGame.ini.
-#include "CoreMinimal.h"
+#include "FF_FacilitySynergyTableBuilder.h"
 
 #if WITH_EDITOR
 
 #include "AssetToolsModule.h"
 #include "Building/Synergy/FF_FacilitySynergyTypes.h"
 #include "EditorFramework/AssetImportData.h"
+#include "Engine/AssetManager.h"
 #include "Engine/DataTable.h"
 #include "Factories/DataTableFactory.h"
 #include "FF_FFZSFacilityDefinition.h"
@@ -51,29 +56,101 @@ bool ValidateTable(const UDataTable& Table, FString& OutFailureReason)
 	return true;
 }
 
-bool ValidateSeedDefinitions(FString& OutFailureReason)
+bool ValidateReferencedDefinitions(const UDataTable& Table, FString& OutFailureReason)
 {
-	// Verify the exact production IDs, not their display names or economy cost keys.
-	const TCHAR* DefinitionPaths[] = {
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_IceCream.PDA_FFZS_Booth_FoodStall_IceCream"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade")
-	};
-	const FName ExpectedIds[] = {
-		TEXT("Booth_FoodStall_Burger"), TEXT("Rest_Seating_Seating"),
-		TEXT("Booth_FoodStall_IceCream"), TEXT("Rest_Shade_Shade")
-	};
-	for (int32 Index = 0; Index < UE_ARRAY_COUNT(DefinitionPaths); ++Index)
+	OutFailureReason.Reset();
+	if (!ValidateTable(Table, OutFailureReason)) return false;
+	const UAssetManager* Manager = UAssetManager::GetIfInitialized();
+	if (!Manager)
 	{
-		const UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr, DefinitionPaths[Index]);
-		if (!Definition || Definition->Spec.FacilityDefinitionId != ExpectedIds[Index])
+		OutFailureReason = TEXT("asset manager is not initialized; wait for the facility catalog scan");
+		return false;
+	}
+	TSet<FName> ValidatedIds;
+	for (const FName RowName : Table.GetRowNames())
+	{
+		const auto* Row = Table.FindRow<FFF_FacilitySynergyRow>(RowName, TEXT("Validate facility references"));
+		// Disabled rows remain valid work-in-progress data and never enter the evaluator.
+		if (!Row->bEnabled) continue;
+		for (const FName Id : {Row->TargetFacilityId, Row->PartnerFacilityId})
 		{
-			OutFailureReason = FString::Printf(TEXT("missing/mismatched seed facility '%s'"), *ExpectedIds[Index].ToString());
-			return false;
+			if (ValidatedIds.Contains(Id)) continue;
+			const FSoftObjectPath Path = Manager->GetPrimaryAssetPath(
+				FPrimaryAssetId(UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(), Id));
+			const auto* Definition = Cast<UFFZSFacilityDefinition>(Path.TryLoad());
+			if (!Definition || Definition->Spec.FacilityDefinitionId != Id)
+			{
+				OutFailureReason = FString::Printf(TEXT("rule '%s' references missing/mismatched facility ID '%s'"),
+					*RowName.ToString(), *Id.ToString());
+				return false;
+			}
+			ValidatedIds.Add(Id);
 		}
 	}
 	return true;
+}
+
+bool AppendMissingRows(UDataTable& Destination, const UDataTable& Source,
+	TArray<FName>& OutAddedRows, FString& OutFailureReason)
+{
+	OutAddedRows.Reset();
+	OutFailureReason.Reset();
+	if (!ValidateTable(Destination, OutFailureReason) || !ValidateTable(Source, OutFailureReason)) return false;
+	UDataTable* Merged = NewObject<UDataTable>(GetTransientPackage());
+	Merged->RowStruct = FFF_FacilitySynergyRow::StaticStruct();
+	for (const FName RowName : Destination.GetRowNames())
+	{
+		Merged->AddRow(RowName, *Destination.FindRow<FFF_FacilitySynergyRow>(RowName, TEXT("Preserve facility synergy")));
+	}
+	TArray<FName> MissingRows;
+	for (const FName RowName : Source.GetRowNames())
+	{
+		if (Destination.GetRowMap().Contains(RowName)) continue;
+		MissingRows.Add(RowName);
+		Merged->AddRow(RowName, *Source.FindRow<FFF_FacilitySynergyRow>(RowName, TEXT("Append facility synergy")));
+	}
+	if (!ValidateReferencedDefinitions(*Merged, OutFailureReason)) return false;
+	// A bad final CSV row or missing PDA cannot leave a partially appended destination.
+	for (const FName RowName : MissingRows)
+		Destination.AddRow(RowName, *Merged->FindRow<FFF_FacilitySynergyRow>(RowName, TEXT("Commit facility synergy append")));
+	OutAddedRows = MoveTemp(MissingRows);
+	return true;
+}
+
+FString GetCsvPath()
+{
+	return FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("data/unreal/facility_synergies_v0.csv"));
+}
+
+UDataTable* LoadSeedTable(FString& OutFailureReason)
+{
+	FString Csv;
+	if (!FFileHelper::LoadFileToString(Csv, *GetCsvPath()))
+	{
+		OutFailureReason = FString::Printf(TEXT("cannot read %s"), *GetCsvPath());
+		return nullptr;
+	}
+	// Parse and validate before creating a persistent object so malformed CSV leaves no asset.
+	UDataTable* ParsedTable = NewObject<UDataTable>(GetTransientPackage());
+	ParsedTable->RowStruct = FFF_FacilitySynergyRow::StaticStruct();
+	const TArray<FString> ImportProblems = ParsedTable->CreateTableFromCSVString(Csv);
+	if (!ImportProblems.IsEmpty() || !ValidateTable(*ParsedTable, OutFailureReason) || ParsedTable->GetRowNames().IsEmpty())
+	{
+		OutFailureReason = FString::Printf(TEXT("CSV validation failed: %s %s"),
+			*OutFailureReason, *FString::Join(ImportProblems, TEXT("; ")));
+		return nullptr;
+	}
+	return ParsedTable;
+}
+
+bool SaveTable(UDataTable& Table)
+{
+	const FString Filename = FPackageName::LongPackageNameToFilename(TablePackage, FPackageName::GetAssetPackageExtension());
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	SaveArgs.SaveFlags = SAVE_NoError;
+	return UPackage::SavePackage(Table.GetOutermost(), &Table, *Filename, SaveArgs);
 }
 
 void CreateTableIfMissing()
@@ -83,7 +160,7 @@ void CreateTableIfMissing()
 	{
 		UDataTable* Existing = LoadObject<UDataTable>(nullptr, *TableObjectPath);
 		FString FailureReason;
-		if (!Existing || !ValidateTable(*Existing, FailureReason))
+		if (!Existing || !ValidateReferencedDefinitions(*Existing, FailureReason))
 		{
 			UE_LOG(LogFFFacilitySynergyTableBuilder, Error,
 				TEXT("FF_SYNERGY_TABLE_FAIL: existing unreadable or invalid package preserved: %s (%s)"),
@@ -95,32 +172,11 @@ void CreateTableIfMissing()
 			*TablePackage, Existing->GetRowNames().Num());
 		return;
 	}
-
 	FString FailureReason;
-	if (!ValidateSeedDefinitions(FailureReason))
+	UDataTable* ParsedTable = LoadSeedTable(FailureReason);
+	if (!ParsedTable || !ValidateReferencedDefinitions(*ParsedTable, FailureReason))
 	{
 		UE_LOG(LogFFFacilitySynergyTableBuilder, Error, TEXT("FF_SYNERGY_TABLE_FAIL: %s"), *FailureReason);
-		return;
-	}
-
-	const FString CsvPath = FPaths::ConvertRelativePathToFull(
-		FPaths::ProjectDir() / TEXT("data/unreal/facility_synergies_v0.csv"));
-	FString Csv;
-	if (!FFileHelper::LoadFileToString(Csv, *CsvPath))
-	{
-		UE_LOG(LogFFFacilitySynergyTableBuilder, Error, TEXT("FF_SYNERGY_TABLE_FAIL: cannot read %s"), *CsvPath);
-		return;
-	}
-
-	// Parse and validate before creating a persistent object so malformed CSV leaves no asset.
-	UDataTable* ParsedTable = NewObject<UDataTable>(GetTransientPackage());
-	ParsedTable->RowStruct = FFF_FacilitySynergyRow::StaticStruct();
-	const TArray<FString> ImportProblems = ParsedTable->CreateTableFromCSVString(Csv);
-	if (!ImportProblems.IsEmpty() || !ValidateTable(*ParsedTable, FailureReason) || ParsedTable->GetRowNames().IsEmpty())
-	{
-		UE_LOG(LogFFFacilitySynergyTableBuilder, Error,
-			TEXT("FF_SYNERGY_TABLE_FAIL: CSV validation failed: %s %s"),
-			*FailureReason, *FString::Join(ImportProblems, TEXT("; ")));
 		return;
 	}
 
@@ -140,15 +196,10 @@ void CreateTableIfMissing()
 	}
 	if (Table->AssetImportData)
 	{
-		Table->AssetImportData->Update(CsvPath);
+		Table->AssetImportData->Update(GetCsvPath());
 	}
 	Table->MarkPackageDirty();
-	const FString Filename = FPackageName::LongPackageNameToFilename(TablePackage, FPackageName::GetAssetPackageExtension());
-	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
-	FSavePackageArgs SaveArgs;
-	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-	SaveArgs.SaveFlags = SAVE_NoError;
-	if (!UPackage::SavePackage(Table->GetOutermost(), Table, *Filename, SaveArgs))
+	if (!SaveTable(*Table))
 	{
 		UE_LOG(LogFFFacilitySynergyTableBuilder, Error, TEXT("FF_SYNERGY_TABLE_FAIL: could not save %s"), *TablePackage);
 		return;
@@ -158,10 +209,52 @@ void CreateTableIfMissing()
 		*TablePackage, Table->GetRowNames().Num());
 }
 
+void AppendMissingSeedRows()
+{
+	UDataTable* Table = LoadObject<UDataTable>(nullptr, *TableObjectPath);
+	if (!Table || Table->GetOutermost()->IsDirty())
+	{
+		UE_LOG(LogFFFacilitySynergyTableBuilder, Error,
+			TEXT("FF_SYNERGY_TABLE_FAIL: append requires a saved existing table; save designer edits first or use FF.CreateFacilitySynergyTable for a missing asset."));
+		return;
+	}
+	FString FailureReason;
+	UDataTable* Source = LoadSeedTable(FailureReason);
+	TArray<FName> AddedRows;
+	if (!Source || !AppendMissingRows(*Table, *Source, AddedRows, FailureReason))
+	{
+		UE_LOG(LogFFFacilitySynergyTableBuilder, Error, TEXT("FF_SYNERGY_TABLE_FAIL: append preserved existing rows: %s"), *FailureReason);
+		return;
+	}
+	if (AddedRows.IsEmpty())
+	{
+		UE_LOG(LogFFFacilitySynergyTableBuilder, Display,
+			TEXT("FF_SYNERGY_TABLE_APPEND_NOOP: %s already contains every CSV row key; no values changed and no package saved."), *TablePackage);
+		return;
+	}
+	Table->MarkPackageDirty();
+	if (!SaveTable(*Table))
+	{
+		for (const FName RowName : AddedRows) Table->RemoveRow(RowName);
+		Table->GetOutermost()->SetDirtyFlag(false);
+		UE_LOG(LogFFFacilitySynergyTableBuilder, Error,
+			TEXT("FF_SYNERGY_TABLE_FAIL: save failed; newly appended rows rolled back in memory: %s"), *TablePackage);
+		return;
+	}
+	UE_LOG(LogFFFacilitySynergyTableBuilder, Display,
+		TEXT("FF_SYNERGY_TABLE_APPEND: %s added %d rows, now %d; all existing row values and import settings preserved."),
+		*TablePackage, AddedRows.Num(), Table->GetRowNames().Num());
+}
+
 FAutoConsoleCommand CreateFacilitySynergyTableCommand(
 	TEXT("FF.CreateFacilitySynergyTable"),
 	TEXT("Creates the missing facility synergy DataTable from its CSV; preserves all existing designer edits."),
 	FConsoleCommandDelegate::CreateStatic(&CreateTableIfMissing));
+
+FAutoConsoleCommand AppendFacilitySynergyRowsCommand(
+	TEXT("FF.AppendFacilitySynergyRows"),
+	TEXT("Explicitly appends missing CSV row keys to the saved facility synergy DataTable; never overwrites existing rows."),
+	FConsoleCommandDelegate::CreateStatic(&AppendMissingSeedRows));
 
 } // namespace FFFacilitySynergyTableBuilder
 

@@ -1,0 +1,56 @@
+{
+  "number": 70,
+  "category": "Tile",
+  "subtype": "Surface",
+  "name_ko": "잔디블록 피크닉 타일",
+  "slug": "GrassBlockPicnicTile",
+  "id": "Tile_Surface_GrassBlockPicnicTile",
+  "footprint_cm": [
+    400,
+    400
+  ],
+  "height_cm": 8,
+  "description_ko": "휴식 구역의 잔디·포장 패턴.",
+  "emphasis_ko": "블록과 잔디를 큰 면으로 구분. 기본은 평탄하게 만들고 별도 잔디 장식을 추가할 때 상부 시설과의 겹침을 검사한다.",
+  "reference_image": "Design/Facitilies/70 잔디블록 피크닉 타일.png",
+  "exploded_reference_image": "Design/Facitilies/70 잔디블록 피크닉 타일 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Tile/PDA_FFZS_Tile_Surface_Stone",
+  "followup_features": [
+    "상부 시설 설치·잔디 겹침·NPC 통행은 실제 배치로 검증한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Tile\\Tile_Surface_GrassBlockPicnicTile\\SM_FF_Tile_Surface_GrassBlockPicnicTile.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\70_Tile_Surface_GrassBlockPicnicTile.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Tile\\Tile_Surface_GrassBlockPicnicTile\\iso.png",
+  "bounds_m": [
+    4.0,
+    4.0,
+    0.07999999076128006
+  ],
+  "bounds_min_m": [
+    -2.0,
+    -2.0,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.0,
+    2.0,
+    0.07999999076128006
+  ],
+  "triangles": 52,
+  "material_names": [
+    "M_F70_Sand",
+    "M_F70_Green",
+    "M_F70_Cream"
+  ],
+  "collision_count": 1,
+  "editable_parts": 21,
+  "fbx_sha256": "161f4bbfa4f09905ee9e69711b4c60a6d7547e9ac657d84bbe2185dd54e21d56",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

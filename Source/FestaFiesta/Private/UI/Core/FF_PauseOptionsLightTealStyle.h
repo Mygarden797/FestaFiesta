@@ -1,3 +1,6 @@
+// FF_PauseOptionsLightTealStyle.h
+// 역할: 일시정지와 설정 화면의 공통 색상·버튼 모양을 제공한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

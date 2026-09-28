@@ -1,3 +1,5 @@
+// FF_FFZSQueueGeometryTests.cpp
+// 역할: 꺾인 대기 경로에서도 자리 간격과 위치가 올바르게 계산되는지 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

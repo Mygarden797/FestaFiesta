@@ -1,3 +1,6 @@
+# migrate_required_badges.py
+# 역할: 시설 조합 효과와 표시 작업에서 기존 데이터를 현재 구조로 이관한다.
+
 """Add required-facility states and verify existing card/synergy authoring is preserved."""
 import hashlib
 import json
@@ -6,8 +9,8 @@ from pathlib import Path
 import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKAGES = ["/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile",
-            "/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard"]
+PACKAGES = ["/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile",
+            "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard"]
 COMMAND = "FF.AddBuildRequiredFacilityBadges"
 
 

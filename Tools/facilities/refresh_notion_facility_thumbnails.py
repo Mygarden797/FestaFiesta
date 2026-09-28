@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# refresh_notion_facility_thumbnails.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 기존 제작 결과를 원본 기준으로 갱신한다.
+
 """Refresh only the 22 generated Notion facility catalog Texture2D assets.
 
 This intentionally never loads, imports, configures, or saves a StaticMesh.  It
@@ -22,7 +25,7 @@ from ffzs_asset_save_transaction import AssetSaveTransaction
 from ffzs_definition_source import require_unattended_commandlet
 
 
-TEXTURE_DESTINATION = "/Game/FestaFiesta/Zone/Test_Asset/image"
+TEXTURE_DESTINATION = "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images"
 MANIFEST_RELATIVE = os.path.join(
     "Tools", "facilities", "notion_facility_examples.json"
 )

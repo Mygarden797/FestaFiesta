@@ -1,3 +1,6 @@
+// FF_FacilitySynergyTypes.h
+// 역할: 조합 표의 행·미리보기 자료형과 작성 데이터의 유효성 규칙이다.
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -12,7 +15,8 @@ struct FESTAFIESTA_API FFF_FacilitySynergyRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="사용", ToolTip="끄면 이 행의 조합을 적용하지 않습니다."))
 	bool bEnabled = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="조합 이름", ToolTip="배치 화면에 표시할 이름입니다."))
+	/** Authored recipe title, independent of either facility's localized display name. IDs define the relation. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="조합 이름", ToolTip="디자이너가 정하는 조합 제목입니다. 시설 표시명과 별개이며 시설 연결은 아래 ID를 사용합니다."))
 	FText DisplayName;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="수익을 받는 시설 ID", GetOptions="FestaFiesta.FF_FacilitySynergySettings.GetFacilityIdOptions", ToolTip="시설 정의의 FacilityDefinitionId를 선택합니다. 이 시설의 이용 수수료가 증가합니다."))
 	FName TargetFacilityId;
@@ -22,6 +26,9 @@ struct FESTAFIESTA_API FFF_FacilitySynergyRow : public FTableRowBase
 	float MaxDistanceMeters = 15.f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="추가 수익 (%)", ClampMin="0.01", ClampMax="1000", ToolTip="10을 입력하면 이용 수수료가 10% 증가합니다. 0.1이 아닙니다. 강화 배수에 곱해집니다."))
 	float RevenueBonusPercent = 10.f;
+	/** One-time profile discovery reward, independent of the recurring proximity revenue bonus. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="최초 발견 보상 (골드)", ClampMin="0", UIMin="0", ToolTip="이 조합을 발견한 뒤 도감의 보상 받기 버튼으로 한 번 수령할 골드입니다. 0이면 보상 없음이며, 이미 수령한 보상은 다시 지급하지 않습니다."))
+	int32 DiscoveryRewardGold = 100;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="중복 방지 그룹", ToolTip="같은 이름의 그룹에서는 가장 큰 보너스 하나만 적용합니다. 비우면 각 행이 독립적으로 더해집니다. 같은 행의 상대 시설 여러 개는 중첩되지 않습니다."))
 	FName StackingGroup;
 
@@ -37,6 +44,7 @@ struct FESTAFIESTA_API FFF_FacilitySynergyPreviewEntry
 {
 	GENERATED_BODY()
 	UPROPERTY(BlueprintReadOnly) FName RuleId;
+	/** Original localized recipe title; UI supplies a readable fallback when empty, never a rule ID. */
 	UPROPERTY(BlueprintReadOnly) FText DisplayName;
 	UPROPERTY(BlueprintReadOnly) FName TargetFacilityId;
 	UPROPERTY(BlueprintReadOnly) FName PartnerFacilityId;

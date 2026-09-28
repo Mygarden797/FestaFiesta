@@ -1,3 +1,6 @@
+# migrate_partner_link.py
+# 역할: 시설 조합 효과와 표시 작업에서 기존 데이터를 현재 구조로 이관한다.
+
 """Add the partner-name button while preserving the existing row's authored layout."""
 import hashlib
 import json
@@ -6,7 +9,7 @@ from pathlib import Path
 import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKAGE = "/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry"
+PACKAGE = "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry"
 COMMAND = "FF.MigrateFacilitySynergyPartnerLink"
 
 

@@ -2,12 +2,18 @@
 
 #include "Camera/FF_FestivalPlayerController.h"
 
+#include "Character/FF_FestivalCharacter.h"
+
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/FF_BuildToolbarInput.h"
+#include "InputKeyEventArgs.h"
 #include "Building/Testing/FF_ZoneLifecycleTestPanelSubsystem.h"
 #include "Camera/FF_FinaleViewpoint.h"
 #include "Camera/FF_OverviewCameraPawn.h"
 #include "Camera/FF_OverviewCameraRig.h"
 #include "CollisionQueryParams.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "EnhancedInputComponent.h"
@@ -15,6 +21,25 @@
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
+#include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Framework/Application/SlateApplication.h"
+#include "UnrealClient.h"
+
+namespace
+{
+	bool IsFacilityLightingInputCaptured(const UWorld* World)
+	{
+		const UFF_FacilityInfoSubsystem* Info=World?World->GetSubsystem<UFF_FacilityInfoSubsystem>():nullptr;
+		if(!Info) return false;
+		return Info->IsLightingTextInputFocused() || (Info->IsPointerOverPanel() &&
+			FSlateApplication::IsInitialized() && FSlateApplication::Get().HasAnyMouseCaptor());
+	}
+	bool IsPointerOverFacilityUI(const UWorld* World)
+	{
+		const UFF_FacilityInfoSubsystem* Info=World?World->GetSubsystem<UFF_FacilityInfoSubsystem>():nullptr;
+		return Info && Info->IsPointerOverPanel();
+	}
+}
 
 AFF_FestivalPlayerController::AFF_FestivalPlayerController()
 {
@@ -27,6 +52,9 @@ AFF_FestivalPlayerController::AFF_FestivalPlayerController()
 void AFF_FestivalPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 시작은 관찰 카메라다. 생성자에서 커서만 켜두면 입력 모드가 안 걸린다.
+	ApplyViewInputMode(ViewMode);
 
 	// 시작 시점의 빙의 대상이 관찰 카메라다. 이후 캐릭터로 빙의가 옮겨가도 이 참조는 유지된다.
 	OverviewPawn = ResolveOverviewPawn();
@@ -53,6 +81,25 @@ void AFF_FestivalPlayerController::BeginPlay()
 			}
 		}
 	}
+}
+
+bool AFF_FestivalPlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+	const auto* Build = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+	if (Build && Build->GetBuildModeState() != EFF_BuildModeState::Closed &&
+		FFBuildToolbarInput::IsRetiredShortcut(Params.Key))
+	{
+		// Consume before PlayerInput, including the engine's F-key debug bindings.
+		return true;
+	}
+	return Super::InputKey(Params);
+}
+
+void AFF_FestivalPlayerController::FlushPressedKeys()
+{
+	Super::FlushPressedKeys();
+	// 창 포커스를 잃거나 입력 모드를 바꿀 때 키만 비우면 이미 쌓인 카메라 입력이 남는다.
+	StopOverviewCameraMotion();
 }
 
 void AFF_FestivalPlayerController::SetupInputComponent()
@@ -169,6 +216,10 @@ EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 	{
 		return EFF_CameraInputBlock::ModalUi;
 	}
+	if (!IsCameraViewportFocused())
+	{
+		return EFF_CameraInputBlock::InactiveViewport;
+	}
 	// 관찰 카메라가 화면에 안 보이는 동안 조작을 받으면, 돌아왔을 때 엉뚱한 데를 보고 있다.
 	if (ViewMode == EFF_CameraViewMode::Actor)
 	{
@@ -187,15 +238,37 @@ EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 	return EFF_CameraInputBlock::None;
 }
 
+bool AFF_FestivalPlayerController::IsCameraViewportFocused() const
+{
+	if (!FSlateApplication::IsInitialized() || !FSlateApplication::Get().IsActive())
+	{
+		return false;
+	}
+
+	const ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	const FViewport* Viewport = LocalPlayer && LocalPlayer->ViewportClient
+		? LocalPlayer->ViewportClient->Viewport : nullptr;
+	// 에디터 자체가 활성 상태여도 다른 패널/창을 조작 중이면 게임 카메라는 멈춘다.
+	return Viewport && Viewport->HasFocus() && Viewport->IsForegroundWindow();
+}
+
+void AFF_FestivalPlayerController::StopOverviewCameraMotion()
+{
+	if (AFF_OverviewCameraPawn* CameraPawn = GetOverviewCameraPawn())
+	{
+		CameraPawn->StopCameraMotion();
+	}
+}
+
 bool AFF_FestivalPlayerController::IsCameraMovementAllowed() const
 {
 	// 건축 중에도 화면은 움직여야 한다. 부스를 놓을 자리를 봐야 하니까.
-	return FFCameraInputModel::IsMovementAllowed(GetInputBlockReason());
+	return !IsFacilityLightingInputCaptured(GetWorld()) && FFCameraInputModel::IsMovementAllowed(GetInputBlockReason());
 }
 
 bool AFF_FestivalPlayerController::IsCameraRotationAllowed() const
 {
-	return FFCameraInputModel::IsRotationAllowed(
+	return !IsFacilityLightingInputCaptured(GetWorld()) && FFCameraInputModel::IsRotationAllowed(
 		GetInputBlockReason(),
 		IsBuildPreviewActive());
 }
@@ -224,6 +297,7 @@ bool AFF_FestivalPlayerController::EnterScriptedView(AFF_FinaleViewpoint* Viewpo
 
 	// 빙의는 옮기지 않는다. 관찰 카메라가 계속 조종 대상으로 남아 있어야
 	// 연출이 끝났을 때 리그 상태를 그대로 이어받는다.
+	StopOverviewCameraMotion();
 	SetViewTargetWithBlend(Viewpoint, FMath::Max(0.f, BlendTime));
 	bScriptedViewActive = true;
 
@@ -239,6 +313,7 @@ void AFF_FestivalPlayerController::ExitScriptedView(float BlendTime)
 	}
 
 	bScriptedViewActive = false;
+	StopOverviewCameraMotion();
 
 	// 연출 전에 무엇을 보고 있었는지에 따라 돌아갈 곳이 다르다.
 	if (ViewMode == EFF_CameraViewMode::Overview)
@@ -261,6 +336,10 @@ void AFF_FestivalPlayerController::ExitScriptedView(float BlendTime)
 void AFF_FestivalPlayerController::SetModalUiActive(bool bActive)
 {
 	bModalUiActive = bActive;
+	if (bActive)
+	{
+		StopOverviewCameraMotion();
+	}
 }
 
 void AFF_FestivalPlayerController::HandlePan(const FInputActionValue& Value)
@@ -277,7 +356,7 @@ void AFF_FestivalPlayerController::HandlePan(const FInputActionValue& Value)
 
 void AFF_FestivalPlayerController::HandleZoom(const FInputActionValue& Value)
 {
-	if (!IsCameraMovementAllowed())
+	if (!IsCameraMovementAllowed() || IsPointerOverFacilityUI(GetWorld()))
 	{
 		return;
 	}
@@ -337,7 +416,15 @@ void AFF_FestivalPlayerController::PlayerTick(float DeltaTime)
 		ProcessPickRequest();
 	}
 	EnsureViewTargetAlive();
-	TickEdgeScroll(DeltaTime);
+	if (IsCameraMovementAllowed())
+	{
+		TickEdgeScroll(DeltaTime);
+	}
+	else
+	{
+		// 차단되기 직전의 팬 입력, 줌 전환, 명시적 추적도 숨은 상태로 진행시키지 않는다.
+		StopOverviewCameraMotion();
+	}
 }
 
 bool AFF_FestivalPlayerController::SwitchToActorView(AActor* TargetActor, float BlendTime)
@@ -349,9 +436,11 @@ bool AFF_FestivalPlayerController::SwitchToActorView(AActor* TargetActor, float 
 	}
 
 	// 관찰 카메라를 그대로 두고 뷰타깃만 옮긴다. Possess 를 쓰면 돌아왔을 때 구도를 잃는다.
+	StopOverviewCameraMotion();
 	SetViewTargetWithBlend(TargetActor, FMath::Max(0.f, BlendTime));
 
 	ViewMode = EFF_CameraViewMode::Actor;
+	ApplyViewInputMode(ViewMode);
 	ViewedActor = TargetActor;
 	LastViewedActor = TargetActor;
 
@@ -369,6 +458,7 @@ bool AFF_FestivalPlayerController::PossessCharacter(APawn* TargetCharacter, floa
 
 	// 관람과 달리 빙의를 옮긴다. 그래야 입력이 캐릭터로 가고 WASD 가 카메라 팬으로 새지 않는다.
 	// 관찰 카메라는 파괴되지 않고 월드에 남아 있어서, 돌아올 때 리그 상태가 그대로다.
+	StopOverviewCameraMotion();
 	Possess(TargetCharacter);
 	SetViewTargetWithBlend(TargetCharacter, FMath::Max(0.f, BlendTime));
 
@@ -376,8 +466,60 @@ bool AFF_FestivalPlayerController::PossessCharacter(APawn* TargetCharacter, floa
 	ViewedActor = TargetCharacter;
 	LastViewedActor = TargetCharacter;
 
+	ApplyViewInputMode(ViewMode);
+
 	OnViewModeChanged.Broadcast(ViewMode, TargetCharacter);
 	return true;
+}
+
+void AFF_FestivalPlayerController::RefreshViewInputMode()
+{
+	ApplyViewInputMode(ViewMode);
+}
+
+void AFF_FestivalPlayerController::ApplyViewInputMode(const EFF_CameraViewMode Mode)
+{
+	if (Mode == EFF_CameraViewMode::Character)
+	{
+		// AController 에 이미 Character 멤버가 있어 다른 이름을 쓴다.
+		const AFF_FestivalCharacter* Possessed = Cast<AFF_FestivalCharacter>(GetPawn());
+		const bool bShiftLock = Possessed && Possessed->IsShiftLockEnabled();
+
+		if (bShiftLock)
+		{
+			/* 커서를 치우고 마우스를 화면 안에 가둔다.
+
+			   가두지 않으면 마우스가 창 밖으로 나가고, 그 순간부터 시점이 안 돌아간다.
+			   시야 고정은 계속 돌릴 때 쓰는 기능이라 갇혀 있는 편이 맞다.
+			*/
+			FInputModeGameOnly InputMode;
+			SetInputMode(InputMode);
+			SetShowMouseCursor(false);
+			return;
+		}
+
+		// 평소에는 커서를 둔다. 클릭해서 무언가 고를 수 있어야 한다.
+		//
+		// 대신 커서 아래 위젯이 마우스 움직임을 먼저 가져가므로,
+		// 시점 회전은 마우스 버튼을 누른 채로만 되게 입력에서 묶어야 한다.
+		FInputModeGameAndUI CharacterInputMode;
+		CharacterInputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		CharacterInputMode.SetHideCursorDuringCapture(false);
+		SetInputMode(CharacterInputMode);
+		SetShowMouseCursor(true);
+		return;
+	}
+
+	/* 관찰과 연출은 커서를 쓴다.
+
+	   GameAndUI 로 두고 캡처를 걸지 않는 이유는, 화면 가장자리로 마우스를 옮겨
+	   카메라를 미는 조작이 있기 때문이다. 캡처를 걸면 커서가 화면 안에 갇힌다.
+	*/
+	FInputModeGameAndUI InputMode;
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	SetShowMouseCursor(true);
 }
 
 void AFF_FestivalPlayerController::SetVisitorCharacter(APawn* InCharacter)
@@ -398,6 +540,7 @@ void AFF_FestivalPlayerController::SwitchToOverview(float BlendTime)
 
 	// 탐색으로 찾았으면 캐시를 갱신해둔다. 다음부터는 순회하지 않는다.
 	OverviewPawn = CameraPawn;
+	StopOverviewCameraMotion();
 
 	// 캐릭터를 조종하다 왔으면 빙의도 되돌려야 입력이 카메라로 온다.
 	if (GetPawn() != CameraPawn)
@@ -409,6 +552,7 @@ void AFF_FestivalPlayerController::SwitchToOverview(float BlendTime)
 	SetViewTargetWithBlend(CameraPawn, FMath::Max(0.f, BlendTime));
 
 	ViewMode = EFF_CameraViewMode::Overview;
+	ApplyViewInputMode(ViewMode);
 	ViewedActor = nullptr;
 
 	OnViewModeChanged.Broadcast(ViewMode, nullptr);
@@ -458,6 +602,17 @@ void AFF_FestivalPlayerController::EnsureViewTargetAlive()
 		return;
 	}
 
+	/* 연출 중이면 건드리지 않는다.
+
+	   지금 화면은 연출 시점을 비추고 있어서 보던 대상이 사라져도 화면이 원점으로
+	   가지 않는다. 여기서 관찰 시점으로 돌리면 연출 카메라를 빼앗는다.
+	   연출이 끝날 때 ExitScriptedView 가 대상이 사라진 경우를 따로 처리한다.
+	*/
+	if (bScriptedViewActive)
+	{
+		return;
+	}
+
 	// 보던 NPC 가 퇴장하거나 시설이 철거되면 뷰타깃이 사라진다.
 	// 그대로 두면 화면이 원점을 비추고 입력도 계속 막혀 있어서 조작 불능처럼 보인다.
 	if (!ViewedActor.IsValid())
@@ -470,7 +625,8 @@ void AFF_FestivalPlayerController::EnsureViewTargetAlive()
 
 void AFF_FestivalPlayerController::TickEdgeScroll(float DeltaTime)
 {
-	if (!IsCameraMovementAllowed())
+	if (!IsCameraMovementAllowed() || IsPointerOverFacilityUI(GetWorld()) ||
+		!EdgeScrollActivationKey.IsValid() || !IsInputKeyDown(EdgeScrollActivationKey))
 	{
 		return;
 	}
@@ -497,6 +653,22 @@ void AFF_FestivalPlayerController::TickEdgeScroll(float DeltaTime)
 	int32 ViewportX = 0;
 	int32 ViewportY = 0;
 	GetViewportSize(ViewportX, ViewportY);
+
+	/* 화면 아래쪽은 가장자리로 치지 않는다.
+
+	   하단에 탭 바와 패널이 있어서, 그것들을 누르려고 마우스를 내릴 때마다
+	   카메라가 밀린다. UI 조작과 화면 밀기가 같은 자리에서 일어나면 둘 중
+	   하나는 늘 방해가 된다.
+
+	   위와 좌우는 가릴 것이 없으므로 그대로 둔다.
+	*/
+	const float BottomDeadZone = FMath::Max(0.f,
+		CameraPawn->CameraSettings.EdgeScrollBottomDeadZonePixels);
+
+	if (MouseY >= static_cast<float>(ViewportY) - BottomDeadZone)
+	{
+		return;
+	}
 
 	const FVector2D EdgeInput = FFF_OverviewCameraRig::ComputeEdgeScrollInput(
 		FVector2D(MouseX, MouseY),
@@ -559,7 +731,20 @@ void AFF_FestivalPlayerController::HandleToggleView(const FInputActionValue& Val
 	// 액터 시점일 때 관찰 카메라 조작이 막혀 있는데, 그 판정을 그대로 쓰면
 	// 액터 시점으로 들어간 뒤 되돌아 나올 수가 없다.
 	// 다만 모달 UI 가 떠 있는 동안에는 화면이 바뀌면 안 된다.
-	if (GetInputBlockReason() == EFF_CameraInputBlock::ModalUi)
+	const EFF_CameraInputBlock BlockReason = GetInputBlockReason();
+	if (BlockReason == EFF_CameraInputBlock::ModalUi ||
+		BlockReason == EFF_CameraInputBlock::InactiveViewport)
+	{
+		return;
+	}
+
+	/* 연출이 카메라를 쥐고 있으면 전환하지 않는다.
+
+	   여기서 바꾸면 화면은 캐릭터로 가지만 연출 중이라는 표시는 그대로 남아서,
+	   다음 순회 시점이 다시 카메라를 끌고 간다. 연출에서 빠지고 싶으면
+	   피날레의 카메라 건너뛰기(SkipCinematicCamera)가 그 길이다.
+	*/
+	if (bScriptedViewActive)
 	{
 		return;
 	}

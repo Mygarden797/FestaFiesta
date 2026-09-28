@@ -1,3 +1,5 @@
+// FF_FFZSFacilityKoreanTooltipsTests.cpp
+// 역할: 시설 속성의 한국어 표시명과 설명이 에디터 사용자에게 제공되는지 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "FF_FFZSFacilityDefinition.h"
@@ -200,6 +202,9 @@ namespace FFZSFacilityKoreanTooltipsTestsPrivate
         TestCustomizationLocText(Test, Source, TEXT("PresentationCategory"), TEXT("Presentation"));
         TestCustomizationLocText(Test, Source, TEXT("AuthoringCategory"), TEXT("Authoring"));
         TestCustomizationLocText(Test, Source, TEXT("AuthoringToolsCategory"), TEXT("Facility Authoring Tools"));
+        TestCustomizationLocText(Test, Source, TEXT("FacilityRevenueCategory"), TEXT("Facility Revenue"));
+        TestCustomizationLocText(Test, Source, TEXT("FacilityRevenueCategoryTip"));
+        TestCustomizationLocText(Test, Source, TEXT("FacilityRevenueHelp"));
         TestCustomizationLocText(Test, Source, TEXT("ShowKoreanHelpButton"), TEXT("Show Korean Help"));
         TestCustomizationLocText(Test, Source, TEXT("ValidateDefinitionButton"), TEXT("Validate Facility Definition"));
         TestCustomizationLocText(Test, Source, TEXT("FootprintFromMeshButton"), TEXT("Footprint <- Loaded Mesh"));
@@ -304,6 +309,8 @@ bool FFFZSFacilityKoreanTooltipsTest::RunTest(const FString& Parameters)
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, AllowedZoneIds),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, InstallCostKey),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, RevenueRuleKey),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, bOverrideRevenuePerUseGold),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, RevenuePerUseGold),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, ExperienceEffectKey),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, VisualMesh),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, VisualSizingMode),
@@ -312,6 +319,31 @@ bool FFFZSFacilityKoreanTooltipsTest::RunTest(const FString& Parameters)
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, AudioSettings),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, PlacementObstacleHeightCm),
         });
+
+    for (const FName PropertyName : {
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, bOverrideRevenuePerUseGold),
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, RevenuePerUseGold) })
+    {
+        const FProperty* Property = FFFZSFacilitySpec::StaticStruct()->FindPropertyByName(PropertyName);
+        if (!TestNotNull(TEXT("Facility revenue authoring property exists"), Property))
+        {
+            continue;
+        }
+        TestTrue(TEXT("Facility revenue is editable, Blueprint writable and saved"),
+            Property->HasAllPropertyFlags(CPF_Edit | CPF_BlueprintVisible | CPF_SaveGame) &&
+            !Property->HasAnyPropertyFlags(CPF_EditConst | CPF_BlueprintReadOnly));
+        TestEqual(TEXT("Facility revenue belongs to the economy settings"),
+            Property->GetMetaData(TEXT("Category")), FString(TEXT("Economy")));
+    }
+    const FProperty* RevenueAmount = FFFZSFacilitySpec::StaticStruct()->FindPropertyByName(
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, RevenuePerUseGold));
+    if (RevenueAmount)
+    {
+        TestEqual(TEXT("The amount is editable only when the author selects an override"),
+            RevenueAmount->GetMetaData(TEXT("EditCondition")), FString(TEXT("bOverrideRevenuePerUseGold")));
+        TestEqual(TEXT("Editor inputs prevent negative revenue"),
+            RevenueAmount->GetMetaData(TEXT("ClampMin")), FString(TEXT("0")));
+    }
 
     TestEnglishDisplayNameAndKoreanTooltip(
         *this,

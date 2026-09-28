@@ -6,6 +6,28 @@
 
 #include "Economy/Rules/FF_DayLedger.h"
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayLedger_ConstructionCorrections,
+	"FestaFiesta.Economy.DayLedger.ConstructionCorrections",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DayLedger_ConstructionCorrections::RunTest(const FString& Parameters)
+{
+	FFF_DayLedger Ledger;
+	Ledger.RecordSpend(EFF_SpendReason::FacilityInstall, 700);
+	Ledger.RecordSpend(EFF_SpendReason::Cleanup, 125);
+	Ledger.RecordEarn(EFF_EarnReason::AdmissionFee, 50);
+	Ledger.RecordRefund(350);
+	TestTrue(TEXT("Undo original construction entries"), Ledger.AdjustConstruction(-700, -350));
+	TestEqual(TEXT("Unrelated spending is preserved"), Ledger.GetSpendByReason(EFF_SpendReason::Cleanup), 125);
+	TestEqual(TEXT("Unrelated revenue is preserved"), Ledger.GetEarnByReason(EFF_EarnReason::AdmissionFee), 50);
+	TestFalse(TEXT("Cannot undo the same spending twice"), Ledger.AdjustConstruction(-1, 0));
+	TestFalse(TEXT("Cannot undo the same refund twice"), Ledger.AdjustConstruction(0, -1));
+	TestFalse(TEXT("Reject aggregate overflow without narrowing"), Ledger.AdjustConstruction(int64(MAX_int32) + 1, 0));
+	TestEqual(TEXT("Rejection preserves zero construction spending"), Ledger.GetSpendByReason(EFF_SpendReason::FacilityInstall), 0);
+	TestTrue(TEXT("Redo restores exact entries"), Ledger.AdjustConstruction(700, 350));
+	TestEqual(TEXT("Exact refund restored"), Ledger.GetTotalRefund(), 350);
+	return true;
+}
+
 // 원인별로 정확히 누적되고, 다른 원인끼리는 서로 안 섞인다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayLedger_RecordSpendAccumulatesByReason, "FestaFiesta.Economy.DayLedger.RecordSpendAccumulatesByReason", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_DayLedger_RecordSpendAccumulatesByReason::RunTest(const FString& Parameters)
@@ -14,12 +36,12 @@ bool FFF_DayLedger_RecordSpendAccumulatesByReason::RunTest(const FString& Parame
 
 	Ledger.RecordSpend(EFF_SpendReason::FacilityInstall, 400);
 	Ledger.RecordSpend(EFF_SpendReason::FacilityInstall, 500);
-	Ledger.RecordSpend(EFF_SpendReason::VenueRent, 1500);
+	Ledger.RecordSpend(EFF_SpendReason::StaffHire, 1500);
 
 	TestEqual(TEXT("같은 원인은 누적된다"),
 		Ledger.GetSpendByReason(EFF_SpendReason::FacilityInstall), 900);
 	TestEqual(TEXT("다른 원인은 서로 안 섞인다"),
-		Ledger.GetSpendByReason(EFF_SpendReason::VenueRent), 1500);
+		Ledger.GetSpendByReason(EFF_SpendReason::StaffHire), 1500);
 	TestEqual(TEXT("기록한 적 없는 원인은 0이다"),
 		Ledger.GetSpendByReason(EFF_SpendReason::Cleanup), 0);
 

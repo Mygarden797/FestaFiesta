@@ -186,11 +186,11 @@
 
 | 바꾸고 싶은 것 | 에셋 / 위젯 |
 |---|---|
-| 조합 탭 위치·버튼 모양 | `Content/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel`의 `Button_TabSynergy` |
+| 조합 탭 위치·버튼 모양 | `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel`의 `Button_TabSynergy` |
 | 조합 페이지 구성·정렬 | 같은 WBP의 `Panel_SynergySection` |
 | 현재 전체 효과 요약 | 같은 WBP의 `Text_SynergySummary` |
 | 조합 카드 목록 위치·정렬 | 같은 WBP의 `VerticalBox_SynergyEntries` |
-| 카드 하나의 글꼴·색·배치 | `Content/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry` |
+| 카드 하나의 글꼴·색·배치 | `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry` |
 
 조합 카드는 설정된 조합 수에 맞춰 자동으로 나타납니다. 카드 에셋 하나를 고치면 모든 카드에 같은 디자인이 적용됩니다. 탭과 카드에서도 데이터가 연결된 위젯의 이름과 종류를 유지하고 모양을 편집하세요.
 
@@ -203,7 +203,7 @@
 3. `Border_SynergyBadge`에서 배지 배경·여백을, `Text_SynergyBadge`에서 ‘조합 시설’ 문구·글꼴·색을 수정합니다.
 4. Compile → Save 후 시설 클릭 → B → 건축 목록에서 확인합니다.
 
-게임 코드는 강조의 표시·숨김만 바꾸므로 디자이너가 정한 색과 문구가 유지됩니다. 위젯 이름과 종류는 유지하세요. 고급 연출은 `BP_OnSynergyHighlightChanged` 이벤트로 연결할 수 있습니다. 이전 전체 화면 카탈로그를 사용하는 화면은 `Content/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard`의 같은 이름 위젯에서 편집합니다.
+게임 코드는 강조의 표시·숨김만 바꾸므로 디자이너가 정한 색과 문구가 유지됩니다. 위젯 이름과 종류는 유지하세요. 고급 연출은 `BP_OnSynergyHighlightChanged` 이벤트로 연결할 수 있습니다. 이전 전체 화면 카탈로그를 사용하는 화면은 `Content/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard`의 같은 이름 위젯에서 편집합니다.
 
 ### 필수 배지와 설치 수의 모양 바꾸기
 
@@ -219,7 +219,7 @@
 - 런타임 표: `/Game/FestaFiesta/Data/Economy/DT_FacilitySynergies`.
 - 재수입 원본: `data/unreal/facility_synergies_v0.csv`. 일반 편집은 에디터의 데이터테이블에서 합니다. CSV 재수입은 에디터에서 수정한 행을 바꾸므로 원본으로 관리하기로 정한 경우에만 사용합니다.
 - 에셋이 없는 개발 환경에서는 프로젝트 빌드 후 에디터 콘솔의 `FF.CreateFacilitySynergyTable`로 생성합니다. 이미 있는 표는 덮어쓰지 않습니다.
-- WBP가 없는 환경에서는 `FF.CreateBuildSynergyWidget`으로 기본 UMG 화면을 생성합니다. 기존 WBP의 Designer 트리와 Class Defaults는 덮어쓰지 않습니다. 화면 에셋은 `/Game/FestaFiesta/UI/Building/WBP_FF_BuildSynergy`입니다.
+- WBP가 없는 환경에서는 `FF.CreateBuildSynergyWidget`으로 기본 UMG 화면을 생성합니다. 기존 WBP의 Designer 트리와 Class Defaults는 덮어쓰지 않습니다. 화면 에셋은 `/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy`입니다.
 - 기존 시설 정보창에 조합 탭을 추가할 때에는 `FF.MigrateFacilitySynergyTab`을 사용합니다. 기존 탭과 디자인을 유지하면서 조합 탭 및 카드 WBP를 추가합니다. 이미 추가된 탭은 다시 만들지 않습니다.
 - 기존 조합 카드의 상대 이름을 버튼으로 바꾸려면 `FF.MigrateFacilitySynergyPartnerLink`를 사용합니다. 원래 글자 스타일과 간격을 유지하며, 같은 명령을 다시 실행해도 기존 에셋을 다시 저장하지 않습니다.
 - 배치 미리보기와 실제 수수료가 같은 조합 평가기를 사용합니다. 조합 값은 시설에 영구 저장하지 않고 현재 배치에서 계산하므로 이동·철거·불러오기 후에도 갱신됩니다.

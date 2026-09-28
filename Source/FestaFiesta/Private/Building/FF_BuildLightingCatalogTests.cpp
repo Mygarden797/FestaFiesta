@@ -1,3 +1,6 @@
+// FF_BuildLightingCatalogTests.cpp
+// 역할: BuildLightingCatalog 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Catalog.ProductionLightingAssetsAndEconomy).
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/FF_BuildCatalogModel.h"
@@ -7,6 +10,7 @@
 #include "Engine/AssetManager.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalSettings.h"
 #include "HAL/PlatformTime.h"
@@ -81,7 +85,7 @@ namespace FFBuildLightingCatalogTest
                 const FPrimaryAssetId PrimaryId(UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(), DefinitionId);
                 const FString AssetName = FString(TEXT("PDA_FFZS_")) + DefinitionId.ToString();
                 const FSoftObjectPath ExpectedPath(FString::Printf(
-                    TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/%s.%s"), *AssetName, *AssetName));
+                    TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Lighting/%s.%s"), *AssetName, *AssetName));
                 Test->TestEqual(*FString::Printf(TEXT("%s is discovered as a production primary asset"), Expected.Name),
                     AssetManager.GetPrimaryAssetPath(PrimaryId), ExpectedPath);
                 Test->TestEqual(*FString::Printf(TEXT("%s is included in packaged builds"), Expected.Name),
@@ -109,7 +113,8 @@ namespace FFBuildLightingCatalogTest
                 const FFF_FacilityCostRow* ExactRow = CostTable->FindRow<FFF_FacilityCostRow>(
                     ExpectedCostKey, TEXT("LightingCatalogEconomyContract"), false);
                 if (!Test->TestNotNull(*FString::Printf(TEXT("%s has an exact authored economy row"), Expected.Name), ExactRow)) continue;
-                Test->TestTrue(TEXT("Authored price is positive and accepted by construction economy"), ExactRow->InstallCost > 0);
+                Test->TestTrue(TEXT("Authored price is accepted by construction economy"),
+                    FFF_FacilityCostResolver::IsValidInstallCost(ExactRow->InstallCost));
                 FName ResolvedKey;
                 FString Failure;
                 Test->TestTrue(TEXT("Lighting cost convention resolves"),

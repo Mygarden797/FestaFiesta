@@ -1,3 +1,6 @@
+// FF_FacilityInfoTypes.h
+// 역할: 시설 정보 화면에 전달할 값과 비용·상태·수입의 표시 규칙을 정의한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
@@ -29,7 +32,11 @@ enum class EFF_FacilityInfoPage : uint8
 	Upgrade,
 	RemoveConfirmation,
 	/** Append only: existing WBP navigation values stay stable. */
-	Synergy
+	Synergy,
+	Lighting,
+	/** Separate pages keep planning and operation facts visible without scrolling. */
+	Revenue,
+	Programs
 };
 
 /** One authored combination; repeated nearby instances are summarized in this row. */
@@ -46,6 +53,17 @@ struct FESTAFIESTA_API FFF_FacilityInfoSynergyEntry
 	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FText ConditionText;
 	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FText StatusText;
 	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") bool bActive = false;
+};
+
+/** Individually bindable comparison values, formatted from the authoritative upgrade quote. */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_FacilityUpgradeColumnData
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText Revenue;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText ServiceTime;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText Throughput;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText Footprint;
 };
 
 /**
@@ -127,6 +145,8 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText QueueCapacityText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info") FText QueueCapacityValueText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info") FText ServiceCapacityValueText;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText ServiceDurationText;
@@ -147,6 +167,15 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
 	FText UpgradeNextText;
+
+	/** Individually editable UMG cells; produced from the same authoritative quote as legacy text. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FFF_FacilityUpgradeColumnData UpgradeCurrentValues;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FFF_FacilityUpgradeColumnData UpgradeNextValues;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText UpgradePriceText;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText UpgradeBalanceText;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText UpgradeBalanceLabel;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
 	FText UpgradeSizeEffectText;
@@ -297,17 +326,6 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
 	FText RevenueSummaryText;
 
-	/** True when a data-authored minigame is mapped to this installed facility type. */
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
-	bool bHasMinigame = false;
-
-	/** The button is visible for mapped facilities, but enabled only while the session may start. */
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
-	bool bCanStartMinigame = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
-	FText MinigameActionText;
-
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	bool bFeedbackIsError = false;
 };
@@ -346,7 +364,7 @@ namespace FFFacilityInfoModel
 		bool bCostAvailable,
 		int32 CostGold);
 	FESTAFIESTA_API FText FormatExpectedWait(bool bAvailable, float Seconds);
-	FESTAFIESTA_API FText FormatThroughput(bool bAvailable, float PeoplePerMinute);
+	FESTAFIESTA_API FText FormatThroughput(bool bAvailable, float TeamsPerMinute);
 	FESTAFIESTA_API FText GetOperationStateText(
 		bool bQueueSupported,
 		bool bQueueAvailable,

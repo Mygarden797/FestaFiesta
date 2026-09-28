@@ -39,8 +39,6 @@ namespace FFF_FacilityRevenueBookTestHelpers
 			Definition->FacilityCostTable = CostTable;
 			Definition->FestivalId = TEXT("FacilityRevenueAutomationFestival");
 			Definition->InitialGold = 10000;
-			// 이 테스트는 매출 귀속만 본다. 임대료가 걷히면 잔액 기대값에 섞인다.
-			Definition->DailyVenueRentGold = 0;
 
 			Progression->StartFestival(Definition);
 			return true;

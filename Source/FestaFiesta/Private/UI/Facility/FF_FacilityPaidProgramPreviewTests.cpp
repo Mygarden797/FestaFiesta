@@ -1,8 +1,12 @@
+// FF_FacilityPaidProgramPreviewTests.cpp
+// 역할: 실제 프로그램 데이터로 구매·편성 화면을 만들고 배치를 검사한다.
+
 // Real UMG/WBP rendering with source festival/facility data and isolated sample resources.
 // No scheduling command, economy transaction, festival save or personal preference is written.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -10,6 +14,7 @@
 #include "Editor.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
+#include "Engine/UserInterfaceSettings.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "HAL/FileManager.h"
@@ -25,6 +30,7 @@
 #include "UI/Facility/FF_FacilityPaidProgramCard.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "UObject/StrongObjectPtr.h"
+#include "Widgets/Layout/SDPIScaler.h"
 
 namespace FFFacilityPaidProgramPreview
 {
@@ -43,12 +49,14 @@ namespace FFFacilityPaidProgramPreview
 	};
 
 	bool SaveCapture(FAutomationTestBase& Test, FWidgetRenderer& Renderer,
-		const TSharedRef<SWidget>& Widget, const FIntPoint Size, const FString& Name)
+		const TSharedRef<SWidget>& Widget, const FIntPoint Size, const FString& Name, const float Dpi = 1.f)
 	{
 		TStrongObjectPtr<UTextureRenderTarget2D> Target(
 			FWidgetRenderer::CreateTargetFor(FVector2D(Size.X, Size.Y), TF_Bilinear, true));
 		if (!Test.TestNotNull(TEXT("Paid-program sRGB render target"), Target.Get())) { return false; }
-		Renderer.DrawWidget(Target.Get(), Widget, FVector2D(Size.X, Size.Y), 0.0f, false);
+		const TSharedRef<SWidget> Scaled=SNew(SDPIScaler).DPIScale(Dpi)[Widget];
+		for(int32 Frame=0;Frame<3;++Frame)
+			Renderer.DrawWidget(Target.Get(), Scaled, FVector2D(Size.X, Size.Y), 0.0f, false);
 		TArray<FColor> Pixels;
 		FReadSurfaceDataFlags ReadFlags;
 		ReadFlags.SetLinearToGamma(false);
@@ -94,13 +102,13 @@ bool FFF_FacilityPaidProgramRenderedPreview::RunTest(const FString& Parameters)
 	}
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	auto* PickerClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityPaidProgramPicker>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker.WBP_FF_FacilityPaidProgramPicker_C")));
+		FFBuildUIAssetPaths::FacilityPaidProgramPickerClass));
 	auto* CardClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityPaidProgramCard>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard.WBP_FF_FacilityPaidProgramCard_C")));
+		FFBuildUIAssetPaths::FacilityPaidProgramCardClass));
 	const auto* Festival = LoadObject<UFF_FestivalDefinition>(nullptr,
 		TEXT("/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan.DA_Festival_Busan"));
 	const auto* Facility = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
 	if (!TestNotNull(TEXT("Editor world"), World) || !TestNotNull(TEXT("Actual picker WBP"), PickerClass) ||
 		!TestNotNull(TEXT("Actual program-card WBP"), CardClass) || !TestNotNull(TEXT("Actual Busan festival definition"), Festival) ||
 		!TestNotNull(TEXT("Actual SandArt facility definition"), Facility)) { return false; }
@@ -113,19 +121,16 @@ bool FFF_FacilityPaidProgramRenderedPreview::RunTest(const FString& Parameters)
 	Data.FacilityInstanceId = FGuid::NewGuid();
 	Data.FacilityName = Facility->Spec.DisplayName;
 	Data.AvailableGold = FMath::Max(7600, Source->CostGold);
-	Data.AvailableStaff = FMath::Max(6, Source->RequiredStaff);
 	FFF_FacilityPaidProgramCardViewData& CardData = Data.Cards.AddDefaulted_GetRef();
 	CardData.ProgramId = Source->ProgramId;
 	CardData.DisplayName = Source->DisplayName;
 	CardData.Description = FText::Format(NSLOCTEXT("PaidProgramPreview", "Revenue", "당일 한정 프로그램 · 최대 매출 {0} Gold"), FText::AsNumber(Source->CalcMaxRevenue()));
 	CardData.TimeText = FFFacilityInfoModel::FormatProgramTimeRange(Source->StartMinutes, Source->EndMinutes);
 	CardData.CostGold = Source->CostGold;
-	CardData.RequiredStaff = Source->RequiredStaff;
 	CardData.CapacityPeople = Source->Capacity;
 	CardData.TicketFeeGold = Source->FeePerPerson;
 	CardData.MaxRevenueGold = Source->CalcMaxRevenue();
 	CardData.CostText = FFFacilityInfoModel::FormatGold(true, Source->CostGold);
-	CardData.StaffText = FText::Format(NSLOCTEXT("PaidProgramPreview", "Staff", "필요 인원 {0}명"), FText::AsNumber(Source->RequiredStaff));
 	CardData.CapacityText = FText::Format(NSLOCTEXT("PaidProgramPreview", "Capacity", "정원 {0}명"), FText::AsNumber(Source->Capacity));
 	CardData.TicketFeeText = FText::Format(NSLOCTEXT("PaidProgramPreview", "Fee", "참가비 {0} Gold/인"), FText::AsNumber(Source->FeePerPerson));
 	CardData.AvailabilityText = FText::FromString(TEXT("구매·편성 가능"));
@@ -133,6 +138,7 @@ bool FFF_FacilityPaidProgramRenderedPreview::RunTest(const FString& Parameters)
 	bool bAllSaved = true;
 	for (const FIntPoint Resolution : { FIntPoint(1280, 720), FIntPoint(1920, 1080) })
 	{
+		const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Resolution);
 		TStrongObjectPtr<UFF_FacilityPaidProgramPicker> Picker(CreateWidget<UFF_FacilityPaidProgramPicker>(World, PickerClass));
 		if (!TestNotNull(TEXT("Playerless picker instance"), Picker.Get())) { return false; }
 		const TSharedRef<SWidget> Slate = Picker->TakeWidget();
@@ -147,31 +153,49 @@ bool FFF_FacilityPaidProgramRenderedPreview::RunTest(const FString& Parameters)
 		auto* Card = Cast<UFF_FacilityPaidProgramCard>(List->GetChildAt(0));
 		auto* Select = Card ? Cast<UButton>(Card->GetWidgetFromName(TEXT("Button_Select"))) : nullptr;
 		if (!TestNotNull(TEXT("Source workshop is rendered in its actual card WBP"), Select)) { return false; }
-		Select->OnClicked.Broadcast();
-		TestTrue(TEXT("Review enables its separate explicit purchase action"), Confirm->GetIsEnabled());
 		const FString Prefix = FString::Printf(TEXT("PaidProgramPurchase_%dx%d_"), Resolution.X, Resolution.Y);
 		FWidgetRenderer Renderer(false, true);
+		auto* Back=Cast<UButton>(Picker->GetWidgetFromName(TEXT("Button_BackToPrograms")));
+		if(Back)
+		{
+			Back->OnClicked.Broadcast();
+			Picker->ForceLayoutPrepass();
+			bAllSaved &= SaveCapture(*this,Renderer,Slate,Resolution,Prefix+TEXT("ProgramList"),Dpi);
+			CheckControl(*this,*Select,Border->GetCachedGeometry().GetLayoutBoundingRect());
+			TestTrue(TEXT("Program card remains compact"),Select->GetCachedGeometry().GetLocalSize().Y<=128.f);
+		}
+		Select->OnClicked.Broadcast();
+		TestTrue(TEXT("Review enables its separate explicit purchase action"), Confirm->GetIsEnabled());
 		Picker->ForceLayoutPrepass();
-		bAllSaved &= SaveCapture(*this, Renderer, Slate, Resolution, Prefix + TEXT("Review"));
+		bAllSaved &= SaveCapture(*this, Renderer, Slate, Resolution, Prefix + TEXT("Review"), Dpi);
 		const FSlateRect PanelRect = Border->GetCachedGeometry().GetLayoutBoundingRect();
-		TestTrue(TEXT("Purchase dock leaves the existing HUD and compact build shelf visible"),
-			PanelRect.Left >= 0 && PanelRect.Right <= Resolution.X && PanelRect.Top >= 0 && PanelRect.Bottom <= Resolution.Y - 125.5);
+		TestTrue(TEXT("Purchase dock leaves its 70-logical-unit HUD reserve visible at project DPI"),
+			PanelRect.Left >= 0 && PanelRect.Right <= Resolution.X && PanelRect.Top >= 0 && PanelRect.Bottom <= Resolution.Y - 69.5f * Dpi);
 		CheckControl(*this, *Confirm, PanelRect);
-		CheckControl(*this, *Select, PanelRect);
-		const FIntPoint DetailSize(FMath::RoundToInt(PanelRect.GetSize().X), FMath::RoundToInt(PanelRect.GetSize().Y));
+		if(!Back)CheckControl(*this, *Select, PanelRect);
+		else
+		{
+			CheckControl(*this,*Back,PanelRect);
+			TestTrue(TEXT("Program purchase shares the inspector width"),FMath::IsNearlyEqual(Border->GetCachedGeometry().GetLocalSize().X,456.f));
+			if(auto* Price=Cast<UCommonTextBlock>(Picker->GetWidgetFromName(TEXT("Text_PurchaseCost"))))
+				TestTrue(TEXT("Purchase amount and currency stay on one readable line"),Price->GetCachedGeometry().GetLocalSize().Y<=32.f);
+			if(auto* Details=Cast<UScrollBox>(Picker->GetWidgetFromName(TEXT("ScrollBox_PurchaseDetails"))))
+				TestTrue(*FString::Printf(TEXT("Review details fit without scrolling at %dp (%.1fpx)"),Resolution.Y,Details->GetScrollOffsetOfEnd()),Details->GetScrollOffsetOfEnd()<=1.f);
+		}
+		const FVector2D LogicalDetailSize = Border->GetCachedGeometry().GetLocalSize();
+		const FIntPoint DetailSize(FMath::RoundToInt(LogicalDetailSize.X), FMath::RoundToInt(LogicalDetailSize.Y));
 		bAllSaved &= SaveCapture(*this, Renderer, Border->TakeWidget(), DetailSize, Prefix + TEXT("ReviewDetail"));
 		if (auto* Details = Cast<UScrollBox>(Picker->GetWidgetFromName(TEXT("ScrollBox_PurchaseDetails"))))
 		{
 			Details->ScrollToEnd();
 			Picker->ForceLayoutPrepass();
-			bAllSaved &= SaveCapture(*this, Renderer, Slate, Resolution, Prefix + TEXT("ReviewScrolled"));
+			bAllSaved &= SaveCapture(*this, Renderer, Slate, Resolution, Prefix + TEXT("ReviewScrolled"), Dpi);
 			CheckControl(*this, *Confirm, Border->GetCachedGeometry().GetLayoutBoundingRect());
 		}
 		// The fixture supplies an authoritative-success result without submitting a purchase.
-		Picker->ShowPurchaseComplete(Source->ProgramId, Data.AvailableGold - Source->CostGold,
-			Data.AvailableStaff - Source->RequiredStaff);
+		Picker->ShowPurchaseComplete(Source->ProgramId, Data.AvailableGold - Source->CostGold);
 		Picker->ForceLayoutPrepass();
-		bAllSaved &= SaveCapture(*this, Renderer, Slate, Resolution, Prefix + TEXT("Complete"));
+		bAllSaved &= SaveCapture(*this, Renderer, Slate, Resolution, Prefix + TEXT("Complete"), Dpi);
 		CheckControl(*this, *Return, Border->GetCachedGeometry().GetLayoutBoundingRect());
 		bAllSaved &= SaveCapture(*this, Renderer, Border->TakeWidget(), DetailSize, Prefix + TEXT("CompleteDetail"));
 	}

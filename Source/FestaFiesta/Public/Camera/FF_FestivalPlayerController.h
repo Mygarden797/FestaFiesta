@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "InputCoreTypes.h"
 #include "Camera/FF_CameraTypes.h"
 #include "FF_FestivalPlayerController.generated.h"
 
@@ -47,6 +48,8 @@ class FESTAFIESTA_API AFF_FestivalPlayerController : public APlayerController
 	GENERATED_BODY()
 
 public:
+	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
+	virtual void FlushPressedKeys() override;
 	AFF_FestivalPlayerController();
 
 	virtual void BeginPlay() override;
@@ -183,6 +186,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input")
 	TObjectPtr<UInputAction> ToggleViewAction;
 
+	// 가장자리 이동은 이 키를 누르는 동안만 허용한다. 기본값은 휠 버튼이다.
+	// 커서만 가장자리에 두고 손을 떼면 움직이지 않는다. 무효 키는 가장자리 이동을 끈다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input")
+	FKey EdgeScrollActivationKey = EKeys::MiddleMouseButton;
+
 	// 시점 전환에 쓸 블렌드 시간. 0 이면 즉시 전환한다.
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera", meta = (ClampMin = "0.0"))
 	float ViewSwitchBlendTime = 0.5f;
@@ -190,6 +198,21 @@ public:
 	// 피킹 트레이스 길이.
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera", meta = (ClampMin = "1000.0"))
 	float PickTraceDistance = 100000.f;
+
+	/* 지금 시점과 시야 고정 상태에 맞는 입력 모드를 건다.
+
+	   관찰 카메라는 커서가 필요하다. 시설을 클릭하고 UI 를 누르기 때문이다.
+
+	   캐릭터 조작은 두 갈래다. 평소에는 커서를 두어 클릭할 수 있게 하고,
+	   시야 고정을 켜면 커서를 치워 마우스 움직임이 전부 시점으로 가게 한다.
+
+	   커서가 떠 있으면 그 아래 위젯이 마우스 움직임을 먼저 가져간다.
+	   그래서 커서를 켠 채로는 시점 회전을 마우스 버튼과 함께 눌러야 한다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
+	void RefreshViewInputMode();
+
+	void ApplyViewInputMode(EFF_CameraViewMode Mode);
 
 private:
 	void HandlePan(const FInputActionValue& Value);
@@ -204,6 +227,8 @@ private:
 	bool IsBuildSessionActive() const;
 	bool IsBuildPreviewActive() const;
 	bool IsCameraRotationAllowed() const;
+	bool IsCameraViewportFocused() const;
+	void StopOverviewCameraMotion();
 
 	// 커서 아래 월드 지점을 구한다. 커서가 없거나 광선이 지면을 안 만나면 false.
 	bool ResolveCursorWorldAnchor(FVector& OutAnchor) const;
@@ -211,7 +236,7 @@ private:
 	// Enhanced Input과 native 좌클릭 fallback이 같은 PlayerTick에 함께 들어와도 한 번만 방송한다.
 	bool bPickRequestHandledThisTick = false;
 
-	// 마우스가 화면 가장자리에 있으면 그쪽으로 팬한다.
+	// 활성화 키를 누른 채 마우스가 화면 가장자리에 있으면 그쪽으로 팬한다.
 	void TickEdgeScroll(float DeltaTime);
 
 	// 보고 있던 대상이 파괴됐는지 확인하고, 그렇다면 관찰 시점으로 되돌린다.

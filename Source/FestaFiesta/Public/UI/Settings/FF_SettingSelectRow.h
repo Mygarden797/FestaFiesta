@@ -1,3 +1,6 @@
+// FF_SettingSelectRow.h
+// 역할: 여러 선택지 중 하나를 고르는 설정 행을 표시한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

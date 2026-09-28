@@ -1,3 +1,5 @@
+// FF_FFZSBuildableGridPresentationTests.cpp
+// 역할: 격자의 표시·숨김·재진입·컴포넌트 재사용과 지역 수명을 실제 테스트 월드에서 검증한다.
 // Exercises the persistent presentation through public APIs in an isolated editor world.
 // Ground/collision are disabled here: spatial mask/terrain tests own those rules, while these
 // tests protect show/hide, re-entry, component reuse and registered-zone lifetime behavior.
@@ -14,6 +16,7 @@
 #include "FF_FFZSBuildArea.h"
 #include "FF_FFZSBuildableGridActor.h"
 #include "FF_FFZSBuildableGridComponent.h"
+#include "FF_FFZSBuildPresentationSettings.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSGridLibrary.h"
@@ -507,12 +510,15 @@ bool FFFZSUnifiedBuildableGridMajorLinesTest::RunTest(const FString& Parameters)
     TArray<UFFZSBuildableGridComponent*> Grids;
     Overview->GetComponents(Grids);
     int32 MajorLines = 0;
+    const FLinearColor MajorColor = GetDefault<UFFZSBuildPresentationSettings>()->MajorLineColor;
     for (const UFFZSBuildableGridComponent* Grid : Grids)
     {
         for (const FBatchedLine& Line : Grid->BatchedLines)
         {
-            // Foreground major strokes are 1.8 px; halos and exterior contours differ.
-            if (!FMath::IsNearlyEqual(Line.Thickness, 1.8f)) continue;
+            // Designer-owned thickness may change; identify the foreground major color, allowing edge fade.
+            if (!FMath::IsNearlyEqual(Line.Color.R, MajorColor.R) ||
+                !FMath::IsNearlyEqual(Line.Color.G, MajorColor.G) ||
+                !FMath::IsNearlyEqual(Line.Color.B, MajorColor.B)) continue;
             ++MajorLines;
             const bool bWorldVertical = FMath::IsNearlyEqual(Line.Start.X, Line.End.X, 0.01);
             const double Coordinate = bWorldVertical ? Line.Start.X : Line.Start.Y;

@@ -19,7 +19,6 @@ EFF_ProgramPurchaseResult FFF_ProgramScheduleRules::EvaluatePurchase(
 	const FName ProgramId,
 	const TArray<FName>& ScheduledToday,
 	const int32 CurrentGold,
-	const int32 AvailableStaffCount,
 	FFF_ProgramCard& OutCard)
 {
 	const FFF_ProgramCard* Card = FindCard(Catalog, ProgramId);
@@ -39,11 +38,6 @@ EFF_ProgramPurchaseResult FFF_ProgramScheduleRules::EvaluatePurchase(
 		return EFF_ProgramPurchaseResult::AlreadyScheduled;
 	}
 
-	if (AvailableStaffCount < Card->RequiredStaff)
-	{
-		return EFF_ProgramPurchaseResult::NotEnoughStaff;
-	}
-
 	if (CurrentGold < Card->CostGold)
 	{
 		return EFF_ProgramPurchaseResult::InsufficientGold;
@@ -52,26 +46,13 @@ EFF_ProgramPurchaseResult FFF_ProgramScheduleRules::EvaluatePurchase(
 	return EFF_ProgramPurchaseResult::Success;
 }
 
-int32 FFF_ProgramScheduleRules::CalcStaffAssignedToPrograms(
-	const TArray<FFF_ProgramCard>& Catalog, const TArray<FName>& ScheduledToday)
-{
-	int32 Total = 0;
-	for (const FName ProgramId : ScheduledToday)
-	{
-		if (const FFF_ProgramCard* Card = FindCard(Catalog, ProgramId))
-		{
-			Total += Card->RequiredStaff;
-		}
-	}
-	return Total;
-}
-
 int32 FFF_ProgramScheduleRules::CalcProgramRevenue(
 	const FFF_ProgramCard& Card, const int32 AttendeeCount)
 {
 	// 정원을 넘는 배정은 규칙상 나오지 않지만, 넘어와도 산 것보다 더 받지는 않는다.
-	const int32 PaidCount = FMath::Clamp(AttendeeCount, 0, Card.Capacity);
-	return PaidCount * Card.FeePerPerson;
+	const int32 PaidCount = FMath::Clamp(AttendeeCount, 0, FMath::Max(0, Card.Capacity));
+	return static_cast<int32>(FMath::Min<int64>(MAX_int32,
+		static_cast<int64>(PaidCount) * FMath::Max(0, Card.FeePerPerson)));
 }
 
 bool FFF_ProgramScheduleRules::IsFacilityTypeAllowed(

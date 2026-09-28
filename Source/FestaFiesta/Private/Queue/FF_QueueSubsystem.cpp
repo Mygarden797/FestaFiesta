@@ -46,12 +46,12 @@ void UFF_QueueSubsystem::RebuildFacilityIndex()
 bool UFF_QueueSubsystem::RegisterFacility(int32 FacilityId, const FFF_QueueConfig& Config, const FFF_QueueLaneGeometry& Lane)
 {
 	const bool bConfigValid =
-		Config.MaxCapacityMembers >= 0 &&
-		Config.MaxCapacityMembers <= UFFZSDeveloperSettings::MaxQueueWaitingAgents &&
+		Config.MaxCapacityParties >= 0 &&
+		Config.MaxCapacityParties <= UFFZSDeveloperSettings::MaxQueueWaitingAgents &&
 		Config.ConcurrentServiceSlots > 0 &&
 		Config.ConcurrentServiceSlots <= UFFZSDeveloperSettings::MaxFacilityServiceCapacity &&
-		FMath::IsFinite(Config.ServiceSecondsPerMember) &&
-		Config.ServiceSecondsPerMember > 0.0f &&
+		FMath::IsFinite(Config.ServiceSecondsPerParty) &&
+		Config.ServiceSecondsPerParty > 0.0f &&
 		!Config.ExitLocation.ContainsNaN();
 	const bool bLaneValid =
 		Lane.PolylinePoints.Num() <= UFFZSDeveloperSettings::MaxQueueSplinePoints &&
@@ -274,8 +274,8 @@ FVector UFF_QueueSubsystem::GetFacilityExitLocation(int32 FacilityId) const
 bool UFF_QueueSubsystem::IsFestivalLive() const
 {
 	const UWorld* World = GetWorld();
-	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-	const UFF_FestivalStageSubsystem* Stage = GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage =
+		UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(World ? World->GetGameInstance() : nullptr);
 
 	// 스테이지 서브시스템이 없는 맵(테스트 레벨 등)에서는 게이팅하지 않는다.
 	return Stage ? (Stage->CurrentStage == EFF_FestivalStage::Live) : true;
@@ -315,12 +315,21 @@ void UFF_QueueSubsystem::AdvanceFixedSteps(int32 NumSteps)
 
 void UFF_QueueSubsystem::Tick(float DeltaTime)
 {
-	if (bPaused || Queues.Num() == 0)
+	// 일시정지는 전부 멈춘다. 알림도 풀릴 때 한꺼번에 나간다.
+	if (bPaused)
 	{
 		return;
 	}
-	if (bAdvanceOnlyDuringLiveStage && !IsFestivalLive())
+
+	/* 시뮬레이션을 안 돌리는 동안에도 쌓인 알림은 내보낸다.
+
+	   알림은 Tick 밖(합류·취소·시설 폐쇄)에서도 쌓인다. 예전에는 여기서 먼저 돌아가서,
+	   마지막 시설이 철거돼 대기열이 0개가 되거나 Live 가 끝난 뒤에 취소된 손님은
+	   그 알림을 다음 Live 까지 못 받았다. 그동안 줄이 없어진 자리에 서 있었다.
+	*/
+	if (Queues.Num() == 0 || (bAdvanceOnlyDuringLiveStage && !IsFestivalLive()))
 	{
+		FlushPendingEvents();
 		return;
 	}
 
@@ -369,6 +378,13 @@ void UFF_QueueSubsystem::FlushPendingEvents()
 				OnServiceStarted.Broadcast(Event.FacilityId, Event.PartyId, Event.WaitSeconds);
 				break;
 			case EFF_QueueEventType::PartyExited:
+				// 코어가 완료한 팀을 제거하면서 만든 스냅샷을 한 번만 전달한다.
+				// Crowd의 퇴장 핸들러가 팀 상태를 바꾸기 전에 정산을 알린다.
+				if (Event.ExitType == EFF_QueueExit::Served && Event.ServedMemberCount > 0)
+				{
+					OnPartyServiceCompleted.Broadcast(
+						Event.FacilityId, Event.PartyId, Event.ServedMemberCount, Event.WaitSeconds);
+				}
 				OnPartyExited.Broadcast(Event.FacilityId, Event.PartyId, Event.ExitType, Event.WaitSeconds);
 				break;
 			default:

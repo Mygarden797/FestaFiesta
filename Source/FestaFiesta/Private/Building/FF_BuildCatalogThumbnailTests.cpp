@@ -328,4 +328,42 @@ bool FFF_BuildFacilityCardThumbnailSelectionTest::RunTest(const FString& Paramet
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_BuildFacilityCardFreeInstallCostFallbackTest,
+	"FestaFiesta.Building.UI.FacilityCardFreeInstallCostFallback",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildFacilityCardFreeInstallCostFallbackTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	UFF_BuildFacilityCard* Card = NewObject<UFF_BuildFacilityCard>();
+	if (!TestNotNull(TEXT("A native facility card supports the text tooltip fallback"), Card))
+	{
+		return false;
+	}
+	FFF_BuildCatalogEntry Entry;
+	Entry.FacilityDefinitionId = TEXT("Booth_FoodStall_FreeTooltipTest");
+	Entry.InstallCost = 0;
+	Entry.bHasResolvedInstallCost = true;
+	Entry.RecoveryCost = 0;
+	Entry.bHasResolvedRecoveryCost = true;
+	Card->Configure(Entry);
+	TestEqual(TEXT("The text fallback displays resolved zero install and recovery prices"),
+		Card->GetToolTipText().ToString(), FString(TEXT("건설 비용: 0 Gold\n회수 비용: 0 Gold")));
+
+	Entry.InstallCost = -1;
+	Card->Configure(Entry);
+	TestEqual(TEXT("A negative install price is unavailable even with the resolved flag"),
+		Card->GetToolTipText().ToString(),
+		FString(TEXT("건설 비용: 가격 정보 없음\n회수 비용: 0 Gold")));
+
+	Entry.InstallCost = 0;
+	Entry.bHasResolvedInstallCost = false;
+	Card->Configure(Entry);
+	TestEqual(TEXT("An unresolved zero install price is distinct from a free facility"),
+		Card->GetToolTipText().ToString(),
+		FString(TEXT("건설 비용: 가격 정보 없음\n회수 비용: 0 Gold")));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# update_facility_movement_targets.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 연결 정보나 설정을 현재 기준에 맞게 갱신한다.
+
 """Atomically migrate production FacilityDefinition movement targets.
 
 The migration is intentionally data-specific.  Every production Definition,
@@ -176,82 +179,82 @@ PROFILES = {
 
 EXPECTED_DEFINITIONS = {
     "Booth_ActivityGame_RingToss": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
         "PDA_FFZS_Booth_ActivityGame_RingToss",
         "booth",
     ),
     "Booth_CraftExperience_SandArt": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
         "PDA_FFZS_Booth_CraftExperience_SandArt",
         "booth",
     ),
     "Booth_FoodStall_DadaPochaFoodTruck": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
         "PDA_FFZS_Booth_FoodStall_DadaPochaFoodTruck",
         "booth",
     ),
     "Booth_MarketGoods_FestivalGoods": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
         "PDA_FFZS_Booth_MarketGoods_FestivalGoods",
         "booth",
     ),
     "Booth_Nightlife_EDMBar": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
         "PDA_FFZS_Booth_Nightlife_EDMBar",
         "booth",
     ),
     "Info_GeneralInfo_MainInformation": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Info/"
         "PDA_FFZS_Info_GeneralInfo_MainInformation",
         "info",
     ),
     "Performance_Busking_StreetStage": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Performance/"
         "PDA_FFZS_Performance_Busking_StreetStage",
         "performance",
     ),
     "Performance_ExperienceStage_DanceBattle": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Performance/"
         "PDA_FFZS_Performance_ExperienceStage_DanceBattle",
         "performance",
     ),
     "Performance_MainStage_SunsetMainStage": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Performance/"
         "PDA_FFZS_Performance_MainStage_SunsetMainStage",
         "performance",
     ),
     "Performance_SubStage_LocalArtist": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Performance/"
         "PDA_FFZS_Performance_SubStage_LocalArtist",
         "performance",
     ),
     "PhotoSpot_Landmark_SunsetLandmark": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/PhotoSpot/"
         "PDA_FFZS_PhotoSpot_Landmark_SunsetLandmark",
         "photo",
     ),
     "Rest_Seating_MainRestArea": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Rest/"
         "PDA_FFZS_Rest_Seating_MainRestArea",
         "rest",
     ),
     "Safety_FirstAid_MedicalTent": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Safety/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Safety/"
         "PDA_FFZS_Safety_FirstAid_MedicalTent",
         "safety",
     ),
     "Toilet_Accessible_WestGate": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Toilet/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/"
         "PDA_FFZS_Toilet_Accessible_WestGate",
         "toilet",
     ),
     "Toilet_Standard_MainRestroom": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Toilet/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/"
         "PDA_FFZS_Toilet_Standard_MainRestroom",
         "toilet",
     ),
     "Toilet_Temporary_CampingArea": (
-        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Toilet/"
+        "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/"
         "PDA_FFZS_Toilet_Temporary_CampingArea",
         "toilet",
     ),

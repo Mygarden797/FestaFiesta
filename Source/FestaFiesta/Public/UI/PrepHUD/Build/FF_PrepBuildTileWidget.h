@@ -1,3 +1,6 @@
+// FF_PrepBuildTileWidget.h
+// 역할: 화면에 보이는 시설 카드만 재사용해 이름·가격·선택 상태를 표시한다.
+
 // PrepBuild TileView and its virtualized entry presentation.
 
 #pragma once
@@ -39,6 +42,10 @@ class FESTAFIESTA_API UFF_PrepBuildTileView final : public UTileView
 public:
 	/** Builder-only configuration. Runtime code never changes the generated entry contract. */
 	void ConfigureEntryClass(TSubclassOf<UUserWidget> InEntryClass);
+	/** Saved paged catalogs route wheel input to their panel, before constructing Slate. */
+	void ConfigureCatalogWheelRouting() { ConsumeMouseWheel = EConsumeMouseWheel::Never; }
+	/** Single horizontal virtualized ribbon. Item data stays stable while scrolling. */
+	void ConfigureHorizontalRibbon();
 
 protected:
 	virtual TSharedRef<STableViewBase> RebuildListWidget() override;
@@ -58,6 +65,8 @@ class FESTAFIESTA_API UFF_PrepBuildTileWidget
 public:
 	// Rebind visible data after a price/thumbnail change without releasing the virtualized row.
 	void RefreshItemPresentation();
+	/** Catalog drag selection reads the current pooled item only after a click is released. */
+	UFF_PrepBuildTileData* GetPresentedItem() const { return Item.Get(); }
 
 	/** 선택한 기존 시설과 관련된 설치 후보를 강조합니다. 스타일은 WBP가 소유합니다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build|Synergy")
@@ -65,6 +74,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Synergy")
 	bool IsSynergyHighlighted() const { return bSynergyHighlighted; }
+
+	/** The codex destination uses a separate authored iridescent rim and caption. */
+	bool IsCodexFocused() const { return bCodexFocused; }
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build|Required")
 	void SetRequiredFacilityStatus(bool bRequired, bool bSatisfied, int32 CurrentCount, int32 MinimumCount);
@@ -74,6 +86,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Required")
 	bool IsRequiredFacilitySatisfied() const { return bRequiredFacilitySatisfied; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Program")
+	bool HasCompatiblePrograms() const { return bHasCompatiblePrograms; }
 
 protected:
 	virtual void NativeOnInitialized() override;
@@ -91,6 +106,13 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|UI|Prep|Build|Required")
 	void BP_OnRequiredFacilityStatusChanged(bool bRequired, bool bSatisfied, int32 CurrentCount, int32 MinimumCount);
+
+	/** 배지의 색상·문구·위치는 WBP에서 편집하며 런타임은 표시 여부만 갱신합니다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Program")
+	TObjectPtr<UBorder> Border_ProgramBadge;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Program")
+	TObjectPtr<UTextBlock> Text_ProgramBadge;
 
 	/** 부족·충족 각각의 문구/색상/폰트/배치는 WBP에서 편집합니다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Required")
@@ -112,8 +134,37 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Synergy")
 	TObjectPtr<UTextBlock> Text_SynergyBadge;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Codex")
+	TObjectPtr<UImage> Image_CodexFocusRim;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Codex")
+	TObjectPtr<UBorder> Border_CodexFocusBadge;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UBorder> Border_Card;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Program")
+	TObjectPtr<UBorder> Border_ThumbnailBackdrop;
+
+	/** Authored pearl material brush; no asset loads occur while cards are recycled. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Program")
+	FSlateBrush ProgramThumbnailBrush;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Program")
+	FLinearColor ProgramCardTint = FLinearColor::FromSRGBColor(FColor(0xED, 0xEC, 0xF8));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Program")
+	FLinearColor ProgramOutlineColor = FLinearColor::FromSRGBColor(FColor(0xB8, 0xB4, 0xD5));
+
+	/** Authored rose material takes priority when a required facility also supports programs. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Required")
+	FSlateBrush RequiredThumbnailBrush;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Required")
+	FLinearColor RequiredCardTint = FLinearColor::FromSRGBColor(FColor(0xF8, 0xEB, 0xE9));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Required")
+	FLinearColor RequiredOutlineColor = FLinearColor::FromSRGBColor(FColor(0xD0, 0xA0, 0xA3));
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UImage> Image_Thumbnail;
@@ -166,21 +217,29 @@ private:
 	void HandleFavoriteClicked();
 	void RefreshFavorite();
 	void RefreshFromItem();
-	void RefreshVisualState(bool bIsSelected);
+	void RefreshVisualState();
 	void ApplySynergyHighlight();
+	void ApplyCodexFocus();
 	void ApplyRequiredFacilityStatus();
+	void ApplyProgramAvailability();
 	FVector2D GetAuthoredThumbnailBounds() const;
 	TWeakObjectPtr<USizeBox> ThumbnailFrame;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_PrepBuildTileData> Item;
+	// Pointer events can outlive a released Slate row's item mapping. Render the
+	// selection delivered by the list-entry callback instead of querying that row.
+	bool bCardSelected = false;
 	bool bCardHovered = false;
 	bool bSynergyHighlighted = false;
+	bool bCodexFocused = false;
 	bool bRequiredFacility = false;
 	bool bRequiredFacilitySatisfied = false;
+	bool bHasCompatiblePrograms = false;
 	int32 RequiredFacilityCurrentCount = 0;
 	int32 RequiredFacilityMinimumCount = 0;
 	FSlateBrush AuthoredCardBrush;
+	FSlateBrush AuthoredThumbnailBrush;
 	FSlateColor AuthoredCostColor;
 	FSlateColor AuthoredStateColor;
 	FSlateColor AuthoredFavoriteColor;

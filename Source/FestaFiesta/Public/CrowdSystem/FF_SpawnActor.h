@@ -35,17 +35,17 @@ protected:
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
 	TSubclassOf<AFF_BaseCrowd> CrowdActorClass;
 
-	// 스폰할 인원 수. AgentPoolSize를 넘으면 넘는 만큼은 스폰되지 않는다
+	// 스폰할 인원 수. 경제가 예상 방문객을 넘겨주면 그 값이 우선한다(이 값은 폴백)
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
-	int32 UnitCount = 500;
+	int32 UnitCount = 1000;
 
-	//화면에 실체화할 Actor 수
+	// 화면에 실체화할 Actor 수. AgentPoolSize 와 같게 둔다 — 작으면 보이지 않는 Agent 가 생긴다
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
-	int32 ActorPoolSize = 500;
+	int32 ActorPoolSize = 1100;
 
-	// 논리적 Agent 수의 상한. UnitCount 이상이어야 한다
+	// 동시에 떠 있을 수 있는 Agent 상한. 하루 누적이 아니라 동시 인원이다. 퇴장하면 슬롯을 다시 쓴다
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
-	int32 AgentPoolSize = 500;
+	int32 AgentPoolSize = 1100;
 
 	// 이 액터 위치 기준 스폰 반경, UU
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")

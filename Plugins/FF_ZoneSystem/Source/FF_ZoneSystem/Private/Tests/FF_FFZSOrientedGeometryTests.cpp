@@ -1,3 +1,5 @@
+// FF_FFZSOrientedGeometryTests.cpp
+// 역할: 회전 사각형의 교차·포함·경계 접촉 판정을 자동 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

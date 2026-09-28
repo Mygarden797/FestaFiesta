@@ -1,3 +1,5 @@
+// FF_FFZSUnifiedConstructionTests.cpp
+// 역할: 여러 Zone을 하나의 건설 영역으로 쓸 때 설치·이동·저장 규칙이 유지되는지 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

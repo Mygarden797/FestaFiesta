@@ -1,3 +1,101 @@
-Name,bEnabled,DisplayName,TargetFacilityId,PartnerFacilityId,MaxDistanceMeters,RevenueBonusPercent,StackingGroup
-BurgerPicnic,True,Burger + Seating,Booth_FoodStall_Burger,Rest_Seating_Seating,15,10,FoodComfort
-IceCreamShade,True,IceCream + Shade,Booth_FoodStall_IceCream,Rest_Shade_Shade,15,10,FoodComfort
+Name,bEnabled,DisplayName,TargetFacilityId,PartnerFacilityId,MaxDistanceMeters,RevenueBonusPercent,StackingGroup,DiscoveryRewardGold
+BurgerPicnic,True,버거,Booth_FoodStall_Burger,Rest_Seating_Seating,15,10,FoodComfort,100
+IceCreamShade,True,아이스크림,Booth_FoodStall_IceCream,Rest_Shade_Shade,15,10,FoodComfort,100
+MainFoodSeating,True,든든한 쉼표,Booth_FoodStall_MainFood,Rest_Seating_Seating,15,10,FoodComfort,100
+PizzaPicnic,True,피크닉 한 판,Booth_FoodStall_Pizza,Rest_Picnic_Picnic,15,10,FoodComfort,100
+TacoShade,True,그늘 아래 타코,Booth_FoodStall_Taco,Rest_Shade_Shade,12,8,FoodComfort,100
+BurgerCooling,True,시원한 버거 타임,Booth_FoodStall_Burger,Rest_Cooling_Cooling,12,8,FoodComfort,100
+IceCreamCooling,True,더위를 잊는 한 입,Booth_FoodStall_IceCream,Rest_Cooling_Cooling,12,8,FoodComfort,100
+GameSeating,True,쉬었다 한 판,Booth_ActivityGame_Game,Rest_Seating_Seating,12,8,FoodComfort,100
+SandArtShade,True,그늘 속 모래공방,Booth_CraftExperience_SandArt,Rest_Shade_Shade,12,8,FoodComfort,100
+BurgerFestoon,True,불빛 아래 버거,Booth_FoodStall_Burger,Lighting_Decorative_Festoon,14,8,Ambience,100
+PizzaRattan,True,따뜻한 피자 테이블,Booth_FoodStall_Pizza,Lighting_Pendant_RattanPendant,12,8,Ambience,100
+TacoFestoon,True,타코의 반짝이는 밤,Booth_FoodStall_Taco,Lighting_Decorative_Festoon,14,8,Ambience,100
+MainFoodStreetlamp,True,환한 저녁 한 끼,Booth_FoodStall_MainFood,Lighting_Streetlamp_FestivalStreetlamp,16,6,Ambience,100
+IceCreamStarTree,True,별빛 아이스크림,Booth_FoodStall_IceCream,Lighting_Decorative_StarTree,14,8,Ambience,100
+MarketGoldenTree,True,반짝이는 기념품,Booth_MarketGoods_Market,Lighting_Decorative_GoldenTree,16,8,Ambience,100
+EdmCurtainArch,True,빛의 무대 입구,Booth_Nightlife_EdmBar,Lighting_Decorative_CurtainArch,16,10,Ambience,100
+EdmFestoon,True,리듬을 밝히는 조명,Booth_Nightlife_EdmBar,Lighting_Decorative_Festoon,18,8,Ambience,100
+GameInteractivePhoto,True,한 판의 추억,Booth_ActivityGame_Game,PhotoSpot_Interactive_Interactive,15,10,Attraction,100
+SandArtThemePhoto,True,작품과 함께 찰칵,Booth_CraftExperience_SandArt,PhotoSpot_Theme_Theme,15,10,Attraction,100
+MarketLandmark,True,축제를 담은 기념품,Booth_MarketGoods_Market,PhotoSpot_Landmark_SunsetLandmark,18,12,Attraction,100
+EdmBusking,True,음악이 이어지는 거리,Booth_Nightlife_EdmBar,Performance_Busking_Busking,18,10,Attraction,100
+MainFoodScenicPhoto,True,풍경과 함께 한 끼,Booth_FoodStall_MainFood,PhotoSpot_Scenic_Scenic,16,8,Attraction,100
+BurgerFamilyPicnic,True,함께 먹는 버거 소풍,Booth_FoodStall_Burger,Rest_Picnic_FamilyMatPicnicZone,15,8,FoodComfort,100
+BurgerPiratePhoto,True,해적의 버거 보물,Booth_FoodStall_Burger,PhotoSpot_Theme_PirateShipPhotoSet,16,8,Attraction,100
+IceCreamHammock,True,해먹 위 달콤한 휴식,Booth_FoodStall_IceCream,Rest_Seating_HammockLounge,12,8,FoodComfort,100
+IceCreamWhalePhoto,True,고래와 나누는 한 입,Booth_FoodStall_IceCream,PhotoSpot_Landmark_WhaleTailSculpture,16,8,Attraction,100
+MainFoodGroupPicnic,True,모두의 저녁 식탁,Booth_FoodStall_MainFood,Rest_Picnic_GroupPicnicTable,15,8,FoodComfort,100
+PizzaAcousticBusking,True,한 조각의 어쿠스틱,Booth_FoodStall_Pizza,Performance_Busking_AcousticBuskingDeck,18,10,Attraction,100
+PizzaSailShade,True,돛 아래 피자 한 판,Booth_FoodStall_Pizza,Rest_Shade_SailShadeShelter,15,8,FoodComfort,100
+TacoSurfPhoto,True,파도색 타코 한 입,Booth_FoodStall_Taco,PhotoSpot_Theme_SurfboardColorWall,15,10,Attraction,100
+GameWishLantern,True,소원을 걸고 한 판,Booth_ActivityGame_Game,Lighting_Decorative_WishLanternRow,14,8,Ambience,100
+SandArtShellPendant,True,조개빛 모래공방,Booth_CraftExperience_SandArt,Lighting_Pendant_ShellShadePendant,12,8,Ambience,100
+MarketVinePergola,True,덩굴 아래 보물찾기,Booth_MarketGoods_Market,Rest_Shade_VinePergola,14,6,FoodComfort,100
+EdmCoolingLounge,True,춤추고 시원하게,Booth_Nightlife_EdmBar,Rest_Cooling_DrinkingWaterLounge,15,8,FoodComfort,100
+CafeCoastalBench,True,바다를 마시는 커피,Booth_FoodStall_CafeTruck,Rest_Seating_CoastalViewBench,15,10,FoodComfort,100
+CafeRattan,True,라탄빛 커피 향기,Booth_FoodStall_CafeTruck,Lighting_Pendant_RattanPendant,12,8,Ambience,100
+CafeAcousticBusking,True,커피와 어쿠스틱,Booth_FoodStall_CafeTruck,Performance_Busking_AcousticBuskingDeck,18,10,Attraction,100
+FruitAdeCooling,True,시원함을 더한 에이드,Booth_FoodStall_FruitAdeBar,Rest_Cooling_DrinkingWaterLounge,12,8,FoodComfort,100
+FruitAdeWaveLight,True,파도빛 과일 한 잔,Booth_FoodStall_FruitAdeBar,Lighting_Decorative_WaveCurveLight,14,8,Ambience,100
+FruitAdeSurfPhoto,True,서퍼의 과일 휴식,Booth_FoodStall_FruitAdeBar,PhotoSpot_Theme_SurfboardColorWall,15,10,Attraction,100
+FishCakeGroupPicnic,True,다 함께 어묵 한 꼬치,Booth_FoodStall_BusanFishCakeCart,Rest_Picnic_GroupPicnicTable,15,10,FoodComfort,100
+FishCakeLighthouseLight,True,등대 아래 따뜻한 국물,Booth_FoodStall_BusanFishCakeCart,Lighting_Streetlamp_LighthouseStreetlamp,16,6,Ambience,100
+FishCakeLocalBand,True,부산의 맛과 음악,Booth_FoodStall_BusanFishCakeCart,Performance_SubStage_LocalBandShowcase,18,10,Attraction,100
+HotteokCoastalBench,True,바다 앞 호떡 쉼표,Booth_FoodStall_SeedHotteokStall,Rest_Seating_CoastalViewBench,12,8,FoodComfort,100
+HotteokGoldenTree,True,황금빛 달콤한 한 입,Booth_FoodStall_SeedHotteokStall,Lighting_Decorative_GoldenTree,14,8,Ambience,100
+HotteokSunsetFrame,True,노을에 구운 호떡,Booth_FoodStall_SeedHotteokStall,PhotoSpot_Scenic_SunsetFrameOverlook,16,8,Attraction,100
+SkewerGroupPicnic,True,꼬치 나누는 긴 식탁,Booth_FoodStall_CharcoalChickenSkewerStall,Rest_Picnic_GroupPicnicTable,15,10,FoodComfort,100
+SkewerFestoon,True,불빛 아래 숯불 향기,Booth_FoodStall_CharcoalChickenSkewerStall,Lighting_Decorative_Festoon,14,8,Ambience,100
+SkewerOutdoorCinema,True,영화와 꼬치의 밤,Booth_FoodStall_CharcoalChickenSkewerStall,Performance_SubStage_OutdoorCinema,18,10,Attraction,100
+VeganVinePergola,True,초록 그늘 샌드위치,Booth_FoodStall_VeganSandwichTruck,Rest_Shade_VinePergola,15,10,FoodComfort,100
+VeganRattan,True,자연빛 비건 식탁,Booth_FoodStall_VeganSandwichTruck,Lighting_Pendant_RattanPendant,12,8,Ambience,100
+VeganScenicPhoto,True,풍경을 곁들인 한 입,Booth_FoodStall_VeganSandwichTruck,PhotoSpot_Scenic_Scenic,16,8,Attraction,100
+CottonCandyFamilyPicnic,True,돗자리 위 구름 간식,Booth_FoodStall_CloudCottonCandyStall,Rest_Picnic_FamilyMatPicnicZone,15,10,FoodComfort,100
+CottonCandyStarTree,True,별에 걸린 솜사탕,Booth_FoodStall_CloudCottonCandyStall,Lighting_Decorative_StarTree,14,8,Ambience,100
+CottonCandyPuppetTheater,True,동화 속 구름 한 입,Booth_FoodStall_CloudCottonCandyStall,Performance_SubStage_FamilyPuppetTheater,18,10,Attraction,100
+BalloonDartSailShade,True,그늘 아래 풍선 명중,Booth_ActivityGame_BalloonDartStall,Rest_Shade_SailShadeShelter,12,8,FoodComfort,100
+BalloonDartFestoon,True,반짝이는 다트 도전,Booth_ActivityGame_BalloonDartStall,Lighting_Decorative_Festoon,14,8,Ambience,100
+BalloonDartMagicStage,True,마법 같은 명중 순간,Booth_ActivityGame_BalloonDartStall,Performance_Busking_StreetMagicStage,16,10,Attraction,100
+BasketballWaterLounge,True,한 골 뒤 시원한 쉼표,Booth_ActivityGame_BasketballShotChallenge,Rest_Cooling_DrinkingWaterLounge,12,8,FoodComfort,100
+BasketballStreetlamp,True,불 밝힌 자유투,Booth_ActivityGame_BasketballShotChallenge,Lighting_Streetlamp_FestivalStreetlamp,16,6,Ambience,100
+BasketballFourCutPhoto,True,승리의 네 컷,Booth_ActivityGame_BasketballShotChallenge,PhotoSpot_Interactive_FourCutPhotoBooth,15,10,Attraction,100
+BoardGameGroupPicnic,True,테이블 위 한 판 승부,Booth_ActivityGame_BoardGameTent,Rest_Picnic_GroupPicnicTable,12,10,FoodComfort,100
+BoardGameRattan,True,포근한 보드게임 밤,Booth_ActivityGame_BoardGameTent,Lighting_Pendant_RattanPendant,12,8,Ambience,100
+BoardGameShadowPlay,True,상상이 이어지는 놀이,Booth_ActivityGame_BoardGameTent,PhotoSpot_Interactive_ShadowPlayWall,15,8,Attraction,100
+ArcherySailShade,True,그늘 속 집중의 화살,Booth_ActivityGame_MiniArcheryRange,Rest_Shade_SailShadeShelter,12,8,FoodComfort,100
+ArcheryLighthouseLight,True,빛을 따라 과녁으로,Booth_ActivityGame_MiniArcheryRange,Lighting_Streetlamp_LighthouseStreetlamp,16,6,Ambience,100
+ArcheryPiratePhoto,True,해적 명사수의 도전,Booth_ActivityGame_MiniArcheryRange,PhotoSpot_Theme_PirateShipPhotoSet,16,10,Attraction,100
+RhythmCooling,True,리듬 사이 시원한 휴식,Booth_ActivityGame_RhythmGameStall,Rest_Cooling_Cooling,12,8,FoodComfort,100
+RhythmCurtainArch,True,빛의 커튼 리듬 스테이지,Booth_ActivityGame_RhythmGameStall,Lighting_Decorative_CurtainArch,16,8,Ambience,100
+RhythmDanceChallenge,True,박자 타고 댄스 도전,Booth_ActivityGame_RhythmGameStall,Performance_ExperienceStage_AudienceDanceChallengeStage,18,10,Attraction,100
+SurfFootbath,True,파도 뒤 발끝 휴식,Booth_ActivityGame_SurfBalanceExperience,Rest_Cooling_BeachFootbathShelter,12,8,FoodComfort,100
+SurfWaveLight,True,빛나는 파도 균형잡기,Booth_ActivityGame_SurfBalanceExperience,Lighting_Decorative_WaveCurveLight,14,8,Ambience,100
+SurfColorWall,True,오늘의 서퍼 인증,Booth_ActivityGame_SurfBalanceExperience,PhotoSpot_Theme_SurfboardColorWall,15,10,Attraction,100
+FanWorkshopVinePergola,True,초록 바람 부채 공방,Booth_CraftExperience_PersonalFanWorkshop,Rest_Shade_VinePergola,12,8,FoodComfort,100
+FanWorkshopWishLantern,True,소원 담은 부채 한 장,Booth_CraftExperience_PersonalFanWorkshop,Lighting_Decorative_WishLanternRow,14,8,Ambience,100
+FanWorkshopFourCutPhoto,True,내 부채와 네 컷 추억,Booth_CraftExperience_PersonalFanWorkshop,PhotoSpot_Interactive_FourCutPhotoBooth,15,10,Attraction,100
+ShellWorkshopCoastalBench,True,바다 곁 조개 팔찌,Booth_CraftExperience_ShellBraceletWorkshop,Rest_Seating_CoastalViewBench,12,8,FoodComfort,100
+ShellWorkshopPendant,True,조개빛 손끝 공방,Booth_CraftExperience_ShellBraceletWorkshop,Lighting_Pendant_ShellShadePendant,12,8,Ambience,100
+ShellWorkshopWhalePhoto,True,고래와 조개의 약속,Booth_CraftExperience_ShellBraceletWorkshop,PhotoSpot_Landmark_WhaleTailSculpture,16,10,Attraction,100
+ResinWorkshopSailShade,True,그늘에 담은 작은 파도,Booth_CraftExperience_WaveResinKeyringWorkshop,Rest_Shade_SailShadeShelter,12,8,FoodComfort,100
+ResinWorkshopJellyfish,True,해파리빛 레진 바다,Booth_CraftExperience_WaveResinKeyringWorkshop,Lighting_Decorative_JellyfishLightCluster,14,8,Ambience,100
+ResinWorkshopSandcastle,True,모래성과 바다 열쇠,Booth_CraftExperience_WaveResinKeyringWorkshop,PhotoSpot_Landmark_GrandSandcastle,16,10,Attraction,100
+ClothingVinePergola,True,그늘에서 고르는 축제룩,Booth_MarketGoods_FestivalClothingShop,Rest_Shade_VinePergola,14,6,FoodComfort,100
+ClothingCurtainArch,True,빛의 런웨이,Booth_MarketGoods_FestivalClothingShop,Lighting_Decorative_CurtainArch,16,8,Ambience,100
+ClothingFourCutPhoto,True,오늘의 축제룩 네 컷,Booth_MarketGoods_FestivalClothingShop,PhotoSpot_Interactive_FourCutPhotoBooth,15,10,Attraction,100
+GlowGoodsWaterLounge,True,응원 전 시원한 충전,Booth_MarketGoods_GlowCheeringGoodsShop,Rest_Cooling_DrinkingWaterLounge,14,6,FoodComfort,100
+GlowGoodsStarTree,True,별빛을 흔드는 응원,Booth_MarketGoods_GlowCheeringGoodsShop,Lighting_Decorative_StarTree,14,8,Ambience,100
+GlowGoodsMainStage,True,무대를 채우는 응원빛,Booth_MarketGoods_GlowCheeringGoodsShop,Performance_MainStage_SunsetMainStage,18,10,Attraction,100
+SouvenirCoastalBench,True,바다를 담아가는 쉼표,Booth_MarketGoods_LocalSouvenirShop,Rest_Seating_CoastalViewBench,14,6,FoodComfort,100
+SouvenirLighthouseLight,True,등대빛 로컬 선물,Booth_MarketGoods_LocalSouvenirShop,Lighting_Streetlamp_LighthouseStreetlamp,16,6,Ambience,100
+SouvenirFestivalLettering,True,축제 이름을 간직하다,Booth_MarketGoods_LocalSouvenirShop,PhotoSpot_Landmark_FestaFiestaLettering,18,10,Attraction,100
+CraftBeerGroupPicnic,True,함께 건배하는 테이블,Booth_Nightlife_CraftBeerTaproom,Rest_Picnic_GroupPicnicTable,15,10,FoodComfort,100
+CraftBeerFestoon,True,불빛 아래 수제맥주,Booth_Nightlife_CraftBeerTaproom,Lighting_Decorative_Festoon,14,8,Ambience,100
+CraftBeerLocalBand,True,밴드와 맥주의 밤,Booth_Nightlife_CraftBeerTaproom,Performance_SubStage_LocalBandShowcase,18,10,Attraction,100
+SilentDiscoHammock,True,춤 사이 해먹 휴식,Booth_Nightlife_SilentDiscoClub,Rest_Seating_HammockLounge,15,8,FoodComfort,100
+SilentDiscoJellyfish,True,해파리빛 무음 댄스,Booth_Nightlife_SilentDiscoClub,Lighting_Decorative_JellyfishLightCluster,16,8,Ambience,100
+SilentDiscoShadowPlay,True,그림자로 추는 춤,Booth_Nightlife_SilentDiscoClub,PhotoSpot_Interactive_ShadowPlayWall,15,10,Attraction,100
+MocktailCoastalBench,True,노을에 기대어 한 잔,Booth_Nightlife_SunsetMocktailBar,Rest_Seating_CoastalViewBench,15,10,FoodComfort,100
+MocktailMarineBollard,True,해안 불빛 모크테일,Booth_Nightlife_SunsetMocktailBar,Lighting_Streetlamp_MarineBollardLight,14,6,Ambience,100
+MocktailSunsetFrame,True,잔에 담긴 일몰 액자,Booth_Nightlife_SunsetMocktailBar,PhotoSpot_Scenic_SunsetFrameOverlook,16,10,Attraction,100

@@ -15,9 +15,7 @@ FText UFF_EconomyDisplayTextLibrary::GetSpendReasonText(EFF_SpendReason Reason)
 	case EFF_SpendReason::FacilityInstall: return LOCTEXT("Spend_FacilityInstall", "시설 설치비");
 	case EFF_SpendReason::ProgramPurchase: return LOCTEXT("Spend_ProgramPurchase", "유료 프로그램 구매");
 	case EFF_SpendReason::Promotion:       return LOCTEXT("Spend_Promotion",       "홍보비");
-	case EFF_SpendReason::VenueRent:       return LOCTEXT("Spend_VenueRent",       "장소 임대료");
-	case EFF_SpendReason::StaffWages:      return LOCTEXT("Spend_StaffWages",      "Staff 임금");
-	case EFF_SpendReason::StaffHire:       return LOCTEXT("Spend_StaffHire",       "추가 고용");
+	case EFF_SpendReason::StaffHire:       return LOCTEXT("Spend_StaffHire",       "Staff 고용");
 	case EFF_SpendReason::EventSupplies:   return LOCTEXT("Spend_EventSupplies",   "Event 소모품");
 	case EFF_SpendReason::Cleanup:         return LOCTEXT("Spend_Cleanup",         "뒷정리");
 	case EFF_SpendReason::FinaleFireworks: return LOCTEXT("Spend_FinaleFireworks", "피날레 폭죽");
@@ -78,10 +76,62 @@ FText UFF_EconomyDisplayTextLibrary::GetProgramPurchaseResultText(EFF_ProgramPur
 	case EFF_ProgramPurchaseResult::FestivalNotStarted: return LOCTEXT("Program_FestivalNotStarted", "축제가 시작되지 않았다");
 	case EFF_ProgramPurchaseResult::UnknownProgram:     return LOCTEXT("Program_UnknownProgram",     "없는 프로그램");
 	case EFF_ProgramPurchaseResult::AlreadyScheduled:   return LOCTEXT("Program_AlreadyScheduled",   "오늘 이미 편성했다");
-	case EFF_ProgramPurchaseResult::NotEnoughStaff:     return LOCTEXT("Program_NotEnoughStaff",     "인원이 부족하다");
 	case EFF_ProgramPurchaseResult::InsufficientGold:   return LOCTEXT("Program_InsufficientGold",   "Gold 부족");
 	case EFF_ProgramPurchaseResult::FacilityTypeMismatch:
 		return LOCTEXT("Program_FacilityTypeMismatch", "이 시설에서는 열 수 없다");
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_EconomyDisplayTextLibrary::GetAdmissionFeeResultText(EFF_AdmissionFeeResult Result)
+{
+	switch (Result)
+	{
+	case EFF_AdmissionFeeResult::Success:            return LOCTEXT("AdmissionFee_Success",            "입장료를 바꿨다");
+	case EFF_AdmissionFeeResult::FestivalNotStarted: return LOCTEXT("AdmissionFee_FestivalNotStarted", "축제가 시작되지 않았다");
+	case EFF_AdmissionFeeResult::OutOfRange:         return LOCTEXT("AdmissionFee_OutOfRange",         "허용 범위 밖이다");
+	case EFF_AdmissionFeeResult::LockedDuringLive:   return LOCTEXT("AdmissionFee_LockedDuringLive",   "운영 중에는 바꿀 수 없다");
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_EconomyDisplayTextLibrary::GetPromotionGradeText(EFF_PromotionGrade Grade)
+{
+	switch (Grade)
+	{
+	case EFF_PromotionGrade::None:       return LOCTEXT("Promotion_None",       "홍보 없음");
+	case EFF_PromotionGrade::Basic:      return LOCTEXT("Promotion_Basic",      "지역 SNS");
+	case EFF_PromotionGrade::Focused:    return LOCTEXT("Promotion_Focused",    "전국 홍보");
+	case EFF_PromotionGrade::Influencer: return LOCTEXT("Promotion_Influencer", "인플루언서");
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_EconomyDisplayTextLibrary::GetFestivalEvaluationGradeText(EFF_FestivalEvaluationGrade Grade)
+{
+	switch (Grade)
+	{
+	case EFF_FestivalEvaluationGrade::D: return LOCTEXT("Evaluation_D", "D");
+	case EFF_FestivalEvaluationGrade::C: return LOCTEXT("Evaluation_C", "C");
+	case EFF_FestivalEvaluationGrade::B: return LOCTEXT("Evaluation_B", "B");
+	case EFF_FestivalEvaluationGrade::A: return LOCTEXT("Evaluation_A", "A");
+	case EFF_FestivalEvaluationGrade::S: return LOCTEXT("Evaluation_S", "S");
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_EconomyDisplayTextLibrary::GetFestivalEvaluationAxisText(EFF_FestivalEvaluationAxis Axis)
+{
+	switch (Axis)
+	{
+	case EFF_FestivalEvaluationAxis::Satisfaction: return LOCTEXT("EvaluationAxis_Satisfaction", "만족도");
+	case EFF_FestivalEvaluationAxis::Visitors:     return LOCTEXT("EvaluationAxis_Visitors",     "방문객");
+	case EFF_FestivalEvaluationAxis::Finance:      return LOCTEXT("EvaluationAxis_Finance",      "재무");
+	case EFF_FestivalEvaluationAxis::Buzz:         return LOCTEXT("EvaluationAxis_Buzz",         "화제성");
 	}
 
 	return FText::GetEmpty();

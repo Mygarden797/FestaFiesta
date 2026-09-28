@@ -4,6 +4,7 @@
 // 흐름: PreValidate → ApplyTentative → 로컬 변경 → Commit 순서이며 실패 시 적용 목록을 역순 Rollback한다.
 // 불변식: Commit은 실패하지 않아야 하고 Rollback은 부분 적용 뒤에도 여러 번 호출 가능해야 한다.
 // 실패/성능: 정책 콜백 중 권한 변경은 fail-closed로 거부되므로 콜백은 짧고 동기적으로 끝내며 긴 I/O를 하지 않는다.
+// 리플렉션 연결 코드는 UHT가 생성한다. 실제 콜백은 게임 측 정책 객체가 구현하므로 빈 .cpp는 필요 없다.
 
 #pragma once
 

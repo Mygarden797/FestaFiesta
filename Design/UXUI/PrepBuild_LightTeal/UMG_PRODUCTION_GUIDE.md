@@ -146,7 +146,7 @@ Source/FestaFiesta/Private/UI/PrepHUD/Panels/
 Content/FestaFiesta/UI/PrepHUD/Panels/
   WBP_FF_PrepPanelBuild.uasset
 
-Content/FestaFiesta/UI/PrepHUD/Build/
+Content/FestaFiesta/Building/FF_WBP_Building/Catalog/
   WBP_FF_PrepBuildTile.uasset
   PAL_FF_PrepBuildUI.uasset
   PAL_FF_PrepBuildCategoryDependencies.uasset

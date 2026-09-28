@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Connect to this checkout's UE 5.7 editor using Epic's bundled Python client."""
+# remote.py
+# 역할: 프로젝트와 엔진 버전이 일치하는 에디터에만 Python 명령을 전달한다.
+
+"""Connect to this checkout's project-selected editor using Epic's bundled Python client."""
 import argparse
 import json
 import math
@@ -14,14 +17,23 @@ MODULE = Path("Engine/Plugins/Experimental/PythonScriptPlugin/Content/Python")
 MARKER = "FF_UNREAL_STATUS="
 
 
+def engine_association():
+    """프로젝트 파일이 선택한 엔진 버전을 연결·탐색·검증 모두에 사용한다."""
+    return str(json.loads(PROJECT.read_text(encoding="utf-8-sig"))["EngineAssociation"])
+
+
 def normalized(path):
     return os.path.normcase(os.path.realpath(path))
 
 
 def engine_root(explicit):
-    association = json.loads(PROJECT.read_text(encoding="utf-8-sig"))["EngineAssociation"]
-    if association != "5.7":
-        raise RuntimeError("This client requires project EngineAssociation 5.7")
+    association = engine_association()
+    try:
+        expected_version = tuple(int(part) for part in association.split("."))
+    except ValueError as error:
+        raise RuntimeError("Remote client needs a numeric EngineAssociation such as 5.7") from error
+    if len(expected_version) != 2:
+        raise RuntimeError("EngineAssociation must contain major.minor")
     selected = explicit or os.environ.get("FESTAFIESTA_UE_ROOT")
     candidates = [Path(selected)] if selected else []
     manifest = Path(os.environ.get("PROGRAMDATA", "C:/ProgramData")) / "Epic/UnrealEngineLauncher/LauncherInstalled.dat"
@@ -30,15 +42,15 @@ def engine_root(explicit):
         candidates += [Path(item["InstallLocation"]) for item in installs
                        if item.get("AppName") == "UE_" + association]
     if not selected:
-        candidates.append(Path(os.environ.get("PROGRAMFILES", "C:/Program Files")) / "Epic Games/UE_5.7")
+        candidates.append(Path(os.environ.get("PROGRAMFILES", "C:/Program Files")) / f"Epic Games/UE_{association}")
     for candidate in candidates:
         version_file = candidate / "Engine/Build/Build.version"
         if not version_file.is_file() or not (candidate / MODULE / "remote_execution.py").is_file():
             continue
         version = json.loads(version_file.read_text(encoding="utf-8-sig"))
-        if (version.get("MajorVersion"), version.get("MinorVersion")) == (5, 7):
+        if (version.get("MajorVersion"), version.get("MinorVersion")) == expected_version:
             return candidate.resolve()
-    raise RuntimeError("UE 5.7 not found; supply --engine-root or FESTAFIESTA_UE_ROOT")
+    raise RuntimeError(f"UE {association} not found; supply --engine-root or FESTAFIESTA_UE_ROOT")
 
 
 def guarded(code):
@@ -69,7 +81,7 @@ def connect(args):
             matches = [node for node in session.remote_nodes
                        if node.get("project_root") and normalized(node["project_root"]) == normalized(PROJECT.parent)
                        and node.get("project_name", "").casefold() == PROJECT.stem.casefold()
-                       and node.get("engine_version", "").startswith("5.7.")]
+                       and node.get("engine_version", "").startswith(engine_association() + ".")]
             if len(matches) > 1:
                 raise RuntimeError("Multiple editors have this project open; close duplicate instances")
             if matches:
@@ -80,7 +92,7 @@ def connect(args):
                 first_match = None
             time.sleep(0.1)
         else:
-            raise TimeoutError("This checkout's UE 5.7 editor was not discovered on loopback")
+            raise TimeoutError("This checkout's project-selected editor was not discovered on loopback")
         node = matches[0]
         session.open_command_connection(node["node_id"])
         # Epic's client exposes no timeout setter and otherwise blocks indefinitely.
@@ -119,7 +131,7 @@ def connect(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--engine-root", help="UE 5.7 installation directory (auto-detected by default)")
+    parser.add_argument("--engine-root", help="Project engine installation directory (auto-detected by default)")
     parser.add_argument("--timeout", type=float, default=30, help="Total client timeout in seconds (default: 30)")
     operation = parser.add_mutually_exclusive_group()
     operation.add_argument("--code", help="Python code to run after verifying this project")

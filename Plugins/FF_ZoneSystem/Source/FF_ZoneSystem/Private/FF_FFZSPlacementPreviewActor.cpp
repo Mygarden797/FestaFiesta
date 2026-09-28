@@ -15,8 +15,11 @@
 #include "Components/SceneComponent.h"
 #include "Components/LineBatchComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSBuildableGridComponent.h"
+#include "FF_FFZSBuildPresentationSettings.h"
+#include "FF_FFZSBuildRangePresentation.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSOrientedGeometry.h"
 #include "FF_FFZSVisualGeometry.h"
@@ -47,6 +50,9 @@ AFFZSPlacementPreviewActor::AFFZSPlacementPreviewActor()
     PreviewMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     PreviewMesh->SetGenerateOverlapEvents(false);
     PreviewMesh->SetRenderCustomDepth(true);
+    // The temporary ghost needs the translucent overlay pass even for Nanite source assets.
+    // Only this component uses the source fallback mesh; installed facilities are unchanged.
+    PreviewMesh->bDisallowNanite = true;
 
     RangeLines = CreateDefaultSubobject<ULineBatchComponent>(TEXT("RangeLines"));
     RangeLines->SetupAttachment(SceneRoot);
@@ -108,17 +114,23 @@ void AFFZSPlacementPreviewActor::Tick(const float DeltaSeconds)
 // 플러그인의 권위 배치 상태를 커밋하지 않는다. 결과 Transform도 이 Preview Actor에만 적용.
 FFFZSPlacementValidation AFFZSPlacementPreviewActor::RefreshPreview()
 {
+    bUsesEffectiveBatchSpec = false;
     if (UFFZSWorldSubsystem* Subsystem = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr)
     {
         LastValidation = Subsystem->ValidatePlacement(PreviewCommand);
+        bHasUnvalidatedPreviewTransform = false;
         SetActorTransform(LastValidation.PlacementTransform);
         RequestPreviewMesh();
+        PreviewMesh->SetRenderCustomDepth(true);
         PreviewMesh->SetCustomDepthStencilValue(LastValidation.bIsValid ? 1 : 2);
+        RefreshGhostFeedback();
         RefreshRangePresentation();
         RefreshPlacementGridPresentation();
     }
     else
     {
+        PreviewMesh->SetOverlayMaterial(nullptr);
+        for (UStaticMeshComponent* Surface : FailureSurfaces) if (Surface) Surface->SetVisibility(false);
         if (RangeLines)
         {
             RangeLines->Flush();
@@ -129,6 +141,113 @@ FFFZSPlacementValidation AFFZSPlacementPreviewActor::RefreshPreview()
         }
     }
     return LastValidation;
+}
+
+void AFFZSPlacementPreviewActor::ApplyBatchPreviewResult(const FFFZSCommand& Command,
+    const FFFZSPlacementValidation& Validation)
+{
+    PreviewCommand = Command;
+    bUsesEffectiveBatchSpec = true;
+    LastValidation = Validation;
+    bHasUnvalidatedPreviewTransform = false;
+    SetActorTransform(LastValidation.PlacementTransform);
+    RequestPreviewMesh();
+    PreviewMesh->SetRenderCustomDepth(true);
+    PreviewMesh->SetCustomDepthStencilValue(LastValidation.bIsValid ? 1 : 2);
+    RefreshGhostFeedback();
+    RefreshRangePresentation();
+}
+
+void AFFZSPlacementPreviewActor::SetUnvalidatedPreviewTransform(const FTransform& Transform)
+{
+    SetActorTransform(Transform);
+    if (bHasUnvalidatedPreviewTransform) return;
+    bHasUnvalidatedPreviewTransform = true;
+    PreviewMesh->SetRenderCustomDepth(false);
+    // Reuse the loaded material without asset requests or per-frame allocations. A neutral
+    // ghost must not inherit the previous target's green/red verdict or blocker geometry.
+    if (GhostFeedbackMaterial)
+    {
+        GhostFeedbackMaterial->SetVectorParameterValue(TEXT("StatusColor"), FLinearColor::White);
+        GhostFeedbackMaterial->SetScalarParameterValue(TEXT("Opacity"), FMath::Clamp(
+            GetDefault<UFFZSBuildPresentationSettings>()->ValidPlacementOpacity, 0.0f, 1.0f));
+        PreviewMesh->SetOverlayMaterial(GhostFeedbackMaterial);
+    }
+    else
+    {
+        PreviewMesh->SetOverlayMaterial(nullptr);
+    }
+    for (UStaticMeshComponent* Surface : FailureSurfaces) if (Surface) Surface->SetVisibility(false);
+    if (RangeLines) RangeLines->Flush();
+    if (UFFZSBuildableGridComponent* Grid = Cast<UFFZSBuildableGridComponent>(PlacementGridLines)) Grid->HideGrid();
+    else if (PlacementGridLines) PlacementGridLines->Flush();
+}
+
+// 공통 설정과 마지막 판정으로 고스트 재질을 갱신한다. 원본 시설 재질은 수정하지 않는다.
+void AFFZSPlacementPreviewActor::RefreshGhostFeedback()
+{
+    const UFFZSBuildPresentationSettings& Style = *GetDefault<UFFZSBuildPresentationSettings>();
+    if (!bFeedbackMaterialLoadAttempted)
+    {
+        bFeedbackMaterialLoadAttempted = true;
+        // 액터별 override를 우선하고, 없으면 프로젝트의 공통 재질을 한 번만 로드한다.
+        const TSoftObjectPtr<UMaterialInterface>& MaterialReference = PlacementFeedbackMaterial.IsNull()
+            ? Style.DefaultPlacementFeedbackMaterial : PlacementFeedbackMaterial;
+        UMaterialInterface* Material = MaterialReference.Get();
+        if (!Material && !MaterialReference.IsNull())
+            Material = LoadObject<UMaterialInterface>(nullptr, *MaterialReference.ToSoftObjectPath().ToString(),
+                nullptr, LOAD_NoWarn | LOAD_Quiet);
+        if (Material)
+        {
+            GhostFeedbackMaterial = UMaterialInstanceDynamic::Create(Material, this);
+            FailureSurfaceMaterial = UMaterialInstanceDynamic::Create(Material, this);
+        }
+    }
+    // 색과 투명도는 새 미리보기부터 반영한다. 재질 파라미터 이름은 공용 재질 계약이다.
+    if (FailureSurfaceMaterial)
+    {
+        FailureSurfaceMaterial->SetVectorParameterValue(TEXT("StatusColor"), Style.InvalidPlacementColor);
+        FailureSurfaceMaterial->SetScalarParameterValue(TEXT("Opacity"), FMath::Clamp(Style.FailureSurfaceOpacity, 0.0f, 1.0f));
+    }
+    if (GhostFeedbackMaterial)
+    {
+        GhostFeedbackMaterial->SetVectorParameterValue(TEXT("StatusColor"), LastValidation.bIsValid
+            ? Style.ValidPlacementColor : Style.InvalidPlacementColor);
+        GhostFeedbackMaterial->SetScalarParameterValue(TEXT("Opacity"), FMath::Clamp(
+            LastValidation.bIsValid ? Style.ValidPlacementOpacity : Style.InvalidPlacementOpacity, 0.0f, 1.0f));
+        PreviewMesh->SetOverlayMaterial(GhostFeedbackMaterial);
+    }
+}
+
+// 실패 영역 바닥의 반투명 면을 재사용하며 충돌과 내비게이션에는 참여시키지 않는다.
+void AFFZSPlacementPreviewActor::ShowFailureSurface(
+    const FFFZSOrientedRect& WorldRegion, const double BaseZ, const int32 SurfaceIndex)
+{
+    if (!FailureSurfaceMaterial || !WorldRegion.IsValid() || SurfaceIndex < 0 ||
+        SurfaceIndex >= FFFZSPlacementValidation::MaxObstructions) return;
+    if (!FailureSurfaces.IsValidIndex(SurfaceIndex))
+    {
+        UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane"));
+        if (!Plane) return;
+        UStaticMeshComponent* Surface = NewObject<UStaticMeshComponent>(this);
+        Surface->SetupAttachment(SceneRoot);
+        Surface->SetAbsolute(true, true, true);
+        Surface->SetStaticMesh(Plane);
+        Surface->SetMaterial(0, FailureSurfaceMaterial);
+        Surface->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        Surface->SetGenerateOverlapEvents(false);
+        Surface->SetCanEverAffectNavigation(false);
+        Surface->SetCastShadow(false);
+        Surface->SetReceivesDecals(false);
+        Surface->RegisterComponent();
+        FailureSurfaces.Add(Surface);
+    }
+    if (!FailureSurfaces.IsValidIndex(SurfaceIndex)) return;
+    UStaticMeshComponent* Surface = FailureSurfaces[SurfaceIndex];
+    Surface->SetWorldTransform(FTransform(FRotator(0, WorldRegion.YawDegrees, 0),
+        FVector(WorldRegion.CenterCell, BaseZ), FVector(WorldRegion.HalfExtentCells.X / 50.0,
+            WorldRegion.HalfExtentCells.Y / 50.0, 1.0)));
+    Surface->SetVisibility(true);
 }
 
 void AFFZSPlacementPreviewActor::RefreshPlacementGridVisual()
@@ -246,6 +365,7 @@ void AFFZSPlacementPreviewActor::ApplyLoadedPreviewMesh()
 // LineBatch scene proxy에 canonical rect를 보관해 커서가 멈춰도 범위가 사라지지 않는다.
 void AFFZSPlacementPreviewActor::RefreshRangePresentation()
 {
+    for (UStaticMeshComponent* Surface : FailureSurfaces) if (Surface) Surface->SetVisibility(false);
     if (!RangeLines)
     {
         return;
@@ -266,44 +386,40 @@ void AFFZSPlacementPreviewActor::RefreshRangePresentation()
     }
 
     const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
-    const FColor BaseColor = LastValidation.bIsValid ? FColor::Green : FColor::Red;
+    const UFFZSBuildPresentationSettings& Style = *GetDefault<UFFZSBuildPresentationSettings>();
+    TArray<FBatchedLine> Lines;
     // [하드코딩 제거] 건축 모드 범위 표시와 같은 상한을 설정 헤더에서 공유한다.
     constexpr int32 MaxDisplayedRectsPerGroup =
         UFFZSDeveloperSettings::MaxDisplayedRangeRectsPerGroup;
-    const auto DrawRect = [this, Zone, CellSizeCm](const FFFZSOrientedRect& Rect, const FLinearColor& Color)
+    const auto DrawRect = [this, Zone, CellSizeCm, &Style, &Lines](const FFFZSOrientedRect& Rect,
+        const FLinearColor& Color, const bool bDashed, const bool bAccentCorners)
     {
-        const FVector Center = Zone->GetActorTransform().TransformPosition(FVector(
-            Rect.CenterCell.X * CellSizeCm,
-            Rect.CenterCell.Y * CellSizeCm,
-            5.0));
-        const FVector Extent(
-            FMath::Max(0.25, Rect.HalfExtentCells.X * CellSizeCm - 0.02),
-            FMath::Max(0.25, Rect.HalfExtentCells.Y * CellSizeCm - 0.02),
-            5.0);
-        const FQuat Rotation = Zone->GetActorQuat() * FQuat(
-            FVector::UpVector,
-            FMath::DegreesToRadians(static_cast<double>(Rect.YawDegrees)));
-        RangeLines->DrawBox(
-            Center,
-            Extent,
-            Rotation,
-            Color,
-            0.0f,
-            SDPG_World,
-            2.0f);
+        const auto RegionCorners = FFZSOrientedGeometry::GetCorners(Rect);
+        FFZSBuildRangePresentation::FWorldCorners Corners;
+        for (int32 Index = 0; Index < 4; ++Index)
+        {
+            Corners[Index] = Zone->GetActorTransform().TransformPosition(FVector(RegionCorners[Index] * CellSizeCm, 0.0));
+            Corners[Index].Z = LastValidation.PlacementTransform.GetLocation().Z +
+                FMath::Clamp(Style.RangeSurfaceLiftCm, 0.5f, 20.0f);
+        }
+        FFZSBuildRangePresentation::AppendOutline(Lines, Corners, Color, bDashed, bAccentCorners, Style);
     };
-    const auto DrawGroup = [&DrawRect, BaseColor](
+    const auto DrawGroup = [this, &DrawRect, &Style](
         const TArray<FFFZSOrientedRect>& Rects,
-        const FColor& ValidColor)
+        const FLinearColor& ValidColor, const FFZSBuildRangePresentation::ERegion Region)
     {
-        const FLinearColor Color(BaseColor == FColor::Red ? BaseColor : ValidColor);
+        const FLinearColor Color = FFZSBuildRangePresentation::HasRegionFailure(LastValidation, Region)
+            ? Style.FailureColor : ValidColor;
+        // Highly fragmented content retains exact solid outlines without multiplying dash work.
+        const bool bDashed = Region == FFZSBuildRangePresentation::ERegion::Clearance && Rects.Num() <= 64;
+        const bool bAccentCorners = Region == FFZSBuildRangePresentation::ERegion::Footprint;
         if (Rects.Num() <= MaxDisplayedRectsPerGroup)
         {
             for (const FFFZSOrientedRect& Rect : Rects)
             {
                 if (Rect.IsValid())
                 {
-                    DrawRect(Rect, Color);
+                    DrawRect(Rect, Color, bDashed, bAccentCorners);
                 }
             }
             return;
@@ -324,12 +440,64 @@ void AFFZSPlacementPreviewActor::RefreshRangePresentation()
         if (Bounds.bIsValid)
         {
             DrawRect(FFFZSOrientedRect(
-                Bounds.GetCenter(), Bounds.GetExtent(), 0.0f), Color);
+                Bounds.GetCenter(), Bounds.GetExtent(), 0.0f), Color, true, false);
         }
     };
-    DrawGroup(LastValidation.FootprintOrientedRects, FColor::Green);
-    DrawGroup(LastValidation.ClearanceOrientedRects, FColor::Cyan);
-    DrawGroup(LastValidation.QueueOrientedRects, FColor::Yellow);
+    DrawGroup(LastValidation.FootprintOrientedRects, Style.FootprintColor, FFZSBuildRangePresentation::ERegion::Footprint);
+    DrawGroup(LastValidation.ClearanceOrientedRects, Style.ClearanceColor, FFZSBuildRangePresentation::ERegion::Clearance);
+    DrawGroup(LastValidation.QueueOrientedRects, Style.QueueColor, FFZSBuildRangePresentation::ERegion::Queue);
+    if (!LastValidation.bIsValid)
+    {
+        int32 SurfaceIndex = 0;
+        const double BaseZ = LastValidation.PlacementTransform.GetLocation().Z +
+            FMath::Clamp(Style.RangeSurfaceLiftCm, 0.5f, 20.0f) + 0.5;
+        TArray<FFFZSOrientedRect, TInlineAllocator<12>> DisplayedRegions;
+        const auto DrawFailureRegion = [this, &Lines, &Style, &SurfaceIndex, &DisplayedRegions, BaseZ](const FFFZSOrientedRect& Region)
+        {
+            if (!Region.IsValid() || SurfaceIndex >= FFFZSPlacementValidation::MaxObstructions) return;
+            for (const FFFZSOrientedRect& Existing : DisplayedRegions)
+                if (Existing.CenterCell.Equals(Region.CenterCell, 0.01) &&
+                    Existing.HalfExtentCells.Equals(Region.HalfExtentCells, 0.01) &&
+                    FMath::IsNearlyEqual(Existing.YawDegrees, Region.YawDegrees)) return;
+            DisplayedRegions.Add(Region);
+            FFZSBuildRangePresentation::FWorldCorners Corners;
+            const auto XY = FFZSOrientedGeometry::GetCorners(Region);
+            for (int32 Index = 0; Index < 4; ++Index) Corners[Index] = FVector(XY[Index], BaseZ);
+            FFZSBuildRangePresentation::AppendFailureHatching(Lines, Corners, Style.FailureColor);
+            ShowFailureSurface(Region, BaseZ, SurfaceIndex++);
+        };
+        for (const FFFZSPlacementObstruction& Obstruction : LastValidation.Obstructions)
+        {
+            FFZSBuildRangePresentation::AppendObstructionOutline(Lines, Obstruction, FLinearColor(1.0f, 0.62f, 0.12f));
+            DrawFailureRegion(Obstruction.AffectedWorldRegion);
+        }
+        const auto DrawUnlocalizedFailure = [this, Zone, &DrawFailureRegion](const TArray<FFFZSOrientedRect>& Regions,
+            const FFZSBuildRangePresentation::ERegion RegionType, const EFFZSPlacementFailure RegionReason)
+        {
+            if (!FFZSBuildRangePresentation::HasRegionFailure(LastValidation, RegionType)) return;
+            if (LastValidation.Obstructions.ContainsByPredicate([RegionReason](const FFFZSPlacementObstruction& D)
+                { return D.Reason == RegionReason; })) return;
+            for (const FFFZSOrientedRect& Rect : Regions)
+            {
+                FFFZSOrientedRect WorldRect = Rect;
+                WorldRect.CenterCell = FVector2D(Zone->GetActorTransform().TransformPosition(FVector(Rect.CenterCell, 0)));
+                WorldRect.YawDegrees += Zone->GetActorRotation().Yaw;
+                DrawFailureRegion(WorldRect);
+            }
+        };
+        DrawUnlocalizedFailure(LastValidation.FootprintOrientedRects, FFZSBuildRangePresentation::ERegion::Footprint, EFFZSPlacementFailure::PlacementCollision);
+        DrawUnlocalizedFailure(LastValidation.ClearanceOrientedRects, FFZSBuildRangePresentation::ERegion::Clearance, EFFZSPlacementFailure::InsufficientClearance);
+        DrawUnlocalizedFailure(LastValidation.QueueOrientedRects, FFZSBuildRangePresentation::ERegion::Queue, EFFZSPlacementFailure::QueueFootprintBlocked);
+    }
+    if (!LastValidation.QueueOrientedRects.IsEmpty())
+    {
+        const FFFZSFacilitySpec DisplaySpec = PreviewCommand.Type == EFFZSCommandType::Install && !bUsesEffectiveBatchSpec
+            ? FFZSFacilityUpgradeRules::BuildEffectiveSpec(PreviewCommand.FacilitySpec, 1, 1.0f)
+            : PreviewCommand.FacilitySpec;
+        FFZSBuildRangePresentation::AppendQueueSlots(Lines, DisplaySpec,
+            LastValidation.PlacementTransform, Style.QueueColor, Style);
+    }
+    RangeLines->DrawLines(Lines);
 }
 
 // The same available-land renderer powers placement and the pre-selection overview.
@@ -343,7 +511,7 @@ void AFFZSPlacementPreviewActor::RefreshPlacementGridPresentation()
     UFFZSWorldSubsystem* Subsystem = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
     const AFFZSGameplayZone* Zone = Subsystem ? Subsystem->FindZone(PreviewCommand.ZoneId) : nullptr;
     const FIntPoint Size = PreviewCommand.FacilitySpec.FootprintSizeCells;
-    if (!bDrawPlacementGrid || !Zone || Size.X <= 0 || Size.Y <= 0)
+    if (bHasUnvalidatedPreviewTransform || !bDrawPlacementGrid || !Zone || Size.X <= 0 || Size.Y <= 0)
     {
         Grid->HideGrid();
         return;

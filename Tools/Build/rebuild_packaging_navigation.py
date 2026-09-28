@@ -1,3 +1,6 @@
+# rebuild_packaging_navigation.py
+# 역할: 에셋·물리 준비를 마치고 NavMesh를 재생성한 뒤 기존 연결을 보존하는지 검사한다.
+
 """Audit/rebuild Test_Main's offline navigation without changing terrain or agents.
 
 Default: read-only audit. FESTAFIESTA_REBUILD_NAVIGATION=1 rebuilds in memory,
@@ -64,6 +67,8 @@ def main():
     try:
         world = unreal.EditorLoadingAndSavingUtils.load_map('/Game/FestaFiesta/Maps/Test_Main')
         assert world, 'Release map did not load'
+        # 비동기 메시 컴파일 중에는 바닥의 물리/내비게이션 정보가 아직 없을 수 있다.
+        assert unreal.FFZSNavigationEditorLibrary.prepare_world_for_navigation(world), 'World geometry is not ready'
         actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem).get_all_level_actors()
         zones = sorted((actor for actor in actors if isinstance(actor, unreal.FFZSGameplayZone)),
                        key=lambda actor: str(actor.get_editor_property('zone_id')))

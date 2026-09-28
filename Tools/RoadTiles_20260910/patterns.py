@@ -1,3 +1,6 @@
+# patterns.py
+# 역할: 도로 타일의 반복 무늬와 구조를 공통 도형 함수로 만든다.
+
 """Reference-based structural patterns for the wooden, cream and mint road tiles.
 
 The public builder functions only use the shared Builder primitive API.  Distances

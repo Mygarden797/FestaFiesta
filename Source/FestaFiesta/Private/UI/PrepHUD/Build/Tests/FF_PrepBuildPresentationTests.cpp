@@ -1,3 +1,6 @@
+// FF_PrepBuildPresentationTests.cpp
+// 역할: 준비 단계 건설 화면의 동작과 저장된 화면 연결을 자동 검증한다.
+
 // LightTeal PrepBuild 프레젠테이션 규칙과 UTileView 데이터 재사용 계약을 검증한다.
 
 #include "Misc/AutomationTest.h"
@@ -6,6 +9,7 @@
 
 #include "Building/FF_BuildCatalogModel.h"
 #include "Building/FF_FacilityNamingLibrary.h"
+#include "Festival/FF_RequiredFacilityTypes.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
@@ -305,6 +309,63 @@ bool FFF_PrepBuildPresentation_TileStateTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_PrepBuildPresentation_FreeInstallCostTest,
+	"FestaFiesta.UI.PrepBuild.FreeInstallCost",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_PrepBuildPresentation_FreeInstallCostTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_PrepBuildPresentationTestHelpers;
+
+	FFF_BuildCatalogEntry Entry = MakeEntry(
+		TEXT("Booth_FoodStall_FreeTest"), TEXT("무료 시설"),
+		EFFZSFacilityCategory::Booth, TEXT("FoodStall"), 0);
+	UFF_PrepBuildTileData* Tile = NewObject<UFF_PrepBuildTileData>();
+	if (!TestNotNull(TEXT("A tile can display a free facility"), Tile))
+	{
+		return false;
+	}
+
+	Tile->Initialize(Entry, 0, true);
+	TestTrue(TEXT("Resolved zero is a valid price"), Tile->HasResolvedCost());
+	TestTrue(TEXT("A free facility is available with zero Gold"), Tile->IsAffordable());
+	TestEqual(TEXT("A free facility displays its resolved price"),
+		Tile->GetCostText().ToString(), FString(TEXT("0 Gold")));
+	TestTrue(TEXT("A free facility has no price failure message"), Tile->GetStateText().IsEmpty());
+
+	Tile->RefreshGold(0, false);
+	TestEqual(TEXT("A free price does not bypass unavailable authoritative Gold"),
+		Tile->GetTileState(), EFF_PrepBuildTileState::GoldUnavailable);
+	Tile->RefreshGold(0, true);
+	TestTrue(TEXT("Resolving zero Gold makes the free facility available again"), Tile->IsAffordable());
+
+	Entry.bBuildLimitReached = true;
+	Tile->Initialize(Entry, 0, true);
+	TestEqual(TEXT("Free facilities still respect their build limit"),
+		Tile->GetTileState(), EFF_PrepBuildTileState::BuildLimitReached);
+	Entry.bBuildLimitReached = false;
+
+	Entry.bHasResolvedInstallCost = false;
+	Tile->Initialize(Entry, 0, true);
+	TestFalse(TEXT("An unresolved zero never becomes a free price"), Tile->HasResolvedCost());
+	TestEqual(TEXT("An unresolved zero remains unavailable"),
+		Tile->GetTileState(), EFF_PrepBuildTileState::PriceUnavailable);
+	TestEqual(TEXT("An unresolved zero replaces the previously displayed free price"),
+		Tile->GetCostText().ToString(), FString(TEXT("가격 확인 중")));
+
+	Entry.bHasResolvedInstallCost = true;
+	Entry.InstallCost = -1;
+	Tile->Initialize(Entry, 0, true);
+	TestFalse(TEXT("A negative price remains invalid even with the resolved flag"), Tile->HasResolvedCost());
+	TestEqual(TEXT("A negative price remains unavailable"),
+		Tile->GetTileState(), EFF_PrepBuildTileState::PriceUnavailable);
+	TestEqual(TEXT("A negative price is not presented as a free facility"),
+		Tile->GetCostText().ToString(), FString(TEXT("가격 확인 중")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_PrepBuildPresentation_SurfaceStateTest,
 	"FestaFiesta.UI.PrepBuild.SurfaceStates",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -562,6 +623,96 @@ bool FFF_PrepBuildPresentation_SynergyHighlightTest::RunTest(const FString& Para
 	TestTrue(TEXT("Clearing the selected combination restores the original order and all pooled identities"), Model->GetListItems() == OriginalItems);
 	TestFalse(TEXT("Clearing removes a previously visible highlight"), Seating->IsSynergyHighlighted());
 	TestFalse(TEXT("Clearing also removes a previously filtered-out highlight"), Shade->IsSynergyHighlighted());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepBuildPresentation_RequiredPriorityTest,
+	"FestaFiesta.UI.PrepBuild.RequiredFacilitiesLeadAllCatalog",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_PrepBuildPresentation_RequiredPriorityTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_PrepBuildPresentationTestHelpers;
+	TArray<FFF_BuildCatalogEntry> Entries;
+	for (int32 Index = 0; Index < 12; ++Index)
+	{
+		const FString Id = FString::Printf(TEXT("Fixture_%02d"), Index);
+		Entries.Add(MakeEntry(*Id, *FString::Printf(TEXT("공통 시설 %02d"), Index),
+			Index < 8 ? EFFZSFacilityCategory::Booth : EFFZSFacilityCategory::Performance,
+			Index < 8 ? TEXT("FoodStall") : TEXT("MainStage"), 100));
+		if (Index >= 8)
+		{
+			Entries.Last().bRequiredForSetup = true;
+			Entries.Last().RequiredMinimumCount = 1;
+			Entries.Last().bRequiredSetupSatisfied = Index % 2 == 1;
+			Entries.Last().RequiredInstalledCount = Index % 2;
+		}
+	}
+	auto* Model = NewObject<UFF_PrepBuildPresentationModel>();
+	FFF_PrepBuildFilter Filter;
+	const auto Reconcile = [&]() { Model->Reconcile(EFF_BuildCatalogLoadState::Ready, Entries, Filter, 500, true, FText::GetEmpty()); };
+	Reconcile();
+	TArray<UObject*> OriginalObjects;
+	for (const auto& Entry : Entries) OriginalObjects.Add(Model->FindTile(Entry.FacilityDefinitionId));
+	const auto ExpectOrder = [&](const TCHAR* Context, const TArray<int32>& ExpectedIndices)
+	{
+		TArray<UObject*> Expected;
+		for (const int32 Index : ExpectedIndices) Expected.Add(OriginalObjects[Index]);
+		TestTrue(Context, Model->GetListItems() == Expected);
+	};
+	ExpectOrder(TEXT("Required facilities originally beyond page one lead the six-card catalog, missing before completed"),
+		{8, 10, 9, 11, 0, 1, 2, 3, 4, 5, 6, 7});
+	const TArray<UObject*> Prioritized = Model->GetListItems();
+	Model->RefreshGold(0);
+	TestTrue(TEXT("Balance updates preserve order and every pooled card"), Model->GetListItems() == Prioritized);
+	TestFalse(TEXT("Prioritizing an unaffordable requirement never makes it purchasable"), Model->FindTile(Entries[8].FacilityDefinitionId)->IsAffordable());
+	Model->SetSynergyHighlightIds({Entries[3].FacilityDefinitionId, Entries[11].FacilityDefinitionId});
+	Reconcile();
+	ExpectOrder(TEXT("Requirements stay ahead of ordinary recommendations; existing recommendation priority remains inside each group"),
+		{8, 10, 11, 9, 3, 0, 1, 2, 4, 5, 6, 7});
+	Model->SetSynergyHighlightIds({});
+	Filter.bFilterByCategory = true;
+	Filter.Category = EFFZSFacilityCategory::Performance;
+	Reconcile();
+	ExpectOrder(TEXT("An explicit category retains its original order without injecting unrelated facilities"), {8, 9, 10, 11});
+	Filter.bFilterByCategory = false;
+	Filter.SearchText = TEXT("공통");
+	Reconcile();
+	ExpectOrder(TEXT("Explicit search results retain their existing stable order"), {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11});
+	Filter.SearchText = TEXT("시설 02");
+	Reconcile();
+	ExpectOrder(TEXT("Missing requirements cannot bypass a search term"), {2});
+	Filter.SearchText.Reset();
+	Filter.bFavoritesOnly = true;
+	Filter.FavoriteIds = {Entries[0].FacilityDefinitionId, Entries[9].FacilityDefinitionId};
+	Reconcile();
+	ExpectOrder(TEXT("Favorites retain their membership and order even when other required facilities are missing"), {0, 9});
+	Filter.bFilterByCategory = true;
+	Filter.Category = EFFZSFacilityCategory::Performance;
+	Filter.MinorToken = TEXT("MainStage");
+	Filter.SearchText = TEXT("시설 09");
+	Reconcile();
+	ExpectOrder(TEXT("Category, subcategory, search and favorites still compose"), {9});
+	Filter = FFF_PrepBuildFilter();
+	Filter.SearchText = TEXT("  ");
+	Entries[8].bRequiredSetupSatisfied = true;
+	Entries[8].RequiredInstalledCount = 1;
+	Reconcile();
+	ExpectOrder(TEXT("After completion the remaining missing requirement comes first without recreating any card"),
+		{10, 8, 9, 11, 0, 1, 2, 3, 4, 5, 6, 7});
+	TestTrue(TEXT("Requirement progress still reaches its original pooled object"),
+		Model->FindTile(Entries[8].FacilityDefinitionId) == OriginalObjects[8] &&
+		Model->FindTile(Entries[8].FacilityDefinitionId)->GetRequiredFacilityCurrentCount() == 1);
+	for (int32 Index = 0; Index < Entries.Num(); ++Index)
+	{
+		TestEqual(TEXT("Presentation sorting never mutates the source catalog order"), Entries[Index].FacilityDefinitionId,
+			FName(*FString::Printf(TEXT("Fixture_%02d"), Index)));
+		Entries[Index].bRequiredForSetup = false;
+	}
+	Reconcile();
+	ExpectOrder(TEXT("Removing requirements restores the original order and original card objects"),
+		{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11});
 	return true;
 }
 

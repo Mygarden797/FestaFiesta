@@ -15,7 +15,7 @@
 
 ## 기획자가 설정하는 곳
 
-콘텐츠 브라우저의 `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/`에서 해당 `UFFZSFacilityDefinition` Data Asset을 엽니다. Details 상단의 **Facility Upgrade**에 필요한 항목을 모았습니다. 이 항목들은 해당 에셋의 `Spec`을 직접 편집하며, 별도의 전역 강화 표는 사용하지 않습니다.
+콘텐츠 브라우저의 `/Game/FestaFiesta/Building/FF_Data_Building/`에서 해당 `UFFZSFacilityDefinition` Data Asset을 엽니다. Details 상단의 **Facility Upgrade**에 필요한 항목을 모았습니다. 이 항목들은 해당 에셋의 `Spec`을 직접 편집하며, 별도의 전역 강화 표는 사용하지 않습니다.
 
 | Details 항목 | 뜻 |
 |---|---|
@@ -61,7 +61,7 @@
 
 이관에서 새 레벨 메시를 임의로 지정하지 않습니다. 각 단계는 기존 Lv.1 메시를 사용하며, 이후 기획자가 원하는 Static Mesh를 지정할 수 있습니다. 이전 설정을 추출한 `Artifacts/FacilityUpgrade/LegacyUpgradeConfig.json`이 있으면 그 비용·시간 표를 사용합니다. 이미 작성된 시설별 설정은 보존하며, 처리 표시를 남겨 재실행 때 사용자가 끈 레벨 기능을 다시 켜지 않습니다. 저장 실패 시 에셋을 복구합니다. 정상 처리 내역은 `Artifacts/FacilityUpgrade/PerFacilityMigrationReport.json`에 기록합니다.
 
-이 수치는 플레이 테스트를 시작하기 위한 설정입니다. 처리량은 손님이 계속 온다는 가정의 최대치이며, 강화가 손님 수나 이용 요금을 직접 늘리지는 않습니다. 미니게임 보상도 그대로입니다. 철거 환급은 기존 설치비 규칙을 따르며 강화비는 환급되지 않습니다.
+이 수치는 플레이 테스트를 시작하기 위한 설정입니다. 처리량은 손님이 계속 온다는 가정의 최대치이며, 강화가 손님 수나 이용 요금을 직접 늘리지는 않습니다. 철거 환급은 기존 설치비 규칙을 따르며 강화비는 환급되지 않습니다.
 
 ### 실제 수익과 화면의 숫자
 

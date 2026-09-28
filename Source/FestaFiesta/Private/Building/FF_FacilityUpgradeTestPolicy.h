@@ -1,3 +1,6 @@
+// FF_FacilityUpgradeTestPolicy.h
+// 역할: 강화 실패 시 비용과 시설이 함께 원복되는지 검사하는 테스트 정책이다.
+
 #pragma once
 
 #include "CoreMinimal.h"

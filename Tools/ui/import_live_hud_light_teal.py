@@ -22,6 +22,10 @@ import unreal
 MANIFEST_REL = "SourceArt/UI/LiveHUD/LightTealParts_v1/asset-manifest.json"
 DESTINATION_ROOT = "/Game/FestaFiesta/UI/LiveHUD/Themes/LightTeal"
 TILEABLE_PREFIX = "HeatMap/"
+GOLD_COIN_FILES = {
+    "Icons/Metrics/T_FF_LH_Icon_Gold_White_256.png",
+    "Badges/T_FF_LH_Badge_Gold_256.png",
+}
 
 
 def project_dir():
@@ -70,6 +74,9 @@ def set_texture_settings(texture, entry):
     address = unreal.TextureAddress.TA_WRAP if is_tileable else unreal.TextureAddress.TA_CLAMP
     texture.set_editor_property("address_x", address)
     texture.set_editor_property("address_y", address)
+    if entry["file"] in GOLD_COIN_FILES:
+        # Keep the authored RGBA source intact while bounding resident UI size.
+        texture.set_editor_property("max_texture_size", 256)
 
 
 def run():
@@ -86,6 +93,8 @@ def run():
     for entry in manifest.get("assets", []):
         relative_file = entry["file"]
         source_file = os.path.normpath(os.path.join(source_root, relative_file))
+        if relative_file in GOLD_COIN_FILES:
+            source_file = os.path.join(project_dir(), "Tools/ui/assets/StarEmbossedGoldCoin.png")
         relative_dir = os.path.dirname(relative_file).replace("\\", "/")
         destination = DESTINATION_ROOT
         if relative_dir:

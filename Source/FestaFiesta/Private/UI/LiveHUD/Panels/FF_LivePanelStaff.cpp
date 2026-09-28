@@ -17,7 +17,7 @@
 // =============================================================================
 
 FFF_LiveStaffSummary FFF_LiveStaffRules::BuildSummary(
-	int32 TotalStaff, int32 BaseStaff, int32 TemporaryStaff, int32 AssignedStaff)
+	int32 TotalStaff, int32 BaseStaff, int32 HiredStaff, int32 AssignedStaff)
 {
 	FFF_LiveStaffSummary Result;
 
@@ -25,7 +25,7 @@ FFF_LiveStaffSummary FFF_LiveStaffRules::BuildSummary(
 	// 하나가 없다고 나머지까지 숨기면 볼 수 있는 것까지 못 보게 된다.
 	Result.Total = (TotalStaff >= 0) ? TotalStaff : INDEX_NONE;
 	Result.Base = (BaseStaff >= 0) ? BaseStaff : INDEX_NONE;
-	Result.Temporary = (TemporaryStaff >= 0) ? TemporaryStaff : INDEX_NONE;
+	Result.Hired = (HiredStaff >= 0) ? HiredStaff : INDEX_NONE;
 	Result.Assigned = (AssignedStaff >= 0) ? AssignedStaff : INDEX_NONE;
 
 	// 🔴 남는 인원은 **둘 다 알아야** 나온다. 하나라도 모르면 `0명` 이 아니라 `모름` 이다.
@@ -61,7 +61,7 @@ void UFF_LivePanelStaff::NativeOnPanelOpened()
 
 	// ★ 못 하는 것과 없는 것을 화면에 적는다. 안 적으면 고장난 것으로 읽힌다.
 	SetTextOrHide(Text_HireNote, LOCTEXT("LiveStaff_HireNote",
-		"알바는 하루짜리라 셋업과 개장 준비에서만 뽑습니다. 라이브 중에는 늘릴 수 없습니다."));
+		"고용은 셋업과 개장 준비에서만 합니다. 라이브 중에는 늘릴 수 없습니다."));
 
 	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveStaff_MissingNote",
 		"시설별 배치와 스태프 개인 상태는 아직 읽을 수 없습니다."));
@@ -98,12 +98,8 @@ void UFF_LivePanelStaff::BindViewModel()
 			TEXT("[%s] ViewModel 을 찾지 못했다. 인력 숫자가 전부 비어 보인다."), *GetName());
 		return;
 	}
-
-	// 🔴 셋 다 받는다. 알바를 뽑으면 전체가 바뀌고, 프로그램을 편성하면 배치가 바뀐다.
-	// 하나만 받으면 남는 인원 계산의 한쪽만 갱신되어 두 숫자가 서로 안 맞는 순간이 생긴다.
+	
 	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_LivePanelStaff::HandleStaffCountChanged);
-	CachedViewModel->OnAvailableStaffCountChanged.AddUniqueDynamic(this, &UFF_LivePanelStaff::HandleStaffCountChanged);
-	CachedViewModel->OnScheduledProgramsChanged.AddUniqueDynamic(this, &UFF_LivePanelStaff::HandleScheduledProgramsChanged);
 }
 
 void UFF_LivePanelStaff::UnbindViewModel()
@@ -112,8 +108,6 @@ void UFF_LivePanelStaff::UnbindViewModel()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_LivePanelStaff::HandleStaffCountChanged);
-		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_LivePanelStaff::HandleStaffCountChanged);
-		CachedViewModel->OnScheduledProgramsChanged.RemoveDynamic(this, &UFF_LivePanelStaff::HandleScheduledProgramsChanged);
 	}
 	CachedViewModel = nullptr;
 }
@@ -129,8 +123,9 @@ void UFF_LivePanelStaff::RefreshAll()
 	Summary = FFF_LiveStaffRules::BuildSummary(
 		ViewModel->GetTotalStaffCount(),
 		ViewModel->GetBaseStaffCount(),
-		ViewModel->GetTemporaryStaffCount(),
-		ViewModel->GetStaffAssignedToPrograms());
+		ViewModel->GetHiredStaffCount(),
+		// 사건 시스템이 오기 전까지 배치는 늘 0 이다. 읽을 창구가 생기면 여기를 바꾼다.
+		/* AssignedToEvents */ 0);
 
 	const FText Unknown = LOCTEXT("LiveStaff_Unknown", "—");
 
@@ -139,12 +134,12 @@ void UFF_LivePanelStaff::RefreshAll()
 		? FText::Format(LOCTEXT("LiveStaff_TotalValue", "{0}명"), FText::AsNumber(Summary.Total))
 		: Unknown);
 
-	// 내역은 둘 다 알아야 말이 된다. `기본 6 · 알바 —` 은 읽는 사람을 헷갈리게 한다.
+	// 내역은 둘 다 알아야 말이 된다. `기본 6 · 고용 —` 은 읽는 사람을 헷갈리게 한다.
 	SetTextOrHide(Text_StaffBreakdown,
-		(Summary.Base != INDEX_NONE && Summary.Temporary != INDEX_NONE)
+		(Summary.Base != INDEX_NONE && Summary.Hired != INDEX_NONE)
 			? FText::Format(
-				LOCTEXT("LiveStaff_Breakdown", "기본 {0} · 알바 {1}"),
-				FText::AsNumber(Summary.Base), FText::AsNumber(Summary.Temporary))
+				LOCTEXT("LiveStaff_Breakdown", "기본 {0} · 고용 {1}"),
+				FText::AsNumber(Summary.Base), FText::AsNumber(Summary.Hired))
 			: FText::GetEmpty());
 
 	SetTextOrHide(Text_AssignedStaff, (Summary.Assigned != INDEX_NONE)
@@ -160,12 +155,12 @@ void UFF_LivePanelStaff::RefreshAll()
 	case EFF_LiveStaffIdleState::HasIdle:
 		IdleValue = FText::Format(LOCTEXT("LiveStaff_IdleValue", "{0}명"), FText::AsNumber(Summary.Idle));
 		IdleNote = LOCTEXT("LiveStaff_IdleNote",
-			"임금은 그대로 나가는데 아무 프로그램에도 묶여 있지 않습니다.");
+			"사건이 나면 이 인원이 대응에 들어갑니다.");
 		break;
 
 	case EFF_LiveStaffIdleState::AllBusy:
 		IdleValue = LOCTEXT("LiveStaff_IdleNone", "없음");
-		IdleNote = LOCTEXT("LiveStaff_AllBusyNote", "전원이 프로그램에 배치되어 있습니다.");
+		IdleNote = LOCTEXT("LiveStaff_AllBusyNote", "전원이 사건 대응 중입니다.");
 		break;
 
 	case EFF_LiveStaffIdleState::Inconsistent:
@@ -188,10 +183,11 @@ void UFF_LivePanelStaff::RefreshAll()
 	SetTextOrHide(Text_IdleStaff, IdleValue);
 	SetTextOrHide(Text_IdleNote, IdleNote);
 
-	// --- 오늘 인건비 ---
-	const int32 Wage = ViewModel->GetDailyStaffWageGold();
-	SetTextOrHide(Text_DailyWage, (Wage != INDEX_NONE)
-		? FText::Format(LOCTEXT("LiveStaff_Wage", "오늘 알바 임금 {0} / 일"), FText::AsNumber(Wage))
+	// --- 고용 단가 ---
+	// 1회 구매라 "/ 일" 이 아니다. Live 중에는 못 뽑으므로 참고용 표시다.
+	const int32 HireCost = ViewModel->GetStaffHireCostGold();
+	SetTextOrHide(Text_DailyWage, (HireCost != INDEX_NONE)
+		? FText::Format(LOCTEXT("LiveStaff_HireCost", "1명 고용비 {0}"), FText::AsNumber(HireCost))
 		: FText::GetEmpty());
 
 	RefreshAssignments();
@@ -212,66 +208,19 @@ void UFF_LivePanelStaff::RefreshAssignments()
 		return;
 	}
 
-	// 오늘 편성한 id 를 카탈로그와 맞춰 이름·필요 인원을 얻는다.
-	// 편성 목록 자체에는 카드 정보가 없어서 이 조합이 필요하다.
-	const TArray<FName> ScheduledIds = ViewModel->GetScheduledProgramIds();
-	const TArray<FFF_ProgramCard> Catalog = ViewModel->GetProgramCatalog();
+	// 여기는 **사건 대응 중인 인원** 이 들어갈 자리다. 유료 프로그램은 인원을 쓰지 않으므로
+	// 편성 목록을 여기에 그리지 않는다 — 그리면 "이 사람들이 묶여 있다" 는 거짓말이 된다.
+	// 사건 시스템(UFF_FestivalEventSubsystem)이 오면 그 목록을 여기에 붙인다.
+	SetTextOrHide(Text_AssignmentsEmpty,
+		LOCTEXT("LiveStaff_NoAssignment", "지금 대응 중인 사건이 없습니다."));
 
-	int32 RowCount = 0;
-	for (const FName& Id : ScheduledIds)
-	{
-		const FFF_ProgramCard* Card = Catalog.FindByPredicate(
-			[&Id](const FFF_ProgramCard& Entry) { return Entry.ProgramId == Id; });
-
-		if (!Card)
-		{
-			// 편성은 됐는데 카탈로그에 없다. 줄을 빼먹지 않고 id 로라도 남긴다 —
-			// 조용히 지우면 인원 합이 안 맞는 이유를 찾을 수 없다.
-			UE_LOG(LogFestaFiestaUI, Warning,
-				TEXT("[%s] 편성된 `%s` 를 카탈로그에서 못 찾았다."), *GetName(), *Id.ToString());
-		}
-
-		UTextBlock* Row = NewObject<UTextBlock>(this);
-		if (!Row)
-		{
-			continue;
-		}
-
-		Row->SetText(Card
-			? FText::Format(
-				LOCTEXT("LiveStaff_AssignmentRow", "{0} · {1}명"),
-				Card->DisplayName, FText::AsNumber(Card->RequiredStaff))
-			: FText::Format(LOCTEXT("LiveStaff_AssignmentUnknown", "{0} · 정보 없음"),
-				FText::FromName(Id)));
-
-		// 이름이 `Slot` 이면 `UWidget::Slot` 을 가려서 -WarningsAsErrors 에 걸린다.
-		if (UVerticalBoxSlot* RowSlot = Box_Assignments->AddChildToVerticalBox(Row))
-		{
-			RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
-		}
-		++RowCount;
-	}
-
-	// 빈 목록에 아무것도 안 두면 고장난 것으로 보인다. 왜 비었는지 적는다.
-	SetTextOrHide(Text_AssignmentsEmpty, (RowCount > 0)
-		? FText::GetEmpty()
-		: LOCTEXT("LiveStaff_NoAssignment",
-			"오늘 편성한 유료 프로그램이 없어 인력이 묶여 있지 않습니다."));
-
-	Box_Assignments->SetVisibility((RowCount > 0)
-		? ESlateVisibility::SelfHitTestInvisible
-		: ESlateVisibility::Collapsed);
+	Box_Assignments->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 void UFF_LivePanelStaff::HandleStaffCountChanged(int32 NewValue)
 {
-	// 인자를 쓰지 않는다. 델리게이트 둘이 이 함수를 부르고, 어느 쪽이 왔든
-	// 전체를 다시 읽어야 남는 인원 계산의 두 값이 서로 맞는다.
-	RefreshAll();
-}
-
-void UFF_LivePanelStaff::HandleScheduledProgramsChanged()
-{
+	// 인자를 쓰지 않는다. 총원 하나만 받아서는 남는 인원 계산의 다른 한쪽(배치)이
+	// 안 맞을 수 있으니, 부를 때마다 전체를 다시 읽는다.
 	RefreshAll();
 }
 

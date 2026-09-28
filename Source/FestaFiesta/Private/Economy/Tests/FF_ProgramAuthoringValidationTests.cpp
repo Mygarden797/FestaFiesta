@@ -1,3 +1,5 @@
+// FF_ProgramAuthoringValidationTests.cpp
+// 역할: 프로그램 작성 오류와 무료 입장·개최 비용·정원의 허용 경계를 자동 검사한다.
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/AutomationTest.h"
@@ -59,9 +61,8 @@ bool FFF_ProgramAuthoringValidation_ReportsAllErrors::RunTest(const FString& Par
 	Catalog[1].ProgramId = Catalog[0].ProgramId;
 	Catalog[1].DisplayName = FText::FromString(TEXT("   "));
 	Catalog[1].CostGold = 0;
-	Catalog[1].RequiredStaff = 0;
 	Catalog[1].Capacity = 0;
-	Catalog[1].FeePerPerson = 0;
+	Catalog[1].FeePerPerson = -1;
 	Catalog[1].StartMinutes = std::numeric_limits<float>::quiet_NaN();
 	Catalog[1].EndMinutes = std::numeric_limits<float>::infinity();
 	Catalog[1].AllowedFacilityTypes = {
@@ -78,6 +79,86 @@ bool FFF_ProgramAuthoringValidation_ReportsAllErrors::RunTest(const FString& Par
 	TestTrue(TEXT("NaN/Infinity 시간 범위를 설명한다"), ContainsError(Errors, TEXT("시간 범위")));
 	TestTrue(TEXT("시설 타입 형식을 설명한다"), ContainsError(Errors, TEXT("대분류_소분류")));
 	TestTrue(TEXT("중복 시설 타입을 설명한다"), ContainsError(Errors, TEXT("중복")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_ProgramAuthoringValidation_FreeProgramsAreValid,
+	"FestaFiesta.Economy.ProgramAuthoring.FreeProgramsAreValid",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ProgramAuthoringValidation_FreeProgramsAreValid::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	const UFF_FestivalDefinition* Definition = NewObject<UFF_FestivalDefinition>();
+	TArray<FFF_ProgramCard> Catalog = Definition->ProgramCatalog;
+	if (!TestFalse(TEXT("The default catalog contains a card for boundary checks"), Catalog.IsEmpty()))
+	{
+		return false;
+	}
+	for (FFF_ProgramCard& Card : Catalog)
+	{
+		Card.FeePerPerson = 0;
+		TestTrue(TEXT("An intentionally free program remains a valid schedulable card"), Card.IsValid());
+		TestEqual(TEXT("Free attendance cannot generate projected revenue"), Card.CalcMaxRevenue(), 0);
+	}
+	TArray<FText> Errors;
+	TestTrue(TEXT("The editor authoring contract accepts zero admission fees"),
+		UFF_ProgramAuthoringValidationLibrary::ValidateProgramCatalog(Catalog, Errors));
+	TestEqual(TEXT("Free admission adds no authoring errors"), Errors.Num(), 0);
+	Catalog[0].FeePerPerson = -1;
+	Errors.Reset();
+	TestFalse(TEXT("Negative fees remain invalid after introducing free programs"),
+		UFF_ProgramAuthoringValidationLibrary::ValidateProgramCatalog(Catalog, Errors));
+	TestFalse(TEXT("Negative fees cannot pass the runtime card guard"), Catalog[0].IsValid());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_ProgramAuthoringValidation_EconomyBoundaries,
+	"FestaFiesta.Economy.ProgramAuthoring.EconomyBoundaries",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_ProgramAuthoringValidation_EconomyBoundaries::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	const UFF_FestivalDefinition* Definition = NewObject<UFF_FestivalDefinition>();
+	if (!TestFalse(TEXT("A default program exists"), Definition->ProgramCatalog.IsEmpty()))
+	{
+		return false;
+	}
+
+	// 각 항목만 경계 밖으로 옮겨 다른 오류가 잘못된 값의 허용을 가리지 않게 한다.
+	struct FBoundaryCase
+	{
+		const TCHAR* Label;
+		int32 Cost;
+		int32 Capacity;
+		int32 Fee;
+		bool bExpectedValid;
+	};
+	const FBoundaryCase Cases[] = {
+		{ TEXT("Free admission with positive cost and capacity"), 1, 1, 0, true },
+		{ TEXT("Paid admission with positive cost and capacity"), 1, 1, 1, true },
+		{ TEXT("Negative admission fee"), 1, 1, -1, false },
+		{ TEXT("Zero hosting cost is still invalid"), 0, 1, 0, false },
+		{ TEXT("Negative hosting cost is still invalid"), -1, 1, 0, false },
+		{ TEXT("Zero capacity is still invalid"), 1, 0, 0, false },
+		{ TEXT("Negative capacity is still invalid"), 1, -1, 0, false },
+	};
+	for (const FBoundaryCase& Boundary : Cases)
+	{
+		FFF_ProgramCard Card = Definition->ProgramCatalog[0];
+		Card.CostGold = Boundary.Cost;
+		Card.Capacity = Boundary.Capacity;
+		Card.FeePerPerson = Boundary.Fee;
+		TArray<FText> Errors;
+		TestEqual(*FString::Printf(TEXT("Runtime: %s"), Boundary.Label),
+			Card.IsValid(), Boundary.bExpectedValid);
+		TestEqual(*FString::Printf(TEXT("Authoring: %s"), Boundary.Label),
+			UFF_ProgramAuthoringValidationLibrary::ValidateProgramCatalog({ Card }, Errors), Boundary.bExpectedValid);
+		TestEqual(*FString::Printf(TEXT("Diagnostic: %s"), Boundary.Label),
+			Errors.IsEmpty(), Boundary.bExpectedValid);
+	}
 	return true;
 }
 

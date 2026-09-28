@@ -1,3 +1,6 @@
+// FF_FacilityInfoSubsystem.h
+// 역할: 현재 선택 시설의 정보를 모아 화면을 열고 시설 조작 요청을 담당 시스템에 전달한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
@@ -47,6 +50,10 @@ class FESTAFIESTA_API UFF_FacilityInfoSubsystem final : public UTickableWorldSub
 	GENERATED_BODY()
 
 public:
+	/** UI-only handoff; the ranking presenter owns its screen and reads existing revenue data. */
+	FSimpleMulticastDelegate OnRevenueRankingRequested;
+	void SetRevenueRankingPresentationOpen(bool bOpen);
+	bool IsRevenueRankingPresentationOpen() const { return bRevenueRankingPresentationOpen; }
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 	virtual bool DoesSupportWorldType(EWorldType::Type WorldType) const override;
@@ -93,6 +100,7 @@ public:
 	/** Used by raw build/camera input to prevent clicking through the visible card. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Facility Info")
 	bool IsPointerOverPanel() const;
+	bool IsLightingTextInputFocused() const;
 
 	/**
 	 * Resolves a currently registered installed facility from its dedicated padded selection proxy.
@@ -128,7 +136,6 @@ public:
 	FFF_OnFacilityInfoActionRequested OnMoveRequested;
 	FFF_OnFacilityInfoActionRequested OnRemoveRequested;
 	FFF_OnFacilityInfoActionRequested OnProgramScheduleRequested;
-	FFF_OnFacilityInfoActionRequested OnMinigameRequested;
 	FFF_OnFacilityInfoActionRequested OnCloseRequested;
 
 private:
@@ -141,6 +148,8 @@ private:
 #endif
 
 	bool EnsurePanel(APlayerController& OwningController);
+	/** 조명 미리보기를 되돌린 뒤 이벤트 연결과 화면을 한곳에서 정리한다. */
+	void ReleasePanel();
 	bool EnsurePaidProgramPicker(APlayerController& OwningController);
 	bool BuildPaidProgramPickerViewData(
 		AFFZSFacilityActor& Facility,
@@ -176,12 +185,13 @@ private:
 	void HandlePanelProgramScheduleRequested();
 	void HandlePanelUpgradeRequested();
 	void HandlePanelLightingRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
+	void HandlePanelLightingRollbackRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
 	void HandlePanelLightingResetRequested(FGuid FacilityId);
 	bool CanEditSelectedLighting(FGuid FacilityId) const;
 	void HandlePaidProgramConfirmed(FName ProgramId, FGuid FacilityInstanceId);
 	void HandlePaidProgramPickerCloseRequested();
-	void HandlePanelMinigameRequested();
 	void HandlePanelCloseRequested();
+	void HandlePanelRevenueRankingRequested();
 
 	UFUNCTION()
 	void HandleScheduledProgramsChanged();
@@ -235,6 +245,7 @@ private:
 	bool bThumbnailSessionAcquired = false;
 	// RootLayout보다 높은 전역 Z-order 시설 UI가 Pause Hub 위에서 클릭되지 않도록 하는 presentation lease.
 	bool bPauseMenuPresentationSuppressed = false;
+	bool bRevenueRankingPresentationOpen = false;
 	// suppress 중 Collapsed 상태를 새 기준으로 덮지 않고 원래 활성 표면 하나만 복원한다.
 	bool bPanelWasVisibleBeforePause = false;
 	bool bPaidProgramPickerWasVisibleBeforePause = false;

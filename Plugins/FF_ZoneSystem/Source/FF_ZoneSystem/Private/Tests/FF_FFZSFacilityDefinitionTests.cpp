@@ -71,6 +71,69 @@ namespace
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSFacilityRevenueDefinitionTest,
+    "FF_ZoneSystem.Unit.Definitions.FacilityRevenueValidationAndFingerprint",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSFacilityRevenueDefinitionTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+    TGuardValue<int32> StableRegionBudget(
+        GetMutableDefault<UFFZSDeveloperSettings>()->MaxEnumeratedCellsPerFacility,
+        1'000'000);
+    UFFZSFacilityDefinition* Definition = NewObject<UFFZSFacilityDefinition>();
+    Definition->Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    TestFalse(TEXT("Existing definitions keep festival defaults"), Definition->Spec.bOverrideRevenuePerUseGold);
+    TestEqual(TEXT("The unconfigured amount is zero"), Definition->Spec.RevenuePerUseGold, 0);
+
+    FFFZSCommand Command;
+    Command.Type = EFFZSCommandType::Install;
+    Command.FacilitySpec = Definition->Spec;
+    const FString LegacyFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
+    TestFalse(TEXT("Legacy receipts omit the override flag"),
+        LegacyFingerprint.Contains(TEXT("spec.override_revenue_per_use_gold")));
+    TestFalse(TEXT("Legacy receipts omit the new amount"),
+        LegacyFingerprint.Contains(TEXT("spec.revenue_per_use_gold")));
+
+    Definition->Spec.bOverrideRevenuePerUseGold = true;
+    TArray<FText> Errors;
+    TestTrue(TEXT("An explicitly free facility is valid"), Definition->IsDefinitionValid(Errors));
+    Command.FacilitySpec = Definition->Spec;
+    const FString FreeFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
+    TestNotEqual(TEXT("Free override differs from festival fallback"), FreeFingerprint, LegacyFingerprint);
+    Definition->Spec.RevenuePerUseGold = 350;
+    TestTrue(TEXT("A positive facility amount is valid"), Definition->IsDefinitionValid(Errors));
+    Command.FacilitySpec = Definition->Spec;
+    const FString PaidFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
+    TestNotEqual(TEXT("Changing the amount changes the receipt"), PaidFingerprint, FreeFingerprint);
+    Command.FacilitySpec.bOverrideRevenuePerUseGold = false;
+    const FString DisabledFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
+    TestNotEqual(TEXT("The enabled policy participates in exact spec comparison"), DisabledFingerprint, PaidFingerprint);
+    TestNotEqual(TEXT("Disabled authored values still participate in exact spec comparison"), DisabledFingerprint, LegacyFingerprint);
+
+    TArray<uint8> Bytes;
+    FObjectWriter Writer(Definition, Bytes, true, true);
+    UFFZSFacilityDefinition* Restored = NewObject<UFFZSFacilityDefinition>();
+    FObjectReader Reader(Restored, Bytes, true, true);
+    TestFalse(TEXT("Facility revenue asset serialization succeeds"), Writer.IsError() || Reader.IsError());
+    TestTrue(TEXT("The override selection survives asset serialization"), Restored->Spec.bOverrideRevenuePerUseGold);
+    TestEqual(TEXT("The amount survives asset serialization"), Restored->Spec.RevenuePerUseGold, 350);
+    Command.FacilitySpec = Restored->Spec;
+    TestEqual(TEXT("Restored authoring data preserves its receipt identity"),
+        UFFZSGridLibrary::BuildCommandFingerprint(Command), PaidFingerprint);
+
+    Definition->Spec.RevenuePerUseGold = -1;
+    TestFalse(TEXT("A negative facility amount is rejected"), Definition->IsDefinitionValid(Errors));
+    TestTrue(TEXT("Validation names the amount the author must correct"),
+        ContainsErrorText(Errors, TEXT("Revenue per Use (Gold)")));
+    Definition->Spec.bOverrideRevenuePerUseGold = false;
+    Errors.Reset();
+    TestFalse(TEXT("Disabling the override does not retain malformed authoring data"),
+        Definition->IsDefinitionValid(Errors));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FFFZSDragPlacementDefinitionPolicyTest,
     "FF_ZoneSystem.Unit.Definitions.DragPlacementPolicySerializationAndSpecIsolation",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

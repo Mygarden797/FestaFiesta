@@ -1,3 +1,6 @@
+// FF_FacilityProgramMarkerTests.cpp
+// 역할: 프로그램 표시의 데이터 연결과 생성·해제 동작을 검증한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
@@ -5,6 +8,10 @@
 #include "UI/Facility/FF_FacilityProgramMarkerSubsystem.h"
 
 #include "Components/WidgetComponent.h"
+#include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
+#include "Components/TextBlock.h"
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Editor.h"
 #include "Engine/DataTable.h"
@@ -25,6 +32,9 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "Materials/MaterialInterface.h"
+#include "RenderingThread.h"
+#include "ShaderCompiler.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Slate/WidgetRenderer.h"
 #include "Styling/CoreStyle.h"
@@ -35,6 +45,60 @@
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
+
+namespace
+{
+	struct FScopedBadgePlayerless
+	{
+		explicit FScopedBadgePlayerless(UWidgetBlueprintGeneratedClass& InClass)
+			: Class(InClass), bPrevious(InClass.bCanCallInitializedWithoutPlayerContext)
+		{ Class.bCanCallInitializedWithoutPlayerContext = true; }
+		~FScopedBadgePlayerless() { Class.bCanCallInitializedWithoutPlayerContext = bPrevious; }
+		UWidgetBlueprintGeneratedClass& Class;
+		bool bPrevious;
+	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityProgramMarkerOrderTest,
+	"FestaFiesta.UI.FacilityProgramMarker.OrderCache",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityProgramMarkerOrderTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	// 화면을 만들지 않고, 시설 추가·삭제·선택에 따른 배치 우선순위만 검증한다.
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!TestNotNull(TEXT("서브시스템의 소유 월드"), World)) return false;
+	TStrongObjectPtr<UFF_FacilityProgramMarkerSubsystem> Subsystem(
+		NewObject<UFF_FacilityProgramMarkerSubsystem>(World));
+	const FGuid First(0, 0, 0, 1);
+	const FGuid Second(0, 0, 0, 2);
+	const FGuid Third(0, 0, 0, 3);
+	Subsystem->Markers.Add(Third, nullptr);
+	Subsystem->Markers.Add(First, nullptr);
+	Subsystem->Markers.Add(Second, nullptr);
+	Subsystem->RefreshMarkerOrder(Second);
+	TestTrue(TEXT("선택 시설을 먼저 배치하고 나머지는 고유 번호 순서를 유지한다"),
+		Subsystem->MarkerOrder == TArray<FGuid>({Second, First, Third}));
+	TestFalse(TEXT("계산이 끝난 순서는 다음 프레임에 그대로 재사용한다"), Subsystem->bMarkerOrderDirty);
+	Subsystem->RefreshMarkerOrder(Second);
+	TestTrue(TEXT("선택이 그대로이면 배치 순서도 그대로 유지된다"),
+		Subsystem->MarkerOrder == TArray<FGuid>({Second, First, Third}));
+	Subsystem->RefreshMarkerOrder(Third);
+	TestTrue(TEXT("선택 변경을 캐시에 즉시 반영한다"),
+		Subsystem->MarkerOrder == TArray<FGuid>({Third, First, Second}));
+	Subsystem->Markers.Remove(First);
+	Subsystem->bMarkerOrderDirty = true;
+	Subsystem->RefreshMarkerOrder(Third);
+	TestTrue(TEXT("삭제한 시설은 재사용 순서에서도 제거된다"),
+		Subsystem->MarkerOrder == TArray<FGuid>({Third, Second}));
+	Subsystem->RefreshMarkerOrder(FGuid());
+	TestTrue(TEXT("선택을 해제하면 고유 번호 순서로 돌아온다"),
+		Subsystem->MarkerOrder == TArray<FGuid>({Second, Third}));
+	Subsystem->ClearPresentation();
+	TestTrue(TEXT("화면을 정리하면 이전 시설 순서도 제거된다"), Subsystem->MarkerOrder.IsEmpty());
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityProgramMarkerLifecycleTest,
 	"FestaFiesta.UI.FacilityProgramMarker.Lifecycle",
@@ -83,7 +147,6 @@ bool FFF_FacilityProgramMarkerLifecycleTest::RunTest(const FString& Parameters)
 	Costs->AddRow(TEXT("Cost.Booth.FoodStall.MarkerFood"), Cost);
 	Definition->FestivalId = TEXT("FacilityProgramMarkerTest");
 	Definition->FacilityCostTable = Costs;
-	Definition->DailyVenueRentGold = 0;
 	Progression->SetProgramReservations(Reservations);
 	Progression->StartFestival(Definition);
 
@@ -110,6 +173,17 @@ bool FFF_FacilityProgramMarkerLifecycleTest::RunTest(const FString& Parameters)
 		EFF_FacilityProgramMarkerState::Available);
 	TestEqual(TEXT("Incompatible installed facility has no marker"), Markers->GetMarkerState(Food),
 		EFF_FacilityProgramMarkerState::Hidden);
+	FFF_FacilityWorldBadgeData Badge;
+	TestTrue(TEXT("Compatible facility exposes its active zero revenue"), Markers->GetBadgeData(CraftA, Badge) &&
+		Badge.bShowRevenue && Badge.bEconomyAvailable && Badge.TodayGold == 0);
+	Progression->AddFacilityRevenue(37, EFF_EarnReason::FacilityCommission, TEXT("MarkerFood"), Food);
+	Progression->AddFacilityRevenue(19, EFF_EarnReason::FacilityCommission, TEXT("MarkerA"), CraftA);
+	Markers->Tick(0.f);
+	TestTrue(TEXT("A program-incompatible facility still displays its own real ledger"),
+		Markers->GetBadgeData(Food, Badge) && Badge.ProgramState == EFF_FacilityProgramMarkerState::Hidden &&
+		Badge.bShowRevenue && Badge.TodayGold == 37);
+	TestTrue(TEXT("Same-type neighbour does not inherit another facility's revenue"),
+		Markers->GetBadgeData(CraftB, Badge) && Badge.TodayGold == 0);
 
 	AFFZSFacilityActor* Preview = World->SpawnActor<AFFZSFacilityActor>();
 	Markers->Tick(0.f);
@@ -132,12 +206,15 @@ bool FFF_FacilityProgramMarkerLifecycleTest::RunTest(const FString& Parameters)
 	Markers->Tick(0.f);
 	TestEqual(TEXT("Next-day reset returns the facility to grey"), Markers->GetMarkerState(CraftA),
 		EFF_FacilityProgramMarkerState::Available);
+	TestTrue(TEXT("Daily reset refreshes the retained facility ledger to zero"),
+		Markers->GetBadgeData(Food, Badge) && Badge.bEconomyAvailable && Badge.TodayGold == 0);
 
 	AFFZSFacilityActor* Facility = Zones->FindFacility(CraftA);
 	Zones->UnregisterFacility(Facility);
 	Markers->Tick(0.f);
 	TestEqual(TEXT("Registry-only removal is detected without a command event"), Markers->GetMarkerState(CraftA),
 		EFF_FacilityProgramMarkerState::Hidden);
+	TestFalse(TEXT("Registry removal also releases the revenue projection"), Markers->GetBadgeData(CraftA, Badge));
 	TestTrue(TEXT("Re-register the installed facility"), Zones->RegisterFacility(Facility));
 	Markers->Tick(0.f);
 	TestEqual(TEXT("Registered facility regains its marker"), Markers->GetMarkerState(CraftA),
@@ -173,6 +250,119 @@ bool FFF_FacilityProgramMarkerWidgetTest::RunTest(const FString& Parameters)
 	Widget->SetMarkerState(EFF_FacilityProgramMarkerState::Hidden);
 	TestEqual(TEXT("Hidden marker does not occupy screen space"), Widget->GetVisibility(),
 		ESlateVisibility::Collapsed);
+	Widget->SetRevenue(true, false, 0);
+	TestEqual(TEXT("Uninitialized economy has an explicit unknown amount"), Widget->GetRevenueText().ToString(), FString(TEXT("—")));
+	Widget->SetRevenue(true, true, 0);
+	TestEqual(TEXT("Active economy zero is a measured zero"), Widget->GetRevenueText().ToString(), FString(TEXT("0 Gold")));
+	TestEqual(TEXT("Revenue-only badges do not block world input"), Widget->GetVisibility(), ESlateVisibility::HitTestInvisible);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityWorldBadgeLayoutTest,
+	"FestaFiesta.UI.FacilityProgramMarker.CollisionLayout",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityWorldBadgeLayoutTest::RunTest(const FString& Parameters)
+{
+	const FVector2D Size(220, 68);
+	const FBox2D Safe(FVector2D(16, 80), FVector2D(1264, 604));
+	TArray<FBox2D> Occupied = { FBox2D(FVector2D(900, 80), FVector2D(1264, 600)) };
+	FVector2D First, Repeat, Next;
+	TestTrue(TEXT("Find position avoiding the detail panel"), FFFacilityWorldBadgeLayout::Place(
+		FVector2D(910, 360), Size, Safe, Occupied, 8, 280, First));
+	TestTrue(TEXT("Same inputs produce the same placement"), FFFacilityWorldBadgeLayout::Place(
+		FVector2D(910, 360), Size, Safe, Occupied, 8, 280, Repeat) && First.Equals(Repeat));
+	const FBox2D FirstRect(First, First + Size);
+	TestFalse(TEXT("Both rows avoid the detail panel"), FirstRect.Intersect(Occupied[0]));
+	Occupied.Add(FirstRect);
+	TestTrue(TEXT("Dense neighbours receive a distinct nearby position"), FFFacilityWorldBadgeLayout::Place(
+		FVector2D(910, 360), Size, Safe, Occupied, 8, 280, Next));
+	TestFalse(TEXT("Program and revenue rectangle never overlaps its neighbour"), FBox2D(Next, Next + Size).Intersect(FirstRect));
+	TestTrue(TEXT("Complete badge stays inside the HUD safe area"), Next.X >= Safe.Min.X && Next.Y >= Safe.Min.Y &&
+		Next.X + Size.X <= Safe.Max.X && Next.Y + Size.Y <= Safe.Max.Y);
+	TestFalse(TEXT("Insufficient space hides the badge instead of covering UI"), FFFacilityWorldBadgeLayout::Place(
+		FVector2D(200, 150), Size, FBox2D(FVector2D(0), FVector2D(100)), {}, 8, 280, Next));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityWorldBadgeAuthoredTest,
+	"FestaFiesta.UI.FacilityProgramMarker.AuthoredRows",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityWorldBadgeAuthoredTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	auto* Class = Cast<UWidgetBlueprintGeneratedClass>(
+		UFF_FacilityProgramMarkerSubsystem::GetDefaultWidgetClassPath().TryLoadClass<UUserWidget>());
+	if (!TestNotNull(TEXT("Editor world"), World) || !TestNotNull(TEXT("Authored world badge WBP"), Class)) return false;
+	FScopedBadgePlayerless Playerless(*Class);
+	TStrongObjectPtr<UFF_FacilityProgramMarkerWidget> Widget(CreateWidget<UFF_FacilityProgramMarkerWidget>(World, Class));
+	if (!TestNotNull(TEXT("Authored badge"), Widget.Get())) return false;
+	const TSharedRef<SWidget> Slate = Widget->TakeWidget();
+	auto* Amount = Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Text_RevenueValue")));
+	UWidget* Label = Widget->GetWidgetFromName(TEXT("Text_RevenueLabel"));
+	UWidget* Program = Widget->GetWidgetFromName(TEXT("Panel_Program"));
+	UWidget* Revenue = Widget->GetWidgetFromName(TEXT("Panel_Revenue"));
+	if (!TestNotNull(TEXT("Authored amount"), Amount) || !TestNotNull(TEXT("Authored revenue label"), Label) || !TestNotNull(TEXT("Separate program row"), Program) ||
+		!TestNotNull(TEXT("Separate revenue row"), Revenue)) return false;
+	const FSlateFontInfo Font = Amount->GetFont();
+	Widget->SetMarkerState(EFF_FacilityProgramMarkerState::Scheduled);
+	Widget->SetRevenue(true, true, MAX_int32);
+	Widget->ForceLayoutPrepass();
+	TestTrue(TEXT("Updates preserve designer typography"), Amount->GetFont() == Font);
+	TestTrue(TEXT("Program and revenue are siblings in the authored vertical layout"), Program->GetParent() == Revenue->GetParent());
+	Widget->SetMarkerState(EFF_FacilityProgramMarkerState::Hidden);
+	TestEqual(TEXT("Incompatible program hides only its own row"), Program->GetVisibility(), ESlateVisibility::Collapsed);
+	TestTrue(TEXT("Incompatible program retains actual revenue"), Revenue->IsVisible());
+	Widget->SetRevenue(true, false, 0);
+	TestEqual(TEXT("Authored unavailable text matches native fallback"), Amount->GetText().ToString(), FString(TEXT("—")));
+	if (!FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
+	{
+		TSet<UMaterialInterface*> Materials;
+		Widget->WidgetTree->ForEachWidget([&Materials](UWidget* W)
+		{
+			if (auto* Border = Cast<UBorder>(W))
+				if (auto* Material = Cast<UMaterialInterface>(Border->Background.GetResourceObject())) Materials.Add(Material);
+		});
+		for (auto* Material : Materials) Material->EnsureIsComplete();
+		if (GShaderCompilingManager) GShaderCompilingManager->FinishAllCompilation();
+		FlushRenderingCommands();
+		Widget->SetMarkerState(EFF_FacilityProgramMarkerState::Scheduled);
+		Widget->SetRevenue(true, true, MAX_int32);
+		Widget->ForceLayoutPrepass();
+		FWidgetRenderer Renderer(false, true);
+		// World markers use their authored desired size without the viewport DPI scaler.
+		const FVector2D Desired = Widget->GetDesiredSize();
+		TestTrue(TEXT("World badge stays compact around its facility"),Desired.X <= 221.f && Desired.Y <= 72.f);
+		const FVector2D Size(FMath::CeilToInt(Desired.X), FMath::CeilToInt(Desired.Y));
+		TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(Size, TF_Bilinear, true));
+		if (!TestNotNull(TEXT("Authored badge render target"), Target.Get())) return false;
+		for (int32 Frame = 0; Frame < 3; ++Frame)
+		{
+			Widget->ForceLayoutPrepass();
+			Renderer.DrawWidget(Target.Get(), Slate, Size, .016f, false);
+		}
+		TestTrue(TEXT("Rendered program and revenue rows do not overlap"),
+			Revenue->GetPaintSpaceGeometry().GetLayoutBoundingRect().Top >= Program->GetPaintSpaceGeometry().GetLayoutBoundingRect().Bottom);
+		TestTrue(TEXT("Largest supported amount fits the authored row"),
+			Amount->GetDesiredSize().X <= Amount->GetPaintSpaceGeometry().GetLocalSize().X + 1.f);
+		const FSlateRect AmountRect = Amount->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		const FSlateRect LabelRect = Label->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		const FSlateRect RevenueRect = Revenue->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		TestTrue(TEXT("Largest amount cannot overlap the today-revenue label"), AmountRect.Left >= LabelRect.Right + 3.f);
+		TestTrue(TEXT("Largest amount remains fully inside the revenue band"),
+			AmountRect.Right <= RevenueRect.Right && AmountRect.Top >= RevenueRect.Top && AmountRect.Bottom <= RevenueRect.Bottom);
+		TestTrue(TEXT("Largest amount remains readable after downscaling"), AmountRect.GetSize().Y >= 12.f);
+		TArray<FColor> Pixels;
+		FReadSurfaceDataFlags Flags;
+		Flags.SetLinearToGamma(false);
+		if (!TestTrue(TEXT("Authored rows render"), Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels, Flags))) return false;
+		TArray64<uint8> Png;
+		FImageUtils::PNGCompressImageArray(FMath::RoundToInt(Size.X), FMath::RoundToInt(Size.Y), Pixels, Png);
+		const FString Directory = FPaths::ProjectSavedDir() / TEXT("Automation");
+		IFileManager::Get().MakeDirectory(*Directory, true);
+		TestTrue(TEXT("Authored badge preview saved"), FFileHelper::SaveArrayToFile(Png, *(Directory / TEXT("FacilityWorldBadgeLargestAmount.png"))));
+	}
 	return true;
 }
 

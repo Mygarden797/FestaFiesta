@@ -6,6 +6,7 @@
 // 실패/성능: 누락 BindWidget은 건너뛰고 썸네일이 메모리에 없으면 디자이너 자리표시자를 유지한다.
 
 #include "Building/UI/FF_BuildFacilityCard.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "Building/Presentation/FF_BuildFacilityCostTooltip.h"
 #include "CommonTextBlock.h"
@@ -21,12 +22,9 @@ UFF_BuildFacilityCard::UFF_BuildFacilityCard()
 {
 	// 카탈로그 항목에 전용 썸네일이 없는 경우를 위해 공용 이미지 경로는 보관한다.
 	// 카드는 이 참조를 직접 로드하지 않으며, 이미 메모리에 없으면 WBP의 어두운 배경을 자리표시자로 사용한다.
-	DefaultThumbnail = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT(
-		"/Game/FestaFiesta/Zone/Test_Asset/Image/T_UI_BuildCatalog_FoodTruck.T_UI_BuildCatalog_FoodTruck")));
+	DefaultThumbnail = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(FFBuildUIAssetPaths::FoodTruckImageObject));
 	// 팀 소유 Zone/UI/Building 자산과 분리된 기능 전용 WBP입니다.
-	InstallCostTooltipClass = TSoftClassPtr<UFF_BuildFacilityCostTooltip>(FSoftObjectPath(TEXT(
-		"/Game/FestaFiesta/Building/Tooltips/WBP_FF_BuildFacilityCostTooltip."
-		"WBP_FF_BuildFacilityCostTooltip_C")));
+	InstallCostTooltipClass = TSoftClassPtr<UFF_BuildFacilityCostTooltip>(FSoftObjectPath(FFBuildUIAssetPaths::FacilityCostTooltipClass));
 }
 
 void UFF_BuildFacilityCard::Configure(const FFF_BuildCatalogEntry& InEntry)
@@ -50,6 +48,7 @@ void UFF_BuildFacilityCard::Configure(const FFF_BuildCatalogEntry& InEntry)
 	// CreateWidget 이후 Configure되는 일반 경로에서는 BindWidget이 이미 유효하므로 즉시 화면에 반영한다.
 	// 생성 순서가 다른 에디터 미리보기 경로는 아래 PreConstruct/Construct에서 같은 함수를 다시 호출한다.
 	ApplyEntryToWidgets();
+	ApplyProgramAvailability();
 	RefreshFacilityCostTooltip();
 }
 
@@ -58,7 +57,7 @@ FText UFF_BuildFacilityCard::MakeFacilityCostToolTip(
 {
 	const FText UnavailableText = LOCTEXT("FacilityCostUnavailable", "가격 정보 없음");
 	const FText InstallCostText =
-		CatalogEntry.bHasResolvedInstallCost && CatalogEntry.InstallCost > 0
+		CatalogEntry.HasValidInstallCost()
 		? FText::Format(
 			LOCTEXT("FacilityCostGoldFormat", "{0} Gold"),
 			FText::AsNumber(CatalogEntry.InstallCost))
@@ -152,9 +151,24 @@ FText UFF_BuildFacilityCard::MakeRequiredFacilityToolTip(const bool bSatisfied,
 		return LOCTEXT("RequiredFacilityInvalidMinimum", "필수 시설 설정 확인 필요 · 최소 설치 개수는 1 이상이어야 합니다.");
 	}
 	return FText::Format(bSatisfied
-		? LOCTEXT("RequiredFacilitySatisfied", "필수 설치 충족 · 현재 {0}개 / 필요 최소 {1}개")
-		: LOCTEXT("RequiredFacilityMissing", "필수 설치 부족 · 현재 {0}개 / 필요 최소 {1}개"),
+		? LOCTEXT("DayOneRequiredFacilitySatisfied", "1일차 필수 설치 완료 · 현재 {0}개 / 필요 최소 {1}개")
+		: LOCTEXT("DayOneRequiredFacilityMissing", "1일차 시작 전에 반드시 설치하세요 · 현재 {0}개 / 필요 최소 {1}개"),
 		FText::AsNumber(FMath::Max(0, CurrentCount)), FText::AsNumber(FMath::Max(1, MinimumCount)));
+}
+
+FText UFF_BuildFacilityCard::MakeProgramFacilityToolTip(const FFF_BuildCatalogEntry& CatalogEntry)
+{
+	if (CatalogEntry.CompatibleProgramCount <= 0) { return FText::GetEmpty(); }
+	return FText::Format(LOCTEXT("CompatiblePrograms", "프로그램 {0}종 편성 가능: {1}\n시설 설치 후 프로그램을 구매·편성하세요."),
+		FText::AsNumber(CatalogEntry.CompatibleProgramCount), CatalogEntry.CompatibleProgramNames);
+}
+
+void UFF_BuildFacilityCard::ApplyProgramAvailability()
+{
+	const ESlateVisibility BadgeVisibility = HasCompatiblePrograms()
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (Border_ProgramBadge) { Border_ProgramBadge->SetVisibility(BadgeVisibility); }
+	if (Text_ProgramBadge) { Text_ProgramBadge->SetVisibility(BadgeVisibility); }
 }
 
 void UFF_BuildFacilityCard::SetRequiredFacilityStatus(const bool bRequired, const bool bSatisfied,
@@ -212,7 +226,7 @@ void UFF_BuildFacilityCard::NativePreConstruct()
 	{
 		ApplyFacilityCostTextFallback();
 	}
-	else { ApplySynergyHighlight(); ApplyRequiredFacilityStatus(); }
+	else { ApplySynergyHighlight(); ApplyRequiredFacilityStatus(); ApplyProgramAvailability(); }
 }
 
 void UFF_BuildFacilityCard::NativeConstruct()
@@ -223,6 +237,7 @@ void UFF_BuildFacilityCard::NativeConstruct()
 	ApplyEntryToWidgets();
 	ApplySynergyHighlight();
 	ApplyRequiredFacilityStatus();
+	ApplyProgramAvailability();
 	RefreshFacilityCostTooltip();
 }
 
@@ -233,6 +248,9 @@ void UFF_BuildFacilityCard::NativeDestruct()
 	bRequiredFacilitySatisfied = false;
 	RequiredFacilityCurrentCount = RequiredFacilityMinimumCount = 0;
 	ApplyRequiredFacilityStatus();
+	// Preserve the configured snapshot for detach/reattach; only release its visible decoration.
+	if (Border_ProgramBadge) { Border_ProgramBadge->SetVisibility(ESlateVisibility::Collapsed); }
+	if (Text_ProgramBadge) { Text_ProgramBadge->SetVisibility(ESlateVisibility::Collapsed); }
 	SetToolTip(nullptr);
 	FacilityCostTooltip = nullptr;
 	Super::NativeDestruct();
@@ -276,9 +294,9 @@ void UFF_BuildFacilityCard::ApplyThumbnailToWidget()
 
 void UFF_BuildFacilityCard::RefreshFacilityCostTooltip()
 {
-	// The existing authored price tooltip has no requirement row. Preserve its cost
-	// information in the shared text fallback while showing the minimum/count here.
-	if (bRequiredFacility)
+	// The existing authored price tooltip has no requirement/program row.
+	// Keep price information alongside both catalog explanations in the text fallback.
+	if (bRequiredFacility || HasCompatiblePrograms())
 	{
 		ApplyFacilityCostTextFallback();
 		return;
@@ -339,8 +357,13 @@ void UFF_BuildFacilityCard::ApplyFacilityCostTextFallback()
 {
 	SetToolTip(nullptr);
 	const FText CostText = MakeFacilityCostToolTip(Entry);
-	SetToolTipText(bRequiredFacility ? FText::Format(LOCTEXT("CostWithRequirement", "{0}\n{1}"), CostText,
-		MakeRequiredFacilityToolTip(bRequiredFacilitySatisfied, RequiredFacilityCurrentCount, RequiredFacilityMinimumCount)) : CostText);
+	FText Description = bRequiredFacility ? FText::Format(LOCTEXT("CostWithRequirement", "{0}\n{1}"), CostText,
+		MakeRequiredFacilityToolTip(bRequiredFacilitySatisfied, RequiredFacilityCurrentCount, RequiredFacilityMinimumCount)) : CostText;
+	if (HasCompatiblePrograms())
+	{
+		Description = FText::Format(LOCTEXT("CostWithPrograms", "{0}\n{1}"), Description, MakeProgramFacilityToolTip(Entry));
+	}
+	SetToolTipText(Description);
 }
 
 #undef LOCTEXT_NAMESPACE

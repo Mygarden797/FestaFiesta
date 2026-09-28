@@ -9,13 +9,13 @@
 
 | 화면 | 콘텐츠 경로 | 주요 편집 위치 |
 |---|---|---|
-| 건축 시설 목록 | `/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild` | `Box_Header`, `HorizontalBox_Categories`, `HorizontalBox_Subcategories`, `TileView_Facilities`, `Button_FavoritesOnly` |
-| 시설 카드 | `/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile` | `SizeBox_Card`, `SizeBox_Thumbnail`, `Border_Card`, `Button_Favorite` |
-| 건축 분류 버튼 | `/Game/FestaFiesta/UI/Building/WBP_FF_BuildCategoryChoice` | `Size_Choice`, `Button_Root`의 Normal / Hovered / Pressed, `Text_Label` |
-| 배치·정밀 이동·회전 | `/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools` | `Border_Tools`, 이동 간격·미세 이동·회전 버튼, 각도 입력, 시설 이름·가격·확정 버튼 |
-| 시설 정보 | `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel` | 정보·운영·강화 탭, 프로그램 영역, 즐겨찾기, 철거 확인, 고정 하단 행동 영역 |
-| 유료 프로그램 구매 | `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker` | 시설 이름, 프로그램 목록, 구매 비용·인력·잔액, 확정 버튼, 완료 화면 |
-| 프로그램 선택 카드 | `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard` | 프로그램 이름·설명·비용·선택 스타일 |
+| 건축 시설 목록 | `/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild` | `Box_Header`, `HorizontalBox_Categories`, `HorizontalBox_Subcategories`, `TileView_Facilities`, `Button_FavoritesOnly` |
+| 시설 카드 | `/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile` | `SizeBox_Card`, `SizeBox_Thumbnail`, `Border_Card`, `Button_Favorite` |
+| 건축 분류 버튼 | `/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildCategoryChoice` | `Size_Choice`, `Button_Root`의 Normal / Hovered / Pressed, `Text_Label` |
+| 배치·정밀 이동·회전 | `/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools` | `Border_Tools`, 이동 간격·미세 이동·회전 버튼, 각도 입력, 시설 이름·가격·확정 버튼 |
+| 시설 정보 | `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel` | 정보·운영·강화 탭, 프로그램 영역, 즐겨찾기, 철거 확인, 고정 하단 행동 영역 |
+| 유료 프로그램 구매 | `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker` | 시설 이름, 프로그램 목록, 구매 비용·인력·잔액, 확정 버튼, 완료 화면 |
+| 프로그램 선택 카드 | `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard` | 프로그램 이름·설명·비용·선택 스타일 |
 
 위젯 이름은 C++의 `BindWidget` / `BindWidgetOptional` 연결 계약입니다. **이름과 위젯 타입을 유지한 채**
 계층·위치·크기·스타일을 바꿀 수 있습니다. 다른 위젯으로 대체하려면 해당 이름의 네이티브 계약도 함께 변경합니다.
@@ -61,7 +61,7 @@
   도구 위에서는 배치 위치가 유지됩니다. 기존 건축 시스템이 실제 위치와 설치 가능 여부를 검증합니다.
 - Q/E는 다음 맞춤 각도로 회전합니다. Shift를 먼저 누르고 Q/E를 누르는 동안 자유 회전합니다.
   화면의 자유 회전 버튼도 누르는 동안 회전하며, 버튼 밖으로 나가거나 포커스를 잃으면 멈춥니다.
-- 시설 정보의 이동·강화·철거·조명·미니게임은 기존 기능을 사용합니다. 철거에는 별도 확인 단계가 있습니다.
+- 시설 정보의 이동·강화·철거·조명은 기존 기능을 사용합니다. 철거에는 별도 확인 단계가 있습니다.
 - 프로그램 카드 선택은 구매하지 않습니다. 별도 **Gold로 구매·편성** 버튼에서 기존 스케줄링 시스템이 다시 검증하고
   비용과 인력을 반영합니다. 구매 완료는 실제 성공 결과가 온 뒤에 표시합니다. 정원 기준 최대 매출은 확정 수익과 구분합니다.
 - 실제 프로그램·비용·호환 시설·시간은 축제 정의와 경제 데이터에서 읽습니다. 시안에 있던 200 Gold 등의 값을 게임 로직에 고정하지 않습니다.

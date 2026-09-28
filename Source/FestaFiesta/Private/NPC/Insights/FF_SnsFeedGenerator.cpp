@@ -10,7 +10,7 @@ namespace
 	void CollectPeriodicTopicIds(EFF_SnsSentiment Polarity, TArray<int32>& OutIds)
 	{
 		// 9(피날레)는 뺀다 — 주기 선택 대상이 아니라 Report 단계 진입 시점에 ForcedTopicId로만 나간다
-		static const int32 AllTopicIds[] = { 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14 };
+		static const int32 AllTopicIds[] = { 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16 };
 		for (int32 Id : AllTopicIds)
 		{
 			if (FFF_SnsFeedGenerator::GetTopicPolarity(Id) == Polarity)
@@ -25,7 +25,7 @@ EFF_SnsSentiment FFF_SnsFeedGenerator::GetTopicPolarity(int32 TopicId)
 {
 	switch (TopicId)
 	{
-	case 7: case 8: case 9: case 10: case 11: case 14:
+	case 7: case 8: case 9: case 10: case 11: case 14: case 16:
 		return EFF_SnsSentiment::Positive;
 	default:
 		return EFF_SnsSentiment::Negative;
@@ -40,6 +40,10 @@ bool FFF_SnsFeedGenerator::IsTopicEligibleNow(int32 TopicId, const FFF_SnsFeedSi
 		return Signals.bMainProgramLocked;
 	case 12: // 축제 초반 시설 부족 — 1일차에서만
 		return Signals.CurrentDay == 1;
+	case 15: // 입장료 비쌈 — 기준값보다 비쌀 때만
+		return Signals.AdmissionFeeGold > Signals.ReferenceAdmissionFeeGold;
+	case 16: // 입장료 가성비 — 기준값보다 쌀 때만
+		return Signals.AdmissionFeeGold < Signals.ReferenceAdmissionFeeGold;
 	default:
 		return true;
 	}
@@ -76,9 +80,36 @@ float FFF_SnsFeedGenerator::ComputeTopicScore(int32 TopicId, const FFF_SnsFeedSi
 		return FMath::Clamp(static_cast<float>(Signals.CongestedCellCount) * 10.f, 0.f, 100.f);
 	case 14: // 재방문·단골 — utility_ai_todo.md §10 결정대로 가볍게, 고정 낮은 점수
 		return 15.f;
+	case 15: // 입장료 비쌈 — 기준값에서 상한까지 0→100
+		return CalcAdmissionFeeTension(Signals, /*bExpensive=*/true);
+	case 16: // 입장료 가성비 — 기준값에서 0 Gold 까지 0→100
+		return CalcAdmissionFeeTension(Signals, /*bExpensive=*/false);
 	default:
 		return 0.f;
 	}
+}
+
+float FFF_SnsFeedGenerator::CalcAdmissionFeeTension(const FFF_SnsFeedSignals& Signals, const bool bExpensive)
+{
+	const int32 Fee = Signals.AdmissionFeeGold;
+	const int32 Reference = Signals.ReferenceAdmissionFeeGold;
+	if (bExpensive)
+	{
+		const int32 Span = FMath::Max(Signals.MaxAdmissionFeeGold - Reference, 1);
+		return Fee > Reference ? FMath::Clamp(100.f * (Fee - Reference) / Span, 0.f, 100.f) : 0.f;
+	}
+	const int32 Span = FMath::Max(Reference, 1);
+	return Fee < Reference ? FMath::Clamp(100.f * (Reference - Fee) / Span, 0.f, 100.f) : 0.f;
+}
+
+int32 FFF_SnsFeedGenerator::CalcPolaritySatisfaction(const FFF_SnsFeedSignals& Signals)
+{
+	// 입장료가 비싸면 부정 글이 늘고 싸면 긍정 글이 는다. 만족도 자체는 바꾸지 않는다 —
+	// 만족도는 시설 경험의 값이고, 이건 "글을 쓰는 기분" 에만 얹는다.
+	const float Expensive = CalcAdmissionFeeTension(Signals, true) / 100.f;
+	const float Cheap = CalcAdmissionFeeTension(Signals, false) / 100.f;
+	return FMath::Clamp(FMath::RoundToInt32(
+		Signals.SimSatisfaction0To100 - ExpensivePolarityPenalty * Expensive + CheapPolarityBonus * Cheap), 0, 100);
 }
 
 bool FFF_SnsFeedGenerator::RollPolarityIsPositive(
@@ -177,9 +208,10 @@ bool FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(const FFF_SnsPostTemplateRow
 		return true;
 	}
 
-	// 화제1(최장 대기)·10(최다 대기줄)만 어떤 시설을 가리켜야 하는지가 분명하다.
+	// 화제1(최장 대기)·10(최다 대기줄)·7(만족)·14(재방문)만 어떤 시설을 가리켜야 하는지가 분명하다.
+	// 7·14 는 "줄이 가장 긴 곳 = 사람들이 좋아하는 곳" 으로 10 과 같은 신호를 쓴다.
 	// 나머지 화제는 가리킬 시설을 정할 신호가 없어 계속 뺀다
-	return Row.TopicId == 1 || Row.TopicId == 10;
+	return Row.TopicId == 1 || Row.TopicId == 10 || Row.TopicId == 7 || Row.TopicId == 14;
 }
 
 FText FFF_SnsFeedGenerator::ResolveBodyText(const FFF_SnsPostTemplateRow& Row, const FFF_SnsFeedSignals& Signals)
@@ -194,7 +226,7 @@ FText FFF_SnsFeedGenerator::ResolveBodyText(const FFF_SnsPostTemplateRow& Row, c
 	{
 		FacilityName = Signals.WorstWaitFacilityDisplayName;
 	}
-	else if (Row.TopicId == 10)
+	else if (Row.TopicId == 10 || Row.TopicId == 7 || Row.TopicId == 14)
 	{
 		FacilityName = Signals.MostQueuedFacilityDisplayName;
 	}
@@ -243,7 +275,7 @@ FFF_SnsPostRow FFF_SnsFeedGenerator::GeneratePost(
 
 	if (TopicId == INDEX_NONE)
 	{
-		Polarity = RollPolarityIsPositive(GlobalSimulationSeed, PostSequenceIndex, Signals.SimSatisfaction0To100)
+		Polarity = RollPolarityIsPositive(GlobalSimulationSeed, PostSequenceIndex, CalcPolaritySatisfaction(Signals))
 			? EFF_SnsSentiment::Positive : EFF_SnsSentiment::Negative;
 		TopicId = ChooseTopicId(GlobalSimulationSeed, PostSequenceIndex, Polarity, Signals);
 		Salience = FMath::Clamp(ComputeTopicScore(TopicId, Signals), 0.f, 100.f);

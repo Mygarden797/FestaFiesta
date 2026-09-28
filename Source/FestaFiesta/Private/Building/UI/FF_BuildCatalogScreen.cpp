@@ -6,6 +6,9 @@
 // 실패/성능: WBP 계약이 불완전하면 Slate로 폴백하고 목록 갱신은 현재 분류 항목만 생성한다.
 
 #include "Building/UI/FF_BuildCatalogScreen.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
+#include "Building/Presentation/FF_BuildTypography.h"
+#include "Building/FF_BuildToolbarInput.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Building/FF_FacilityNamingLibrary.h"
@@ -24,6 +27,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
@@ -71,13 +75,13 @@ namespace
 	// 런타임에 동적 생성하는 WBP 템플릿과 아이콘 에셋의 기본 경로이다.
 	// 생성자에서 soft reference로만 등록하므로 화면 클래스 로드만으로 에셋을 강제 로드하지 않는다.
 	const TCHAR* CategoryButtonPath =
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCategoryButton.WBP_FF_BuildCategoryButton_C");
+		FFBuildUIAssetPaths::CategoryButtonClass;
 	const TCHAR* MinorSectionPath =
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildMinorSection.WBP_FF_BuildMinorSection_C");
+		FFBuildUIAssetPaths::MinorSectionClass;
 	const TCHAR* FacilityCardPath =
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard.WBP_FF_BuildFacilityCard_C");
+		FFBuildUIAssetPaths::FacilityCardClass;
 	const TCHAR* CategoryIconAtlasPath =
-		TEXT("/Game/FestaFiesta/Zone/Test_Asset/Image/T_UI_BuildCatalog_IconAtlas.T_UI_BuildCatalog_IconAtlas");
+		FFBuildUIAssetPaths::CategoryIconAtlasObject;
 
 	void ApplyButtonIconBrush(UFF_CommonButtonBase* Button, const FSlateBrush& Brush)
 	{
@@ -145,8 +149,7 @@ namespace
 		const FLinearColor& Color,
 		const ETextJustify::Type Justification = ETextJustify::Left)
 	{
-		FSlateFontInfo Font = Text.GetFont();
-		Font.Size = FontSize;
+		const FSlateFontInfo Font = FFBuildTypography::Make(FFBuildTypography::ERole::Number, FontSize);
 		Text.SetFont(Font);
 		Text.SetColorAndOpacity(FSlateColor(Color));
 		Text.SetJustification(Justification);
@@ -516,7 +519,7 @@ TSharedRef<SWidget> UFF_BuildCatalogScreen::RebuildWidget()
 							this, &UFF_BuildCatalogScreen::GetBuildTabColor)))
 					.OnClicked_UObject(this, &UFF_BuildCatalogScreen::HandleBuildTabClicked)
 					[
-						SNew(STextBlock).Text(LOCTEXT("BuildTab", "건축"))
+						SNew(STextBlock).Font(FFBuildTypography::Make(FFBuildTypography::ERole::Heading, 20)).Text(LOCTEXT("BuildTab", "건축"))
 					]
 				]
 				+ SHorizontalBox::Slot()
@@ -529,7 +532,7 @@ TSharedRef<SWidget> UFF_BuildCatalogScreen::RebuildWidget()
 							this, &UFF_BuildCatalogScreen::GetSkinTabColor)))
 					.OnClicked_UObject(this, &UFF_BuildCatalogScreen::HandleSkinTabClicked)
 					[
-						SNew(STextBlock).Text(LOCTEXT("SkinTab", "스킨"))
+						SNew(STextBlock).Font(FFBuildTypography::Make(FFBuildTypography::ERole::Label, 18)).Text(LOCTEXT("SkinTab", "스킨"))
 					]
 				]
 				+ SHorizontalBox::Slot()
@@ -557,6 +560,7 @@ TSharedRef<SWidget> UFF_BuildCatalogScreen::RebuildWidget()
 							[
 								SNew(STextBlock)
 								.Text(LOCTEXT("CurrentGoldLabelSlate", "현재 잔액"))
+								.Font(FFBuildTypography::Make(FFBuildTypography::ERole::Label, 14))
 								.ColorAndOpacity(FLinearColor(0.58f, 0.69f, 0.78f, 1.0f))
 							]
 							+ SHorizontalBox::Slot()
@@ -570,7 +574,7 @@ TSharedRef<SWidget> UFF_BuildCatalogScreen::RebuildWidget()
 							[
 								SAssignNew(GoldTextBlock, STextBlock)
 								.Text(MakeCurrentGoldText())
-								.Font(FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), 22))
+								.Font(FFBuildTypography::Make(FFBuildTypography::ERole::Number, 22))
 								.ColorAndOpacity(FLinearColor(0.08f, 0.95f, 0.88f, 1.0f))
 							]
 						]
@@ -583,7 +587,7 @@ TSharedRef<SWidget> UFF_BuildCatalogScreen::RebuildWidget()
 					.ContentPadding(FMargin(16.0f, 8.0f))
 					.OnClicked_UObject(this, &UFF_BuildCatalogScreen::HandleCloseClicked)
 					[
-						SNew(STextBlock).Text(LOCTEXT("Close", "닫기  B"))
+						SNew(STextBlock).Font(FFBuildTypography::Make(FFBuildTypography::ERole::Label, 16)).Text(LOCTEXT("Close", "닫기  B"))
 					]
 				]
 			]
@@ -613,6 +617,7 @@ TSharedRef<SWidget> UFF_BuildCatalogScreen::RebuildWidget()
 			.Padding(0.0f, 8.0f, 0.0f, 0.0f)
 			[
 				SAssignNew(StatusTextBlock, STextBlock)
+				.Font(FFBuildTypography::Make(FFBuildTypography::ERole::Body, 14))
 				.Text(CurrentStatusText)
 				.ColorAndOpacity(bCurrentStatusIsError ? ErrorStatusColor : NormalStatusColor)
 			]
@@ -758,6 +763,16 @@ void UFF_BuildCatalogScreen::HandleRequiredFacilitiesChanged()
 	// One authority snapshot per notification, never a world query from each card.
 	RequiredSnapshot = RequiredFacilities->GetRequiredFacilitiesStatus();
 	FFBuildCatalogModel::ApplyRequiredFacilities(CatalogEntries, RequiredSnapshot);
+	// Festival changes share this notification with installation changes.
+	// Reproject program support for the existing cards without rebuilding the catalog.
+	if (CachedEconomyReadModel)
+	{
+		for (FFF_BuildCatalogEntry& Entry : CatalogEntries)
+		{
+			FString FailureReason;
+			CachedEconomyReadModel->TryProjectFacilityCosts(Entry, Entry.Definition.Get(), FailureReason);
+		}
+	}
 	RefreshRequiredCardPresentation();
 }
 
@@ -781,6 +796,7 @@ void UFF_BuildCatalogScreen::RefreshRequiredCardPresentation()
 		const FFF_BuildCatalogEntry* const* Found = EntriesById.Find(Card->GetFacilityDefinitionId());
 		if (!Found) continue;
 		const FFF_BuildCatalogEntry& Entry = **Found;
+		Card->Configure(Entry);
 		Card->SetRequiredFacilityStatus(Entry.bRequiredForSetup, Entry.bRequiredSetupSatisfied,
 			Entry.RequiredInstalledCount, Entry.RequiredMinimumCount);
 	}
@@ -802,6 +818,11 @@ FReply UFF_BuildCatalogScreen::NativeOnPreviewKeyDown(
 	const FGeometry& InGeometry,
 	const FKeyEvent& InKeyEvent)
 {
+	if (FFBuildToolbarInput::IsRetiredShortcut(InKeyEvent.GetKey()))
+	{
+		// Focused catalog search must not route former toolbar keys to pause or gameplay.
+		return FReply::Handled();
+	}
 	if (InKeyEvent.GetKey() == EKeys::B && !InKeyEvent.IsRepeat())
 	{
 		// UI가 먼저 처리한 B가 같은 프레임의 PlayerController 폴링과 중복되지 않도록 별도 의도로 전달한다.
@@ -813,7 +834,7 @@ FReply UFF_BuildCatalogScreen::NativeOnPreviewKeyDown(
 	if (Settings && Settings->OpenCloseKeys.Contains(InKeyEvent.GetKey()) &&
 		!InKeyEvent.IsRepeat())
 	{
-		// 카탈로그/검색창이 GameAndUI 포커스를 소유해도 ESC/F5가 게임 입력으로 유실되지 않게 전달한다.
+		// 카탈로그/검색창이 GameAndUI 포커스를 소유해도 Escape가 유실되지 않게 전달한다.
 		OnPauseMenuKeyRequested.Broadcast();
 		return FReply::Handled();
 	}
@@ -978,7 +999,7 @@ void UFF_BuildCatalogScreen::RefreshCategoryButtons()
 					this, &UFF_BuildCatalogScreen::GetCategoryColor, Category)))
 			.OnClicked_UObject(this, &UFF_BuildCatalogScreen::HandleCategoryClicked, Category)
 			[
-				SAssignNew(CategoryLabel, STextBlock).Text(GetCategoryLabel(Category))
+				SAssignNew(CategoryLabel, STextBlock).Font(FFBuildTypography::Make(FFBuildTypography::ERole::Label, 14)).Text(GetCategoryLabel(Category))
 			]
 		];
 		NativeCategoryTexts.Add(Category, CategoryLabel);
@@ -1086,6 +1107,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 		if (!bAddedAnySection && WidgetTree)
 		{
 			UCommonTextBlock* EmptyText = WidgetTree->ConstructWidget<UCommonTextBlock>();
+			EmptyText->SetFont(FFBuildTypography::Make(FFBuildTypography::ERole::Body, 14));
 			EmptyText->SetText(LOCTEXT("EmptyCategoryUMG", "이 대분류에 등록된 완성형 시설이 없습니다."));
 			EmptyText->SetColorAndOpacity(FSlateColor(NativeIdleColor));
 			if (UVerticalBoxSlot* EmptySlot = BOX_MinorSections->AddChildToVerticalBox(EmptyText))
@@ -1112,6 +1134,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 		[
 			SNew(STextBlock)
 			.Text(LOCTEXT("SkinComingSoon", "스킨 데이터 모델은 2차 구현 예정입니다."))
+			.Font(FFBuildTypography::Make(FFBuildTypography::ERole::Body, 14))
 			.ColorAndOpacity(NativeIdleColor)
 		];
 		return;
@@ -1142,6 +1165,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 		[
 			SNew(STextBlock)
 			.Text(GetMinorDisplayName(MinorToken))
+			.Font(FFBuildTypography::Make(FFBuildTypography::ERole::Heading, 18))
 			.ColorAndOpacity(FLinearColor(0.30f, 0.90f, 0.84f, 1.0f))
 		];
 
@@ -1170,6 +1194,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 						.AutoHeight()
 						[
 							SAssignNew(RequiredText, STextBlock)
+							.Font(FFBuildTypography::Make(FFBuildTypography::ERole::Label, 12))
 							.Text(MakeRequiredFacilityText(*Entry))
 							.Visibility(Entry->bRequiredForSetup ? EVisibility::Visible : EVisibility::Collapsed)
 							.AutoWrapText(true)
@@ -1179,6 +1204,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 						[
 							SNew(STextBlock)
 							.Text(LOCTEXT("SynergyCardBadge", "조합 시설"))
+							.Font(FFBuildTypography::Make(FFBuildTypography::ERole::Label, 12))
 							.ColorAndOpacity(NativeSelectedColor)
 							.Visibility(SynergyFacilityIds.Contains(Entry->FacilityDefinitionId)
 								? EVisibility::Visible : EVisibility::Collapsed)
@@ -1190,6 +1216,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 							.Text(Entry->DisplayName.IsEmpty()
 								? FText::FromString(Entry->UniqueNameToken)
 								: Entry->DisplayName)
+							.Font(FFBuildTypography::Make(FFBuildTypography::ERole::Number, 16))
 							.AutoWrapText(true)
 						]
 						+ SVerticalBox::Slot()
@@ -1198,6 +1225,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 						[
 							SNew(STextBlock)
 							.Text(GetCategoryDisplayName(Entry->Category))
+							.Font(FFBuildTypography::Make(FFBuildTypography::ERole::Body, 12))
 							.ColorAndOpacity(NativeIdleColor)
 							.AutoWrapText(true)
 						]
@@ -1207,6 +1235,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 						[
 							SNew(STextBlock)
 							.Text(UFF_BuildFacilityCard::MakeFacilityBuildLimitText(*Entry))
+							.Font(FFBuildTypography::Make(FFBuildTypography::ERole::Body, 12))
 							.ColorAndOpacity(Entry->bBuildLimitReached
 								? FLinearColor(0.85f, 0.20f, 0.16f, 1.0f)
 								: NativeIdleColor)
@@ -1231,6 +1260,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 		[
 			SNew(STextBlock)
 			.Text(LOCTEXT("EmptyCategory", "이 대분류에 등록된 완성형 시설이 없습니다."))
+			.Font(FFBuildTypography::Make(FFBuildTypography::ERole::Body, 14))
 			.ColorAndOpacity(NativeIdleColor)
 		];
 	}

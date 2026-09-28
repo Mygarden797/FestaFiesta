@@ -1,3 +1,6 @@
+// FF_FacilityPaidProgramPicker.h
+// 역할: 시설에서 편성할 유료 프로그램 목록과 선택 결과를 보여 준다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
@@ -34,12 +37,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info|Paid Program")
 	void ApplyViewData(const FFF_FacilityPaidProgramPickerViewData& ViewData);
 
+	/** Refresh an open preview without losing its selection, receipt, or an in-flight confirmation. */
+	void RefreshViewData(const FFF_FacilityPaidProgramPickerViewData& ViewData);
+
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info|Paid Program")
 	void SetPickerOpen(bool bOpen);
 
 	/** Called only after the authoritative scheduling transaction succeeds. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info|Paid Program")
-	void ShowPurchaseComplete(FName ProgramId, int32 RemainingGold, int32 RemainingStaff);
+	void ShowPurchaseComplete(FName ProgramId, int32 RemainingGold);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Facility Info|Paid Program")
 	void OnViewDataApplied(const FFF_FacilityPaidProgramPickerViewData& ViewData);
@@ -63,6 +69,8 @@ private:
 
 	UFUNCTION()
 	void HandleCloseClicked();
+	UFUNCTION() void HandleBackToProgramsClicked();
+	void SetReviewVisible(bool bReview);
 
 	const FFF_FacilityPaidProgramCardViewData* FindCard(FName ProgramId) const;
 	void ClearPreview();
@@ -76,6 +84,10 @@ private:
 	FName SelectedProgramId = NAME_None;
 	bool bPurchaseCompleted = false;
 	bool bCommitPending = false;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_BackToPrograms;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> Size_ProgramList;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> Border_Preview;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_Instruction;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UWidget> Border_Body;
@@ -89,8 +101,6 @@ private:
 	TObjectPtr<UCommonTextBlock> Text_ResourcePreview;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_PreviewTime;
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
-	TObjectPtr<UCommonTextBlock> Text_RequiredStaff;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_Capacity;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
@@ -119,7 +129,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))
 	FLinearColor FeedbackSuccessColor =
-		FLinearColor::FromSRGBColor(FColor(0x3F, 0x8F, 0x6D));
+		FLinearColor::FromSRGBColor(FColor(0x3D, 0x3C, 0x4F));
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UBorder> Border_Picker;

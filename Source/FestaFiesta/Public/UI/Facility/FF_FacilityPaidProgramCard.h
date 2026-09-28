@@ -1,3 +1,6 @@
+// FF_FacilityPaidProgramCard.h
+// 역할: 유료 프로그램 하나의 이름·가격·편성 가능 여부를 표시한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
@@ -40,11 +43,11 @@ private:
 	UPROPERTY(Transient)
 	FFF_FacilityPaidProgramCardViewData CurrentViewData;
 
-	/** Runtime state tints are synchronized from the shared in-game LightTeal palette. */
+	/** Runtime state tints share the construction mode's pearl and cyan palette. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))
 	FLinearColor SelectedColor =
-		FLinearColor::FromSRGBColor(FColor(0xB4, 0xC8, 0xBB));
+		FLinearColor::FromSRGBColor(FColor(0xD3, 0xF1, 0xFF));
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))
@@ -53,7 +56,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))
 	FLinearColor AvailableColor =
-		FLinearColor::FromSRGBColor(FColor(0x31, 0x57, 0x47));
+		FLinearColor::FromSRGBColor(FColor(0x3D, 0x3C, 0x4F));
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))

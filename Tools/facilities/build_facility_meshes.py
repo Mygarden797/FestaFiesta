@@ -1,3 +1,6 @@
+# build_facility_meshes.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 원본 모델이나 결과물을 생성한다.
+
 """Build low-poly FestaFiesta facility meshes and preview renders with Blender.
 
 Run from the repository root:

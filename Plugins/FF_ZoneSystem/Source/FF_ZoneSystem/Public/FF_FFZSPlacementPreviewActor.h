@@ -17,6 +17,8 @@ struct FStreamableHandle;
 class USceneComponent;
 class UStaticMeshComponent;
 class ULineBatchComponent;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 
 // UI와 독립적인 비권한 배치 고스트.
 // UI가 입력과 수명주기를 소유하고 이 액터는 검증 결과·비주얼·디버그 표시만 보관.
@@ -36,6 +38,14 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Preview")
     TObjectPtr<UStaticMeshComponent> PreviewMesh;
     // 충돌과 권한이 없는 고스트 표현 컴포넌트다. 
+
+    // 비우면 Project Settings > Game > FF Build Presentation의 기본 재질을 사용한다.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Preview|Feedback")
+    TSoftObjectPtr<UMaterialInterface> PlacementFeedbackMaterial;
+
+    // Reused, non-colliding planes. Source facility materials and assets are never edited.
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UStaticMeshComponent>> FailureSurfaces;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Preview")
     TObjectPtr<ULineBatchComponent> RangeLines;
@@ -78,8 +88,15 @@ public:
     
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Preview")
     FFFZSPlacementValidation RefreshPreview();
+    // Display an already validated group result; authority is still rechecked by the batch commit.
+    void ApplyBatchPreviewResult(const FFFZSCommand& Command, const FFFZSPlacementValidation& Validation);
     // 현재 PreviewCommand를 읽기 전용 검증하고 LastValidation·Transform·메시·디버그 표시를 갱신.
     // @return 호출 시점의 결과. 이후 월드 변경으로 즉시 오래된 결과가 될 수 있다.
+
+    // Follow a freshly sampled target without rerunning placement policies. The command and
+    // last validation remain unchanged; stale success/failure visuals are hidden until refresh.
+    void SetUnvalidatedPreviewTransform(const FTransform& Transform);
+    bool HasUnvalidatedPreviewTransform() const { return bHasUnvalidatedPreviewTransform; }
 
     // 권위 검증·메시·예약 영역은 건드리지 않고 로컬 격자만 다시 만든다. G 표시 토글처럼
     // 시각 상태만 바뀐 입력에서 외부 정책과 전체 배치 검증을 중복 실행하지 않게 한다.
@@ -120,6 +137,15 @@ protected:
     // 자동 갱신이 켜진 동안만 누적 간격에 맞춰 RefreshPreview를 호출한다. 
 
 private:
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> GhostFeedbackMaterial;
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> FailureSurfaceMaterial;
+    bool bFeedbackMaterialLoadAttempted = false;
+    bool bHasUnvalidatedPreviewTransform = false;
+    bool bUsesEffectiveBatchSpec = false;
+    void RefreshGhostFeedback();
+    void ShowFailureSurface(const FFFZSOrientedRect& WorldRegion, double BaseZ, int32 SurfaceIndex);
     UPROPERTY(VisibleAnywhere, Category = "Preview")
     FFFZSPlacementValidation LastValidation;
     // UI 표시용 마지막 검증 캐시. 권한 판정이나 저장 상태가 아니다. 

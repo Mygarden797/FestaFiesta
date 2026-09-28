@@ -1,4 +1,5 @@
 // FF_BuildDragPlacementPathTests.cpp
+// 역할: 다음 기능의 정상 동작과 오류 처리를 자동 검사한다: 드래그 경로의 격자 좌표를 빠짐없이 순서대로 생성한다.
 // Pure path contracts: edge connectivity, sparse samples, resumable work and integer bounds.
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -33,6 +34,29 @@ bool FFF_BuildDragPathStationaryTest::RunTest(const FString& Parameters)
 	Path.Reset(FIntPoint(-20, 30));
 	TestFalse(TEXT("Reset discards outstanding work from the previous gesture"), Path.HasPendingCells());
 	TestEqual(TEXT("Reset establishes the next gesture's origin"), Path.GetCurrentCell(), FIntPoint(-20, 30));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildDragPathSampleMergeTest,
+	"FestaFiesta.Building.DragPlacement.Path.SampleMergingPreservesTurns",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildDragPathSampleMergeTest::RunTest(const FString& Parameters)
+{
+	for (const FIntPoint Direction : { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) })
+	{
+		TestTrue(TEXT("Straight cursor samples can extend the queued segment"),
+			FFF_BuildDragPlacementPath::CanExtendCardinalSegment(FIntPoint::ZeroValue, Direction, Direction * 2));
+		TestFalse(TEXT("Retracing retains its turning point"),
+			FFF_BuildDragPlacementPath::CanExtendCardinalSegment(FIntPoint::ZeroValue, Direction * 2, Direction));
+		TestFalse(TEXT("A right-angle turn cannot become a diagonal shortcut"),
+			FFF_BuildDragPlacementPath::CanExtendCardinalSegment(FIntPoint::ZeroValue, Direction,
+				Direction + FIntPoint(-Direction.Y, Direction.X)));
+	}
+	TestFalse(TEXT("Diagonal sampling keeps the existing corner tie path"),
+		FFF_BuildDragPlacementPath::CanExtendCardinalSegment(FIntPoint::ZeroValue, FIntPoint(1, 1), FIntPoint(2, 2)));
+	TestTrue(TEXT("Extreme coordinates do not overflow direction comparisons"),
+		FFF_BuildDragPlacementPath::CanExtendCardinalSegment(FIntPoint(MIN_int32, 4), FIntPoint(0, 4), FIntPoint(MAX_int32, 4)));
 	return true;
 }
 

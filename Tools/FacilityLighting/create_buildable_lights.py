@@ -1,3 +1,6 @@
+# create_buildable_lights.py
+# 역할: 시설 조명과 조명 제어 화면 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Connect six existing fixtures to construction, instance controls and economy.
 
 Run after compiling the Lighting category. Saves only the six new definitions,
@@ -16,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'Saved/FacilityLighting_20260910'
 OUT.mkdir(parents=True, exist_ok=True)
 BASE = '/Game/Asset/LighiingAsset_HKH/Test1_FestivalLights_20260910'
-DEFINITIONS = '/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting'
+DEFINITIONS = '/Game/FestaFiesta/Building/FF_Data_Building/Lighting'
 FIXTURES = (
     ('CurtainArch', 'Decorative', '커튼 아치 조명'),
     ('Festoon', 'Decorative', '페스툰 조명'),

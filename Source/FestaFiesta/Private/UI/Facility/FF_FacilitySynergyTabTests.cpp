@@ -1,8 +1,13 @@
+// FF_FacilitySynergyTabTests.cpp
+// 역할: 시설 정보의 조합 탭과 상대 시설 연결을 검증한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "UI/Facility/FF_FacilitySynergyEntryWidget.h"
 #include "Building/Synergy/FF_FacilitySynergyTypes.h"
+#include "Building/Synergy/FF_FacilitySynergyEvaluator.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "CommonTextBlock.h"
@@ -43,6 +48,80 @@ namespace
     };
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilitySynergyDisplayNamesTest,
+    "FestaFiesta.UI.FacilityInfo.SynergyDisplayNames",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilitySynergyDisplayNamesTest::RunTest(const FString& Parameters)
+{
+    // Recipe titles are independently authored FText; facility identity never comes from them.
+    FFF_FacilitySynergyRule Rule;
+    Rule.Id = TEXT("FixtureRecipeId");
+    Rule.Row.TargetFacilityId = TEXT("FixtureRevenueFacilityId");
+    Rule.Row.PartnerFacilityId = TEXT("FixtureSupportingFacilityId");
+    Rule.Row.DisplayName = NSLOCTEXT("FacilitySynergyDisplayNamesTest", "Recipe", "여유로운 한 끼");
+    const FFF_FacilitySynergyPoint Target { FGuid(0, 0, 0, 1), Rule.Row.TargetFacilityId, FVector::ZeroVector };
+    const FFF_FacilitySynergyPoint Partner { FGuid(0, 0, 0, 2), Rule.Row.PartnerFacilityId, FVector(100, 0, 0) };
+    FFF_FacilitySynergyEvaluator Evaluator;
+    Evaluator.SetRules({Rule}, 50.f);
+    Evaluator.SetFacilities({Target, Partner});
+    FFF_FacilitySynergyPreview Preview;
+    Evaluator.BuildPreview(Target.DefinitionId, Target.WorldLocation, Target.InstanceId, Preview);
+    if (!TestEqual(TEXT("Production evaluator supplies the recipe"), Preview.Entries.Num(), 1)) return false;
+    TestTrue(TEXT("Preview preserves authored FText identity instead of serializing the title"),
+        Preview.Entries[0].DisplayName.IdenticalTo(Rule.Row.DisplayName));
+
+    TMap<FName, FText> Names {
+        { Rule.Row.TargetFacilityId, NSLOCTEXT("FacilitySynergyDisplayNamesTest", "Target", "햄버거 가게") },
+        { Rule.Row.PartnerFacilityId, NSLOCTEXT("FacilitySynergyDisplayNamesTest", "Partner", "벤치") } };
+    FFF_FacilityInfoViewData Data;
+    const float Bonus = Evaluator.Evaluate(Target).TotalPercent;
+    FFFacilityInfoModel::ApplySynergyPreview(&Preview, true, Bonus, Names, Data);
+    if (!TestEqual(TEXT("Inspector maps the evaluated recipe"), Data.SynergyEntries.Num(), 1)) return false;
+    TestTrue(TEXT("Custom recipe title preserves authored localized text identity"),
+        Data.SynergyEntries[0].TitleText.IdenticalTo(Rule.Row.DisplayName));
+    TestEqual(TEXT("Recipe identity remains the rule ID"), Data.SynergyEntries[0].RuleId, Rule.Id);
+    TestEqual(TEXT("Partner navigation remains the definition ID"),
+        Data.SynergyEntries[0].PartnerFacilityDefinitionId, Rule.Row.PartnerFacilityId);
+
+    Names[Rule.Row.TargetFacilityId] = NSLOCTEXT("FacilitySynergyDisplayNamesTest", "RenamedTarget", "Grillküche");
+    Names[Rule.Row.PartnerFacilityId] = NSLOCTEXT("FacilitySynergyDisplayNamesTest", "RenamedPartner", "Ruhebank");
+    FFFacilityInfoModel::ApplySynergyPreview(&Preview, true, Bonus, Names, Data);
+    TestTrue(TEXT("Facility rename or translation cannot overwrite an independent recipe title"),
+        Data.SynergyEntries[0].TitleText.IdenticalTo(Rule.Row.DisplayName));
+    TestTrue(TEXT("Partner label uses the current ID-resolved display name"),
+        Data.SynergyEntries[0].PartnerText.ToString().Contains(Names[Rule.Row.PartnerFacilityId].ToString()));
+    TestTrue(TEXT("Beneficiary effect uses the current ID-resolved display name"),
+        Data.SynergyEntries[0].EffectText.ToString().Contains(Names[Rule.Row.TargetFacilityId].ToString()));
+    TestEqual(TEXT("Renaming leaves the navigation ID unchanged"),
+        Data.SynergyEntries[0].PartnerFacilityDefinitionId, Rule.Row.PartnerFacilityId);
+    TestEqual(TEXT("Renaming leaves the paid bonus unchanged"), Evaluator.Evaluate(Target).TotalPercent, Bonus);
+
+    // Incomplete runtime/transient rules still need safe text even though asset validation rejects empty titles.
+    Rule.Row.DisplayName = FText::GetEmpty();
+    Evaluator.SetRules({Rule}, 50.f);
+    Evaluator.BuildPreview(Target.DefinitionId, Target.WorldLocation, Target.InstanceId, Preview);
+    if (!TestEqual(TEXT("Untitled preview still describes its rule"), Preview.Entries.Num(), 1)) return false;
+    TestTrue(TEXT("Evaluator does not turn an internal rule ID into a player-facing title"),
+        Preview.Entries[0].DisplayName.IsEmpty());
+    FFFacilityInfoModel::ApplySynergyPreview(&Preview, true, Bonus, Names, Data);
+    const FText ExpectedFallback = FText::Format(
+        NSLOCTEXT("FacilitySynergyDisplayNamesTest", "Fallback", "{0} + {1}"),
+        Names[Rule.Row.TargetFacilityId], Names[Rule.Row.PartnerFacilityId]);
+    TestEqual(TEXT("Untitled recipe uses the current localized ingredient names"),
+        Data.SynergyEntries[0].TitleText.ToString(), ExpectedFallback.ToString());
+    Names.Reset();
+    FFFacilityInfoModel::ApplySynergyPreview(&Preview, true, Bonus, Names, Data);
+    const FString UnknownTitle = Data.SynergyEntries[0].TitleText.ToString();
+    TestTrue(TEXT("Missing title and catalog names remain readable without exposing IDs"),
+        !UnknownTitle.IsEmpty() && !UnknownTitle.Contains(Rule.Id.ToString()) &&
+        !UnknownTitle.Contains(Rule.Row.TargetFacilityId.ToString()) &&
+        !UnknownTitle.Contains(Rule.Row.PartnerFacilityId.ToString()));
+    TestEqual(TEXT("Missing display data still preserves partner navigation"),
+        Data.SynergyEntries[0].PartnerFacilityDefinitionId, Rule.Row.PartnerFacilityId);
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilitySynergyTabTest,
     "FestaFiesta.UI.FacilityInfo.SynergyTab",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
@@ -51,15 +130,15 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
 {
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
     auto* PanelClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C")));
+        FFBuildUIAssetPaths::FacilityInfoPanelClass));
     auto* EntryClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilitySynergyEntryWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry.WBP_FF_FacilitySynergyEntry_C")));
+        FFBuildUIAssetPaths::FacilitySynergyEntryClass));
     const auto* Burger = LoadObject<UFFZSFacilityDefinition>(nullptr,
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"));
     const auto* Seating = LoadObject<UFFZSFacilityDefinition>(nullptr,
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"));
     const auto* Shade = LoadObject<UFFZSFacilityDefinition>(nullptr,
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade"));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade"));
     const auto* SynergyTable = LoadObject<UDataTable>(nullptr,
         TEXT("/Game/FestaFiesta/Data/Economy/DT_FacilitySynergies.DT_FacilitySynergies"));
     if (!TestNotNull(TEXT("Editor fixture world"), World) || !TestNotNull(TEXT("Actual facility inspector WBP"), PanelClass) ||
@@ -67,8 +146,12 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
         !TestNotNull(TEXT("Catalog seating definition"), Seating) || !TestNotNull(TEXT("Catalog shade definition"), Shade)) return false;
     const auto* BurgerRule = SynergyTable ? SynergyTable->FindRow<FFF_FacilitySynergyRow>(TEXT("BurgerPicnic"), TEXT("SynergyTab")) : nullptr;
     if (!TestNotNull(TEXT("Actual starter combination row"), BurgerRule)) return false;
-    TestEqual(TEXT("DataTable combination name uses the actual facility names"), BurgerRule->DisplayName.ToString(),
-        Burger->Spec.DisplayName.ToString() + TEXT(" + ") + Seating->Spec.DisplayName.ToString());
+    TestTrue(TEXT("Shipped recipe is enabled with a valid configuration and an authored title"),
+        BurgerRule->bEnabled && BurgerRule->IsUsable() && !BurgerRule->DisplayName.IsEmpty());
+    TestEqual(TEXT("Shipped recipe targets the actual burger definition ID"),
+        BurgerRule->TargetFacilityId, Burger->Spec.FacilityDefinitionId);
+    TestEqual(TEXT("Shipped recipe references the actual seating definition ID"),
+        BurgerRule->PartnerFacilityId, Seating->Spec.FacilityDefinitionId);
     FScopedSynergyTabPlayerless PanelInitialization(*PanelClass);
     FScopedSynergyTabPlayerless EntryInitialization(*EntryClass);
     TStrongObjectPtr<UFF_FacilityInfoPanel> Panel(CreateWidget<UFF_FacilityInfoPanel>(World, PanelClass));
@@ -110,12 +193,12 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
     Preview.bRulesAvailable = true;
     for (int32 Index = 0; Index < 2; ++Index)
     {
-        // Two presentation-only rules, using the exact authored catalog facility names.
+        // One shipped title plus one independent presentation-only recipe title.
         // This fixture never changes the shipped balance table or any installed facility.
         auto& Entry = Preview.Entries.AddDefaulted_GetRef();
         Entry.RuleId = Index == 0 ? TEXT("BurgerPicnic") : TEXT("FixtureBurgerShade");
         Entry.DisplayName = Index == 0 ? BurgerRule->DisplayName
-            : FText::FromString(Burger->Spec.DisplayName.ToString() + TEXT(" + ") + Shade->Spec.DisplayName.ToString());
+            : NSLOCTEXT("FacilitySynergyTabTest", "FixtureShadeRecipe", "그늘 아래 휴식");
         Entry.TargetFacilityId = Burger->Spec.FacilityDefinitionId;
         Entry.PartnerFacilityId = Index == 0 ? Seating->Spec.FacilityDefinitionId : Shade->Spec.FacilityDefinitionId;
         Entry.MaxDistanceMeters = 15.0f;
@@ -132,6 +215,8 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
         { Shade->Spec.FacilityDefinitionId, Shade->Spec.DisplayName } };
     FFFacilityInfoModel::ApplySynergyPreview(&Preview, true, 10.0f, Names, Data);
     if (!TestEqual(TEXT("Read model produces two distinct rule cards"), Data.SynergyEntries.Num(), 2)) return false;
+    TestTrue(TEXT("Shipped recipe title is preserved separately from current catalog facility names"),
+        Data.SynergyEntries[0].TitleText.IdenticalTo(BurgerRule->DisplayName));
     TestTrue(TEXT("Displayed partner matches the actual build catalog name"),
         Data.SynergyEntries[0].PartnerText.ToString().Contains(Seating->Spec.DisplayName.ToString()));
     TestFalse(TEXT("Internal facility ID never leaks into the player-facing partner label"),
@@ -149,10 +234,12 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
     Panel->SetPanelOpen(true);
     TestEqual(TEXT("Overview does not eagerly create hidden combo rows"), Entries->GetChildrenCount(), 0);
     Synergy->OnClicked.Broadcast();
-    TestTrue(TEXT("Actual button opens synergy content"), Section->GetVisibility() == ESlateVisibility::Visible && !Synergy->GetIsEnabled());
-    if (!TestEqual(TEXT("Two rules instantiate two authored cards"), Entries->GetChildrenCount(), 2)) return false;
+    TestTrue(TEXT("Actual button opens synergy content while retaining enabled contrast"), Section->GetVisibility() == ESlateVisibility::Visible && Synergy->GetIsEnabled());
+    const bool bPaged = Panel->GetWidgetFromName(TEXT("Button_SynergyNext")) != nullptr;
+    const int32 ExpectedPoolSize = bPaged ? 1 : 2;
+    if (!TestEqual(TEXT("Rules use the authored visible-card pool"), Entries->GetChildrenCount(), ExpectedPoolSize)) return false;
     UWidget* FirstRow = Entries->GetChildAt(0);
-    UWidget* SecondRow = Entries->GetChildAt(1);
+    UWidget* SecondRow = bPaged ? nullptr : Entries->GetChildAt(1);
     auto* Row = Cast<UFF_FacilitySynergyEntryWidget>(FirstRow);
     if (!TestNotNull(TEXT("Row uses the authored child native contract"), Row)) return false;
     for (const FName Name : { TEXT("Text_Title"), TEXT("Text_Partner"), TEXT("Text_Effect"), TEXT("Text_Condition"), TEXT("Text_Status") })
@@ -161,6 +248,8 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
             Cast<UTextBlock>(Row->GetWidgetFromName(Name)))) return false;
     }
     auto* PartnerText = CastChecked<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_Partner")));
+    TestTrue(TEXT("Authored row presents the original localized recipe title"),
+        CastChecked<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_Title")))->GetText().IdenticalTo(BurgerRule->DisplayName));
     auto* PartnerButton = Cast<UButton>(Row->GetWidgetFromName(TEXT("Button_OpenPartnerCatalog")));
     if (!TestNotNull(TEXT("Authored partner navigation button"), PartnerButton)) return false;
     TestTrue(TEXT("Original partner label is the clickable content with a valid destination"),
@@ -178,7 +267,7 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
     const FSlateColor AuthoredColor = PartnerText->GetColorAndOpacity();
     Panel->ApplyViewData(Data);
     TestTrue(TEXT("World refreshes reuse existing row objects and designer typography"),
-        Entries->GetChildAt(0) == FirstRow && Entries->GetChildAt(1) == SecondRow &&
+        Entries->GetChildAt(0) == FirstRow && (bPaged || Entries->GetChildAt(1) == SecondRow) &&
         PartnerText->GetFont() == AuthoredFont && PartnerText->GetColorAndOpacity() == AuthoredColor);
     int32 PartnerRequests = 0;
     FName RequestedDefinition;
@@ -209,6 +298,18 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
         !PartnerButton->GetIsEnabled() && PartnerRequests == 1);
     Row->OnPartnerCatalogRequested.Remove(PartnerHandle);
     Panel->ApplyViewData(Data);
+    if (bPaged)
+    {
+        auto* Next = CastChecked<UButton>(Panel->GetWidgetFromName(TEXT("Button_SynergyNext")));
+        auto* Previous = CastChecked<UButton>(Panel->GetWidgetFromName(TEXT("Button_SynergyPrevious")));
+        Next->OnClicked.Broadcast();
+        TestTrue(TEXT("Next displays the second actual recipe in the same authored card"),
+            Entries->GetChildAt(0) == FirstRow &&
+            CastChecked<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_Title")))->GetText().IdenticalTo(Data.SynergyEntries[1].TitleText));
+        Previous->OnClicked.Broadcast();
+        TestTrue(TEXT("Previous restores the first actual recipe"),
+            CastChecked<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_Title")))->GetText().IdenticalTo(Data.SynergyEntries[0].TitleText));
+    }
     Operation->OnClicked.Broadcast();
     TestEqual(TEXT("Switching tabs hides the combo section"), Section->GetVisibility(), ESlateVisibility::Collapsed);
     Synergy->OnClicked.Broadcast();
@@ -282,8 +383,8 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
     FFFacilityInfoModel::ApplySynergyPreview(&EmptyPreview, true, 0.0f, Names, Data);
     Panel->ApplyViewData(Data);
     TestTrue(TEXT("Empty selection clears old cards while retaining the pool"),
-        !Summary->GetText().IsEmpty() && Entries->GetChildrenCount() == 2 &&
-        FirstRow->GetVisibility() == ESlateVisibility::Collapsed && SecondRow->GetVisibility() == ESlateVisibility::Collapsed);
+        !Summary->GetText().IsEmpty() && Entries->GetChildrenCount() == ExpectedPoolSize &&
+        FirstRow->GetVisibility() == ESlateVisibility::Collapsed && (!SecondRow || SecondRow->GetVisibility() == ESlateVisibility::Collapsed));
     bSaved &= Capture(TEXT("FacilitySynergyTabEmpty720.png"));
     Data.FacilityInstanceId = FGuid::NewGuid();
     Panel->ApplyViewData(Data);

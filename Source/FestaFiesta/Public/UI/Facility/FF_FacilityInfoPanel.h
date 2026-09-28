@@ -1,9 +1,14 @@
+// FF_FacilityInfoPanel.h
+// 역할: 선택한 시설의 정보·업그레이드·조명·프로그램을 표시하고 조작 의도를 전달한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "Blueprint/UserWidget.h"
 #include "CoreMinimal.h"
+#include "Styling/SlateTypes.h"
+#include "Widgets/Layout/Anchors.h"
 #include "UI/Facility/FF_FacilityInfoTypes.h"
 #include "UI/Facility/FF_FacilityLightingControls.h"
 #include "FF_FacilityInfoPanel.generated.h"
@@ -32,10 +37,11 @@ public:
 	FSimpleMulticastDelegate OnRemoveRequested;
 	FSimpleMulticastDelegate OnProgramScheduleRequested;
 	FSimpleMulticastDelegate OnUpgradeRequested;
-	FSimpleMulticastDelegate OnMinigameRequested;
 	FSimpleMulticastDelegate OnCloseRequested;
 	FSimpleMulticastDelegate OnFavoriteRequested;
+	FSimpleMulticastDelegate OnRevenueRankingRequested;
 	FFF_OnFacilityLightingRequested OnLightingRequested;
+	FFF_OnFacilityLightingRequested OnLightingRollbackRequested;
 	FFF_OnFacilityLightingResetRequested OnLightingResetRequested;
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
@@ -55,14 +61,20 @@ public:
 	/** True only while the cursor is over the visible card, not the full-screen overlay. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Facility Info")
 	bool IsPointerOverInteractivePanel() const;
+	bool IsLightingTextInputFocused() const;
+	void CancelLightingEdit();
 
 	const FFF_FacilityInfoViewData& GetCurrentViewData() const { return CurrentViewData; }
 
 protected:
-	virtual void NativeOnInitialized() override;   
+	virtual void NativeOnInitialized() override;
 	virtual FReply NativeOnMouseButtonDown(
 		const FGeometry& InGeometry,
 		const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual FReply NativeOnMouseWheel(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual void NativeOnMouseCaptureLost(const FCaptureLostEvent& Event) override;
 
 private:
 	UFUNCTION()
@@ -75,9 +87,6 @@ private:
 	void HandleCloseClicked();
 
 	UFUNCTION()
-	void HandleMinigameClicked();
-
-	UFUNCTION()
 	void HandleProgramScheduleClicked();
 
 	UFUNCTION()
@@ -87,13 +96,41 @@ private:
 	UFUNCTION() void HandleSynergyClicked();
 	UFUNCTION() void HandleOperationClicked();
 	UFUNCTION() void HandleUpgradeTabClicked();
+	UFUNCTION() void HandleLightingTabClicked();
+	UFUNCTION() void HandleRevenueTabClicked();
+	UFUNCTION() void HandleProgramsTabClicked();
+	UFUNCTION() void HandleSynergyPreviousClicked();
+	UFUNCTION() void HandleSynergyNextClicked();
+	UFUNCTION() void HandleLightingMinimizeClicked();
+	void HandleLightingEditFinished();
+	void RefreshLightingPanelLayout();
+	void HandleLightingRollbackRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
 	UFUNCTION() void HandleFavoriteClicked();
 	UFUNCTION() void HandleRemoveConfirmClicked();
 	UFUNCTION() void HandleRemoveCancelClicked();
+	UFUNCTION() void HandleRevenueRankingClicked();
 	void RefreshPageVisibility();
 	void RefreshSynergyEntries();
 	void HandleSynergyPartnerCatalogRequested(FName FacilityDefinitionId);
 	EFF_FacilityInfoPage ActivePage = EFF_FacilityInfoPage::Overview;
+	int32 SynergyPageIndex = 0;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_TabRevenue;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_TabPrograms;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_SynergyPrevious;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_SynergyNext;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_SynergyPage;
+	bool bLightingMinimized = false;
+	bool bDraggingLighting = false;
+	FVector2D LightingDragStart;
+	FVector2D LightingPanelTranslation;
+	FVector2D LightingDragTranslation;
+	FMargin ExpandedLightingOffsets;
+	FAnchors ExpandedLightingAnchors;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_TabLighting;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingMinimize;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_LightingMinimize;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> Panel_LightingCompact;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_LightingCompactSummary;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UButton> Button_TabOverview;
@@ -110,7 +147,7 @@ private:
 		meta = (AllowPrivateAccess = "true", DisplayName = "조합 행 위젯", ToolTip = "조합 탭의 각 항목을 그리는 WBP입니다. 글꼴·색·간격은 이 WBP의 Designer에서 수정합니다."))
 	TSoftClassPtr<UFF_FacilitySynergyEntryWidget> SynergyEntryWidgetClass =
 		TSoftClassPtr<UFF_FacilitySynergyEntryWidget>(FSoftObjectPath(
-			TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry.WBP_FF_FacilitySynergyEntry_C")));
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry.WBP_FF_FacilitySynergyEntry_C")));
 	UPROPERTY(Transient) TArray<TObjectPtr<UFF_FacilitySynergyEntryWidget>> SynergyEntryPool;
 	UPROPERTY(Transient) TSubclassOf<UFF_FacilitySynergyEntryWidget> LoadedSynergyEntryClass;
 	bool bSynergyEntryLoadFailed = false;
@@ -143,6 +180,9 @@ private:
 
 	UPROPERTY(Transient)
 	FFF_FacilityInfoViewData CurrentViewData;
+	/** Preserve authored inactive/selected brushes while selection remains an enabled state. */
+	UPROPERTY(Transient)
+	TMap<EFF_FacilityInfoPage, FButtonStyle> AuthoredTabStyles;
 
 	/** A double-click must not also purchase the newly displayed next level. */
 	double LastUpgradeClickSeconds = -1.0;
@@ -180,6 +220,10 @@ private:
 			ToolTip = "오늘 결제가 아직 없을 때 오늘 매출 숫자에 쓰는 색입니다."))
 	FLinearColor RevenueIdleColor =
 		FLinearColor::FromSRGBColor(FColor(0x31, 0x57, 0x47));
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Tabs")
+	FLinearColor SelectedTabTextColor = FLinearColor::White;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Tabs")
+	FLinearColor InactiveTabTextColor = FLinearColor::FromSRGBColor(FColor(0x31, 0x57, 0x47));
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UBorder> Border_Panel;
@@ -192,12 +236,6 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UButton> Button_Remove;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
-	TObjectPtr<UButton> Button_StartMinigame;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
-	TObjectPtr<UCommonTextBlock> Text_StartMinigame;
 
 	/** Optional during the non-destructive WBP migration; the builder authors it for new assets. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
@@ -266,6 +304,27 @@ private:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_UpgradeNext;
 
+	/** V2 named cells remain optional so older authored panels keep their original presentation. */
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_UpgradeMetricRows;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_UpgradeQuote;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_UpgradeActions;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeCurrentRevenue;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeNextRevenue;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeCurrentTime;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeNextTime;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeCurrentThroughput;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeNextThroughput;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeCurrentSize;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeNextSize;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradePrice;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeBalance;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeBalanceLabel;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_PersistentIdentity;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_RemoveActions;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_RemoveRecovery;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_RemoveInstallCost;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_RevenueRanking;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_UpgradeCost;
 
@@ -284,9 +343,6 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UWidget> Panel_BuildActions;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
-	TObjectPtr<UWidget> Panel_LiveActions;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UImage> Image_Thumbnail;
@@ -336,6 +392,8 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_QueueCapacity;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_QueueCapacityValue;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_ServiceCapacityValue;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_ServiceDuration;

@@ -3,6 +3,7 @@
 #include "Festival/FF_FestivalDefinition.h"
 
 #include "DataTables/FF_FacilityCostRow.h"
+#include "DataTables/FF_FacilityRevenueTableRow.h"
 #include "Engine/DataTable.h"
 #include "FF_FFZSFacilityDefinition.h"
 
@@ -14,9 +15,13 @@
 
 UFF_FestivalDefinition::UFF_FestivalDefinition()
 {
+	// 경로만 지정한다. CDO 생성 중에는 에셋을 로드하지 않는다.
+	FacilityRevenueTable = TSoftObjectPtr<UDataTable>(FSoftObjectPath(
+		TEXT("/Game/FestaFiesta/Data/Economy/DT_FacilityRevenues.DT_FacilityRevenues")));
+
 	FFF_RequiredFacility MainStage;
 	MainStage.FacilityDefinition = TSoftObjectPtr<UFFZSFacilityDefinition>(FSoftObjectPath(
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage")));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage")));
 	RequiredSetupFacilities.Add(MainStage);
 
 	// 등급이 올라갈수록 비용과 보너스가 함께 커진다.
@@ -42,7 +47,6 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 		Workshop.ProgramId = TEXT("Program_SandArtWorkshop");
 		Workshop.DisplayName = LOCTEXT("Program_SandArtWorkshop", "바다향기 공방");
 		Workshop.CostGold = 200;
-		Workshop.RequiredStaff = 1;
 		Workshop.Capacity = 12;
 		Workshop.FeePerPerson = 30;   // 정원 다 차면 360, 확정 매출이다
 		Workshop.StartMinutes = 30.f; 
@@ -57,7 +61,6 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 		Yoga.ProgramId = TEXT("Program_SunsetYoga");
 		Yoga.DisplayName = LOCTEXT("Program_SunsetYoga", "선셋 요가");
 		Yoga.CostGold = 250;
-		Yoga.RequiredStaff = 2;
 		Yoga.Capacity = 16;
 		Yoga.FeePerPerson = 25;       // 정원 다 차면 400, 확정 매출이다
 		Yoga.StartMinutes = 90.f;
@@ -69,12 +72,24 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 		ProgramCatalog = { Workshop, Yoga };
 	}
 
-	// "안 함"은 데이터가 아니라 미구매 상태다 (0 Gold · 배수 1.0)
-	PromotionBasic.CostGold = 500;
-	PromotionBasic.VisitorMultiplier = 1.08f;
+	// "홍보 없음"은 데이터가 아니라 미구매 상태다 (0 Gold · NoPromotionVisitorMultiplier).
+	// 지역 SNS 가 기준선(×1.00)이라 안 사면 손해다.
+	PromotionBasic.CostGold = 600;
+	PromotionBasic.VisitorMultiplier = 1.f;
+	PromotionBasic.StartingBuzz = 6;
 
-	PromotionFocused.CostGold = 1200;
-	PromotionFocused.VisitorMultiplier = 1.18f;
+	PromotionFocused.CostGold = 1400;
+	PromotionFocused.VisitorMultiplier = 1.12f;
+	PromotionFocused.StartingBuzz = 14;
+
+	PromotionInfluencer.CostGold = 2600;
+	PromotionInfluencer.VisitorMultiplier = 1.25f;
+	PromotionInfluencer.StartingBuzz = 26;
+}
+
+UDataTable* UFF_FestivalDefinition::GetFacilityRevenueTable() const
+{
+	return FacilityRevenueTable.LoadSynchronous();
 }
 
 bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
@@ -128,16 +143,10 @@ bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 		OutErrors.Add(LOCTEXT("BadStaffCount", "InitialStaffCount 가 음수다."));
 	}
 
-	// --- 고정비 ---
-	if (DailyVenueRentGold < 0)
+	// --- 스태프 고용 ---
+	if (StaffHireCostGold < 0 || MaxHiredStaffCount < 0)
 	{
-		OutErrors.Add(LOCTEXT("BadRecurringCost", "고정비에 음수가 있다."));
-	}
-
-	// --- 스태프 임금/고용 ---
-	if (DailyStaffWageGold < 0 || MaxHiredStaffPerDay < 0)
-	{
-		OutErrors.Add(LOCTEXT("BadWageOrHireCap", "임금·고용 상한에 음수가 있다."));
+		OutErrors.Add(LOCTEXT("BadHireCostOrCap", "고용 비용·총원 상한에 음수가 있다."));
 	}
 	
 	// --- 뒷정리 ---
@@ -198,7 +207,7 @@ bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 	}
 
 	// --- 수익원 ---
-	if (BoothCommissionRate < 0.f || BoothCommissionRate > 1.f)
+	if (!FMath::IsFinite(BoothCommissionRate) || BoothCommissionRate < 0.f || BoothCommissionRate > 1.f)
 	{
 		OutErrors.Add(FText::Format(
 			LOCTEXT("BadCommissionRate", "BoothCommissionRate 가 {0} 이다. 0.0~1.0 이어야 한다."),
@@ -224,18 +233,40 @@ bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 	// 배수가 1.0 미만이면 홍보가 방문객을 줄이게 된다.
 	// 비용 0 이면 무료 홍보가 되어 "안 함"과 구분되지 않는다.
 	if (PromotionBasic.CostGold <= 0 || PromotionBasic.VisitorMultiplier < 1.f
-		|| PromotionFocused.CostGold <= 0 || PromotionFocused.VisitorMultiplier < 1.f)
+		|| PromotionFocused.CostGold <= 0 || PromotionFocused.VisitorMultiplier < 1.f
+		|| PromotionInfluencer.CostGold <= 0 || PromotionInfluencer.VisitorMultiplier < 1.f)
 	{
 		OutErrors.Add(LOCTEXT("BadPromotionTier",
 			"홍보 등급이 잘못됐다. 비용은 1 이상, 방문객 배수는 1.0 이상이어야 한다."));
 	}
 
-	// 집중이 기본보다 비싼데 효과가 같거나 낮으면 그 등급은 함정이 된다.
+	// 윗 등급이 더 비싼데 효과가 같거나 낮으면 그 등급은 함정이 된다.
 	if (PromotionFocused.CostGold <= PromotionBasic.CostGold
-		|| PromotionFocused.VisitorMultiplier <= PromotionBasic.VisitorMultiplier)
+		|| PromotionFocused.VisitorMultiplier <= PromotionBasic.VisitorMultiplier
+		|| PromotionInfluencer.CostGold <= PromotionFocused.CostGold
+		|| PromotionInfluencer.VisitorMultiplier <= PromotionFocused.VisitorMultiplier)
 	{
 		OutErrors.Add(LOCTEXT("PromotionNotMonotonic",
-			"집중 홍보가 기본보다 비싸면서 방문객 배수도 더 커야 한다."));
+			"윗 등급 홍보일수록 비싸면서 방문객 배수도 더 커야 한다(지역 SNS < 전국 < 인플루언서)."));
+	}
+
+	if (NoPromotionVisitorMultiplier > PromotionBasic.VisitorMultiplier)
+	{
+		OutErrors.Add(LOCTEXT("NoPromotionAboveBasic",
+			"홍보 없음의 방문객 배수가 지역 SNS 보다 크면 홍보를 살 이유가 없다."));
+	}
+
+	// --- 입장료 ---
+	if (AdmissionFeeMinGold > AdmissionFeeMaxGold
+		|| AdmissionFeeGold < AdmissionFeeMinGold || AdmissionFeeGold > AdmissionFeeMaxGold)
+	{
+		OutErrors.Add(LOCTEXT("BadAdmissionFeeRange",
+			"입장료 범위가 잘못됐다. Min <= 기준값(AdmissionFeeGold) <= Max 여야 한다."));
+	}
+	if (AdmissionFeeMinVisitorMultiplier > 1.f)
+	{
+		OutErrors.Add(LOCTEXT("BadAdmissionFeeMultiplier",
+			"입장료 최소 방문객 배수가 1.0 보다 크면 비싸게 받아도 손님이 줄지 않는다."));
 	}
 
 	// --- 참조 표 ---
@@ -254,6 +285,42 @@ bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 	else if (FacilityCostTable->GetRowMap().Num() == 0)
 	{
 		OutErrors.Add(LOCTEXT("EmptyFacilityCostTable", "FacilityCostTable 에 행이 없다."));
+	}
+
+	// 표 연결을 비운 축제는 기존 시설 Data Asset/소분류 기본값을 그대로 사용할 수 있다.
+	if (!FacilityRevenueTable.IsNull())
+	{
+		const UDataTable* RevenueTable = GetFacilityRevenueTable();
+		if (!RevenueTable)
+		{
+			OutErrors.Add(LOCTEXT("MissingFacilityRevenueTable", "Facility Revenue Table을 불러올 수 없습니다. DT_FacilityRevenues 연결을 확인하세요."));
+		}
+		else if (RevenueTable->GetRowStruct() != FFF_FacilityRevenueTableRow::StaticStruct())
+		{
+			OutErrors.Add(LOCTEXT("BadFacilityRevenueRowStruct", "Facility Revenue Table의 행 구조체는 FF_FacilityRevenueTableRow여야 합니다."));
+		}
+		else
+		{
+			for (const auto& Entry : RevenueTable->GetRowMap())
+			{
+				const FFF_FacilityRevenueTableRow* Row = reinterpret_cast<const FFF_FacilityRevenueTableRow*>(Entry.Value);
+				if (Entry.Key.IsNone() || !Row)
+				{
+					OutErrors.Add(FText::Format(LOCTEXT("BadFacilityRevenueRow", "시설 수익표의 '{0}' 행을 확인하세요. 행 이름은 유효한 Facility Definition Id여야 합니다."),
+						FText::FromName(Entry.Key)));
+				}
+				if (Row)
+				{
+					TArray<FText> RowErrors;
+					Row->IsRowValid(RowErrors);
+					for (const FText& Error : RowErrors)
+					{
+						OutErrors.Add(FText::Format(LOCTEXT("InvalidFacilityRevenueFields", "시설 수익표 '{0}': {1}"),
+							FText::FromName(Entry.Key), Error));
+					}
+				}
+			}
+		}
 	}
 
 	return OutErrors.Num() == ErrorCountBefore;
