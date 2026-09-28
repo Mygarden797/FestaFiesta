@@ -74,6 +74,16 @@ void UFF_CrowdIncidentBridgeSubsystem::HandleMemberMissingChanged(const TArray<F
 
 	for (const FFF_CrowdMemberMissingEvent& Event : Events)
 	{
+		if (Event.Change != EFF_CrowdMissingChange::Started)
+		{
+			const UEnum* ChangeEnum = StaticEnum<EFF_CrowdMissingChange>();
+			FF_CI_BRIDGE_LOG("MISSING %s agent %d actor %s hasKey %s",
+				ChangeEnum ? *ChangeEnum->GetNameStringByValue(static_cast<int64>(Event.Change)) : TEXT("?"),
+				Event.StableAgentID,
+				Event.Actor.IsValid() ? *Event.Actor->GetName() : TEXT("<null>"),
+				MissingKeyByAgent.Contains(Event.StableAgentID) ? TEXT("Y") : TEXT("N"));
+		}
+
 		switch (Event.Change)
 		{
 		case EFF_CrowdMissingChange::Started:
@@ -106,6 +116,11 @@ void UFF_CrowdIncidentBridgeSubsystem::ReportMissing(const FFF_CrowdMemberMissin
 		FF_CI_BRIDGE_LOG("Agent %d has no actor. Missing incident is not reported", Event.StableAgentID);
 		return;
 	}
+
+	FF_CI_BRIDGE_LOG("MISSING Started agent %d party %d actor %s actorLoc %s eventLoc %s gap %.0f",
+		Event.StableAgentID, Event.PartyID, *Event.Actor->GetName(),
+		*Event.Actor->GetActorLocation().ToCompactString(), *Event.LocationUU.ToCompactString(),
+		FVector::Dist(Event.Actor->GetActorLocation(), Event.LocationUU));
 
 	FFF_IncidentReport EventReport;
 	FFF_IncidentAnchor EventAnchor;

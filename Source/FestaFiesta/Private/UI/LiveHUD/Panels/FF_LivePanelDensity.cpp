@@ -3,10 +3,15 @@
 #include "UI/LiveHUD/Panels/FF_LivePanelDensity.h"
 
 #include "Components/Button.h"
+#include "Components/Border.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
+#include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "UI/FF_UILog.h"
 
@@ -19,6 +24,10 @@ namespace FFDensityLocal
 	 * 패널 안에서 혼자 크게 나온다 (2026-09-03 실기에서 확인).
 	 */
 	constexpr int32 LegendFontSize = 13;
+	const FLinearColor TextColor(0.10f, 0.15f, 0.13f, 1.f);
+	const FLinearColor MutedColor(0.28f, 0.35f, 0.31f, 1.f);
+	const FLinearColor RowColor(0.92f, 0.95f, 0.93f, 1.f);
+	const FLinearColor PeakRowColor(0.80f, 0.88f, 0.83f, 1.f);
 
 	/**
 	 * 범례 수치 자릿수.
@@ -56,6 +65,20 @@ namespace FFDensityLocal
 	{
 		const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
 		return World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr;
+	}
+
+	UTextBlock* MakeLegendText(UObject* Outer, const UTextBlock* FontSource,
+		const FText& Text, const int32 Size, const FLinearColor& Color)
+	{
+		UTextBlock* Block = NewObject<UTextBlock>(Outer);
+		FSlateFontInfo Font = FontSource ? FontSource->GetFont() : Block->GetFont();
+		Font.Size = Size;
+		Block->SetFont(Font);
+		Block->SetText(Text);
+		Block->SetColorAndOpacity(FSlateColor(Color));
+		Block->SetAutoWrapText(true);
+		Block->SetVisibility(ESlateVisibility::HitTestInvisible);
+		return Block;
 	}
 }
 
@@ -160,11 +183,6 @@ void UFF_LivePanelDensity::NativeOnPanelOpened()
 		Button_Toggle->OnClicked.AddUniqueDynamic(this, &UFF_LivePanelDensity::HandleToggleClicked);
 	}
 
-	// ★ 못 하는 것을 화면에 적는다. 안 적으면 패키징에서 안 켜지는 이유를 아무도 모른다.
-	// ★ 별표를 쓰지 않는다. UMG 는 마크다운을 모르므로 `**` 가 글자로 그대로 나온다.
-	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveDensity_MissingNote",
-		"히트맵은 지금 디버그 표시라 에디터에서만 보입니다. 제품 빌드용 표시를 요청해 뒀습니다."));
-
 	RebuildLegend();
 	RefreshToggleLabel();
 	RefreshSummary();
@@ -204,28 +222,33 @@ void UFF_LivePanelDensity::NativeTick(const FGeometry& MyGeometry, float InDelta
 	}
 
 	TimeSinceRefresh = 0.f;
+	RefreshToggleLabel();
 	RefreshSummary();
 }
 
 void UFF_LivePanelDensity::HandleToggleClicked()
 {
+#if ENABLE_DRAW_DEBUG
 	UFF_CrowdSimulationSubsystem* Crowd = FFDensityLocal::FindCrowd(this);
-	if (!Crowd)
+	if (!Crowd || !Crowd->GetDensityGrid().IsBuilt())
 	{
 		// 조용히 넘기지 않는다 — 버튼이 눌리는데 아무 일도 안 나는 것이 제일 헷갈린다.
 		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] Crowd 서브시스템이 없어 히트맵을 켤 수 없다."), *GetName());
+			TEXT("[%s] Crowd 밀도 격자가 준비되지 않아 히트맵을 켤 수 없다."), *GetName());
+		RefreshToggleLabel();
 		return;
 	}
 
 	Crowd->bDrawDebugDensity = !Crowd->bDrawDebugDensity;
-
+#endif
 	RefreshToggleLabel();
 }
 
 void UFF_LivePanelDensity::RefreshToggleLabel()
 {
+#if ENABLE_DRAW_DEBUG
 	const UFF_CrowdSimulationSubsystem* Crowd = FFDensityLocal::FindCrowd(this);
+	const bool bReady = Crowd && Crowd->GetDensityGrid().IsBuilt();
 	const bool bOn = Crowd && Crowd->bDrawDebugDensity;
 
 	// !! 상태를 색으로만 말하지 않는다 !! 라벨이 지금 상태를 글자로 적는다 (AT-011).
@@ -235,8 +258,20 @@ void UFF_LivePanelDensity::RefreshToggleLabel()
 
 	if (Button_Toggle)
 	{
-		Button_Toggle->SetIsEnabled(Crowd != nullptr);
+		Button_Toggle->SetIsEnabled(bReady);
 	}
+	SetTextOrHide(Text_MissingNote, bReady
+		? LOCTEXT("LiveDensity_DebugBuildNote", "바닥 히트맵은 개발용 표시입니다. 출시 빌드에서는 지원하지 않습니다.")
+		: LOCTEXT("LiveDensity_GridPendingNote", "밀도 격자가 준비되면 히트맵을 켤 수 있습니다."));
+#else
+	SetTextOrHide(Text_ToggleLabel, LOCTEXT("LiveDensity_HeatmapUnavailable", "히트맵 미지원"));
+	if (Button_Toggle)
+	{
+		Button_Toggle->SetIsEnabled(false);
+	}
+	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveDensity_NoDebugDrawNote",
+		"이 빌드는 바닥 히트맵을 지원하지 않습니다. 밀도 수치와 등급은 계속 확인할 수 있습니다."));
+#endif
 }
 
 void UFF_LivePanelDensity::RebuildLegend()
@@ -247,6 +282,9 @@ void UFF_LivePanelDensity::RebuildLegend()
 	}
 
 	Box_Legend->ClearChildren();
+	LegendRowBorders.Reset();
+	LegendPeakLabels.Reset();
+	LegendGrades.Reset();
 
 	const TArray<FFF_DensityLegendRow> Rows = FFF_DensityRules::BuildLegend();
 	if (Rows.IsEmpty())
@@ -258,40 +296,77 @@ void UFF_LivePanelDensity::RebuildLegend()
 
 	for (const FFF_DensityLegendRow& Row : Rows)
 	{
-		UTextBlock* Line = NewObject<UTextBlock>(this);
-		if (!Line)
-		{
-			continue;
-		}
-
-		// 🔴 **넷을 같이 적는다** — 문자·이름·수치·(색은 히트맵 쪽). 색을 못 봐도
-		//    `D · 0.72~1.08명/㎡ · 혼잡` 을 읽으면 무엇인지 안다 (AT-011).
+		// 문자·이름·수치·색상칩을 같이 적고, 색은 바닥 표시의 원본 함수를 사용한다.
 		const FNumberFormattingOptions Format = FFDensityLocal::MakeDensityFormat();
 
 		const FText Range = Row.HasUpperBound()
 			? FText::Format(
-				LOCTEXT("LiveDensity_Range", "{0}~{1}명/㎡"),
+				LOCTEXT("LiveDensity_RangeExclusive", "{0} 이상 · {1} 미만 명/㎡"),
 				FText::AsNumber(Row.MinDensity, &Format),
 				FText::AsNumber(Row.MaxDensity, &Format))
 			: FText::Format(
 				LOCTEXT("LiveDensity_RangeTop", "{0}명/㎡ 이상"),
 				FText::AsNumber(Row.MinDensity, &Format));
 
-		Line->SetText(FText::Format(
-			LOCTEXT("LiveDensity_LegendRow", "{0} · {1} · {2}"),
-			Row.GradeLetter, Range, Row.GradeName));
+		UBorder* Background = NewObject<UBorder>(this);
+		Background->SetBrushColor(FFDensityLocal::RowColor);
+		Background->SetPadding(FMargin(10.f, 5.f));
+		Background->SetVisibility(ESlateVisibility::HitTestInvisible);
+		UHorizontalBox* Line = NewObject<UHorizontalBox>(this);
+		Background->SetContent(Line);
 
-		// 🔴 **꾸미지 않으면 기본 폰트**라 패널 안에서 혼자 크게 나온다.
-		FSlateFontInfo Font = Line->GetFont();
-		Font.Size = FFDensityLocal::LegendFontSize;
-		Line->SetFont(Font);
+		USizeBox* ChipSize = NewObject<USizeBox>(this);
+		ChipSize->SetWidthOverride(8.f);
+		ChipSize->SetHeightOverride(26.f);
+		UBorder* Chip = NewObject<UBorder>(this);
+		Chip->SetBrushColor(FLinearColor::FromSRGBColor(FCrowdDensityGrid::LOSToColor(Row.Grade)));
+		Chip->SetPadding(FMargin(0.f));
+		ChipSize->SetContent(Chip);
+		if (UHorizontalBoxSlot* ChipSlot = Line->AddChildToHorizontalBox(ChipSize))
+		{
+			ChipSlot->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
+			ChipSlot->SetVerticalAlignment(VAlign_Center);
+		}
 
-		Line->SetAutoWrapText(true);
+		UVerticalBox* Details = NewObject<UVerticalBox>(this);
+		Details->AddChildToVerticalBox(FFDensityLocal::MakeLegendText(this, Text_Congested,
+			FText::Format(LOCTEXT("LiveDensity_LegendName", "{0} · {1}"), Row.GradeLetter, Row.GradeName),
+			FFDensityLocal::LegendFontSize, FFDensityLocal::TextColor));
+		Details->AddChildToVerticalBox(FFDensityLocal::MakeLegendText(this, Text_Congested,
+			Range, 11, FFDensityLocal::MutedColor));
+		if (UHorizontalBoxSlot* DetailSlot = Line->AddChildToHorizontalBox(Details))
+		{
+			DetailSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			DetailSlot->SetVerticalAlignment(VAlign_Center);
+		}
 
-		if (UVerticalBoxSlot* LineSlot = Box_Legend->AddChildToVerticalBox(Line))
+		UTextBlock* PeakLabel = FFDensityLocal::MakeLegendText(this, Text_Congested,
+			LOCTEXT("LiveDensity_CurrentPeak", "현재 최대"), 11, FFDensityLocal::TextColor);
+		// Hidden으로 자리를 유지하여 최대 등급 변경 때 수치 열 폭이 흔들리지 않게 한다.
+		PeakLabel->SetVisibility(ESlateVisibility::Hidden);
+		if (UHorizontalBoxSlot* PeakSlot = Line->AddChildToHorizontalBox(PeakLabel))
+		{
+			PeakSlot->SetPadding(FMargin(10.f, 0.f, 0.f, 0.f));
+			PeakSlot->SetVerticalAlignment(VAlign_Center);
+		}
+
+		if (UVerticalBoxSlot* LineSlot = Box_Legend->AddChildToVerticalBox(Background))
 		{
 			LineSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
 		}
+		LegendRowBorders.Add(Background);
+		LegendPeakLabels.Add(PeakLabel);
+		LegendGrades.Add(Row.Grade);
+	}
+}
+
+void UFF_LivePanelDensity::RefreshLegendHighlight(const TOptional<ECrowdLOS> PeakGrade)
+{
+	for (int32 Index = 0; Index < LegendGrades.Num(); ++Index)
+	{
+		const bool bPeak = PeakGrade.IsSet() && LegendGrades[Index] == PeakGrade.GetValue();
+		LegendRowBorders[Index]->SetBrushColor(bPeak ? FFDensityLocal::PeakRowColor : FFDensityLocal::RowColor);
+		LegendPeakLabels[Index]->SetVisibility(bPeak ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
 }
 
@@ -301,11 +376,14 @@ void UFF_LivePanelDensity::RefreshSummary()
 	const UFF_CrowdSimulationSubsystem* Crowd =
 		World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr;
 
-	if (!Crowd)
+	if (!Crowd || !Crowd->GetDensityGrid().IsBuilt())
 	{
 		// 못 읽은 것과 `0명/㎡` 는 다르다. 0 으로 적으면 "한산하다" 는 틀린 사실이 된다.
 		SetTextOrHide(Text_Peak, LOCTEXT("LiveDensity_NoCrowd", "밀도를 아직 읽지 못했습니다."));
+		SetTextOrHide(Text_PeakGrade, FText::GetEmpty());
 		SetTextOrHide(Text_Congested, FText::GetEmpty());
+		SetTextOrHide(Text_CellSize, LOCTEXT("LiveDensity_CellSizePending", "격자 크기를 확인하고 있습니다."));
+		RefreshLegendHighlight(TOptional<ECrowdLOS>());
 		return;
 	}
 
@@ -314,20 +392,35 @@ void UFF_LivePanelDensity::RefreshSummary()
 
 	const FNumberFormattingOptions Format = FFDensityLocal::MakeDensityFormat();
 
-	SetTextOrHide(Text_Peak, FText::Format(
-		LOCTEXT("LiveDensity_Peak", "가장 붐비는 곳 {0}명/㎡ · {1} ({2})"),
-		FText::AsNumber(MaxDensity, &Format),
-		FFF_DensityRules::GetGradeLetter(PeakGrade),
-		FFF_DensityRules::GetGradeName(PeakGrade)));
+	if (Text_PeakGrade)
+	{
+		SetTextOrHide(Text_Peak, FText::Format(LOCTEXT("LiveDensity_PeakValue", "{0}명/㎡"),
+			FText::AsNumber(MaxDensity, &Format)));
+		SetTextOrHide(Text_PeakGrade, FText::Format(LOCTEXT("LiveDensity_PeakGrade", "{0} · {1}"),
+			FFF_DensityRules::GetGradeLetter(PeakGrade), FFF_DensityRules::GetGradeName(PeakGrade)));
+	}
+	else
+	{
+		SetTextOrHide(Text_Peak, FText::Format(
+			LOCTEXT("LiveDensity_Peak", "가장 붐비는 곳 {0}명/㎡ · {1} ({2})"),
+			FText::AsNumber(MaxDensity, &Format),
+			FFF_DensityRules::GetGradeLetter(PeakGrade),
+			FFF_DensityRules::GetGradeName(PeakGrade)));
+	}
+	RefreshLegendHighlight(PeakGrade);
 
 	// ★ 0 이어도 적는다. 접으면 "아직 안 셌다" 와 "없다" 가 구분되지 않는다.
 	const int32 CongestedCells = Crowd->GetCongestedCellCount();
 
-	SetTextOrHide(Text_Congested, (CongestedCells > 0)
-		? FText::Format(
-			LOCTEXT("LiveDensity_Congested", "혼잡 구간 {0}칸"),
-			FText::AsNumber(CongestedCells))
-		: LOCTEXT("LiveDensity_NoCongestion", "혼잡 구간 없음"));
+	SetTextOrHide(Text_Congested, Text_PeakGrade
+		? FText::Format(LOCTEXT("LiveDensity_CongestedValue", "{0}칸"), FText::AsNumber(CongestedCells))
+		: FText::Format(LOCTEXT("LiveDensity_Congested", "혼잡 구간 {0}칸"), FText::AsNumber(CongestedCells)));
+
+	const FCrowdDensityGrid& Grid = Crowd->GetDensityGrid();
+	SetTextOrHide(Text_CellSize, FText::Format(
+		LOCTEXT("LiveDensity_CellSize", "한 칸 {0} × {0}m · {1}㎡"),
+		FText::AsNumber(Grid.GetCellSizeMeters(), &Format),
+		FText::AsNumber(Grid.GetCellAreaSqM(), &Format)));
 }
 
 #undef LOCTEXT_NAMESPACE

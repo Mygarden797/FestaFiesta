@@ -154,8 +154,11 @@ bool FFF_RequiredFacilitiesFlowTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Card reports installed count"), Row.InstalledCount, 1);
 	TestEqual(TEXT("Card reports no missing instances"), Row.MissingCount, 0);
 	TestTrue(TEXT("Satisfied setup may advance"), Stage->CanTransitionTo(EFF_FestivalStage::PromotionPreview, Reason));
-	Stage->Tick(0.01f);
-	TestNotEqual(TEXT("Expired setup resumes after requirement satisfied"), Stage->CurrentStage, EFF_FestivalStage::Setup);
+	// 셋업에는 제한시간이 없다. 조건을 채워도 시간으로는 안 넘어가고 개장(스킵)으로만 넘어간다.
+	Stage->Tick(100000.f);
+	TestEqual(TEXT("Setup has no time limit"), Stage->CurrentStage, EFF_FestivalStage::Setup);
+	Stage->SkipCurrentStage();
+	TestNotEqual(TEXT("Satisfied setup advances by skip"), Stage->CurrentStage, EFF_FestivalStage::Setup);
 
 	// 현재 DaySequence는 Setup -> Live다. 철거는 다음 배치 가능 단계에서 검증한다.
 	Stage->RequestTransition(EFF_FestivalStage::MorningCheck);

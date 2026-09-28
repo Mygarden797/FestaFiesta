@@ -37,6 +37,7 @@
 | Dongle | 영문 브랜드 워드마크 비교·Unreal UI 후보 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
 | Copernicus DEM GLO-30 | 대한민국 국가 지도 고도·산악 음영 | `confirmed` | Copernicus WorldDEM-30 User Licence | 필요 |
 | geoBoundaries KOR ADM1 | 대한민국 행정구역 경계·6권역 재구성 | `confirmed` | CC BY 4.0 | 필요 |
+| Natural Earth Admin 0 Countries 1:10m | 지구의 BR·DE·JP·US·ES·TH·AU 국가 선택 경계 | `confirmed` | Public Domain | 선택, 권장 |
 
 ---
 
@@ -316,6 +317,19 @@ CC BY 4.0은 **수정 사실 표시가 의무**이므로 여기 기록한다 (U3
 
 > Administrative boundaries by geoBoundaries, licensed under CC BY 4.0. Modified for FestaFiesta.
 
+### P12-B 한국 국가 선택 영역 (2026-09-20 추가)
+
+- 상태: `confirmed` — 위에서 확보한 `geoBoundaries-KOR-ADM1-68945753` 원본을 재사용한다. 새 외부 데이터 다운로드는 없다.
+- 원본 파일: `geoBoundaries-KOR-ADM1.geojson` — SHA-256 `6683CD1AD991676D96493FD0AAE068215426497CCF82C8B0EB5683CAD341CDDC`.
+- 재현 원본·메타데이터·인용문 보관: `SourceArt/UI/Atlas/CountryRegions/KR/source/`. 이 폴더와 생성물은 기존 `SourceArt` ignore를 유지한다.
+- 원본 메타데이터의 기반 출처는 **Natural Earth / Public Domain**이며, geoBoundaries 배포본의 코드·파생물에는 동봉 인용문이 명시한 **CC BY 4.0**과 위 크레딧을 적용한다.
+- 수정: 17개 ADM1의 정확히 일치하는 공유 경계를 제거해 국가 외곽을 합친다. 경위도 좌표 단순화·이동은 하지 않는다. 본토·제주·울릉도·원본 도서와 내륙 구멍 구조를 보존한다. 이 산출물은 원본에 없는 독도를 임의 도형으로 보충하지 않는다.
+- 재생성 스크립트: `Tools/ui/atlas_regions/prepare_korea.py` (`--source`로 원본 지정, 원본 SHA-256 검증).
+- 생성물: `SourceArt/UI/Atlas/CountryRegions/KR/KR.region.json`, `T_FF_AtlasRegion_KR_1024.png`, `manifest.json`, `validation.json`.
+- 좌표·채널 계약: WGS84/CRS84 `[경도, 위도]`; 영역 `[서, 남, 동, 북] = [124.4, 33.0, 131.1, 38.8]`; 북쪽은 V=0. RGBA 1024²에서 R=영역, G=외곽선, B=영역 바깥의 부드러운 후광, A=255. 기존 지구 텍스처를 수정한 이미지가 아니라 원본 좌표로 새로 계산한 데이터 마스크다.
+- Unreal 예정 에셋: `/Game/FestaFiesta/UI/Atlas/CountryRegions/KR/`.
+- 크레딧: 위 geoBoundaries 문구를 재사용하며, 기반 출처 Natural Earth도 표시한다. 배포본 라이선스 동봉 경로는 기존 `to_verify` 상태다.
+
 ---
 
 ## 새 외부 에셋 등록 템플릿
@@ -391,3 +405,22 @@ CC BY 4.0은 **수정 사실 표시가 의무**이므로 여기 기록한다 (U3
 - Unreal 에셋: `/Game/FestaFiesta/UI/Atlas/Earth/BrightGlobe_v1/`. `P05/`의 전 세계 지형·재질을 공용 Frontend에 적용했으며 지역 시험 에셋도 보존한다.
 - 지도·해안·색상 분류는 Solar System Scope CC BY 4.0 파생 자료이며, 지형 고도는 NOAA 공개 데이터다.
 - 크레딧: 지형 높이: NOAA NGDC ETOPO1 (Amante & Eakins, 2009). 지도·색상 기준: Solar System Scope(INOVE), CC BY 4.0. FestaFiesta용으로 수정됨.
+
+### P12-C 전 세계 7개국 선택 영역 — Natural Earth (2026-09-21)
+
+- 상태: `confirmed` — 공식 1:10m Admin 0 Countries v5.1.1 원본과 공개 도메인 사용 조건을 확인하고 임포트 전에 등록함.
+- 제작·배포: Natural Earth / Tom Patterson, Nathaniel Vaughn Kelso 및 기여자.
+- 원본 페이지: https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-admin-0-countries/
+- 직접 다운로드: https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip
+- 라이선스: **Public Domain**. 상업적 사용·수정·재배포를 허용하며 출처 표시는 의무가 아님.
+- 공식 조건: https://www.naturalearthdata.com/about/terms-of-use/
+- 다운로드·확인일: 2026-09-21. ZIP 내부 VERSION 5.1.1, WGS84 경위도 확인.
+- 사용 원본: `ne_10m_admin_0_countries.zip` — SHA-256 `ce1ac7036499a0edd641fbc093cd209a98f96a49d2eca8480aaacad35138a7f6`.
+- 작업 원본·조건 원문 보관: `SourceArt/UI/Atlas/CountryRegions/World/source/`. 원문 사본 `naturalearth-terms-of-use-20260921.html`.
+- 사용 국가: 브라질(BR), 독일(DE), 일본(JP), 미국(US), 스페인(ES), 태국(TH), 호주(AU). 대한민국은 기존 geoBoundaries KOR ADM1 파생물을 유지한다.
+- 수정 내역: 7개 국가 레코드 추출, 링 방향·시작점 정규화, 미국의 날짜변경선 경도를 연속 좌표로 래핑, 선택용 RGB 마스크 변환. 원본의 섬·경계 정점은 단순화하거나 이동하지 않음. 원본에 없는 도서는 추정해 추가하지 않음.
+- 경계 기준: 원본 Admin 0 Countries의 기본 **de facto** 경계를 그대로 사용한다. 선택 영역용 데이터이며 국가 간 경계 판단을 새로 작성하지 않는다.
+- 산출물: `SourceArt/UI/Atlas/CountryRegions/World/`; 제작 스크립트 `Tools/ui/atlas_regions/prepare_world.py`.
+- Unreal 임포트 대상: `/Game/FestaFiesta/UI/Atlas/CountryRegions/`의 7개 `T_FF_AtlasRegion_<국가>` 마스크와 공통 `DA_AtlasCountryRegions`.
+- 권장 크레딧: **Made with Natural Earth. Modified for FestaFiesta.**
+- 배포본 조건 원문 동봉: 의무 없음. 위 원장·원본 URL을 크레딧 자료로 유지한다.

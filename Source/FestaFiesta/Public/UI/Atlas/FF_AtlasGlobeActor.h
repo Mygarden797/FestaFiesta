@@ -5,13 +5,16 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "UI/Atlas/FF_AtlasGeo.h"
+#include "UI/Atlas/FF_AtlasCountryRegions.h"
 #include "FF_AtlasGlobeActor.generated.h"
 
 class UArrowComponent;
 class UFF_AtlasSettings;
+class UFF_AtlasCountryRegions;
 class UFF_FestivalAtlasCatalog;
 class UFF_UIAccessibilitySubsystem;
 class UMaterialInterface;
+class UMaterialInstanceDynamic;
 class UPointLightComponent;
 class USceneComponent;
 class UStaticMesh;
@@ -86,6 +89,19 @@ struct FESTAFIESTA_API FFF_AtlasPinInstance
 	/** 선택됐을 때만 켜지는 조명. 크기 변화만으로 선택을 알리지 않기 위한 두 번째 신호다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UPointLightComponent> Light;
+};
+
+/** 영역 표시를 끌 때 메시 기본 슬롯과 레벨 오버라이드를 구별해 복원한다. */
+USTRUCT()
+struct FFF_AtlasRegionMaterialSnapshot
+{
+	GENERATED_BODY()
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> Component;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMaterialInterface>> Overrides;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMaterialInterface>> SlotOverlays;
 };
 
 /**
@@ -260,6 +276,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Atlas")
 	FName PickLandmark(const FVector& RayOrigin, const FVector& RayDirection) const;
 
+	/** 국가 화면에서만 영역 재질과 클릭을 켠다. 데이터가 없는 나라는 조형물을 유지한다. */
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Atlas")
+	void SetCountryRegionMode(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Atlas")
+	bool IsCountryRegionMode() const { return bCountryRegionMode; }
+
+	/** 표시한 Top 삼각형의 UV로 판정한다. 바다·구멍·뒤편·영역 밖 육지는 선택하지 않는다. */
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Atlas")
+	FName PickCountryRegion(const FVector& RayOrigin, const FVector& RayDirection) const;
+
+	/** 영역이 준비된 국가는 영역, 나머지는 기존 조형물 판정으로 라우팅한다. */
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Atlas")
+	FName PickCountry(const FVector& RayOrigin, const FVector& RayDirection) const;
+
 	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Atlas")
 	void SetHoveredCountry(FName CountryId);
 
@@ -359,6 +390,10 @@ protected:
 	/** 독립 육지 윗면/해안 메시. 반지름 5000uu 기준, 최대 16개. 비우면 기존 구체 방식이다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FestaFiesta|Atlas|Assets")
 	TArray<TObjectPtr<UStaticMesh>> LandLayerMeshes;
+
+	/** 지역 파일은 이 하드 참조를 통해 쿠킹된다. 비우면 기존 조형물 선택 방식이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="FestaFiesta|Atlas|Assets")
+	TObjectPtr<UFF_AtlasCountryRegions> RegionData;
 
 	/** 구름 머티리얼. 반투명이어야 한다. 비우면 구름 구체를 아예 숨긴다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FestaFiesta|Atlas|Assets")
@@ -467,6 +502,12 @@ private:
 
 	/** 선택된 조형물만 커지고 조명이 켜지게 한다. */
 	void ApplySelectionVisuals();
+	void ApplyRegionSelectionVisuals();
+	void ApplyRegionMotionVisuals();
+	void RestoreRegionMaterials();
+	void InvalidateRegionSurfaceCache();
+	bool HasCountryRegion(FName CountryId) const;
+	bool UpdateRegionSurfaceCache() const;
 
 	/** 전환 시간과 자동 자전을 `움직임 감소` 로 걸러 준다. */
 	float GetEffectiveTransitionSeconds() const;
@@ -524,6 +565,27 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<FFF_AtlasPinInstance> Pins;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_AtlasCountryRegions> ActiveRegionData;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> RegionMaterialInstance;
+	UPROPERTY(Transient)
+	TArray<FFF_AtlasRegionMaterialSnapshot> RegionMaterialSnapshots;
+	bool bCountryRegionMode = false;
+	/** 재질 슬롯과 클릭/조형물 숨김이 반드시 같은 국가 집합을 사용한다. */
+	TArray<FName> RenderedRegionCountries;
+	mutable TArray<FVector> RegionSurfaceVertices;
+	mutable FBox RegionSurfaceBounds = FBox(ForceInit);
+	mutable FFF_AtlasRegionSurfaceIndex RegionSurfaceIndex;
+	/** 화면 왕복에서는 유지하되, 같은 에셋 안 배열 수정도 다음 진입 때 검출한다. */
+	TWeakObjectPtr<UFF_AtlasCountryRegions> RegionCachedData;
+	uint64 RegionCachedSurfaceSignature = 0;
+	mutable FVector RegionCachedScale = FVector::ZeroVector;
+	mutable FVector RegionCachedActorCenter = FVector::ZeroVector;
+	mutable float RegionCachedRadius = 0.f;
+	mutable float RegionCachedThickness = 0.f;
+	mutable float RegionCachedMountain = 0.f;
 
 	FFF_AtlasGlobeOrientation Orientation;
 	bool bUseFocusViewportPosition = false;

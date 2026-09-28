@@ -8,6 +8,7 @@
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
 #include "InputCoreTypes.h"
+#include "Materials/MaterialInterface.h"
 #include "UI/Atlas/FF_AtlasPinButton.h"
 #include "UI/Atlas/FF_FestivalAtlasCatalog.h"
 #include "UI/Core/FF_UIFlowSettings.h"
@@ -27,6 +28,13 @@ UFF_AtlasCountryScreen::UFF_AtlasCountryScreen(const FObjectInitializer& ObjectI
 void UFF_AtlasCountryScreen::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+
+	// 밝은 지도 WBP는 버튼 인스턴스의 ButtonLabel과 TextBlock 내용을 디자이너에서 편집한다.
+	// 기존 화면의 초기 문구 계약은 유지하되 새 화면을 실행할 때 수정값을 되돌리지 않는다.
+	if (bUseDesignerTextAndColors)
+	{
+		return;
+	}
 
 	if (Button_StartFestival)
 	{
@@ -648,7 +656,7 @@ void UFF_AtlasCountryScreen::RefreshFestivalCard()
 		//    배경을 두 벌 두면 브러시를 런타임에 갈아 끼워야 하고, 그러려면 색이 화면 코드에
 		//    박히거나 WBP 에 브러시 두 개가 생긴다. 문구(`플레이 가능` / `준비 중`)가 이미
 		//    가장 강한 신호이므로 색은 그 위에 얹는 보조 신호로만 쓴다 (AT-011).
-		if (const UFF_UIPalette* Palette = UFF_UIPalette::Get())
+		if (const UFF_UIPalette* Palette = UFF_UIPalette::Get(); Palette && !bUseDesignerTextAndColors)
 		{
 			Text_Availability->SetColorAndOpacity(FSlateColor(
 				bLocked ? Palette->Frontend.Dim : Palette->Frontend.Title));
@@ -889,7 +897,16 @@ FVector2D UFF_AtlasCountryScreen::GetMapSourceSize() const
 		{
 			if (Image_Map)
 			{
-				Image_Map->SetBrushFromTexture(MapTexture);
+				const TSoftObjectPtr<UMaterialInterface>* DisplayMaterial = CountryMapDisplayMaterials.Find(CountryId);
+				UMaterialInterface* Material = DisplayMaterial ? DisplayMaterial->LoadSynchronous() : nullptr;
+				if (Material)
+				{
+					Image_Map->SetBrushFromMaterial(Material);
+				}
+				else
+				{
+					Image_Map->SetBrushFromTexture(MapTexture);
+				}
 				// 풀에서 재사용되며 이전 국가의 placeholder tint가 남을 수 있으므로 원본색으로 복구한다.
 				Image_Map->SetColorAndOpacity(FLinearColor::White);
 			}

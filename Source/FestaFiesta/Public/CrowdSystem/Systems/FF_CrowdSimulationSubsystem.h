@@ -965,7 +965,7 @@ public:
 	float PartyMemberSpeedMultiplier = 1.3f;
 	
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
-	int32 MissingThreshholdSteps = 30;
+	int32 MissingThreshholdSteps = 120;
 	
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite,Category = "Crowd|Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))

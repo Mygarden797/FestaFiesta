@@ -7,6 +7,7 @@
 #include "FF_IncidentTypes.generated.h"
 
 class AActor;
+class UWorld;
 
 // 값이 저장·집계 키가 된다. 중간에 끼워 넣지 않고 뒤에만 추가한다.
 UENUM(BlueprintType)
@@ -125,6 +126,34 @@ struct FESTAFIESTA_API FFF_IncidentReport
 	FGameplayTagContainer ContextTags;
 };
 
+
+// 효과가 Apply 에서 받는 것. 허브 슬롯이 닫힌 뒤에도 쓸 수 있게 값으로 복사해 둔다.
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_IncidentContext
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	TObjectPtr<UWorld> World = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	FFF_IncidentHandle Handle;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	FGameplayTag IncidentTag;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	FFF_IncidentAnchor Anchor;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	FGameplayTagContainer ContextTags;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	int32 OptionIndex = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	float PeakIntensity = 0.f;
+};
 
 //UI 전달용으로 만들어진 View 전용 함수
 USTRUCT(BlueprintType)

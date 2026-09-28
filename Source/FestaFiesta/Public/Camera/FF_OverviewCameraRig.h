@@ -5,6 +5,18 @@
 #include "CoreMinimal.h"
 #include "Camera/FF_CameraTypes.h"
 
+// 입력 지속 여부와 일회성 명령을 위치/회전/줌별로 관리한다.
+// 예: 줌 전환 중 이동 키를 놓아도 줌은 완료하고 수평 이동은 멈출 수 있다.
+enum class EFF_CameraMotionChannel : uint8
+{
+	None = 0,
+	Focus = 1 << 0,
+	Rotation = 1 << 1,
+	Zoom = 1 << 2,
+	All = (1 << 0) | (1 << 1) | (1 << 2)
+};
+ENUM_CLASS_FLAGS(EFF_CameraMotionChannel);
+
 // 탑다운 카메라의 계산 부분만 떼어낸 것.
 //
 // UObject 도 Actor 도 아니고 월드를 모른다. 에디터를 안 켜도 단위 테스트가 되는 게 목적이다.
@@ -26,14 +38,14 @@ public:
 	void EdgeScroll(const FVector2D& ScreenInput, float DeltaSeconds);
 
 	// Steps 가 양수면 당겨오고 음수면 물러난다. 곱셈이라 어느 거리에서도 체감이 같다.
-	void Zoom(float Steps);
+	bool Zoom(float Steps);
 
 	// 커서 아래 월드 지점을 화면에 고정한 채 줌한다.
 	//
 	// 원리는 간단하다. 화면에서 앵커가 중심으로부터 떨어진 거리는 스프링암 길이에 비례한다.
 	// 그래서 팔 길이가 k 배로 줄면 초점을 앵커 쪽으로 (1-k) 만큼 당기면 앵커가 제자리에 남는다.
 	// 결과적으로 새 초점은 앵커와 옛 초점 사이를 k 로 보간한 지점이 된다.
-	void ZoomTowards(float Steps, const FVector& WorldAnchor);
+	bool ZoomTowards(float Steps, const FVector& WorldAnchor);
 
 	// 커서 광선을 초점 높이의 수평면에 떨어뜨린다.
 	//
@@ -75,6 +87,12 @@ public:
 
 	// 보간 없이 현재 목표를 그대로 표시 상태로 만든다. 초기화 직후에 쓴다.
 	void SnapToTarget();
+
+	// 정지는 목표로 순간이동하는 것이 아니라, 현재 화면을 새로운 목표로 삼는 것이다.
+	void HoldChannels(EFF_CameraMotionChannel Channels);
+	void SnapChannelsToTarget(EFF_CameraMotionChannel Channels);
+	bool HasReachedTarget(EFF_CameraMotionChannel Channels) const;
+	bool HasReachedGroundHeight(float GroundZ) const;
 
 	const FFF_OverviewCameraState& GetDisplayState() const { return Display; }
 	const FFF_OverviewCameraState& GetTargetState() const { return Target; }
