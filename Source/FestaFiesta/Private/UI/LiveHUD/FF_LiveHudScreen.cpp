@@ -12,10 +12,12 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
+#include "GameFramework/PlayerController.h"
 #include "UI/FF_UILog.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
+#include "UI/LiveHUD/Incident/FF_IncidentMarkerLayer.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
@@ -92,6 +94,28 @@ void UFF_LiveHudScreen::NativeOnInitialized()
 	{
 		Button_Cta->OnClicked.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleCtaClicked);
 	}
+
+}
+
+// 이 화면의 루트는 하단 바 높이만 받으므로 아이콘 레이어는 뷰포트에 직접 올린다.
+void UFF_LiveHudScreen::EnsureIncidentMarkerLayer()
+{
+	if (!IncidentMarkerLayer)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			IncidentMarkerLayer = CreateWidget<UFF_IncidentMarkerLayer>(PC, UFF_IncidentMarkerLayer::StaticClass());
+		}
+		else if (UWorld* World = GetWorld())
+		{
+			IncidentMarkerLayer = CreateWidget<UFF_IncidentMarkerLayer>(World, UFF_IncidentMarkerLayer::StaticClass());
+		}
+	}
+
+	if (IncidentMarkerLayer && !IncidentMarkerLayer->IsInViewport())
+	{
+		IncidentMarkerLayer->AddToViewport(-10);
+	}
 }
 
 void UFF_LiveHudScreen::NativeConstruct()
@@ -104,11 +128,16 @@ void UFF_LiveHudScreen::NativeConstruct()
 
 	BindViewModel();
 	RefreshAll();
+	EnsureIncidentMarkerLayer();
 }
 
 void UFF_LiveHudScreen::NativeDestruct()
 {
 	UnbindViewModel();
+	if (IncidentMarkerLayer)
+	{
+		IncidentMarkerLayer->RemoveFromParent();
+	}
 	Super::NativeDestruct();
 }
 

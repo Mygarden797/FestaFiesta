@@ -12,6 +12,7 @@ class UBorder;
 class UImage;
 class UButton;
 class UFF_FestivalViewModelSubsystem;
+class UFF_IncidentMarkerLayer;
 class UFF_LivePanelBase;
 class UFF_LivePlaceholderPanel;
 class UFF_LiveTabButton;
@@ -442,6 +443,11 @@ private:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Live|Layout", meta = (ClampMin = "0.0"))
 	float MenuRowHeight = 29.f;
+
+	void EnsureIncidentMarkerLayer();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_IncidentMarkerLayer> IncidentMarkerLayer;
 
 	void RefreshTabs();
 	void RefreshStatusRow();
