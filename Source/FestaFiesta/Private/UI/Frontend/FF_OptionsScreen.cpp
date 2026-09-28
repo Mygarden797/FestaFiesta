@@ -135,6 +135,8 @@ namespace
 bool UFF_OptionsScreen::FDraft::Equals(const FDraft& Other) const
 {
 	return FMath::IsNearlyEqual(MasterVolume, Other.MasterVolume, 0.001f)
+		&& FMath::IsNearlyEqual(MusicVolume, Other.MusicVolume, 0.001f)
+		&& FMath::IsNearlyEqual(EffectsVolume, Other.EffectsVolume, 0.001f)
 		&& bZoomToCursor == Other.bZoomToCursor
 		&& bEdgeScroll == Other.bEdgeScroll;
 }
@@ -441,10 +443,22 @@ void UFF_OptionsScreen::BuildSoundRows()
 		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_OptionsScreen::HandleMasterVolumeChanged);
 	}
 
-	AddInfoRow(
-		LOCTEXT("OptionSoundBusLabel", "개별 음량"),
-		LOCTEXT("OptionSoundBusValue", "준비 중"),
-		LOCTEXT("OptionSoundBusDesc", "BGM·효과음 분리는 사운드 담당의 SoundClass 구성이 들어온 뒤에 붙입니다"));
+	// 배경음·효과음은 마스터에 곱해진다. 적용은 축제 사운드(UFF_AudioSubsystem)가 설정 방송을 받아 한다.
+	if (UFF_SettingSliderRow* Row = AddSliderRow(
+		LOCTEXT("OptionMusicVolume", "배경음 음량"),
+		LOCTEXT("OptionMusicVolumeDesc", "축제 배경음과 피날레 음악의 크기입니다"),
+		Draft.MusicVolume, 0.f, 1.f, 0.05f))
+	{
+		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_OptionsScreen::HandleMusicVolumeChanged);
+	}
+
+	if (UFF_SettingSliderRow* Row = AddSliderRow(
+		LOCTEXT("OptionEffectsVolume", "효과음 음량"),
+		LOCTEXT("OptionEffectsVolumeDesc", "불꽃·건설·대기열·UI 소리의 크기입니다"),
+		Draft.EffectsVolume, 0.f, 1.f, 0.05f))
+	{
+		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_OptionsScreen::HandleEffectsVolumeChanged);
+	}
 }
 
 void UFF_OptionsScreen::BuildGraphicsRows()
@@ -787,6 +801,8 @@ void UFF_OptionsScreen::CaptureDraft()
 	}
 
 	Saved.MasterVolume = Runtime->GetMasterVolume();
+	Saved.MusicVolume = Runtime->GetMusicVolume();
+	Saved.EffectsVolume = Runtime->GetEffectsVolume();
 	Saved.bZoomToCursor = Runtime->IsZoomToCursorEnabled();
 	Saved.bEdgeScroll = Runtime->IsEdgeScrollEnabled();
 	Draft = Saved;
@@ -808,8 +824,9 @@ void UFF_OptionsScreen::CommitDraft()
 		return;
 	}
 
-	// 세 값을 한 번에 넘긴다. 행마다 setter 를 부르면 슬라이더를 끌 때마다 ini 를 쓴다.
-	Runtime->CommitSettings(Draft.MasterVolume, Draft.bZoomToCursor, Draft.bEdgeScroll);
+	// 다섯 값을 한 번에 넘긴다. 행마다 setter 를 부르면 슬라이더를 끌 때마다 ini 를 쓴다.
+	Runtime->CommitAllSettings(Draft.MasterVolume, Draft.MusicVolume, Draft.EffectsVolume,
+		Draft.bZoomToCursor, Draft.bEdgeScroll);
 
 	// 그래픽은 엔진이 소유한다. 화면 모드가 바뀌면 여기서 15초 확인이 시작된다.
 	CommitGraphicsDraft();
@@ -920,6 +937,32 @@ void UFF_OptionsScreen::HandleReduceMotionToggled(const bool bEnabled)
 void UFF_OptionsScreen::HandleMasterVolumeChanged(const float Value)
 {
 	Draft.MasterVolume = Value;
+	bDiscardArmed = false;
+
+	if (ShouldCommitImmediately())
+	{
+		CommitDraft();
+		return;
+	}
+	RefreshDirtyState();
+}
+
+void UFF_OptionsScreen::HandleMusicVolumeChanged(const float Value)
+{
+	Draft.MusicVolume = Value;
+	bDiscardArmed = false;
+
+	if (ShouldCommitImmediately())
+	{
+		CommitDraft();
+		return;
+	}
+	RefreshDirtyState();
+}
+
+void UFF_OptionsScreen::HandleEffectsVolumeChanged(const float Value)
+{
+	Draft.EffectsVolume = Value;
 	bDiscardArmed = false;
 
 	if (ShouldCommitImmediately())
