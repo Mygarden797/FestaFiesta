@@ -9,6 +9,8 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "Economy/Rules/FF_StaffEventRules.h"
+#include "Festival/FF_FestivalBuzzSubsystem.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "HAL/IConsoleManager.h"
@@ -33,6 +35,7 @@ void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collec
 	TryBindProgressionSubsystem();
 	TryBindSatisfactionSubsystem();
 	TryBindInsightsSubsystem();
+	TryBindBuzzSubsystem();
 }
 
 void UFF_FestivalViewModelSubsystem::Deinitialize()
@@ -59,8 +62,16 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedProgressionSubsystem->OnScheduledProgramsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
 		CachedProgressionSubsystem->OnFinaleGradeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged);
 		CachedProgressionSubsystem->OnPromotionGradeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerPromotionGradeChanged);
+		CachedProgressionSubsystem->OnAdmittedVisitorsTodayChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerAdmittedVisitorsTodayChanged);
+		CachedProgressionSubsystem->OnStaffRosterChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffRosterChanged);
 	}
 	CachedProgressionSubsystem = nullptr;
+
+	if (CachedBuzzSubsystem)
+	{
+		CachedBuzzSubsystem->OnBuzzChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerBuzzChanged);
+	}
+	CachedBuzzSubsystem = nullptr;
 
 	if (CachedSatisfactionSubsystem)
 	{
@@ -275,6 +286,8 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 	CachedProgressionSubsystem->OnScheduledProgramsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
 	CachedProgressionSubsystem->OnFinaleGradeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged);
 	CachedProgressionSubsystem->OnPromotionGradeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerPromotionGradeChanged);
+	CachedProgressionSubsystem->OnAdmittedVisitorsTodayChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerAdmittedVisitorsTodayChanged);
+	CachedProgressionSubsystem->OnStaffRosterChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffRosterChanged);
 
 	// 구독 전에 이미 샀을 수 있다. 현재값을 한 번 맞춘다.
 	PurchasedPromotion = ToPromotionChoice(CachedProgressionSubsystem->GetPurchasedPromotionGrade());
@@ -517,6 +530,148 @@ int32 UFF_FestivalViewModelSubsystem::GetAdmissionFeeGold() const
 	// 기준값이 아니라 오늘 입장료다. 플레이어가 매일 바꾼다.
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	return Progression ? Progression->GetAdmissionFee() : INDEX_NONE;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetAdmittedVisitorsToday() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression && Progression->IsFestivalStarted() ? Progression->GetAdmittedVisitorsToday() : INDEX_NONE;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetTotalAdmittedVisitors() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression && Progression->IsFestivalStarted() ? Progression->GetTotalAdmittedVisitors() : INDEX_NONE;
+}
+
+bool UFF_FestivalViewModelSubsystem::IsDailyGoalBonusPaid() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->IsDailyGoalBonusPaid() : false;
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerAdmittedVisitorsTodayChanged(int32 NewValue)
+{
+	// 값은 캐시하지 않는다 — getter 가 소유자를 바로 읽는다.
+	OnAdmittedVisitorsTodayChanged.Broadcast(NewValue);
+}
+
+void UFF_FestivalViewModelSubsystem::GetAdmissionFeeRange(
+	int32& OutMinGold, int32& OutMaxGold, int32& OutReferenceGold) const
+{
+	OutMinGold = OutMaxGold = OutReferenceGold = INDEX_NONE;
+	if (const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem())
+	{
+		Progression->GetAdmissionFeeRange(OutMinGold, OutMaxGold, OutReferenceGold);
+	}
+}
+
+bool UFF_FestivalViewModelSubsystem::CanSetAdmissionFeeNow() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted())
+	{
+		return false;
+	}
+
+	// 소유자의 TrySetAdmissionFee 가 Live 만 막는다. 같은 조건을 미리 보여 줄 뿐이다.
+	return GetCurrentStage() != EFF_FestivalStage::Live;
+}
+
+EFF_AdmissionFeeResult UFF_FestivalViewModelSubsystem::RequestSetAdmissionFee(int32 NewFeeGold)
+{
+	UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression)
+	{
+		UE_LOG(LogFestaFiestaUI, Error, TEXT("[ViewModel] 경제 시스템이 없어 입장료를 바꿀 수 없다."));
+		return EFF_AdmissionFeeResult::FestivalNotStarted;
+	}
+
+	// 방송은 소유자의 OnAdmissionFeeChanged 를 받아서 한다 — 여기서 또 쏘면 두 번 온다.
+	const EFF_AdmissionFeeResult Result = Progression->TrySetAdmissionFee(NewFeeGold);
+	if (Result != EFF_AdmissionFeeResult::Success)
+	{
+		UE_LOG(LogFestaFiestaUI, Log,
+			TEXT("[ViewModel] 입장료 변경 거부(%d Gold): %s"), NewFeeGold, *UEnum::GetValueAsString(Result));
+	}
+	return Result;
+}
+
+FFF_VisitorForecast UFF_FestivalViewModelSubsystem::GetVisitorForecast() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetVisitorForecast() : FFF_VisitorForecast();
+}
+
+FFF_VisitorForecast UFF_FestivalViewModelSubsystem::PreviewVisitorForecast(
+	EFF_PromotionChoice Choice, int32 AdmissionFeeGold) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression
+		? Progression->PreviewVisitorForecast(ToPromotionGrade(Choice), AdmissionFeeGold)
+		: FFF_VisitorForecast();
+}
+
+void UFF_FestivalViewModelSubsystem::TryBindBuzzSubsystem()
+{
+	if (CachedBuzzSubsystem)
+	{
+		return;
+	}
+
+	UGameInstance* GI = GetGameInstance();
+	if (!GI)
+	{
+		return;
+	}
+
+	UFF_FestivalBuzzSubsystem* Buzz = GI->GetSubsystem<UFF_FestivalBuzzSubsystem>();
+	if (!Buzz)
+	{
+		++BuzzBindRetryCount;
+		if (BuzzBindRetryCount == MaxStageBindRetry)
+		{
+			UE_LOG(LogFestaFiestaUI, Error,
+				TEXT("[ViewModel] UFF_FestivalBuzzSubsystem을 %d회 시도해도 찾지 못했다. 화제성이 중립값으로 남는다."),
+				MaxStageBindRetry);
+		}
+		return;
+	}
+
+	CachedBuzzSubsystem = Buzz;
+	CachedBuzzSubsystem->OnBuzzChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerBuzzChanged);
+}
+
+float UFF_FestivalViewModelSubsystem::GetBuzz() const
+{
+	return CachedBuzzSubsystem ? CachedBuzzSubsystem->GetBuzz() : 50.f;
+}
+
+float UFF_FestivalViewModelSubsystem::GetBuzzAtDayStart() const
+{
+	return CachedBuzzSubsystem ? CachedBuzzSubsystem->GetBuzzAtDayStart() : 50.f;
+}
+
+float UFF_FestivalViewModelSubsystem::GetBuzzChangeToday() const
+{
+	return GetBuzz() - GetBuzzAtDayStart();
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerBuzzChanged(float NewBuzz, float PreviousBuzz)
+{
+	OnBuzzChanged.Broadcast(NewBuzz, PreviousBuzz);
+}
+
+FFF_FestivalEvaluation UFF_FestivalViewModelSubsystem::GetFestivalEvaluation() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetFestivalEvaluation() : FFF_FestivalEvaluation();
+}
+
+TArray<int32> UFF_FestivalViewModelSubsystem::GetDailySatisfactionHistory() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetDailySatisfactionHistory() : TArray<int32>();
 }
 
 EFF_FinaleGrade UFF_FestivalViewModelSubsystem::GetPurchasedFinaleGrade() const
@@ -1115,6 +1270,49 @@ int32 UFF_FestivalViewModelSubsystem::GetMaxHiredStaffCount() const
 	return Definition ? Definition->MaxHiredStaffCount : INDEX_NONE;
 }
 
+TArray<FFF_StaffMember> UFF_FestivalViewModelSubsystem::GetStaffRoster() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression && Progression->IsFestivalStarted() ? Progression->GetStaffRoster() : TArray<FFF_StaffMember>();
+}
+
+bool UFF_FestivalViewModelSubsystem::CanPromoteStaff(int32 StaffId) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted())
+	{
+		return false;
+	}
+
+	// 소유자 TryPromoteStaff 와 같은 날짜(열린 날)로 같은 규칙을 부른다.
+	for (const FFF_StaffMember& Member : Progression->GetStaffRoster())
+	{
+		if (Member.StaffId == StaffId)
+		{
+			return FFF_StaffEventRules::CanPromote(Member, Progression->GetLastProcessedDay());
+		}
+	}
+	return false;
+}
+
+bool UFF_FestivalViewModelSubsystem::RequestPromoteStaff(int32 StaffId)
+{
+	UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression)
+	{
+		UE_LOG(LogFestaFiestaUI, Error, TEXT("[ViewModel] 경제 시스템이 없어 스태프를 승급할 수 없다."));
+		return false;
+	}
+
+	// 방송은 소유자의 OnStaffRosterChanged 를 받아서 한다.
+	return Progression->TryPromoteStaff(StaffId);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerStaffRosterChanged()
+{
+	OnStaffRosterChanged.Broadcast();
+}
+
 bool UFF_FestivalViewModelSubsystem::RequestHireStaff(int32 Count)
 {
 	UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
@@ -1368,6 +1566,11 @@ void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
 	if (!CachedInsightsSubsystem)
 	{
 		TryBindInsightsSubsystem();
+	}
+
+	if (!CachedBuzzSubsystem)
+	{
+		TryBindBuzzSubsystem();
 	}
 
 	// 남은 시간은 여기서 폴링하지 않는다.
