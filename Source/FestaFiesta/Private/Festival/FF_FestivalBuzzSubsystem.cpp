@@ -56,20 +56,22 @@ void UFF_FestivalBuzzSubsystem::ApplySnsPost(const FFF_SnsPostRow& Post)
 void UFF_FestivalBuzzSubsystem::ResetForNewFestival()
 {
 	BuzzAtDayStart = FFF_BuzzRules::NeutralBuzz;
-	SetBuzz(FFF_BuzzRules::NeutralBuzz, TEXT("NewFestival"));
+	SetBuzz(FFF_BuzzRules::NeutralBuzz, TEXT("NewFestival"), true);
 }
 
 void UFF_FestivalBuzzSubsystem::BeginNewDay(const float DecayRatio)
 {
-	SetBuzz(FFF_BuzzRules::ApplyDailyDecay(Buzz, DecayRatio), TEXT("DayDecay"));
-	BuzzAtDayStart = Buzz;
+	// 아침 기준을 먼저 바꾼 뒤 알린다. 받는 쪽이 "오늘 +N" 을 새 기준으로 다시 계산한다.
+	const float Decayed = FFF_BuzzRules::Clamp(FFF_BuzzRules::ApplyDailyDecay(Buzz, DecayRatio));
+	BuzzAtDayStart = Decayed;
+	SetBuzz(Decayed, TEXT("DayDecay"), true);
 }
 
-void UFF_FestivalBuzzSubsystem::SetBuzz(const float NewBuzz, const FName Reason)
+void UFF_FestivalBuzzSubsystem::SetBuzz(const float NewBuzz, const FName Reason, const bool bAlwaysBroadcast)
 {
 	const float Previous = Buzz;
 	Buzz = FFF_BuzzRules::Clamp(NewBuzz);
-	if (FMath::IsNearlyEqual(Previous, Buzz))
+	if (!bAlwaysBroadcast && FMath::IsNearlyEqual(Previous, Buzz))
 	{
 		return;
 	}
@@ -96,5 +98,5 @@ void UFF_FestivalBuzzSubsystem::ReadSaveData(const TArray<uint8>& InBytes)
 		return;
 	}
 	BuzzAtDayStart = FFF_BuzzRules::Clamp(State.BuzzAtDayStart);
-	SetBuzz(State.Buzz, TEXT("Restore"));
+	SetBuzz(State.Buzz, TEXT("Restore"), true);
 }
