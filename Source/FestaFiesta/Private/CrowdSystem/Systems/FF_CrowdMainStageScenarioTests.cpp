@@ -12,6 +12,7 @@
 //   UnrealEditor-Cmd.exe <uproject> -ExecCmds="Automation RunTests FestaFiesta.Scenario;Quit"
 //       -unattended -nopause -nosplash -NullRHI -NoSound -FFScenario
 
+#include "Misc/App.h"
 #include "Misc/AutomationTest.h"
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
@@ -23,6 +24,7 @@
 #include "Engine/World.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FileHelpers.h"
+#include "Festival/FF_FestivalBuzzSubsystem.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Tests/AutomationCommon.h"
@@ -119,6 +121,8 @@ public:
 			return true;
 		}
 
+		ApplyVisitorConditions(Game);
+
 		// 편성 판정에 쓰는 목록이라 개장 전에 읽는다.
 		const FFFZSReadModel ReadModel = Zones->BuildReadModel();
 		Test->AddInfo(FString::Printf(TEXT("설치된 시설 %d개"), ReadModel.Facilities.Num()));
@@ -212,6 +216,50 @@ public:
 	}
 
 private:
+	// 방문객 조건을 명령줄로 바꾼다. 풀 한도를 재려면 인원이 가장 많이 나오는 조합을 건다.
+	//   -FFScenarioPromotion=Influencer -FFScenarioFee=0 -FFScenarioBuzz=100
+	void ApplyVisitorConditions(UGameInstance* Game)
+	{
+		UFF_FestivalProgressionSubsystem* Progression =
+			Game ? Game->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+		if (!Progression)
+		{
+			return;
+		}
+
+		FString PromotionName;
+		if (FParse::Value(FCommandLine::Get(), TEXT("FFScenarioPromotion="), PromotionName))
+		{
+			const int64 Value = StaticEnum<EFF_PromotionGrade>()->GetValueByNameString(PromotionName);
+			if (Value == INDEX_NONE
+				|| Progression->TryPurchasePromotion(static_cast<EFF_PromotionGrade>(Value)) != EFF_PromotionPurchaseResult::Success)
+			{
+				Test->AddError(FString::Printf(TEXT("홍보 '%s' 을 적용하지 못했다."), *PromotionName));
+			}
+		}
+
+		int32 Fee = 0;
+		if (FParse::Value(FCommandLine::Get(), TEXT("FFScenarioFee="), Fee)
+			&& Progression->TrySetAdmissionFee(Fee) != EFF_AdmissionFeeResult::Success)
+		{
+			Test->AddError(FString::Printf(TEXT("입장료 %d 를 적용하지 못했다."), Fee));
+		}
+
+		float TargetBuzz = 0.f;
+		UFF_FestivalBuzzSubsystem* Buzz = Game->GetSubsystem<UFF_FestivalBuzzSubsystem>();
+		if (Buzz && FParse::Value(FCommandLine::Get(), TEXT("FFScenarioBuzz="), TargetBuzz))
+		{
+			Buzz->AddBuzz(TargetBuzz - Buzz->GetBuzz(), TEXT("Scenario"));
+		}
+
+		const FFF_VisitorForecast Forecast = Progression->GetVisitorForecast();
+		Test->AddInfo(FString::Printf(
+			TEXT("[조건] 홍보 %s · 입장료 %d · 화제성 %.0f → 예상 %d (배수 홍보 %.2f · 입장료 %.2f · 화제성 %.2f)"),
+			*UEnum::GetValueAsString(Progression->GetPurchasedPromotionGrade()), Forecast.AdmissionFeeGold,
+			Buzz ? Buzz->GetBuzz() : 0.f, Forecast.ExpectedVisitors,
+			Forecast.PromotionMultiplier, Forecast.AdmissionFeeMultiplier, Forecast.BuzzMultiplier));
+	}
+
 	FAutomationTestBase* Test;
 	double StartedAt = -1.0;
 };
@@ -246,6 +294,16 @@ public:
 		PeakSeated = FMath::Max(PeakSeated, Seated);
 		PeakProgramAtVenue = FMath::Max(PeakProgramAtVenue, AtVenue);
 
+		// -NullRHI 로 돌리면 렌더 비용이 빠져 게임 스레드(군중 시뮬) 비용만 남는다.
+		PeakActive = FMath::Max(PeakActive, Crowd->GetActiveAgentCount());
+		// 파티 최대 인원(6)만큼도 안 남으면 입장이 밀리는 중이다.
+		if (Crowd->GetAgentPoolSize() - Crowd->GetActiveAgentCount() < 6) { ++PoolFullFrames; }
+		const double FrameMs = FApp::GetDeltaTime() * 1000.0;
+		FrameMsSum += FrameMs;
+		++FrameCount;
+		PeakFrameMs = FMath::Max(PeakFrameMs, FrameMs);
+		if (FrameMs > 33.3) { ++SlowFrames; }
+
 		const bool bTimedOut =
 			FPlatformTime::Seconds() - StartedAt > FFMainStageScenario::WallClockBudgetSeconds;
 		if (Stage->ElapsedLiveSeconds < FFMainStageScenario::ObserveUntilLiveSeconds && !bTimedOut)
@@ -277,6 +335,17 @@ public:
 			TEXT("[군중] 활성 %d명 · 버려진 시뮬 시간 %.2f초 (0 이 아니면 위 수치를 믿지 말 것)"),
 			Crowd->GetActiveAgentCount(), Crowd->GetDroppedSimSeconds()));
 
+		const UFF_FestivalProgressionSubsystem* Progression =
+			Game ? Game->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+		Test->AddInfo(FString::Printf(
+			TEXT("[인원] 예상 %d · 입장 %d · 최고 동시 %d / 풀 %d · 풀이 차서 입장이 밀린 프레임 %d/%d"),
+			Progression ? Progression->GetExpectedVisitors() : INDEX_NONE,
+			Progression ? Progression->GetAdmittedVisitorsToday() : INDEX_NONE,
+			PeakActive, Crowd->GetAgentPoolSize(), PoolFullFrames, FrameCount));
+		Test->AddInfo(FString::Printf(
+			TEXT("[프레임] 평균 %.1fms · 최대 %.1fms · 33ms 초과 %d/%d 프레임 (NullRHI 면 게임 스레드만)"),
+			FrameCount > 0 ? FrameMsSum / FrameCount : 0.0, PeakFrameMs, SlowFrames, FrameCount));
+
 		// 계측이 목적이라 임계를 박지 않는다. 배선이 끊긴 경우만 잡는다.
 		Test->TestTrue(TEXT("공연 구간에 한 파티라도 무대에 앉았다"), PeakSeated > 0);
 		return true;
@@ -287,6 +356,12 @@ private:
 	double StartedAt = -1.0;
 	int32 PeakSeated = 0;
 	int32 PeakProgramAtVenue = 0;
+	int32 PeakActive = 0;
+	double FrameMsSum = 0.0;
+	double PeakFrameMs = 0.0;
+	int32 FrameCount = 0;
+	int32 SlowFrames = 0;
+	int32 PoolFullFrames = 0;
 };
 
 class FFFScenarioWaitForTeardown final : public IAutomationLatentCommand

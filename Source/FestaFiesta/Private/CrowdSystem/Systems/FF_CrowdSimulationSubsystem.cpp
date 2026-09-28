@@ -763,6 +763,15 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 				const FFF_TaggedVisitor& LeadVisitor = CachedDistribution.Visitors[VisitorCursor];
 		const int32 PlannedSize = bEnablePartyGrouping ? FMath::Max(LeadVisitor.TargetGroupSize, 1) : 1;
 		const int32 PartySize = FMath::Min(PlannedSize, CachedDistribution.Visitors.Num() - VisitorCursor);
+
+		// 파티가 통째로 들어갈 자리가 없으면 다음 프레임에 다시 시도한다. 중간에 끊기면 커서는
+		// 파티 전체만큼 넘어가 남은 멤버가 영영 안 온다.
+		if (FreeAgentSlotIndex.Num() < PartySize)
+		{
+			bAgentPoolExhausted = true;
+			break;
+		}
+
 		checkf(!LeadVisitor.bIsDependentChildSlot || !bEnablePartyGrouping,
 			TEXT("SpawnAgents: 그룹 선두가 아동 슬롯이다 — 빌더가 성인을 먼저 배출한다는 전제가 깨졌다. ")
 			TEXT("아동이 리더가 되면 목적지를 상속할 대상이 없다"));
@@ -865,8 +874,6 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 					FMath::Max(Temp_LiveStageMinutes * StayShare * Traits.StayDurationMultiplier, 0.f);
 			}
 
-			ApplyAgentAppearance(AgentIndex);
-			
 			++SpawnedCount;
 			++MembersSpawnedThisParty;
 		}
@@ -888,10 +895,11 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 	if (bAgentPoolExhausted && !bArrivalPoolExhaustedLogged)
 	{
 		bArrivalPoolExhaustedLogged = true;
-		UE_LOG(LogTemp, Error,
-			TEXT("[CrowdSimulationSubsystem] Agent 풀 소진 — %d/%d명에서 멈췄다. ")
-			TEXT("곡선 뒷부분이 잘려 분석 결과가 왜곡된다. AgentPoolSize를 UnitCount 이상으로 올릴 것"),
-			VisitorCursor, ArrivalTotalVisitorCount);
+		// 풀은 동시 인원 상한이다. 차면 누가 나갈 때까지 입장이 밀리고, Live 가 끝날 때까지 못 들어온
+		// 손님은 그날 오지 않는다. 자주 보이면 AgentPoolSize·ActorPoolSize 를 함께 올린다.
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] Agent 풀(%d)이 찼다 — %d/%d명째에서 입장이 밀린다"),
+			UnitDatas.Num(), VisitorCursor, ArrivalTotalVisitorCount);
 	}
 
 	if (SpawnedCount > 0)
@@ -4775,22 +4783,39 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 		? (DistToSlotSq > FMath::Square(ReleaseRadius))
 		: (DistToSlotSq > FMath::Square(CatchUpRadius));
 	
-	if (Unit.MissingCount > MissingThreshholdSteps)
+	const bool bPartyLeaving = PartyDecisionStates.IsValidIndex(LeaderIndex)
+		&& (PartyDecisionStates[LeaderIndex].bIsLeaving
+			|| PartyDecisionStates[LeaderIndex].AudiencePhase == EFF_PartyAudiencePhase::Exiting);
+
+	if (bPartyLeaving)
 	{
-		
+		if (Unit.bMissing)
+		{
+			QueueMissingEvent(AgentIndex, Unit, EFF_CrowdMissingChange::Returned);
+		}
+
+		Unit.bMissing = false;
+		Unit.MissingCount = 0;
+	}
+	else if (Unit.MissingCount > MissingThreshholdSteps)
+	{
+
 		if (!Unit.bMissing )
 		{
 			QueueMissingEvent(AgentIndex,Unit,EFF_CrowdMissingChange::Started);
 		}
-		
+
 		Unit.bMissing = true;
-	
+
 	}
 
 	if (Unit.bCatchingUpToLeader)
 	{
 		Unit.Speed = Unit.MaxSpeed;
-		Unit.MissingCount++;
+		if (!bPartyLeaving)
+		{
+			Unit.MissingCount++;
+		}
 
 		if (bLeaderStopped)
 		{

@@ -7,6 +7,7 @@ DEFINE_LOG_CATEGORY(LogFestaFiestaCamera);
 void FFF_OverviewCameraRig::Initialize(const FFF_OverviewCameraSettings& InSettings, const FVector& InFocusLocation, float InArmLength)
 {
 	Settings = InSettings;
+	bHasGroundHeight = false;
 
 	// 설정이 뒤집혀 있으면 줌이 반대로 돌거나 0으로 나눈다. 조용히 이상하게 도느니 고쳐서 쓴다.
 	if (!Settings.IsValid())
@@ -163,39 +164,35 @@ void FFF_OverviewCameraRig::ApplyPanWithSpeed(const FVector2D& ScreenInput, floa
 	ClampFocusToBounds(Target.FocusLocation);
 }
 
-void FFF_OverviewCameraRig::Zoom(float Steps)
+bool FFF_OverviewCameraRig::Zoom(float Steps)
 {
 	if (FMath::IsNearlyZero(Steps))
 	{
-		return;
+		return false;
 	}
 
 	// 곱셈 줌. Steps 가 양수면 가까워진다.
 	const float Factor = FMath::Pow(Settings.ZoomStepMultiplier, -Steps);
+	const float PreviousArmLength = Target.ArmLength;
 	Target.ArmLength = FMath::Clamp(Target.ArmLength * Factor, Settings.MinArmLength, Settings.MaxArmLength);
 	Target.Pitch = ResolvePitchForArmLength(Target.ArmLength);
+	return !FMath::IsNearlyEqual(PreviousArmLength, Target.ArmLength);
 }
 
-void FFF_OverviewCameraRig::ZoomTowards(float Steps, const FVector& WorldAnchor)
+bool FFF_OverviewCameraRig::ZoomTowards(float Steps, const FVector& WorldAnchor)
 {
-	if (FMath::IsNearlyZero(Steps))
-	{
-		return;
-	}
-
 	const float PreviousArmLength = Target.ArmLength;
-	Zoom(Steps);
 
 	// 클램프에 걸려 실제로 안 움직였으면 초점도 건드리면 안 된다.
 	// 안 그러면 최대 줌 상태에서 휠을 계속 굴릴 때 화면이 커서 쪽으로 계속 기어간다.
-	if (FMath::IsNearlyEqual(PreviousArmLength, Target.ArmLength))
+	if (!Zoom(Steps))
 	{
-		return;
+		return false;
 	}
 
 	if (PreviousArmLength <= KINDA_SMALL_NUMBER)
 	{
-		return;
+		return true;
 	}
 
 	const float Ratio = Target.ArmLength / PreviousArmLength;
@@ -206,6 +203,7 @@ void FFF_OverviewCameraRig::ZoomTowards(float Steps, const FVector& WorldAnchor)
 	Target.FocusLocation = FMath::Lerp(Target.FocusLocation, FullyAnchored, Strength);
 
 	ClampFocusToBounds(Target.FocusLocation);
+	return true;
 }
 
 bool FFF_OverviewCameraRig::ProjectRayToHorizontalPlane(const FVector& RayOrigin, const FVector& RayDirection,
@@ -375,6 +373,64 @@ void FFF_OverviewCameraRig::ResetToInitial()
 void FFF_OverviewCameraRig::SnapToTarget()
 {
 	Display = Target;
+}
+
+void FFF_OverviewCameraRig::HoldChannels(const EFF_CameraMotionChannel Channels)
+{
+	if (EnumHasAnyFlags(Channels, EFF_CameraMotionChannel::Focus))
+	{
+		Target.FocusLocation = Display.FocusLocation;
+	}
+	if (EnumHasAnyFlags(Channels, EFF_CameraMotionChannel::Rotation))
+	{
+		Target.Yaw = Display.Yaw;
+	}
+	if (EnumHasAnyFlags(Channels, EFF_CameraMotionChannel::Zoom))
+	{
+		Target.ArmLength = Display.ArmLength;
+		Target.Pitch = Display.Pitch;
+	}
+}
+
+void FFF_OverviewCameraRig::SnapChannelsToTarget(const EFF_CameraMotionChannel Channels)
+{
+	if (EnumHasAnyFlags(Channels, EFF_CameraMotionChannel::Focus))
+	{
+		Display.FocusLocation = Target.FocusLocation;
+	}
+	if (EnumHasAnyFlags(Channels, EFF_CameraMotionChannel::Rotation))
+	{
+		Display.Yaw = Target.Yaw;
+	}
+	if (EnumHasAnyFlags(Channels, EFF_CameraMotionChannel::Zoom))
+	{
+		Display.ArmLength = Target.ArmLength;
+		Display.Pitch = Target.Pitch;
+	}
+}
+
+bool FFF_OverviewCameraRig::HasReachedTarget(const EFF_CameraMotionChannel Channels) const
+{
+	// 1mm / 0.01도 이내의 잔여 보간을 끝내서 유한 시간 안에 정확히 고정한다.
+	return (!EnumHasAnyFlags(Channels, EFF_CameraMotionChannel::Focus)
+			|| Display.FocusLocation.Equals(Target.FocusLocation, 0.1))
+		&& (!EnumHasAnyFlags(Channels, EFF_CameraMotionChannel::Rotation)
+			|| FMath::Abs(NormalizeYaw(Target.Yaw - Display.Yaw)) <= 0.01f)
+		&& (!EnumHasAnyFlags(Channels, EFF_CameraMotionChannel::Zoom)
+			|| (FMath::IsNearlyEqual(Display.ArmLength, Target.ArmLength, 0.1f)
+				&& FMath::IsNearlyEqual(Display.Pitch, Target.Pitch, 0.01f)));
+}
+
+bool FFF_OverviewCameraRig::HasReachedGroundHeight(const float GroundZ) const
+{
+	if (!Settings.bFollowGroundHeight)
+	{
+		return true;
+	}
+	FVector Desired = Target.FocusLocation;
+	Desired.Z = GroundZ + Settings.GroundFocusOffset;
+	ClampFocusToBounds(Desired);
+	return FMath::IsNearlyEqual(Target.FocusLocation.Z, Desired.Z, 0.1);
 }
 
 void FFF_OverviewCameraRig::AdvanceInterpolation(float DeltaSeconds)

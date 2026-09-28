@@ -71,6 +71,8 @@ public:
 	FFF_IncidentHandle ReportIncident(const FFF_IncidentReport& Report);
 	//사건 철회
 	void WithdrawIncident(FName DedupeKey);
+	//플레이어가 사건을 처리했다
+	bool ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex = INDEX_NONE);
 	//핸들 유효 관계
 	bool IsHandleValid(FFF_IncidentHandle Handle) const;
 	
@@ -110,6 +112,7 @@ private:
 	
 	UPROPERTY()
 	TMap<FGameplayTag,TObjectPtr<UFF_IncidentDefinition>> CachedDef;
+	
 	int32 MaxConcurrent = 64;
 	
 };

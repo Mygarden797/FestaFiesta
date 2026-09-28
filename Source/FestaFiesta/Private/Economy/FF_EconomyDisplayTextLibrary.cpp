@@ -84,4 +84,57 @@ FText UFF_EconomyDisplayTextLibrary::GetProgramPurchaseResultText(EFF_ProgramPur
 	return FText::GetEmpty();
 }
 
+FText UFF_EconomyDisplayTextLibrary::GetAdmissionFeeResultText(EFF_AdmissionFeeResult Result)
+{
+	switch (Result)
+	{
+	case EFF_AdmissionFeeResult::Success:            return LOCTEXT("AdmissionFee_Success",            "입장료를 바꿨다");
+	case EFF_AdmissionFeeResult::FestivalNotStarted: return LOCTEXT("AdmissionFee_FestivalNotStarted", "축제가 시작되지 않았다");
+	case EFF_AdmissionFeeResult::OutOfRange:         return LOCTEXT("AdmissionFee_OutOfRange",         "허용 범위 밖이다");
+	case EFF_AdmissionFeeResult::LockedDuringLive:   return LOCTEXT("AdmissionFee_LockedDuringLive",   "운영 중에는 바꿀 수 없다");
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_EconomyDisplayTextLibrary::GetPromotionGradeText(EFF_PromotionGrade Grade)
+{
+	switch (Grade)
+	{
+	case EFF_PromotionGrade::None:       return LOCTEXT("Promotion_None",       "홍보 없음");
+	case EFF_PromotionGrade::Basic:      return LOCTEXT("Promotion_Basic",      "지역 SNS");
+	case EFF_PromotionGrade::Focused:    return LOCTEXT("Promotion_Focused",    "전국 홍보");
+	case EFF_PromotionGrade::Influencer: return LOCTEXT("Promotion_Influencer", "인플루언서");
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_EconomyDisplayTextLibrary::GetFestivalEvaluationGradeText(EFF_FestivalEvaluationGrade Grade)
+{
+	switch (Grade)
+	{
+	case EFF_FestivalEvaluationGrade::D: return LOCTEXT("Evaluation_D", "D");
+	case EFF_FestivalEvaluationGrade::C: return LOCTEXT("Evaluation_C", "C");
+	case EFF_FestivalEvaluationGrade::B: return LOCTEXT("Evaluation_B", "B");
+	case EFF_FestivalEvaluationGrade::A: return LOCTEXT("Evaluation_A", "A");
+	case EFF_FestivalEvaluationGrade::S: return LOCTEXT("Evaluation_S", "S");
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_EconomyDisplayTextLibrary::GetFestivalEvaluationAxisText(EFF_FestivalEvaluationAxis Axis)
+{
+	switch (Axis)
+	{
+	case EFF_FestivalEvaluationAxis::Satisfaction: return LOCTEXT("EvaluationAxis_Satisfaction", "만족도");
+	case EFF_FestivalEvaluationAxis::Visitors:     return LOCTEXT("EvaluationAxis_Visitors",     "방문객");
+	case EFF_FestivalEvaluationAxis::Finance:      return LOCTEXT("EvaluationAxis_Finance",      "재무");
+	case EFF_FestivalEvaluationAxis::Buzz:         return LOCTEXT("EvaluationAxis_Buzz",         "화제성");
+	}
+
+	return FText::GetEmpty();
+}
+
 #undef LOCTEXT_NAMESPACE
