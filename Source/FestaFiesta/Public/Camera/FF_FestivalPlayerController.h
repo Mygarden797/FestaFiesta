@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "InputCoreTypes.h"
 #include "Camera/FF_CameraTypes.h"
 #include "FF_FestivalPlayerController.generated.h"
 
@@ -48,6 +49,7 @@ class FESTAFIESTA_API AFF_FestivalPlayerController : public APlayerController
 
 public:
 	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
+	virtual void FlushPressedKeys() override;
 	AFF_FestivalPlayerController();
 
 	virtual void BeginPlay() override;
@@ -184,6 +186,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input")
 	TObjectPtr<UInputAction> ToggleViewAction;
 
+	// 가장자리 이동은 이 키를 누르는 동안만 허용한다. 기본값은 휠 버튼이다.
+	// 커서만 가장자리에 두고 손을 떼면 움직이지 않는다. 무효 키는 가장자리 이동을 끈다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input")
+	FKey EdgeScrollActivationKey = EKeys::MiddleMouseButton;
+
 	// 시점 전환에 쓸 블렌드 시간. 0 이면 즉시 전환한다.
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera", meta = (ClampMin = "0.0"))
 	float ViewSwitchBlendTime = 0.5f;
@@ -220,6 +227,8 @@ private:
 	bool IsBuildSessionActive() const;
 	bool IsBuildPreviewActive() const;
 	bool IsCameraRotationAllowed() const;
+	bool IsCameraViewportFocused() const;
+	void StopOverviewCameraMotion();
 
 	// 커서 아래 월드 지점을 구한다. 커서가 없거나 광선이 지면을 안 만나면 false.
 	bool ResolveCursorWorldAnchor(FVector& OutAnchor) const;
@@ -227,7 +236,7 @@ private:
 	// Enhanced Input과 native 좌클릭 fallback이 같은 PlayerTick에 함께 들어와도 한 번만 방송한다.
 	bool bPickRequestHandledThisTick = false;
 
-	// 마우스가 화면 가장자리에 있으면 그쪽으로 팬한다.
+	// 활성화 키를 누른 채 마우스가 화면 가장자리에 있으면 그쪽으로 팬한다.
 	void TickEdgeScroll(float DeltaTime);
 
 	// 보고 있던 대상이 파괴됐는지 확인하고, 그렇다면 관찰 시점으로 되돌린다.
