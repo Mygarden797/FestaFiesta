@@ -7,6 +7,13 @@
 
 namespace CrowdSteering
 {
+	bool IsApproachingAssignedSlot(const FUnitData& Unit)
+	{
+		return Unit.bHasQueueSlot && Unit.bUsePreciseSlotPosition
+			&& FVector::DistSquared2D(Unit.Position, Unit.QueueSlotLocation)
+				<= FMath::Square(AssignedSlotApproachDistanceUU);
+	}
+
 	float ComputeVelocityAlpha(float SmoothTime, float FixedDt)
 	{
 		if (SmoothTime <= KINDA_SMALL_NUMBER)
@@ -41,7 +48,12 @@ namespace CrowdSteering
 
 		const FVector Direction = ToTarget.GetSafeNormal2D();
 
-		const float BrakingDistance = FMath::Max(Params.BrakingDistanceUU, KINDA_SMALL_NUMBER);
+		// 보행용 4.5m 감속을 90cm 간격 줄에 그대로 쓰면 한 칸 전진 속도가 너무 낮다.
+		// 자리에는 순간이동하지 않고 마지막 약 1m에서만 감속해 작은 도착 반경까지 걷는다.
+		const float BrakingDistance = Unit.bHasQueueSlot && Unit.bUsePreciseSlotPosition
+			? FMath::Min(FMath::Max(Params.BrakingDistanceUU, KINDA_SMALL_NUMBER),
+				FMath::Max(Unit.Radius * 3.f, Unit.ArrivalRadiusUU * 2.f))
+			: FMath::Max(Params.BrakingDistanceUU, KINDA_SMALL_NUMBER);
 		const float SpeedScale = FMath::Clamp(ToTarget.Size() / BrakingDistance, 0.f, 1.f);
 
 		return Direction * (Unit.Speed * SpeedScale);

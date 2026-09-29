@@ -119,7 +119,7 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
 	bool bCanUnassignStaff = false;
 
-	/** Current one-person settlement estimate, visible even when the facility has no levels. */
+	/** Current settlement estimates by team size, visible even when the facility has no levels. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
 	FText FacilityRevenueText;
 
@@ -232,6 +232,7 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText ExpectedWaitText;
 
+	// Existing widget binding name; the operational metric displays seconds per team.
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText ThroughputText;
 
@@ -379,6 +380,7 @@ namespace FFFacilityInfoModel
 		bool bCostAvailable,
 		int32 CostGold);
 	FESTAFIESTA_API FText FormatExpectedWait(bool bAvailable, float Seconds);
+	FESTAFIESTA_API FText FormatServiceDuration(bool bAvailable, float SecondsPerTeam);
 	FESTAFIESTA_API FText FormatThroughput(bool bAvailable, float TeamsPerMinute);
 	FESTAFIESTA_API FText GetOperationStateText(
 		bool bQueueSupported,

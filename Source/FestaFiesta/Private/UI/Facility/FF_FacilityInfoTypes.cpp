@@ -144,7 +144,17 @@ namespace FFFacilityInfoModel
 			? FText::Format(LOCTEXT("CurrentRevenueSigned", "1인 예상 수익  {0} Gold\n기본 대비 {1} Gold"),
 				FText::AsNumber(Preview->CurrentRevenuePerUseGold),
 				FormatSignedChange(Preview->CurrentRevenuePerUseGold - Preview->BaseRevenuePerUseGold))
-			: LOCTEXT("RevenueUnavailable", "1인 예상 수익  정보 없음");
+			: LOCTEXT("TeamRevenueUnavailable", "팀당 예상 수익  정보 없음");
+		if (Preview && Preview->bRevenueAvailable && Preview->CurrentRevenueByTeamSizeGold.Num() == 6)
+		{
+			// Each amount is quoted before rounding by the same rule as a completed team payment.
+			// These are explicit team-size examples, not a guaranteed minimum/maximum payment.
+			const TArray<int32>& Revenue = Preview->CurrentRevenueByTeamSizeGold;
+			ViewData.FacilityRevenueText = FText::Format(
+				LOCTEXT("TeamRevenueBySize", "팀당 예상 수익 · 일반 이용 1회\n1명 {0} · 2명 {1} · 3명 {2} Gold\n4명 {3} · 5명 {4} · 6명 {5} Gold"),
+				FText::AsNumber(Revenue[0]), FText::AsNumber(Revenue[1]), FText::AsNumber(Revenue[2]),
+				FText::AsNumber(Revenue[3]), FText::AsNumber(Revenue[4]), FText::AsNumber(Revenue[5]));
+		}
 		ViewData.CurrentUpgradeLevel = Preview ? FMath::Max(1, Preview->CurrentLevel) : 1;
 		ViewData.bHasFacilityLevels = Preview && Preview->bHasLevels;
 		ViewData.FacilityLevelText = ViewData.bHasFacilityLevels ? FText::Format(
@@ -437,6 +447,19 @@ namespace FFFacilityInfoModel
 		}
 		const int32 Minutes = FMath::Max(1, FMath::CeilToInt(Seconds / 60.0f));
 		return FText::Format(LOCTEXT("WaitMinutesFormat", "약 {0}분"), FText::AsNumber(Minutes));
+	}
+
+	FText FormatServiceDuration(const bool bAvailable, const float SecondsPerTeam)
+	{
+		if (!bAvailable || !FMath::IsFinite(SecondsPerTeam) || SecondsPerTeam <= 0.0f)
+		{
+			return LOCTEXT("UnavailableServiceDuration", "계산 불가");
+		}
+		FNumberFormattingOptions Options;
+		Options.MinimumFractionalDigits = 0;
+		Options.MaximumFractionalDigits = 2;
+		return FText::Format(LOCTEXT("TeamServiceDurationFormat", "팀당 {0}초"),
+			FText::AsNumber(SecondsPerTeam, &Options));
 	}
 
 	FText FormatThroughput(const bool bAvailable, const float TeamsPerMinute)

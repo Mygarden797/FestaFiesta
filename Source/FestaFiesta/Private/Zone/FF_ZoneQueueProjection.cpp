@@ -21,6 +21,22 @@ namespace
 	}
 }
 
+bool UFF_ZoneSystemQueueBridgeSubsystem::TryBuildPlacementObstacle(
+	const FFFZSFacilitySpec& Spec, const FTransform& Transform, FFF_QueuePlacementObstacle& OutObstacle)
+{
+	if (Spec.IsGroundSurface() || Transform.ContainsNaN()
+		|| Spec.FootprintSizeCells.X <= 0 || Spec.FootprintSizeCells.Y <= 0)
+	{
+		return false;
+	}
+	const FVector Scale = Transform.GetScale3D().GetAbs();
+	OutObstacle.Center = Transform.GetLocation();
+	OutObstacle.HalfExtentsCm = FVector2D(Spec.FootprintSizeCells.X * Scale.X * .5,
+		Spec.FootprintSizeCells.Y * Scale.Y * .5);
+	OutObstacle.YawDegrees = Transform.Rotator().Yaw;
+	return true;
+}
+
 FFF_QueueConfig UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(
 	const FFFZSQueueRules& Rules,
 	const FVector& ExitLocation)
@@ -154,6 +170,14 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(
 		OutLane.TailDirection = FVector::ForwardVector;
 	}
 	OutLane.SlotYawDegrees = OutLane.ExplicitSlotTransforms[0].Rotator().Yaw;
+	OutLane.bConstrainMemberPlacement = true;
+	OutLane.MemberPlacementClearanceCm = 40.f;
+	OutLane.MaxMemberLateralOffsetCm = 270.f;
+	FFF_QueuePlacementObstacle OwnFootprint;
+	if (TryBuildPlacementObstacle(Spec, FacilityTransform, OwnFootprint))
+	{
+		OutLane.PlacementObstacles.Add(OwnFootprint);
+	}
 	return true;
 }
 

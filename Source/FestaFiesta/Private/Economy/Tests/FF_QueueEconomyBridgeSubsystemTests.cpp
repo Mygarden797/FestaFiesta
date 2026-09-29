@@ -1214,4 +1214,243 @@ bool FFF_QueueEconomyBridge_EmptyEntranceDiscoversAndPaysBusiness::RunTest(const
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueEconomyBridge_MainProgramBreakSettlesAndResumes,
+	"FestaFiesta.Economy.QueueBridge.MainProgramBreakSettlesAndResumes",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueEconomyBridge_MainProgramBreakSettlesAndResumes::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_QueueEconomyBridgeTestHelpers;
+	FScopedQueueEconomyTestSettings SettingsGuard;
+	FQueueEconomyHarness Harness;
+	if (!TestTrue(TEXT("Performance-break settlement world initializes"), Harness.Initialize(this))) return false;
+	auto* Stage = Harness.World->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>();
+	if (!TestNotNull(TEXT("The real stage clock is available"), Stage)) return false;
+	FObjectPropertyBase* ScheduleProperty = FindFProperty<FObjectPropertyBase>(
+		UFF_FestivalStageSubsystem::StaticClass(), TEXT("ProgramScheduleTable"));
+	if (!TestNotNull(TEXT("The fixture can supply its own program schedule"), ScheduleProperty)) return false;
+	UDataTable* Schedule = NewObject<UDataTable>(Stage);
+	Schedule->RowStruct = FFF_LiveTriggerEvent::StaticStruct();
+	const auto AddProgramEvent = [Schedule](FName RowName, float AtSeconds, bool bStartsShow)
+	{
+		FFF_LiveTriggerEvent Event;
+		Event.Day = 1;
+		Event.TriggerSeconds = AtSeconds;
+		Event.EventLabel = RowName.ToString();
+		Event.bIsMainProgramLockStart = bStartsShow;
+		Schedule->AddRow(RowName, Event);
+	};
+	AddProgramEvent(TEXT("FirstStart"), 180.f, true);
+	AddProgramEvent(TEXT("FirstEnd"), 210.f, false);
+	AddProgramEvent(TEXT("SecondStart"), 240.f, true);
+	AddProgramEvent(TEXT("SecondEnd"), 270.f, false);
+	ScheduleProperty->SetObjectPropertyValue_InContainer(Stage, Schedule);
+
+	Harness.Definition->BoothCommissionRate = .25f;
+	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	Spec.FacilityDefinitionId = BoothDefinitionId;
+	Spec.InstallCostKey = NAME_None;
+	Spec.bOverrideRevenuePerUseGold = true;
+	Spec.RevenuePerUseGold = 100;
+	Spec.QueueRules.ServiceCapacity = 1;
+	Spec.QueueRules.ServiceDurationSeconds = 10.f;
+	Spec.QueueRules.AbandonAfterSeconds = 0.f;
+	FString Failure;
+	if (!Harness.InstallFoodStall(Failure, false, &Spec)) { AddError(Failure); return false; }
+	FFFZSCommand Open;
+	Open.CommandId = FGuid::NewGuid();
+	Open.TransactionId = FGuid::NewGuid();
+	Open.Type = EFFZSCommandType::Open;
+	Open.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+	Open.FacilityInstanceId = Harness.FacilityInstanceId;
+	if (!TestTrue(TEXT("The test business opens"), Harness.ZoneSystem->ExecuteCommand(Open).bSucceeded)) return false;
+	Stage->CurrentDay = 1;
+	Stage->CurrentStage = EFF_FestivalStage::Live;
+	Stage->ElapsedLiveSeconds = 176.9f;
+	TestFalse(TEXT("Before the three-minute boundary, normal business is available"), Stage->IsMainProgramQueueBreakActive());
+	Harness.Queue->SimulationStepSeconds = .05f;
+	const int32 RevenueBefore = Harness.Progression->GetTodayRevenue();
+	const auto Visit = [&](int32 PartyId, int32 Members)
+	{
+		FFF_JoinRequest Request;
+		Request.PartyId = PartyId;
+		Request.MemberCount = Members;
+		return Harness.QueueBridge->TryJoinZoneFacility(Harness.FacilityInstanceId, Request);
+	};
+	if (!TestTrue(TEXT("The four-person team joins before preparation"), Visit(700001, 4).bAccepted)
+		|| !TestTrue(TEXT("A two-person waiting team also joins"), Visit(700002, 2).bAccepted)) return false;
+	Harness.QueueBridge->NotifyZoneFacilityPartyArrived(Harness.FacilityInstanceId, 700001);
+	Harness.Queue->AdvanceFixedSteps(40);
+	TestEqual(TEXT("Only the arrived first team has started service"),
+		Harness.Queue->GetQueueState(Harness.QueueFacilityId).ActiveServicePartyCount, 1);
+	TestEqual(TEXT("Partial service and mere admission have not charged yet"), Harness.Progression->GetTodayRevenue(), RevenueBefore);
+
+	Stage->ElapsedLiveSeconds = 177.f;
+	TestTrue(TEXT("Preparation begins exactly three festival minutes before the show"), Stage->IsMainProgramQueueBreakActive());
+	Harness.QueueBridge->SynchronizeMainProgramQueueBreak();
+	TestEqual(TEXT("Only the four people already using the booth pay at the boundary"),
+		Harness.Progression->GetTodayRevenue() - RevenueBefore, 100);
+	TestEqual(TEXT("Both using and waiting teams leave before the show"),
+		Harness.Queue->GetQueueState(Harness.QueueFacilityId).OccupiedMemberCount, 0);
+	TestFalse(TEXT("The queue snapshot rejects new business during preparation"),
+		Harness.Queue->GetQueueState(Harness.QueueFacilityId).bAcceptingNew);
+	FFF_FacilityInstanceRevenue Revenue;
+	if (!TestTrue(TEXT("The boundary settlement reaches the actual facility ledger"),
+		Harness.Progression->GetFacilityInstanceRevenue(Harness.FacilityInstanceId, Revenue))) return false;
+	TestEqual(TEXT("One using team creates exactly one payment"), Revenue.TodayPaymentCount, 1);
+	TestEqual(TEXT("The facility ledger records the same 100 gold"), Revenue.TodayGold, 100);
+	const TArray<FFF_QueueLog>& FirstLogs = Harness.Queue->GetQueueLogsRef();
+	if (!TestEqual(TEXT("Both first-show visits produce real queue exit logs"), FirstLogs.Num(), 2)) return false;
+	TestEqual(TEXT("Partial service is settled as served"), FirstLogs[0].ExitType, EFF_QueueExit::Served);
+	TestTrue(TEXT("Settlement happened before the full service duration elapsed"),
+		FirstLogs[0].ServiceSeconds > 0.f && FirstLogs[0].ServiceSeconds < Spec.QueueRules.ServiceDurationSeconds);
+	TestEqual(TEXT("The waiting team is cancelled without service"), FirstLogs[1].ExitType, EFF_QueueExit::Cancelled);
+	TestEqual(TEXT("The waiting team consumed no service time"), FirstLogs[1].ServiceSeconds, 0.f);
+	Harness.QueueBridge->SynchronizeMainProgramQueueBreak();
+	Harness.Queue->FlushPendingEvents();
+	Harness.Queue->AdvanceFixedSteps(240);
+	TestEqual(TEXT("Repeated synchronization, dispatch, and fixed steps never double-charge"),
+		Harness.Progression->GetTodayRevenue() - RevenueBefore, 100);
+	TestEqual(TEXT("New preparation-period admissions are rejected"), Visit(700003, 1).Result, EFF_QueueJoinResult::RejectedClosed);
+	Stage->ElapsedLiveSeconds = 209.9f;
+	TestEqual(TEXT("New admissions stay blocked throughout the show"), Visit(700004, 1).Result, EFF_QueueJoinResult::RejectedClosed);
+
+	Stage->ElapsedLiveSeconds = 210.f;
+	Harness.QueueBridge->SynchronizeMainProgramQueueBreak();
+	TestFalse(TEXT("The first performance break ends at the scheduled end"), Stage->IsMainProgramQueueBreakActive());
+	if (!TestTrue(TEXT("Normal business resumes immediately after the show"), Visit(700005, 1).bAccepted)) return false;
+	Harness.QueueBridge->NotifyZoneFacilityPartyArrived(Harness.FacilityInstanceId, 700005);
+	Harness.Queue->AdvanceFixedSteps(201);
+	TestEqual(TEXT("An ordinary post-show visit still completes and pays normally"),
+		Harness.Progression->GetTodayRevenue() - RevenueBefore, 125);
+
+	Stage->ElapsedLiveSeconds = 236.9f;
+	if (!TestTrue(TEXT("A three-person team joins before the second show"), Visit(700006, 3).bAccepted)
+		|| !TestTrue(TEXT("Another team waits for the second show boundary"), Visit(700007, 2).bAccepted)) return false;
+	Harness.QueueBridge->NotifyZoneFacilityPartyArrived(Harness.FacilityInstanceId, 700006);
+	Harness.Queue->AdvanceFixedSteps(40);
+	Stage->ElapsedLiveSeconds = 237.f;
+	// No bridge Tick or explicit synchronization has run at this boundary. The admission
+	// facade must observe the new clock window before it can accept another team.
+	TestEqual(TEXT("The first boundary-time join synchronizes and rejects before the bridge ticks"),
+		Visit(700008, 1).Result, EFF_QueueJoinResult::RejectedClosed);
+	TestEqual(TEXT("The second show settles its existing three-person service exactly once"),
+		Harness.Progression->GetTodayRevenue() - RevenueBefore, 200);
+	TestEqual(TEXT("The second boundary also drains all old teams"),
+		Harness.Queue->GetQueueState(Harness.QueueFacilityId).OccupiedMemberCount, 0);
+	Harness.QueueBridge->SynchronizeMainProgramQueueBreak();
+	Harness.Queue->FlushPendingEvents();
+	Stage->ElapsedLiveSeconds = 270.f;
+	Harness.QueueBridge->SynchronizeMainProgramQueueBreak();
+	TestTrue(TEXT("The second show releases its temporary admission block"),
+		Harness.Queue->GetQueueState(Harness.QueueFacilityId).bAcceptingNew);
+	TestTrue(TEXT("The final facility revenue remains queryable"),
+		Harness.Progression->GetFacilityInstanceRevenue(Harness.FacilityInstanceId, Revenue));
+	TestEqual(TEXT("Two boundary completions and one ordinary visit make three payments"), Revenue.TodayPaymentCount, 3);
+	TestEqual(TEXT("Waiting teams and repeated boundaries add no extra gold"), Revenue.TodayGold, 200);
+	TestEqual(TEXT("All five accepted visits were accounted for exactly once"), Harness.Queue->GetQueueLogsRef().Num(), 5);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueEconomyBridge_ProductionTableCompletionUpdatesTodayBadge,
+	"FestaFiesta.Economy.QueueBridge.ProductionTableCompletionUpdatesTodayBadge",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueEconomyBridge_ProductionTableCompletionUpdatesTodayBadge::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_QueueEconomyBridgeTestHelpers;
+	FScopedQueueEconomyTestSettings SettingsGuard;
+	FQueueEconomyHarness Harness;
+	if (!TestTrue(TEXT("Production-price settlement world initializes"), Harness.Initialize(this))) return false;
+	TStrongObjectPtr<UDataTable> RevenueTable(LoadObject<UDataTable>(nullptr,
+		TEXT("/Game/FestaFiesta/Data/Economy/DT_FacilityRevenues.DT_FacilityRevenues")));
+	if (!TestNotNull(TEXT("The actual facility revenue table loads"), RevenueTable.Get())) return false;
+	const FName DefinitionId(TEXT("Booth_ActivityGame_BalloonDartStall"));
+	const FFF_FacilityRevenueTableRow* Row = RevenueTable->FindRow<FFF_FacilityRevenueTableRow>(
+		DefinitionId, TEXT("ProductionTableCompletionUpdatesTodayBadge"));
+	if (!TestNotNull(TEXT("The balloon dart booth has an authored revenue row"), Row)
+		|| !TestTrue(TEXT("The production booth has a positive customer fee"), Row->RevenuePerUseGold > 0)) return false;
+	Harness.Definition->FacilityRevenueTable = RevenueTable.Get();
+	UFF_FacilityUpgradeSubsystem* Upgrades = Harness.World->GetSubsystem<UFF_FacilityUpgradeSubsystem>();
+	UFF_FacilityProgramMarkerSubsystem* Markers = Harness.World->GetSubsystem<UFF_FacilityProgramMarkerSubsystem>();
+	if (!TestNotNull(TEXT("The facility quote owner exists"), Upgrades)
+		|| !TestNotNull(TEXT("The today-revenue badge owner exists"), Markers)) return false;
+
+	// The isolated layout avoids map/navigation dependencies while using the real production price.
+	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	Spec.FacilityDefinitionId = DefinitionId;
+	Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall");
+	Spec.bOverrideRevenuePerUseGold = true;
+	Spec.RevenuePerUseGold = 999; // A stale saved facility fee must not override the table.
+	Spec.QueueRules.ServiceDurationSeconds = 1.f;
+	Spec.QueueRules.AbandonAfterSeconds = 0.f;
+	FString Failure;
+	if (!Harness.InstallFoodStall(Failure, false, &Spec)) { AddError(Failure); return false; }
+	FFFZSCommand Open;
+	Open.CommandId = FGuid::NewGuid();
+	Open.TransactionId = FGuid::NewGuid();
+	Open.Type = EFFZSCommandType::Open;
+	Open.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+	Open.FacilityInstanceId = Harness.FacilityInstanceId;
+	if (!TestTrue(TEXT("The table-priced booth opens"), Harness.ZoneSystem->ExecuteCommand(Open).bSucceeded)) return false;
+	Harness.Queue->SimulationStepSeconds = .05f;
+	FFF_FacilityUpgradePreview Quote;
+	if (!TestTrue(TEXT("Facility information resolves its team quote"),
+		Upgrades->GetUpgradePreview(Harness.FacilityInstanceId, Quote))) return false;
+	if (!TestEqual(TEXT("The quote includes all supported team sizes"), Quote.CurrentRevenueByTeamSizeGold.Num(), 6)) return false;
+	Markers->Tick(0.f);
+	FFF_FacilityWorldBadgeData Badge;
+	if (!TestTrue(TEXT("The booth shows zero today revenue before anyone completes a use"),
+		Markers->GetBadgeData(Harness.FacilityInstanceId, Badge) && Badge.bShowRevenue && Badge.TodayGold == 0)) return false;
+
+	const float Rate = Row->bOverrideCommissionRate ? Row->CommissionRate : Harness.Definition->BoothCommissionRate;
+	const float* AuthoredLevelMultiplier = Row->RevenueMultiplierByLevel.Find(1);
+	const float LevelMultiplier = AuthoredLevelMultiplier ? *AuthoredLevelMultiplier : 1.f;
+	const int32 GoldBeforeVisits = Harness.Progression->GetGold();
+	const int32 InitialTodayRevenue = Harness.Progression->GetTodayRevenue();
+	int32 Earned = 0;
+	int32 Payments = 0;
+	for (const int32 Members : {1, 4, 6})
+	{
+		const int32 Expected = FMath::RoundToInt32(
+			static_cast<double>(Row->RevenuePerUseGold) * Members * Rate * LevelMultiplier);
+		if (!TestTrue(TEXT("The production example produces actual income"), Expected > 0)) return false;
+		TestEqual(TEXT("The visible team quote uses the production table and full team rounding"),
+			Quote.CurrentRevenueByTeamSizeGold[Members - 1], Expected);
+		FFF_JoinRequest Visit;
+		Visit.PartyId = 810000 + Members;
+		Visit.MemberCount = Members;
+		if (!TestTrue(TEXT("The team enters the real facility queue"),
+			Harness.QueueBridge->TryJoinZoneFacility(Harness.FacilityInstanceId, Visit).bAccepted)) return false;
+		Harness.Queue->AdvanceFixedSteps(25);
+		TestEqual(TEXT("Joining and walking to the booth do not add revenue"),
+			Harness.Progression->GetTodayRevenue(), InitialTodayRevenue + Earned);
+		Harness.QueueBridge->NotifyZoneFacilityPartyArrived(Harness.FacilityInstanceId, Visit.PartyId);
+		Harness.Queue->AdvanceFixedSteps(10);
+		TestEqual(TEXT("A team still using the booth has not paid yet"),
+			Harness.Progression->GetTodayRevenue(), InitialTodayRevenue + Earned);
+		Harness.Queue->AdvanceFixedSteps(11);
+		Earned += Expected;
+		++Payments;
+		TestEqual(TEXT("Completed use adds the quoted amount to spendable Gold"),
+			Harness.Progression->GetGold(), GoldBeforeVisits + Earned);
+		TestEqual(TEXT("Completed use adds the same amount to festival today revenue"),
+			Harness.Progression->GetTodayRevenue(), InitialTodayRevenue + Earned);
+		FFF_FacilityInstanceRevenue Ledger;
+		if (!TestTrue(TEXT("The completed use records the installed facility's ledger"),
+			Harness.Progression->GetFacilityInstanceRevenue(Harness.FacilityInstanceId, Ledger))) return false;
+		TestEqual(TEXT("Facility information reads the same today amount"), Ledger.TodayGold, Earned);
+		TestEqual(TEXT("Each completed team creates exactly one payment"), Ledger.TodayPaymentCount, Payments);
+		Markers->Tick(0.f);
+		if (!TestTrue(TEXT("The completed facility still has a visible revenue badge"),
+			Markers->GetBadgeData(Harness.FacilityInstanceId, Badge) && Badge.bShowRevenue)) return false;
+		TestEqual(TEXT("The world today-revenue badge immediately matches the real ledger"), Badge.TodayGold, Earned);
+		Harness.Queue->FlushPendingEvents();
+		Harness.Queue->AdvanceFixedSteps(25);
+		TestEqual(TEXT("Further dispatch and ticks do not settle the same use twice"),
+			Harness.Progression->GetTodayRevenue(), InitialTodayRevenue + Earned);
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

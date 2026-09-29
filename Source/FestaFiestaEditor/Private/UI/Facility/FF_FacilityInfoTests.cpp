@@ -235,6 +235,18 @@ bool FFF_FacilityInfoFormattingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("처리 속도는 실제 인원 수가 아닌 팀 단위로 표시한다"),
 		FFFacilityInfoModel::FormatThroughput(true, 15.0f).ToString(),
 		FString(TEXT("분당 15.0팀")));
+	TestEqual(TEXT("운영 처리 시간은 한 팀의 실제 이용 초로 표시한다"),
+		FFFacilityInfoModel::FormatServiceDuration(true, 5.0f).ToString(),
+		FString(TEXT("팀당 5초")));
+	TestEqual(TEXT("개별 시설의 소수 이용 시간을 반영한다"),
+		FFFacilityInfoModel::FormatServiceDuration(true, 2.5f).ToString(),
+		FString(TEXT("팀당 2.5초")));
+	TestEqual(TEXT("없는 이용 시간은 즉시 처리로 오해되지 않는다"),
+		FFFacilityInfoModel::FormatServiceDuration(false, 5.0f).ToString(),
+		FString(TEXT("계산 불가")));
+	TestEqual(TEXT("잘못된 0초는 유효한 처리 시간으로 표시하지 않는다"),
+		FFFacilityInfoModel::FormatServiceDuration(true, 0.0f).ToString(),
+		FString(TEXT("계산 불가")));
 	TestEqual(TEXT("미등록 Queue 기본값을 열린 시설로 표시하지 않는다"),
 		FFFacilityInfoModel::GetOperationStateText(true, false, true, true).ToString(),
 		FString(TEXT("운영 정보 준비 중")));
@@ -1937,7 +1949,7 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 	Data.OccupancyText = FText::FromString(TEXT("4 / 8팀"));
 	Data.RemainingServiceText = FText::FromString(TEXT("4팀"));
 	Data.ExpectedWaitText = FText::FromString(TEXT("12초"));
-	Data.ThroughputText = FText::FromString(TEXT("분당 15팀"));
+	Data.ThroughputText = FText::FromString(TEXT("팀당 5초"));
 	Panel->ApplyViewData(Data);
 	Panel->SetInfoPage(EFF_FacilityInfoPage::Operation);
 	bSaved &= Capture(TEXT("FacilityGamePanelLive720.png"));
@@ -2708,7 +2720,7 @@ bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Paramet
 	Data.OccupancyText = FText::FromString(TEXT("0 / 5팀"));
 	Data.RemainingServiceText = FText::FromString(TEXT("0팀"));
 	Data.ExpectedWaitText = FText::FromString(TEXT("계산 불가"));
-	Data.ThroughputText = FText::FromString(TEXT("분당 10.0팀"));
+	Data.ThroughputText = FText::FromString(TEXT("팀당 5초"));
 	Data.SynergySummaryText = FText::FromString(TEXT("이 시설에 등록된 조합이 없습니다."));
 	FFF_FacilityInstanceRevenue Revenue;
 	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, true, true, 0, Data);
