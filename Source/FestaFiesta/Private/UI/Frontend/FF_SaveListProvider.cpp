@@ -156,6 +156,27 @@ void UFF_SaveListProvider::BuildRealSlots()
 		Entry.Day = Loaded->Session.Day;
 		Entry.SavedAt = Loaded->SavedAt;
 
+		/* 로비 세이브는 축제가 없다. 이름 칸을 비우지 않고 무엇인지 알 수 있게 적는다.
+
+		   예전에는 축제 이름도 단계도 비어 빈 카드로 보였고, 눌러도 반응이 없었다.
+		   지역 칸에는 돌아갈 나라를 넣는다. 이어하면 그 나라의 국가 지도가 열린다.
+		*/
+		if (Loaded->Session.bAtLobby)
+		{
+			Entry.bAtLobby = true;
+			Entry.FestivalName = LOCTEXT("SaveSlotLobbyName", "로비");
+			Entry.StageName = LOCTEXT("SaveSlotLobbyStage", "다음 축제 선택");
+
+			if (const FFF_AtlasCountryEntry* Country =
+				Catalog ? Catalog->FindCountry(Loaded->Session.CountryId) : nullptr)
+			{
+				Entry.RegionName = Country->DisplayName;
+			}
+
+			Slots.Add(Entry);
+			continue;
+		}
+
 		if (const FFF_FestivalAtlasEntry* Festival =
 			Catalog ? Catalog->FindEntry(Loaded->Session.FestivalId) : nullptr)
 		{
@@ -188,6 +209,37 @@ void UFF_SaveListProvider::BuildRealSlots()
 
 		Slots.Add(Entry);
 	}
+}
+
+bool UFF_SaveListProvider::DeleteSlot(const FName SlotId)
+{
+	// 더미를 보여주는 중이면 실제 파일을 지우지 않는다. 화면의 카드는 가짜다.
+	if (bShowingDummySlots || SlotId.IsNone())
+	{
+		return false;
+	}
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	UFF_SaveSubsystem* Save =
+		GameInstance ? GameInstance->GetSubsystem<UFF_SaveSubsystem>() : nullptr;
+	if (!Save)
+	{
+		return false;
+	}
+
+	/* 지우는 데 실패해도 목록은 다시 읽는다.
+
+	   파일이 이미 없으면 저장 시스템은 false 를 돌려주고 알리지 않는다. 그때 목록을
+	   그대로 두면 없는 기록이 카드로 남아 "눌러도 안 지워진다" 로 보인다.
+	*/
+	const bool bDeleted = Save->DeleteSlot(SlotId);
+	if (!bDeleted)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("UFF_SaveListProvider: 슬롯 `%s` 를 지우지 못했다. 목록을 다시 읽는다."), *SlotId.ToString());
+		RefreshSlots();
+	}
+	return bDeleted;
 }
 
 const UFF_UIFlowSettings* UFF_SaveListProvider::Settings()

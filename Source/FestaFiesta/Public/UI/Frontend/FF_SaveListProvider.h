@@ -27,6 +27,13 @@ struct FESTAFIESTA_API FFF_SaveSlotEntry
 	UPROPERTY(BlueprintReadOnly, Category = "Save Slot")
 	bool bAutoSave = false;
 
+	/**
+	 * 축제를 마치고 로비에서 남긴 기록인가.
+	 * 일차와 단계가 없으므로 카드는 `Day N` 대신 상태 문구만 보여준다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Save Slot")
+	bool bAtLobby = false;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Save Slot")
 	FText FestivalName;
 
@@ -99,6 +106,15 @@ public:
 	/** 목록이 바뀌면 알린다. 실물이 오면 Progression 의 이벤트를 여기로 중계한다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI|Save")
 	FFF_OnSaveListChanged OnSaveListChanged;
+
+	/**
+	 * 기록 하나를 지운다. 지워지면 저장 시스템이 알려와 목록이 다시 만들어진다.
+	 *
+	 * 화면이 저장 시스템을 직접 부르지 않고 여기를 거친다. 목록을 공급하는 쪽이 삭제도
+	 * 맡아야 더미 목록일 때 실제 파일을 건드리는 사고가 없다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Save")
+	bool DeleteSlot(FName SlotId);
 
 	/** 더미 목록을 다시 만든다. 콘솔에서 빈 상태와 있는 상태를 번갈아 보려고 둔다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Save")

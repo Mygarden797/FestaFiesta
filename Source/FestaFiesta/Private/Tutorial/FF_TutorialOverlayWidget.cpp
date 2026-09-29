@@ -345,21 +345,28 @@ int32 UFF_TutorialOverlayWidget::NativePaint(
 	const float ScreenW = static_cast<float>(ScreenSize.X);
 	const float ScreenH = static_cast<float>(ScreenSize.Y);
 
-	// 위
-	DrawMaskRect(OutDrawElements, BaseLayer, AllottedGeometry,
-		FVector2f(0.f, 0.f), FVector2f(ScreenW, Top), MaskColor);
+	// 읽고 넘기는 줄의 강조면 덮개 없이 테두리만 그린다. FFF_DialogueLine::bHighlightOutlineOnly 주석 참고.
+	const UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
+	const bool bOutlineOnly = Tutorial && Tutorial->IsHighlightOutlineOnly();
 
-	// 아래
-	DrawMaskRect(OutDrawElements, BaseLayer, AllottedGeometry,
-		FVector2f(0.f, Bottom), FVector2f(ScreenW, ScreenH - Bottom), MaskColor);
+	if (!bOutlineOnly)
+	{
+		// 위
+		DrawMaskRect(OutDrawElements, BaseLayer, AllottedGeometry,
+			FVector2f(0.f, 0.f), FVector2f(ScreenW, Top), MaskColor);
 
-	// 왼쪽 (구멍 높이만큼만)
-	DrawMaskRect(OutDrawElements, BaseLayer, AllottedGeometry,
-		FVector2f(0.f, Top), FVector2f(Left, Bottom - Top), MaskColor);
+		// 아래
+		DrawMaskRect(OutDrawElements, BaseLayer, AllottedGeometry,
+			FVector2f(0.f, Bottom), FVector2f(ScreenW, ScreenH - Bottom), MaskColor);
 
-	// 오른쪽
-	DrawMaskRect(OutDrawElements, BaseLayer, AllottedGeometry,
-		FVector2f(Right, Top), FVector2f(ScreenW - Right, Bottom - Top), MaskColor);
+		// 왼쪽 (구멍 높이만큼만)
+		DrawMaskRect(OutDrawElements, BaseLayer, AllottedGeometry,
+			FVector2f(0.f, Top), FVector2f(Left, Bottom - Top), MaskColor);
+
+		// 오른쪽
+		DrawMaskRect(OutDrawElements, BaseLayer, AllottedGeometry,
+			FVector2f(Right, Top), FVector2f(ScreenW - Right, Bottom - Top), MaskColor);
+	}
 
 	// 테두리. 깜빡여서 시선을 끈다.
 	float OutlineAlpha = OutlineColor.A;
