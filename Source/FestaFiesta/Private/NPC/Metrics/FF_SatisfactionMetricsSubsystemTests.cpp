@@ -267,11 +267,104 @@ bool FFF_SatisfactionMetrics_AddSampleWithoutBeginIsRejected::RunTest(const FStr
 	TestFalse(TEXT("Begin() 없이 넣은 대기 표본은 거부된다"), Metrics.AddWaitSample(10.f));
 	TestFalse(TEXT("Begin() 없이 설정한 성공률은 거부된다"), Metrics.SetQueueSuccessRate(0.5f));
 	TestFalse(TEXT("Begin() 없이 넣은 밀도 표본은 거부된다"), Metrics.AddDensitySample(50.f, 1));
-	TestFalse(TEXT("Begin() 없이 넣은 취향 표본은 거부된다"), Metrics.AddPreferenceSample(0.f));
 	TestFalse(TEXT("Begin() 없이 넣은 Need 충족도 표본은 거부된다"), Metrics.AddNeedFulfillmentSample(50.f));
+
+	TestFalse(TEXT("Begin() 없이 넣은 감점 표본은 거부된다"), Metrics.AddPenaltySample(10.f));
 
 	Metrics.Begin();
 	TestTrue(TEXT("Begin() 후에는 받아들인다"), Metrics.AddWaitSample(10.f));
+	return true;
+}
+
+// 취향 표본은 결정이 확정되는 집계 창 밖에서 들어온다. 거부하지 않고 다음 창이 이어받는다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SatisfactionMetrics_PreferenceOutsideWindowCarriesToNextWindow, "FestaFiesta.NPC.SatisfactionMetrics.PreferenceOutsideWindowCarriesToNextWindow", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SatisfactionMetrics_PreferenceOutsideWindowCarriesToNextWindow::RunTest(const FString& Parameters)
+{
+	FFF_SatisfactionAggregator Metrics;
+	const FFF_SatisfactionCoefficients Coefficients = MakePersonalFitOnlyCoefficients(1.f, 1.f);
+
+	// 집계 창이 열리기 전에 확정된 결정. 실제 게임에서는 항상 이 순서다
+	TestTrue(TEXT("창 밖의 취향 표본도 받는다"), Metrics.AddPreferenceSample(1.f));
+
+	Metrics.Begin();
+	Metrics.AddNeedFulfillmentSample(100.f);
+	Metrics.Commit(Coefficients);
+	TestEqual(TEXT("모아 둔 표본(선호 1.0)이 이번 창에 반영된다 → 취향 100점"), Metrics.GetPreferenceScore(), 100);
+	TestEqual(TEXT("취향 100 + Need 100 → 100"), Metrics.GetSimSatisfaction(), 100);
+
+	// 다음 창에는 새 취향 표본이 없다. 지난 표본을 또 쓰면 안 된다
+	Metrics.Begin();
+	Metrics.AddNeedFulfillmentSample(50.f);
+	Metrics.Commit(Coefficients);
+	TestEqual(TEXT("이어받은 표본은 한 번만 쓰인다 → 개인 부합도는 Need 50만"), Metrics.GetPersonalFitScore(), 50);
+	TestEqual(TEXT("최종 50"), Metrics.GetSimSatisfaction(), 50);
+
+	// 창 안에서 넣은 표본과 창 밖의 표본이 함께 평균된다
+	Metrics.AddPreferenceSample(1.f);  // 창 밖
+	Metrics.Begin();
+	Metrics.AddPreferenceSample(-1.f); // 창 안
+	Metrics.AddNeedFulfillmentSample(50.f);
+	Metrics.Commit(Coefficients);
+	TestEqual(TEXT("선호 1.0과 비선호 -1.0의 평균 0 → 취향 50점"), Metrics.GetPreferenceScore(), 50);
+	return true;
+}
+
+// 감점은 방문객 전체 평균으로 최종 점수에서 빠진다 — 일부만 깎이면 그 비율만큼만 내려간다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SatisfactionMetrics_PenaltyIsAveragedOverAllVisitors, "FestaFiesta.NPC.SatisfactionMetrics.PenaltyIsAveragedOverAllVisitors", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SatisfactionMetrics_PenaltyIsAveragedOverAllVisitors::RunTest(const FString& Parameters)
+{
+	FFF_SatisfactionAggregator Metrics;
+	const FFF_SatisfactionCoefficients Coefficients = MakeEnvironmentOnlyCoefficients(1.f, 0.f);
+
+	Metrics.Begin();
+	Metrics.AddWaitSample(0.f); // 원점수 100
+	Metrics.Commit(Coefficients);
+	TestEqual(TEXT("감점 표본이 없으면 감점 없이 100"), Metrics.GetSimSatisfaction(), 100);
+	TestEqual(TEXT("감점 없음"), Metrics.GetPenaltyPoints(), 0);
+
+	// 방문객 5명 중 1명이 50점 감점 → 평균 10점
+	Metrics.Begin();
+	Metrics.AddWaitSample(0.f);
+	Metrics.AddPenaltySample(50.f);
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		Metrics.AddPenaltySample(0.f);
+	}
+	Metrics.Commit(Coefficients);
+
+	TestEqual(TEXT("평균 감점 10점"), Metrics.GetPenaltyPoints(), 10);
+	TestEqual(TEXT("100 - 10 = 90"), Metrics.GetSimSatisfaction(), 90);
+	TestEqual(TEXT("대기 점수 자체는 오염되지 않는다"), Metrics.GetWaitScore(), 100);
+	return true;
+}
+
+// 재료가 없는 주기에도 감점이 창마다 쌓이지 않는다 — 이미 감점된 값에서 또 빼면 안 된다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SatisfactionMetrics_PenaltyDoesNotStackOnEmptyWindow, "FestaFiesta.NPC.SatisfactionMetrics.PenaltyDoesNotStackOnEmptyWindow", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SatisfactionMetrics_PenaltyDoesNotStackOnEmptyWindow::RunTest(const FString& Parameters)
+{
+	FFF_SatisfactionAggregator Metrics;
+	const FFF_SatisfactionCoefficients Coefficients = MakeEnvironmentOnlyCoefficients(1.f, 0.f);
+
+	Metrics.Begin();
+	Metrics.AddWaitSample(0.f);
+	Metrics.AddPenaltySample(20.f);
+	Metrics.Commit(Coefficients);
+	TestEqual(TEXT("100 - 20 = 80"), Metrics.GetSimSatisfaction(), 80);
+
+	// 재료는 없고 감점 표본만 있는 주기가 이어진다
+	for (int32 Window = 0; Window < 3; ++Window)
+	{
+		Metrics.Begin();
+		Metrics.AddPenaltySample(20.f);
+		Metrics.Commit(Coefficients);
+	}
+	TestEqual(TEXT("3번 지나도 80이다 — 매 창마다 20씩 더 빠지지 않는다"), Metrics.GetSimSatisfaction(), 80);
+
+	// 회복: 감점 표본이 0이 되면 원래 점수로 돌아온다
+	Metrics.Begin();
+	Metrics.AddPenaltySample(0.f);
+	Metrics.Commit(Coefficients);
+	TestEqual(TEXT("감점이 사라지면 100으로 돌아온다"), Metrics.GetSimSatisfaction(), 100);
 	return true;
 }
 

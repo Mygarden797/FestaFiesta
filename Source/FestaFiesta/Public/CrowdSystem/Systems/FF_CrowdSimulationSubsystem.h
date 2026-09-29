@@ -319,6 +319,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Metrics", meta = (ClampMin = "1"))
 	int32 NeedMetricsIntervalSteps = 30;
 
+	/**
+	 * 영역 안에 있는 방문객 전원의 만족도를 DropPoints 점 깎는다. 사건 처리 실패 같은 벌칙용이다.
+	 *
+	 * 만족도는 방문객별 값이 아니라 창마다 다시 계산되는 전체 지수라서, 감점을 방문객 한 명 한 명에게
+	 * 붙여 두고 전체 평균으로 반영한다. 그래서 영역 안 인원이 전체의 20% 면 DropPoints 의
+	 * 20% 만큼만 전체 점수가 내려간다. 영역을 벗어나도 감점은 그 사람에게 남는다.
+	 *
+	 * 여러 번 부르면 쌓이고(사람당 최대 100), 시간이 지나면 SatisfactionPenaltyRecoverPerMinute 로 회복된다.
+	 *
+	 * @param Center     영역 중심(월드 좌표, cm). 높이는 무시하고 평면 거리로 잰다.
+	 * @param RadiusCm   영역 반지름(cm).
+	 * @param DropPoints 한 사람당 깎을 점수(0~100).
+	 * @return 감점이 붙은 방문객 수. 0이면 영역에 아무도 없었던 것이다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Satisfaction")
+	int32 ApplySatisfactionPenaltyInArea(const FVector& Center, float RadiusCm, float DropPoints);
+
+	/**
+	 * 방문객에게 붙은 감점이 회복되는 속도. 축제 시간 1분당 몇 점씩 줄어드는지.
+	 * 임시로 2점으로 둔다. (30점 감점이 축제 시간 15분 뒤 사라진다)
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Satisfaction", meta = (ClampMin = "0.0"))
+	float SatisfactionPenaltyRecoverPerMinute = 2.f;
+
 	// 만족도 대기 항의 큐 성공률 계산용 — 직전 확정 창에서의 누적 카운터 스냅샷.
 	// QueueJoinAccepted/QueueJoinRejected/QueuePatienceAbandons는 시뮬레이션 시작부터의
 	// 누적값이라, 이번 창만의 델타를 구하려면 지난 창의 값을 들고 있어야 한다.

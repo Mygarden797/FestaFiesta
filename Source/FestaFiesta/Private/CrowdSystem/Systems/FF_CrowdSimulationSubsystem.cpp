@@ -5358,6 +5358,32 @@ FFF_NeedState UFF_CrowdSimulationSubsystem::MakeInitialNeeds(int32 StableAgentId
 		InitialNeedModeFraction,
 		InitialNeedMaxFraction);
 }
+int32 UFF_CrowdSimulationSubsystem::ApplySatisfactionPenaltyInArea(
+	const FVector& Center, const float RadiusCm, const float DropPoints)
+{
+	if (RadiusCm <= 0.f || DropPoints <= 0.f)
+	{
+		return 0;
+	}
+
+	const float RadiusSquared = FMath::Square(RadiusCm);
+	int32 AffectedCount = 0;
+	for (FUnitData& Unit : UnitDatas)
+	{
+		if (!Unit.bIsActive || FVector::DistSquared2D(Unit.Position, Center) > RadiusSquared)
+		{
+			continue;
+		}
+		Unit.SatisfactionPenalty = FMath::Min(Unit.SatisfactionPenalty + DropPoints, 100.f);
+		++AffectedCount;
+	}
+
+	UE_LOG(LogFestaFiestaNpc, Log,
+		TEXT("[만족도] 영역 감점: 중심 %s 반경 %.0fcm 에서 %d명에게 %.1f점 (사람당)."),
+		*Center.ToCompactString(), RadiusCm, AffectedCount, DropPoints);
+	return AffectedCount;
+}
+
 void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Needs);
@@ -5405,6 +5431,18 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 			continue;
 		}
 		Unit.Needs = FFF_NeedRules::Advance(Unit.Needs, ElapsedMinutes, NeedRiseRates);
+
+		// 감점은 집계하지 않는 스텝에도 시간이 흐른 만큼 회복시킨다. 안 그러면 집계가 꺼진 동안 멈춰 있다.
+		if (Unit.SatisfactionPenalty > 0.f)
+		{
+			Unit.SatisfactionPenalty = FMath::Max(
+				0.f, Unit.SatisfactionPenalty - SatisfactionPenaltyRecoverPerMinute * FMath::Max(ElapsedMinutes, 0.f));
+		}
+		// 감점이 없는 방문객도 0으로 넣는다. 평균이 감점된 사람끼리가 아니라 전체 방문객 기준이 되게 하려는 것이다.
+		if (Satisfaction)
+		{
+			Satisfaction->AddPenaltySample(Unit.SatisfactionPenalty);
+		}
 
 		// 표본은 파티가 아니라 개인 단위다 — 지표가 "이 Need 가 미해소인 방문객 비율"이다.
 		if (NeedMetrics)
