@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Festival/FF_RequiredFacilityTypes.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
 #include "FF_PrepPanelCheck.generated.h"
@@ -12,6 +13,7 @@ class UTextBlock;
 class UWidget;
 class UFF_FestivalViewModelSubsystem;
 class UFF_PrepChoiceButton;
+class UFF_RequiredFacilitiesSubsystem;
 
 /**
  * 예상 방문객이 수용량에 비해 어느 정도인지.
@@ -98,6 +100,10 @@ struct FESTAFIESTA_API FFF_PrepCheckRules
 		int32 AdmissionFee,
 		int32 DailyVisitorGoal,
 		int32 DailyGoalBonus);
+
+	/** 설치 판정은 소유자의 Read Model을 그대로 표시한다. 새 필수 조건을 만들지 않는다. */
+	static FText FormatRequiredFacilities(const FFF_RequiredFacilitiesStatus& Status,
+		const FText& RowFormat, const FText& NoRequirementsText);
 };
 
 /**
@@ -129,7 +135,7 @@ public:
 	UFF_PrepPanelCheck(const FObjectInitializer& ObjectInitializer);
 
 	/**
-	 * 예상 방문객을 외부에서 넣는다. **소유자 API 가 없다** (2026-08-26, `UI_API.md` 요청 중).
+	 * 소유자 데이터가 없는 프리뷰에만 예상 방문객을 넣는다. 실제 게임에서는 ViewModel 값이 우선한다.
 	 * `INDEX_NONE` 이면 관련 칸이 모두 `아직 알 수 없습니다` 가 된다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Debug")
@@ -174,8 +180,17 @@ protected:
 	UFUNCTION()
 	void HandleCtaStateChanged();
 
+	UFUNCTION()
+	void HandleRequiredFacilitiesChanged();
+
+	UFUNCTION()
+	void HandleScheduledProgramsChanged();
+
 protected:
 	// --- 카드 4장 ---
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UTextBlock> Text_DayLabel;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_Weather;
@@ -197,6 +212,13 @@ protected:
 	/** `500명 · 달성 시 +300`. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_DailyGoal;
+
+	/** 새 디자인은 목표 숫자와 보너스를 별도 줄로 표시한다. 기존 합친 바인딩도 유지한다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UTextBlock> Text_DailyGoalValue;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UTextBlock> Text_DailyGoalBonus;
 
 	/** `320~480명` 또는 `아직 알 수 없습니다`. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
@@ -222,6 +244,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_ProgramSummary;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UTextBlock> Text_RequiredFacilities;
 
 	/** 마지막 날이 아니면 줄째 숨긴다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
@@ -260,7 +285,33 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_OpenGateLabel;
 
+	/** 하단 바와 같은 판정/사유. 준비 선택 사항을 별도의 필수 조건으로 만들지 않는다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UTextBlock> Text_OpenGateReason;
+
 	// --- 설정 ---
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
+	FText DayLabelFormat;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
+	FText DailyGoalValueFormat;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
+	FText DailyGoalBonusFormat;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
+	FText GoldValueFormat;
+
+	/** {Name}, {Installed}, {Required}, {State}. 각 시설은 한 줄씩 표시한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
+	FText RequiredFacilityFormat;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
+	FText NoRequiredFacilitiesText;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
+	FText OpenGateReadyText;
 
 	/**
 	 * 수용 위험 경계 비율. **둘 다 `assumption` 이다** — 산정 근거가 아직 없다.
@@ -304,6 +355,7 @@ private:
 	void RefreshCapacity();
 	void RefreshSummary();
 	void RefreshEstimate();
+	void RefreshRequiredFacilities();
 
 	/**
 	 * 개장 버튼의 문구와 활성 상태를 바의 판정으로 맞춘다.
@@ -316,7 +368,7 @@ private:
 	/** 설치된 Zone 의 정원 합. 못 읽으면 `INDEX_NONE`. */
 	int32 GetTotalSoftCapacity() const;
 
-	/** 예약된 유료 프로그램 수. 못 읽으면 `INDEX_NONE`. */
+	/** ViewModel의 당일 유료 프로그램 편성 수. 못 읽으면 `INDEX_NONE`. */
 	int32 GetProgramCount() const;
 
 	/** 표에서 찾은 문구. 없으면 enum 이름을 그대로 돌려주고 경고를 남긴다. */
@@ -326,15 +378,17 @@ private:
 	static void SetGroupTextOrHide(UWidget* Group, UTextBlock* TextBlock, const FText& Value);
 
 	/** 금액 칸 하나. `INDEX_NONE` 이면 `아직 알 수 없습니다`. */
-	static FText FormatGoldOrUnknown(int32 Amount);
+	FText FormatGoldOrUnknown(int32 Amount) const;
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
 
+	TWeakObjectPtr<UFF_RequiredFacilitiesSubsystem> BoundRequiredFacilities;
+
 	UPROPERTY()
 	TArray<TObjectPtr<UFF_PrepChoiceButton>> WeatherChoices;
 
-	// 소유자 API 가 없는 값. `INDEX_NONE` 이면 관련 칸이 전부 `모름` 이 된다.
+	// 범위 API가 없어 단일 예상치를 두 끝에 넣는다. `INDEX_NONE`은 모름이다.
 	/**
 	 * 🔴 경제는 **하루 단일 예상치**를 준다 (`GetExpectedVisitors()`). 범위 API 는 아직 없다.
 	 * 그래서 지금은 Min·Max 에 같은 값이 들어가고 화면도 `500명` 하나로 뜬다.
@@ -342,4 +396,6 @@ private:
 	 */
 	int32 ExpectedVisitorsMin = INDEX_NONE;
 	int32 ExpectedVisitorsMax = INDEX_NONE;
+
+	friend class FFF_PrepCheckRules_CtaReasonRefresh;
 };

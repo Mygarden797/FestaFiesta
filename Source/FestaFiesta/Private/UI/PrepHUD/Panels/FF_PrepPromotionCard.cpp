@@ -10,24 +10,23 @@ void UFF_PrepPromotionCard::ConfigureOption(const FFF_PromotionOptionView& InOpt
 {
 	Option = InOption;
 
-	ConfigureChoice(static_cast<int32>(InOption.Choice), InLabel);
+	const FSlateBrush* IconBrush = ChoiceIconBrushes.Find(InOption.Choice);
+	ConfigureTab(static_cast<int32>(InOption.Choice), InLabel,
+		IconBrush ? *IconBrush : FSlateBrush());
 
 	// `안 함` 의 0 Gold 는 확정값이다. 칸을 비우면 "아직 모른다"로 읽힌다.
-	SetTextOrHide(Text_Cost, (InOption.Choice == EFF_PromotionChoice::None)
-		? LOCTEXT("PrepPromotion_CostNone", "0 Gold")
-		: FText::Format(LOCTEXT("PrepPromotion_Cost", "{0} Gold"), FText::AsNumber(InOption.CostGold)));
+	SetTextOrHide(Text_Cost, InOption.CostGold != INDEX_NONE
+		? FText::Format(CostFormat, FText::AsNumber(InOption.CostGold))
+		: UnknownValueText);
 
-	// 사람 수가 아니라 배수만 쓴다. 예상 방문객 API 가 없어서 `+N명` 을 만들 수 없다 —
-	// 없는 숫자를 지어내지 않는다.
+	// 미구매 등급에도 배수가 있다. '방문객 그대로'로 고정하면 실제 예상치와 달라진다.
 	FNumberFormattingOptions MultiplierFormat;
 	MultiplierFormat.SetMinimumFractionalDigits(2);
 	MultiplierFormat.SetMaximumFractionalDigits(2);
 
-	SetTextOrHide(Text_Effect, (InOption.Choice == EFF_PromotionChoice::None)
-		? LOCTEXT("PrepPromotion_EffectNone", "방문객 그대로")
-		: FText::Format(
-			LOCTEXT("PrepPromotion_Effect", "방문객 ×{0}"),
-			FText::AsNumber(InOption.VisitorMultiplier, &MultiplierFormat)));
+	SetTextOrHide(Text_Effect, InOption.VisitorMultiplier > 0.f
+		? FText::Format(EffectFormat, FText::AsNumber(InOption.VisitorMultiplier, &MultiplierFormat))
+		: UnknownValueText);
 
 	ApplyContentColor();
 }
