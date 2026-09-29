@@ -1015,7 +1015,13 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 		}
 
 		Unit.ArrivalRadiusUU = ArrivalRadiusUU;
-		if (Unit.LeaderAgentIndex == AgentIndex && PartyDecisionStates.IsValidIndex(AgentIndex))
+		if (Unit.bHasQueueSlot)
+		{
+			// 일행도 리더와 같은 자리 도착 기준을 쓴다. 기본 10m 반경이면
+			// 멤버가 줄 밖에 있어도 도착한 것으로 판단하고 줄 방향을 바라본다.
+			Unit.ArrivalRadiusUU = QueueSlotArrivalRadiusUU;
+		}
+		else if (Unit.LeaderAgentIndex == AgentIndex && PartyDecisionStates.IsValidIndex(AgentIndex))
 		{
 			const FPartyDecisionState& RadiusState = PartyDecisionStates[AgentIndex];
 
@@ -2246,10 +2252,13 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 
 	const float MinQueryDistSq = FMath::Square(FMath::Max(MinPathQueryDistanceUU, 0.f));
 	const float RepathToleranceSq = FMath::Square(FMath::Max(RepathToleranceUU, 1.f));
+	// 경로를 하나 만들 때마다 다음 프레임의 커서는 이동한다. 이번 순회도
+	// 그 커서를 쓰면 다음 멤버를 건너뛰고 앞 NPC를 중복 방문하게 된다.
+	const int32 ScanStartIndex = PathQueryCursor;
 
 	for (int32 Scanned = 0; Scanned < PoolSize; ++Scanned)
 	{
-		const int32 AgentIndex = (PathQueryCursor + Scanned) % PoolSize;
+		const int32 AgentIndex = (ScanStartIndex + Scanned) % PoolSize;
 
 		FUnitData& Unit = UnitDatas[AgentIndex];
 		FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
@@ -2263,8 +2272,10 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 			continue;
 		}
 
-		if (Unit.LeaderAgentIndex != AgentIndex)
+		if (Unit.LeaderAgentIndex != AgentIndex && !Unit.bHasQueueSlot)
 		{
+			// 자리 배정 전에는 리더를 따라가지만, 배정 후에는 멤버도 자기
+			// 자리까지 보행 경로를 구해야 꺾인 줄 안쪽의 시설을 가로지르지 않는다.
 			if (Unit.bFormationPathBlocked && UnitDatas.IsValidIndex(Unit.LeaderAgentIndex))
 			{
 				UpdateBlockedMemberPath(AgentIndex, Budget, Backlog, MinQueryDistSq);
@@ -2443,8 +2454,9 @@ bool UFF_CrowdSimulationSubsystem::BuildPathForAgent(int32 AgentIndex)
 	}
 	AgentLaneIndices[AgentIndex] = INDEX_NONE;
 
-	// 레인이 먼저다. 실패는 정상 경로이며 그대로 NavMesh로 내려간다
-	if (TryBuildLanePathForAgent(AgentIndex))
+	// 줄 내부 이동은 해당 시설의 보행 경로를 쓴다. 도로 레인에 다시 합류하면
+	// 한 칸 앞으로 갈 때마다 줄에서 빠져나가 도로를 우회하게 된다.
+	if (!Unit.bHasQueueSlot && TryBuildLanePathForAgent(AgentIndex))
 	{
 		return true;
 	}
@@ -3792,6 +3804,18 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 
 	case EFF_PartyQueuePhase::Joined:
 	{
+		// 가입 이벤트와 자리 배정은 지연 전달된다. 아직 접근점을 목표로 삼거나
+		// 일행이 따라오는 동안에는 도착 확인을 보내지 않는다.
+		for (const int32 MemberIndex : GetPartyMembers(Leader.PartyID))
+		{
+			const FUnitData& Member = UnitDatas[MemberIndex];
+			if (!Member.bHasQueueSlot
+				|| FVector::DistSquared2D(Member.Position, Member.QueueSlotLocation)
+					> FMath::Square(QueueSlotArrivalRadiusUU))
+			{
+				return true;
+			}
+		}
 		Bridge->NotifyZoneFacilityPartyArrived(State.QueuedFacilityId, Leader.PartyID);
 		++QueueArrivalNotifies;
 
@@ -5014,24 +5038,62 @@ void UFF_CrowdSimulationSubsystem::SetAgentDestination(int32 AgentIndex, FVector
 bool UFF_CrowdSimulationSubsystem::SetPartyQueueColumn(int32 PartyID, const TArray<FVector>& Locations, float InLaneYaw)
 {
 	const int32* LeaderPtr = PartyLeaderByID.Find(PartyID);
-	
-	if (!LeaderPtr || Locations.Num() ==0 )
+	const TArray<int32> Members = GetPartyMembers(PartyID);
+	if (!LeaderPtr || !UnitDatas.IsValidIndex(*LeaderPtr) || Members.IsEmpty()
+		|| Members.Num() != Locations.Num() || !FMath::IsFinite(InLaneYaw)
+		|| Locations.ContainsByPredicate([](const FVector& Location) { return Location.ContainsNaN(); }))
 	{
 		return false;
 	}
-	
-	for ( const int32 AgentIndex : GetPartyMembers(PartyID))
+	for (const int32 AgentIndex : Members)
+	{
+		if (!Locations.IsValidIndex(UnitDatas[AgentIndex].PartySlotIndex))
+		{
+			return false; // 인원 불일치를 마지막 한 자리에 겹쳐 세우지 않는다.
+		}
+	}
+
+	bool bSlotChanged = false;
+	for (const int32 AgentIndex : Members)
 	{
 		FUnitData& Unit = UnitDatas[AgentIndex];
-		
-		const int32 Idx = FMath::Clamp(Unit.PartySlotIndex, 0, Locations.Num() - 1);
-		Unit.QueueSlotLocation = Locations[Idx];
+		const FVector& NewLocation = Locations[Unit.PartySlotIndex];
+		if (!Unit.bHasQueueSlot || !Unit.QueueSlotLocation.Equals(NewLocation, 0.1f))
+		{
+			bSlotChanged = true;
+			// 한 칸(90cm)이 일반 재탐색 오차(100cm)보다 작아도 이전 목적지의
+			// waypoint를 버린다. 멤버의 formation 우회 경로도 함께 해제한다.
+			if (PathFollowers.IsValidIndex(AgentIndex))
+			{
+				PathFollowers[AgentIndex].Reset();
+			}
+			if (AgentLaneIndices.IsValidIndex(AgentIndex))
+			{
+				AgentLaneIndices[AgentIndex] = INDEX_NONE;
+			}
+			Unit.bHasSteerTarget = false;
+			Unit.bFormationPathBlocked = false;
+			Unit.FormationClearStreak = 0;
+			Unit.StuckSteps = 0;
+			Unit.UnstuckHoldSteps = 0;
+		}
+		Unit.QueueSlotLocation = NewLocation;
+		Unit.TargetLocation = NewLocation;
 		Unit.LaneYaw = InLaneYaw;
 		Unit.bHasQueueSlot = true;
+		Unit.ArrivalRadiusUU = QueueSlotArrivalRadiusUU;
+		Unit.Speed = Unit.CruiseSpeed;
 	}
-	
-	UnitDatas[*LeaderPtr].TargetLocation = Locations[0];
-	
+	if (bSlotChanged && PartyDecisionStates.IsValidIndex(*LeaderPtr))
+	{
+		FPartyDecisionState& State = PartyDecisionStates[*LeaderPtr];
+		if (State.QueuePhase == EFF_PartyQueuePhase::AtSlot)
+		{
+			// 앞팀이 떠나면 Queue도 기존 도착 확인을 지운다. 새 자리까지
+			// 이동하고 다시 확인해야 다음 팀의 서비스가 계속 진행된다.
+			State.QueuePhase = EFF_PartyQueuePhase::Joined;
+		}
+	}
 	return true;
 }
 

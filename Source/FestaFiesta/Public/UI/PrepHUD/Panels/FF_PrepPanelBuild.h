@@ -63,6 +63,10 @@ class FESTAFIESTA_API UFF_PrepPanelBuild : public UFF_PrepPanelBase
 
 public:
 	UFF_PrepPanelBuild(const FObjectInitializer& ObjectInitializer);
+#if WITH_EDITORONLY_DATA
+	UPROPERTY(EditAnywhere, Category = "Designer Preview", meta = (DisplayName = "빈 목록 미리보기"))
+	bool bPreviewEmptyCatalog = false;
+#endif
 
 	/** Zero-based local page selection. It never changes filtering or starts placement. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build|Pages")
@@ -109,6 +113,7 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
@@ -257,7 +262,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UButton> Button_FilterPerformance;
 
-	/** 기존 WBP를 수정하지 않고 전체 카테고리 스크롤 행을 삽입하는 런타임 호스트입니다. */
+	/** Legacy-only host; cleaned catalog assets contain saved category tabs instead. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UHorizontalBox> HorizontalBox_Tools;
 
@@ -328,6 +333,15 @@ private:
 	void ScrollCatalogBy(float ItemDelta);
 	bool bCatalogPointerDown = false;
 	bool bCatalogPointerMoved = false;
+	/** The catalog tree owns dimensions and action styling after the explicit Designer migration. */
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Catalog", meta = (DisplayName = "디자이너 카탈로그 레이아웃 사용"))
+	bool bUseDesignerCatalogLayout = false;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Catalog", meta = (DisplayName = "화면 폭에 맞추기"))
+	bool bFitCatalogToViewport = true;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Catalog", meta = (ClampMin = "0", DisplayName = "화면 좌우 여백 합계"))
+	float CatalogViewportMargin = 64.f;
+	float AuthoredCatalogHeight = 0.f;
+	float AuthoredCatalogWidth = 0.f;
 	FName SelectedCatalogFacilityId = NAME_None;
 	void RefreshSelectedFacilityPresentation();
 	void ClearCodexFocus();

@@ -580,6 +580,9 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     // 스키마를 올릴 때 한 군데를 빠뜨리기 쉬웠다. 세 곳이 이 상수를 공유한다.
     static constexpr int32 CurrentSchemaVersion = 2;
 
+    // Tagged assets/saves created before staffing was authored use this same fallback.
+    static constexpr int32 DefaultStaffCapacity = 2;
+
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Schema Version", ToolTip = "시설 정의 저장 형식 버전입니다. 마이그레이션 코드 없이 제작자가 임의로 바꾸면 안 됩니다.", ClampMin = "1"))
     int32 SchemaVersion = CurrentSchemaVersion;
 
@@ -591,6 +594,9 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Category", ToolTip = "시설의 기능 분류입니다. Zone 허용 규칙과 카탈로그 분류에 사용됩니다."))
     EFFZSFacilityCategory Category = EFFZSFacilityCategory::Booth;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Staff", meta = (DisplayName = "Staff Capacity", ToolTip = "Info 안내 시설 한 곳에 배정할 수 있는 스태프 최대 인원입니다. 설치하면 고용 상한과 배정 자리만 늘어나며 스태프를 자동 고용하지 않습니다. 0이면 스태프를 배정하지 않습니다. 설치 시 복사·저장되므로 변경한 값은 새로 설치하는 시설부터 적용됩니다.", EditCondition = "Category == EFFZSFacilityCategory::Info", EditConditionHides, ClampMin = "0", UIMin = "0"))
+    int32 StaffCapacity = DefaultStaffCapacity;
     
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Footprint Size (cm)", ToolTip = "회전 전 건물이 차지하는 바닥 크기입니다. 1 Cell은 1cm이므로 X=가로 폭, Y=세로 깊이입니다. 예: 600×300은 6m×3m입니다. (가로+여유)×(깊이+여유)와 대기열 예약 면적의 안전 예산이 10,000,000셀을 넘으면 검증에 실패합니다.", ClampMin = "1"))
     FIntPoint FootprintSizeCells = FIntPoint(100, 100);
@@ -694,6 +700,12 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     bool AllowsFacilityPlacementOnTop() const
     {
         return Category == EFFZSFacilityCategory::Tile;
+    }
+
+    /** Only Info facilities provide staff slots; never interpret slots as hired staff. */
+    int32 GetStaffCapacity() const
+    {
+        return Category == EFFZSFacilityCategory::Info ? FMath::Max(0, StaffCapacity) : 0;
     }
     
     bool IsValid(TArray<FText>& OutErrors) const;

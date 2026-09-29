@@ -31,10 +31,10 @@ namespace FFBuildTypographyBuilder
 using namespace FFUIWbpBuilder;
 using namespace FFBuildTypography;
 constexpr const TCHAR* Prefix = TEXT("FF_BUILD_TYPOGRAPHY");
-constexpr const TCHAR* Version = TEXT("FF.BuildMode.Typography20260921.1");
+constexpr const TCHAR* Version = TEXT("FF.BuildMode.Typography20260929.2");
 // Includes the current construction flow, its supported catalog fallback, and
-// shared HUD / inspector surfaces reachable while constructing. Other prep
-// panels and the separately redesigned codex screen/cards are intentionally absent.
+// inspector surfaces reachable while constructing. Shared HUDs and revenue
+// dashboards are intentionally absent. The collection uses the same font family.
 const TCHAR* Paths[] = {
     FFBuildUIAssetPaths::BuildPanelPackage,
     FFBuildUIAssetPaths::BuildTilePackage,
@@ -54,14 +54,12 @@ const TCHAR* Paths[] = {
     FFBuildUIAssetPaths::FacilitySynergyEntryPackage,
     FFBuildUIAssetPaths::FacilityPaidProgramCardPackage,
     FFBuildUIAssetPaths::FacilityPaidProgramPickerPackage,
-    FFBuildUIAssetPaths::FacilityWorldBadgePackage,
-    FFBuildUIAssetPaths::FacilityRevenueRankingPackage,
-    FFBuildUIAssetPaths::FacilityRevenueRankRowPackage,
-    FFBuildUIAssetPaths::PrepHudBarPackage,
-    FFBuildUIAssetPaths::PrepHudTabButtonPackage,
-    FFBuildUIAssetPaths::PrepChoiceButtonPackage,
     FFBuildUIAssetPaths::FacilityCodexLauncherPackage,
-    FFBuildUIAssetPaths::FacilityCodexCatalogLauncherPackage
+    FFBuildUIAssetPaths::FacilityCodexCatalogLauncherPackage,
+    FFBuildUIAssetPaths::FacilityCodexScreenPackage,
+    FFBuildUIAssetPaths::FacilityCodexCardPackage,
+    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Controls/WBP_FF_CodexCollectionCategory"),
+    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Controls/WBP_FF_CodexCollectionReward")
 };
 
 static bool Contains(const FString& Value, std::initializer_list<const TCHAR*> Tokens)
@@ -256,7 +254,9 @@ static void Run()
             // Keep established wrapping / fixed-height contracts. Only tiny
             // general labels receive a readability floor; world badges stay compact.
             const bool bWorldBadge = BP->GetName() == TEXT("WBP_FF_FacilityWorldBadge");
-            Info.Size = FMath::Max(Info.Size, bWorldBadge ? 10.f : 12.f);
+            const bool bConstructionSurface = BP->GetOutermost()->GetName().Contains(TEXT("/FF_WBP_Building/")) &&
+                !BP->GetOutermost()->GetName().Contains(TEXT("/Shared/"));
+            Info.Size = FMath::Max(Info.Size, bWorldBadge ? 10.f : bConstructionSurface ? 14.f : 12.f);
             Info.LetterSpacing = 0;
             Widget->Modify();
             ApplyFont(*Widget, Info);

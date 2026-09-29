@@ -104,6 +104,21 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText FacilityStateText;
 
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
+	bool bShowStaffSection = false;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
+	int32 StaffCapacity = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
+	int32 AssignedStaffCount = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
+	FText StaffSummaryText;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
+	FText StaffAssignmentHint;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
+	bool bCanAssignStaff = false;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
+	bool bCanUnassignStaff = false;
+
 	/** Current one-person settlement estimate, visible even when the facility has no levels. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
 	FText FacilityRevenueText;

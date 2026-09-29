@@ -4,16 +4,19 @@
 #include "UI/FacilityCodex/FF_FacilityCodexScreen.h"
 
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
+#include "Building/Codex/FF_FacilityCodexSettings.h"
 #include "Components/Button.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
+#include "Components/HorizontalBox.h"
 #include "Components/Image.h"
 #include "Components/ProgressBar.h"
 #include "Components/SizeBox.h"
 #include "Components/StackBox.h"
 #include "Components/StackBoxSlot.h"
+#include "Components/TextBlock.h"
 #include "Components/WidgetSwitcher.h"
 #include "Engine/World.h"
 #include "Engine/AssetManager.h"
@@ -34,6 +37,7 @@ void UFF_FacilityCodexScreen::NativeOnInitialized()
 	Super::NativeOnInitialized();
 	SetIsFocusable(true);
 	if (Button_Close) Button_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleClose);
+	if (Button_ExitCodex) Button_ExitCodex->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleExitCodex);
 	if (Button_All) Button_All->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAll);
 	if (Button_Discovered) Button_Discovered->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDiscovered);
 	if (Button_Undiscovered) Button_Undiscovered->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUndiscovered);
@@ -61,12 +65,83 @@ void UFF_FacilityCodexScreen::NativeOnInitialized()
 		TileView_Entries->OnItemClicked().AddUObject(this, &ThisClass::HandleCollectionClicked);
 	if (Button_CollectionPrevious) Button_CollectionPrevious->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCollectionPrevious);
 	if (Button_CollectionNext) Button_CollectionNext->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCollectionNext);
+	if (Column_CollectionCategories && Search_Entries && !bUseAuthoredCollectionLayout)
+	{
+		// ContrastBuilder supplies a full-contrast passive label in place of Slate's
+		// translucent native hint. Update that label, keeping exactly one hint visible.
+		const FText CompactHint = LOCTEXT("CollectionSearchCompact", "시설·조합 검색");
+		if (auto* Hint = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_SearchHint"))))
+		{
+			Hint->SetText(CompactHint);
+			Hint->SetAutoWrapText(false);
+			Hint->SetClipping(EWidgetClipping::ClipToBounds);
+			Search_Entries->SetHintText(FText::GetEmpty());
+		}
+		else Search_Entries->SetHintText(CompactHint);
+		if (UWidget* HintOverlay = GetWidgetFromName(TEXT("Overlay_SearchHint")))
+			HintOverlay->SetClipping(EWidgetClipping::ClipToBounds);
+		// Keep both input and hint inside the category column in portrait windows.
+		Search_Entries->SetMinDesiredWidth(0.f);
+		Search_Entries->SetToolTipText(LOCTEXT("CollectionSearchHelp", "시설 이름 또는 조합 이름으로 검색합니다."));
+		Search_Entries->SetClipping(EWidgetClipping::ClipToBounds);
+		if (auto* Bounds = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_Refined_Search_Entries"))))
+		{
+			Bounds->ClearWidthOverride();
+			Bounds->ClearMinDesiredWidth();
+			Bounds->ClearMaxDesiredWidth();
+		}
+	}
+}
+
+void UFF_FacilityCodexScreen::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+#if WITH_EDITORONLY_DATA
+	if (IsDesignTime() && Column_CollectionCategories)
+	{
+		// Preview only the authored widgets: no subsystem, rewards or profile writes.
+		SetCollectionDetailOpen(bPreviewCollectionDetail);
+		if (Panel_Detail) Panel_Detail->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		ClearRewardFeedback();
+		if (Text_Empty) Text_Empty->SetVisibility(ESlateVisibility::Collapsed);
+		// Designer uses its own visibility flag instead of runtime Visibility.
+		// Update only controls whose state is chosen by this page preview.
+		for (const TCHAR* Name : {TEXT("Horizontal_Toolbar"), TEXT("Size_CollectionSearch"),
+			TEXT("Scroll_CollectionCategories"), TEXT("Size_Browse"), TEXT("Row_CollectionProgress"),
+			TEXT("Size_Detail"), TEXT("Size_Showcase"), TEXT("Horizontal_PreviewRotation"),
+			TEXT("Button_CollectionPrevious"), TEXT("Button_CollectionNext"), TEXT("Panel_Detail"),
+			TEXT("Text_Empty"), TEXT("Border_RewardFeedback"), TEXT("Text_RewardFeedback")})
+			if (UWidget* Widget = GetWidgetFromName(Name))
+			{
+				const ESlateVisibility AuthoredVisibility = Widget->GetVisibility();
+				Widget->bHiddenInDesigner = AuthoredVisibility == ESlateVisibility::Collapsed || AuthoredVisibility == ESlateVisibility::Hidden;
+			}
+		// The repeated controls show configured thresholds and amounts, without
+		// reading a player profile or simulating a successful claim.
+		const auto& Rewards = GetDefault<UFF_FacilityCodexSettings>()->CollectionRewards;
+		if (Row_CollectionMilestones)
+			for (int32 Index = 0; Index < Row_CollectionMilestones->GetChildrenCount(); ++Index)
+				if (auto* Reward = Cast<UUserWidget>(Row_CollectionMilestones->GetChildAt(Index)))
+				{
+					if (Rewards.IsValidIndex(Index))
+					{
+						if (auto* Threshold = Cast<UTextBlock>(Reward->GetWidgetFromName(TEXT("Text_Label"))))
+							Threshold->SetText(FText::AsNumber(Rewards[Index].RequiredDiscoveries));
+						if (auto* Gold = Cast<UTextBlock>(Reward->GetWidgetFromName(TEXT("Text_MilestoneAmount"))))
+							Gold->SetText(FText::AsNumber(Rewards[Index].RewardGold));
+					}
+					if (auto* Badge = Reward->GetWidgetFromName(TEXT("Border_MilestoneStatus")))
+					{ Badge->SetVisibility(ESlateVisibility::Collapsed); Badge->bHiddenInDesigner = true; }
+				}
+	}
+#endif
 }
 
 // 도감 화면의 버튼과 변경 알림을 연결한다.
 void UFF_FacilityCodexScreen::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (IsDesignTime()) return;
 	if (Viewport_Showcase)
 	{
 		Viewport_Showcase->OnPreviewReadyChanged.RemoveAll(this);
@@ -103,6 +178,7 @@ void UFF_FacilityCodexScreen::NativeDestruct()
 void UFF_FacilityCodexScreen::NativeTick(const FGeometry& Geometry, float DeltaTime)
 {
 	Super::NativeTick(Geometry, DeltaTime);
+	if (IsDesignTime()) { UpdateResponsiveLayout(); return; }
 	UpdateRewardFeedback(DeltaTime);
 	// Layout-only resize handling. Gameplay data still refreshes exclusively through events.
 	UpdateResponsiveLayout();
@@ -688,6 +764,12 @@ void UFF_FacilityCodexScreen::HandleClose()
 		if (TileView_Entries) TileView_Entries->SetKeyboardFocus();
 		return;
 	}
+	OnCloseRequested.Broadcast();
+}
+void UFF_FacilityCodexScreen::HandleExitCodex()
+{
+	// The X closes the whole modal, including from a recipe detail. The presenter
+	// restores the original catalog/inspector and input state through this event.
 	OnCloseRequested.Broadcast();
 }
 void UFF_FacilityCodexScreen::HandleAll() { SetDiscoveryFilter(EFF_FacilityCodexFilterState::All); }

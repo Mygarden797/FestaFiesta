@@ -36,9 +36,8 @@ FFF_QueueConfig UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(
 	Config.ServiceSecondsPerParty = FMath::Max(Rules.ServiceDurationSeconds, KINDA_SMALL_NUMBER);
 	Config.ExitLocation = ExitLocation;
 
-	// 현재 생산 Crowd에는 NotifyPartyArrived 호출자가 없다. 기본값 false로 두어 서비스 정지를 막고,
-	// 호출자가 준비되면 NotifyZoneFacilityPartyArrived façade와 함께 전환한다.
-	Config.bRequireArrivalConfirmation = false;
+	// 실제 일행이 배정된 자리에 도착한 뒤에만 이용 시간을 센다.
+	Config.bRequireArrivalConfirmation = true;
 	return Config;
 }
 

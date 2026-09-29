@@ -76,11 +76,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Staff", meta = (ClampMin = "0"))
 	int32 StaffHireCostGold = 450;
 
-	// 축제 전체에서 고용할 수 있는 인원 상한 (명). [밸런스]
-	// [주의] '하루 상한' 이 아니라 **총원 상한** 이다. 영구 고용이라 하루로 끊으면
-	//        상한이 사실상 없어진다(사흘이면 18명).
-	// 기본 6명 대비 +6 이면 최대 12명
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Staff", meta = (ClampMin = "0"))
+	// 시설 보너스 이전의 축제 기본 고용 한도. Info 시설의 StaffCapacity 합이 여기에 더해진다.
+	// 최대 총원 = InitialStaffCount + MaxHiredStaffCount + 설치된 Info 시설 정원 합.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Staff", meta = (ClampMin = "0", ToolTip = "안내시설 보너스를 제외한 기본 추가 고용 한도입니다. Info 시설을 설치하면 해당 시설의 Staff Capacity만큼 한도가 더 늘어납니다. 설치 자체는 스태프를 고용하지 않습니다."))
 	int32 MaxHiredStaffCount = 6;
 
 	// --- 수익원 -----------------------------------------------------------

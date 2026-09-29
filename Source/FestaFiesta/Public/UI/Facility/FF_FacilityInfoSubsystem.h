@@ -184,6 +184,8 @@ private:
 	void HandlePanelRemoveRequested();
 	void HandlePanelProgramScheduleRequested();
 	void HandlePanelUpgradeRequested();
+	void HandlePanelAssignStaffRequested();
+	void HandlePanelUnassignStaffRequested();
 	void HandlePanelLightingRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
 	void HandlePanelLightingRollbackRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
 	void HandlePanelLightingResetRequested(FGuid FacilityId);

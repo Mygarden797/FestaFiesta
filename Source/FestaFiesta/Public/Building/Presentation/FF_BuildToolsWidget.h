@@ -19,6 +19,14 @@ class UFF_BuildCatalogEconomyReadModel;
 class UFF_BuildCatalogSubsystem;
 struct FKey;
 
+UENUM(BlueprintType)
+enum class EFF_BuildToolsDesignerPage : uint8
+{
+    Placement UMETA(DisplayName = "배치"),
+    Catalog UMETA(DisplayName = "카탈로그"),
+    Settings UMETA(DisplayName = "건축 설정")
+};
+
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_BuildToolsViewData
 {
@@ -80,6 +88,13 @@ class FESTAFIESTA_API UFF_BuildToolsWidget : public UUserWidget
     GENERATED_BODY()
 
 public:
+    /** Only chooses visible sections in the Designer; never replaces authored text or styling. */
+    UPROPERTY(EditAnywhere, Category = "Designer Preview")
+    bool bPreviewDesignerPage = true;
+    UPROPERTY(EditAnywhere, Category = "Designer Preview", meta = (EditCondition = "bPreviewDesignerPage"))
+    EFF_BuildToolsDesignerPage DesignerPage = EFF_BuildToolsDesignerPage::Placement;
+    UPROPERTY(EditAnywhere, Category = "Designer Preview", meta = (EditCondition = "bPreviewDesignerPage"))
+    bool bDesignerShowHelp = true;
     bool IsPointerOverTools() const;
     bool IsEditingAngle() const;
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ToggleRadialMenu();
@@ -115,6 +130,7 @@ public:
     FSlateColor NeutralStatusColor = FSlateColor(FLinearColor::FromSRGBColor(FColor(0x7B, 0x7D, 0x92)));
 
 protected:
+    virtual void NativePreConstruct() override;
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
     virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
@@ -225,6 +241,8 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_NudgeRight;
 
 private:
+    FVector2D AuthoredHelpPosition = FVector2D(32.f, 525.f);
+    float AuthoredSettingsHeight = 950.f;
     TWeakObjectPtr<UFF_BuildModeSubsystem> BuildMode;
     TWeakObjectPtr<UFF_BuildCatalogEconomyReadModel> Economy;
     TWeakObjectPtr<UFF_BuildCatalogSubsystem> CatalogModel;
