@@ -12,6 +12,9 @@
 #include "Blueprint/WidgetTree.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Engine/PrimaryAssetLabel.h"
+#include "Components/HorizontalBox.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildCategoryChoice.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
@@ -104,6 +107,15 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 				*FString::Printf(TEXT("타일 계약 위젯이 존재한다: %s"), *RequiredName.ToString()),
 				TileTree->FindWidget(RequiredName));
 		}
+#if WITH_EDITORONLY_DATA
+		for (const FName Conditional : { FName(TEXT("Border_RequiredMissing")), FName(TEXT("Border_RequiredSatisfied")),
+			FName(TEXT("Border_ProgramBadge")), FName(TEXT("Border_SynergyHighlight")),
+			FName(TEXT("Image_CodexFocusRim")), FName(TEXT("Border_CodexFocusBadge")), FName(TEXT("Text_State")) })
+		{
+			const UWidget* Widget = TileTree->FindWidget(Conditional);
+			TestTrue(TEXT("Default Designer card hides optional states instead of stacking them"), Widget && Widget->bHiddenInDesigner);
+		}
+#endif
 	}
 
 	UClass* PanelClass = LoadClass<UFF_PrepPanelBuild>(nullptr, PanelClassPath);
@@ -116,34 +128,43 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 	if (PanelTree)
 	{
 		for (const FName RequiredName : {
-			FName(TEXT("Text_PanelTitle")),
-			FName(TEXT("HorizontalBox_CatalogEmphasisGuide")),
-			FName(TEXT("Border_CatalogRequiredGuide")),
-			FName(TEXT("Border_CatalogProgramLegend")),
-			FName(TEXT("Text_CatalogProgramLegend")),
-			FName(TEXT("Text_CatalogProgramGuide")),
-			FName(TEXT("Button_Close")),
 			FName(TEXT("Panel_Catalog")),
-			FName(TEXT("Panel_PlacementCompact")),
-			FName(TEXT("HorizontalBox_Tools")),
 			FName(TEXT("HorizontalBox_Categories")),
+			FName(TEXT("HorizontalBox_Subcategories")),
+			FName(TEXT("Choice_AllSubcategories")),
+			FName(TEXT("Row_BuildCodexCategory")),
+			FName(TEXT("Widget_FacilityCodexCatalogLauncher")),
+			FName(TEXT("Button_RevenueRanking")),
 			FName(TEXT("Button_FavoritesOnly")),
 			FName(TEXT("Text_FavoritesOnly")),
 			FName(TEXT("TileView_Facilities")),
-			FName(TEXT("Search_Facilities")),
-			FName(TEXT("Text_Gold")),
-			FName(TEXT("Text_Status")),
-			FName(TEXT("Text_ItemCount")),
-			FName(TEXT("Text_PlacementGuide")),
-			FName(TEXT("Button_ReturnToCatalog")),
-			FName(TEXT("Button_ExitBuildMode")),
-			FName(TEXT("Button_FilterAll")),
-			FName(TEXT("Button_FilterBooth")),
-			FName(TEXT("Button_FilterPerformance")) })
+			FName(TEXT("Search_Facilities")) })
 		{
 			TestNotNull(
 				*FString::Printf(TEXT("패널 계약 위젯이 존재한다: %s"), *RequiredName.ToString()),
 				PanelTree->FindWidget(RequiredName));
+		}
+		for (const FName RetiredName : { FName(TEXT("Text_Gold")), FName(TEXT("Box_Header")),
+			FName(TEXT("Border_AuroraSelection")), FName(TEXT("HorizontalBox_Tools")),
+			FName(TEXT("Panel_PlacementCompact")), FName(TEXT("Border_CatalogFooter")) })
+			TestNull(*FString::Printf(TEXT("Retired surface is deleted: %s"), *RetiredName.ToString()), PanelTree->FindWidget(RetiredName));
+		const auto* Categories = Cast<UHorizontalBox>(PanelTree->FindWidget(TEXT("HorizontalBox_Categories")));
+		if (TestNotNull(TEXT("Saved editable category row"), Categories))
+		{
+			TSet<int32> Ids;
+			for (UWidget* Child : Categories->GetAllChildren())
+			{
+				const auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(Child);
+				if (TestNotNull(TEXT("Category is a saved editable choice"), Choice))
+				{
+					TestFalse(TEXT("Each saved tab has an authored label"), Choice->AuthoredLabel.IsEmpty());
+					Ids.Add(Choice->AuthoredChoiceId);
+				}
+			}
+			TestTrue(TEXT("Saved categories contain All"), Ids.Contains(INDEX_NONE));
+			for (auto Category : FFF_PrepBuildPresentationRules::GetCategoryOrder())
+				TestTrue(TEXT("Saved categories contain every production category"), Ids.Contains(static_cast<int32>(Category)));
+			TestEqual(TEXT("Saved tabs have no duplicated category IDs"), Ids.Num(), Categories->GetChildrenCount());
 		}
 
 		const UFF_PrepBuildTileView* TileView =
@@ -151,6 +172,11 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 		TestNotNull(TEXT("시설 목록은 UTileView 기반 전용 가상화 위젯이다"), TileView);
 		TestTrue(TEXT("TileView entry class는 생성된 LightTeal 타일 WBP다"),
 			TileView && TileView->GetEntryWidgetClass() == TileClass);
+#if WITH_EDITORONLY_DATA
+		const UWidget* Empty = PanelTree->FindWidget(TEXT("Panel_Empty"));
+		TestTrue(TEXT("Default Designer catalog hides the empty-results overlay"), Empty && Empty->bHiddenInDesigner);
+		TestTrue(TEXT("Default Designer catalog displays its preview card list"), TileView && !TileView->bHiddenInDesigner);
+#endif
 	}
 
 	UClass* ChoiceClass = LoadClass<UFF_PrepChoiceButton>(nullptr, ChoiceClassPath);

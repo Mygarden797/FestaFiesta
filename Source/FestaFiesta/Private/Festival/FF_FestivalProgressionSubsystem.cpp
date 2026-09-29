@@ -24,6 +24,7 @@
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalSettings.h"
+#include "Staff/FF_StaffFacilitySubsystem.h"
 
 namespace
 {
@@ -293,6 +294,8 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	// 목표 값 자체가 축제 정의에 달려 있어서, 인원이 0 그대로여도 한 번 알린다.
 	OnAdmittedVisitorsTodayChanged.Broadcast(AdmittedVisitorsToday);
 	OnFestivalDefinitionChanged.Broadcast();
+	OnStaffRosterChanged.Broadcast();
+	OnStaffCapacityChanged.Broadcast(GetMaxTotalStaffCount());
 }
 
 bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount, EFF_SpendReason Reason)
@@ -634,7 +637,7 @@ bool UFF_FestivalProgressionSubsystem::TryHireStaff(int32 RequestedCount)
 	{
 		UE_LOG(LogFestaFiestaEconomy, Log,
 			TEXT("[경제] 고용 거부: 총원 상한 초과 (고용 %d명 + 요청 %d명 > 상한 %d명)"),
-			AlreadyHired, RequestedCount, Definition->MaxHiredStaffCount);
+			AlreadyHired, RequestedCount, GetMaxHiredStaffCount());
 		return false;
 	}
 
@@ -692,7 +695,22 @@ int32 UFF_FestivalProgressionSubsystem::GetRemainingHireCap() const
 
 	// 축제 전체 상한이다. 하루 경계에서 다시 열리지 않는다.
 	return FMath::Max(0,
-		Definition->MaxHiredStaffCount - StaffPool.GetHiredStaffCount());
+		GetMaxHiredStaffCount() - StaffPool.GetHiredStaffCount());
+}
+
+int32 UFF_FestivalProgressionSubsystem::GetMaxHiredStaffCount() const
+{
+	if (!Definition) return 0;
+	const UWorld* World = GetWorld();
+	const UFF_StaffFacilitySubsystem* Staffing = World ? World->GetSubsystem<UFF_StaffFacilitySubsystem>() : nullptr;
+	const int64 Capacity = static_cast<int64>(Definition->MaxHiredStaffCount)
+		+ (Staffing ? Staffing->GetTotalFacilityCapacity() : 0);
+	return static_cast<int32>(FMath::Clamp<int64>(Capacity, 0, MAX_int32 - StaffPool.GetBaseStaffCount()));
+}
+
+int32 UFF_FestivalProgressionSubsystem::GetMaxTotalStaffCount() const
+{
+	return StaffPool.GetBaseStaffCount() + GetMaxHiredStaffCount();
 }
 
 int32 UFF_FestivalProgressionSubsystem::GetAffordableHireCount() const

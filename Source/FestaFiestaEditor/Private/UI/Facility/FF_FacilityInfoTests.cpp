@@ -1091,9 +1091,22 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		ThumbnailSize->GetWidthOverride() > 0.f && ThumbnailSize->GetHeightOverride() > 0.f);
 	TestNotNull(TEXT("현재/강화 후 비교 카드 계약"), Tree->FindWidget(TEXT("Panel_UpgradeComparison")));
 	for (const FName Name : {FName(TEXT("Text_UpgradeCurrent")), FName(TEXT("Text_UpgradeNext")),
-		FName(TEXT("Text_Footprint_Card")), FName(TEXT("Text_InstallCost_Card")), FName(TEXT("Text_Occupancy_Card"))})
+		FName(TEXT("Clarity_Row_Text_Footprint")), FName(TEXT("Clarity_Row_Text_InstallCost")), FName(TEXT("Clarity_Row_Text_Occupancy"))})
 	{
-		TestNotNull(*FString::Printf(TEXT("게임형 정보 카드 %s"), *Name.ToString()), Tree->FindWidget(Name));
+		TestNotNull(*FString::Printf(TEXT("현재 시설 정보 행 %s"), *Name.ToString()), Tree->FindWidget(Name));
+	}
+	for (const FName Name : {FName(TEXT("Aurora_InfoV7")), FName(TEXT("Clarity_InfoV1"))})
+	{
+		const UPanelWidget* Marker = Cast<UPanelWidget>(Tree->FindWidget(Name));
+		TestTrue(TEXT("예전 디자인은 비어 있는 버전 표지만 남긴다"), Marker && Marker->GetChildrenCount() == 0);
+	}
+	const UWidget* RequiredBindings = Tree->FindWidget(TEXT("Panel_RequiredBindings"));
+	TestTrue(TEXT("필수 바인딩 보관 영역은 화면 공간을 차지하지 않는다"),
+		RequiredBindings && RequiredBindings->GetVisibility() == ESlateVisibility::Collapsed && RequiredBindings->bHiddenInDesigner);
+	for (const FName Name : {FName(TEXT("Text_Context")), FName(TEXT("Panel_LightingCompact"))})
+	{
+		const UWidget* Conditional = Tree->FindWidget(Name);
+		TestTrue(TEXT("기본 Designer에서 중복 제목과 조명 요약을 숨긴다"), Conditional && Conditional->bHiddenInDesigner);
 	}
 	TestNotNull(TEXT("건축 섹션 계약"), Tree->FindWidget(TEXT("Panel_BuildSection")));
 	TestNotNull(TEXT("라이브 섹션 계약"), Tree->FindWidget(TEXT("Panel_LiveSection")));
@@ -1120,11 +1133,10 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	UVerticalBox* DetailContent = Cast<UVerticalBox>(Tree->FindWidget(TEXT("Panel_Content")));
 	if (TestNotNull(TEXT("시설 상세 스크롤 콘텐츠"), DetailContent) && UpgradeSection)
 	{
-		const UWidget* Summary = FFFacilityInfoUpgradeLayout::FindContentChild(
-			Tree->FindWidget(TEXT("Summary_Card")), *DetailContent);
 		const int32 UpgradeIndex = DetailContent->GetChildIndex(UpgradeSection);
-		TestTrue(TEXT("강화 영역은 실제 WBP 요약 바로 다음에 위치한다"),
-			Summary && UpgradeIndex == DetailContent->GetChildIndex(Summary) + 1);
+		TestNull(TEXT("폐기한 옛 요약 카드는 Designer에 남지 않는다"), Tree->FindWidget(TEXT("Summary_Card")));
+		TestTrue(TEXT("강화 영역은 독립된 상세 페이지로 유지된다"), UpgradeIndex != INDEX_NONE);
+		TestNotNull(TEXT("시설 식별 정보는 현재 고정 헤더에 유지된다"), Tree->FindWidget(TEXT("Panel_PersistentIdentity")));
 		for (const FName Name : {FName(TEXT("Panel_BuildSection")), FName(TEXT("Panel_LiveSection")),
 			FName(TEXT("Panel_ProgramSection"))})
 		{
@@ -1146,8 +1158,7 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		TEXT("Text_Throughput"), TEXT("Text_Feedback"), TEXT("Text_ProgramStatus"),
 		TEXT("Text_ScheduledProgramSummary"), TEXT("Text_ProgramScheduleReason"),
 		TEXT("Text_ScheduleProgram"), TEXT("Text_FacilityLevel"),
-		TEXT("Text_UpgradeEffect"), TEXT("Text_UpgradeCost"), TEXT("Text_UpgradeReason"), TEXT("Text_Upgrade"),
-		TEXT("Text_FacilityRevenue")
+		TEXT("Text_UpgradeEffect"), TEXT("Text_UpgradeCost"), TEXT("Text_UpgradeReason"), TEXT("Text_Upgrade")
 	};
 	for (const FName Name : RequiredTextNames)
 	{
@@ -1338,8 +1349,8 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 			Panel->ApplyViewData(ViewData);
 			TestEqual(TEXT("레벨 없는 시설의 강화 영역 전체를 숨긴다"),
 				Panel->GetWidgetFromName(TEXT("Panel_UpgradeSection"))->GetVisibility(), ESlateVisibility::Collapsed);
-			TestEqual(TEXT("레벨 없는 시설에도 수익 항목을 유지한다"),
-				Panel->GetWidgetFromName(TEXT("Text_FacilityRevenue"))->GetVisibility(), ESlateVisibility::HitTestInvisible);
+			TestNotNull(TEXT("레벨 없는 시설에도 독립 수익 페이지를 유지한다"),
+				Panel->GetWidgetFromName(TEXT("Panel_RevenueSection")));
 			if (UWidget* RevenueSection = Panel->GetWidgetFromName(TEXT("Panel_RevenueSection")))
 			{
 				// Present only after FF.MigrateFacilityRevenueSection; the tree contract is covered separately.
@@ -1448,7 +1459,8 @@ bool FFF_FacilityInfoInspectorV2MigrationTest::RunTest(const FString& Parameters
 	UWidgetTree* Tree = Copy->WidgetTree;
 	const bool bAlreadyV2 = Tree->FindWidget(TEXT("Panel_PersistentIdentity")) != nullptr;
 	const bool bAlreadyRefined = Tree->FindWidget(TEXT("Panel_UpgradeActions")) != nullptr;
-	const UCommonTextBlock* OriginalOccupancyLabel = Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Occupancy_Label")));
+	const UCommonTextBlock* OriginalOccupancyLabel = Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Clarity_Label_Text_Occupancy")));
+	if (!OriginalOccupancyLabel) OriginalOccupancyLabel = Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Occupancy_Label")));
 	const FString OriginalOccupancyCaption = OriginalOccupancyLabel ? OriginalOccupancyLabel->GetText().ToString() : FString();
 	UWidget* OriginalRoot = Tree->RootWidget;
 	USizeBox* PanelSize = Cast<USizeBox>(Tree->FindWidget(TEXT("Panel_Size")));
@@ -1519,7 +1531,8 @@ bool FFF_FacilityInfoInspectorV2MigrationTest::RunTest(const FString& Parameters
 		TestTrue(*FString::Printf(TEXT("New Designer BindWidget variable has a stable GUID: %s"), *Name.ToString()),
 			Widget && Widget->bIsVariable && Copy->WidgetVariableNameToGuidMap.Contains(Name));
 	}
-	UCommonTextBlock* OccupancyLabel = Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Occupancy_Label")));
+	UCommonTextBlock* OccupancyLabel = Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Clarity_Label_Text_Occupancy")));
+	if (!OccupancyLabel) OccupancyLabel = Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Occupancy_Label")));
 	TestTrue(TEXT("New layouts use team occupancy; existing authored captions remain for runtime normalization"),
 		OccupancyLabel && OccupancyLabel->GetText().ToString() ==
 			(bAlreadyV2 ? OriginalOccupancyCaption : FString(TEXT("대기·처리 중 팀"))));
@@ -1599,13 +1612,11 @@ bool FFF_FacilityInfoRevenueSectionContractTest::RunTest(const FString& Paramete
 		UWidget* SectionInContent = FFFacilityInfoUpgradeLayout::FindContentChild(Section, *Content);
 		const UWidget* Upgrade = FFFacilityInfoUpgradeLayout::FindContentChild(
 			Tree->FindWidget(TEXT("Panel_UpgradeSection")), *Content);
-		const UWidget* Summary = FFFacilityInfoUpgradeLayout::FindContentChild(
-			Tree->FindWidget(TEXT("Summary_Card")), *Content);
 		TestNotNull(TEXT("수익 섹션은 기존 상세 스크롤 안에 있다"), SectionInContent);
 		const int32 SectionIndex = SectionInContent ? Content->GetChildIndex(SectionInContent) : INDEX_NONE;
 		const bool bAurora = Tree->FindWidget(TEXT("Aurora_InfoV7")) != nullptr;
-		TestTrue(TEXT("수익 섹션은 현재 디자인의 요약 위치를 유지한다"),
-			Summary && (bAurora ? SectionIndex < Content->GetChildIndex(Summary) : SectionIndex > Content->GetChildIndex(Summary)));
+		TestNull(TEXT("수익 페이지에 폐기한 요약 카드가 남지 않는다"), Tree->FindWidget(TEXT("Summary_Card")));
+		TestTrue(TEXT("수익은 독립된 상세 페이지로 유지된다"), SectionIndex != INDEX_NONE);
 		if (Upgrade && !bAurora)
 		{
 			TestTrue(TEXT("수익 섹션은 강화 블록 바로 다음이다"), SectionIndex == Content->GetChildIndex(Upgrade) + 1);

@@ -108,7 +108,7 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("Virtualized tile view"), Tile) || !TestNotNull(TEXT("Search input"), Search) ||
         !TestNotNull(TEXT("Close button"), Close) || !TestNotNull(TEXT("Detail heading"), Detail) ||
         !TestNotNull(TEXT("Discovery reward detail"), Discovery)) return false;
-    for (const FName Name : { TEXT("Button_All"), TEXT("Button_Discovered"), TEXT("Button_Undiscovered"), TEXT("Button_Active"), TEXT("Button_ClearFacility") })
+    for (const FName Name : { TEXT("Button_All"), TEXT("Button_Discovered"), TEXT("Button_Undiscovered"), TEXT("Button_Active") })
         if (!TestNotNull(*Name.ToString(), Cast<UButton>(Screen->GetWidgetFromName(Name)))) return false;
 
     auto Definition = [](const TCHAR* Suffix) {
@@ -155,10 +155,17 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("All recipes visible"), Screen->GetVisibleEntryCount(), 2);
     if (Screen->GetWidgetFromName(TEXT("Column_CollectionCategories")))
     {
+        for (const TCHAR* Name : {TEXT("Text_Empty"), TEXT("Border_RewardFeedback"), TEXT("Size_Detail"), TEXT("Size_Showcase")})
+        {
+            const auto* Template = ScreenClass->GetWidgetTreeArchetype()->FindWidget(Name);
+            TestTrue(FString::Printf(TEXT("Saved Designer list hides conditional widget %s"), Name),
+                Template && Template->bHiddenInDesigner);
+        }
         // The Pearl collection has separate list and detail pages. Exercise the
         // current saved widget through that navigation instead of requiring the
         // retired floating inspector to paint while the list page is active.
         auto* Browse = Cast<USizeBox>(Screen->GetWidgetFromName(TEXT("Size_Browse")));
+        auto* ExitCodex = Cast<UButton>(Screen->GetWidgetFromName(TEXT("Button_ExitCodex")));
         auto* DetailPage = Cast<USizeBox>(Screen->GetWidgetFromName(TEXT("Size_Detail")));
         auto* Showcase = Cast<USizeBox>(Screen->GetWidgetFromName(TEXT("Size_Showcase")));
         auto* Amount = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailRewardAmount")));
@@ -176,7 +183,8 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
         auto* LockedLabel = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailRewardLocked")));
         auto* DetailGold = Cast<UImage>(Screen->GetWidgetFromName(TEXT("Image_DetailRewardGold")));
         auto* CardGold = Cast<UImage>(CardClass->GetWidgetTreeArchetype()->FindWidget(TEXT("Image_CardRewardGold")));
-        if (!TestNotNull(TEXT("Pearl collection browse"), Browse) ||
+        if (!TestNotNull(TEXT("Top-right codex exit button"), ExitCodex) ||
+            !TestNotNull(TEXT("Pearl collection browse"), Browse) ||
             !TestNotNull(TEXT("Separate detail page"), DetailPage) ||
             !TestNotNull(TEXT("Separate showcase"), Showcase) ||
             !TestNotNull(TEXT("Reward amount"), Amount) ||
@@ -213,6 +221,9 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                 FMath::IsNearlyEqual(StateIcon->GetBrush().ImageSize.Y, 32.f));
         }
         TestFalse(TEXT("Collection opens on its list page"), Screen->IsCombinationDetailOpen());
+        TestEqual(TEXT("Collection persists the requested six fixed columns"), CastChecked<UFF_FacilityCodexTileView>(Tile)->ColumnCount, 6);
+        TestNotNull(TEXT("Reward track uses a saved Fill container without relying on native Tick"),
+            Cast<USizeBox>(Screen->GetWidgetFromName(TEXT("Scroll_ReadableMilestones"))));
         TestTrue(TEXT("List shows the recipe grid and hides the separate detail"),
             Browse->IsVisible() && !DetailPage->IsVisible() && !Showcase->IsVisible());
 
@@ -263,14 +274,77 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
 
         Close->OnClicked.Broadcast();
         TestFalse(TEXT("Back returns to the collection list"), Screen->IsCombinationDetailOpen());
+        int32 ExitRequests = 0;
+        const FDelegateHandle ExitObserver = Screen->OnCloseRequested.AddLambda([&ExitRequests]() { ++ExitRequests; });
+        ExitCodex->OnClicked.Broadcast();
+        TestEqual(TEXT("X on the list requests closing the whole codex once"), ExitRequests, 1);
+        Screen->OpenCombinationDetail(Entries[0].RuleId);
+        ExitCodex->OnClicked.Broadcast();
+        TestEqual(TEXT("X on a detail requests closing the whole codex once"), ExitRequests, 2);
+        Screen->OnCloseRequested.Remove(ExitObserver);
+        Close->OnClicked.Broadcast();
         Screen->SetPreviewEntries(Entries);
         Screen->SetDiscoveryFilter(EFF_FacilityCodexFilterState::RewardReady);
         TestEqual(TEXT("Reward filter lists only the discovered unpaid recipe"), Screen->GetVisibleEntryCount(), 1);
         Screen->SetDiscoveryFilter(EFF_FacilityCodexFilterState::All);
         TestEqual(TEXT("All filter restores both recipes"), Screen->GetVisibleEntryCount(), 2);
 
+        auto* CollectionSearchHint = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_SearchHint")));
+        if (!TestNotNull(TEXT("Collection retains its full-contrast authored search hint"), CollectionSearchHint)) return false;
+        TestTrue(TEXT("Only the compact authored hint paints in an empty collection search"),
+            Search->GetHintText().IsEmpty() &&
+            CollectionSearchHint->GetText().ToString() == TEXT("시설·조합 검색") &&
+            CollectionSearchHint->GetVisibility() == ESlateVisibility::HitTestInvisible);
+        Search->SetText(FText::FromString(TEXT("no_matching_recipe")));
+        Search->OnTextChanged.Broadcast(Search->GetText());
+        TestEqual(TEXT("A collection search hides the authored hint while typing"),
+            CollectionSearchHint->GetVisibility(), ESlateVisibility::Collapsed);
+        TestEqual(TEXT("Collection search input filters the recipes"), Screen->GetVisibleEntryCount(), 0);
+        Screen->SetSearchText(FText::GetEmpty());
+        TestEqual(TEXT("Clearing collection search restores the recipes"), Screen->GetVisibleEntryCount(), 2);
+        TestTrue(TEXT("Clearing collection search restores exactly one passive hint"),
+            Search->GetHintText().IsEmpty() &&
+            CollectionSearchHint->GetVisibility() == ESlateVisibility::HitTestInvisible);
+
         if (!FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
         {
+            // This current-layout branch returns before the legacy fixture's
+            // shader warmup. Prepare its real materials before judging contrast
+            // or exporting images, including when this test runs on its own.
+            TSet<UMaterialInterface*> Materials;
+            const auto GatherBrush = [&Materials](const FSlateBrush& Brush)
+            {
+                if (auto* Material = Cast<UMaterialInterface>(Brush.GetResourceObject())) Materials.Add(Material);
+            };
+            const auto GatherMaterials = [&Materials, &GatherBrush](UWidget* Widget)
+            {
+                if (const auto* Border = Cast<UBorder>(Widget)) GatherBrush(Border->Background);
+                if (const auto* Button = Cast<UButton>(Widget))
+                {
+                    GatherBrush(Button->GetStyle().Normal); GatherBrush(Button->GetStyle().Hovered);
+                    GatherBrush(Button->GetStyle().Pressed); GatherBrush(Button->GetStyle().Disabled);
+                }
+                if (const auto* Image = Cast<UImage>(Widget)) GatherBrush(Image->GetBrush());
+                if (const auto* Image = Cast<UFF_FacilityCodexImage>(Widget))
+                    if (Image->DiscoveryMaterial) Materials.Add(Image->DiscoveryMaterial);
+            };
+            Screen->WidgetTree->ForEachWidget(GatherMaterials);
+            CardClass->GetWidgetTreeArchetype()->ForEachWidget(GatherMaterials);
+            for (UMaterialInterface* Material : Materials) Material->EnsureIsComplete();
+            if (GShaderCompilingManager) GShaderCompilingManager->FinishAllCompilation();
+            FlushRenderingCommands();
+            const auto SaveCollectionPreview = [this](UTextureRenderTarget2D& Target, const FIntPoint Resolution, const TCHAR* Page)
+            {
+                TArray<FColor> Pixels;
+                FReadSurfaceDataFlags Flags; Flags.SetLinearToGamma(false);
+                if (!Target.GameThread_GetRenderTargetResource()->ReadPixels(Pixels, Flags)) return false;
+                TArray64<uint8> Png;
+                FImageUtils::PNGCompressImageArray(Resolution.X, Resolution.Y, Pixels, Png);
+                const FString Directory = FPaths::ProjectSavedDir() / TEXT("Automation/FacilityCodex");
+                IFileManager::Get().MakeDirectory(*Directory, true);
+                return TestTrue(TEXT("Current collection preview saved"), FFileHelper::SaveArrayToFile(Png,
+                    *(Directory / FString::Printf(TEXT("ReadableCollection_%s_%dx%d.png"), Page, Resolution.X, Resolution.Y))));
+            };
             for (const FIntPoint Resolution : {FIntPoint(1280, 720), FIntPoint(1024, 768), FIntPoint(720, 960), FIntPoint(1920, 1080)})
             {
                 FWidgetRenderer Renderer(false, true);
@@ -287,6 +361,10 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                     Renderer.DrawWindow(Target.Get(), Grid, Window, 1.f, Size, .016f, false);
                 }
                 const FSlateRect Viewport(0, 0, Resolution.X, Resolution.Y);
+                const FSlateRect ScreenRect = Screen->GetWidgetFromName(TEXT("Size_Dialog"))->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                TestTrue(TEXT("Authored codex fills the viewport through its saved parent slots"),
+                    FMath::Abs(ScreenRect.Left) <= 1.f && FMath::Abs(ScreenRect.Top) <= 1.f &&
+                    FMath::Abs(ScreenRect.Right - Resolution.X) <= 1.f && FMath::Abs(ScreenRect.Bottom - Resolution.Y) <= 1.f);
                 const FSlateRect BrowseRect = Browse->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 const FSlateRect TileRect = Tile->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 TestTrue(TEXT("The collection list and cards remain inside the viewport"),
@@ -294,6 +372,42 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                     BrowseRect.Right <= Viewport.Right + 1.f && BrowseRect.Bottom <= Viewport.Bottom + 1.f &&
                     TileRect.Left >= BrowseRect.Left - 1.f && TileRect.Right <= BrowseRect.Right + 1.f);
                 TestTrue(TEXT("The separate detail stays hidden while browsing"), !DetailPage->IsVisible());
+                const FSlateRect FilterRect = Screen->GetWidgetFromName(TEXT("Horizontal_Toolbar"))->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const FSlateRect CloseRect = Close->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                TestTrue(TEXT("Collection filters occupy their own row below the title and above the list"),
+                    FilterRect.Top >= CloseRect.Bottom - 1.f && FilterRect.Bottom <= BrowseRect.Top + 1.f);
+                const FSlateRect ExitRect = ExitCodex->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                AddInfo(FString::Printf(TEXT("Codex bounds %dx%d DPI=%.9f: X=(%.3f,%.3f)-(%.3f,%.3f), size=(%.9f,%.9f); titleRight=%.3f filterTop=%.3f browseRight=%.3f"),
+                    Resolution.X, Resolution.Y, Dpi, ExitRect.Left, ExitRect.Top, ExitRect.Right, ExitRect.Bottom,
+                    ExitRect.GetSize().X, ExitRect.GetSize().Y, CloseRect.Right, FilterRect.Top, BrowseRect.Right));
+                TestTrue(TEXT("X remains visible at the top-right above the filters at every resolution"),
+                    ExitCodex->IsVisible() && ExitRect.GetSize().GetMin() >= 32.f &&
+                    FMath::Abs(ExitRect.Right - BrowseRect.Right) <= 1.f &&
+                    ExitRect.Top >= 0.f && ExitRect.Bottom < FilterRect.Top && ExitRect.Left > CloseRect.Right);
+                const auto* ProgressRow = Screen->GetWidgetFromName(TEXT("Row_CollectionProgress"));
+                const auto* RewardScroll = Screen->GetWidgetFromName(TEXT("Scroll_ReadableMilestones"));
+                const auto* RewardTrack = Screen->GetWidgetFromName(TEXT("Size_ReadableMilestoneTrack"));
+                if (!TestNotNull(TEXT("Collection reward row"), ProgressRow) ||
+                    !TestNotNull(TEXT("Collection reward viewport"), RewardScroll) ||
+                    !TestNotNull(TEXT("Collection reward track"), RewardTrack)) return false;
+                const FSlateRect RewardViewportRect = RewardScroll->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const FSlateRect RewardTrackRect = RewardTrack->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                TestTrue(TEXT("Reward viewport reaches the right edge of the collection and its track fills all available width"),
+                    FMath::Abs(RewardViewportRect.Right - BrowseRect.Right) <= 1.f &&
+                    RewardTrackRect.Right >= RewardViewportRect.Right - 1.f &&
+                    RewardViewportRect.Bottom <= Resolution.Y + 1.f);
+                const FSlateRect SearchRect = Search->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                TestTrue(TEXT("Collection search fits beside the filters, including portrait windows"),
+                    SearchRect.Right <= FilterRect.Left - 1.f &&
+                    Search->GetDesiredSize().X <= Search->GetCachedGeometry().GetLocalSize().X + 1.f &&
+                    Search->GetClipping() == EWidgetClipping::ClipToBounds);
+                const FSlateRect SearchHintRect = CollectionSearchHint->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                TestTrue(TEXT("The complete authored search hint stays inside the search field at every resolution"),
+                    SearchHintRect.Left >= SearchRect.Left - 1.f && SearchHintRect.Right <= SearchRect.Right + 1.f &&
+                    SearchHintRect.Top >= SearchRect.Top - 1.f && SearchHintRect.Bottom <= SearchRect.Bottom + 1.f &&
+                    CollectionSearchHint->GetDesiredSize().X <= CollectionSearchHint->GetCachedGeometry().GetLocalSize().X + 1.f &&
+                    CollectionSearchHint->GetClipping() == EWidgetClipping::ClipToBounds);
+                SaveCollectionPreview(*Target, Resolution, TEXT("List"));
                 auto* FirstCard = Cast<UFF_FacilityCodexCard>(Tile->GetEntryWidgetFromItem(Tile->GetListItems()[0]));
                 if (!TestNotNull(TEXT("Visible first Pearl recipe card"), FirstCard)) return false;
                 auto* Name = CastChecked<UTextBlock>(FirstCard->GetWidgetFromName(TEXT("Text_Name")));
@@ -302,6 +416,12 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                 const FSlateRect CardRect = FirstCard->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 const FSlateRect NameRect = Name->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 const FSlateRect StateRect = State->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                AddInfo(FString::Printf(TEXT("Codex card %dx%d: card=(%.3f,%.3f)-(%.3f,%.3f), title=(%.3f,%.3f)-(%.3f,%.3f), reward=(%.3f,%.3f)-(%.3f,%.3f), rewardVisibility=%d"),
+                    Resolution.X, Resolution.Y, CardRect.Left, CardRect.Top, CardRect.Right, CardRect.Bottom,
+                    NameRect.Left, NameRect.Top, NameRect.Right, NameRect.Bottom,
+                    StateRect.Left, StateRect.Top, StateRect.Right, StateRect.Bottom, int32(State->GetVisibility())));
+                auto* Bonus = CastChecked<UTextBlock>(FirstCard->GetWidgetFromName(TEXT("Text_Bonus")));
+                TestFalse(TEXT("Card fee percentage remains one line inside the auto-sized reward strip"), Bonus->GetAutoWrapText());
                 TestTrue(TEXT("Pearl card title has enough height to show every wrapped line"),
                     Name->GetDesiredSize().Y <= NameBounds->GetCachedGeometry().GetLocalSize().Y + 1.f);
                 TestTrue(TEXT("Pearl card title and reward stay inside its card"),
@@ -397,6 +517,10 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                     Renderer.DrawWindow(Target.Get(), Grid, Window, 1.f, Size, .016f, false);
                 }
                 const FSlateRect DetailRect = DetailPage->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const FSlateRect ExitRect = ExitCodex->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const FSlateRect NextRect = Screen->GetWidgetFromName(TEXT("Button_CollectionNext"))->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                TestTrue(TEXT("Detail navigation leaves a clear gap before the X button"),
+                    ExitCodex->IsVisible() && NextRect.Right + 16.f * Dpi <= ExitRect.Left && ExitRect.Right <= Resolution.X);
                 const FSlateRect ShowcaseRect = Showcase->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 const FSlateRect RewardPanelRect = Screen->GetWidgetFromName(TEXT("Border_ShowcaseRewardInfo"))
                     ->GetPaintSpaceGeometry().GetLayoutBoundingRect();
@@ -409,6 +533,7 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                     DetailRect.Right <= Resolution.X + 1.f && DetailRect.Bottom <= Resolution.Y + 1.f &&
                     ShowcaseRect.Left >= -1.f && ShowcaseRect.Top >= -1.f &&
                     ShowcaseRect.Right <= Resolution.X + 1.f && ShowcaseRect.Bottom <= Resolution.Y + 1.f);
+                SaveCollectionPreview(*Target, Resolution, TEXT("Detail"));
                 TestTrue(TEXT("The exact Gold amount and chevron paint inside the claim row"),
                     ClaimLabelRect.GetSize().GetMin() > 0.f && ChevronRect.GetSize().GetMin() > 0.f &&
                     ClaimLabelRect.Left >= ClaimRect.Left - 1.f && ClaimLabelRect.Right <= ChevronRect.Left + .5f &&
@@ -416,6 +541,45 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                 TestTrue(TEXT("The Pearl detail claim fills its reward surface at 72 logical pixels high"),
                     ClaimRect.GetSize().X >= RewardPanelRect.GetSize().X - 32.f * Dpi &&
                     ClaimRect.GetSize().Y / Dpi >= 71.f && ClaimRect.GetSize().Y / Dpi <= 73.f);
+            }
+            Close->OnClicked.Broadcast();
+            TArray<FFF_FacilityCodexEntry> GridEntries;
+            for (int32 Index = 0; Index < 12; ++Index)
+            {
+                auto& Entry = GridEntries.Add_GetRef(Entries[Index % Entries.Num()]);
+                Entry.RuleId = FName(*FString::Printf(TEXT("FixedSix_%02d"), Index));
+            }
+            Screen->SetPreviewEntries(GridEntries);
+            for (const FIntPoint Resolution : {FIntPoint(1280, 720), FIntPoint(1920, 1080)})
+            {
+                FWidgetRenderer Renderer(false, true);
+                const FVector2D Size(Resolution.X, Resolution.Y);
+                const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Resolution);
+                TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(Size, TF_Bilinear, true));
+                if (!TestNotNull(TEXT("Six-column render target"), Target.Get())) return false;
+                auto Window = SNew(SVirtualWindow).Size(Size);
+                Window->SetContent(SNew(SDPIScaler).DPIScale(Dpi)[Slate]);
+                FHittestGrid Grid;
+                for (int32 Frame = 0; Frame < 8; ++Frame)
+                {
+                    Screen->ForceLayoutPrepass();
+                    Renderer.DrawWindow(Target.Get(), Grid, Window, 1.f, Size, .016f, false);
+                }
+                const auto Rect = [Tile](int32 Index)
+                {
+                    UUserWidget* Card = Tile->GetEntryWidgetFromItem(Tile->GetListItems()[Index]);
+                    return Card ? Card->GetPaintSpaceGeometry().GetLayoutBoundingRect() : FSlateRect();
+                };
+                const FSlateRect First = Rect(0), Sixth = Rect(5), Seventh = Rect(6);
+                const FSlateRect GridBounds = Tile->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                AddInfo(FString::Printf(TEXT("Six-column bounds %dx%d: first=%s sixth=%s seventh=%s grid=%s"),
+                    Resolution.X, Resolution.Y, *First.ToString(), *Sixth.ToString(), *Seventh.ToString(), *GridBounds.ToString()));
+                TestTrue(TEXT("Exactly six real cards occupy each row and the seventh begins the next row"),
+                    First.GetSize().GetMin() > 0.f && Sixth.GetSize().GetMin() > 0.f && Seventh.GetSize().GetMin() > 0.f &&
+                    FMath::Abs(First.Top - Sixth.Top) <= 1.f && Sixth.Left > First.Right &&
+                    Seventh.Top >= First.Bottom - 1.f && FMath::Abs(Seventh.Left - First.Left) <= 1.f &&
+                    First.Left >= GridBounds.Left - 1.f && Sixth.Right <= GridBounds.Right + 1.f);
+                SaveCollectionPreview(*Target, Resolution, TEXT("SixColumns"));
             }
         }
         return true;

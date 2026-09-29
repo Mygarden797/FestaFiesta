@@ -581,7 +581,7 @@ bool FFFZoneSystemQueueProjectionTest::RunTest(const FString& Parameters)
 		0.5f,
 		0.001f);
 	TestEqual(TEXT("Exit Anchor 위치를 전달한다"), Config.ExitLocation, ExitLocation);
-	TestFalse(TEXT("도착 통지 연결 전에는 서비스 정지를 만들지 않는다"), Config.bRequireArrivalConfirmation);
+	TestTrue(TEXT("실제 슬롯 도착 통지를 받아야 서비스를 시작한다"), Config.bRequireArrivalConfirmation);
 
 	using FQueueBridge = UFF_ZoneSystemQueueBridgeSubsystem;
 	TestEqual(TEXT("시설 포기 제한이 Party 제한보다 빠르면 시설 값을 쓴다"),

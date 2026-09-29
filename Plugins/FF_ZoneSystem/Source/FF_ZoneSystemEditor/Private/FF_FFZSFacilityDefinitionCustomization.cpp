@@ -312,6 +312,17 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
     // Expose the captured Spec settings at the Data Asset's top level without a second copy.
     const TSharedRef<IPropertyHandle> SpecHandle = DetailBuilder.GetProperty(
         GET_MEMBER_NAME_CHECKED(UFFZSFacilityDefinition, Spec));
+    IDetailCategoryBuilder& StaffCategory = DetailBuilder.EditCategory(
+        TEXT("FF Zone System|Facility Staff"), LOCTEXT("FacilityStaffCategory", "Facility Staff"),
+        ECategoryPriority::Important);
+    StaffCategory.SetToolTip(LOCTEXT("FacilityStaffCategoryTip",
+        "Info 안내 시설의 스태프 배정 정원입니다. 설치로 정원만 늘어나며 실제 인원은 별도 고용으로 추가합니다."));
+    if (const TSharedPtr<IPropertyHandle> StaffCapacity = SpecHandle->GetChildHandle(
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, StaffCapacity)))
+    {
+        DetailBuilder.HideProperty(StaffCapacity);
+        StaffCategory.AddProperty(StaffCapacity.ToSharedRef());
+    }
     IDetailCategoryBuilder& RevenueCategory = DetailBuilder.EditCategory(
         TEXT("FF Zone System|Facility Revenue"), LOCTEXT("FacilityRevenueCategory", "Facility Revenue"),
         ECategoryPriority::Important);

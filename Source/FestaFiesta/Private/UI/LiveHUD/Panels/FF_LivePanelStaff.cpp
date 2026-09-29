@@ -63,8 +63,8 @@ void UFF_LivePanelStaff::NativeOnPanelOpened()
 	SetTextOrHide(Text_HireNote, LOCTEXT("LiveStaff_HireNote",
 		"고용은 셋업과 개장 준비에서만 합니다. 라이브 중에는 늘릴 수 없습니다."));
 
-	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveStaff_MissingNote",
-		"시설별 배치와 스태프 개인 상태는 아직 읽을 수 없습니다."));
+	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveStaff_FacilityAssignmentNote",
+		"안내 시설을 선택해 스태프를 배정하세요. 배정된 시설에서 사건 현장으로 출동합니다."));
 
 	BindViewModel();
 	RefreshAll();
@@ -100,6 +100,8 @@ void UFF_LivePanelStaff::BindViewModel()
 	}
 	
 	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_LivePanelStaff::HandleStaffCountChanged);
+	CachedViewModel->OnStaffCapacityChanged.AddUniqueDynamic(this, &ThisClass::HandleStaffCountChanged);
+	CachedViewModel->OnStaffAssignmentChanged.AddUniqueDynamic(this, &ThisClass::HandleStaffAssignmentChanged);
 }
 
 void UFF_LivePanelStaff::UnbindViewModel()
@@ -108,6 +110,8 @@ void UFF_LivePanelStaff::UnbindViewModel()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_LivePanelStaff::HandleStaffCountChanged);
+		CachedViewModel->OnStaffCapacityChanged.RemoveDynamic(this, &ThisClass::HandleStaffCountChanged);
+		CachedViewModel->OnStaffAssignmentChanged.RemoveDynamic(this, &ThisClass::HandleStaffAssignmentChanged);
 	}
 	CachedViewModel = nullptr;
 }
@@ -124,14 +128,19 @@ void UFF_LivePanelStaff::RefreshAll()
 		ViewModel->GetTotalStaffCount(),
 		ViewModel->GetBaseStaffCount(),
 		ViewModel->GetHiredStaffCount(),
-		// 사건 시스템이 오기 전까지 배치는 늘 0 이다. 읽을 창구가 생기면 여기를 바꾼다.
-		/* AssignedToEvents */ 0);
+		ViewModel->GetBusyStaffCount());
 
 	const FText Unknown = LOCTEXT("LiveStaff_Unknown", "—");
+	const int32 MaxTotal = ViewModel->GetMaxTotalStaffCount();
+	const int32 Unassigned = ViewModel->GetUnassignedStaffCount();
+	SetTextOrHide(Text_MissingNote, Unassigned >= 0
+		? FText::Format(LOCTEXT("LiveStaff_UnassignedCount", "미배정 {0}명 · 안내 시설을 선택해 + 배정하세요."), FText::AsNumber(Unassigned))
+		: LOCTEXT("LiveStaff_FacilityAssignmentNote", "안내 시설을 선택해 스태프를 배정하세요. 배정된 시설에서 사건 현장으로 출동합니다."));
 
 	// --- 요약 ---
-	SetTextOrHide(Text_TotalStaff, (Summary.Total != INDEX_NONE)
-		? FText::Format(LOCTEXT("LiveStaff_TotalValue", "{0}명"), FText::AsNumber(Summary.Total))
+	SetTextOrHide(Text_TotalStaff, (Summary.Total != INDEX_NONE && MaxTotal >= 0)
+		? FText::Format(LOCTEXT("LiveStaff_TotalCapacityValue", "{0} / {1}명"),
+			FText::AsNumber(Summary.Total), FText::AsNumber(MaxTotal))
 		: Unknown);
 
 	// 내역은 둘 다 알아야 말이 된다. `기본 6 · 고용 —` 은 읽는 사람을 헷갈리게 한다.
@@ -154,8 +163,8 @@ void UFF_LivePanelStaff::RefreshAll()
 	{
 	case EFF_LiveStaffIdleState::HasIdle:
 		IdleValue = FText::Format(LOCTEXT("LiveStaff_IdleValue", "{0}명"), FText::AsNumber(Summary.Idle));
-		IdleNote = LOCTEXT("LiveStaff_IdleNote",
-			"사건이 나면 이 인원이 대응에 들어갑니다.");
+		IdleNote = LOCTEXT("LiveStaff_FacilityIdleNote",
+			"미배정 인원도 포함합니다. 안내 시설에 배정된 대기 인원만 출동할 수 있습니다.");
 		break;
 
 	case EFF_LiveStaffIdleState::AllBusy:
@@ -208,11 +217,11 @@ void UFF_LivePanelStaff::RefreshAssignments()
 		return;
 	}
 
-	// 여기는 **사건 대응 중인 인원** 이 들어갈 자리다. 유료 프로그램은 인원을 쓰지 않으므로
-	// 편성 목록을 여기에 그리지 않는다 — 그리면 "이 사람들이 묶여 있다" 는 거짓말이 된다.
-	// 사건 시스템(UFF_FestivalEventSubsystem)이 오면 그 목록을 여기에 붙인다.
-	SetTextOrHide(Text_AssignmentsEmpty,
-		LOCTEXT("LiveStaff_NoAssignment", "지금 대응 중인 사건이 없습니다."));
+	const int32 BusyCount = ViewModel->GetBusyStaffCount();
+	SetTextOrHide(Text_AssignmentsEmpty, BusyCount > 0
+		? FText::Format(LOCTEXT("LiveStaff_ActiveResponse", "{0}명이 사건 현장으로 이동하거나 대응 중입니다."), FText::AsNumber(BusyCount))
+		: BusyCount == 0 ? LOCTEXT("LiveStaff_NoAssignment", "지금 대응 중인 사건이 없습니다.")
+		: LOCTEXT("LiveStaff_AssignmentUnknown", "출동 정보를 아직 읽지 못했습니다."));
 
 	Box_Assignments->SetVisibility(ESlateVisibility::Collapsed);
 }
@@ -221,6 +230,11 @@ void UFF_LivePanelStaff::HandleStaffCountChanged(int32 NewValue)
 {
 	// 인자를 쓰지 않는다. 총원 하나만 받아서는 남는 인원 계산의 다른 한쪽(배치)이
 	// 안 맞을 수 있으니, 부를 때마다 전체를 다시 읽는다.
+	RefreshAll();
+}
+
+void UFF_LivePanelStaff::HandleStaffAssignmentChanged()
+{
 	RefreshAll();
 }
 

@@ -13,7 +13,7 @@ namespace
 	{
 		FFF_DestinationCandidate Candidate;
 
-		// 0 = 현재 Zone, 1 = 인접 Zone. 낮은 쪽이 먼저 남는다
+		// 0 = 현재 Zone, 1 = 인접 Zone, 2 = 빈 구역에서 확장해 찾은 Zone.
 		int32 ZoneRank = 0;
 	};
 
@@ -87,6 +87,57 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 		if (!ZoneRankById.Contains(NeighborId))
 		{
 			ZoneRankById.Add(NeighborId, 1);
+		}
+	}
+
+	// 입장 구역과 이웃에 시설이 없으면 기존 1홉 제한은 열린 유료 시설도 영원히 숨긴다.
+	// 가까운 시설이 있을 때의 선택은 유지하고, 비어 있는 구역에서만 탐색 범위를 넓힌다.
+	const bool bHasLocalDestination = ReadModel.Facilities.ContainsByPredicate(
+		[&](const FFFZSFacilityReadModel& Facility)
+		{
+			return ZoneRankById.Contains(Facility.ZoneId)
+				&& IsSelectableCategory(Facility.Category)
+				&& Facility.State == EFFZSFacilityState::Active && !Facility.bNeedsRelocation
+				&& (bMainStageOpen || !IsMainStageFacility(Facility.Category, Facility.FacilityDefinitionId));
+		});
+	if (!bHasLocalDestination)
+	{
+		FVector CurrentAnchor;
+		if (WalkDistances && WalkDistances->TryGetZoneAnchorCm(CurrentZoneId, CurrentAnchor))
+		{
+			// 인접 목록이 덜 작성된 맵도 실제 보행 경로가 확인되면 시설을 발견한다.
+			// 확장 탐색에서는 경로 없는 구역을 직선거리로 대체하지 않는다.
+			for (const FFFZSZoneReadModel& Zone : ReadModel.Zones)
+			{
+				float PathLengthCm = 0.f;
+				if (!ZoneRankById.Contains(Zone.ZoneId)
+					&& WalkDistances->TryGetWalkDistanceCm(CurrentZoneId, Zone.ZoneId, PathLengthCm))
+				{
+					ZoneRankById.Add(Zone.ZoneId, 2);
+				}
+			}
+		}
+		else
+		{
+			// 보행 행렬이 없거나 현재 구역이 아직 반영되지 않았으면 연결 그래프를 따라간다.
+			// 연결되지 않은 섬이나 아직 등록되지 않은 구역은 후보가 될 수 없다.
+			TArray<FName> Frontier = {CurrentZoneId};
+			TSet<FName> Visited = {CurrentZoneId};
+			for (int32 Index = 0; Index < Frontier.Num(); ++Index)
+			{
+				const FName ZoneId = Frontier[Index];
+				const FFFZSZoneReadModel* Zone = ReadModel.Zones.FindByPredicate(
+					[ZoneId](const FFFZSZoneReadModel& Candidate) { return Candidate.ZoneId == ZoneId; });
+				if (!Zone) continue;
+				for (const FName NeighborId : Zone->NeighborZoneIds)
+				{
+					if (Visited.Contains(NeighborId) || !ReadModel.Zones.ContainsByPredicate(
+						[NeighborId](const FFFZSZoneReadModel& Candidate) { return Candidate.ZoneId == NeighborId; })) continue;
+					Visited.Add(NeighborId);
+					Frontier.Add(NeighborId);
+					if (!ZoneRankById.Contains(NeighborId)) ZoneRankById.Add(NeighborId, 2);
+				}
+			}
 		}
 	}
 

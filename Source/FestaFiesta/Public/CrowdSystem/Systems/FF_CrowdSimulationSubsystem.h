@@ -1252,6 +1252,7 @@ private:
 	void ReleaseProgramParty(int32 LeaderAgentIndex);
 	
 	friend struct FFF_CrowdProgramTestAccess;
+	friend struct FFF_CrowdQueueTestAccess;
 
 	void ClearPartyQueueState(int32 LeaderAgentIndex, bool bLeaveQueue);
 

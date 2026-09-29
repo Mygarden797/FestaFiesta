@@ -19,6 +19,18 @@ class USizeBox;
 class UTextBlock;
 class UFF_PrepBuildTileData;
 
+UENUM()
+enum class EFF_PrepBuildTilePreviewState : uint8
+{
+	Available UMETA(DisplayName = "일반 시설"),
+	RequiredMissing UMETA(DisplayName = "필수 시설 · 미설치"),
+	RequiredSatisfied UMETA(DisplayName = "필수 시설 · 설치 완료"),
+	Program UMETA(DisplayName = "프로그램 시설"),
+	Synergy UMETA(DisplayName = "조합 추천 시설"),
+	CodexFocus UMETA(DisplayName = "도감에서 찾은 시설"),
+	Unavailable UMETA(DisplayName = "설치 불가 안내")
+};
+
 namespace FFPrepBuildTileLayout
 {
 	constexpr float CardWidth = 170.0f;
@@ -65,6 +77,13 @@ class FESTAFIESTA_API UFF_PrepBuildTileWidget
 public:
 	// Rebind visible data after a price/thumbnail change without releasing the virtualized row.
 	void RefreshItemPresentation();
+#if WITH_EDITORONLY_DATA
+	/** Designer-only state; live card status still comes exclusively from its item. */
+	UPROPERTY(EditAnywhere, Category = "Designer Preview", meta = (DisplayName = "대표 카드 상태"))
+	EFF_PrepBuildTilePreviewState DesignerPreviewState = EFF_PrepBuildTilePreviewState::Available;
+	UPROPERTY(EditAnywhere, Category = "Designer Preview", meta = (DisplayName = "설치 불가 예시 안내"))
+	FText DesignerUnavailableReason = NSLOCTEXT("FestaFiestaPrepBuild", "DesignerInsufficientGold", "골드가 부족합니다");
+#endif
 	/** Catalog drag selection reads the current pooled item only after a click is released. */
 	UFF_PrepBuildTileData* GetPresentedItem() const { return Item.Get(); }
 
@@ -213,6 +232,9 @@ protected:
 	FVector2D ThumbnailFallbackBounds = FVector2D(150.0, 70.0);
 
 private:
+#if WITH_EDITOR
+	void ApplyDesignerPreviewState();
+#endif
 	UFUNCTION()
 	void HandleFavoriteClicked();
 	void RefreshFavorite();

@@ -26,6 +26,7 @@
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Misc/AutomationTest.h"
+#include "NPC/Integration/FF_ZoneSystemBridge.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Queue/FF_QueueTypes.h"
 #include "Tests/AutomationCommon.h"
@@ -815,6 +816,7 @@ bool FFF_QueueEconomyBridge_UpgradeRevenueCompletesAndRestores::RunTest(const FS
 		Join.PartyId = Harness.PartyId;
 		Join.MemberCount = MemberCount;
 		if (!Harness.QueueBridge->TryJoinZoneFacility(Harness.FacilityInstanceId, Join).bAccepted) return false;
+		Harness.QueueBridge->NotifyZoneFacilityPartyArrived(Harness.FacilityInstanceId, Join.PartyId);
 		Harness.Queue->AdvanceFixedSteps(1500);
 		return Harness.QueueBridge->GetZoneFacilityQueueState(Harness.FacilityInstanceId).OccupiedMemberCount == 0;
 	};
@@ -1063,6 +1065,8 @@ bool FFF_QueueEconomyBridge_TeamCompletionUsesCapturedMembers::RunTest(const FSt
 		Harness.Queue->GetQueueState(Harness.QueueFacilityId).OccupiedMemberCount, 5);
 	Family.MemberCount = 99;
 	const int32 RevenueBefore = Harness.Progression->GetTodayRevenue();
+	Harness.QueueBridge->NotifyZoneFacilityPartyArrived(Harness.FacilityInstanceId, Solo.PartyId);
+	Harness.QueueBridge->NotifyZoneFacilityPartyArrived(Harness.FacilityInstanceId, Family.PartyId);
 	Harness.Queue->AdvanceFixedSteps(19);
 	TestEqual(TEXT("Admission and service start do not charge"), Harness.Progression->GetTodayRevenue(), RevenueBefore);
 	Harness.Queue->AdvanceFixedSteps(2);
@@ -1083,6 +1087,7 @@ bool FFF_QueueEconomyBridge_TeamCompletionUsesCapturedMembers::RunTest(const FSt
 	Family.MemberCount = 4;
 	if (!TestTrue(TEXT("A completed team may visit again"),
 		Harness.QueueBridge->TryJoinZoneFacility(Harness.FacilityInstanceId, Family).bAccepted)) return false;
+	Harness.QueueBridge->NotifyZoneFacilityPartyArrived(Harness.FacilityInstanceId, Family.PartyId);
 	Harness.Queue->AdvanceFixedSteps(21);
 	TestEqual(TEXT("A new completed visit pays once using its own captured count"),
 		Harness.Progression->GetTodayRevenue() - RevenueBefore, 225);
@@ -1126,6 +1131,7 @@ bool FFF_QueueEconomyBridge_UnfinishedTeamsNeverPay::RunTest(const FString& Para
 	Request.MaxWaitSeconds = 600.f;
 	if (!TestTrue(TEXT("Next team joins"),
 		Harness.QueueBridge->TryJoinZoneFacility(Harness.FacilityInstanceId, Request).bAccepted)) return false;
+	Harness.QueueBridge->NotifyZoneFacilityPartyArrived(Harness.FacilityInstanceId, Request.PartyId);
 	Harness.Queue->AdvanceFixedSteps(1);
 	if (!TestTrue(TEXT("Emergency closure cancels the active team"),
 		ChangeLifecycle(EFFZSCommandType::EmergencyClose))) return false;
@@ -1140,6 +1146,71 @@ bool FFF_QueueEconomyBridge_UnfinishedTeamsNeverPay::RunTest(const FString& Para
 	if (!TestEqual(TEXT("Both unfinished visits have exit records"), Logs.Num(), 2)) return false;
 	TestEqual(TEXT("The first team abandoned"), Logs[0].ExitType, EFF_QueueExit::Abandoned);
 	TestEqual(TEXT("The second team was cancelled"), Logs[1].ExitType, EFF_QueueExit::Cancelled);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueEconomyBridge_EmptyEntranceDiscoversAndPaysBusiness,
+	"FestaFiesta.Economy.QueueBridge.EmptyEntranceDiscoversAndPaysBusiness",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueEconomyBridge_EmptyEntranceDiscoversAndPaysBusiness::RunTest(const FString& Parameters)
+{
+	using namespace FFF_QueueEconomyBridgeTestHelpers;
+	FScopedQueueEconomyTestSettings SettingsGuard;
+	FQueueEconomyHarness Harness;
+	if (!TestTrue(TEXT("Discovery and revenue world initializes"), Harness.Initialize(this))) return false;
+	Harness.Definition->BoothCommissionRate = .25f;
+	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	Spec.FacilityDefinitionId = BoothDefinitionId;
+	Spec.InstallCostKey = NAME_None;
+	Spec.bOverrideRevenuePerUseGold = true;
+	Spec.RevenuePerUseGold = 100;
+	Spec.QueueRules.ServiceDurationSeconds = 1.f;
+	FString Failure;
+	if (!Harness.InstallFoodStall(Failure, false, &Spec)) { AddError(Failure); return false; }
+	FFFZSCommand Open;
+	Open.CommandId = FGuid::NewGuid();
+	Open.TransactionId = FGuid::NewGuid();
+	Open.Type = EFFZSCommandType::Open;
+	Open.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+	Open.FacilityInstanceId = Harness.FacilityInstanceId;
+	if (!TestTrue(TEXT("The paid booth opens"), Harness.ZoneSystem->ExecuteCommand(Open).bSucceeded)) return false;
+
+	FFFZSReadModel Model = Harness.ZoneSystem->BuildReadModel();
+	FFFZSZoneReadModel Entrance;
+	Entrance.ZoneId = TEXT("EmptyEntrance");
+	Entrance.NeighborZoneIds = {TEXT("EmptyWalkway")};
+	Model.Zones.Add(Entrance);
+	FFFZSZoneReadModel Walkway;
+	Walkway.ZoneId = TEXT("EmptyWalkway");
+	Walkway.NeighborZoneIds = {Entrance.ZoneId, TestZoneId};
+	Model.Zones.Add(Walkway);
+	const auto Candidates = FFF_ZoneSystemBridge::BuildCandidates(Model, Entrance.ZoneId, FVector::ZeroVector);
+	if (!TestEqual(TEXT("Guests in the empty entrance can discover the operating business"), Candidates.Num(), 1)) return false;
+	FGuid DiscoveredFacility;
+	if (!TestTrue(TEXT("The candidate resolves to an installed facility"),
+		FFF_ZoneSystemBridge::TryParseDestinationId(Candidates[0].DestinationId, DiscoveredFacility))) return false;
+	TestEqual(TEXT("Discovery points at the paid booth"), DiscoveredFacility, Harness.FacilityInstanceId);
+
+	FFF_JoinRequest Visit;
+	Visit.PartyId = 600001;
+	Visit.MemberCount = 4;
+	if (!TestTrue(TEXT("The discovered business admits the team"),
+		Harness.QueueBridge->TryJoinZoneFacility(DiscoveredFacility, Visit).bAccepted)) return false;
+	Harness.Queue->SimulationStepSeconds = .05f;
+	const int32 RevenueBefore = Harness.Progression->GetTodayRevenue();
+	Harness.Queue->AdvanceFixedSteps(25);
+	TestEqual(TEXT("Walking to the queue does not generate unearned revenue"), Harness.Progression->GetTodayRevenue(), RevenueBefore);
+	Harness.QueueBridge->NotifyZoneFacilityPartyArrived(DiscoveredFacility, Visit.PartyId);
+	Harness.Queue->AdvanceFixedSteps(25);
+	TestEqual(TEXT("Four completed visits at 100 gold and 25 percent pay 100 gold"),
+		Harness.Progression->GetTodayRevenue() - RevenueBefore, 100);
+	FFF_FacilityInstanceRevenue Revenue;
+	if (!TestTrue(TEXT("The payment belongs to the discovered facility"),
+		Harness.Progression->GetFacilityInstanceRevenue(DiscoveredFacility, Revenue))) return false;
+	TestEqual(TEXT("One team completes exactly one payment"), Revenue.TodayPaymentCount, 1);
+	TestEqual(TEXT("Facility information and festival revenue agree"), Revenue.TodayGold, 100);
+	Harness.Queue->AdvanceFixedSteps(25);
+	TestEqual(TEXT("A finished visit never pays again"), Harness.Progression->GetTodayRevenue() - RevenueBefore, 100);
 	return true;
 }
 

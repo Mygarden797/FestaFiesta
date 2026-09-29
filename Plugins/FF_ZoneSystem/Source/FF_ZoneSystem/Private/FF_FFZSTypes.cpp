@@ -346,6 +346,10 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     {
         OutErrors.Add(LOCTEXT("InvalidCategory", "Facility Category가 잘못되었습니다."));
     }
+    if (StaffCapacity < 0)
+    {
+        OutErrors.Add(LOCTEXT("InvalidStaffCapacity", "Staff Capacity는 0(배정 자리 없음) 이상이어야 합니다. Info 안내 시설에만 적용됩니다."));
+    }
     if (FootprintSizeCells.X <= 0 || FootprintSizeCells.Y <= 0)
     {
         OutErrors.Add(LOCTEXT("InvalidFootprint", "Footprint의 두 크기는 모두 최소 1 Cell이어야 합니다."));

@@ -12,7 +12,9 @@
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalSettings.h"
 #include "Misc/AutomationTest.h"
+#include "Queue/FF_FacilityQueue.h"
 #include "UObject/StrongObjectPtr.h"
+#include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include <limits>
 
 #if WITH_EDITOR
@@ -315,6 +317,39 @@ bool FFF_FacilityRevenueTable_ContentCoverage::RunTest(const FString& Parameters
 		TestFalse(*FString::Printf(TEXT("Editor rows have readable facility names: %s"), *Id.ToString()), Row->DisplayName.IsEmpty());
 		TestEqual(*FString::Printf(TEXT("Runtime resolves the actual table price: %s"), *Id.ToString()),
 			FFF_BoothRevenueRules::ResolveRevenuePerUse(Definition->Spec, Festival->RevenuePerUseByMinorToken, Table), Row->RevenuePerUseGold);
+		if (Row->RevenuePerUseGold > 0)
+		{
+			// A price alone cannot earn anything if the authored facility cannot project a queue
+			// or finish a visit. Exercise every paid production definition, not only a fixture booth.
+			FFF_QueueLaneGeometry Lane;
+			if (!TestTrue(*FString::Printf(TEXT("Paid facility has a usable queue: %s"), *Id.ToString()),
+				UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(Definition->Spec, FTransform::Identity, Lane))) continue;
+			const FFF_QueueConfig Config = UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(
+				Definition->Spec.QueueRules, FVector::ZeroVector);
+			FFF_FacilityQueue Queue;
+			Queue.Configure(-2, Config, Lane);
+			FFF_JoinRequest Visit;
+			Visit.PartyId = 700001;
+			Visit.MemberCount = 4;
+			int32 Slot = INDEX_NONE;
+			float Wait = 0.f;
+			if (!TestEqual(*FString::Printf(TEXT("Paid facility admits a team: %s"), *Id.ToString()),
+				Queue.TryJoin(Visit, 0.f, Slot, Wait), EFF_QueueJoinResult::Accepted)) continue;
+			Queue.NotifyPartyArrived(Visit.PartyId);
+			Queue.Advance(Config.ServiceSecondsPerParty + .1f, Config.ServiceSecondsPerParty + .1f);
+			TArray<FFF_QueueLog> Logs;
+			Queue.ConsumePendingLogs(Logs);
+			if (!TestEqual(*FString::Printf(TEXT("Paid facility completes one visit: %s"), *Id.ToString()), Logs.Num(), 1)) continue;
+			TestEqual(*FString::Printf(TEXT("Paid visit completes rather than cancels: %s"), *Id.ToString()), Logs[0].ExitType, EFF_QueueExit::Served);
+			TestEqual(*FString::Printf(TEXT("Completed visit preserves four billable people: %s"), *Id.ToString()), Logs[0].MemberCount, 4);
+			const float Rate = FFF_BoothRevenueRules::ResolveCommissionRate(Definition->Spec, Festival->BoothCommissionRate, Table);
+			const float Multiplier = FFF_BoothRevenueRules::ResolveRevenueMultiplier(Definition->Spec, 1, 1.f, Table);
+			if (Rate > 0.f && Multiplier > 0.f)
+			{
+				TestTrue(*FString::Printf(TEXT("Paid completed visit produces gold: %s"), *Id.ToString()),
+					FFF_BoothRevenueRules::ResolveCommission(Row->RevenuePerUseGold, Logs[0].MemberCount, Rate, Multiplier) > 0);
+			}
+		}
 	}
 	for (const FName RowName : Table->GetRowNames())
 	{

@@ -137,7 +137,8 @@ bool FFF_FacilityCodexCollectionScreenTest::RunTest(const FString& Parameters)
 		|| !TestNotNull(TEXT("Claim"), Claim) || !TestNotNull(TEXT("Categories"), Categories)
 		|| !TestNotNull(TEXT("Collection stages"), Stages) || !TestNotNull(TEXT("Reward feedback"), Feedback)) return false;
 	if (!TestEqual(TEXT("All recipes are initially listed"), Tile->GetNumItems(), 3)) return false;
-	TestTrue(TEXT("Categories populate after the presenter's pre-construction filter refresh"), Categories->GetChildrenCount() > 1);
+	TestEqual(TEXT("The collection sidebar contains only All combinations after the pre-construction refresh"),
+		Categories->GetChildrenCount(), 1);
 	TestFalse(TEXT("The catalog opens on its list page"), Screen->IsCombinationDetailOpen());
 	int32 CloseRequests = 0;
 	Screen->OnCloseRequested.AddLambda([&CloseRequests]() { ++CloseRequests; });
@@ -163,8 +164,21 @@ bool FFF_FacilityCodexCollectionScreenTest::RunTest(const FString& Parameters)
 	auto* AllCategory = Categories->GetChildrenCount() ? Cast<UFF_PrepChoiceButton>(Categories->GetChildAt(0)) : nullptr;
 	auto* AllButton = AllCategory ? Cast<UButton>(AllCategory->GetWidgetFromName(TEXT("Button_Root"))) : nullptr;
 	if (!TestNotNull(TEXT("All combinations control"), AllButton)) return false;
+	auto* AllLabel = Cast<UTextBlock>(AllCategory->GetWidgetFromName(TEXT("Text_Label")));
+	if (!TestNotNull(TEXT("All combinations label"), AllLabel)) return false;
+	TestEqual(TEXT("The single navigation action is labelled All combinations"), AllLabel->GetText().ToString(), FString(TEXT("전체 조합")));
+	const auto* FilteredItem = Tile->GetListItems().IsEmpty() ? nullptr : Cast<UFF_FacilityCodexItem>(Tile->GetListItems()[0]);
+	if (!TestNotNull(TEXT("Facility-filtered recipe remains available before testing the legacy category API"), FilteredItem)) return false;
+	const EFFZSFacilityCategory DifferentCategory = FilteredItem->Entry.TargetCategory == EFFZSFacilityCategory::Booth
+		? EFFZSFacilityCategory::Rest : EFFZSFacilityCategory::Booth;
+	Screen->SetCategoryFilter(true, DifferentCategory);
+	TestEqual(TEXT("The legacy category API still filters recipes without adding sidebar controls"), Screen->GetVisibleEntryCount(), 0);
+	TestEqual(TEXT("Legacy category filtering does not recreate detailed category buttons"), Categories->GetChildrenCount(), 1);
+	TestFalse(TEXT("All combinations is not selected while facility or category restrictions remain"), AllCategory->IsSelected());
 	AllButton->OnClicked.Broadcast();
-	TestEqual(TEXT("All combinations clears the inspector facility restriction"), Screen->GetVisibleEntryCount(), 3);
+	TestEqual(TEXT("All combinations clears both facility and category restrictions"), Screen->GetVisibleEntryCount(), 3);
+	TestTrue(TEXT("The same single All combinations button becomes selected after resetting filters"),
+		Categories->GetChildrenCount() == 1 && Categories->GetChildAt(0) == AllCategory && AllCategory->IsSelected());
 	if (!TestEqual(TEXT("Milestone controls reflect authored stages"), Stages->GetChildrenCount(), 3)) return false;
 	const auto StageButton = [Stages](int32 Index) -> UButton*
 	{
