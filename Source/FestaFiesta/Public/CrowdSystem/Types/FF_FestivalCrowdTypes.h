@@ -70,6 +70,10 @@ struct FUnitData
 
 	bool bIsDependentChild = false;
 	FFF_NeedState Needs;
+
+	// 사건 처리 실패 같은 외부 요인으로 이 방문객의 만족도에 붙은 감점(0~100점).
+	// 시간이 지나면 SatisfactionPenaltyRecoverPerMinute 만큼씩 줄어든다.
+	float SatisfactionPenalty = 0.f;
 	FName CommandType = NAME_None;
 
 	// 소속 파티. 1인 방문객도 멤버 1명짜리 파티로 처리해 코드 경로를 하나로 통일한다.

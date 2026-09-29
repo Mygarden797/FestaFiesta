@@ -79,7 +79,8 @@ struct FFF_SatisfactionCoefficients
  *   
  * - 취향매칭: `UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision`이 `Choose()`가
  *   이미 계산한 `PreferenceTerm`을 결정 확정 시점에 샘플링한다(`AddPreferenceSample`,
- *   파티 단위, no_choice는 애초에 표본이 아니다)
+ *   파티 단위, no_choice는 애초에 표본이 아니다). 결정 처리는 집계 창이 닫힌 뒤에 도므로
+ *   창 밖의 표본은 모아 두었다가 다음 창이 이어받는다
  *   
  * - Need 충족도: 같은 `AdvanceNeeds`가 `UFF_NpcNeedMetricsSubsystem`의 현재 켜져 있는
  *   Need 성분(Hunger·Restroom·Stimulation — Thirst·Fatigue는 Phase 게이트로 아직 0이라
@@ -111,11 +112,18 @@ struct FFF_SatisfactionAggregator
 	bool AddDensitySample(float Score0To100, int32 Weight);
 
 	// 확정된 결정 하나의 취향매칭 정도. -1(비선호)~1(선호). Choose()가 no_choice를
-	// 돌려준 회차는 애초에 호출하지 않는다
+	// 돌려준 회차는 애초에 호출하지 않는다.
+	// 다른 입력과 달리 Begin() 없이 불러도 받는다 — 결정은 집계 창 밖에서 확정되므로,
+	// 창 밖의 표본은 모아 두었다가 다음 Begin() 이 이어받는다
 	bool AddPreferenceSample(float PreferenceNorm);
 
 	// Need 성분 하나의 충족도(0~100 = 100 - 미해소율%). 켜져 있는 성분마다 한 번씩 부른다
 	bool AddNeedFulfillmentSample(float FulfillmentScore0To100);
+
+	// 방문객 한 명에게 붙은 감점(0~100점). 활성 방문객마다 한 번씩 부른다
+	// 감점이 없는 사람도 0으로 넣어야 평균이 "전체 방문객 기준"이 된다. 
+	// 사건 처리 실패 같은 외부 요인이라, 블렌드가 끝난 최종 점수에서 평균 감점을 뺀다.
+	bool AddPenaltySample(float PenaltyPoints);
 
 	// 누적을 확정한다. 값이 실제로 바뀌었으면 true
 	bool Commit(const FFF_SatisfactionCoefficients& Coefficients);
@@ -128,6 +136,9 @@ struct FFF_SatisfactionAggregator
 	int32 GetEnvironmentScore() const { return CommittedEnvironmentScore; }
 	int32 GetPersonalFitScore() const { return CommittedPersonalFitScore; }
 
+	// 최종 점수에서 빠진 평균 감점(점). 0이면 감점이 없다. 디버그·분해 표시용
+	int32 GetPenaltyPoints() const { return CommittedPenaltyPoints; }
+
 	// 이번 확정 주기에 들어간 표본 수 중 최솟값 — 넷 중 하나라도 비면 그 사실이 드러난다
 	int32 GetSampleCount() const { return CommittedSampleCount; }
 
@@ -137,6 +148,11 @@ private:
 	// 첫 Commit 전 중립값. 더미 72를 그대로 물려받지 않는다 — "데이터가 아직 없다"를
 	// "이미 잘 되고 있다"로 보이게 하지 않기 위해서다
 	static constexpr int32 NeutralScore = 50;
+
+	// 감점을 빼기 전 점수. 이번 주기에 블렌드할 재료가 없으면 이 값에서 다시 감점을 뺀다 —
+	// 이미 감점된 CommittedSatisfaction 에서 또 빼면 감점이 창마다 쌓인다
+	int32 CommittedBaseSatisfaction = NeutralScore;
+	int32 CommittedPenaltyPoints = 0;
 
 	int32 CommittedSatisfaction = NeutralScore;
 	int32 CommittedWaitScore = NeutralScore;
@@ -155,8 +171,13 @@ private:
 	int64 PendingDensityWeight = 0;
 	double PendingPreferenceSum = 0.0;
 	int32 PendingPreferenceCount = 0;
+	// 집계 창 밖에서 들어온 취향 표본. 다음 Begin 이 Pending 으로 넘겨받고 비운다
+	double CarriedPreferenceSum = 0.0;
+	int32 CarriedPreferenceCount = 0;
 	double PendingNeedFulfillmentSum = 0.0;
 	int32 PendingNeedFulfillmentCount = 0;
+	double PendingPenaltySum = 0.0;
+	int32 PendingPenaltyCount = 0;
 	bool bAggregating = false;
 };
 
@@ -224,6 +245,11 @@ public:
 	void AddDensitySample(float Score0To100, int32 Weight) { Aggregator.AddDensitySample(Score0To100, Weight); }
 	void AddPreferenceSample(float PreferenceNorm) { Aggregator.AddPreferenceSample(PreferenceNorm); }
 	void AddNeedFulfillmentSample(float FulfillmentScore0To100) { Aggregator.AddNeedFulfillmentSample(FulfillmentScore0To100); }
+	void AddPenaltySample(float PenaltyPoints) { Aggregator.AddPenaltySample(PenaltyPoints); }
+
+	/** 방문객 전체 평균으로 최종 점수에서 빠진 감점(점). 0이면 감점이 없다 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|NPC|Satisfaction")
+	int32 GetPenaltyPoints() const { return Aggregator.GetPenaltyPoints(); }
 
 	// 누적을 확정하고, 값이 실제로 바뀌었을 때만 델리게이트를 쏜다. Coefficients는
 	// 호출부가 이미 밀도 표본을 매기려고 로드해 둔 것을 그대로 넘긴다 — 여기서 또
