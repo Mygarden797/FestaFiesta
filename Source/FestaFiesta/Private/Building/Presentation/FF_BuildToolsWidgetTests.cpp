@@ -139,8 +139,7 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
         TEXT("Button_Help"), TEXT("Button_Facts"), TEXT("Button_DirectAdjustment"),
         TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo"),
         TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem"),
-        TEXT("Button_Grid"), TEXT("Button_SnapMeter"), TEXT("Button_SnapPrecision"),
-        TEXT("Button_SnapFree"), TEXT("Button_BuildSettings"), TEXT("Button_BuildSettingsClose"),
+        TEXT("Button_Grid"), TEXT("Button_BuildSettings"), TEXT("Button_BuildSettingsClose"),
         TEXT("Button_MultiSelect"), TEXT("Button_SnapCycle"), TEXT("Button_ToolbarRanges"),
         TEXT("Button_ToolbarCatalog"), TEXT("Button_ToolbarHelp"),
         TEXT("Button_BuildBack"), TEXT("Button_SettingsGrid"),
@@ -204,23 +203,12 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
     }
     TestTrue(TEXT("Seven pictogram buttons have a generous floating surface"),
         TopSize && TopSize->GetWidthOverride() >= 580.f);
-    TestNotNull(TEXT("One real gold currency value lives in the floating toolbar"),
-        Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_ToolbarGold"))));
-    TestNotNull(TEXT("The toolbar uses the project gold badge"),
-        Cast<UImage>(Tree->FindWidget(TEXT("Image_BuildToolbarGold"))));
-    const USizeBox* GoldIcon = Cast<USizeBox>(Tree->FindWidget(TEXT("Size_BuildToolbarGoldIcon")));
-    TestTrue(TEXT("Currency artwork is large yet bounded"), GoldIcon &&
-        GoldIcon->GetWidthOverride() >= 34.f && GoldIcon->GetWidthOverride() <= 38.f &&
-        GoldIcon->GetHeightOverride() >= 34.f && GoldIcon->GetHeightOverride() <= 38.f);
-    const UBorder* GoldBadge = Cast<UBorder>(Tree->FindWidget(TEXT("Border_BuildToolbarGold")));
-    const UCanvasPanelSlot* GoldSlot = GoldBadge ? Cast<UCanvasPanelSlot>(GoldBadge->Slot) : nullptr;
-    TestTrue(TEXT("One independent currency badge is sized for icon, name and value"),
-        GoldSlot && GoldSlot->GetSize().X >= 210.f && GoldSlot->GetSize().Y >= 54.f);
-    TestNotNull(TEXT("Currency badge names the resource"),
-        Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_ToolbarGoldCaption"))));
-    const UHorizontalBox* Keycaps = Cast<UHorizontalBox>(Tree->FindWidget(TEXT("Row_BuildToolbarKeycaps")));
-    TestTrue(TEXT("Function key captions are removed from the visible toolbar"),
-        Keycaps && Keycaps->GetVisibility() == ESlateVisibility::Collapsed);
+    for (const TCHAR* Name : {TEXT("Text_ToolbarGold"), TEXT("Image_BuildToolbarGold"),
+        TEXT("Border_BuildToolbarGold"), TEXT("Text_ToolbarGoldCaption"),
+        TEXT("Row_RetiredToolbarSnap"), TEXT("Row_BuildToolbarKeycaps"),
+        TEXT("Button_SnapMeter"), TEXT("Button_SnapPrecision"), TEXT("Button_SnapFree")})
+        TestNull(*FString::Printf(TEXT("Obsolete presentation is removed from Designer: %s"), Name), Tree->FindWidget(Name));
+    TestNotNull(TEXT("Placement cost remains available after removing the redundant top gold badge"), Tree->FindWidget(TEXT("Text_Cost")));
     for (int32 Index = 1; Index <= 7; ++Index)
     {
         const FName CanvasName = Index == 1 ? FName(TEXT("Canvas_BuildToolbarFacilityPlus"))
@@ -270,11 +258,9 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
     for (const TCHAR* Name : {TEXT("Text_BuildHelpUndo"), TEXT("Text_BuildHelpRedo"), TEXT("Text_BuildHelpQueue"), TEXT("Text_BuildHelpQueueHint")})
         TestNotNull(*FString::Printf(TEXT("Editing guidance belongs to the existing help: %s"), Name), Tree->FindWidget(Name));
     const UWidget* QueueHelp = Tree->FindWidget(TEXT("Row_BuildHelpQueue"));
-    TestTrue(TEXT("Queue guidance starts hidden until a supported facility is selected"),
-        QueueHelp && QueueHelp->GetVisibility() == ESlateVisibility::Collapsed);
-    const UTextBlock* LegacyHelp = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_ControlHelp")));
-    TestTrue(TEXT("Letter-by-letter help is retained only as a hidden compatibility binding"),
-        LegacyHelp && LegacyHelp->GetVisibility() == ESlateVisibility::Collapsed);
+    TestTrue(TEXT("Designer placement preview exposes the editable queue guide"), QueueHelp &&
+        QueueHelp->GetVisibility() == ESlateVisibility::SelfHitTestInvisible && !QueueHelp->bHiddenInDesigner);
+    TestNull(TEXT("Obsolete letter-by-letter help is removed instead of archived"), Tree->FindWidget(TEXT("Text_ControlHelp")));
     for (const FName Name : {FName(TEXT("Size_BuildHelpMouseIcon")),
         FName(TEXT("Size_BuildHelpArrowsIcon")), FName(TEXT("Size_BuildHelpRotateIcon")),
         FName(TEXT("Size_BuildHelpGridIcon")), FName(TEXT("Size_BuildHelpCatalogIcon")),
@@ -287,11 +273,23 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
         TestNotNull(*Name.ToString(), Cast<UTextBlock>(Tree->FindWidget(Name)));
     for (const FName Name : {TEXT("Button_DirectAdjustment"), TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem")})
         TestNotNull(*Name.ToString(), Cast<UButton>(Tree->FindWidget(Name)));
-    for (const FName Name : {TEXT("Panel_PlacementFacts"), TEXT("Border_PlacementHelp")})
+    for (const FName Name : {TEXT("Panel_PlacementFacts")})
     {
         UWidget* OptionalPanel = Tree->FindWidget(Name);
         TestTrue(*FString::Printf(TEXT("%s starts collapsed outside a placement session"), *Name.ToString()),
             OptionalPanel && OptionalPanel->GetVisibility() == ESlateVisibility::Collapsed);
+    }
+    const UWidget* DesignerHelp = Tree->FindWidget(TEXT("Border_PlacementHelp"));
+    TestTrue(TEXT("Saved placement Designer shows its editable help surface"), DesignerHelp &&
+        DesignerHelp->GetVisibility() == ESlateVisibility::SelfHitTestInvisible && !DesignerHelp->bHiddenInDesigner);
+    for (const TCHAR* Name : {TEXT("Text_SettingsGrid"), TEXT("Text_SettingsFacilityRanges"),
+        TEXT("Text_SettingsSynergyPreview"), TEXT("Text_SettingsDirectAdjustment"),
+        TEXT("Text_SettingsZoomToCursor"), TEXT("Text_SettingsEdgeScroll")})
+    {
+        const auto* Caption = Cast<UTextBlock>(Tree->FindWidget(Name));
+        const FString Value = Caption ? Caption->GetText().ToString() : FString();
+        TestTrue(*FString::Printf(TEXT("Saved Designer toggle uses the compact runtime state: %s"), Name),
+            Caption && (Value == TEXT("켜짐") || Value == TEXT("꺼짐")));
     }
     return true;
 }
@@ -337,6 +335,7 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("Settings drawer instance"), Settings)) return false;
     MenuRemainsRemoved();
     TestFalse(TEXT("A closed settings drawer does not capture auxiliary input"), Widget->IsAuxiliaryPanelOpen());
+    TestFalse(TEXT("Runtime outside a placement session hides the authored preview help"), Open(TEXT("Border_PlacementHelp")));
     for (FName Name : {TEXT("Button_BuildBack"), TEXT("Button_BuildSettings"), TEXT("Button_BuildSettingsClose"),
         TEXT("Button_MultiSelect"), TEXT("Button_SnapCycle"), TEXT("Button_ToolbarRanges"),
         TEXT("Button_ToolbarCatalog"), TEXT("Button_ToolbarHelp"),

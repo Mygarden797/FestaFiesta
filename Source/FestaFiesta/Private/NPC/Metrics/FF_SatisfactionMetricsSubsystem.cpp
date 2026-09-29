@@ -52,10 +52,15 @@ void FFF_SatisfactionAggregator::Begin()
 	bHasQueueSuccessRateThisWindow = false;
 	PendingDensityWeightedScoreSum = 0.0;
 	PendingDensityWeight = 0;
-	PendingPreferenceSum = 0.0;
-	PendingPreferenceCount = 0;
+	// 지난 창 이후에 확정된 결정의 취향 표본을 이번 창이 이어받는다. 한 번만 쓰이도록 비운다.
+	PendingPreferenceSum = CarriedPreferenceSum;
+	PendingPreferenceCount = CarriedPreferenceCount;
+	CarriedPreferenceSum = 0.0;
+	CarriedPreferenceCount = 0;
 	PendingNeedFulfillmentSum = 0.0;
 	PendingNeedFulfillmentCount = 0;
+	PendingPenaltySum = 0.0;
+	PendingPenaltyCount = 0;
 	bAggregating = true;
 }
 
@@ -94,12 +99,19 @@ bool FFF_SatisfactionAggregator::AddDensitySample(float Score0To100, int32 Weigh
 
 bool FFF_SatisfactionAggregator::AddPreferenceSample(float PreferenceNorm)
 {
-	if (!bAggregating)
+	// 결정은 집계 창(Begin~Commit) 밖에서 확정된다. 집계는 AdvanceNeeds 한 번의 호출 안에서
+	// 끝나고 결정 처리는 그다음에 도는데, 그때 거부하면 취향 표본이 하나도 못 들어온다.
+	// 그래서 창 밖의 표본은 따로 모아 두었다가 다음 Begin 이 이어받는다.
+	if (bAggregating)
 	{
-		return false;
+		PendingPreferenceSum += PreferenceNorm;
+		++PendingPreferenceCount;
 	}
-	PendingPreferenceSum += PreferenceNorm;
-	++PendingPreferenceCount;
+	else
+	{
+		CarriedPreferenceSum += PreferenceNorm;
+		++CarriedPreferenceCount;
+	}
 	return true;
 }
 
@@ -111,6 +123,17 @@ bool FFF_SatisfactionAggregator::AddNeedFulfillmentSample(float FulfillmentScore
 	}
 	PendingNeedFulfillmentSum += FulfillmentScore0To100;
 	++PendingNeedFulfillmentCount;
+	return true;
+}
+
+bool FFF_SatisfactionAggregator::AddPenaltySample(float PenaltyPoints)
+{
+	if (!bAggregating)
+	{
+		return false;
+	}
+	PendingPenaltySum += FMath::Clamp(PenaltyPoints, 0.f, 100.f);
+	++PendingPenaltyCount;
 	return true;
 }
 
@@ -146,6 +169,20 @@ bool FFF_SatisfactionAggregator::Commit(const FFF_SatisfactionCoefficients& Coef
 	}
 	bAggregating = false;
 
+	// 감점을 빼기 전 점수에서 이번 주기의 평균 감점을 빼 최종 점수를 정한다.
+	// 방문객 전체 평균이라, 일부 구역만 깎여도 그 구역의 인원 비율만큼만 전체 점수가 내려간다.
+	// 표본이 없으면(활성 방문객 0) 감점도 없다. 값이 바뀌었으면 true.
+	const auto ApplyPenalty = [this]() -> bool
+	{
+		CommittedPenaltyPoints = PendingPenaltyCount > 0
+			? FMath::Clamp(FMath::RoundToInt(static_cast<float>(PendingPenaltySum / PendingPenaltyCount)), 0, 100)
+			: 0;
+		const int32 Resolved = FMath::Clamp(CommittedBaseSatisfaction - CommittedPenaltyPoints, 0, 100);
+		const bool bChangedByPenalty = Resolved != CommittedSatisfaction;
+		CommittedSatisfaction = Resolved;
+		return bChangedByPenalty;
+	};
+
 	const bool bHasWaitSamples = PendingWaitCount > 0;
 	const bool bHasSuccessRate = bHasQueueSuccessRateThisWindow;
 	const bool bHasWaitInput = bHasWaitSamples || bHasSuccessRate;
@@ -156,10 +193,11 @@ bool FFF_SatisfactionAggregator::Commit(const FFF_SatisfactionCoefficients& Coef
 	// 표본이 하나도 없는 입력은 이번 주기 블렌드에서 뺀다(가중치를 0으로 취급) — 값을
 	// 전부 0으로 되돌리면 "데이터 없음"이 "최악"으로 보인다. 넷 다 비면 직전 확정값을
 	// 그대로 유지한다(헤더 주석 "표본 0일 때" 참조)
+	// 단 감점은 이 경우에도 다시 반영한다 — 회복이 재료 없는 창에서 멈추면 안 된다.
 	if (!bHasWaitInput && !bHasDensity && !bHasPreference && !bHasNeed)
 	{
 		CommittedSampleCount = 0;
-		return false;
+		return ApplyPenalty();
 	}
 
 	if (bHasWaitInput)
@@ -223,7 +261,10 @@ bool FFF_SatisfactionAggregator::Commit(const FFF_SatisfactionCoefficients& Coef
 		bHasEnvironment, Coefficients.WeightEnvironment, CommittedEnvironmentScore,
 		bHasPersonalFit, Coefficients.WeightPersonalFit, CommittedPersonalFitScore,
 		bHasTop);
-	const int32 ResolvedSatisfaction = bHasTop ? NewSatisfaction : CommittedSatisfaction;
+	if (bHasTop)
+	{
+		CommittedBaseSatisfaction = NewSatisfaction;
+	}
 
 	// 표본 수는 "가장 적게 들어온 입력"으로 잡는다 — 하나라도 비면 부분 데이터라는
 	// 사실이 대표값에 드러나야 UI가 "이번 주기는 일부만 반영됐다"를 알 수 있다.
@@ -235,9 +276,7 @@ bool FFF_SatisfactionAggregator::Commit(const FFF_SatisfactionCoefficients& Coef
 	if (bHasNeed) MinSampleCount = FMath::Min(MinSampleCount, PendingNeedFulfillmentCount);
 	CommittedSampleCount = (bHasWaitSamples || bHasDensity || bHasPreference || bHasNeed) ? MinSampleCount : 0;
 
-	const bool bChanged = ResolvedSatisfaction != CommittedSatisfaction;
-	CommittedSatisfaction = ResolvedSatisfaction;
-	return bChanged;
+	return ApplyPenalty();
 }
 
 // --- UFF_SatisfactionMetricsSubsystem ---

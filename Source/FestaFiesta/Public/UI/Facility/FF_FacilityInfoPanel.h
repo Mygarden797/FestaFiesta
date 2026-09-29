@@ -33,10 +33,21 @@ class FESTAFIESTA_API UFF_FacilityInfoPanel : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(EditAnywhere, Category = "Designer Preview")
+	bool bPreviewDesignerPage = true;
+	UPROPERTY(EditAnywhere, Category = "Designer Preview", meta = (EditCondition = "bPreviewDesignerPage"))
+	EFF_FacilityInfoPage DesignerPage = EFF_FacilityInfoPage::Overview;
+	/** Ordinary panel size comes from Panel_Size in the WBP Designer. */
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Layout", meta = (ClampMin = "200"))
+	float LightingPanelWidth = 480.f;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Layout", meta = (ClampMin = "100"))
+	float LightingCompactHeight = 220.f;
 	FSimpleMulticastDelegate OnMoveRequested;
 	FSimpleMulticastDelegate OnRemoveRequested;
 	FSimpleMulticastDelegate OnProgramScheduleRequested;
 	FSimpleMulticastDelegate OnUpgradeRequested;
+	FSimpleMulticastDelegate OnAssignStaffRequested;
+	FSimpleMulticastDelegate OnUnassignStaffRequested;
 	FSimpleMulticastDelegate OnCloseRequested;
 	FSimpleMulticastDelegate OnFavoriteRequested;
 	FSimpleMulticastDelegate OnRevenueRankingRequested;
@@ -50,7 +61,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
 	void SetInfoPage(EFF_FacilityInfoPage Page);
 
-	/** Optional authored animation or presentation; the native class never builds a widget tree. */
+	/** Optional authored animation or presentation. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Facility Info")
 	void OnViewDataApplied(const FFF_FacilityInfoViewData& ViewData);
 
@@ -67,7 +78,9 @@ public:
 	const FFF_FacilityInfoViewData& GetCurrentViewData() const { return CurrentViewData; }
 
 protected:
+	virtual void NativePreConstruct() override;
 	virtual void NativeOnInitialized() override;
+	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
 	virtual FReply NativeOnMouseButtonDown(
 		const FGeometry& InGeometry,
 		const FPointerEvent& InMouseEvent) override;
@@ -92,6 +105,16 @@ private:
 	UFUNCTION()
 	void HandleUpgradeClicked();
 
+	UFUNCTION() void HandleAssignStaffClicked();
+	UFUNCTION() void HandleUnassignStaffClicked();
+	void EnsureStaffControls();
+	void RefreshStaffControls();
+	/** Optional authored controls; older assets receive one additive staff section. */
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_StaffSection;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_StaffSummary;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_AssignStaff;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_UnassignStaff;
+
 	UFUNCTION() void HandleOverviewClicked();
 	UFUNCTION() void HandleSynergyClicked();
 	UFUNCTION() void HandleOperationClicked();
@@ -104,6 +127,8 @@ private:
 	UFUNCTION() void HandleLightingMinimizeClicked();
 	void HandleLightingEditFinished();
 	void RefreshLightingPanelLayout();
+	FVector2D LastLayoutViewport = FVector2D::ZeroVector;
+	FVector2D AuthoredPanelSize = FVector2D::ZeroVector;
 	void HandleLightingRollbackRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
 	UFUNCTION() void HandleFavoriteClicked();
 	UFUNCTION() void HandleRemoveConfirmClicked();
@@ -124,8 +149,6 @@ private:
 	FVector2D LightingDragStart;
 	FVector2D LightingPanelTranslation;
 	FVector2D LightingDragTranslation;
-	FMargin ExpandedLightingOffsets;
-	FAnchors ExpandedLightingAnchors;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_TabLighting;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingMinimize;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_LightingMinimize;

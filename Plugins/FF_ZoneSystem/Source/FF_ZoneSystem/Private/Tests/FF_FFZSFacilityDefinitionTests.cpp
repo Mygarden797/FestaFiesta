@@ -71,6 +71,70 @@ namespace
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSFacilityStaffCapacityDefinitionTest,
+    "FF_ZoneSystem.Unit.Definitions.StaffCapacityValidationAndPersistence",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSFacilityStaffCapacityDefinitionTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+    TGuardValue<int32> StableRegionBudget(
+        GetMutableDefault<UFFZSDeveloperSettings>()->MaxEnumeratedCellsPerFacility,
+        1'000'000);
+    UFFZSFacilityDefinition* Definition = NewObject<UFFZSFacilityDefinition>();
+    Definition->Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::Info);
+    TestEqual(TEXT("Info assets without the new field provide two staff slots"),
+        Definition->Spec.GetStaffCapacity(), 2);
+
+    FFFZSCommand Command;
+    Command.Type = EFFZSCommandType::Install;
+    Command.FacilitySpec = Definition->Spec;
+    const FString LegacyFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
+    TestFalse(TEXT("Default staff capacity preserves legacy receipt bytes"),
+        LegacyFingerprint.Contains(TEXT("spec.staff_capacity")));
+
+    TArray<FText> Errors;
+    Definition->Spec.StaffCapacity = 0;
+    TestTrue(TEXT("An Info facility with no staff slots is valid"), Definition->IsDefinitionValid(Errors));
+    TestEqual(TEXT("Zero capacity disables staff assignment"), Definition->Spec.GetStaffCapacity(), 0);
+    Command.FacilitySpec = Definition->Spec;
+    const FString ZeroFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
+    TestNotEqual(TEXT("Zero capacity differs from the default in receipts"), ZeroFingerprint, LegacyFingerprint);
+
+    Definition->Spec.StaffCapacity = 7;
+    TestTrue(TEXT("Each Info asset can author its own capacity"), Definition->IsDefinitionValid(Errors));
+    TestEqual(TEXT("Authored Info slots are exposed to the staffing owner"), Definition->Spec.GetStaffCapacity(), 7);
+    Command.FacilitySpec = Definition->Spec;
+    const FString ConfiguredFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
+    TestNotEqual(TEXT("Changing staff slots changes command identity"), ConfiguredFingerprint, ZeroFingerprint);
+
+    TArray<uint8> Bytes;
+    FObjectWriter Writer(Definition, Bytes, true, true);
+    UFFZSFacilityDefinition* Restored = NewObject<UFFZSFacilityDefinition>();
+    FObjectReader Reader(Restored, Bytes, true, true);
+    TestFalse(TEXT("Staff capacity asset serialization succeeds"), Writer.IsError() || Reader.IsError());
+    TestEqual(TEXT("The authored staff capacity survives asset serialization"), Restored->Spec.GetStaffCapacity(), 7);
+    Command.FacilitySpec = Restored->Spec;
+    TestEqual(TEXT("Restored staff capacity keeps command identity"),
+        UFFZSGridLibrary::BuildCommandFingerprint(Command), ConfiguredFingerprint);
+
+    Definition->Spec.Category = EFFZSFacilityCategory::Booth;
+    TestEqual(TEXT("Non-Info facilities provide no slots even with retained authoring data"),
+        Definition->Spec.GetStaffCapacity(), 0);
+    TestEqual(TEXT("Category changes do not discard the saved Info configuration"),
+        Definition->Spec.StaffCapacity, 7);
+
+    Definition->Spec.Category = EFFZSFacilityCategory::Info;
+    Definition->Spec.StaffCapacity = -1;
+    TestFalse(TEXT("Negative staff capacity cannot be installed or saved as a valid definition"),
+        Definition->IsDefinitionValid(Errors));
+    TestTrue(TEXT("Validation names the field the content author must correct"),
+        ContainsErrorText(Errors, TEXT("Staff Capacity")));
+    TestEqual(TEXT("The runtime getter never exposes negative capacity"), Definition->Spec.GetStaffCapacity(), 0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FFFZSFacilityRevenueDefinitionTest,
     "FF_ZoneSystem.Unit.Definitions.FacilityRevenueValidationAndFingerprint",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

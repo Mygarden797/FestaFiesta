@@ -98,6 +98,31 @@ void UFF_BuildToolsActionButton::ApplySelection(const bool bSelected, UTextBlock
 }
 
 // 건설 상태·잔액 변경 알림과 화면 버튼을 연결하고 처음 값을 표시한다.
+void UFF_BuildToolsWidget::NativePreConstruct()
+{
+    Super::NativePreConstruct();
+    if (!IsDesignTime() || !bPreviewDesignerPage) return;
+    auto Show = [this](const TCHAR* Name, bool bVisible)
+    {
+        if (auto* Widget = GetWidgetFromName(Name))
+        {
+#if WITH_EDITOR
+            Widget->bHiddenInDesigner = !bVisible;
+#endif
+            Widget->SetVisibility(bVisible ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+        }
+    };
+    const bool bPlacement = DesignerPage == EFF_BuildToolsDesignerPage::Placement;
+    Show(TEXT("Border_BuildTopBar"), true);
+    Show(TEXT("Border_BuildBack"), true);
+    Show(TEXT("Border_PlacementInfo"), bPlacement);
+    Show(TEXT("Border_Tools"), bPlacement);
+    Show(TEXT("Panel_BuildSettings"), DesignerPage == EFF_BuildToolsDesignerPage::Settings);
+    Show(TEXT("Border_PlacementHelp"), bDesignerShowHelp && DesignerPage != EFF_BuildToolsDesignerPage::Settings);
+    Show(TEXT("Row_BuildHelpQueue"), bPlacement);
+    Show(TEXT("Border_BuildToolbarGold"), false);
+}
+
 void UFF_BuildToolsWidget::NativeConstruct()
 {
     Super::NativeConstruct();
@@ -110,6 +135,11 @@ void UFF_BuildToolsWidget::NativeConstruct()
     if (!Size_BuildWorldHelp)
         Size_BuildWorldHelp = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_BuildWorldHelp")));
     if (Size_BuildWorldHelp) Size_BuildWorldHelp->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    if (Size_BuildWorldHelp)
+        if (auto* HelpCanvasSlot = Cast<UCanvasPanelSlot>(Size_BuildWorldHelp->Slot))
+            AuthoredHelpPosition = HelpCanvasSlot->GetPosition();
+    if (Size_BuildSettings && Size_BuildSettings->IsHeightOverride())
+        AuthoredSettingsHeight = Size_BuildSettings->GetHeightOverride();
     BuildMode = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
     Economy = GetGameInstance() ? GetGameInstance()->GetSubsystem<UFF_BuildCatalogEconomyReadModel>() : nullptr;
     CatalogModel = GetGameInstance() ? GetGameInstance()->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
@@ -318,6 +348,7 @@ void UFF_BuildToolsWidget::ShowNextPlacementProblem()
 void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
 {
     Super::NativeTick(Geometry, DeltaTime);
+    if (IsDesignTime()) return;
     RefreshEditingHelp();
     if (Size_BuildWorldHelp && Border_PlacementHelp && Border_PlacementHelp->IsVisible())
     {
@@ -385,14 +416,19 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
             const float ContentHeight = Column_BuildIconHelp
                 ? Column_BuildIconHelp->GetDesiredSize().Y + 24.f
                 : Size_BuildWorldHelp->GetDesiredSize().Y;
-            const FVector2D Placement = FFBuildToolsModel::ResolveHelpVerticalBounds(ContentHeight, Bottom);
+            // The Designer owns the preferred position. Only move upward/shrink when
+            // another visible panel or the viewport would cover the guide.
+            const float MinimumTop = FMath::Min3(104.f, float(AuthoredHelpPosition.Y), FMath::Max(0.f, Bottom));
+            const float FittedHeight = FMath::Min(FMath::Max(0.f, ContentHeight), FMath::Max(0.f, Bottom - MinimumTop));
+            const FVector2D Placement(FMath::Clamp(float(AuthoredHelpPosition.Y), MinimumTop,
+                FMath::Max(MinimumTop, Bottom - FittedHeight)), FittedHeight);
             const float HelpHeight = Placement.Y;
             if (!Size_BuildWorldHelp->IsHeightOverride() ||
                 !FMath::IsNearlyEqual(Size_BuildWorldHelp->GetHeightOverride(), HelpHeight, .5f))
                 Size_BuildWorldHelp->SetHeightOverride(HelpHeight);
             const float Top = Placement.X;
             if (!FMath::IsNearlyEqual(HelpSlot->GetPosition().Y, Top, .5f))
-                HelpSlot->SetPosition(FVector2D(32.f, Top));
+                HelpSlot->SetPosition(FVector2D(AuthoredHelpPosition.X, Top));
         }
     }
     if (Size_BuildSettings)
@@ -400,7 +436,9 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
         const float ViewportHeight = Geometry.GetLocalSize().Y;
         if (ViewportHeight > 0.f)
         {
-            const float Height = FMath::Clamp(ViewportHeight - 126.f, 380.f, 950.f);
+            const auto* SettingsSlot = Cast<UCanvasPanelSlot>(Size_BuildSettings->Slot);
+            const float AuthoredTop = SettingsSlot ? float(SettingsSlot->GetPosition().Y) : 101.f;
+            const float Height = FMath::Min(AuthoredSettingsHeight, FMath::Max(100.f, ViewportHeight - AuthoredTop - 25.f));
             if (!FMath::IsNearlyEqual(Size_BuildSettings->GetHeightOverride(), Height, .5f))
                 Size_BuildSettings->SetHeightOverride(Height);
         }
@@ -670,6 +708,9 @@ void UFF_BuildToolsWidget::RefreshTools()
     // Also retire the button for older, not-yet-migrated widget assets.
     if (Button_Radial) Button_Radial->SetVisibility(ESlateVisibility::Collapsed);
     if (Panel_Radial) Panel_Radial->SetVisibility(ESlateVisibility::Collapsed);
+    // The placement workspace no longer has a duplicate wallet at the top.
+    // Collapse the whole surface so legacy saved widgets also release its hit area.
+    if (Border_BuildToolbarGold) Border_BuildToolbarGold->SetVisibility(ESlateVisibility::Collapsed);
     const bool bStartingPreview = bPreview && !ViewData.bPreviewActive;
     if (bStartingPreview || !bPreview || (System && System->IsCurrentPlacementValid())) PlacementProblemIndex = 0;
     // The compact top bar also serves catalog browsing. Placement summary and confirm
@@ -762,9 +803,6 @@ void UFF_BuildToolsWidget::RefreshTools()
     if (Text_FacilityName) { Text_FacilityName->SetText(ViewData.FacilityName); }
     if (Text_Cost) { Text_Cost->SetText(ViewData.CostText); }
     if (Text_Balance) Text_Balance->SetText(ViewData.BalanceText);
-    if (Text_ToolbarGold)
-        Text_ToolbarGold->SetText(Economy.IsValid() && Economy->HasAuthoritativeGold()
-            ? FText::AsNumber(Economy->GetGold()) : LOCTEXT("GoldPending", "—"));
     if (Text_Footprint) Text_Footprint->SetText(ViewData.FootprintText);
     if (Text_Queue) Text_Queue->SetText(ViewData.QueueText);
     // The saved WBP keeps this named legacy binding collapsed for older

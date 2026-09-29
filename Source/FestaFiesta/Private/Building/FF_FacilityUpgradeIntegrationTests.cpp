@@ -223,9 +223,22 @@ bool FFFFacilityUpgradeActualServiceTest::RunTest(const FString& Parameters)
 	if (!TestTrue(TEXT("Customer joins the upgraded facility"), H.QueueBridge->TryJoinZoneFacility(First, Join).bAccepted)) return false;
 	Join.PartyId = 98702;
 	if (!TestTrue(TEXT("Customer joins the sibling"), H.QueueBridge->TryJoinZoneFacility(Sibling, Join).bAccepted)) return false;
+	H.Queues->AdvanceFixedSteps(1);
+	TestEqual(TEXT("Upgrade does not bypass arrival confirmation"),
+		H.QueueBridge->GetZoneFacilityQueueState(First).ActiveServicePartyCount, 0);
+	TestEqual(TEXT("The sibling also waits for its customer to arrive"),
+		H.QueueBridge->GetZoneFacilityQueueState(Sibling).ActiveServicePartyCount, 0);
+	// This fixture has deterministic queue parties, not moving Crowd agents. Deliver the
+	// real arrival facade explicitly before comparing the effective service durations.
+	H.QueueBridge->NotifyZoneFacilityPartyArrived(First, 98701);
+	H.QueueBridge->NotifyZoneFacilityPartyArrived(Sibling, 98702);
 	H.Queues->AdvanceFixedSteps(270); // Nine simulated seconds, between the two actual completion times.
 	TestEqual(TEXT("Upgraded service has actually completed"), H.QueueBridge->GetZoneFacilityQueueState(First).OccupiedMemberCount, 0);
+	TestEqual(TEXT("The upgraded customer was served rather than cancelled"),
+		H.QueueBridge->GetZoneFacilityQueueState(First).CompletedPartyCount, 1);
 	TestEqual(TEXT("Unupgraded service is still running"), H.QueueBridge->GetZoneFacilityQueueState(Sibling).OccupiedMemberCount, 1);
+	TestEqual(TEXT("The sibling is using its unmodified ten-second duration"),
+		H.QueueBridge->GetZoneFacilityQueueState(Sibling).ActiveServicePartyCount, 1);
 	return true;
 }
 

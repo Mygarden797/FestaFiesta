@@ -38,6 +38,12 @@ public:
 		meta = (DeterminesOutputType = "ScreenClass"))
 	UFF_ActivatableScreenBase* PushScreen(TSubclassOf<UFF_ActivatableScreenBase> ScreenClass);
 
+	/* PushScreen 과 같지만 이번 한 번만 스택의 크로스페이드를 건너뛴다.
+	   레벨에 들어오면서 지구본(스택 바닥용)과 국가 지도를 연달아 올릴 때, 페이드가 돌면
+	   그 사이 지구본이 비쳐 보인다. 스택 설정값은 바로 되돌리므로 다른 전환은 그대로다.
+	*/
+	UFF_ActivatableScreenBase* PushScreenWithoutTransition(TSubclassOf<UFF_ActivatableScreenBase> ScreenClass);
+
 	/** 화면 위에 겹치는 상세 패널을 밀어 넣는다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI",
 		meta = (DeterminesOutputType = "PanelClass"))

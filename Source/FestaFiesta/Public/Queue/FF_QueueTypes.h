@@ -123,6 +123,22 @@ struct FFF_QueueConfig
 	bool bRequireArrivalConfirmation = false;
 };
 
+/** Solid world-space footprint used by the deterministic member-slot planner. */
+USTRUCT(BlueprintType)
+struct FFF_QueuePlacementObstacle
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
+	FVector Center = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
+	FVector2D HalfExtentsCm = FVector2D::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
+	float YawDegrees = 0.f;
+};
+
 /**
  * 기본 대기열 형상은 직선 1열이다. 사행·다열은 나중에 확장한다.
  * 스플라인이 들어오면 이 구조체를 스플라인 평가로 교체한다 — 교체 지점은 ResolveSlot 하나뿐이다.
@@ -131,6 +147,21 @@ USTRUCT(BlueprintType)
 struct FFF_QueueLaneGeometry
 {
 	GENERATED_BODY()
+
+	/** Production lanes reserve bounded, nonoverlapping member patterns before admitting parties. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
+	bool bConstrainMemberPlacement = false;
+
+	/** Includes body radius and the final-position tolerance; two occupants need twice this clearance. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "1.0"))
+	float MemberPlacementClearanceCm = 40.f;
+
+	/** Fixed local envelope, never expanded to make an oversized or obstructed party fit. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "0.0", ClampMax = "270.0"))
+	float MaxMemberLateralOffsetCm = 270.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
+	TArray<FFF_QueuePlacementObstacle> PlacementObstacles;
 
 	/**
 	 * Head-to-tail world-space linear polyline copied from the facility definition.

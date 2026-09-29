@@ -10,6 +10,7 @@
 #include "Engine/World.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Economy/Rules/FF_StaffEventRules.h"
+#include "Staff/FF_StaffFacilitySubsystem.h"
 #include "Festival/FF_FestivalBuzzSubsystem.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
@@ -36,6 +37,7 @@ void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collec
 	TryBindSatisfactionSubsystem();
 	TryBindInsightsSubsystem();
 	TryBindBuzzSubsystem();
+	TryBindStaffFacilitySubsystem();
 }
 
 void UFF_FestivalViewModelSubsystem::Deinitialize()
@@ -59,6 +61,7 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedProgressionSubsystem->OnExpectedVisitorsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged);
 		CachedProgressionSubsystem->OnAdmissionFeeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerAdmissionFeeChanged);
 		CachedProgressionSubsystem->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
+		CachedProgressionSubsystem->OnStaffCapacityChanged.RemoveDynamic(this, &ThisClass::HandleOwnerStaffCapacityChanged);
 		CachedProgressionSubsystem->OnScheduledProgramsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
 		CachedProgressionSubsystem->OnFinaleGradeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged);
 		CachedProgressionSubsystem->OnPromotionGradeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerPromotionGradeChanged);
@@ -66,6 +69,11 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedProgressionSubsystem->OnStaffRosterChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffRosterChanged);
 	}
 	CachedProgressionSubsystem = nullptr;
+	if (UFF_StaffFacilitySubsystem* Staff = CachedStaffFacilitySubsystem.Get())
+	{
+		Staff->OnStaffingChanged.RemoveDynamic(this, &ThisClass::HandleOwnerStaffAssignmentChanged);
+	}
+	CachedStaffFacilitySubsystem.Reset();
 
 	if (CachedBuzzSubsystem)
 	{
@@ -283,6 +291,7 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 	CachedProgressionSubsystem->OnExpectedVisitorsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged);
 	CachedProgressionSubsystem->OnAdmissionFeeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerAdmissionFeeChanged);
 	CachedProgressionSubsystem->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
+	CachedProgressionSubsystem->OnStaffCapacityChanged.AddUniqueDynamic(this, &ThisClass::HandleOwnerStaffCapacityChanged);
 	CachedProgressionSubsystem->OnScheduledProgramsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
 	CachedProgressionSubsystem->OnFinaleGradeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged);
 	CachedProgressionSubsystem->OnPromotionGradeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerPromotionGradeChanged);
@@ -1269,8 +1278,54 @@ int32 UFF_FestivalViewModelSubsystem::GetTodayStaffHireCostGold() const
 int32 UFF_FestivalViewModelSubsystem::GetMaxHiredStaffCount() const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
-	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
-	return Definition ? Definition->MaxHiredStaffCount : INDEX_NONE;
+	return Progression && Progression->IsFestivalStarted() ? Progression->GetMaxHiredStaffCount() : INDEX_NONE;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetMaxTotalStaffCount() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression && Progression->IsFestivalStarted() ? Progression->GetMaxTotalStaffCount() : INDEX_NONE;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetBusyStaffCount() const
+{
+	const UWorld* World = GetWorld();
+	const UFF_StaffFacilitySubsystem* Staff = World ? World->GetSubsystem<UFF_StaffFacilitySubsystem>() : nullptr;
+	return Staff ? Staff->GetBusyStaffCount() : INDEX_NONE;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetUnassignedStaffCount() const
+{
+	const UWorld* World = GetWorld();
+	const UFF_StaffFacilitySubsystem* Staff = World ? World->GetSubsystem<UFF_StaffFacilitySubsystem>() : nullptr;
+	return Staff ? Staff->GetUnassignedStaffCount() : INDEX_NONE;
+}
+
+void UFF_FestivalViewModelSubsystem::TryBindStaffFacilitySubsystem()
+{
+	UWorld* World = GetWorld();
+	UFF_StaffFacilitySubsystem* Staff = World ? World->GetSubsystem<UFF_StaffFacilitySubsystem>() : nullptr;
+	if (CachedStaffFacilitySubsystem.Get() == Staff) return;
+	if (UFF_StaffFacilitySubsystem* Previous = CachedStaffFacilitySubsystem.Get())
+	{
+		Previous->OnStaffingChanged.RemoveDynamic(this, &ThisClass::HandleOwnerStaffAssignmentChanged);
+	}
+	CachedStaffFacilitySubsystem = Staff;
+	if (Staff)
+	{
+		Staff->OnStaffingChanged.AddUniqueDynamic(this, &ThisClass::HandleOwnerStaffAssignmentChanged);
+	}
+	HandleOwnerStaffAssignmentChanged();
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerStaffCapacityChanged(int32 NewValue)
+{
+	OnStaffCapacityChanged.Broadcast(NewValue);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerStaffAssignmentChanged()
+{
+	OnStaffAssignmentChanged.Broadcast();
 }
 
 TArray<FFF_StaffMember> UFF_FestivalViewModelSubsystem::GetStaffRoster() const
@@ -1551,6 +1606,8 @@ void UFF_FestivalViewModelSubsystem::PollMetricsFromSources()
 
 void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
 {
+	// Rebind across map travel; actual staffing data is refreshed only by owner events.
+	TryBindStaffFacilitySubsystem();
 	if (!CachedStageSubsystem)
 	{
 		TryBindStageSubsystem();

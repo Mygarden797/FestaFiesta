@@ -209,7 +209,9 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 	CodexWidgets.Reset();
 	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, CodexWidgets, UFF_FacilityCodexScreen::StaticClass(), true);
 	TestEqual(TEXT("Repeated open creates only one screen"), CodexWidgets.Num(), 1);
-	Presenter->CloseCodex();
+	auto* InspectorExit = Cast<UButton>(OpenScreen->GetWidgetFromName(TEXT("Button_ExitCodex")));
+	if (!TestNotNull(TEXT("Inspector-launched codex has a real X button"), InspectorExit)) return false;
+	InspectorExit->OnClicked.Broadcast();
 	Presenter->CloseCodex();
 	TestFalse(TEXT("Repeated close removes the surface"), Presenter->IsCodexOpen());
 	TestFalse(TEXT("Game input is restored"), Viewport->IgnoreInput());
@@ -290,7 +292,10 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 		if (!TestNotNull(TEXT("Catalog-launched codex screen"), CatalogCodex)) return false;
 		TestEqual(TEXT("Catalog search never becomes an implicit codex filter"),
 			CatalogCodex->GetVisibleEntryCount(), Codex->GetEntriesView().Num());
-		Presenter->CloseCodex();
+		if (!Codex->GetEntriesView().IsEmpty()) CatalogCodex->OpenCombinationDetail(Codex->GetEntriesView()[0].RuleId);
+		auto* CatalogExit = Cast<UButton>(CatalogCodex->GetWidgetFromName(TEXT("Button_ExitCodex")));
+		if (!TestNotNull(TEXT("Catalog-launched codex detail has a real X button"), CatalogExit)) return false;
+		CatalogExit->OnClicked.Broadcast();
 		TestTrue(TEXT("Advance catalog close restoration"), AdvanceFrame());
 		TestFalse(TEXT("Catalog input resumes after closing codex"), Build->IsInputSuspendedForPauseMenu());
 		TestEqual(TEXT("Closing codex returns to the same catalog state"), Build->GetBuildModeState(), EFF_BuildModeState::CatalogOpen);

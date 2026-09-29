@@ -17,6 +17,10 @@ namespace
 {
 	const TCHAR* RuntimeSettingsSection = TEXT("/Script/FestaFiesta.RuntimeSettings");
 	const TCHAR* MasterVolumeKey = TEXT("MasterVolume");
+	const TCHAR* MusicVolumeKey = TEXT("MusicVolume");
+	const TCHAR* EffectsVolumeKey = TEXT("EffectsVolume");
+	const TCHAR* FireworksVolumeKey = TEXT("FireworksVolume");
+	const TCHAR* UiVolumeKey = TEXT("UiVolume");
 	const TCHAR* ZoomToCursorKey = TEXT("bZoomToCursor");
 	const TCHAR* EdgeScrollKey = TEXT("bEdgeScrollEnabled");
 }
@@ -24,6 +28,17 @@ namespace
 const UFF_RuntimeSettingsDefaults* UFF_RuntimeSettingsDefaults::Get()
 {
 	return GetDefault<UFF_RuntimeSettingsDefaults>();
+}
+
+FFF_AudioVolumes UFF_RuntimeSettingsDefaults::MakeDefaultVolumes() const
+{
+	FFF_AudioVolumes Out;
+	Out.Master = DefaultMasterVolume;
+	Out.Music = DefaultMusicVolume;
+	Out.Effects = DefaultEffectsVolume;
+	Out.Fireworks = DefaultFireworksVolume;
+	Out.Ui = DefaultUiVolume;
+	return Out.Clamped();
 }
 
 void UFF_RuntimeSettingsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -49,18 +64,23 @@ UFF_RuntimeSettingsSubsystem* UFF_RuntimeSettingsSubsystem::Get(const UObject* W
 void UFF_RuntimeSettingsSubsystem::LoadFromUserSettings()
 {
 	const UFF_RuntimeSettingsDefaults* Defaults = UFF_RuntimeSettingsDefaults::Get();
-	MasterVolume = Defaults ? Defaults->DefaultMasterVolume : 0.8f;
+	Volumes = Defaults ? Defaults->MakeDefaultVolumes() : FFF_AudioVolumes();
 	bZoomToCursor = !Defaults || Defaults->bDefaultZoomToCursor;
 	bEdgeScrollEnabled = !Defaults || Defaults->bDefaultEdgeScrollEnabled;
 
 	if (GConfig)
 	{
-		GConfig->GetFloat(RuntimeSettingsSection, MasterVolumeKey, MasterVolume, GGameUserSettingsIni);
+		GConfig->GetFloat(RuntimeSettingsSection, MasterVolumeKey, Volumes.Master, GGameUserSettingsIni);
+		// 예전 ini 에는 갈래 키가 없다. 없으면 GetFloat 이 값을 건드리지 않아 위 기본값이 남는다.
+		GConfig->GetFloat(RuntimeSettingsSection, MusicVolumeKey, Volumes.Music, GGameUserSettingsIni);
+		GConfig->GetFloat(RuntimeSettingsSection, EffectsVolumeKey, Volumes.Effects, GGameUserSettingsIni);
+		GConfig->GetFloat(RuntimeSettingsSection, FireworksVolumeKey, Volumes.Fireworks, GGameUserSettingsIni);
+		GConfig->GetFloat(RuntimeSettingsSection, UiVolumeKey, Volumes.Ui, GGameUserSettingsIni);
 		GConfig->GetBool(RuntimeSettingsSection, ZoomToCursorKey, bZoomToCursor, GGameUserSettingsIni);
 		GConfig->GetBool(RuntimeSettingsSection, EdgeScrollKey, bEdgeScrollEnabled, GGameUserSettingsIni);
 	}
 
-	MasterVolume = FMath::Clamp(MasterVolume, 0.f, 1.f);
+	Volumes = Volumes.Clamped();
 }
 
 void UFF_RuntimeSettingsSubsystem::SaveToUserSettings() const
@@ -72,7 +92,11 @@ void UFF_RuntimeSettingsSubsystem::SaveToUserSettings() const
 		return;
 	}
 
-	GConfig->SetFloat(RuntimeSettingsSection, MasterVolumeKey, MasterVolume, GGameUserSettingsIni);
+	GConfig->SetFloat(RuntimeSettingsSection, MasterVolumeKey, Volumes.Master, GGameUserSettingsIni);
+	GConfig->SetFloat(RuntimeSettingsSection, MusicVolumeKey, Volumes.Music, GGameUserSettingsIni);
+	GConfig->SetFloat(RuntimeSettingsSection, EffectsVolumeKey, Volumes.Effects, GGameUserSettingsIni);
+	GConfig->SetFloat(RuntimeSettingsSection, FireworksVolumeKey, Volumes.Fireworks, GGameUserSettingsIni);
+	GConfig->SetFloat(RuntimeSettingsSection, UiVolumeKey, Volumes.Ui, GGameUserSettingsIni);
 	GConfig->SetBool(RuntimeSettingsSection, ZoomToCursorKey, bZoomToCursor, GGameUserSettingsIni);
 	GConfig->SetBool(RuntimeSettingsSection, EdgeScrollKey, bEdgeScrollEnabled, GGameUserSettingsIni);
 	GConfig->Flush(false, GGameUserSettingsIni);
@@ -87,12 +111,26 @@ void UFF_RuntimeSettingsSubsystem::NotifyChanged()
 void UFF_RuntimeSettingsSubsystem::SetMasterVolume(float NewValue)
 {
 	NewValue = FMath::Clamp(NewValue, 0.f, 1.f);
-	if (FMath::IsNearlyEqual(MasterVolume, NewValue))
+	if (FMath::IsNearlyEqual(Volumes.Master, NewValue))
 	{
 		return;
 	}
 
-	MasterVolume = NewValue;
+	Volumes.Master = NewValue;
+	ApplyAudioSettings();
+	NotifyChanged();
+}
+
+void UFF_RuntimeSettingsSubsystem::SetAudioVolumes(const FFF_AudioVolumes& NewVolumes)
+{
+	const FFF_AudioVolumes Clamped = NewVolumes.Clamped();
+	if (Volumes.Equals(Clamped))
+	{
+		return;
+	}
+
+	// 마스터만 엔진에 건다. 나머지는 소리를 재생하는 쪽(UFF_AudioSubsystem)이 방송을 받아 곱한다.
+	Volumes = Clamped;
 	ApplyAudioSettings();
 	NotifyChanged();
 }
@@ -124,9 +162,20 @@ void UFF_RuntimeSettingsSubsystem::CommitSettings(
 	bool bNewZoomToCursor,
 	bool bNewEdgeScrollEnabled)
 {
-	NewMasterVolume = FMath::Clamp(NewMasterVolume, 0.f, 1.f);
+	// 예전 세 값 버전. 마스터 외의 갈래는 지금 값을 그대로 넘긴다.
+	FFF_AudioVolumes NewVolumes = Volumes;
+	NewVolumes.Master = NewMasterVolume;
+	CommitAllSettings(NewVolumes, bNewZoomToCursor, bNewEdgeScrollEnabled);
+}
+
+void UFF_RuntimeSettingsSubsystem::CommitAllSettings(
+	const FFF_AudioVolumes& NewVolumes,
+	bool bNewZoomToCursor,
+	bool bNewEdgeScrollEnabled)
+{
+	const FFF_AudioVolumes Clamped = NewVolumes.Clamped();
 	const bool bChanged =
-		!FMath::IsNearlyEqual(MasterVolume, NewMasterVolume) ||
+		!Volumes.Equals(Clamped) ||
 		bZoomToCursor != bNewZoomToCursor ||
 		bEdgeScrollEnabled != bNewEdgeScrollEnabled;
 	if (!bChanged)
@@ -134,7 +183,7 @@ void UFF_RuntimeSettingsSubsystem::CommitSettings(
 		return;
 	}
 
-	MasterVolume = NewMasterVolume;
+	Volumes = Clamped;
 	bZoomToCursor = bNewZoomToCursor;
 	bEdgeScrollEnabled = bNewEdgeScrollEnabled;
 	ApplyAudioSettings();
@@ -144,7 +193,7 @@ void UFF_RuntimeSettingsSubsystem::CommitSettings(
 void UFF_RuntimeSettingsSubsystem::ResetToProjectDefaults()
 {
 	const UFF_RuntimeSettingsDefaults* Defaults = UFF_RuntimeSettingsDefaults::Get();
-	MasterVolume = Defaults ? FMath::Clamp(Defaults->DefaultMasterVolume, 0.f, 1.f) : 0.8f;
+	Volumes = Defaults ? Defaults->MakeDefaultVolumes() : FFF_AudioVolumes();
 	bZoomToCursor = !Defaults || Defaults->bDefaultZoomToCursor;
 	bEdgeScrollEnabled = !Defaults || Defaults->bDefaultEdgeScrollEnabled;
 
@@ -154,6 +203,8 @@ void UFF_RuntimeSettingsSubsystem::ResetToProjectDefaults()
 
 void UFF_RuntimeSettingsSubsystem::ApplyAudioSettings()
 {
+	// 마스터만 엔진 전체에 건다. 배경음·효과음은 재생하는 쪽이 방송을 받아 곱한다.
+	// 사운드 클래스 애셋 없이 돌게 하려는 것이다. 애셋을 만들고 모든 소리에 지정하는 일이 끝나기 전에도 슬라이더가 먹어야 한다.
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -163,6 +214,6 @@ void UFF_RuntimeSettingsSubsystem::ApplyAudioSettings()
 	const FAudioDeviceHandle AudioDeviceHandle = World->GetAudioDevice();
 	if (FAudioDevice* AudioDevice = AudioDeviceHandle.GetAudioDevice())
 	{
-		AudioDevice->SetTransientPrimaryVolume(MasterVolume);
+		AudioDevice->SetTransientPrimaryVolume(Volumes.Master);
 	}
 }

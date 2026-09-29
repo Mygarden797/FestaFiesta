@@ -153,7 +153,39 @@ void UFF_PrepBuildTileWidget::NativePreConstruct()
 	}
 	// Preview labels, clipping and wrapping are authored in the WBP, including Designer preview.
 	if (!IsDesignTime()) { RefreshItemPresentation(); }
+#if WITH_EDITOR
+	else { ApplyDesignerPreviewState(); }
+#endif
 }
+
+#if WITH_EDITOR
+void UFF_PrepBuildTileWidget::ApplyDesignerPreviewState()
+{
+	// Designer intentionally ignores runtime Collapsed/Hidden visibility. Its own
+	// visibility flag must describe one coherent state, rather than every badge at once.
+	const auto Show = [](UWidget* Widget, bool bVisible)
+	{
+		if (!Widget) return;
+		Widget->bHiddenInDesigner = !bVisible;
+		Widget->InvalidateLayoutAndVolatility();
+	};
+	Show(Border_RequiredMissing, DesignerPreviewState == EFF_PrepBuildTilePreviewState::RequiredMissing);
+	Show(Border_RequiredSatisfied, DesignerPreviewState == EFF_PrepBuildTilePreviewState::RequiredSatisfied);
+	Show(Border_ProgramBadge, DesignerPreviewState == EFF_PrepBuildTilePreviewState::Program);
+	const bool bSynergy = DesignerPreviewState == EFF_PrepBuildTilePreviewState::Synergy;
+	Show(Border_SynergyHighlight, bSynergy);
+	Show(Text_SynergyBadge, bSynergy);
+	const bool bCodex = DesignerPreviewState == EFF_PrepBuildTilePreviewState::CodexFocus;
+	Show(Image_CodexFocusRim, bCodex);
+	Show(Border_CodexFocusBadge, bCodex);
+	Show(Text_State, DesignerPreviewState == EFF_PrepBuildTilePreviewState::Unavailable);
+	if (Text_State && DesignerPreviewState == EFF_PrepBuildTilePreviewState::Unavailable)
+		Text_State->SetText(DesignerUnavailableReason);
+	const bool bHasThumbnail = Image_Thumbnail && Image_Thumbnail->GetBrush().GetResourceObject();
+	Show(Image_Thumbnail, bHasThumbnail);
+	Show(Text_ThumbnailPlaceholder, !bHasThumbnail);
+}
+#endif
 
 void UFF_PrepBuildTileWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
 {

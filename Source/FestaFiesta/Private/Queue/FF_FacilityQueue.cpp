@@ -8,6 +8,34 @@ DEFINE_LOG_CATEGORY(LogFestaFiestaQueue);
 
 namespace
 {
+	bool IsClearOfPlacementObstacles(const FVector& Position, const float ClearanceCm,
+		const TArray<FFF_QueuePlacementObstacle>& Obstacles)
+	{
+		if (Position.ContainsNaN()) return false;
+		for (const FFF_QueuePlacementObstacle& Obstacle : Obstacles)
+		{
+			if (Obstacle.Center.ContainsNaN() || Obstacle.HalfExtentsCm.ContainsNaN()
+				|| !FMath::IsFinite(Obstacle.YawDegrees)
+				|| Obstacle.HalfExtentsCm.X < 0.0 || Obstacle.HalfExtentsCm.Y < 0.0)
+			{
+				return false;
+			}
+			const FVector Delta = Position - Obstacle.Center;
+			const double Radians = FMath::DegreesToRadians(Obstacle.YawDegrees);
+			const double Cos = FMath::Cos(Radians);
+			const double Sin = FMath::Sin(Radians);
+			const double OutsideX = FMath::Max(0.0,
+				FMath::Abs(Delta.X * Cos + Delta.Y * Sin) - Obstacle.HalfExtentsCm.X);
+			const double OutsideY = FMath::Max(0.0,
+				FMath::Abs(-Delta.X * Sin + Delta.Y * Cos) - Obstacle.HalfExtentsCm.Y);
+			if (FMath::Square(OutsideX) + FMath::Square(OutsideY) < FMath::Square(ClearanceCm))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
 	bool TryResolvePolylineSlot(
 		const TArray<FVector>& Points,
 		const float DistanceAlongLaneCm,
@@ -45,6 +73,10 @@ void FFF_FacilityQueue::Configure(int32 InFacilityId, const FFF_QueueConfig& InC
 		Config.ConcurrentServiceSlots, 1, UFFZSDeveloperSettings::MaxFacilityServiceCapacity);
 	Config.ServiceSecondsPerParty = FMath::Max(Config.ServiceSecondsPerParty, KINDA_SMALL_NUMBER);
 	Config.PartyFormationSpacing = FMath::Max(Config.PartyFormationSpacing, 0.f);
+	Lane.MemberPlacementClearanceCm = FMath::IsFinite(Lane.MemberPlacementClearanceCm)
+		? FMath::Clamp(Lane.MemberPlacementClearanceCm, 1.f, 270.f) : 40.f;
+	Lane.MaxMemberLateralOffsetCm = FMath::IsFinite(Lane.MaxMemberLateralOffsetCm)
+		? FMath::Clamp(Lane.MaxMemberLateralOffsetCm, 0.f, 270.f) : 0.f;
 
 	Lane.SlotSpacingCm = FMath::Max(Lane.SlotSpacingCm, 1.f);
 	// 방향이 0벡터면 슬롯이 전부 같은 자리에 겹친다. 조용히 틀리느니 기본축으로 되돌린다.
@@ -61,7 +93,9 @@ void FFF_FacilityQueue::Configure(int32 InFacilityId, const FFF_QueueConfig& InC
 	CompletedPartyCount = 0;
 	TotalCompletedWaitSeconds = 0.0;
 	bIsOpen = true;
+	bPerformanceBreak = false;
 	bSlotTargetsDirty = true;
+	RebuildMemberPlacementPatterns();
 }
 
 int32 FFF_FacilityQueue::FindPartyIndex(int32 PartyId) const
@@ -79,6 +113,12 @@ int32 FFF_FacilityQueue::FindPartyIndex(int32 PartyId) const
 bool FFF_FacilityQueue::ContainsParty(int32 PartyId) const
 {
 	return FindPartyIndex(PartyId) != INDEX_NONE;
+}
+
+bool FFF_FacilityQueue::HasPartyStartedService(int32 PartyId) const
+{
+	const int32 Index = FindPartyIndex(PartyId);
+	return Index != INDEX_NONE && Parties[Index].bServiceStarted;
 }
 
 int32 FFF_FacilityQueue::GetOccupiedMemberCount() const
@@ -117,7 +157,8 @@ float FFF_FacilityQueue::GetServiceRate() const
 
 bool FFF_FacilityQueue::IsAcceptingNew() const
 {
-	return bIsOpen && (Parties.Num() < Config.MaxCapacityParties);
+	return bIsOpen && !bPerformanceBreak && (Parties.Num() < Config.MaxCapacityParties)
+		&& CanFitPartyThroughSlot(Parties.Num(), 1, Lane.PlacementObstacles);
 }
 
 float FFF_FacilityQueue::GetExpectedWaitSeconds(int32 IncomingMemberCount) const
@@ -235,12 +276,106 @@ void FFF_FacilityQueue::BuildSlotAssignments(TArray<FFF_SlotAssignment>& OutAssi
 			FFF_SlotAssignment& A = OutAssignments.Add_GetRef(TeamAnchor);
 			A.AgentId = AgentId;
 			A.PartyMemberIndex = i;
+			if (Lane.bConstrainMemberPlacement)
+			{
+				// Admission checked this pattern and every preceding slot. Occupancy
+				// changes cannot move a teammate or create a new packing conflict.
+				A.TargetLocation = MemberPlacementPatterns[SlotCursor][i];
+				continue;
+			}
 			const int32 SideStep = (i + 1) / 2;
 			const float Side = (i % 2 == 1) ? 1.f : -1.f;
 			A.TargetLocation += TeamRight * (Side * SideStep * Config.PartyFormationSpacing);
 		}
 		++SlotCursor;
 	}
+}
+
+void FFF_FacilityQueue::RebuildMemberPlacementPatterns()
+{
+	bMemberPlacementPatternsNeedRefresh = false;
+	MemberPlacementPatterns.Reset();
+	if (!Lane.bConstrainMemberPlacement) return;
+	MemberPlacementPatterns.SetNum(Config.MaxCapacityParties);
+
+	TArray<FFF_SlotAssignment> Anchors;
+	Anchors.Reserve(Config.MaxCapacityParties);
+	for (int32 Index = 0; Index < Config.MaxCapacityParties; ++Index)
+	{
+		Anchors.Add(ResolveSlot(INDEX_NONE, INDEX_NONE, Index));
+	}
+	const float Clearance = Lane.MemberPlacementClearanceCm;
+	const float Spacing = FMath::Max(Config.PartyFormationSpacing, 2.f * Clearance);
+	const int32 SideSteps = FMath::FloorToInt(Lane.MaxMemberLateralOffsetCm / Spacing);
+	for (int32 Index = 0; Index < Anchors.Num(); ++Index)
+	{
+		const FFF_SlotAssignment& Anchor = Anchors[Index];
+		const FVector Right = FRotator(0.f, Anchor.TargetYaw, 0.f).RotateVector(FVector::RightVector);
+		auto IsCandidateAllowed = [&](const FVector& Candidate)
+		{
+			if (!IsClearOfPlacementObstacles(Candidate, Clearance, Lane.PlacementObstacles)) return false;
+			for (int32 Other = 0; Other < Anchors.Num(); ++Other)
+			{
+				if (Other == Index) continue;
+				const FVector Delta = Anchors[Other].TargetLocation - Anchor.TargetLocation;
+				const double Distance = Delta.Size2D();
+				if (Distance < 2.f * Clearance) return false;
+				// Reserve all future leaders and a separate strip for each team. Both
+				// sides keep one body/tolerance radius away from their shared bisector,
+				// so independently generated patterns cannot overlap across a U bend.
+				const FVector FromAnchor = Candidate - Anchor.TargetLocation;
+				const double TowardOther = (FromAnchor.X * Delta.X + FromAnchor.Y * Delta.Y) / Distance;
+				if (TowardOther > Distance * .5 - Clearance + UE_KINDA_SMALL_NUMBER) return false;
+			}
+			return true;
+		};
+		TArray<FVector>& Pattern = MemberPlacementPatterns[Index];
+		if (!IsCandidateAllowed(Anchor.TargetLocation)) continue;
+		Pattern.Add(Anchor.TargetLocation); // Authored leaders are never moved.
+		for (int32 SideStep = 1; SideStep <= SideSteps; ++SideStep)
+		{
+			for (const float Side : {1.f, -1.f})
+			{
+				const FVector Candidate = Anchor.TargetLocation + Right * (Side * SideStep * Spacing);
+				if (IsCandidateAllowed(Candidate)) Pattern.Add(Candidate);
+			}
+		}
+	}
+}
+
+bool FFF_FacilityQueue::CanFitPartyThroughSlot(const int32 LastSlotIndex, const int32 MemberCount,
+	const TArray<FFF_QueuePlacementObstacle>& Obstacles) const
+{
+	if (!Lane.bConstrainMemberPlacement) return true;
+	for (int32 Index = 0; Index <= LastSlotIndex; ++Index)
+	{
+		if (!MemberPlacementPatterns.IsValidIndex(Index)
+			|| MemberPlacementPatterns[Index].Num() < MemberCount) return false;
+		for (int32 Member = 0; Member < MemberCount; ++Member)
+		{
+			if (!IsClearOfPlacementObstacles(MemberPlacementPatterns[Index][Member],
+				Lane.MemberPlacementClearanceCm, Obstacles)) return false;
+		}
+	}
+	return true;
+}
+
+bool FFF_FacilityQueue::CanUsePlacementObstacles(const TArray<FFF_QueuePlacementObstacle>& Obstacles) const
+{
+	for (int32 Index = 0; Index < Parties.Num(); ++Index)
+	{
+		if (!CanFitPartyThroughSlot(Index, Parties[Index].MemberCount, Obstacles)) return false;
+	}
+	return true;
+}
+
+bool FFF_FacilityQueue::RefreshPlacementObstacles(const TArray<FFF_QueuePlacementObstacle>& Obstacles)
+{
+	if (!CanUsePlacementObstacles(Obstacles)) return false;
+	Lane.PlacementObstacles = Obstacles;
+	if (Parties.IsEmpty()) RebuildMemberPlacementPatterns();
+	else bMemberPlacementPatternsNeedRefresh = true;
+	return true;
 }
 
 bool FFF_FacilityQueue::ConsumeSlotTargetsDirty()
@@ -290,7 +425,7 @@ EFF_QueueJoinResult FFF_FacilityQueue::TryJoin(const FFF_JoinRequest& Request, f
 	{
 		return Reject(EFF_QueueJoinResult::RejectedInvalidParty);
 	}
-	if (!bIsOpen)
+	if (!bIsOpen || bPerformanceBreak)
 	{
 		return Reject(EFF_QueueJoinResult::RejectedClosed);
 	}
@@ -302,6 +437,13 @@ EFF_QueueJoinResult FFF_FacilityQueue::TryJoin(const FFF_JoinRequest& Request, f
 	// 전부 아니면 전무. 부분 수락은 되돌리기 어려운 상태를 만든다.
 	if (Parties.Num() >= Config.MaxCapacityParties)
 	{
+		return Reject(EFF_QueueJoinResult::RejectedFull);
+	}
+	if (Parties.IsEmpty() && bMemberPlacementPatternsNeedRefresh) RebuildMemberPlacementPatterns();
+	if (!CanFitPartyThroughSlot(Parties.Num(), Request.MemberCount, Lane.PlacementObstacles))
+	{
+		// Numeric team capacity is unchanged. Defer a physically incompatible
+		// party before it can wait forever at an impossible current or future slot.
 		return Reject(EFF_QueueJoinResult::RejectedFull);
 	}
 
@@ -423,6 +565,32 @@ void FFF_FacilityQueue::ReopenFacility()
 	bSlotTargetsDirty = true;
 }
 
+void FFF_FacilityQueue::SetPerformanceBreak(bool bInPerformanceBreak, float SimTimeSeconds)
+{
+	if (bPerformanceBreak == bInPerformanceBreak)
+	{
+		return;
+	}
+	bPerformanceBreak = bInPerformanceBreak;
+	if (!bPerformanceBreak)
+	{
+		return;
+	}
+
+	// 기존 완료 경로를 재사용해 실제 이용 인원과 정산 이벤트를 한 번만 전달한다.
+	// 도착했어도 서비스를 시작하지 않은 팀은 구매자로 처리하지 않는다.
+	for (const FFF_QueuedParty& Party : Parties)
+	{
+		RecordExit(Party, Party.bServiceStarted ? EFF_QueueExit::Served : EFF_QueueExit::Cancelled,
+			SimTimeSeconds);
+	}
+	if (!Parties.IsEmpty())
+	{
+		Parties.Reset();
+		bSlotTargetsDirty = true;
+	}
+}
+
 void FFF_FacilityQueue::InvalidateShiftedArrivals(int32 FirstShiftedIndex)
 {
 	for (int32 Index = FirstShiftedIndex; Index < Parties.Num(); ++Index)
@@ -436,7 +604,7 @@ void FFF_FacilityQueue::InvalidateShiftedArrivals(int32 FirstShiftedIndex)
 
 void FFF_FacilityQueue::Advance(float DeltaSeconds, float SimTimeSeconds)
 {
-	if (!bIsOpen || Parties.Num() == 0 || DeltaSeconds <= 0.f)
+	if (!bIsOpen || bPerformanceBreak || Parties.Num() == 0 || DeltaSeconds <= 0.f)
 	{
 		return;
 	}

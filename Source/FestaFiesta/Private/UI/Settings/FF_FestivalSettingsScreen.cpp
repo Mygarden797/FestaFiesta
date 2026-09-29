@@ -198,7 +198,7 @@ bool UFF_FestivalSettingsScreen::FSettingsDraft::Equals(const FSettingsDraft& Ot
 	return WindowMode == Other.WindowMode && Resolution == Other.Resolution &&
 		ResolutionScalePercent == Other.ResolutionScalePercent &&
 		FrameRateLimit == Other.FrameRateLimit && GraphicsPreset == Other.GraphicsPreset &&
-		bVSync == Other.bVSync && FMath::IsNearlyEqual(MasterVolume, Other.MasterVolume) &&
+		bVSync == Other.bVSync && Audio.Equals(Other.Audio) &&
 		bZoomToCursor == Other.bZoomToCursor && bEdgeScroll == Other.bEdgeScroll &&
 		bReduceMotion == Other.bReduceMotion;
 }
@@ -490,7 +490,7 @@ void UFF_FestivalSettingsScreen::CaptureDraft()
 	}
 	if (const UFF_RuntimeSettingsSubsystem* Runtime = UFF_RuntimeSettingsSubsystem::Get(this))
 	{
-		Draft.MasterVolume = Runtime->GetMasterVolume();
+		Draft.Audio = Runtime->GetAudioVolumes();
 		Draft.bZoomToCursor = Runtime->IsZoomToCursorEnabled();
 		Draft.bEdgeScroll = Runtime->IsEdgeScrollEnabled();
 	}
@@ -650,9 +650,37 @@ void UFF_FestivalSettingsScreen::BuildBasicRows()
 	if (UFF_SettingSliderRow* Row = AddSliderRow(
 		LOCTEXT("MasterVolume", "마스터 음량"),
 		LOCTEXT("MasterVolumeDesc", "게임 전체 소리의 크기를 조절합니다"),
-		Draft.MasterVolume, 0.f, 1.f, 0.05f))
+		Draft.Audio.Master, 0.f, 1.f, 0.05f))
 	{
 		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleMasterVolumeChanged);
+	}
+	if (UFF_SettingSliderRow* Row = AddSliderRow(
+		LOCTEXT("MusicVolume", "배경음 음량"),
+		LOCTEXT("MusicVolumeDesc", "축제 배경음과 피날레 음악의 크기를 조절합니다"),
+		Draft.Audio.Music, 0.f, 1.f, 0.05f))
+	{
+		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleMusicVolumeChanged);
+	}
+	if (UFF_SettingSliderRow* Row = AddSliderRow(
+		LOCTEXT("EffectsVolume", "효과음 음량"),
+		LOCTEXT("EffectsVolumeDesc", "건설·대기열·진행 알림처럼 운영 중에 나는 소리의 크기를 조절합니다"),
+		Draft.Audio.Effects, 0.f, 1.f, 0.05f))
+	{
+		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleEffectsVolumeChanged);
+	}
+	if (UFF_SettingSliderRow* Row = AddSliderRow(
+		LOCTEXT("FireworksVolume", "불꽃놀이 음량"),
+		LOCTEXT("FireworksVolumeDesc", "피날레 불꽃이 터지는 소리의 크기를 조절합니다"),
+		Draft.Audio.Fireworks, 0.f, 1.f, 0.05f))
+	{
+		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleFireworksVolumeChanged);
+	}
+	if (UFF_SettingSliderRow* Row = AddSliderRow(
+		LOCTEXT("UiVolume", "UI 소리 음량"),
+		LOCTEXT("UiVolumeDesc", "버튼 클릭·확인·오류 알림 소리의 크기를 조절합니다"),
+		Draft.Audio.Ui, 0.f, 1.f, 0.05f))
+	{
+		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleUiVolumeChanged);
 	}
 	AddSectionHeader(LOCTEXT("BasicCameraSection", "카메라 조작"));
 	if (UFF_SettingToggleRow* Row = AddToggleRow(
@@ -1207,7 +1235,7 @@ void UFF_FestivalSettingsScreen::RefreshSummary()
 		: (bSavedNotice ? LOCTEXT("SummarySavedNow", "저장 완료") : LOCTEXT("SummarySaved", "저장된 설정"));
 	SetSummary(FText::Format(
 		LOCTEXT("CurrentSummaryFormat", "{0}  ·  {1}  ·  {2}  ·  {3}  ·  음량 {4}"),
-		Prefix, FormatResolution(Draft.Resolution), WindowMode, Quality, FormatPercent(FMath::RoundToInt(Draft.MasterVolume * 100.f))));
+		Prefix, FormatResolution(Draft.Resolution), WindowMode, Quality, FormatPercent(FMath::RoundToInt(Draft.Audio.Master * 100.f))));
 }
 
 void UFF_FestivalSettingsScreen::RefreshActionButtons()
@@ -1479,7 +1507,7 @@ void UFF_FestivalSettingsScreen::CommitDraft()
 	}
 	if (UFF_RuntimeSettingsSubsystem* Runtime = UFF_RuntimeSettingsSubsystem::Get(this))
 	{
-		Runtime->CommitSettings(Draft.MasterVolume, Draft.bZoomToCursor, Draft.bEdgeScroll);
+		Runtime->CommitAllSettings(Draft.Audio, Draft.bZoomToCursor, Draft.bEdgeScroll);
 	}
 	if (UFF_UIAccessibilitySubsystem* Accessibility = UFF_UIAccessibilitySubsystem::Get(this))
 	{
@@ -1596,7 +1624,47 @@ void UFF_FestivalSettingsScreen::HandleMasterVolumeChanged(const float Value)
 	{
 		return;
 	}
-	Draft.MasterVolume = FMath::Clamp(Value, 0.f, 1.f);
+	Draft.Audio.Master = FMath::Clamp(Value, 0.f, 1.f);
+	UpdateDirtyState();
+}
+
+void UFF_FestivalSettingsScreen::HandleMusicVolumeChanged(const float Value)
+{
+	if (bAwaitingVideoModeConfirmation)
+	{
+		return;
+	}
+	Draft.Audio.Music = FMath::Clamp(Value, 0.f, 1.f);
+	UpdateDirtyState();
+}
+
+void UFF_FestivalSettingsScreen::HandleEffectsVolumeChanged(const float Value)
+{
+	if (bAwaitingVideoModeConfirmation)
+	{
+		return;
+	}
+	Draft.Audio.Effects = FMath::Clamp(Value, 0.f, 1.f);
+	UpdateDirtyState();
+}
+
+void UFF_FestivalSettingsScreen::HandleFireworksVolumeChanged(const float Value)
+{
+	if (bAwaitingVideoModeConfirmation)
+	{
+		return;
+	}
+	Draft.Audio.Fireworks = FMath::Clamp(Value, 0.f, 1.f);
+	UpdateDirtyState();
+}
+
+void UFF_FestivalSettingsScreen::HandleUiVolumeChanged(const float Value)
+{
+	if (bAwaitingVideoModeConfirmation)
+	{
+		return;
+	}
+	Draft.Audio.Ui = FMath::Clamp(Value, 0.f, 1.f);
 	UpdateDirtyState();
 }
 

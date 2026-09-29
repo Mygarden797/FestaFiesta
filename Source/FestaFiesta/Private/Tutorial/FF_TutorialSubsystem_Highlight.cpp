@@ -15,6 +15,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Tutorial/FF_TutorialMarker.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UI/PrepHUD/FF_PrepHudTabButton.h"
 #include "UI/PrepHUD/FF_PrepHudTypes.h"
 
@@ -140,10 +141,35 @@ int32 UFF_TutorialSubsystem::ScanPrepHudAnchors()
 		++Registered;
 	}
 
+	/* 준비 화면의 잔액도 강조 대상으로 등록한다. 예산을 설명할 때 가리킨다(PrepHud_Gold).
+
+	   탭처럼 전용 위젯 클래스가 없어서 이름으로 찾는다. 아이콘까지 묶은 Box_Gold 가 있으면
+	   그것을, 없으면 숫자(Text_Gold)만 가리킨다. 숫자만 잡혀도 여백을 두고 그리므로 알아볼 수 있다.
+	   UI 파일을 고치지 않으려고 공개 조회(GetWidgetFromName)만 쓴다.
+	*/
+	TArray<UUserWidget*> Bars;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Bars, UFF_PrepHudBar::StaticClass(), false);
+	for (UUserWidget* Bar : Bars)
+	{
+		UWidget* Gold = Bar ? Bar->GetWidgetFromName(TEXT("Box_Gold")) : nullptr;
+		if (!Gold && Bar)
+		{
+			Gold = Bar->GetWidgetFromName(TEXT("Text_Gold"));
+		}
+
+		// 화면에 보이는 바를 쓴다. 옛 바가 숨은 채 남아 있으면 엉뚱한 자리를 가리킨다.
+		if (Gold && Gold->IsVisible())
+		{
+			RegisterAnchor(TEXT("PrepHud_Gold"), Gold);
+			++Registered;
+			break;
+		}
+	}
+
 	if (Registered > 0)
 	{
 		UE_LOG(LogFestaFiestaTutorial, Log,
-			TEXT("[튜토리얼] 준비 화면 탭 %d개를 강조 대상으로 등록했다."), Registered);
+			TEXT("[튜토리얼] 준비 화면에서 %d개를 강조 대상으로 등록했다."), Registered);
 	}
 
 	return Registered;

@@ -10,6 +10,62 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "FF_RuntimeSettingsSubsystem.generated.h"
 
+/* 소리 갈래별 음량. 마스터를 뺀 나머지는 마스터에 곱해지는 비율(0~1)이다.
+
+   값을 하나의 묶음으로 두는 이유는 갈래가 늘어날 때 고칠 곳을 줄이려는 것이다.
+   예전에는 갈래마다 getter·setter·저장 키·확정 함수 인자가 하나씩 늘었다. 묶어두면
+   설정 화면은 사본 하나를 들고 있다가 통째로 넘기면 되고, 비교도 한 곳에서 한다.
+
+   마스터는 엔진 전체 음량(SetTransientPrimaryVolume)이라 모든 소리에 먹는다.
+   나머지는 축제 사운드(UFF_AudioSubsystem)가 재생할 때 곱하므로, 그 서브시스템을 거치지
+   않는 소리(버튼 스타일에 박힌 클릭음 등)는 마스터만 따른다.
+*/
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_AudioVolumes
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Master = 0.8f;
+
+	// 축제 배경음, 피날레 곡, 엔딩곡.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Music = 1.f;
+
+	// 건설, 대기열, 단계 전환처럼 운영 중에 나는 소리. 환경음도 여기에 묶는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Effects = 1.f;
+
+	// 피날레 불꽃. 가장 크고 몰아서 터지므로 따로 줄일 수 있게 뺐다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Fireworks = 1.f;
+
+	// 버튼 클릭·확인·오류 같은 화면 소리.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Ui = 1.f;
+
+	// 모든 값을 0~1 로 자른 사본.
+	FFF_AudioVolumes Clamped() const
+	{
+		FFF_AudioVolumes Out;
+		Out.Master = FMath::Clamp(Master, 0.f, 1.f);
+		Out.Music = FMath::Clamp(Music, 0.f, 1.f);
+		Out.Effects = FMath::Clamp(Effects, 0.f, 1.f);
+		Out.Fireworks = FMath::Clamp(Fireworks, 0.f, 1.f);
+		Out.Ui = FMath::Clamp(Ui, 0.f, 1.f);
+		return Out;
+	}
+
+	bool Equals(const FFF_AudioVolumes& Other, const float Tolerance = 0.001f) const
+	{
+		return FMath::IsNearlyEqual(Master, Other.Master, Tolerance)
+			&& FMath::IsNearlyEqual(Music, Other.Music, Tolerance)
+			&& FMath::IsNearlyEqual(Effects, Other.Effects, Tolerance)
+			&& FMath::IsNearlyEqual(Fireworks, Other.Fireworks, Tolerance)
+			&& FMath::IsNearlyEqual(Ui, Other.Ui, Tolerance);
+	}
+};
+
 /**
  * 플레이어별 런타임 설정의 프로젝트 기본값.
  *
@@ -30,6 +86,26 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Audio",
 		meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
 	float DefaultMasterVolume = 0.8f;
+
+	// 아래 갈래들은 마스터에 곱해지는 비율이다. 기본 1 이면 마스터만 움직여도 예전과 같다.
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Audio",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float DefaultMusicVolume = 1.f;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Audio",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float DefaultEffectsVolume = 1.f;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Audio",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float DefaultFireworksVolume = 1.f;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Audio",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float DefaultUiVolume = 1.f;
+
+	// 위 값들을 음량 묶음으로. 초기화와 첫 실행이 같은 값을 쓰게 한 곳에서 만든다.
+	FFF_AudioVolumes MakeDefaultVolumes() const;
 
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Gameplay|Camera")
 	bool bDefaultZoomToCursor = true;
@@ -57,7 +133,11 @@ public:
 	static UFF_RuntimeSettingsSubsystem* Get(const UObject* WorldContextObject);
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Settings")
-	float GetMasterVolume() const { return MasterVolume; }
+	float GetMasterVolume() const { return Volumes.Master; }
+
+	// 갈래별 음량 전체. 마스터 외의 값은 UFF_AudioSubsystem 이 OnSettingsChanged 를 받아 적용한다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Settings")
+	FFF_AudioVolumes GetAudioVolumes() const { return Volumes; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Settings")
 	bool IsZoomToCursorEnabled() const { return bZoomToCursor; }
@@ -67,6 +147,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
 	void SetMasterVolume(float NewValue);
+
+	// 음량 묶음을 바로 적용하고 저장한다. 슬라이더마다 부르면 ini 를 계속 쓰므로 화면은 CommitAllSettings 를 쓴다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
+	void SetAudioVolumes(const FFF_AudioVolumes& NewVolumes);
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
 	void SetZoomToCursorEnabled(bool bEnabled);
@@ -82,6 +166,11 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
 	void CommitSettings(float NewMasterVolume, bool bNewZoomToCursor, bool bNewEdgeScrollEnabled);
+
+	// 음량 묶음과 카메라 옵션을 한 번에 확정한다. 두 설정 화면은 이쪽을 쓴다.
+	// 위 CommitSettings 를 고치지 않고 새로 둔 이유는 그 노드를 쓰는 BP 가 핀이 바뀌어 깨지지 않게 하려는 것이다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
+	void CommitAllSettings(const FFF_AudioVolumes& NewVolumes, bool bNewZoomToCursor, bool bNewEdgeScrollEnabled);
 
 	/** 프로젝트 기본값으로 돌아가고 한 번만 저장·방송한다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
@@ -99,7 +188,7 @@ private:
 	void SaveToUserSettings() const;
 	void NotifyChanged();
 
-	float MasterVolume = 0.8f;
+	FFF_AudioVolumes Volumes;
 	bool bZoomToCursor = true;
 	bool bEdgeScrollEnabled = true;
 };

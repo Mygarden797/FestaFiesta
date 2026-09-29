@@ -30,6 +30,7 @@
 #include "InputCoreTypes.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
+#include "Staff/FF_StaffFacilitySubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
@@ -285,6 +286,8 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	Panel->OnProgramScheduleRequested.AddUObject(
 		this, &ThisClass::HandlePanelProgramScheduleRequested);
 	Panel->OnUpgradeRequested.AddUObject(this, &ThisClass::HandlePanelUpgradeRequested);
+	Panel->OnAssignStaffRequested.AddUObject(this, &ThisClass::HandlePanelAssignStaffRequested);
+	Panel->OnUnassignStaffRequested.AddUObject(this, &ThisClass::HandlePanelUnassignStaffRequested);
 	Panel->OnLightingRequested.AddUObject(this, &ThisClass::HandlePanelLightingRequested);
 	Panel->OnLightingRollbackRequested.AddUObject(this, &ThisClass::HandlePanelLightingRollbackRequested);
 	Panel->OnLightingResetRequested.AddUObject(this, &ThisClass::HandlePanelLightingResetRequested);
@@ -318,6 +321,8 @@ void UFF_FacilityInfoSubsystem::ReleasePanel()
 	Panel->OnRemoveRequested.RemoveAll(this);
 	Panel->OnProgramScheduleRequested.RemoveAll(this);
 	Panel->OnUpgradeRequested.RemoveAll(this);
+	Panel->OnAssignStaffRequested.RemoveAll(this);
+	Panel->OnUnassignStaffRequested.RemoveAll(this);
 	// 취소 시 원래 조명으로 되돌리는 이벤트가 필요하므로 연결을 끊기 전에 취소한다.
 	Panel->CancelLightingEdit();
 	Panel->OnLightingRollbackRequested.RemoveAll(this);
@@ -767,6 +772,28 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		? LOCTEXT("UnknownZone", "구역 정보 없음")
 		: FText::FromName(Facility.GetZoneId());
 	OutViewData.FacilityStateText = FFFacilityInfoModel::GetFacilityStateText(ReadModel.State);
+	if (Spec.Category == EFFZSFacilityCategory::Info)
+	{
+		if (const UFF_StaffFacilitySubsystem* Staff = World->GetSubsystem<UFF_StaffFacilitySubsystem>())
+		{
+			const FGuid FacilityId = OutViewData.FacilityInstanceId;
+			OutViewData.bShowStaffSection = true;
+			OutViewData.StaffCapacity = Staff->GetFacilityCapacity(FacilityId);
+			OutViewData.AssignedStaffCount = Staff->GetAssignedStaffCount(FacilityId);
+			OutViewData.bCanAssignStaff = Staff->CanAssignAvailableStaff(FacilityId);
+			OutViewData.bCanUnassignStaff = Staff->CanUnassignAvailableStaff(FacilityId);
+			int32 BusyCount = 0;
+			for (const FFF_StaffMember& Member : Staff->GetFacilityStaff(FacilityId))
+			{
+				BusyCount += Staff->IsStaffBusy(Member.StaffId) ? 1 : 0;
+			}
+			OutViewData.StaffSummaryText = FText::Format(
+				LOCTEXT("StaffFacilitySummary", "스태프 배정 {0} / {1}명 · 출동 중 {2}명"),
+				FText::AsNumber(OutViewData.AssignedStaffCount), FText::AsNumber(OutViewData.StaffCapacity), FText::AsNumber(BusyCount));
+			OutViewData.StaffAssignmentHint = LOCTEXT("StaffFacilityHint",
+				"시설 설치는 정원만 늘립니다. 고용한 스태프를 +로 배정하세요. 출동 중에는 배정을 해제할 수 없습니다.");
+		}
+	}
 	OutViewData.CurrentInstancesInWorld = Spec.FacilityDefinitionId.IsNone()
 		? 0
 		: FMath::Max(0, ZoneSystem->CountFacilitiesByDefinitionId(Spec.FacilityDefinitionId));
@@ -921,7 +948,7 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		? FFFacilityInfoModel::FormatExpectedWait(QueueState.bIsOpen, ExpectedWaitSeconds)
 		: MissingQueueMetric;
 	OutViewData.ThroughputText = bQueueAvailable
-		? FFFacilityInfoModel::FormatThroughput(true, QueueState.GetServiceRatePerMinute())
+		? FFFacilityInfoModel::FormatServiceDuration(true, Facility.GetEffectiveQueueRules().ServiceDurationSeconds)
 		: MissingQueueMetric;
 	if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface())
 	{
@@ -1073,7 +1100,9 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		Progression->GetFacilityInstanceRevenue(OutViewData.FacilityInstanceId, InstanceRevenue);
 	}
 	const bool bGeneratesDirectRevenue =
-		(bHasUpgradePreview && UpgradePreview.bRevenueAvailable && UpgradePreview.CurrentRevenuePerUseGold > 0) ||
+		(bHasUpgradePreview && UpgradePreview.bRevenueAvailable &&
+			(UpgradePreview.CurrentRevenuePerUseGold > 0 ||
+			 UpgradePreview.CurrentRevenueByTeamSizeGold.ContainsByPredicate([](int32 Gold) { return Gold > 0; }))) ||
 		OutViewData.bHasScheduledProgram;
 	FFFacilityInfoModel::ApplyFacilityRevenue(
 		bEconomyAvailable ? &InstanceRevenue : nullptr,
@@ -1083,6 +1112,28 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		OutViewData);
 
 	return true;
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelAssignStaffRequested()
+{
+	UWorld* World = GetWorld();
+	UFF_StaffFacilitySubsystem* Staff = World ? World->GetSubsystem<UFF_StaffFacilitySubsystem>() : nullptr;
+	if (SelectedFacilityId.IsValid() && Staff)
+	{
+		Staff->TryAssignAvailableStaff(SelectedFacilityId);
+		RefreshPanel();
+	}
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelUnassignStaffRequested()
+{
+	UWorld* World = GetWorld();
+	UFF_StaffFacilitySubsystem* Staff = World ? World->GetSubsystem<UFF_StaffFacilitySubsystem>() : nullptr;
+	if (SelectedFacilityId.IsValid() && Staff)
+	{
+		Staff->TryUnassignAvailableStaff(SelectedFacilityId);
+		RefreshPanel();
+	}
 }
 
 void UFF_FacilityInfoSubsystem::RefreshPanel()

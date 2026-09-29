@@ -41,9 +41,13 @@ public:
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Identity")
 	FGameplayTag EscalateTo;
 
-	//클릭 시 선택지. 비어 있으면 확인만 하는 사건이다
+	// 클릭 시 선택지. 비어 있으면 RequiredStaff 인원을 보내고, 0명이면 즉시 확인한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Instanced, Category = "Incident|Options")
 	TArray<TObjectPtr<UFF_IncidentOption>> Options;
+
+	// 선택지 없이 마커를 눌렀을 때 출동할 인원. 단순 알림은 0으로 설정한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Incident|Staff", meta = (ClampMin = "0"))
+	int32 RequiredStaff = 1;
 
 	const UFF_IncidentOption* GetOption(int32 OptionIndex) const
 	{

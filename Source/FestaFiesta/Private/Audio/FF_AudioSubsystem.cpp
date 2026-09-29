@@ -11,6 +11,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
+#include "UI/Settings/FF_RuntimeSettingsSubsystem.h"
 
 DEFINE_LOG_CATEGORY(LogFestaFiestaAudio);
 
@@ -38,10 +39,12 @@ void UFF_AudioSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
 	RegisterDebugConsoleCommands();
+	BindRuntimeSettings();
 }
 
 void UFF_AudioSubsystem::Deinitialize()
 {
+	UnbindRuntimeSettings();
 	UnregisterDebugConsoleCommands();
 	StopAmbience();
 	Super::Deinitialize();
@@ -157,7 +160,7 @@ bool UFF_AudioSubsystem::PlayEvent2D(const EFF_AudioEvent Event)
 
 	UGameplayStatics::PlaySound2D(
 		this, Sound,
-		Cue->VolumeMultiplier,
+		Cue->VolumeMultiplier * GetChannelVolume(ResolveChannel(Event, *Cue)),
 		FMath::FRandRange(Cue->PitchMin, Cue->PitchMax),
 		0.f, nullptr, nullptr, true);
 
@@ -188,7 +191,7 @@ bool UFF_AudioSubsystem::PlayEventAtLocation(const EFF_AudioEvent Event, const F
 
 	UGameplayStatics::PlaySoundAtLocation(
 		World, Sound, WorldLocation, FRotator::ZeroRotator,
-		Cue->VolumeMultiplier,
+		Cue->VolumeMultiplier * GetChannelVolume(ResolveChannel(Event, *Cue)),
 		FMath::FRandRange(Cue->PitchMin, Cue->PitchMax),
 		0.f, nullptr,
 		Cue->Concurrency.LoadSynchronous());
@@ -267,13 +270,42 @@ void UFF_AudioSubsystem::SetAmbience(const EFF_AudioAmbience Ambience)
 		return;
 	}
 
+	/* 곡 볼륨과 배경음 비율은 컴포넌트 볼륨에 두고, 페이드는 1 까지만 올린다.
+
+	   예전에는 컴포넌트 볼륨과 페이드 목표에 곡 볼륨을 둘 다 넣어서 곡 볼륨이 제곱으로 먹었다.
+	   0.5 로 두면 0.25 로 들렸다. 볼륨을 한 곳에 모아야 설정이 바뀌었을 때 그 값만 다시 걸 수 있다.
+	*/
+	AmbienceTrackVolume = Track->VolumeMultiplier;
 	AmbienceComponent = UGameplayStatics::SpawnSound2D(
-		World, Sound, Track->VolumeMultiplier, 1.f, 0.f, nullptr, true, false);
+		World, Sound, AmbienceTrackVolume * GetChannelVolume(EFF_AudioChannel::Music),
+		1.f, 0.f, nullptr, true, false);
 
 	if (AmbienceComponent)
 	{
-		AmbienceComponent->FadeIn(FMath::Max(0.f, Track->FadeInSeconds), Track->VolumeMultiplier);
+		AmbienceComponent->FadeIn(FMath::Max(0.f, Track->FadeInSeconds), 1.f);
+		AmbienceComponent->OnAudioFinishedNative.AddUObject(this, &UFF_AudioSubsystem::HandleAmbienceFinished);
 	}
+}
+
+void UFF_AudioSubsystem::HandleAmbienceFinished(UAudioComponent* Component)
+{
+	/* 지금 곡이 끝난 것만 다시 튼다.
+
+	   곡을 갈아탈 때 이전 곡은 페이드아웃 칸으로 옮겨지고, 끌 때는 참조를 먼저 비운다.
+	   그 곡들도 끝났다고 알려오는데, 다시 틀면 꺼진 곡이 되살아난다.
+	*/
+	if (!Component || Component != AmbienceComponent || !bAudioEnabled)
+	{
+		return;
+	}
+
+	// 엔딩곡은 한 번만 흐른다. 연출이 끝나기 전에 곡이 끝나도 되풀이하면 끝났다는 느낌이 사라진다.
+	if (CurrentAmbience == EFF_AudioAmbience::FinaleEnding)
+	{
+		return;
+	}
+
+	Component->Play(0.f);
 }
 
 bool UFF_AudioSubsystem::HasAmbienceTrack(const EFF_AudioAmbience Ambience) const
@@ -283,12 +315,84 @@ bool UFF_AudioSubsystem::HasAmbienceTrack(const EFF_AudioAmbience Ambience) cons
 	return Track && Track->IsValid();
 }
 
+float UFF_AudioSubsystem::GetChannelVolume(const EFF_AudioChannel Channel) const
+{
+	// 설정 시스템이 없는 맵(테스트 등)에서는 비율을 걸지 않는다. 소리가 안 나는 것보다 낫다.
+	const UFF_RuntimeSettingsSubsystem* Runtime = UFF_RuntimeSettingsSubsystem::Get(this);
+	if (!Runtime)
+	{
+		return 1.f;
+	}
+
+	const FFF_AudioVolumes Volumes = Runtime->GetAudioVolumes();
+	switch (Channel)
+	{
+	case EFF_AudioChannel::Music:     return Volumes.Music;
+	case EFF_AudioChannel::Fireworks: return Volumes.Fireworks;
+	case EFF_AudioChannel::Ui:        return Volumes.Ui;
+	default:                          return Volumes.Effects;
+	}
+}
+
+EFF_AudioChannel UFF_AudioSubsystem::ResolveChannel(const EFF_AudioEvent Event, const FFF_AudioCue& Cue)
+{
+	if (Cue.Channel != EFF_AudioChannel::Effects)
+	{
+		return Cue.Channel;
+	}
+
+	switch (Event)
+	{
+	case EFF_AudioEvent::FinaleBurst:
+	case EFF_AudioEvent::FinaleShowStarted:
+	case EFF_AudioEvent::FinaleShowEnded:
+		return EFF_AudioChannel::Fireworks;
+
+	case EFF_AudioEvent::UiClick:
+	case EFF_AudioEvent::UiHover:
+	case EFF_AudioEvent::UiConfirm:
+	case EFF_AudioEvent::UiCancel:
+	case EFF_AudioEvent::UiError:
+		return EFF_AudioChannel::Ui;
+
+	default:
+		return EFF_AudioChannel::Effects;
+	}
+}
+
+void UFF_AudioSubsystem::BindRuntimeSettings()
+{
+	if (UFF_RuntimeSettingsSubsystem* Runtime = UFF_RuntimeSettingsSubsystem::Get(this))
+	{
+		Runtime->OnSettingsChanged.AddUniqueDynamic(this, &UFF_AudioSubsystem::HandleRuntimeSettingsChanged);
+	}
+}
+
+void UFF_AudioSubsystem::UnbindRuntimeSettings()
+{
+	// 설정 시스템은 게임 인스턴스라 월드보다 오래 산다. 안 끊으면 사라진 월드의 이 객체를 계속 부른다.
+	if (UFF_RuntimeSettingsSubsystem* Runtime = UFF_RuntimeSettingsSubsystem::Get(this))
+	{
+		Runtime->OnSettingsChanged.RemoveDynamic(this, &UFF_AudioSubsystem::HandleRuntimeSettingsChanged);
+	}
+}
+
+void UFF_AudioSubsystem::HandleRuntimeSettingsChanged()
+{
+	if (AmbienceComponent)
+	{
+		AmbienceComponent->SetVolumeMultiplier(AmbienceTrackVolume * GetChannelVolume(EFF_AudioChannel::Music));
+	}
+}
+
 void UFF_AudioSubsystem::StopAmbience()
 {
 	if (AmbienceComponent)
 	{
-		AmbienceComponent->Stop();
+		// 참조를 먼저 비운다. Stop 이 곧바로 "끝났다" 를 알리는데, 그때 지금 곡으로 보이면 다시 튼다.
+		UAudioComponent* Stopping = AmbienceComponent;
 		AmbienceComponent = nullptr;
+		Stopping->Stop();
 	}
 	if (FadingAmbienceComponent)
 	{

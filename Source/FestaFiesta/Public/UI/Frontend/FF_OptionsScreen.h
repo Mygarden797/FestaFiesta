@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GenericPlatform/GenericWindow.h"
 #include "UI/FF_ActivatableScreenBase.h"
+#include "UI/Settings/FF_RuntimeSettingsSubsystem.h"
 #include "FF_OptionsScreen.generated.h"
 
 class UFF_CommonButtonBase;
@@ -60,7 +61,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnOptionsBackRequested);
  * | 분류 | 소유자 | 저장 위치 |
  * | --- | --- | --- |
  * | 접근성 · 움직임 감소 | `UFF_UIAccessibilitySubsystem` | 세션 |
- * | 사운드 · 마스터 음량 | `UFF_RuntimeSettingsSubsystem` | `GameUserSettings.ini` |
+ * | 사운드 · 마스터·배경음·효과음·불꽃놀이·UI 음량 | `UFF_RuntimeSettingsSubsystem` | `GameUserSettings.ini` |
  * | 조작 · 카메라 토글 2개 | `UFF_RuntimeSettingsSubsystem` | `GameUserSettings.ini` |
  * | 조작 · 키 배치 | `UFF_KeyBindingRuntimeSubsystem` | Enhanced Input User Settings |
  * | 그래픽 | `UGameUserSettings` | `GameUserSettings.ini` |
@@ -73,7 +74,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnOptionsBackRequested);
  * - **즉시**: 접근성. 화면 표현만 바뀌므로 바로 확인시키는 것이 값어치다.
  * - **`적용`**: 사운드 · 조작. 게임 동작과 `.ini` 를 건드린다.
  *   슬라이더를 끌 때마다 `SetMasterVolume` 을 부르면 **프레임마다 ini 를 쓴다** —
- *   그래서 세 값을 `CommitSettings` 로 한 번에 확정한다 (`UFF_RuntimeSettingsSubsystem` 주석).
+ *   그래서 음량 묶음과 카메라 옵션을 `CommitAllSettings` 로 한 번에 확정한다 (`UFF_RuntimeSettingsSubsystem` 주석).
  *
  * `Button_Apply` 가 없는 구형 WBP 는 확정할 길이 없으므로 그때만 즉시 반영으로 되돌아간다.
  *
@@ -144,6 +145,18 @@ protected:
 
 	UFUNCTION()
 	void HandleMasterVolumeChanged(float Value);
+
+	UFUNCTION()
+	void HandleMusicVolumeChanged(float Value);
+
+	UFUNCTION()
+	void HandleEffectsVolumeChanged(float Value);
+
+	UFUNCTION()
+	void HandleFireworksVolumeChanged(float Value);
+
+	UFUNCTION()
+	void HandleUiVolumeChanged(float Value);
 
 	UFUNCTION()
 	void HandleZoomToCursorToggled(bool bEnabled);
@@ -315,10 +328,11 @@ protected:
 	EFF_OptionCategory DefaultCategory = EFF_OptionCategory::Accessibility;
 
 private:
-	/** `UFF_RuntimeSettingsSubsystem` 이 한 번에 받는 세 값. 화면은 이 사본만 만진다. */
+	/** `UFF_RuntimeSettingsSubsystem` 이 한 번에 받는 다섯 값. 화면은 이 사본만 만진다. */
 	struct FDraft
 	{
-		float MasterVolume = 0.8f;
+		// 마스터와 갈래별 음량. 적용할 때 통째로 넘긴다.
+		FFF_AudioVolumes Audio;
 		bool bZoomToCursor = true;
 		bool bEdgeScroll = true;
 

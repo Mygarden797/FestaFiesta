@@ -12,9 +12,12 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
 #include "Components/ScrollBox.h"
 #include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/SizeBox.h"
 #include "Engine/World.h"
@@ -23,17 +26,54 @@
 #include "HAL/PlatformTime.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
+#include "Building/Presentation/FF_BuildTypography.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityInfoPanel"
+
+void UFF_FacilityInfoPanel::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+	if (!IsDesignTime() || !bPreviewDesignerPage || !WidgetTree) return;
+	auto Show = [this](const TCHAR* Name, bool bVisible)
+	{
+		if (UWidget* Widget = WidgetTree->FindWidget(Name))
+		{
+#if WITH_EDITOR
+			Widget->bHiddenInDesigner = !bVisible;
+#endif
+			Widget->SetVisibility(bVisible ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+		}
+	};
+	// Preview only switches real authored sections. It does not rebuild the tree,
+	// invent sample values, or replace the designer's brushes, fonts and padding.
+	Show(TEXT("Panel_BuildSection"), DesignerPage == EFF_FacilityInfoPage::Overview);
+	Show(TEXT("Panel_LiveSection"), DesignerPage == EFF_FacilityInfoPage::Operation);
+	Show(TEXT("Panel_SynergySection"), DesignerPage == EFF_FacilityInfoPage::Synergy);
+	Show(TEXT("Panel_UpgradeSection"), DesignerPage == EFF_FacilityInfoPage::Upgrade);
+	Show(TEXT("Panel_UpgradeActions"), DesignerPage == EFF_FacilityInfoPage::Upgrade);
+	Show(TEXT("Panel_RevenueSection"), DesignerPage == EFF_FacilityInfoPage::Revenue);
+	Show(TEXT("Panel_ProgramSection"), DesignerPage == EFF_FacilityInfoPage::Programs);
+	Show(TEXT("Widget_LightingControls"), DesignerPage == EFF_FacilityInfoPage::Lighting);
+	Show(TEXT("Button_LightingMinimize"), DesignerPage == EFF_FacilityInfoPage::Lighting);
+	Show(TEXT("Panel_InspectorNavigation"), DesignerPage != EFF_FacilityInfoPage::Lighting);
+	Show(TEXT("Button_TabLighting"), DesignerPage == EFF_FacilityInfoPage::Lighting);
+	Show(TEXT("Button_TabPrograms"), DesignerPage == EFF_FacilityInfoPage::Programs);
+	Show(TEXT("Panel_RemoveConfirmation"), DesignerPage == EFF_FacilityInfoPage::RemoveConfirmation);
+	Show(TEXT("Panel_RemoveActions"), DesignerPage == EFF_FacilityInfoPage::RemoveConfirmation);
+	Show(TEXT("Panel_Actions"), DesignerPage != EFF_FacilityInfoPage::Lighting && DesignerPage != EFF_FacilityInfoPage::RemoveConfirmation);
+}
 
 void UFF_FacilityInfoPanel::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
-	// Layout is authored in WBP, including optional tabs and confirmation. Use the editor
-	// migration command for old assets; never append runtime controls over designer work.
-	// Existing WBP assets can still carry the former per-person captions. Refresh only
-	// known labels so the new team values stay correct without rebuilding the layout.
-	if (WidgetTree)
+	// Existing layout remains authored in WBP. Only the optional staff section gets a
+	// fallback for older assets; an authored section always takes precedence.
+	EnsureStaffControls();
+	if (Button_AssignStaff) Button_AssignStaff->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAssignStaffClicked);
+	if (Button_UnassignStaff) Button_UnassignStaff->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUnassignStaffClicked);
+	// Legacy assets can still carry former per-person captions. The finalized Designer
+	// stores the current captions itself, so subsequent authored text stays editable.
+	if (WidgetTree && !WidgetTree->FindWidget(TEXT("Panel_RequiredBindings")))
 	{
 		auto SetMetricLabel = [this](const TCHAR* ValueName, const TCHAR* LegacyRow, const FText& Caption)
 		{
@@ -102,6 +142,18 @@ void UFF_FacilityInfoPanel::NativeOnInitialized()
 	}
 }
 
+void UFF_FacilityInfoPanel::NativeTick(const FGeometry& Geometry, float DeltaTime)
+{
+	Super::NativeTick(Geometry, DeltaTime);
+	if (IsDesignTime()) return;
+	const FVector2D Viewport = Geometry.GetLocalSize();
+	if (Viewport.X > 1.f && Viewport.Y > 1.f && !Viewport.Equals(LastLayoutViewport, .5f))
+	{
+		LastLayoutViewport = Viewport;
+		RefreshLightingPanelLayout();
+	}
+}
+
 FReply UFF_FacilityInfoPanel::NativeOnMouseButtonDown(
 	const FGeometry& InGeometry,
 	const FPointerEvent& InMouseEvent)
@@ -157,8 +209,10 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	SetText(Text_FacilityRevenue, ViewData.FacilityRevenueText);
 	if (Text_FacilityRevenue)
 	{
+		Text_FacilityRevenue->SetToolTipText(LOCTEXT("TeamRevenueSettlementHint",
+			"현재 수수료율·시설 강화·시너지를 반영한 팀별 예상 수익입니다.\n이용 완료 시 실제 적립된 수익이 오늘 매출에 누적됩니다.\n유료 프로그램 참가비는 별도로 정산됩니다."));
 		Text_FacilityRevenue->SetVisibility(ViewData.FacilityInstanceId.IsValid()
-			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 	const bool bShowRevenue = ViewData.bShowRevenueSection && ViewData.FacilityInstanceId.IsValid();
 	SetText(Text_FacilityTodayRevenue, ViewData.TodayRevenueText);
@@ -397,6 +451,7 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	SetText(Text_RemoveInstallCost, ViewData.InstallCostText);
 	if (Button_RemoveConfirm) Button_RemoveConfirm->SetIsEnabled(bBuildContext && ViewData.bCanRemove);
 	RefreshPageVisibility();
+	RefreshStaffControls();
 	OnViewDataApplied(ViewData);
 }
 
@@ -420,7 +475,11 @@ void UFF_FacilityInfoPanel::SetInfoPage(const EFF_FacilityInfoPage Page)
 void UFF_FacilityInfoPanel::RefreshPageVisibility()
 {
 	// Legacy designer panels keep their previous presentation until explicitly migrated.
-	if (!Button_TabOverview || !Button_TabOperation || !Button_TabUpgrade) return;
+	if (!Button_TabOverview || !Button_TabOperation || !Button_TabUpgrade)
+	{
+		RefreshStaffControls();
+		return;
+	}
 	const bool bBuild = CurrentViewData.Context == EFF_FacilityInfoContext::Build;
 	if (ActivePage == EFF_FacilityInfoPage::Upgrade && (!bBuild || !CurrentViewData.bHasFacilityLevels))
 		ActivePage = EFF_FacilityInfoPage::Overview;
@@ -435,6 +494,7 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 		ActivePage = EFF_FacilityInfoPage::Overview;
 	if (ActivePage == EFF_FacilityInfoPage::Programs && (!Button_TabPrograms || !CurrentViewData.bShowProgramSection))
 		ActivePage = EFF_FacilityInfoPage::Overview;
+	RefreshStaffControls();
 	auto Show = [](UWidget* Widget, const bool bShow)
 	{
 		if (Widget) Widget->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
@@ -674,6 +734,73 @@ void UFF_FacilityInfoPanel::HandleRemoveClicked()
 	}
 }
 
+void UFF_FacilityInfoPanel::EnsureStaffControls()
+{
+	if (!WidgetTree || Panel_StaffSection || IsDesignTime()) return;
+	// Add within the existing scroll content, never replace/reparent the designer tree.
+	UPanelWidget* Host = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("Panel_Content")));
+	if (!Host) Host = Cast<UScrollBox>(WidgetTree->FindWidget(TEXT("ScrollBox_Details")));
+	if (!Host) return;
+
+	UVerticalBox* Section = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Panel_StaffSection"));
+	Text_StaffSummary = WidgetTree->ConstructWidget<UCommonTextBlock>(UCommonTextBlock::StaticClass(), TEXT("Text_StaffSummary"));
+	Text_StaffSummary->SetFont(Text_Footprint ? Text_Footprint->GetFont() : FFBuildTypography::Make(FFBuildTypography::ERole::Body, 14));
+	if (Text_Footprint) Text_StaffSummary->SetColorAndOpacity(Text_Footprint->GetColorAndOpacity());
+	Text_StaffSummary->SetAutoWrapText(true);
+	Section->AddChildToVerticalBox(Text_StaffSummary)->SetPadding(FMargin(0, 6, 0, 4));
+	UHorizontalBox* Actions = WidgetTree->ConstructWidget<UHorizontalBox>();
+	Section->AddChildToVerticalBox(Actions);
+	auto MakeButton = [this, Actions](const FName Name, const FText& Caption)
+	{
+		UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
+		if (Button_TabOverview) Button->SetStyle(Button_TabOverview->GetStyle());
+		UCommonTextBlock* Label = WidgetTree->ConstructWidget<UCommonTextBlock>();
+		Label->SetText(Caption);
+		Label->SetFont(Text_StaffSummary->GetFont());
+		Label->SetColorAndOpacity(Text_StaffSummary->GetColorAndOpacity());
+		Button->AddChild(Label);
+		Actions->AddChildToHorizontalBox(Button)->SetPadding(FMargin(0, 3, 8, 8));
+		return Button;
+	};
+	Button_AssignStaff = MakeButton(TEXT("Button_AssignStaff"), LOCTEXT("AssignOneStaff", "+ 배정"));
+	Button_UnassignStaff = MakeButton(TEXT("Button_UnassignStaff"), LOCTEXT("UnassignOneStaff", "- 해제"));
+	Host->AddChild(Section);
+	Panel_StaffSection = Section;
+	Panel_StaffSection->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void UFF_FacilityInfoPanel::RefreshStaffControls()
+{
+	if (Panel_StaffSection)
+	{
+		const bool bShow = CurrentViewData.bShowStaffSection &&
+			(ActivePage == EFF_FacilityInfoPage::Overview || ActivePage == EFF_FacilityInfoPage::Operation);
+		Panel_StaffSection->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		Panel_StaffSection->SetToolTipText(CurrentViewData.StaffAssignmentHint);
+	}
+	SetText(Text_StaffSummary, CurrentViewData.StaffSummaryText);
+	if (Button_AssignStaff)
+	{
+		Button_AssignStaff->SetIsEnabled(CurrentViewData.bCanAssignStaff);
+		Button_AssignStaff->SetToolTipText(LOCTEXT("AssignStaffTip", "미배정 대기 스태프 1명을 이 안내 시설에 배정합니다. 빈자리와 보유 스태프가 필요합니다."));
+	}
+	if (Button_UnassignStaff)
+	{
+		Button_UnassignStaff->SetIsEnabled(CurrentViewData.bCanUnassignStaff);
+		Button_UnassignStaff->SetToolTipText(LOCTEXT("UnassignStaffTip", "이 시설의 대기 스태프 1명을 미배정 상태로 돌립니다. 출동 중인 스태프는 복귀 후 해제할 수 있습니다."));
+	}
+}
+
+void UFF_FacilityInfoPanel::HandleAssignStaffClicked()
+{
+	if (CurrentViewData.bCanAssignStaff && CurrentViewData.FacilityInstanceId.IsValid()) OnAssignStaffRequested.Broadcast();
+}
+
+void UFF_FacilityInfoPanel::HandleUnassignStaffClicked()
+{
+	if (CurrentViewData.bCanUnassignStaff && CurrentViewData.FacilityInstanceId.IsValid()) OnUnassignStaffRequested.Broadcast();
+}
+
 void UFF_FacilityInfoPanel::HandleCloseClicked()
 {
 	OnCloseRequested.Broadcast();
@@ -743,23 +870,13 @@ void UFF_FacilityInfoPanel::HandleLightingMinimizeClicked()
 	UCanvasPanelSlot* PanelSlot=Size?Cast<UCanvasPanelSlot>(Size->Slot):nullptr;
 	if(!PanelSlot) return;
 	bLightingMinimized=!bLightingMinimized;
-	if(bLightingMinimized)
+	if(!bLightingMinimized)
 	{
-		ExpandedLightingOffsets=PanelSlot->GetOffsets(); ExpandedLightingAnchors=PanelSlot->GetAnchors();
-		const bool bClarityV2=WidgetTree->FindWidget(TEXT("ClarityV2_Info"))!=nullptr;
-		PanelSlot->SetAnchors(FAnchors(1,0)); PanelSlot->SetOffsets(FMargin(ExpandedLightingOffsets.Left,ExpandedLightingOffsets.Top,bClarityV2?480.f:690.f,bClarityV2?220.f:280.f));
-		Size->SetHeightOverride(bClarityV2?220.f:280.f);
-	}
-	else
-	{
-		PanelSlot->SetAnchors(ExpandedLightingAnchors); PanelSlot->SetOffsets(ExpandedLightingOffsets); Size->ClearHeightOverride();
 		// A compact card can be dragged to the bottom; expanding must keep its footer on screen.
-		const bool bClarityV2=WidgetTree->FindWidget(TEXT("ClarityV2_Info"))!=nullptr;
-		const double MaxTranslation=bClarityV2
-			? GetCachedGeometry().GetLocalSize().Y-ExpandedLightingOffsets.Bottom-ExpandedLightingOffsets.Top-8.0
-			: double(ExpandedLightingOffsets.Bottom)-8.0;
+		const double Top = PanelSlot->GetPosition().Y;
+		const double MaxTranslation = GetCachedGeometry().GetLocalSize().Y - AuthoredPanelSize.Y - Top - 8.0;
 		LightingPanelTranslation.Y=FMath::Clamp(LightingPanelTranslation.Y,
-			8.0-ExpandedLightingOffsets.Top,FMath::Max(8.0-ExpandedLightingOffsets.Top,MaxTranslation));
+			8.0-Top,FMath::Max(8.0-Top,MaxTranslation));
 	}
 	RefreshLightingPanelLayout();
 	if(FSlateApplication::IsInitialized()) FSlateApplication::Get().ClearKeyboardFocus(EFocusCause::Cleared);
@@ -769,22 +886,28 @@ void UFF_FacilityInfoPanel::RefreshLightingPanelLayout()
 {
 	if(!Button_TabLighting || !WidgetTree) return;
 	const bool bLighting=ActivePage==EFF_FacilityInfoPage::Lighting;
-	const bool bCompactInspector=WidgetTree->FindWidget(TEXT("Clarity_InfoV1"))!=nullptr;
 	const bool bClarityV2=WidgetTree->FindWidget(TEXT("ClarityV2_Info"))!=nullptr;
-	const float PanelWidth=bLighting?(bClarityV2?480.f:690.f):(bCompactInspector?456.f:592.f);
+	const FVector2D Viewport = GetCachedGeometry().GetLocalSize();
 	if(USizeBox* Size=Cast<USizeBox>(WidgetTree->FindWidget(TEXT("Panel_Size"))))
 	{
+		if (AuthoredPanelSize.IsNearlyZero())
+		{
+			const auto* AuthoredCanvasSlot = Cast<UCanvasPanelSlot>(Size->Slot);
+			AuthoredPanelSize.X = Size->IsWidthOverride() ? Size->GetWidthOverride() : (AuthoredCanvasSlot ? AuthoredCanvasSlot->GetSize().X : 456.f);
+			AuthoredPanelSize.Y = Size->IsHeightOverride() ? Size->GetHeightOverride() : (AuthoredCanvasSlot ? AuthoredCanvasSlot->GetSize().Y : 620.f);
+		}
+		const float DesiredWidth = bLighting ? LightingPanelWidth : float(AuthoredPanelSize.X);
+		const float DesiredHeight = bLightingMinimized ? LightingCompactHeight : float(AuthoredPanelSize.Y);
+		const float PanelWidth = Viewport.X > 1.f ? FMath::Min(DesiredWidth, FMath::Max(200.f, float(Viewport.X) - 36.f)) : DesiredWidth;
+		const float PanelHeight = Viewport.Y > 1.f ? FMath::Min(DesiredHeight, FMath::Max(100.f, float(Viewport.Y) - 36.f)) : DesiredHeight;
 		Size->SetWidthOverride(PanelWidth);
+		Size->SetHeightOverride(PanelHeight);
 		if(UCanvasPanelSlot* PanelSlot=Cast<UCanvasPanelSlot>(Size->Slot))
 		{
-			if (bCompactInspector && !bLightingMinimized)
-			{
-				const bool bStretchLighting=bLighting&&!bClarityV2;
-				PanelSlot->SetAnchors(bStretchLighting?FAnchors(1,0,1,1):FAnchors(1,0));
-				PanelSlot->SetOffsets(FMargin(-18,18,PanelWidth,bStretchLighting?80.f:620.f));
-				if(bStretchLighting) Size->ClearHeightOverride(); else Size->SetHeightOverride(620);
-			}
-			else { FMargin O=PanelSlot->GetOffsets(); O.Right=PanelWidth; PanelSlot->SetOffsets(O); }
+			// Respect the authored anchor, alignment and position. Only a fixed-size
+			// canvas slot needs its allocated size updated alongside the SizeBox.
+			if (!PanelSlot->GetAnchors().IsStretchedHorizontal() && !PanelSlot->GetAnchors().IsStretchedVertical())
+				PanelSlot->SetSize(FVector2D(PanelWidth, PanelHeight));
 		}
 		Size->SetRenderTranslation(bLighting?LightingPanelTranslation:FVector2D::ZeroVector);
 	}

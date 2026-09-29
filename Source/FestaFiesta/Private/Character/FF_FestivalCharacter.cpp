@@ -15,6 +15,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
+#include "TimerManager.h"
 
 AFF_FestivalCharacter::AFF_FestivalCharacter()
 {
@@ -64,6 +65,98 @@ void AFF_FestivalCharacter::BeginPlay()
 	// 기존 캐릭터 Blueprint에 저장된 응답이 새 채널을 Ignore로 덮어써도 플레이 시 복구한다.
 	GetCapsuleComponent()->SetCollisionResponseToChannel(FFZSCollision::FacilityPlayerObjectChannel, ECR_Block);
 	ApplyMovementSpeed();
+
+	GetWorldTimerManager().SetTimer(
+		SafeSampleTimer, this, &AFF_FestivalCharacter::SampleSafeLocation, SafeSampleIntervalSeconds, true);
+}
+
+void AFF_FestivalCharacter::SampleSafeLocation()
+{
+	// 관찰 시점에서는 캐릭터가 조종되지 않고 서 있다. 그때는 기록할 필요가 없다.
+	if (!GetController())
+	{
+		return;
+	}
+
+	// 공중이나 수영 중의 위치는 기록하지 않는다. 기록은 전부 서 있을 수 있는 땅이어야 한다.
+	const UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (!Movement || !Movement->IsMovingOnGround())
+	{
+		return;
+	}
+
+	const FVector Location = GetActorLocation();
+	if (!SafeLocations.IsEmpty()
+		&& FVector::DistSquared(SafeLocations.Last(), Location) < FMath::Square(SafeSampleSpacingCm))
+	{
+		return;
+	}
+
+	SafeLocations.Add(Location);
+	if (SafeLocations.Num() > MaxSafeSamples)
+	{
+		SafeLocations.RemoveAt(0);
+	}
+}
+
+bool AFF_FestivalCharacter::RestoreToLastSafeLocation()
+{
+	if (SafeLocations.IsEmpty())
+	{
+		// 위험 지형에서 시작했거나 기록 없이 곧장 떨어진 경우다. 옮길 곳을 알 수 없다.
+		if (!bWarnedNoSafeLocation)
+		{
+			bWarnedNoSafeLocation = true;
+			UE_LOG(LogFestaFiestaCamera, Warning,
+				TEXT("[캐릭터] 되돌아갈 땅 기록이 없다. 시작 위치가 위험 지형 안이 아닌지 확인할 것."));
+		}
+		return false;
+	}
+
+	// 가장 최근 기록은 낭떠러지 끝이다. 걸어온 길을 따라 RestoreBackoffCm 만큼 거슬러 올라간다.
+	int32 Index = SafeLocations.Num() - 1;
+	float Travelled = 0.f;
+	while (Index > 0 && Travelled < RestoreBackoffCm)
+	{
+		Travelled += FVector::Dist2D(SafeLocations[Index], SafeLocations[Index - 1]);
+		--Index;
+	}
+
+	const FVector Destination = SafeLocations[Index] + FVector(0.f, 0.f, RestoreLiftCm);
+	if (!TeleportTo(Destination, GetActorRotation()))
+	{
+		UE_LOG(LogFestaFiestaCamera, Warning,
+			TEXT("[캐릭터] 안전한 땅 (%s) 으로 옮기지 못했다. 그 자리가 다른 물체와 겹쳐 있을 수 있다."),
+			*Destination.ToCompactString());
+		return false;
+	}
+
+	// 도착한 지점보다 뒤의 기록은 버린다. 안 그러면 다음에 떨어질 때 이미 지나온 끝 쪽이 또 뽑힌다.
+	SafeLocations.SetNum(Index + 1);
+	bWarnedNoSafeLocation = false;
+
+	// 낙하 속도가 남으면 도착하자마자 튕기거나 바닥을 뚫는다.
+	// 수영 상태로 남지 않도록 이동 모드도 걷기로 되돌린다.
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->SetMovementMode(MOVE_Walking);
+	}
+
+	UE_LOG(LogFestaFiestaCamera, Log,
+		TEXT("[캐릭터] 안전한 땅 (%s) 으로 되돌렸다."), *Destination.ToCompactString());
+	return true;
+}
+
+void AFF_FestivalCharacter::FellOutOfWorld(const UDamageType& DamageType)
+{
+	// 파괴하면 플레이어가 조종할 몸이 사라진다. 돌아갈 땅이 있으면 살려 둔다.
+	if (RestoreToLastSafeLocation())
+	{
+		return;
+	}
+
+	Super::FellOutOfWorld(DamageType);
 }
 
 void AFF_FestivalCharacter::ApplyMovementSpeed()
