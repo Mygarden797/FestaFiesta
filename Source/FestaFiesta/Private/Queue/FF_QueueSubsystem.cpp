@@ -3,6 +3,7 @@
 #include "Queue/FF_QueueSubsystem.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Misc/FileHelper.h"
@@ -216,7 +217,27 @@ void UFF_QueueSubsystem::ReopenFacility(int32 FacilityId)
 	}
 }
 
+void UFF_QueueSubsystem::SetPerformanceBreak(int32 FacilityId, bool bInPerformanceBreak)
+{
+	if (FFF_FacilityQueue* Queue = FindQueue(FacilityId))
+	{
+		Queue->SetPerformanceBreak(bInPerformanceBreak, SimTimeSeconds);
+		Queue->ConsumePendingEvents(PendingEvents);
+		Queue->ConsumePendingLogs(QueueLogs);
+		if (Queue->ConsumeSlotTargetsDirty())
+		{
+			DirtySlotFacilities.AddUnique(FacilityId);
+		}
+	}
+}
+
 // ── 조회 ────────────────────────────────────────────────────────────────────
+
+bool UFF_QueueSubsystem::HasPartyStartedService(int32 FacilityId, int32 PartyId) const
+{
+	const FFF_FacilityQueue* Queue = FindQueue(FacilityId);
+	return Queue && Queue->HasPartyStartedService(PartyId);
+}
 
 FFF_QueueState UFF_QueueSubsystem::GetQueueState(int32 FacilityId) const
 {
@@ -315,7 +336,15 @@ void UFF_QueueSubsystem::AdvanceFixedSteps(int32 NumSteps)
 
 void UFF_QueueSubsystem::Tick(float DeltaTime)
 {
-	// 일시정지는 전부 멈춘다. 알림도 풀릴 때 한꺼번에 나간다.
+	// Subsystem Tick 순서와 관계없이 경계에서 새 서비스를 시작하기 전에 완료·중지를 반영한다.
+	if (UWorld* World = GetWorld())
+	{
+		if (UFF_ZoneSystemQueueBridgeSubsystem* Bridge = World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>())
+		{
+			Bridge->SynchronizeMainProgramQueueBreak();
+		}
+	}
+	// 공연 경계 동기화 이후 일반 서비스 진행과 대기 중인 알림은 일시정지 동안 멈춘다.
 	if (bPaused)
 	{
 		return;

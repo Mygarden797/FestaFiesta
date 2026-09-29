@@ -17,7 +17,7 @@ inline const TCHAR* Path(ERole Role)
 {
     switch (Role)
     {
-    case ERole::Heading: return TEXT("/Game/Asset/Font/NEXON_Kart_Gothic_Kor_OTF_Bold_Font.NEXON_Kart_Gothic_Kor_OTF_Bold_Font");
+    case ERole::Heading: return TEXT("/Game/Asset/Font/NEXON_Lv2_Gothic_OTF_Bold_Font.NEXON_Lv2_Gothic_OTF_Bold_Font");
     case ERole::Label: return TEXT("/Game/Asset/Font/NEXON_Lv2_Gothic_OTF_Medium_Font.NEXON_Lv2_Gothic_OTF_Medium_Font");
     case ERole::Number: return TEXT("/Game/Asset/Font/NEXON_Lv2_Gothic_OTF_Bold_Font.NEXON_Lv2_Gothic_OTF_Bold_Font");
     default: return TEXT("/Game/Asset/Font/NEXON_Lv2_Gothic_OTF_Font.NEXON_Lv2_Gothic_OTF_Font");

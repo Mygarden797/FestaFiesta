@@ -279,10 +279,10 @@ public:
 
 	// 지금 메인 무대가 후보로 열려 있는가. BuildCandidates 에 그대로 넘어가는 값이다.
 	UFUNCTION(BlueprintPure, Category = "Decision|Stage")
-	bool IsMainStageOpen() const { return !bMainStageGatingActive || bMainStageOpen; }
+	bool IsMainStageOpen() const;
 
 	// Stage 없는 월드의 상시 개방과 실제 메인 공연 중 전역 안내를 구분한다.
-	bool IsGlobalMainStageDiscoveryActive() const { return bMainStageGatingActive && bMainProgramActive; }
+	bool IsGlobalMainStageDiscoveryActive() const;
 
 	/**
 	 * 무대가 열리는 순간 재결정을 밀어 넣을 파티 수 상한. 0 이하면 상한 없음.

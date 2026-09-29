@@ -110,6 +110,7 @@ void UFF_ZoneSystemQueueBridgeSubsystem::Deinitialize()
 	LastObservedWorldRevision = INDEX_NONE;
 	bActorGenerationCheckPending = false;
 	bQueueEventsNeedFlush = false;
+	bMainProgramQueueBreak = false;
 	QueueSystem = nullptr;
 	ZoneSystem = nullptr;
 	Super::Deinitialize();
@@ -123,6 +124,7 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::DoesSupportWorldType(const EWorldType::
 
 void UFF_ZoneSystemQueueBridgeSubsystem::Tick(const float DeltaTime)
 {
+	SynchronizeMainProgramQueueBreak();
 	if (bActorGenerationCheckPending)
 	{
 		bActorGenerationCheckPending = false;
@@ -219,6 +221,53 @@ int32 UFF_ZoneSystemQueueBridgeSubsystem::FindOrAllocateQueueFacilityId(const FG
 	return INDEX_NONE;
 }
 
+TArray<FFF_QueuePlacementObstacle> UFF_ZoneSystemQueueBridgeSubsystem::BuildPlacementObstacles(
+	const FFFZSPolicyContext* ProposedChange) const
+{
+	TArray<FFF_QueuePlacementObstacle> Obstacles;
+	if (ZoneSystem)
+	{
+		for (const FFFZSFacilityReadModel& Model : ZoneSystem->BuildReadModel().Facilities)
+		{
+			if (ProposedChange && Model.FacilityInstanceId == ProposedChange->Command.FacilityInstanceId) continue;
+			const AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(Model.FacilityInstanceId);
+			if (!Facility || Facility->GetFacilityState() == EFFZSFacilityState::Removed) continue;
+			FFF_QueuePlacementObstacle Obstacle;
+			if (TryBuildPlacementObstacle(Facility->GetFacilitySpec(), Facility->GetActorTransform(), Obstacle))
+			{
+				Obstacles.Add(Obstacle);
+			}
+		}
+	}
+	if (ProposedChange && ProposedChange->Command.Type != EFFZSCommandType::Remove)
+	{
+		FFF_QueuePlacementObstacle Obstacle;
+		if (TryBuildPlacementObstacle(ProposedChange->Command.FacilitySpec,
+			ProposedChange->Validation.PlacementTransform, Obstacle))
+		{
+			Obstacles.Add(Obstacle);
+		}
+	}
+	return Obstacles;
+}
+
+void UFF_ZoneSystemQueueBridgeSubsystem::RefreshAllPlacementObstacles()
+{
+	if (!QueueSystem) return;
+	const TArray<FFF_QueuePlacementObstacle> Obstacles = BuildPlacementObstacles();
+	for (const int32 QueueId : ActiveBridgeQueueFacilityIds)
+	{
+		if (FFF_FacilityQueue* Queue = QueueSystem->FindQueue(QueueId))
+		{
+			if (!Queue->RefreshPlacementObstacles(Obstacles))
+			{
+				UE_LOG(LogFFZoneQueueBridge, Warning,
+					TEXT("Facility %d의 점유 대기열과 새 시설 경계가 충돌해 기존 자리 배정을 유지합니다."), QueueId);
+			}
+		}
+	}
+}
+
 bool UFF_ZoneSystemQueueBridgeSubsystem::RegisterOrRefreshFacility(AFFZSFacilityActor& Facility)
 {
 	// 조명·길·타일은 Party 서비스 시설이 아니므로 Queue ID나 이동 슬롯을 만들지 않는다.
@@ -260,12 +309,17 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::RegisterOrRefreshFacility(AFFZSFacility
 		return false;
 	}
 
+	Lane.PlacementObstacles = BuildPlacementObstacles();
 	if (!QueueSystem->RegisterFacility(QueueFacilityId, Config, Lane) ||
 		!QueueSystem->IsFacilityRegistered(QueueFacilityId))
 	{
 		return false;
 	}
 	ActiveBridgeQueueFacilityIds.Add(QueueFacilityId);
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	QueueSystem->SetPerformanceBreak(QueueFacilityId, Stage && Stage->IsMainProgramQueueBreakActive());
 
 	if (Facility.GetFacilityState() == EFFZSFacilityState::Active)
 	{
@@ -349,6 +403,7 @@ int32 UFF_ZoneSystemQueueBridgeSubsystem::RefreshQueueRegistrations()
 			RegisteredCount += RegisterOrRefreshFacility(*Facility) ? 1 : 0;
 		}
 	}
+	RefreshAllPlacementObstacles();
 	CacheObservedWorld();
 	return RegisteredCount;
 }
@@ -537,8 +592,33 @@ void UFF_ZoneSystemQueueBridgeSubsystem::HandleZoneWorldChanged(const FFFZSWorld
 		break;
 	}
 
+	if (Event.Type == EFFZSCommandType::Install || Event.Type == EFFZSCommandType::Move
+		|| Event.Type == EFFZSCommandType::Remove || Event.Type == EFFZSCommandType::Upgrade)
+	{
+		RefreshAllPlacementObstacles();
+	}
 	CacheObservedWorld();
 	bActorGenerationCheckPending = false;
+}
+
+void UFF_ZoneSystemQueueBridgeSubsystem::SynchronizeMainProgramQueueBreak()
+{
+	if (!QueueSystem) return;
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	const bool bShouldBreak = Stage && Stage->IsMainProgramQueueBreakActive();
+	if (bMainProgramQueueBreak == bShouldBreak) return;
+
+	// 모든 큐를 먼저 막은 뒤 이벤트를 보낸다. 퇴장 핸들러의 재선택이 다른 큐로 새지 않는다.
+	bMainProgramQueueBreak = bShouldBreak;
+	TArray<int32> FacilityIds = ActiveBridgeQueueFacilityIds.Array();
+	FacilityIds.Sort();
+	for (const int32 FacilityId : FacilityIds)
+	{
+		QueueSystem->SetPerformanceBreak(FacilityId, bShouldBreak);
+	}
+	QueueSystem->FlushPendingEvents();
 }
 
 FFF_QueueJoinResponse UFF_ZoneSystemQueueBridgeSubsystem::TryJoinZoneFacility(
@@ -548,6 +628,12 @@ FFF_QueueJoinResponse UFF_ZoneSystemQueueBridgeSubsystem::TryJoinZoneFacility(
 	FFF_QueueJoinResponse Response;
 	if (!ZoneSystem || !QueueSystem || !ZoneFacilityId.IsValid())
 	{
+		return Response;
+	}
+	SynchronizeMainProgramQueueBreak();
+	if (bMainProgramQueueBreak)
+	{
+		Response.Result = EFF_QueueJoinResult::RejectedClosed;
 		return Response;
 	}
 
@@ -684,6 +770,10 @@ FFF_QueueState UFF_ZoneSystemQueueBridgeSubsystem::GetZoneFacilityQueueState(
 		State.bAcceptingNew = false;
 		State.bIsOpen = false;
 	}
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	if (Stage && Stage->IsMainProgramQueueBreakActive()) State.bAcceptingNew = false;
 	return State;
 }
 

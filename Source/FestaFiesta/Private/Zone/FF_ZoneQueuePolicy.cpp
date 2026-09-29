@@ -26,6 +26,26 @@ FFFZSPolicyDecision UFF_ZoneSystemQueueBridgeSubsystem::PreValidateFFZoneSystemC
 	const FFFZSPolicyContext& Context) const
 {
 	FFFZSPolicyDecision Decision;
+	// A neighboring placement may cover a party member even when the owning
+	// facility's authored queue spline remains clear. Preserve every future slot
+	// of currently queued teams before committing any footprint change.
+	if (QueueSystem && (Context.Command.Type == EFFZSCommandType::Install
+		|| Context.Command.Type == EFFZSCommandType::Move || Context.Command.Type == EFFZSCommandType::Upgrade))
+	{
+		const TArray<FFF_QueuePlacementObstacle> Obstacles = BuildPlacementObstacles(&Context);
+		for (const int32 QueueId : ActiveBridgeQueueFacilityIds)
+		{
+			const FFF_FacilityQueue* Queue = QueueSystem->FindQueue(QueueId);
+			if (Queue && !Queue->CanUsePlacementObstacles(Obstacles))
+			{
+				Decision.bAllowed = false;
+				Decision.FailureReason = EFFZSPlacementFailure::FacilityOccupied;
+				Decision.Message = LOCTEXT("PlacementOverlapsQueuedParty",
+					"대기 중인 일행의 현재 자리나 앞으로 이동할 자리를 비운 뒤 시설을 배치할 수 있습니다.");
+				return Decision;
+			}
+		}
+	}
 	// 동선 변경과 강화 재구성은 두 Queue 모두 완전히 비어 있어야 한다.
 	const bool bNeedsEmptyQueue = Context.Command.Type == EFFZSCommandType::Move
 		|| Context.Command.Type == EFFZSCommandType::Remove
@@ -108,6 +128,7 @@ FFFZSPolicyDecision UFF_ZoneSystemQueueBridgeSubsystem::ApplyTentativeFFZoneSyst
 		return Decision;
 	}
 
+	Lane.PlacementObstacles = BuildPlacementObstacles(&Context);
 	FPendingUpgradeQueue& Pending = PendingUpgradeQueues.Add(Context.Command.CommandId);
 	Pending.QueueFacilityId = QueueFacilityId;
 	Pending.PreviousQueue = *Existing;
@@ -122,6 +143,7 @@ FFFZSPolicyDecision UFF_ZoneSystemQueueBridgeSubsystem::ApplyTentativeFFZoneSyst
 		return Decision;
 	}
 	// 공개 Queue 이벤트는 아직 내보내지 않는다. 기존 큐는 비어 있으므로 취소도 발생하지 않는다.
+	QueueSystem->SetPerformanceBreak(QueueFacilityId, bMainProgramQueueBreak);
 	QueueSystem->FindQueue(QueueFacilityId)->CloseFacility(
 		EFF_QueueCloseReason::Reconfigure, QueueSystem->GetSimTimeSeconds());
 	return Decision;

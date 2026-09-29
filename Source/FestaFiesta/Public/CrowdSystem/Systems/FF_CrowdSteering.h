@@ -18,6 +18,10 @@ struct FUnitData;
  */
 namespace CrowdSteering
 {
+	// 지정 자리의 마지막 2m에서는 일반 보행의 개인 공간보다 배정 좌표를 우선한다.
+	inline constexpr float AssignedSlotApproachDistanceUU = 200.f;
+	FESTAFIESTA_API bool IsApproachingAssignedSlot(const FUnitData& Unit);
+
 	/** 한 스텝 이동에 필요한 설정값. Agent마다 달라지지 않는 값들만 모았다. */
 	struct FStepParams
 	{

@@ -96,35 +96,39 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 		EAutomationExpectedMessageFlags::Contains, 1, false);
 	Panel->HandlePanelOpened();
 	Panel->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	for (const FName Name : { TEXT("Panel_Catalog"), TEXT("Box_Header") })
+	for (const FName Name : { TEXT("Panel_Catalog") })
 	{
 		if (UWidget* Widget = Panel->GetWidgetFromName(Name)) Widget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	}
 	if (UWidget* Compact = Panel->GetWidgetFromName(TEXT("Panel_PlacementCompact"))) Compact->SetVisibility(ESlateVisibility::Collapsed);
 
-	auto* Header = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_CatalogHeader")));
 	auto* CodexRow = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("Row_BuildCodexCategory")));
 	auto* CategoryScroll = Cast<UScrollBox>(Panel->GetWidgetFromName(TEXT("ScrollBox_Categories")));
 	auto* CategorySize = Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_CategoryRow")));
 	auto* Search = Cast<UEditableTextBox>(Panel->GetWidgetFromName(TEXT("Search_Facilities")));
-	auto* Gold = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_Gold")));
 	auto* Launcher = Cast<UFF_FacilityCodexLauncher>(Panel->GetWidgetFromName(TEXT("Widget_FacilityCodexCatalogLauncher")));
 	auto* Ranking = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_RevenueRanking")));
 	auto* SubcategoryHeader = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_SubcategoryHeader")));
 	auto* SearchBounds = Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_PearlSearch")));
 	auto* RankingBounds = Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_PearlRevenueRanking")));
 	auto* Tiles = Cast<UFF_PrepBuildTileView>(Panel->GetWidgetFromName(TEXT("TileView_Facilities")));
-	if (!TestNotNull(TEXT("Authored catalog header"), Header) ||
-		!TestNotNull(TEXT("Pinned bottom codex tab row"), CodexRow) ||
+	if (!TestNotNull(TEXT("Pinned bottom codex tab row"), CodexRow) ||
 		!TestNotNull(TEXT("Category filters retain their scrollbox"), CategoryScroll) ||
 		!TestNotNull(TEXT("Category row retains its designer sizebox"), CategorySize) ||
 		!TestNotNull(TEXT("Existing search field"), Search) ||
-		!TestNotNull(TEXT("Existing gold balance"), Gold) || !TestNotNull(TEXT("Added catalog codex launcher"), Launcher) ||
+		!TestNotNull(TEXT("Added catalog codex launcher"), Launcher) ||
 		!TestNotNull(TEXT("Added revenue ranking action"), Ranking) ||
 		!TestNotNull(TEXT("Pearl search and ranking row"), SubcategoryHeader) ||
 		!TestNotNull(TEXT("Search bounds"), SearchBounds) ||
 		!TestNotNull(TEXT("Ranking bounds"), RankingBounds) ||
 		!TestNotNull(TEXT("Actual facility tile view"), Tiles)) return false;
+	const auto* DesignerLayout = FindFProperty<FBoolProperty>(PanelClass, TEXT("bUseDesignerCatalogLayout"));
+	TestTrue(TEXT("Catalog geometry and action styling use the saved Designer layout"),
+		DesignerLayout && DesignerLayout->GetPropertyValue_InContainer(Panel.Get()));
+	for (const TCHAR* Retired : {TEXT("Box_Header"), TEXT("HorizontalBox_CatalogHeader"), TEXT("Text_Gold"),
+		TEXT("Border_AuroraSelection"), TEXT("Border_CatalogFooter"), TEXT("HorizontalBox_Tools"),
+		TEXT("Size_CategoryDivider"), TEXT("Panel_PlacementCompact"), TEXT("Text_CategoryBreadcrumb")})
+		TestNull(*FString::Printf(TEXT("Retired catalog presentation is removed: %s"), Retired), Panel->GetWidgetFromName(Retired));
 	TestTrue(TEXT("Additive entry is the saved compact launcher class"), Launcher->GetClass() == LauncherClass);
 	TestTrue(TEXT("Search and ranking share the subcategory row; codex stays beside category filters"),
 		Search->GetParent() == SearchBounds && SearchBounds->GetParent() == SubcategoryHeader &&

@@ -164,6 +164,7 @@ void UFF_PrepPanelStaff::BindViewModel()
 	// 둘 다 구독하지 않으면 다른 패널에서 돈을 쓴 뒤 이 화면이 거짓 견적을 띄운다.
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleGoldChanged);
 	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleStaffCountChanged);
+	CachedViewModel->OnStaffCapacityChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleStaffCountChanged);
 
 }
 
@@ -174,6 +175,7 @@ void UFF_PrepPanelStaff::UnbindViewModel()
 	{
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleGoldChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleStaffCountChanged);
+		CachedViewModel->OnStaffCapacityChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleStaffCountChanged);
 	}
 	CachedViewModel = nullptr;
 }
@@ -190,6 +192,7 @@ void UFF_PrepPanelStaff::RefreshAll()
 	const int32 Hired = ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE;
 	const int32 Total = ViewModel ? ViewModel->GetTotalStaffCount() : INDEX_NONE;
 	const int32 MaxHired = ViewModel ? ViewModel->GetMaxHiredStaffCount() : INDEX_NONE;
+	const int32 MaxTotal = ViewModel ? ViewModel->GetMaxTotalStaffCount() : INDEX_NONE;
 	const int32 HireCost = ViewModel ? ViewModel->GetStaffHireCostGold() : INDEX_NONE;
 	const int32 Gold = ViewModel ? ViewModel->GetGold() : INDEX_NONE;
 
@@ -203,18 +206,17 @@ void UFF_PrepPanelStaff::RefreshAll()
 	// --- 현재 인원 ---
 	//
 	// 내역(기본 · 고용)은 이 화면에서 플레이어가 직접 바꾸는 숫자라 지우지 않고 뒤에 덧붙인다.
-	// 프로그램은 인원을 묶지 않으므로 전체가 곧 사건에 쓸 수 있는 인원이다.
+	// 보유 인원과 시설 정원을 구분한다. 출동하려면 안내 시설에 별도 배정해야 한다.
 	SetTextOrHide(Text_CurrentStaff, (Total >= 0 && Base >= 0 && Hired >= 0)
 		? FText::Format(
 			LOCTEXT("PrepStaff_Current", "{0}명 (기본 {1} · 고용 {2})"),
 			FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Hired))
 		: FText::GetEmpty());
 
-	// 최대는 기본 팀 + 총원 상한이다. 상한만 쓰면 "최대 6명"으로 읽혀 절반이 사라진다.
-	SetTextOrHide(Text_MaxStaff, (Base >= 0 && MaxHired >= 0)
+	SetTextOrHide(Text_MaxStaff, MaxTotal >= 0
 		? FText::Format(
-			LOCTEXT("PrepStaff_Max", "최대 {0}명 (기본 {1} + 고용 {2})"),
-			FText::AsNumber(Base + MaxHired), FText::AsNumber(Base), FText::AsNumber(MaxHired))
+			LOCTEXT("PrepStaff_FacilityMax", "보유 가능 최대 {0}명 · 안내 시설을 설치하면 증가"),
+			FText::AsNumber(MaxTotal))
 		: FText::GetEmpty());
 
 	// --- 스텝퍼 ---
@@ -256,9 +258,9 @@ void UFF_PrepPanelStaff::RefreshAll()
 	case EFF_PrepHireBlockReason::CapReached:
 		BlockReason = (MaxHired >= 0)
 			? FText::Format(
-				LOCTEXT("PrepStaff_CapReached", "고용 상한 {0}명을 다 썼습니다. 더 뽑을 수 없습니다."),
+				LOCTEXT("PrepStaff_FacilityCapReached", "현재 고용 상한 {0}명에 도달했습니다. 안내 시설을 설치해 정원을 늘리세요."),
 				FText::AsNumber(MaxHired))
-			: LOCTEXT("PrepStaff_CapReachedNoMax", "고용 상한을 다 썼습니다. 더 뽑을 수 없습니다.");
+			: LOCTEXT("PrepStaff_FacilityCapReachedNoMax", "안내 시설을 설치해 스태프 정원을 늘리세요.");
 		break;
 
 	case EFF_PrepHireBlockReason::NotEnoughGold:

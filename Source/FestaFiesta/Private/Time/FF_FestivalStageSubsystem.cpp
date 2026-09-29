@@ -227,6 +227,44 @@ bool UFF_FestivalStageSubsystem::IsMainProgramLocked()
 }
 
 
+bool UFF_FestivalStageSubsystem::TryGetMainProgramQueueBreakWindow(
+	float& OutStartSeconds, float& OutEndSeconds) const
+{
+	if (CurrentStage != EFF_FestivalStage::Live || !ProgramScheduleTable)
+	{
+		return false;
+	}
+	TArray<FFF_LiveTriggerEvent*> Rows;
+	ProgramScheduleTable->GetAllRows<FFF_LiveTriggerEvent>(TEXT("MainProgramQueueBreak"), Rows);
+	Rows.RemoveAll([this](const FFF_LiveTriggerEvent* Row) { return !Row || Row->Day != CurrentDay; });
+	Rows.Sort([](const FFF_LiveTriggerEvent& A, const FFF_LiveTriggerEvent& B)
+	{
+		return A.TriggerSeconds < B.TriggerSeconds;
+	});
+	for (int32 Index = 0; Index + 1 < Rows.Num(); ++Index)
+	{
+		if (!Rows[Index]->bIsMainProgramLockStart) continue;
+		const float StartSeconds = Rows[Index]->TriggerSeconds;
+		const float EndSeconds = Rows[Index + 1]->TriggerSeconds;
+		const float MinutesUntilStart = StageSecondsToFestivalMinutes(StartSeconds - ElapsedLiveSeconds);
+		if (EndSeconds > StartSeconds && MinutesUntilStart <= MainProgramQueueBreakLeadMinutes
+			&& ElapsedLiveSeconds < EndSeconds)
+		{
+			OutStartSeconds = StartSeconds;
+			OutEndSeconds = EndSeconds;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool UFF_FestivalStageSubsystem::IsMainProgramQueueBreakActive() const
+{
+	float StartSeconds = 0.f;
+	float EndSeconds = 0.f;
+	return TryGetMainProgramQueueBreakWindow(StartSeconds, EndSeconds);
+}
+
 bool UFF_FestivalStageSubsystem::TryGetNextMainProgramEndSeconds(float& OutSeconds)
 {
 	const TArray<FFF_LiveTriggerEvent>& Events = GetEventsForCurrentDay();
