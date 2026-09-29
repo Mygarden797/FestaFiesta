@@ -392,6 +392,25 @@ UFF_ActivatableScreenBase* UFF_UIRootLayout::PushScreen(TSubclassOf<UFF_Activata
 	return PushToStack(ScreenStack, ScreenClass, TEXT("ScreenStack"));
 }
 
+UFF_ActivatableScreenBase* UFF_UIRootLayout::PushScreenWithoutTransition(TSubclassOf<UFF_ActivatableScreenBase> ScreenClass)
+{
+	/* 암전 전환의 교체 단계와 같은 방식이다. 스위처는 밀어 넣는 순간의 전환 시간으로
+	   애니메이션 여부를 정하므로, 0 으로 두고 넣은 뒤 원래 값을 바로 돌려놓아도 된다.
+	*/
+	UCommonActivatableWidgetStack* Stack = ScreenStack;
+	const float PreviousDuration = Stack ? Stack->GetTransitionDuration() : 0.f;
+	if (Stack)
+	{
+		Stack->SetTransitionDuration(0.f);
+	}
+	UFF_ActivatableScreenBase* Pushed = PushScreen(ScreenClass);
+	if (Stack)
+	{
+		Stack->SetTransitionDuration(PreviousDuration);
+	}
+	return Pushed;
+}
+
 UFF_ActivatableScreenBase* UFF_UIRootLayout::PushPanel(TSubclassOf<UFF_ActivatableScreenBase> PanelClass)
 {
 	return PushToStack(PanelStack, PanelClass, TEXT("PanelStack"));

@@ -110,20 +110,18 @@ namespace FFF_DialogueTable
 			Line.Kind = EFF_DialogueLineKind::Choice;
 		}
 
-		/* 조작을 기다리지 않는 줄의 강조는 떼어낸다.
+		/* 조작을 기다리지 않는 줄의 강조는 테두리만 그린다.
 
 		   강조는 화면을 어둡게 덮는다. 플레이어가 무언가 해야 하는 순간에는
 		   시선을 모아주지만, 그냥 읽고 넘기는 대사에서는 시야만 가린다.
 
-		   안내하는 줄과 기다리는 줄 양쪽에 같은 대상을 적기 쉬운데, 그러면
-		   안내를 읽는 내내 화면이 어둡다.
+		   예전에는 이런 줄의 강조를 아예 뗐다. 그런데 "올해 배정된 예산이에요" 처럼
+		   가리키면서 설명해야 하는 줄이 생겼다(피드백: 골드 쪽에 네모). 떼지 않고
+		   덮개만 빼면 두 문제를 같이 푼다.
 		*/
 		if (!Line.HighlightAnchor.IsNone() && !Line.RequiresPlayerAction())
 		{
-			UE_LOG(LogFestaFiestaTutorial, Verbose,
-				TEXT("[대사] %s 행은 조작을 기다리지 않으므로 강조 '%s' 를 쓰지 않는다."),
-				*RowName.ToString(), *Line.HighlightAnchor.ToString());
-			Line.HighlightAnchor = NAME_None;
+			Line.bHighlightOutlineOnly = true;
 		}
 
 		// 반대로 조건 없는 조작 대기 줄은 영영 멈춘다. 대사로 낮춰서 진행을 막지 않는다.

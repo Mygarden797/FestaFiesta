@@ -57,6 +57,12 @@ void UFF_TutorialSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
 	AutoStartCountdown = Settings ? FMath::Max(0.f, Settings->StartDelaySeconds) : 0.f;
 
+	// 이어하기 지정은 레벨을 열기 전에 걸리고 레벨이 뜬 뒤 소비된다. 지금이 확실히 읽히는 때다.
+	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		bWorldStartedFromContinue = Save->HasPendingContinue();
+	}
+
 	BindGameSignals();
 }
 
@@ -683,8 +689,13 @@ void UFF_TutorialSubsystem::TryAutoStart()
 	   두 가지를 따로 묻는다. 안내를 껐는지는 전역이고, 튜토리얼을 봤는지는
 	   축제별이다. 하나로 합쳐 두면 첫 축제를 끝낸 사람이 다음 축제의 안내를
 	   영영 못 보는데, 그게 고치려는 문제 자체다.
+
+	   튜토리얼 레벨만은 예외다. 지도에서 직접 골라 들어왔으면 봤든 건너뛰었든 다시 튼다.
+	   그 레벨은 연습장이라, 고른 것 자체가 "다시 해보겠다" 는 뜻이다. 예전에는 봤으면
+	   레벨 선택으로 돌려보냈는데, 그러면 연습을 다시 할 방법이 없었다(피드백).
 	*/
 	const FName FestivalId = ResolveCurrentFestivalId();
+	const bool bReplayTutorialLevel = IsTutorialFestival(FestivalId) && !bWorldStartedFromContinue;
 
 	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
 	{
@@ -700,23 +711,28 @@ void UFF_TutorialSubsystem::TryAutoStart()
 			return;
 		}
 
-		if (Save->IsTutorialOptedOut())
+		/* 봤거나 꺼뒀으면 틀지 않는다. 레벨에서 내보내지도 않는다.
+
+		   여기까지 오는 튜토리얼 레벨은 이어하기로 들어온 경우뿐이다. 하던 판을 계속하려고
+		   고른 것이라 대사 없이 그대로 두고, 레벨 선택으로 돌려보내지 않는다.
+		   돌려보내면 튜토리얼 레벨의 저장은 이어할 수 없는 기록이 된다.
+		*/
+		if (bReplayTutorialLevel)
+		{
+			UE_LOG(LogFestaFiestaTutorial, Log,
+				TEXT("[튜토리얼] 튜토리얼 레벨에 새로 들어왔다. 기록과 상관없이 처음부터 튼다."));
+		}
+		else if (Save->IsTutorialOptedOut())
 		{
 			UE_LOG(LogFestaFiestaTutorial, Log,
 				TEXT("[튜토리얼] 안내를 꺼둔 상태라 시작하지 않는다."));
-
-			// 튜토리얼 레벨이면 레벨도 볼 이유가 없다. 레벨 선택으로 돌려보낸다.
-			LeaveIfTutorialLevel(FestivalId);
 			return;
 		}
-
-		if (Save->WasFestivalTutorialSeen(FestivalId))
+		else if (Save->WasFestivalTutorialSeen(FestivalId))
 		{
 			UE_LOG(LogFestaFiestaTutorial, Log,
 				TEXT("[튜토리얼] %s 튜토리얼은 이미 봤으므로 시작하지 않는다."),
 				*FestivalId.ToString());
-
-			LeaveIfTutorialLevel(FestivalId);
 			return;
 		}
 	}
@@ -876,6 +892,9 @@ void UFF_TutorialSubsystem::GoToLine(const int32 LineIndex)
 	   ActiveLines 가 비거나 새로 채워져서, 참조로 들고 있던 줄이 사라진 메모리를 가리킨다.
 	*/
 	const FFF_DialogueLine Line = ActiveLines[CurrentLineIndex];
+
+	// 강조 방식을 먼저 정한다. 같은 대상을 이어서 가리켜도 줄마다 덮개 여부가 다를 수 있다.
+	bHighlightOutlineOnly = Line.bHighlightOutlineOnly;
 	ApplyHighlight(Line.HighlightAnchor);
 
 	const bool bWaitsForTab = Line.RequiresPlayerAction()
@@ -1189,6 +1208,12 @@ void UFF_TutorialSubsystem::SkipTutorial()
 	LeaveIfTutorialLevel(ResolveCurrentFestivalId());
 }
 
+bool UFF_TutorialSubsystem::IsTutorialFestival(const FName FestivalId)
+{
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	return Settings && !Settings->TutorialFestivalId.IsNone() && FestivalId == Settings->TutorialFestivalId;
+}
+
 bool UFF_TutorialSubsystem::LeaveIfTutorialLevel(const FName FestivalId)
 {
 	/* 튜토리얼 레벨이면 레벨을 끝내고 레벨 선택으로 돌아간다.
@@ -1199,8 +1224,7 @@ bool UFF_TutorialSubsystem::LeaveIfTutorialLevel(const FName FestivalId)
 	   흐름을 타고 들어온 경우(UIFlow 가 축제 중)에만 돌려보낸다. 에디터에서 레벨을
 	   직접 열어 테스트할 때 쫓겨나면 튜토리얼 레벨을 고칠 수가 없다.
 	*/
-	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
-	if (!Settings || Settings->TutorialFestivalId.IsNone() || FestivalId != Settings->TutorialFestivalId)
+	if (!IsTutorialFestival(FestivalId))
 	{
 		return false;
 	}
