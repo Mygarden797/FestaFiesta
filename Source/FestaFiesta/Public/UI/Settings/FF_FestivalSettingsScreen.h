@@ -142,6 +142,8 @@ protected:
 	UFUNCTION() void HandleSaveClicked();
 	UFUNCTION() void HandleVSyncToggled(bool bEnabled);
 	UFUNCTION() void HandleMasterVolumeChanged(float Value);
+	UFUNCTION() void HandleMusicVolumeChanged(float Value);
+	UFUNCTION() void HandleEffectsVolumeChanged(float Value);
 	UFUNCTION() void HandleSelectionChanged(FName SettingId, int32 SelectedIndex);
 	UFUNCTION() void HandleZoomToCursorToggled(bool bEnabled);
 	UFUNCTION() void HandleEdgeScrollToggled(bool bEnabled);
@@ -254,6 +256,8 @@ private:
 		int32 GraphicsPreset = 3;
 		bool bVSync = true;
 		float MasterVolume = 0.8f;
+		float MusicVolume = 1.f;
+		float EffectsVolume = 1.f;
 		bool bZoomToCursor = true;
 		bool bEdgeScroll = true;
 		bool bReduceMotion = false;
