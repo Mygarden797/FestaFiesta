@@ -394,9 +394,18 @@ bool FFFZoneSystemQueueFacadeLifecycleE2ETest::RunTest(const FString& Parameters
 	}
 	const FGuid FacilityId = InstallCommand.FacilityInstanceId;
 	AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(FacilityId);
+	FFFZSGridPlacement NeighborPlacement = Placement;
+	NeighborPlacement.OriginCell += FIntPoint(4000, 0);
+	const FFFZSCommand NeighborInstall = UFFZSGridLibrary::MakeInstallCommand(
+		FacilitySpec, ZoneId, NeighborPlacement, ZoneSystem->GetWorldRevision());
+	if (!TestTrue(TEXT("The neighboring footprint installs through the Zone authority"),
+		ZoneSystem->ExecuteCommand(NeighborInstall).bSucceeded))
+	{
+		return false;
+	}
 	if (!TestNotNull(TEXT("The installed Facility is registered"), Facility)
 		|| !TestEqual(TEXT("The Facility opens through the lifecycle bridge"),
-			StageBridge->OpenEligibleFacilities(false).SucceededCount, 1))
+			StageBridge->OpenEligibleFacilities(false).SucceededCount, 2))
 	{
 		return false;
 	}
@@ -469,6 +478,47 @@ bool FFFZoneSystemQueueFacadeLifecycleE2ETest::RunTest(const FString& Parameters
 	TestEqual(TEXT("The façade routes the Party into the projected Queue"),
 		QueueBridge->GetZoneFacilityQueueState(FacilityId).OccupiedMemberCount, 1);
 
+	// Footprint protection includes non-service obstacles and runs before any placement commit.
+	FFFZSPolicyContext ObstacleContext;
+	ObstacleContext.Command.FacilityInstanceId = FGuid::NewGuid();
+	ObstacleContext.Command.FacilitySpec.Category = EFFZSFacilityCategory::Lighting;
+	ObstacleContext.Command.FacilitySpec.FootprintSizeCells = FIntPoint(20, 80);
+	ObstacleContext.Validation.PlacementTransform = FTransform(FRotator(0.f, 35.f, 0.f),
+		Facility->GetQueueComponent()->GetQueueSlotWorldLocation(0));
+	for (const EFFZSCommandType Type : {EFFZSCommandType::Install, EFFZSCommandType::Move,
+		EFFZSCommandType::Upgrade})
+	{
+		ObstacleContext.Command.Type = Type;
+		const FFFZSPolicyDecision Decision = QueueBridge->PreValidateFFZoneSystemChange_Implementation(ObstacleContext);
+		TestFalse(TEXT("A footprint change cannot cover an occupied member target"), Decision.bAllowed);
+		TestEqual(TEXT("A covered member is reported as occupied"), Decision.FailureReason,
+			EFFZSPlacementFailure::FacilityOccupied);
+	}
+	ObstacleContext.Command.Type = EFFZSCommandType::Install;
+	ObstacleContext.Command.FacilitySpec.Category = EFFZSFacilityCategory::Tile;
+	TestTrue(TEXT("Ground surfaces do not become queue placement walls"),
+		QueueBridge->PreValidateFFZoneSystemChange_Implementation(ObstacleContext).bAllowed);
+	ObstacleContext.Command.FacilitySpec.Category = EFFZSFacilityCategory::Lighting;
+	ObstacleContext.Validation.PlacementTransform.AddToTranslation(FVector(4000.0, 4000.0, 0.0));
+	TestTrue(TEXT("A distant solid footprint leaves an occupied queue valid"),
+		QueueBridge->PreValidateFFZoneSystemChange_Implementation(ObstacleContext).bAllowed);
+
+	// Replay a neighboring facility's committed event while this queue is serving. Its
+	// footprint refresh must preserve this party and its timer instead of reconfiguring it.
+	QueueBridge->NotifyZoneFacilityPartyArrived(FacilityId, JoinRequest.PartyId);
+	QueueSystem->AdvanceFixedSteps(1);
+	const float WaitBeforeObstacleRefresh = QueueSystem->GetExpectedWaitSeconds(QueueFacilityId, 1);
+	FFFZSWorldChangeEvent NeighborEvent;
+	NeighborEvent.Type = EFFZSCommandType::Install;
+	NeighborEvent.FacilityInstanceId = NeighborInstall.FacilityInstanceId;
+	ZoneSystem->OnWorldChanged.Broadcast(NeighborEvent);
+	TestEqual(TEXT("A neighboring install preserves the existing queue membership"),
+		QueueBridge->GetZoneFacilityQueueState(FacilityId).OccupiedMemberCount, 1);
+	TestEqual(TEXT("A neighboring install preserves the active service"),
+		QueueBridge->GetZoneFacilityQueueState(FacilityId).ActiveServicePartyCount, 1);
+	TestEqual(TEXT("Obstacle refresh preserves the remaining service time"),
+		QueueSystem->GetExpectedWaitSeconds(QueueFacilityId, 1), WaitBeforeObstacleRefresh);
+
 	TArray<FText> OccupiedRestoreErrors;
 	const bool bOccupiedRestoreSucceeded =
 		QueueBridge->RestoreZoneWorldSnapshotAndSynchronize(
@@ -530,7 +580,7 @@ bool FFFZoneSystemQueueFacadeLifecycleE2ETest::RunTest(const FString& Parameters
 	}
 	const FFF_ZoneFacilityLifecycleBatchResult CloseResult =
 		StageBridge->CloseActiveFacilities(false);
-	TestEqual(TEXT("Closing closes the active Facility"), CloseResult.SucceededCount, 1);
+	TestEqual(TEXT("Closing closes both active Facilities"), CloseResult.SucceededCount, 2);
 	const FFF_QueueState ClosedState =
 		QueueBridge->GetZoneFacilityQueueState(FacilityId);
 	TestFalse(TEXT("Closing leaves the projected Queue closed"), ClosedState.bIsOpen);
@@ -606,6 +656,7 @@ bool FFFZoneSystemQueueExplicitGeometryProjectionTest::RunTest(const FString& Pa
 
 	// 꺾인 local polyline을 사용해 위치뿐 아니라 구간별 slot 방향도 Transform되는지 확인한다.
 	FFFZSFacilitySpec Spec;
+	Spec.FootprintSizeCells = FIntPoint(200, 100);
 	Spec.QueueRules.MaxWaitingAgents = 4;
 	Spec.QueueRules.SlotSpacingCm = 100.0f;
 	Spec.QueueSplinePointsCm = {
@@ -625,6 +676,18 @@ bool FFFZoneSystemQueueExplicitGeometryProjectionTest::RunTest(const FString& Pa
 		Lane.PolylinePoints.Num(), Spec.QueueSplinePointsCm.Num());
 	TestEqual(TEXT("Exactly MaxWaitingAgents explicit slots are generated"),
 		Lane.ExplicitSlotTransforms.Num(), Spec.QueueRules.MaxWaitingAgents);
+	TestTrue(TEXT("Production projection constrains member placement"), Lane.bConstrainMemberPlacement);
+	TestEqual(TEXT("Body and arrival clearance is projected"), Lane.MemberPlacementClearanceCm, 40.f);
+	TestEqual(TEXT("Member placement stays inside the bounded lateral envelope"), Lane.MaxMemberLateralOffsetCm, 270.f);
+	if (TestEqual(TEXT("The owning footprint is projected as one solid obstacle"), Lane.PlacementObstacles.Num(), 1))
+	{
+		const FFF_QueuePlacementObstacle& Obstacle = Lane.PlacementObstacles[0];
+		TestTrue(TEXT("Obstacle center uses the installed world transform"),
+			Obstacle.Center.Equals(FacilityTransform.GetLocation()));
+		TestTrue(TEXT("One centimeter cells become local obstacle half extents"),
+			Obstacle.HalfExtentsCm.Equals(FVector2D(100.0, 50.0)));
+		TestEqual(TEXT("Obstacle rotation follows the installed facility"), Obstacle.YawDegrees, 90.f);
+	}
 
 	const TArray<FVector> ExpectedLocalSlots = {
 		FVector(0.0, 0.0, 0.0),

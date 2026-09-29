@@ -41,6 +41,66 @@ namespace FFF_StageTimeTestHelpers
 	};
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageTime_MainProgramQueueBreak,
+	"FestaFiesta.Time.StageClock.MainProgramQueueBreak",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_StageTime_MainProgramQueueBreak::RunTest(const FString& Parameters)
+{
+	FFF_StageTimeTestHelpers::FClockHarness Harness;
+	if (!TestTrue(TEXT("Create stage"), Harness.Initialize(EFF_FestivalStage::Live, 0.f))) return false;
+	UDataTable* Table = NewObject<UDataTable>(Harness.GameInstance);
+	Table->RowStruct = FFF_LiveTriggerEvent::StaticStruct();
+	auto AddEvent = [Table](const FName Name, const int32 Day, const float Seconds, const bool bStart)
+	{
+		FFF_LiveTriggerEvent Row;
+		Row.Day = Day;
+		Row.TriggerSeconds = Seconds;
+		Row.bIsMainProgramLockStart = bStart;
+		Table->AddRow(Name, Row);
+	};
+	AddEvent(TEXT("SecondEnd"), 1, 270.f, false);
+	AddEvent(TEXT("FirstStart"), 1, 180.f, true);
+	AddEvent(TEXT("FirstEnd"), 1, 210.f, false);
+	AddEvent(TEXT("SecondStart"), 1, 240.f, true);
+	AddEvent(TEXT("Day2Start"), 2, 120.f, true);
+	AddEvent(TEXT("Day2End"), 2, 150.f, false);
+	FObjectPropertyBase* Property = FindFProperty<FObjectPropertyBase>(
+		UFF_FestivalStageSubsystem::StaticClass(), TEXT("ProgramScheduleTable"));
+	if (!TestNotNull(TEXT("Schedule property"), Property)) return false;
+	Property->SetObjectPropertyValue_InContainer(Harness.Stage, Table);
+
+	for (const float Scale : { 1.f, 2.f, 4.f })
+	{
+		Harness.Stage->TimeScale = Scale;
+		Harness.Stage->ElapsedLiveSeconds = 176.99f;
+		TestFalse(TEXT("No interruption before 19:57 at any speed"), Harness.Stage->IsMainProgramQueueBreakActive());
+		Harness.Stage->ElapsedLiveSeconds = 177.f;
+		TestEqual(TEXT("Boundary is 19:57, not 180 real seconds early"), Harness.Stage->GetCurrentLiveClockString(), FString(TEXT("19:57")));
+		TestTrue(TEXT("Three festival minutes before 20:00"), Harness.Stage->IsMainProgramQueueBreakActive());
+	}
+	float Start = -1.f;
+	float End = -1.f;
+	Harness.Stage->ElapsedLiveSeconds = 180.2f;
+	TestTrue(TEXT("A frame crossing show start still enters the break"),
+		Harness.Stage->TryGetMainProgramQueueBreakWindow(Start, End));
+	TestEqual(TEXT("Actual start"), Start, 180.f);
+	TestEqual(TEXT("Actual end"), End, 210.f);
+	Harness.Stage->ElapsedLiveSeconds = 210.f;
+	TestFalse(TEXT("Reopens exactly at show end"), Harness.Stage->IsMainProgramQueueBreakActive());
+	Harness.Stage->ElapsedLiveSeconds = 237.f;
+	TestTrue(TEXT("Next show has its own three-minute boundary"), Harness.Stage->IsMainProgramQueueBreakActive());
+	Harness.Stage->CurrentDay = 2;
+	Harness.Stage->ElapsedLiveSeconds = 117.f;
+	TestTrue(TEXT("New day uses its own schedule"), Harness.Stage->IsMainProgramQueueBreakActive());
+	Harness.Stage->CurrentStage = EFF_FestivalStage::Setup;
+	TestFalse(TEXT("Setup never interrupts queues"), Harness.Stage->IsMainProgramQueueBreakActive());
+	Harness.Stage->CurrentStage = EFF_FestivalStage::Live;
+	Harness.Stage->CurrentDay = 3;
+	TestFalse(TEXT("No scheduled show means no break"), Harness.Stage->IsMainProgramQueueBreakActive());
+	Harness.Stage->CurrentStage = EFF_FestivalStage::Setup;
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageTime_OnlyLiveStageHasATime, "FestaFiesta.Time.StageClock.OnlyLiveStageHasATime", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_StageTime_OnlyLiveStageHasATime::RunTest(const FString& Parameters)
 {

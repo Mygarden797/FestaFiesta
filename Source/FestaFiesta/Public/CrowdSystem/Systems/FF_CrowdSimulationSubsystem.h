@@ -348,21 +348,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crowd|Decision")
 	int32 RequestRedecisionForIdleParties(int32 MaxParties = 0);
 
-	/** 메인 공연장의 Audience 정원만큼 적격 파티를 Utility를 거치지 않고 직접 집결시킨다. */
+	/** Stage의 공연 3축제분 전 휴식 구간에만 정원만큼 적격 파티를 직접 집결시킨다. */
 	int32 GatherPartiesToMainStageAudience();
-
-	/**
-	 * 집결을 검토하기 시작하는 시점(공연 시각 이만큼 전, Live 초 = 축제 분).
-	 *
-	 * 실제 출발 시각은 파티마다 다르다 — 아래 `AudienceTravelSlack` 로 자기 이동시간을
-	 * 환산해서 **늦지 않을 만큼만 일찍** 떠난다. 이 값은 그 판정을 시작하는 바깥 창일 뿐이라
-	 * 넉넉히 잡아도 가까운 손님이 일찍 끌려가지 않는다.
-	 *
-	 * ★ 배속 잠금(`MainProgramLockLeadSeconds`)과 다른 값이다. 잠금은 플레이어가 공연을
-	 *   1배속으로 보게 하는 구간이고, 이 값은 군중 동선의 창이다.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0"))
-	float AudienceGatherLeadSeconds = 180.f;
 
 	/**
 	 * 직선거리 이동시간에 곱하는 여유 배수. 실제 경로는 시설을 우회하고 군중에 막혀 느리다.
@@ -623,6 +610,16 @@ public:
 	// 대기열 슬롯·서비스 지점의 도착 판정 반경, UU. **슬롯 간격보다 작아야 한다.**
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "10.0"))
 	float QueueSlotArrivalRadiusUU = 45.f;
+
+	// 개별 좌표가 배정된 줄·관람석의 최종 오차. 공용 입구/프로그램 접근점에는 적용하지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "1.0", ClampMax = "10.0"))
+	float AssignedSlotArrivalRadiusUU = 5.f;
+
+	float GetAssignedSlotArrivalRadius() const
+	{
+		return FMath::Min(FMath::Max(QueueSlotArrivalRadiusUU, 1.f),
+			FMath::Clamp(AssignedSlotArrivalRadiusUU, 1.f, 10.f));
+	}
 
 	// 시설 접근점(큐에 가입하기 전)의 도착 판정 반경, UU.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "10.0"))
@@ -1591,6 +1588,8 @@ private:
 
 	// 시설별 점유 좌석. 좌석 API는 예약을 소유하지 않으므로 Crowd가 수명과 중복을 관리한다.
 	TMap<FGuid, TSet<int32>> OccupiedAudienceSlots;
+	// 도착 불가로 회수된 파티는 이번 공연에서만 제외한다. 다음 공연에는 다시 참여한다.
+	TSet<int32> AudiencePartiesExcludedThisShow;
 	TSet<FGuid> MissingProgramApproachWarnings;
 	TMap<FGuid, FVector> CachedProgramApproachByFacility;
 	int64 ProgramApproachCacheRevision = -1;

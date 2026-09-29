@@ -948,7 +948,7 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		? FFFacilityInfoModel::FormatExpectedWait(QueueState.bIsOpen, ExpectedWaitSeconds)
 		: MissingQueueMetric;
 	OutViewData.ThroughputText = bQueueAvailable
-		? FFFacilityInfoModel::FormatThroughput(true, QueueState.GetServiceRatePerMinute())
+		? FFFacilityInfoModel::FormatServiceDuration(true, Facility.GetEffectiveQueueRules().ServiceDurationSeconds)
 		: MissingQueueMetric;
 	if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface())
 	{
@@ -1100,7 +1100,9 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		Progression->GetFacilityInstanceRevenue(OutViewData.FacilityInstanceId, InstanceRevenue);
 	}
 	const bool bGeneratesDirectRevenue =
-		(bHasUpgradePreview && UpgradePreview.bRevenueAvailable && UpgradePreview.CurrentRevenuePerUseGold > 0) ||
+		(bHasUpgradePreview && UpgradePreview.bRevenueAvailable &&
+			(UpgradePreview.CurrentRevenuePerUseGold > 0 ||
+			 UpgradePreview.CurrentRevenueByTeamSizeGold.ContainsByPredicate([](int32 Gold) { return Gold > 0; }))) ||
 		OutViewData.bHasScheduledProgram;
 	FFFacilityInfoModel::ApplyFacilityRevenue(
 		bEconomyAvailable ? &InstanceRevenue : nullptr,

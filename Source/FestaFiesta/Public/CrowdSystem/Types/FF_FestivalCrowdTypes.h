@@ -84,6 +84,8 @@ struct FUnitData
 	
 	FVector QueueSlotLocation = FVector::ZeroVector;
 	bool bHasQueueSlot = false;
+	// 실제로 배정된 대기열 자리·관람석은 넓은 접근 반경이 아니라 자리 중심까지 이동한다.
+	bool bUsePreciseSlotPosition = false;
 	float LaneYaw = 0.f;
 
 	// 재현성을 위한 고정 ID. 슬롯 인덱스는 재사용되므로 그것과 별개로 둔다

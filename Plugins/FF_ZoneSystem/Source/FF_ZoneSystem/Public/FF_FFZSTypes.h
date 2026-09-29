@@ -313,7 +313,7 @@ struct FF_ZONESYSTEM_API FFFZSQueueRules
     // 동시에 ServiceIndex를 배정할 수 있는 최대 팀 수다.
     
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Service Duration per Team (Seconds)", ToolTip = "한 팀이 Service 앵커에 도착한 뒤 이용을 완료할 때까지 걸리는 시간(초)입니다. 팀 인원수와 관계없이 같은 시간이 걸리며, 완료 수익은 실제 이용 인원수로 계산합니다.", ClampMin = "0.01", Units = "s"))
-    float ServiceDurationSeconds = 4.0f;
+    float ServiceDurationSeconds = 5.0f;
     // Service 앵커 도착 보고 뒤 완료까지 필요한 시뮬레이션 시간이다.
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Abandon After (Seconds)", ToolTip = "대기 시간이 이 값(초)에 도달하면 포기 흐름을 시작합니다. 0은 자동 포기를 끕니다.", ClampMin = "0.0", Units = "s"))
@@ -545,7 +545,7 @@ struct FF_ZONESYSTEM_API FFFZSFacilityUpgradeTier
     float CostMultiplier = 0.3f;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Service Duration Multiplier", ToolTip = "Lv.1 서비스 시간에 곱하는 절대 배수입니다. 0보다 큰 유한한 값을 사용합니다. 이전 단계보다 증가·감소하거나 같아도 됩니다."))
-    float ServiceDurationMultiplier = 0.8f;
+    float ServiceDurationMultiplier = 1.0f;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Revenue Multiplier", ToolTip = "Lv.1 시설 수익에 곱하는 절대 배수입니다. 0 이상의 유한한 값을 사용합니다. 1.5이면 기본 수익의 150%이며 0이면 수익이 없습니다. 이전 단계와 크기를 비교하지 않습니다."))
     float RevenueMultiplier = 1.5f;
