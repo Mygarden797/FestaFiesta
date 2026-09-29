@@ -410,7 +410,8 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 
 	if (bDrawDebugDensity)
 	{
-		DensityGrid.DrawDebug(GetWorld());
+		DensityGrid.DrawDebug(GetWorld(),
+			[this](const FVector& WorldLocation, double& OutZ) { return TryGetGroundZ(WorldLocation, OutZ); });
 	}
 	if (bDrawDebugAgents)
 	{
@@ -1372,6 +1373,10 @@ void UFF_CrowdSimulationSubsystem::PublishCongestionSnapshot()
 	const TArray<int32>& Throughput = DensityGrid.GetCellThroughput();
 	const TArray<float>& Density = DensityGrid.GetDensityField();
 	const int32 NumX = FMath::Max(1, DensityGrid.GetNumX());
+	const auto ResolveGroundZ = [this](const FVector& WorldLocation, double& OutZ)
+	{
+		return TryGetGroundZ(WorldLocation, OutZ);
+	};
 
 	CongestionSnapshot.Cells.Reset(Congested.Num());
 	CongestionSnapshot.SimTimeMinutes = GetLiveMinutes();
@@ -1385,7 +1390,7 @@ void UFF_CrowdSimulationSubsystem::PublishCongestionSnapshot()
 
 		FFF_CrowdCongestedCell& Cell = CongestionSnapshot.Cells.AddDefaulted_GetRef();
 		Cell.Cell = FIntPoint(CellX, CellY);
-		Cell.CenterWorldUU = DensityGrid.GetCellCenterWorld(CellX, CellY);
+		Cell.CenterWorldUU = DensityGrid.GetCellCenterOnGround(CellX, CellY, ResolveGroundZ);
 		Cell.DensityPerSqm = Density.IsValidIndex(CellIndex) ? Density[CellIndex] : 0.f;
 		Cell.Occupancy = Counts.IsValidIndex(CellIndex) ? Counts[CellIndex] : 0;
 		Cell.Throughput = Throughput.IsValidIndex(CellIndex) ? Throughput[CellIndex] : 0;

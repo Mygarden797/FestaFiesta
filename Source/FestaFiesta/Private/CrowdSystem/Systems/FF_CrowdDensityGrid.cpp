@@ -200,6 +200,19 @@ FVector FCrowdDensityGrid::GetCellCenterWorld(int32 X, int32 Y) const
 		OriginUU.Z);
 }
 
+FVector FCrowdDensityGrid::GetCellCenterOnGround(int32 X, int32 Y, FGroundZResolver ResolveGroundZ) const
+{
+	FVector Center = GetCellCenterWorld(X, Y);
+
+	double GroundZ = 0.0;
+	if (ResolveGroundZ(Center, GroundZ))
+	{
+		Center.Z = GroundZ;
+	}
+
+	return Center;
+}
+
 ECrowdLOS FCrowdDensityGrid::DensityToLOS(float DensityPerSqM)
 {
 	if (DensityPerSqM < CrowdDensity::LOS_A_Max) { return ECrowdLOS::A; }
@@ -224,7 +237,8 @@ FColor FCrowdDensityGrid::LOSToColor(ECrowdLOS LOS)
 	}
 }
 
-void FCrowdDensityGrid::DrawDebug(const UWorld* World, float ZOffsetUU, float MinDensityToDraw) const
+void FCrowdDensityGrid::DrawDebug(const UWorld* World, FGroundZResolver ResolveGroundZ,
+	float ZOffsetUU, float MinDensityToDraw) const
 {
 	if (!World || !IsBuilt())
 	{
@@ -244,7 +258,7 @@ void FCrowdDensityGrid::DrawDebug(const UWorld* World, float ZOffsetUU, float Mi
 				continue;
 			}
 
-			FVector Center = GetCellCenterWorld(X, Y);
+			FVector Center = GetCellCenterOnGround(X, Y, ResolveGroundZ);
 			Center.Z += ZOffsetUU;
 
 			FColor Color = LOSToColor(DensityToLOS(CellDensity));
