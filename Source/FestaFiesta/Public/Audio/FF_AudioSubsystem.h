@@ -25,9 +25,10 @@ class UFF_AudioBankData;
 // 소리가 안 붙은 상태에서 다른 파트 작업이 막히면 안 된다.
 //
 // ─── 볼륨 ───────────────────────────────────────────────────────────────────
-// 볼륨 설정은 여기서 소유하지 않는다. 플레이어 개인 설정은 다른 곳이 단일 소유자다.
-// 여기서는 재생할 때 갈래(EFF_AudioChannel)만 지정해두고, 실제 볼륨 분리는
-// 그쪽에 음악·효과음 값이 생겼을 때 이어 붙이면 된다.
+// 볼륨 값은 여기서 소유하지 않는다. 플레이어 개인 설정(UFF_RuntimeSettingsSubsystem)이 단일 소유자다.
+// 마스터는 그쪽이 엔진 전체에 걸고, 배경음·효과음 비율은 여기서 재생할 때 곱한다.
+// 사운드 클래스로 가르지 않은 이유는 애셋을 만들고 모든 소리에 지정하기 전에도 슬라이더가 먹어야 해서다.
+// 그래서 이 서브시스템을 거치지 않는 소리(버튼 스타일에 박힌 클릭음 등)는 마스터만 따른다.
 UCLASS()
 class FESTAFIESTA_API UFF_AudioSubsystem : public UWorldSubsystem
 {
@@ -70,6 +71,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Audio")
 	bool HasAmbienceTrack(EFF_AudioAmbience Ambience) const;
 
+	/* 갈래별 개인 설정 비율(0~1). 마스터는 빠져 있다. 마스터는 엔진이 이미 곱한다.
+
+	   배경음은 배경음 슬라이더, 나머지(효과음·UI·환경음)는 효과음 슬라이더를 따른다.
+	   설정 창에 슬라이더를 넷 두면 플레이어는 UI 와 효과음의 차이를 모른다. 둘이면 충분하다.
+	*/
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Audio")
+	float GetChannelVolume(EFF_AudioChannel Channel) const;
+
 	// ── 진단 ────────────────────────────────────────────────────────────────
 
 	// 소리를 전부 끈다. 다른 파트를 확인할 때 방해되지 않게.
@@ -108,7 +117,18 @@ private:
 	void RegisterDebugConsoleCommands();
 	void UnregisterDebugConsoleCommands();
 
+	// 설정 창에서 저장하면 온다. 이미 흐르는 배경음에 새 비율을 건다.
+	// 원샷은 다음 재생부터 새 값을 읽으므로 따로 할 일이 없다.
+	UFUNCTION()
+	void HandleRuntimeSettingsChanged();
+
+	void BindRuntimeSettings();
+	void UnbindRuntimeSettings();
+
 	bool bAudioEnabled = true;
+
+	// 지금 배경음의 곡 자체 볼륨. 설정이 바뀌면 여기에 비율을 다시 곱한다.
+	float AmbienceTrackVolume = 1.f;
 
 	EFF_AudioAmbience CurrentAmbience = EFF_AudioAmbience::None;
 
