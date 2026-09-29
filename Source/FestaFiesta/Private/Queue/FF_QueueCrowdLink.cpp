@@ -132,6 +132,10 @@ void UFF_QueueCrowdLink::HandleSlotTargetsUpdated(int32 FacilityId, const TArray
 		{
 			++MemberCountMismatches;
 		}
+		else
+		{
+			AppliedSlotTargets += It.Value.Num();
+		}
 	}
 	
 }

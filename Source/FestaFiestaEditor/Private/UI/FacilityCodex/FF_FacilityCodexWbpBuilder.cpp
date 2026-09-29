@@ -26,7 +26,10 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/Font.h"
+#include "Editor.h"
+#include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
+#include "Misc/OutputDeviceNull.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/FacilityCodex/FF_FacilityCodexCard.h"
@@ -411,6 +414,21 @@ namespace FFFacilityCodexWbpBuilder
 
 	void Build()
 	{
+		const bool bNewScreen = LoadExistingBlueprint(ScreenPath) == nullptr;
+		const bool bNewCard = LoadExistingBlueprint(CardPath) == nullptr;
+		if (bNewScreen != bNewCard)
+		{
+			// Never rebuild half the current family with the retired seed layout or
+			// run historical style migrations over its surviving designer-owned half.
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: incomplete codex family; restore the missing Screen/Card from its asset backup before authoring."), Prefix);
+			return;
+		}
+		UWorld* AuthoringWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		if (bNewScreen && (!AuthoringWorld || GEditor->PlayWorld || AuthoringWorld->GetOutermost()->GetName() != TEXT("/Engine/Maps/Entry")))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: first creation requires an idle Entry editor."), Prefix);
+			return;
+		}
 		if (!EnsureWidgetBlueprint(Prefix, CardPath, Folder, *UFF_FacilityCodexCard::StaticClass(), Card)) return;
 		UClass* CardClass = LoadGeneratedClass(CardPath);
 		if (!CardClass || !CardClass->IsChildOf(UFF_FacilityCodexCard::StaticClass())) return;
@@ -418,6 +436,31 @@ namespace FFFacilityCodexWbpBuilder
 			[CardClass](UWidgetBlueprint& BP, UWidgetTree& Tree) { return Screen(BP, Tree, CardClass); })) return;
 		if (!EnsureWidgetBlueprint(Prefix, LauncherPath, Folder, *UFF_FacilityCodexLauncher::StaticClass(), Launcher)) return;
 		if (!EnsureWidgetBlueprint(Prefix, CatalogLauncherPath, Folder, *UFF_FacilityCodexLauncher::StaticClass(), CatalogLauncher)) return;
+		if (bNewScreen)
+		{
+			// The historical seed remains an internal construction step. A new family
+			// is finalized as the current editable collection before reporting READY.
+			FOutputDeviceNull Output;
+			for (const TCHAR* Name : {TEXT("FF.ApplyBuildModeClarityCodex"), TEXT("FF.ApplyBuildModeClarityCodexRefinement"),
+				TEXT("FF.ApplyFacilityCodexGlassTheme"), TEXT("FF.ApplyFacilityCodexFestivalTheme"),
+				TEXT("FF.ApplyFacilityCodexActions"), TEXT("FF.ApplyFacilityCodexRewardIcon"),
+				TEXT("FF.ApplyFacilityCodexRewardStatus"), TEXT("FF.ApplyFacilityCodexRewardIridescence"),
+				TEXT("FF.ApplyFacilityCodexRewardBounds"), TEXT("FF.ApplyFacilityCodexRewardHint"),
+				TEXT("FF.ApplyFacilityCodexShowcase"), TEXT("FF.ApplyFacilityCodexContrast"),
+				TEXT("FF.ApplyBuildReferenceFacilityCodex"), TEXT("FF.ApplyBuildPearlCodex"), TEXT("FF.ApplyCodexNavigation")})
+			{
+				IConsoleObject* ConsoleObject = IConsoleManager::Get().FindConsoleObject(Name);
+				IConsoleCommand* Step = ConsoleObject ? ConsoleObject->AsCommand() : nullptr;
+				if (!Step || !Step->Execute({}, AuthoringWorld, Output)) return;
+			}
+			auto* Current = LoadExistingBlueprint(ScreenPath);
+			if (!Current || Current->GetOutermost()->GetMetaData().GetValue(Current,
+				TEXT("FF.Codex.NavigationRewards.20260929.v4")) != TEXT("1"))
+			{
+				UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: current codex authoring did not finish; review prerequisite material/widget errors."), Prefix);
+				return;
+			}
+		}
 		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_READY: Screen, Card, Launcher, CatalogLauncher ready. Existing designer layouts were preserved."), Prefix);
 	}
 

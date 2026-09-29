@@ -1017,6 +1017,12 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
     }
     AppendString(TEXT("spec.install_cost_key"), Spec.InstallCostKey.ToString());
     AppendString(TEXT("spec.revenue_rule_key"), Spec.RevenueRuleKey.ToString());
+    // Omit the tagged-serialization fallback to preserve receipts from before staff slots existed.
+    // Compare the authored value even outside Info, so canonical definition checks remain exact.
+    if (Spec.StaffCapacity != FFFZSFacilitySpec::DefaultStaffCapacity)
+    {
+        AppendInt(TEXT("spec.staff_capacity"), Spec.StaffCapacity);
+    }
     // false + zero is the legacy festival-default policy, so existing receipt bytes stay unchanged.
     // Include stored amounts even when disabled: canonical Definition comparison covers all authored data.
     if (Spec.bOverrideRevenuePerUseGold || Spec.RevenuePerUseGold != 0)

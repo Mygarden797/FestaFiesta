@@ -80,6 +80,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FF Zone System|Integration|Queue")
 	FFF_QueueJoinResponse TryJoinZoneFacility(FGuid ZoneFacilityId, FFF_JoinRequest Request);
 
+	/** 공연 3분 전 이용 중인 팀은 완료, 대기 팀은 취소하고 정산 이벤트를 먼저 전달한다. */
+	void SynchronizeMainProgramQueueBreak();
+
 	UFUNCTION(BlueprintCallable, Category = "FF Zone System|Integration|Queue")
 	bool LeaveZoneFacilityQueue(FGuid ZoneFacilityId, int32 PartyId);
 
@@ -136,6 +139,10 @@ private:
 	void HandleZoneWorldChanged(const FFFZSWorldChangeEvent& Event);
 
 	int32 FindOrAllocateQueueFacilityId(FGuid ZoneFacilityId);
+	static bool TryBuildPlacementObstacle(const FFFZSFacilitySpec& Spec,
+		const FTransform& Transform, FFF_QueuePlacementObstacle& OutObstacle);
+	TArray<FFF_QueuePlacementObstacle> BuildPlacementObstacles(const FFFZSPolicyContext* ProposedChange = nullptr) const;
+	void RefreshAllPlacementObstacles();
 	bool RegisterOrRefreshFacility(AFFZSFacilityActor& Facility);
 	void UnregisterFacility(FGuid ZoneFacilityId);
 	void HandleActorSpawned(AActor* Actor);
@@ -170,5 +177,6 @@ private:
 	FDelegateHandle ActorDestroyedHandle;
 	bool bActorGenerationCheckPending = false;
 	bool bQueueEventsNeedFlush = false;
+	bool bMainProgramQueueBreak = false;
 	bool bPolicyRegistered = false;
 };

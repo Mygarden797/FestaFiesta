@@ -30,13 +30,10 @@ bool FFF_BuildStudioWidgetBindings::RunTest(const FString& Parameters)
 	Class->bCanCallInitializedWithoutPlayerContext = PreviousInitialization;
 	if (!TestNotNull(TEXT("Instantiated studio"), Panel.Get())) { return false; }
 	const TSharedRef<SWidget> Slate = Panel->TakeWidget();
-	for (const FName Name : { FName(TEXT("Panel_Catalog")), FName(TEXT("Panel_PlacementCompact")),
+	for (const FName Name : { FName(TEXT("Panel_Catalog")),
 		FName(TEXT("TileView_Facilities")), FName(TEXT("HorizontalBox_Subcategories")),
-		FName(TEXT("Button_InspectFacilities")), FName(TEXT("Text_CategoryBreadcrumb")),
 		FName(TEXT("HorizontalBox_Categories")), FName(TEXT("Button_FavoritesOnly")),
-		FName(TEXT("Text_FavoritesOnly")),
-		FName(TEXT("Button_ReturnToCatalog")), FName(TEXT("Button_ExitBuildMode")),
-		FName(TEXT("Text_PlacementGuide")) })
+		FName(TEXT("Text_FavoritesOnly")), FName(TEXT("Search_Facilities")) })
 	{
 		UWidget* Widget = Panel->GetWidgetFromName(Name);
 		const FObjectPropertyBase* Binding = FindFProperty<FObjectPropertyBase>(Class, Name);

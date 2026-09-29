@@ -38,6 +38,10 @@ struct FESTAFIESTA_API FFF_FacilityUpgradePreview
 	int32 BaseRevenuePerUseGold = 0;
 	UPROPERTY(BlueprintReadOnly, Category = "Upgrade|Revenue")
 	int32 CurrentRevenuePerUseGold = 0;
+	/** Team-size examples: index 0 is one person, through index 5 for six people.
+	 * Each amount rounds the whole team's settlement once; empty when revenue is unavailable. */
+	UPROPERTY(BlueprintReadOnly, Category = "Upgrade|Revenue")
+	TArray<int32> CurrentRevenueByTeamSizeGold;
 	UPROPERTY(BlueprintReadOnly, Category = "Upgrade|Revenue")
 	int32 NextRevenuePerUseGold = 0;
 	UPROPERTY(BlueprintReadOnly, Category = "Upgrade|Revenue")

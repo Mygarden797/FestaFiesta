@@ -62,6 +62,7 @@ public:
 #endif
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
@@ -70,6 +71,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UFF_FacilityCodexTileView> TileView_Entries;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UEditableTextBox> Search_Entries;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_Close;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_ExitCodex;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_All;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_Discovered;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_Undiscovered;
@@ -79,10 +81,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_CollectionRemaining;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UBorder> Border_RewardFeedback;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_RewardFeedback;
-	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_ClearFacility;
-	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Summary;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_ClearFacility;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Summary;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UProgressBar> Progress_Discovery;
-	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Filter;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Filter;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Empty;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UWidget> Panel_Detail;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_DetailTitle;
@@ -153,6 +155,14 @@ protected:
 	FLinearColor InactiveFilterTextColor = FLinearColor::FromSRGBColor(FColor(0x20, 0x4c, 0x36));
 	UPROPERTY(EditDefaultsOnly, Category="Collection") TSubclassOf<UFF_PrepChoiceButton> CollectionCategoryClass;
 	UPROPERTY(EditDefaultsOnly, Category="Collection") TSubclassOf<UFF_PrepChoiceButton> CollectionMilestoneClass;
+	/** Modern screens use editable Canvas anchors/offsets instead of legacy runtime coordinates. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Collection|Layout")
+	bool bUseAuthoredCollectionLayout = false;
+#if WITH_EDITORONLY_DATA
+	/** Preview the detail page in Designer; never changes the page opened during play. */
+	UPROPERTY(EditAnywhere, Category="Collection|Designer Preview")
+	bool bPreviewCollectionDetail = false;
+#endif
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UVerticalBox> Column_CollectionCategories;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UHorizontalBox> Row_CollectionMilestones;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_CollectionPrevious;
@@ -175,6 +185,7 @@ private:
 	void UpdateResponsiveLayout();
 	UFUNCTION() void RefreshFromSubsystem();
 	UFUNCTION() void HandleClose();
+	UFUNCTION() void HandleExitCodex();
 	UFUNCTION() void HandleAll();
 	UFUNCTION() void HandleDiscovered();
 	UFUNCTION() void HandleUndiscovered();

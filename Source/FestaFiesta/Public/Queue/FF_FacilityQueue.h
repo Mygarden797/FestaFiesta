@@ -73,6 +73,13 @@ public:
 	void CloseFacility(EFF_QueueCloseReason Reason, float SimTimeSeconds);
 	void ReopenFacility();
 
+	/**
+	 * 공연 준비 동안 신규 이용을 막는다. 시작 시 이용 중인 팀만 Served로 정산하고,
+	 * 아직 서비스를 시작하지 않은 팀은 Cancelled로 내보낸다. 반복 호출은 정산을 반복하지 않는다.
+	 * 해제는 시설의 별도 개폐 상태를 바꾸지 않는다.
+	 */
+	void SetPerformanceBreak(bool bInPerformanceBreak, float SimTimeSeconds);
+
 	FFF_QueueState GetState() const;
 
 	/**
@@ -94,6 +101,10 @@ public:
 	// 한 팀 자리 안에 멤버별 목표를 배치한다. 같은 팀은 같은 SlotIndex를 공유한다.
 	void BuildSlotAssignments(TArray<FFF_SlotAssignment>& OutAssignments) const;
 
+	/** Construction must preserve every occupied party's current and future fixed member pattern. */
+	bool CanUsePlacementObstacles(const TArray<FFF_QueuePlacementObstacle>& Obstacles) const;
+	/** Empty queues may rebuild patterns; occupied queues never retarget existing members. */
+	bool RefreshPlacementObstacles(const TArray<FFF_QueuePlacementObstacle>& Obstacles);
 
 
 	/** 마지막 조회 이후 줄 구성이 바뀌었는지. true를 한 번 반환하면 플래그는 내려간다. */
@@ -108,6 +119,8 @@ public:
 	bool IsOpen() const { return bIsOpen; }
 	bool IsAcceptingNew() const;
 	bool ContainsParty(int32 PartyId) const;
+	/** Authoritative service state; arrival at a waiting slot alone does not start service. */
+	bool HasPartyStartedService(int32 PartyId) const;
 	int32 GetWaitingPartyCount() const { return Parties.Num(); }
 	int32 GetOccupiedMemberCount() const;
 	int32 GetRemainingServiceMemberCount() const;
@@ -123,15 +136,22 @@ private:
 	/** 퇴장 이벤트 + QueueLog 레코드를 함께 쌓는다. 실제 배열 제거는 호출자가 한다. */
 	void RecordExit(const FFF_QueuedParty& Party, EFF_QueueExit ExitType, float SimTimeSeconds);
 	void InvalidateShiftedArrivals(int32 FirstShiftedIndex);
+	void RebuildMemberPlacementPatterns();
+	bool CanFitPartyThroughSlot(int32 LastSlotIndex, int32 MemberCount,
+		const TArray<FFF_QueuePlacementObstacle>& Obstacles) const;
 
 	int32 FacilityId = INDEX_NONE;
 	FFF_QueueConfig Config;
 	FFF_QueueLaneGeometry Lane;
+	// Indexed by authored team slot, then party-member index. Independent of occupancy.
+	TArray<TArray<FVector>> MemberPlacementPatterns;
+	bool bMemberPlacementPatternsNeedRefresh = false;
 
 	// FIFO. 앞이 창구 쪽이다. 순서 자체가 이 클래스의 핵심 소유 데이터라 정렬하거나 재배치하지 않는다.
 	TArray<FFF_QueuedParty> Parties;
 
 	bool bIsOpen = true;
+	bool bPerformanceBreak = false;
 	bool bSlotTargetsDirty = false;
 	int32 CompletedPartyCount = 0;
 	double TotalCompletedWaitSeconds = 0.0;

@@ -92,6 +92,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Queue")
 	FFF_QueueState GetQueueState(int32 FacilityId) const;
 
+	/** True only while this admitted team is actually receiving service in the queue core. */
+	bool HasPartyStartedService(int32 FacilityId, int32 PartyId) const;
+
 	/** FacilityId 오름차순으로 정렬된 전체 스냅샷. FFF_CrowdReadModel.QueueStates 채울 때 쓴다. */
 	UFUNCTION(BlueprintPure, Category = "Queue")
 	TArray<FFF_QueueState> GetAllQueueStates() const;
@@ -208,6 +211,7 @@ private:
 	void NotifyPartyArrived(int32 FacilityId, int32 PartyId);
 	void CloseFacility(int32 FacilityId, EFF_QueueCloseReason Reason);
 	void ReopenFacility(int32 FacilityId);
+	void SetPerformanceBreak(int32 FacilityId, bool bInPerformanceBreak);
 
 	FFF_FacilityQueue* FindQueue(int32 FacilityId);
 	const FFF_FacilityQueue* FindQueue(int32 FacilityId) const;

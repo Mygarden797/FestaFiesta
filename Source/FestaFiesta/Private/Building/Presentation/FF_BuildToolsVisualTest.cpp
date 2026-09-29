@@ -104,7 +104,6 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
     Text(TEXT("Text_FacilityName"), TEXT("구름 솜사탕 부스"));
     Text(TEXT("Text_Cost"), TEXT("설치 400 Gold"));
     Text(TEXT("Text_Balance"), TEXT("보유 7,200 Gold  ·  확정 후 6,800 Gold"));
-    Text(TEXT("Text_ToolbarGold"), TEXT("7,200"));
     Text(TEXT("Text_BuildHelpPrimary"), TEXT("클릭해 시설 배치"));
     Text(TEXT("Text_BuildHelpRotate"), TEXT("시설 방향 회전"));
     Text(TEXT("Text_BuildHelpMove"), TEXT("카메라 이동"));
@@ -129,8 +128,8 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
         !TestNotNull(TEXT("Placement facility summary"), Info) ||
         !TestNotNull(TEXT("Build-session top toolbar"), TopBar) ||
         !TestNotNull(TEXT("Build-session back navigation"), Back) ||
-        !TestNotNull(TEXT("Independent top-right gold currency"), Gold) ||
         !TestNotNull(TEXT("Build settings drawer"), Settings)) return false;
+    TestNull(TEXT("Duplicate top-right currency was removed from the saved Designer"), Gold);
     // NativeConstruct applies the editor world's Closed state. This render fixture
     // deliberately authors the visible surfaces without opening a build session.
     TopBar->SetVisibility(ESlateVisibility::Visible);
@@ -221,7 +220,6 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
             const FSlateRect Viewport(0, 0, Resolution.X, Resolution.Y);
             const FSlateRect TopRect = Bounds(TopBar);
             const FSlateRect BackRect = Bounds(Back);
-            const FSlateRect GoldRect = Bounds(Gold);
             const FSlateRect DockRect = Bounds(Dock), InfoRect = Bounds(Info), SettingsRect = Bounds(Settings);
             const auto* SettingsScroll = Cast<UScrollBox>(Widget->GetWidgetFromName(TEXT("Scroll_BuildSettings")));
             const FSlateRect SettingsViewRect = SettingsScroll ? Bounds(SettingsScroll) : SettingsRect;
@@ -239,13 +237,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
                 BackRect.Right < Resolution.X * .25f && BackRect.Bottom < Resolution.Y * .15f);
             TestFalse(ContextName + TEXT(": back button and toolbar do not overlap"),
                 Overlaps(BackRect, TopRect));
-            TestTrue(ContextName + TEXT(": one currency pill fits at the upper right"),
-                IsRendered(Gold) && Contains(Viewport, GoldRect) && GoldRect.Left > Resolution.X * .7f);
-            TestTrue(ContextName + TEXT(": currency name and amount have readable badge space"),
-                GoldRect.Right - GoldRect.Left >= 205.f * Dpi &&
-                GoldRect.Bottom - GoldRect.Top >= 54.f * Dpi);
-            TestFalse(ContextName + TEXT(": currency stays separate from the F1-F7 pill"),
-                Overlaps(GoldRect, TopRect));
+            TestFalse(ContextName + TEXT(": duplicate top currency is removed"), IsRendered(Gold));
             TestTrue(ContextName + TEXT(": top toolbar stays above the working center"),
                 TopRect.Bottom <= Resolution.Y * .18f);
             if (bDock)
@@ -261,6 +253,20 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
             if (bInfo)
             {
                 TestTrue(ContextName + TEXT(": facility summary fits the viewport"), Contains(Viewport, InfoRect));
+                TArray<FSlateRect> HeaderItems;
+                for (const FName Name : {FName(TEXT("Text_Mode")), FName(TEXT("Button_Facts")), FName(TEXT("Button_Help"))})
+                {
+                    const UWidget* Item = Widget->GetWidgetFromName(Name);
+                    if (!IsRendered(Item)) continue;
+                    const FSlateRect Rect = Bounds(Item);
+                    TestTrue(ContextName + TEXT(": summary header item fits the card: ") + Name.ToString(), Contains(InfoRect, Rect));
+                    for (const FSlateRect& Previous : HeaderItems)
+                        TestFalse(ContextName + TEXT(": summary title and actions do not overlap"), Overlaps(Previous, Rect));
+                    HeaderItems.Add(Rect);
+                    if (const auto* HeaderLabel = Cast<UTextBlock>(Item))
+                        TestTrue(ContextName + TEXT(": complete placement mode caption is readable"),
+                            HeaderLabel->GetDesiredSize().X <= HeaderLabel->GetCachedGeometry().GetLocalSize().X + 1.f);
+                }
                 TestTrue(ContextName + TEXT(": facility summary docks to the right edge"),
                     InfoRect.Left > Resolution.X * .62f && InfoRect.Right <= Resolution.X - 8.f * Dpi);
                 TestFalse(ContextName + TEXT(": top toolbar and summary do not overlap"),
