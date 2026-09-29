@@ -8,6 +8,7 @@
 
 class UCameraComponent;
 class UInputAction;
+class UDamageType;
 class UInputMappingContext;
 class USpringArmComponent;
 struct FInputActionValue;
@@ -38,6 +39,44 @@ public:
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void PawnClientRestart() override;
 	virtual void UnPossessed() override;
+
+	// 맵 밖으로 떨어졌을 때. 기본 동작은 액터를 파괴하므로, 돌아갈 땅이 있으면 그리로 보낸다.
+	virtual void FellOutOfWorld(const UDamageType& DamageType) override;
+
+	/* 걸어온 길에서 안전한 땅으로 되돌아간다. 옮겼으면 true.
+
+	   강, 구멍, 맵 가장자리 같은 위험 지형이 각자 위치를 기록하지 않도록 기록은 캐릭터가 갖고,
+	   위험 지형은 감지만 해서 이 함수를 부른다.
+
+	   가장 최근 기록은 낭떠러지 끝이라 다시 미끄러지기 쉽다.
+	   그래서 걸어온 길을 RestoreBackoffCm 만큼 거슬러 올라간 지점으로 보낸다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|SafeLocation")
+	bool RestoreToLastSafeLocation();
+
+	// 되돌아갈 땅 기록이 있는지.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|SafeLocation")
+	bool HasSafeLocation() const { return !SafeLocations.IsEmpty(); }
+
+	// 안전 위치를 확인하는 주기. 조종 중이고 땅에 서 있을 때만 기록한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FestaFiesta|SafeLocation", meta = (ClampMin = "0.02"))
+	float SafeSampleIntervalSeconds = 0.1f;
+
+	// 이보다 가까운 위치는 새로 기록하지 않는다. 가만히 서 있어도 기록이 채워지는 것을 막는다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FestaFiesta|SafeLocation", meta = (ClampMin = "10.0"))
+	float SafeSampleSpacingCm = 50.f;
+
+	// 기록 개수 상한. 간격과 곱한 길이만큼의 길을 기억한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FestaFiesta|SafeLocation", meta = (ClampMin = "2"))
+	int32 MaxSafeSamples = 40;
+
+	// 되돌아갈 때 걸어온 길을 이만큼 거슬러 올라간다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|SafeLocation", meta = (ClampMin = "0.0"))
+	float RestoreBackoffCm = 250.f;
+
+	// 도착 지점에서 위로 띄우는 높이. 바닥에 파묻혀 끼는 것을 막는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|SafeLocation", meta = (ClampMin = "0.0"))
+	float RestoreLiftCm = 10.f;
 
 	/* 시야 고정을 켜고 끈다. 로블록스의 시프트락과 같은 동작이다.
 
@@ -137,5 +176,13 @@ protected:
 	TObjectPtr<UCameraComponent> FollowCamera;
 
 private:
+	void SampleSafeLocation();
+
 	bool bSprinting = false;
+
+	// 땅 위에서 지나온 위치. 오래된 것이 앞이다.
+	TArray<FVector> SafeLocations;
+
+	FTimerHandle SafeSampleTimer;
+	bool bWarnedNoSafeLocation = false;
 };
