@@ -4,6 +4,9 @@
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Festival/FF_RequiredFacilitiesSubsystem.h"
 
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Blueprint/WidgetTree.h"
+
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
@@ -14,6 +17,7 @@
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 #include "Engine/Texture2D.h"
 #include "FF_FFZSWorldSubsystem.h"
@@ -58,6 +62,24 @@ namespace FFPrepHudBarLocal
 	}
 }
 
+bool FFF_PrepPanelLayout::TryResolveCenteredPosition(const FGeometry& ViewportGeometry,
+	const FGeometry& CanvasGeometry, FVector2D& OutPosition) const
+{
+	const FVector2D ViewportSize = ViewportGeometry.GetLocalSize();
+	const FVector2D CanvasSize = CanvasGeometry.GetLocalSize();
+	if (ViewportSize.X <= 0.0 || ViewportSize.Y <= 0.0 || CanvasSize.X <= 0.0 || CanvasSize.Y <= 0.0)
+	{
+		return false;
+	}
+
+	// Geometry 변환에 DPI와 창의 화면상 원점이 이미 포함된다. ViewportScale로 다시 나누지 않는다.
+	const FVector2D CenterAbsolute = ViewportGeometry.LocalToAbsolute(ViewportSize * 0.5);
+	// 0.5 앵커를 유지해야 Canvas DesiredSize가 이동량 때문에 늘어나지 않는다.
+	// (0,0) 앵커는 |Offset|을 DesiredSize에 더해 Auto 높이 부모에서 재배치 피드백이 생긴다.
+	OutPosition = FVector2D(CanvasGeometry.AbsoluteToLocal(CenterAbsolute)) - CanvasSize * 0.5 + Offset;
+	return !OutPosition.ContainsNaN();
+}
+
 UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -99,15 +121,15 @@ UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 
 	// 인력 — 스텝퍼와 짧은 표뿐이다. 크게 열면 빈 공간만 늘어난다.
 	PanelLayouts.Add(EFF_PrepHudTab::Staff,
-		{ EFF_PrepPanelDock::Center, FVector2D(760.0, 520.0), CenterNudge });
+		{ EFF_PrepPanelDock::Center, FVector2D(760.0, 520.0), FVector2D::ZeroVector });
 
 	// 프로그램 — 슬롯·후보·예상 효과 3열.
 	PanelLayouts.Add(EFF_PrepHudTab::Program,
-		{ EFF_PrepPanelDock::Center, FVector2D(1160.0, 640.0), CenterNudge });
+		{ EFF_PrepPanelDock::Center, FVector2D(1160.0, 640.0), FVector2D::ZeroVector });
 
 	// 홍보 — 등급 카드 3장 + 예상 방문객 범위.
 	PanelLayouts.Add(EFF_PrepHudTab::Promotion,
-		{ EFF_PrepPanelDock::Center, FVector2D(1080.0, 600.0), CenterNudge });
+		{ EFF_PrepPanelDock::Center, FVector2D(1080.0, 600.0), FVector2D::ZeroVector });
 
 	// 피날레 — 등급 카드를 가로로 5장 놓아야 해서 가장 넓다.
 	PanelLayouts.Add(EFF_PrepHudTab::Finale,
@@ -115,7 +137,7 @@ UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 
 	// 점검 — 개장 직전 마지막 확인이라 카드·요약·견적을 한 번에 봐야 한다.
 	PanelLayouts.Add(EFF_PrepHudTab::Check,
-		{ EFF_PrepPanelDock::Center, FVector2D(1280.0, 780.0), CenterNudge });
+		{ EFF_PrepPanelDock::Center, FVector2D(1280.0, 780.0), FVector2D::ZeroVector });
 
 	DefaultPanelLayout = { EFF_PrepPanelDock::Center, FVector2D(1160.0, 640.0), CenterNudge };
 
@@ -248,6 +270,20 @@ void UFF_PrepHudBar::NativeDestruct()
 
 	UnbindSources();
 	Super::NativeDestruct();
+}
+
+void UFF_PrepHudBar::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (Selection.bHasSelection)
+	{
+		const FFF_PrepPanelLayout Layout = ResolveLayout(Selection.Tab);
+		if (UsesViewportCenter(Layout))
+		{
+			// 창 크기·DPI·부모 레이아웃 변화만 위치에 반영하고 Designer의 Size/Offset은 덮어쓰지 않는다.
+			ApplyPanelLayout(Layout, &MyGeometry);
+		}
+	}
 }
 
 // =============================================================================
@@ -516,12 +552,7 @@ void UFF_PrepHudBar::ApplySelection(const FFF_PrepTabSelection& NewSelection)
 
 	// 3) 호스트는 `SelfHitTestInvisible` 로 띄운다. `Visible` 이면 패널 바깥의 빈 영역까지
 	//    월드 클릭을 먹는다. 자식(패널)은 그대로 클릭을 받는다.
-	if (Panel_PanelHost)
-	{
-		Panel_PanelHost->SetVisibility(Selection.bHasSelection
-			? ESlateVisibility::SelfHitTestInvisible
-			: ESlateVisibility::Collapsed);
-	}
+	RefreshPanelHostVisibility();
 
 	// 4) 탭 선택 표시. 색만 바꾸지 않고 배경 브러시가 함께 바뀐다 (AT-011).
 	for (UFF_PrepHudTabButton* TabButton : TabButtons)
@@ -822,8 +853,28 @@ float UFF_PrepHudBar::GetBottomBarHeight() const
 	return BarHeight;
 }
 
-void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
+bool UFF_PrepHudBar::UsesViewportCenter(const FFF_PrepPanelLayout& Layout) const
 {
+	if (!Selection.bHasSelection || Layout.Dock != EFF_PrepPanelDock::Center)
+	{
+		return false;
+	}
+	return Selection.Tab == EFF_PrepHudTab::Program || Selection.Tab == EFF_PrepHudTab::Staff
+		|| Selection.Tab == EFF_PrepHudTab::Promotion || Selection.Tab == EFF_PrepHudTab::Check;
+}
+
+void UFF_PrepHudBar::RefreshPanelHostVisibility()
+{
+	if (Panel_PanelHost)
+	{
+		Panel_PanelHost->SetVisibility(!Selection.bHasSelection ? ESlateVisibility::Collapsed
+			: bAwaitingCenteredLayout ? ESlateVisibility::Hidden : ESlateVisibility::SelfHitTestInvisible);
+	}
+}
+
+void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout, const FGeometry* CurrentHudGeometry)
+{
+	bAwaitingCenteredLayout = false;
 	if (!Panel_PanelHost)
 	{
 		return;
@@ -833,6 +884,7 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 	if (Dock == EFF_PrepPanelDock::Designer)
 	{
 		// 손으로 잡은 자리를 그대로 쓴다. 여기서 손대면 디자이너 작업이 매번 사라진다.
+		RefreshPanelHostVisibility();
 		return;
 	}
 
@@ -843,8 +895,37 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 		UE_LOG(LogFestaFiestaUI, Verbose,
 			TEXT("[%s] Panel_PanelHost 가 CanvasPanel 자식이 아니라 도킹을 코드가 정하지 않는다."),
 			*GetName());
+		RefreshPanelHostVisibility();
 		return;
 	}
+
+	if (UsesViewportCenter(Layout))
+	{
+		const UWidget* Canvas = Panel_PanelHost->GetParent();
+		const FGeometry HudGeometry = CurrentHudGeometry ? *CurrentHudGeometry : GetCachedGeometry();
+		// 루트 Canvas는 HUD와 같은 공간이다. Tick의 최신 geometry를 써 resize 직전 캐시를 피한다.
+		const FGeometry CanvasGeometry = WidgetTree && WidgetTree->RootWidget == Canvas
+			? HudGeometry : Canvas->GetCachedGeometry();
+		const UWorld* World = GetWorld();
+		// 게임에서는 실제 viewport만 쓴다. 에디터의 독립 WidgetRenderer는 HUD 표면을 기준으로 검증한다.
+		const FGeometry ViewportGeometry = World && World->IsGameWorld()
+			? UWidgetLayoutLibrary::GetViewportWidgetGeometry(this) : HudGeometry;
+		FVector2D Position;
+		bAwaitingCenteredLayout = !Layout.TryResolveCenteredPosition(ViewportGeometry, CanvasGeometry, Position);
+		if (!bAwaitingCenteredLayout)
+		{
+			const FAnchors Anchors(0.5f, 0.5f);
+			const FVector2D Alignment(0.5, 0.5);
+			const FMargin Offsets(Position.X, Position.Y, Layout.Size.X, Layout.Size.Y);
+			if (CanvasSlot->GetAutoSize()) { CanvasSlot->SetAutoSize(false); }
+			if (CanvasSlot->GetAnchors() != Anchors) { CanvasSlot->SetAnchors(Anchors); }
+			if (CanvasSlot->GetAlignment() != Alignment) { CanvasSlot->SetAlignment(Alignment); }
+			if (CanvasSlot->GetOffsets() != Offsets) { CanvasSlot->SetOffsets(Offsets); }
+		}
+		RefreshPanelHostVisibility();
+		return;
+	}
+	RefreshPanelHostVisibility();
 
 	// === CanvasPanelSlot 의 Offsets 는 앵커에 따라 뜻이 달라진다 ===
 	// 그 축이 늘어나 있으면(min != max) 양쪽 **여백**이고, 점 앵커면 **위치와 크기**다.
@@ -1054,7 +1135,7 @@ void UFF_PrepHudBar::RefreshCta()
 			Box_Cta->SetVisibility(ESlateVisibility::Collapsed);
 		}
 		SetGroupTextOrHide(nullptr, Text_CtaReason, FText::GetEmpty());
-		SetCtaState(State);
+		SetCtaState(State, FText::GetEmpty());
 		return;
 	}
 
@@ -1138,17 +1219,18 @@ void UFF_PrepHudBar::RefreshCta()
 		}
 	}
 
-	SetCtaState(State);
+	SetCtaState(State, Reason);
 }
 
-void UFF_PrepHudBar::SetCtaState(EFF_PrepCtaState NewState)
+void UFF_PrepHudBar::SetCtaState(EFF_PrepCtaState NewState, const FText& NewReason)
 {
-	if (NewState == LastCtaState)
+	if (NewState == LastCtaState && LastCtaReason.EqualTo(NewReason))
 	{
 		return;
 	}
 
 	LastCtaState = NewState;
+	LastCtaReason = NewReason;
 
 	// 점검 패널의 `개장하기` 가 이 판정을 그대로 쓴다. 바가 시설 수를 다시 세는 순간
 	// 알려 주지 않으면 패널 버튼이 예전 상태로 남는다.

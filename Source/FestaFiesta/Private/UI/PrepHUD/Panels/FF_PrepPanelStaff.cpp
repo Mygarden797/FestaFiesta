@@ -3,6 +3,7 @@
 #include "UI/PrepHUD/Panels/FF_PrepPanelStaff.h"
 
 #include "Components/Button.h"
+#include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "UI/FF_UILog.h"
@@ -70,9 +71,35 @@ FFF_PrepHireQuote FFF_PrepStaffRules::BuildQuote(
 	return Result;
 }
 
+bool FFF_PrepStaffRules::TryGetCapacityFraction(int32 Current, int32 Maximum, float& OutFraction)
+{
+	OutFraction = 0.f;
+	if (Current < 0 || Maximum < 0)
+	{
+		return false;
+	}
+
+	if (Maximum > 0)
+	{
+		OutFraction = FMath::Clamp(static_cast<float>(Current) / static_cast<float>(Maximum), 0.f, 1.f);
+	}
+	return true;
+}
+
 // =============================================================================
 // UFF_PrepPanelStaff
 // =============================================================================
+
+UFF_PrepPanelStaff::UFF_PrepPanelStaff(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	StaffCapacityTextFormat = LOCTEXT("PrepStaff_CapacityFormat", "{Current} / {Maximum}명");
+	StaffBreakdownTextFormat = LOCTEXT("PrepStaff_BreakdownFormat", "기본 {Base}명 · 추가 고용 {Hired}명");
+	SelectedCountTextFormat = LOCTEXT("PrepStaff_SelectedCountFormat", "{Count}");
+	HireUnitCostTextFormat = LOCTEXT("PrepStaff_UnitCostFormat", "{Count}명 × {UnitCost} Gold");
+	GoldValueTextFormat = LOCTEXT("PrepStaff_GoldValueFormat", "{Gold} Gold");
+	HireActionTextFormat = LOCTEXT("PrepStaff_HireActionFormat", "{Count}명 고용하기");
+}
 
 void UFF_PrepPanelStaff::NativePreConstruct()
 {
@@ -219,10 +246,33 @@ void UFF_PrepPanelStaff::RefreshAll()
 			FText::AsNumber(MaxTotal))
 		: FText::GetEmpty());
 
+	// 새 시안은 현재/최대 수치, 기본/추가 내역과 비율을 나누어 보여 준다.
+	const int32 Maximum = (Base >= 0 && MaxHired >= 0) ? Base + MaxHired : INDEX_NONE;
+	FFormatNamedArguments StaffArgs;
+	StaffArgs.Add(TEXT("Current"), FText::AsNumber(Total));
+	StaffArgs.Add(TEXT("Maximum"), FText::AsNumber(Maximum));
+	StaffArgs.Add(TEXT("Base"), FText::AsNumber(Base));
+	StaffArgs.Add(TEXT("Hired"), FText::AsNumber(Hired));
+	SetTextOrHide(Text_StaffCapacity, Total >= 0 && Maximum >= 0
+		? FText::Format(StaffCapacityTextFormat, StaffArgs) : FText::GetEmpty());
+	SetTextOrHide(Text_StaffBreakdown, Base >= 0 && Hired >= 0
+		? FText::Format(StaffBreakdownTextFormat, StaffArgs) : FText::GetEmpty());
+	if (Progress_StaffCapacity)
+	{
+		float Fraction = 0.f;
+		const bool bKnownCapacity = FFF_PrepStaffRules::TryGetCapacityFraction(Total, Maximum, Fraction);
+		Progress_StaffCapacity->SetPercent(Fraction);
+		Progress_StaffCapacity->SetVisibility(bKnownCapacity
+			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	}
+
 	// --- 스텝퍼 ---
+	FFormatNamedArguments HireArgs;
+	HireArgs.Add(TEXT("Count"), FText::AsNumber(Quote.SelectedCount));
+	HireArgs.Add(TEXT("UnitCost"), FText::AsNumber(HireCost));
 	if (Text_SelectedCount)
 	{
-		Text_SelectedCount->SetText(FText::AsNumber(Quote.SelectedCount));
+		Text_SelectedCount->SetText(FText::Format(SelectedCountTextFormat, HireArgs));
 	}
 	if (Button_Decrease)
 	{
@@ -245,6 +295,22 @@ void UFF_PrepPanelStaff::RefreshAll()
 			LOCTEXT("PrepStaff_GoldAfter", "고용 후 잔액 {0}"),
 			FText::AsNumber(Quote.GoldAfterHire))
 		: FText::GetEmpty());
+
+	SetTextOrHide(Text_HireUnitCost, Quote.HireCostTotal != INDEX_NONE && HireCost >= 0
+		? FText::Format(HireUnitCostTextFormat, HireArgs) : FText::GetEmpty());
+	const auto GoldValue = [this](int32 Value)
+	{
+		if (Value == INDEX_NONE)
+		{
+			return FText::GetEmpty();
+		}
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("Gold"), FText::AsNumber(Value));
+		return FText::Format(GoldValueTextFormat, Args);
+	};
+	SetTextOrHide(Text_HireCostTotal, GoldValue(Quote.HireCostTotal));
+	SetTextOrHide(Text_GoldAfterValue, GoldValue(Quote.GoldAfterHire));
+	SetTextOrHide(Text_HireAction, FText::Format(HireActionTextFormat, HireArgs));
 
 	if (Button_Hire)
 	{
@@ -289,6 +355,8 @@ void UFF_PrepPanelStaff::RefreshAll()
 	SetTextOrHide(Text_WageCost, (Hired >= 0 && HireCost != INDEX_NONE)
 		? FText::Format(LOCTEXT("PrepStaff_HireSpent", "{0} (누계)"), FText::AsNumber(Hired * HireCost))
 		: FText::GetEmpty());
+	SetTextOrHide(Text_HireSpentValue, Hired >= 0 && HireCost >= 0
+		? GoldValue(Hired * HireCost) : FText::GetEmpty());
 }
 
 void UFF_PrepPanelStaff::ChangeSelection(int32 Delta)

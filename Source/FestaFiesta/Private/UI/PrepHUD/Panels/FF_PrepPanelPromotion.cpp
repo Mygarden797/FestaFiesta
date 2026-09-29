@@ -86,6 +86,17 @@ FFF_PrepPromotionQuote FFF_PrepPromotionRules::BuildQuote(
 	return Result;
 }
 
+TOptional<int32> FFF_PrepPromotionRules::ResolveSummaryBalance(
+	const FFF_PrepPromotionQuote& Quote, EFF_PromotionChoice Purchased, int32 Gold)
+{
+	if (Purchased != EFF_PromotionChoice::None)
+	{
+		return Gold != INDEX_NONE ? TOptional<int32>(Gold) : TOptional<int32>();
+	}
+	return Quote.bHasGoldAfterPurchase
+		? TOptional<int32>(Quote.GoldAfterPurchase) : TOptional<int32>();
+}
+
 // =============================================================================
 // UFF_PrepPanelPromotion
 // =============================================================================
@@ -100,8 +111,7 @@ void UFF_PrepPanelPromotion::NativeOnInitialized()
 	// 그 사이 경제가 붙어서 **절반만 맞는 말**이 됐다. 예상 방문객
 	// (`GetExpectedVisitors()`) 에는 배수가 들어간다. 안 들어가는 것은 실제 스폰이다
 	// (`AFF_SpawnActor::UnitCount` 를 쓴다). 김시리님 권장 문구를 그대로 쓴다.
-	SetTextOrHide(Text_NotAppliedNotice, LOCTEXT("PrepPromotion_NotApplied",
-		"예상 방문객에는 반영되며, 실제 입장 인원 연동은 준비 중입니다."));
+	SetTextOrHide(Text_NotAppliedNotice, NotAppliedNoticeText);
 
 	// `Text_OnceNotice` 는 여기서 안 채운다 — 사유 문구와 같은 말을 할 때가 있어
 	// `RefreshAll` 이 상태를 보고 켜고 끈다.
@@ -273,7 +283,7 @@ void UFF_PrepPanelPromotion::RefreshAll()
 		}
 		else if (Index == SelectedIndex)
 		{
-			CardWidget->ApplyCardState(EFF_PrepCardState::Selected, FText::GetEmpty());
+			CardWidget->ApplyCardState(EFF_PrepCardState::Selected, SelectedBadgeText);
 		}
 		else
 		{
@@ -289,7 +299,7 @@ void UFF_PrepPanelPromotion::RefreshAll()
 
 	SetTextOrHide(Text_CostPreview, (Quote.CostGold != INDEX_NONE)
 		? FText::Format(
-			LOCTEXT("PrepPromotion_CostPreview", "{0} Gold · 방문객 ×{1}"),
+			LOCTEXT("PrepPromotion_CostPreview", "{0} Gold · 예상 방문객 ×{1}"),
 			FText::AsNumber(Quote.CostGold),
 			FText::AsNumber(Quote.VisitorMultiplier, &MultiplierFormat))
 		: FText::GetEmpty());
@@ -299,6 +309,27 @@ void UFF_PrepPanelPromotion::RefreshAll()
 			LOCTEXT("PrepPromotion_GoldAfter", "구매 후 잔액 {0}"),
 			FText::AsNumber(Quote.GoldAfterPurchase))
 		: FText::GetEmpty());
+
+	// 새 요약 영역은 구매 이후에도 유지한다. 이미 낸 홍보비를 다시 차감하지 않는다.
+	const bool bPurchased = Purchased != EFF_PromotionChoice::None;
+	const FFF_PromotionOptionView* DisplayOption = bPurchased
+		? Options.FindByPredicate([Purchased](const FFF_PromotionOptionView& One)
+			{ return One.Choice == Purchased; })
+		: FindSelectedOption();
+	SetTextOrHide(Text_SelectedPromotion, bPurchased
+		? FText::Format(PurchasedPromotionFormat, GetChoiceLabel(Purchased))
+		: DisplayOption
+			? FText::Format(SelectedPromotionFormat, GetChoiceLabel(DisplayOption->Choice))
+			: NoPromotionSelectedText);
+	SetTextOrHide(Text_PurchaseCost, DisplayOption && DisplayOption->CostGold != INDEX_NONE
+		? FText::Format(PurchaseCostFormat, FText::AsNumber(DisplayOption->CostGold))
+		: MissingValueText);
+	const TOptional<int32> SummaryBalance =
+		FFF_PrepPromotionRules::ResolveSummaryBalance(Quote, Purchased, Gold);
+	SetTextOrHide(Text_GoldAfterValue, SummaryBalance.IsSet()
+		? FText::Format(GoldAfterValueFormat, FText::AsNumber(SummaryBalance.GetValue()))
+		: MissingValueText);
+	SetTextOrHide(Text_GoldAfterLabel, bPurchased ? CurrentGoldLabel : GoldAfterLabel);
 
 	if (Button_Purchase)
 	{
@@ -316,8 +347,7 @@ void UFF_PrepPanelPromotion::RefreshAll()
 
 	SetTextOrHide(Text_OnceNotice, bReasonRepeatsNotice
 		? FText::GetEmpty()
-		: LOCTEXT("PrepPromotion_Once",
-			"홍보는 축제당 한 번만 고를 수 있고 3일 전체에 적용됩니다. 셋업이 지나면 살 수 없습니다."));
+		: OnceNoticeText);
 
 	// 🔴 `Collapsed` 가 아니라 `Hidden` 이다. 이 칸은 액션 행의 `Fill` 슬롯이라 접으면
 	// 슬롯째 사라지고 구매 버튼이 왼쪽으로 튄다 (프로그램 패널에서 실제로 겪었다).
@@ -413,6 +443,11 @@ void UFF_PrepPanelPromotion::HandlePurchaseClicked()
 	}
 }
 
+FText UFF_PrepPanelPromotion::GetPurchaseConfirmationTitle(EFF_PromotionChoice Choice) const
+{
+	return FText::Format(ConfirmTitleFormat, GetChoiceLabel(Choice));
+}
+
 bool UFF_PrepPanelPromotion::OpenConfirmDialog()
 {
 	// 이미 떠 있으면 두 번 띄우지 않는다.
@@ -457,19 +492,18 @@ bool UFF_PrepPanelPromotion::OpenConfirmDialog()
 
 	FFF_ConfirmDialogRow& CostRow = Rows.AddDefaulted_GetRef();
 	CostRow.Label = LOCTEXT("PrepPromotion_RowCost", "홍보비");
-	CostRow.Value = FText::Format(LOCTEXT("PrepPromotion_RowCostValue", "{0} Gold"),
+	CostRow.Value = FText::Format(PurchaseCostFormat,
 		FText::AsNumber(Quote.CostGold));
 
 	if (Quote.bHasGoldAfterPurchase)
 	{
 		FFF_ConfirmDialogRow& GoldRow = Rows.AddDefaulted_GetRef();
 		GoldRow.Label = LOCTEXT("PrepPromotion_RowGoldAfter", "구매 후 잔액");
-		GoldRow.Value = FText::AsNumber(Quote.GoldAfterPurchase);
+		GoldRow.Value = FText::Format(GoldAfterValueFormat, FText::AsNumber(Quote.GoldAfterPurchase));
 	}
 
 	Dialog->Configure(
-		FText::Format(LOCTEXT("PrepPromotion_ConfirmTitle", "홍보 `{0}` 을 살까요?"),
-			GetChoiceLabel(Quote.Choice)),
+		GetPurchaseConfirmationTitle(Quote.Choice),
 		LOCTEXT("PrepPromotion_ConfirmBody",
 			"홍보는 축제당 한 번뿐이고 되돌릴 수 없습니다. 3일 전체에 적용됩니다.\n"
 			"예상 방문객에는 반영되고, 실제 입장 인원 연동은 준비 중입니다."),

@@ -116,16 +116,18 @@ struct FESTAFIESTA_API FFF_PrepPromotionRules
 		EFF_PromotionChoice Purchased,
 		bool bCanPurchaseNow,
 		int32 Gold);
+
+	/** 구매 완료 후에는 현재 잔액을 보여준다. 기존 견적에서 홍보비를 다시 빼지 않는다. */
+	static TOptional<int32> ResolveSummaryBalance(
+		const FFF_PrepPromotionQuote& Quote, EFF_PromotionChoice Purchased, int32 Gold);
 };
 
 /**
  * 준비 단계 `홍보` 패널.
  *
- * === 🔴 여기만 절반이 더미다 ===
- * 등급 비용·배수와 Gold 차감은 진짜지만, **배수를 방문객에 적용하는 소비자가 아직 없다.**
- * 사도 방문객이 늘지 않는다 — 그래서 화면에 그 사실을 적는다. 안 적으면 플레이어가 돈만 내고
- * 아무 일도 안 일어나는 것을 버그로 본다. 요청 내역은 `UI_API.md` 의
- * `홍보 패널 — UI 가 더미로 채운 부분` 절에 있다.
+ * === 예상치와 실제 입장 인원을 구분한다 ===
+ * 등급 비용·배수와 Gold 차감, 예상 방문객 반영은 연결되어 있다.
+ * 실제 입장 인원과의 연동은 별개이므로 해당 안내를 화면에 남긴다.
  *
  * === 확인창을 거친다 ===
  * 피날레와 같다. 축제당 1회이고 셋업이 지나면 되돌릴 수 없다.
@@ -142,6 +144,10 @@ class FESTAFIESTA_API UFF_PrepPanelPromotion : public UFF_PrepPanelBase
 public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Promotion")
 	FFF_PrepPromotionQuote GetQuote() const { return Quote; }
+
+	/** 저장된 제목 형식에 실제 홍보 등급을 넣는다. 확인창·미리보기가 같은 문구를 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Promotion")
+	FText GetPurchaseConfirmationTitle(EFF_PromotionChoice Choice) const;
 
 protected:
 	virtual void NativeOnInitialized() override;
@@ -176,11 +182,11 @@ protected:
 protected:
 	// --- 위젯 바인딩. 전부 Optional 이다 ---
 
-	/** 카드 3장이 들어갈 자리. `WrapBox` 를 권한다. */
+	/** 실제 등급 목록이 들어갈 자리. `WrapBox` 를 권한다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
 	TObjectPtr<UPanelWidget> Box_PromotionCards;
 
-	/** ★ 배수가 아직 안 먹는다는 안내. **비우지 않는다.** */
+	/** 예상 방문객과 실제 입장 인원 연동 범위를 설명하는 안내. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
 	TObjectPtr<UTextBlock> Text_NotAppliedNotice;
 
@@ -195,6 +201,20 @@ protected:
 	/** `구매 후 잔액 6,400`. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
 	TObjectPtr<UTextBlock> Text_GoldAfter;
+
+	/** 새 요약 영역. 기존 견적 바인딩은 이전 WBP 호환용으로 유지한다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
+	TObjectPtr<UTextBlock> Text_SelectedPromotion;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
+	TObjectPtr<UTextBlock> Text_PurchaseCost;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
+	TObjectPtr<UTextBlock> Text_GoldAfterValue;
+
+	/** 구매 전/완료 후의 잔액 의미를 구분한다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
+	TObjectPtr<UTextBlock> Text_GoldAfterLabel;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
 	TObjectPtr<UButton> Button_Purchase;
@@ -215,6 +235,47 @@ protected:
 	/** 확인창 클래스. 비면 확인창 없이 바로 사지 않고 **거절한다** — 되돌릴 수 없는 결정이다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion")
 	FString ConfirmDialogPath = TEXT("/Game/FestaFiesta/UI/Frontend/WBP_FF_ConfirmDialog");
+
+	/** {0}: 구매하려는 등급 이름. 백틱은 FText 이스케이프이므로 인용부호로 쓰지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
+	FText ConfirmTitleFormat = NSLOCTEXT("FestaFiestaPrepPromotion", "ConfirmTitleFormat", "‘{0}’ 홍보를 구매할까요?");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
+	FText NoPromotionSelectedText = NSLOCTEXT("FestaFiestaPrepPromotion", "NoPromotionSelected", "등급을 선택하세요");
+
+	/** {0}: 선택한 등급 이름. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
+	FText SelectedPromotionFormat = NSLOCTEXT("FestaFiestaPrepPromotion", "SelectedPromotionFormat", "{0}");
+
+	/** {0}: 이미 구매한 등급 이름. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
+	FText PurchasedPromotionFormat = NSLOCTEXT("FestaFiestaPrepPromotion", "PurchasedPromotionFormat", "{0} · 구매 완료");
+
+	/** {0}: 실제 홍보비. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
+	FText PurchaseCostFormat = NSLOCTEXT("FestaFiestaPrepPromotion", "PurchaseCostFormat", "{0} Gold");
+
+	/** {0}: 구매 후 예상 잔액 또는 구매 완료 후 현재 잔액. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
+	FText GoldAfterValueFormat = NSLOCTEXT("FestaFiestaPrepPromotion", "GoldAfterValueFormat", "{0} Gold");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
+	FText GoldAfterLabel = NSLOCTEXT("FestaFiestaPrepPromotion", "GoldAfterLabel", "구매 후 잔액");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
+	FText CurrentGoldLabel = NSLOCTEXT("FestaFiestaPrepPromotion", "CurrentGoldLabel", "현재 잔액");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
+	FText MissingValueText = NSLOCTEXT("FestaFiestaPrepPromotion", "MissingValue", "—");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
+	FText SelectedBadgeText = NSLOCTEXT("FestaFiestaPrepPromotion", "SelectedBadge", "✓ 선택됨");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
+	FText OnceNoticeText = NSLOCTEXT("FestaFiestaPrepPromotion", "OnceNotice", "축제당 1회, 셋업에서 구매할 수 있으며 3일 전체에 적용됩니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
+	FText NotAppliedNoticeText = NSLOCTEXT("FestaFiestaPrepPromotion", "NotAppliedNotice", "예상 방문객에는 반영되며, 실제 입장 인원 연동은 준비 중입니다.");
 
 private:
 	UFF_FestivalViewModelSubsystem* GetViewModel() const;

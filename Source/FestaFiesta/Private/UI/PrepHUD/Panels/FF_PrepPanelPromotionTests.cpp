@@ -172,4 +172,86 @@ bool FFF_PrepPromotionRules_Quote::RunTest(const FString& Parameters)
 	return true;
 }
 
+// 구매 완료 화면에서 지불한 홍보비를 다시 빼면 잔액이 실제 경제 값과 달라진다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepPromotionRules_SummaryBalance,
+	"FestaFiesta.UI.PrepPromotion.SummaryBalance",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_PrepPromotionRules_SummaryBalance::RunTest(const FString& Parameters)
+{
+	using namespace FFF_PrepPromotionRulesTestHelpers;
+	const FFF_PromotionOptionView Focused = MakeOption(EFF_PromotionChoice::Focused, 1400, 1.12f);
+	const FFF_PrepPromotionQuote BeforePurchase = FFF_PrepPromotionRules::BuildQuote(
+		&Focused, EFF_PromotionChoice::None, true, 9700);
+	const TOptional<int32> BeforeBalance = FFF_PrepPromotionRules::ResolveSummaryBalance(
+		BeforePurchase, EFF_PromotionChoice::None, 9700);
+	TestTrue(TEXT("구매 전에는 예상 잔액이 있다"), BeforeBalance.IsSet());
+	if (BeforeBalance.IsSet())
+	{
+		TestEqual(TEXT("구매 전 비용은 한 번 뺀다"), BeforeBalance.GetValue(), 8300);
+	}
+
+	// 재개한 패널에는 선택 카드가 없지만, 구매한 등급과 소유자의 현재 잔액은 남아 있다.
+	const FFF_PrepPromotionQuote Reopened = FFF_PrepPromotionRules::BuildQuote(
+		nullptr, EFF_PromotionChoice::Focused, true, 8300);
+	const TOptional<int32> ReopenedBalance = FFF_PrepPromotionRules::ResolveSummaryBalance(
+		Reopened, EFF_PromotionChoice::Focused, 8300);
+	TestTrue(TEXT("다시 연 구매 완료 화면도 잔액을 표시한다"), ReopenedBalance.IsSet());
+	if (ReopenedBalance.IsSet())
+	{
+		TestEqual(TEXT("구매 완료 뒤 1400을 다시 차감하지 않는다"), ReopenedBalance.GetValue(), 8300);
+	}
+
+	// 다른 지출 결과가 오면 현재 잔액을 따라야 한다. 이전 구매 견적을 재사용하지 않는다.
+	const TOptional<int32> LaterBalance = FFF_PrepPromotionRules::ResolveSummaryBalance(
+		BeforePurchase, EFF_PromotionChoice::Focused, 7200);
+	TestTrue(TEXT("후속 결과의 잔액이 있다"), LaterBalance.IsSet());
+	if (LaterBalance.IsSet())
+	{
+		TestEqual(TEXT("구매 후 다른 지출도 현재 잔액을 반영한다"), LaterBalance.GetValue(), 7200);
+	}
+	TestFalse(TEXT("소유자의 잔액을 모르면 과거 견적으로 대신하지 않는다"),
+		FFF_PrepPromotionRules::ResolveSummaryBalance(
+			BeforePurchase, EFF_PromotionChoice::Focused, INDEX_NONE).IsSet());
+
+	const FFF_PrepPromotionQuote OneShort = FFF_PrepPromotionRules::BuildQuote(
+		&Focused, EFF_PromotionChoice::None, true, 1399);
+	const TOptional<int32> OneShortBalance = FFF_PrepPromotionRules::ResolveSummaryBalance(
+		OneShort, EFF_PromotionChoice::None, 1399);
+	TestTrue(TEXT("-1 예상 잔액은 미확인 값이 아니다"), OneShortBalance.IsSet());
+	if (OneShortBalance.IsSet())
+	{
+		TestEqual(TEXT("1 Gold 부족 표시를 유지한다"), OneShortBalance.GetValue(), -1);
+	}
+	const FFF_PrepPromotionQuote Unselected = FFF_PrepPromotionRules::BuildQuote(
+		nullptr, EFF_PromotionChoice::None, true, 9700);
+	TestFalse(TEXT("미선택 비용이 없으면 구매 후 잔액도 단정하지 않는다"),
+		FFF_PrepPromotionRules::ResolveSummaryBalance(
+			Unselected, EFF_PromotionChoice::None, 9700).IsSet());
+	return true;
+}
+
+// 백틱은 FText에서 중괄호를 이스케이프한다. 실제 확인창 제목에 치환자가 노출된 회귀를 막는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepPromotionRules_ConfirmTitle,
+	"FestaFiesta.UI.PrepPromotion.ConfirmTitle",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_PrepPromotionRules_ConfirmTitle::RunTest(const FString& Parameters)
+{
+	const UFF_PrepPanelPromotion* Panel = GetDefault<UFF_PrepPanelPromotion>();
+	const struct { EFF_PromotionChoice Choice; const TCHAR* Label; } Cases[] =
+	{
+		{ EFF_PromotionChoice::Basic, TEXT("지역 SNS") },
+		{ EFF_PromotionChoice::Focused, TEXT("전국 홍보") },
+		{ EFF_PromotionChoice::Influencer, TEXT("인플루언서") }
+	};
+	for (const auto& One : Cases)
+	{
+		const FString Title = Panel->GetPurchaseConfirmationTitle(One.Choice).ToString();
+		TestTrue(FString::Printf(TEXT("%s 확인창에 실제 등급명을 표시한다"), One.Label),
+			Title.Contains(One.Label));
+		TestFalse(TEXT("확인창에 포맷 치환자가 남지 않는다"), Title.Contains(TEXT("{0}")));
+		TestFalse(TEXT("확인창에 이스케이프 백틱이 노출되지 않는다"), Title.Contains(TEXT("`")));
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -142,6 +142,15 @@ void UFF_PrepPanelProgram::NativeOnInitialized()
 			"프로그램은 하루짜리입니다. 다음 날에는 다시 편성해야 합니다.");
 	}
 	SetTextOrHide(Text_DailyNotice, DailyNoticeText);
+	if (Combo_Facilities)
+	{
+		Combo_Facilities->OnSelectionChanged.AddUniqueDynamic(this, &ThisClass::HandleFacilitySelectionChanged);
+		// 디자이너가 직접 연결한 항목 생성 함수는 보존한다.
+		if (!Combo_Facilities->OnGenerateWidgetEvent.IsBound())
+		{
+			Combo_Facilities->OnGenerateWidgetEvent.BindDynamic(this, &ThisClass::GenerateFacilityOptionWidget);
+		}
+	}
 
 	// 내부 버튼이라 인스턴스 수명과 같다. 외부 시스템 구독만 패널을 열 때 붙인다.
 	if (Button_Schedule)
@@ -316,6 +325,7 @@ void UFF_PrepPanelProgram::RebuildCards()
 
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	Catalog = ViewModel ? ViewModel->GetProgramCatalog() : TArray<FFF_ProgramCard>();
+	SetTextOrHide(Text_EmptyCatalog, Catalog.IsEmpty() ? EmptyCatalogText : FText::GetEmpty());
 
 	UClass* ResolvedCardClass = ResolveWidgetClass(CardWidgetClass, CardWidgetFallbackPath);
 	if (!Box_ProgramCards || !ResolvedCardClass)
@@ -366,6 +376,8 @@ void UFF_PrepPanelProgram::RebuildCards()
 
 void UFF_PrepPanelProgram::RebuildFacilityChoices()
 {
+	const FGuid PreviousFacility = FacilityOptions.IsValidIndex(SelectedFacilityIndex)
+		? FacilityOptions[SelectedFacilityIndex].FacilityInstanceId : FGuid();
 	RebuildCatalogChoices();
 	FacilityWidgets.Reset();
 	if (Box_FacilityChoices)
@@ -386,6 +398,7 @@ void UFF_PrepPanelProgram::RebuildFacilityChoices()
 		{
 			Box_FacilityRow->SetVisibility(ESlateVisibility::Collapsed);
 		}
+		RefreshFacilityCombo();
 		return;
 	}
 
@@ -397,7 +410,7 @@ void UFF_PrepPanelProgram::RebuildFacilityChoices()
 	FacilityOptions = ViewModel->GetEligibleFacilitiesForProgram(Card->ProgramId);
 
 	UClass* ResolvedChoiceClass = ResolveWidgetClass(FacilityChoiceClass, FacilityChoiceFallbackPath);
-	if (Box_FacilityChoices && ResolvedChoiceClass)
+	if (!Combo_Facilities && Box_FacilityChoices && ResolvedChoiceClass)
 	{
 		for (int32 Index = 0; Index < FacilityOptions.Num(); ++Index)
 		{
@@ -414,7 +427,7 @@ void UFF_PrepPanelProgram::RebuildFacilityChoices()
 			FacilityWidgets.Add(Choice);
 		}
 	}
-	else if (FacilityOptions.Num() > 0)
+	else if (!Combo_Facilities && FacilityOptions.Num() > 0)
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,
 			TEXT("[%s] 시설 선택지를 그릴 자리나 클래스가 없다. 열 수 있는 시설 %d곳을 못 보여준다."),
@@ -423,10 +436,44 @@ void UFF_PrepPanelProgram::RebuildFacilityChoices()
 
 	// 한 곳뿐이면 골라 준다. 선택지가 하나인데 누르게 하는 것은 일만 늘린다.
 	// **여러 곳이면 고르게 둔다** — 어디서 여는지가 대기열과 동선에 영향을 준다.
-	if (FacilityOptions.Num() == 1)
+	SelectedFacilityIndex = FacilityOptions.IndexOfByPredicate([&PreviousFacility](const FFF_PrepFacilityOption& Option)
+	{
+		return PreviousFacility.IsValid() && Option.FacilityInstanceId == PreviousFacility;
+	});
+	if (SelectedFacilityIndex == INDEX_NONE && FacilityOptions.Num() == 1)
 	{
 		SelectedFacilityIndex = 0;
 	}
+	RefreshFacilityCombo();
+}
+
+void UFF_PrepPanelProgram::RefreshFacilityCombo()
+{
+	if (!Combo_Facilities) { return; }
+	TGuardValue<bool> RefreshGuard(bRefreshingFacilityCombo, true);
+	Combo_Facilities->ClearOptions();
+	Combo_Facilities->AddOption((FacilityOptions.IsEmpty() ? NoFacilityText : FacilityPlaceholderText).ToString());
+	for (int32 Index = 0; Index < FacilityOptions.Num(); ++Index)
+	{
+		// 같은 이름의 부스도 별개 선택지다. 표시 문자열은 고유하게 만들고 실제 요청은 GUID를 쓴다.
+		Combo_Facilities->AddOption(FText::Format(
+			LOCTEXT("FacilityOptionNumbered", "{0}. {1}"),
+			FText::AsNumber(Index + 1), FacilityOptions[Index].DisplayName).ToString());
+	}
+	Combo_Facilities->SetSelectedIndex(FacilityOptions.IsValidIndex(SelectedFacilityIndex) ? SelectedFacilityIndex + 1 : 0);
+	Combo_Facilities->SetIsEnabled(!FacilityOptions.IsEmpty());
+}
+
+UWidget* UFF_PrepPanelProgram::GenerateFacilityOptionWidget(FString Item)
+{
+	if (!Combo_Facilities) { return nullptr; }
+	UTextBlock* Label = NewObject<UTextBlock>(this);
+	Label->SetText(FText::FromString(Item));
+	Label->SetToolTipText(FText::FromString(Item));
+	Label->SetFont(Combo_Facilities->GetFont());
+	Label->SetColorAndOpacity(Combo_Facilities->GetForegroundColor());
+	Label->SetTextOverflowPolicy(ETextOverflowPolicy::Ellipsis);
+	return Label;
 }
 
 void UFF_PrepPanelProgram::EnsureCatalogChoices()
@@ -503,6 +550,10 @@ void UFF_PrepPanelProgram::RefreshAll()
 
 	const bool bCanScheduleNow = ViewModel ? ViewModel->CanScheduleProgramNow() : false;
 	const int32 Gold = ViewModel ? ViewModel->GetGold() : INDEX_NONE;
+	const int32 Day = ViewModel ? ViewModel->GetCurrentDay() : INDEX_NONE;
+	SetTextOrHide(Text_SelectedProgram, SelectedCard ? SelectedCard->DisplayName : NoSelectionText);
+	SetTextOrHide(Text_Day, Day > 0 ? FText::Format(DayTextFormat, FText::AsNumber(Day)) : FText::GetEmpty());
+	SetTextOrHide(Text_EmptyCatalog, Catalog.IsEmpty() ? EmptyCatalogText : FText::GetEmpty());
 
 	// 시설 수는 카드를 골랐을 때만 의미가 있다. 안 골랐으면 `모름` 이다 — 0 을 넣으면
 	// 카드도 안 골랐는데 `부스를 먼저 지으세요` 가 뜬다.
@@ -555,7 +606,8 @@ void UFF_PrepPanelProgram::RefreshAll()
 		}
 		else if (Index == SelectedCardIndex)
 		{
-			CardWidget->ApplyCardState(EFF_PrepCardState::Selected, FText::GetEmpty());
+			CardWidget->ApplyCardState(EFF_PrepCardState::Selected,
+				LOCTEXT("PrepProgram_BadgeSelected", "✓ 선택됨"));
 		}
 		else
 		{
@@ -624,7 +676,7 @@ void UFF_PrepPanelProgram::RefreshAll()
 
 	// 🔴 같은 문구를 두 번 띄우지 않는다. `열 장소` 안내가 이미 그 말을 하고 있으면
 	// 하단 사유는 비운다 — 화면 두 곳에 같은 문장이 있으면 읽는 사람이 둘을 다른 것으로 본다.
-	if (bShowFacilityNotice && Quote.BlockReason == EFF_PrepProgramBlockReason::NoEligibleFacility)
+	if (!Combo_Facilities && bShowFacilityNotice && Quote.BlockReason == EFF_PrepProgramBlockReason::NoEligibleFacility)
 	{
 		BlockReason = FText::GetEmpty();
 	}
@@ -690,6 +742,7 @@ void UFF_PrepPanelProgram::HandleCardClicked(int32 ChoiceId)
 
 	// 같은 카드를 다시 누르면 선택을 푼다. 날씨와 달리 "아무것도 안 고른 상태"가 유효하다.
 	SelectedCardIndex = (SelectedCardIndex == ChoiceId) ? INDEX_NONE : ChoiceId;
+	SelectedFacilityIndex = INDEX_NONE;
 
 	// 카드가 바뀌면 열 수 있는 시설도 바뀐다. 목록을 먼저 새로 만든 뒤 그린다.
 	RebuildFacilityChoices();
@@ -706,6 +759,16 @@ void UFF_PrepPanelProgram::HandleFacilityClicked(int32 ChoiceId)
 	}
 
 	SelectedFacilityIndex = ChoiceId;
+	RefreshAll();
+}
+
+void UFF_PrepPanelProgram::HandleFacilitySelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+{
+	(void)SelectedItem;
+	(void)SelectionType;
+	if (bRefreshingFacilityCombo || !Combo_Facilities) { return; }
+	const int32 ChoiceId = Combo_Facilities->GetSelectedIndex() - 1;
+	SelectedFacilityIndex = FacilityOptions.IsValidIndex(ChoiceId) ? ChoiceId : INDEX_NONE;
 	RefreshAll();
 }
 
@@ -748,13 +811,14 @@ void UFF_PrepPanelProgram::HandleScheduleClicked()
 
 	if (Result != EFF_ProgramPurchaseResult::Success)
 	{
+		// 시설 철거나 외부 편성으로 목록이 바뀌었을 수 있다. 결과 사유는 갱신 후 마지막에 보여 준다.
+		RebuildFacilityChoices();
+		RefreshAll();
 		// 🔴 실패 문구를 enum `DisplayName` 으로 만들지 않는다. 패키징에서 영문이 뜬다
 		// (2026-08-19 김시리 정정). 표시 문구는 `UFF_EconomyDisplayTextLibrary` 가 소유한다.
 		SetTextOrHide(Text_BlockReason,
 			UFF_EconomyDisplayTextLibrary::GetProgramPurchaseResultText(Result));
 
-		// 실패하면 이벤트가 오지 않으므로 여기서 한 번 다시 그린다 — 그러지 않으면
-		// 눌렀는데 아무 반응이 없는 화면이 된다. 사유 문구는 위에서 이미 덮었다.
 		return;
 	}
 
@@ -776,6 +840,7 @@ void UFF_PrepPanelProgram::HandleScheduledProgramsChanged()
 	// 편성이 성사됐으면 그 카드는 이제 못 고른다. 선택을 비우지 않으면 잠긴 카드가
 	// 골라진 채로 남아 견적이 그 카드 기준으로 계속 그려진다.
 	SelectedCardIndex = INDEX_NONE;
+	SelectedFacilityIndex = INDEX_NONE;
 
 	RebuildFacilityChoices();
 	RefreshAll();
@@ -785,6 +850,7 @@ void UFF_PrepPanelProgram::HandleStageViewChanged(EFF_FestivalStage NewStage, in
 {
 	// 날이 바뀌면 편성 목록이 비워지고 카탈로그 잠금도 풀린다. 목록째 다시 만든다.
 	SelectedCardIndex = INDEX_NONE;
+	SelectedFacilityIndex = INDEX_NONE;
 
 	RebuildCards();
 	RebuildFacilityChoices();
