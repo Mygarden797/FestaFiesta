@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Styling/SlateTypes.h"
+#include "Incident/FF_IncidentTypes.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/LiveHUD/FF_LiveHudTypes.h"
 #include "FF_LiveHudScreen.generated.h"
@@ -13,6 +14,7 @@ class UBorder;
 class UImage;
 class UButton;
 class UFF_FestivalViewModelSubsystem;
+class UFF_IncidentDetailPanel;
 class UFF_IncidentMarkerLayer;
 class UFF_LivePanelBase;
 class UFF_LivePlaceholderPanel;
@@ -482,6 +484,21 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_IncidentMarkerLayer> IncidentMarkerLayer;
+
+	/**
+	 * 아이콘 클릭 → 상세 패널. 패널도 루트 높이 제약 때문에 뷰포트에 직접 올리고 아이콘 레이어보다 위에 둔다.
+	 * 🔴 배치 관리자가 없는 동안 [보내기]는 여기서 임시로 ResolveIncident 를 부른다. 생기면 TryDispatch 로 바꾼다.
+	 */
+	void EnsureIncidentDetailPanel();
+
+	UFUNCTION()
+	void HandleIncidentMarkerClicked(FFF_IncidentHandle Handle);
+
+	UFUNCTION()
+	void HandleIncidentDispatchRequested(FFF_IncidentHandle Handle, int32 OptionIndex, int32 StaffCount);
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_IncidentDetailPanel> IncidentDetailPanel;
 
 	void RefreshTabs();
 	void RefreshStatusRow();

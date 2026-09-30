@@ -13,12 +13,9 @@
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "Incident/FF_IncidentSubsystem.h"
-#include "Incident/FF_StaffDispatchSubsystem.h"
 #include "UI/LiveHUD/Incident/FF_IncidentMarkerButton.h"
 #include "Kismet/GameplayStatics.h"
 #include "UI/FF_UILog.h"
-
-#define LOCTEXT_NAMESPACE "FFIncidentMarkerLayer"
 
 namespace FFIncidentMarkerDebug
 {
@@ -53,7 +50,6 @@ void UFF_IncidentMarkerLayer::NativeDestruct()
 {
 	UnbindIncidents();
 	ClearMarkers();
-	PendingResolve.Reset();
 	Super::NativeDestruct();
 }
 
@@ -128,43 +124,7 @@ void UFF_IncidentMarkerLayer::HandleIncidentClosed(FFF_IncidentHandle Handle)
 
 void UFF_IncidentMarkerLayer::HandleMarkerClicked(FFF_IncidentHandle Handle)
 {
-	PendingResolve.AddUnique(Handle);
 	OnIncidentMarkerClicked.Broadcast(Handle);
-}
-
-void UFF_IncidentMarkerLayer::FlushPendingResolve()
-{
-	if (PendingResolve.Num() == 0)
-	{
-		return;
-	}
-
-	const TArray<FFF_IncidentHandle> ToResolve = MoveTemp(PendingResolve);
-	PendingResolve.Reset();
-
-	UFF_IncidentSubsystem* Incident = GetIncidentSubsystem();
-	if (!Incident)
-	{
-		return;
-	}
-
-	for (const FFF_IncidentHandle& Handle : ToResolve)
-	{
-		const bool bAccepted = Incident->ResolveIncident(Handle);
-		// Resolution may synchronously remove the marker, so re-find it after the command.
-		if (const FMarker* Marker = Markers.Find(Handle))
-		{
-			if (UFF_IncidentMarkerButton* Button = Marker->Button.Get())
-			{
-				const UWorld* World = GetWorld();
-				const UFF_StaffDispatchSubsystem* Dispatch = World ? World->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr;
-				Button->SetToolTipText(Dispatch && Dispatch->IsResponding(Handle)
-					? LOCTEXT("StaffResponding", "스태프 출동 중입니다. 현장에 도착하면 사건을 해결합니다.")
-					: !bAccepted ? LOCTEXT("StaffUnavailable", "출동할 수 없습니다. 안내 시설에 배정된 대기 스태프와 이동 경로를 확인하세요.")
-					: FText::GetEmpty());
-			}
-		}
-	}
 }
 
 void UFF_IncidentMarkerLayer::AddOrRefreshMarker(FFF_IncidentHandle Handle)
@@ -289,11 +249,6 @@ void UFF_IncidentMarkerLayer::ApplyIcon(UFF_IncidentMarkerButton& Button, const 
 {
 	UTexture2D* Icon = ResolveIcon(View);
 	Button.SetIcon(Icon, FallbackColor, IconSize);
-	const UWorld* World = GetWorld();
-	const UFF_StaffDispatchSubsystem* Dispatch = World ? World->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr;
-	Button.SetToolTipText(Dispatch && Dispatch->IsResponding(Button.GetHandle())
-		? LOCTEXT("StaffResponding", "스태프 출동 중입니다. 현장에 도착하면 사건을 해결합니다.")
-		: LOCTEXT("StaffDispatchPrompt", "클릭하여 안내 시설의 스태프를 출동시킵니다."));
 
 	if (!Icon)
 	{
@@ -348,8 +303,6 @@ bool UFF_IncidentMarkerLayer::TryGetAnchorWorldLocation(const FFF_IncidentAnchor
 void UFF_IncidentMarkerLayer::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-
-	FlushPendingResolve();
 
 	if (Markers.Num() == 0)
 	{
@@ -428,5 +381,3 @@ void UFF_IncidentMarkerLayer::NativeTick(const FGeometry& MyGeometry, float InDe
 		LogMarker(TEXT("TICK"), Pair.Key, Pair.Value, LocalSize);
 	}
 }
-
-#undef LOCTEXT_NAMESPACE

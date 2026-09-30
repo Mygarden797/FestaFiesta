@@ -49,6 +49,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Incident|Staff", meta = (ClampMin = "0"))
 	int32 RequiredStaff = 1;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Incident|Options")
+	int32 MaxActive = INDEX_NONE;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Incident|Options")
+	int32 MaxPerDay = INDEX_NONE;
+	
+	
+	
 	const UFF_IncidentOption* GetOption(int32 OptionIndex) const
 	{
 		return Options.IsValidIndex(OptionIndex) ? Options[OptionIndex].Get() : nullptr;

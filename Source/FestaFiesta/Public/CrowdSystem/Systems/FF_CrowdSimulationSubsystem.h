@@ -14,6 +14,7 @@
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_CrowdAvoidanceConfig.h"
 #include "CrowdSystem/Types/FF_CrowdCongestionSnapshot.h"
+#include "CrowdSystem/Types/FF_CrowdItemLostEvent.h"
 #include "CrowdSystem/Types/FF_CrowdMemberMissingEvent.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "Math/RandomStream.h"
@@ -64,6 +65,9 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FFF_OnCrowdCongestionSampled,
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FFF_OnCrowdMemberMissingChanged,
 	const TArray<FFF_CrowdMemberMissingEvent>& );
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FFF_OnCrowdItemLost,
+	const TArray<FFF_CrowdItemLostEvent>&  );
 
 // "도착해서 서 있는가, 가려는데 못 가는가"를 가른 집계.
 //
@@ -233,6 +237,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Crowd")
 	int32 GetAgentPoolSize() const { return UnitDatas.Num(); }
+	
 	UFUNCTION(BlueprintPure, Category = "Crowd")
 	FName GetAgentArchetypeID(int32 AgentIndex) const
 	{
@@ -268,6 +273,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Party")
 	TArray<int32> GetPartyMembers(int32 PartyID) const;
 
+	/**
+	 * AgentIndex 주변 RadiusMeters(m) 안의 활성 Unit 인덱스. 자기 자신은 빠지고, 인덱스 오름차순이다.
+	 * 회피 격자가 이번 풀과 맞으면 격자로 찾고(가까운 순으로 MaxCount개), 아니면 활성 Unit 전수 순회로 대신한다.
+	 * 격자 경로의 위치는 마지막 회피 스텝 기준이라 한 스텝 늦을 수 있다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Crowd|Query")
+	TArray<int32> GetUnitsNearAgent(int32 AgentIndex, float RadiusMeters, int32 MaxCount = 32) const;
+
 	UFUNCTION(BlueprintPure, Category = "Crowd|Metrics")
 	float GetDensityAtLocation(FVector WorldLocation) const { return DensityGrid.GetDensityAtLocation(WorldLocation); }
 
@@ -291,6 +304,19 @@ public:
 	const FFF_CrowdCongestionSnapshot& GetCongestionSnapshot() const { return CongestionSnapshot; }
 
 	FFF_OnCrowdMemberMissingChanged OnMemberMissingChanged;
+	
+	FFF_OnCrowdItemLost OnCrowdItemLostEventChanged;
+
+	/**
+	 * 분실물 발생 빈도. 축제 시간 1시간당 평균 건수이고, 인원·배속과 무관하다. 0이면 끈다.
+	 * 발생 시각은 시뮬레이션 분 기준 지수분포로 미리 뽑고, 그 시각이 되면 조건에 맞는 방문객 한 명을 고른다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|ItemLost", meta = (ClampMin = "0.0"))
+	float ItemLostPerHour = 6.f;
+
+	// 이 속도(UU/s) 미만이면 서 있는 것으로 보고 분실 후보에서 뺀다
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|ItemLost", meta = (ClampMin = "0.0"))
+	float ItemLostMinSpeedUU = 30.f;
 
 	AActor* GetAgentActor(int32 AgentIndex) const;
 
@@ -1661,8 +1687,16 @@ private:
 	void FlushMissingEvent();
 	
 	void QueueMissingEvent(int32 AgentIndex, const FUnitData& Unit, EFF_CrowdMissingChange Change);
-	
+
+	void TickItemLost();
+	int32 PickItemLostCandidate() const;
+	void FlushItemLostEvent();
+
 	//이벤트 관련
 private:
 	TArray<FFF_CrowdMemberMissingEvent> CrowdMemberMissingEvents;
+
+	TArray<FFF_CrowdItemLostEvent> CrowdItemLostEvents;
+	float NextItemLostAtMinutes = -1.f;
+	float LastItemLostClockMinutes = -1.f;
 };
