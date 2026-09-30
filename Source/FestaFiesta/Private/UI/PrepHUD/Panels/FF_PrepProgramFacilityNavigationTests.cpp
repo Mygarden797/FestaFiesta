@@ -5,12 +5,12 @@
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
-#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetTree.h"
 #include "Building/FF_BuildCatalogModel.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Components/Button.h"
+#include "Components/ComboBoxString.h"
 #include "Components/PanelWidget.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
@@ -42,6 +42,7 @@
 #include "Slate/WidgetRenderer.h"
 #include "Tests/AutomationCommon.h"
 #include "TextureResource.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelProgram.h"
 #include "UObject/StrongObjectPtr.h"
@@ -67,7 +68,7 @@ namespace FFPrepProgramFacilityNavigationTest
 	bool CaptureGuide(FAutomationTestBase& Test, UFF_PrepPanelProgram& Panel, const TSharedRef<SWidget>& PresentedPanel)
 	{
 		if (FParse::Param(FCommandLine::Get(), TEXT("nullrhi"))) { return true; }
-		const FIntPoint Size(880, 600);
+		const FIntPoint Size(1120, 600);
 		FWidgetRenderer Renderer(false, true);
 		TStrongObjectPtr<UTextureRenderTarget2D> Target(
 			FWidgetRenderer::CreateTargetFor(FVector2D(Size.X, Size.Y), TF_Bilinear, true));
@@ -79,7 +80,11 @@ namespace FFPrepProgramFacilityNavigationTest
 			Panel.ForceLayoutPrepass();
 			Renderer.DrawWidget(Target.Get(), PresentedPanel, FVector2D(Size.X, Size.Y), 1.f / 60.f, false);
 		}
-		UScrollBox* Scroll = Cast<UScrollBox>(Panel.GetWidgetFromName(TEXT("ScrollBox_Content")));
+		UScrollBox* Scroll = Cast<UScrollBox>(Panel.GetWidgetFromName(TEXT("ScrollBox_Body")));
+		if (!Scroll)
+		{
+			Scroll = Cast<UScrollBox>(Panel.GetWidgetFromName(TEXT("ScrollBox_Content")));
+		}
 		UPanelWidget* Guide = Cast<UPanelWidget>(Panel.GetWidgetFromName(TEXT("Box_CatalogChoices")));
 		if (!Test.TestNotNull(TEXT("Visible program content scroll viewport"), Scroll) ||
 			!Test.TestNotNull(TEXT("Rendered compatible-facility actions"), Guide) ||
@@ -145,8 +150,9 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 		TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelProgram.WBP_FF_PrepPanelProgram_C")));
 	auto* CardClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepProgramCard>(nullptr,
 		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepProgramCard.WBP_FF_PrepProgramCard_C")));
-	auto* ChoiceClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepChoiceButton>(nullptr,
-		FFBuildUIAssetPaths::PrepChoiceButtonClass));
+	const UFF_PrepPanelProgram* PanelDefaults = PanelClass ? PanelClass->GetDefaultObject<UFF_PrepPanelProgram>() : nullptr;
+	auto* ChoiceClass = PanelDefaults ? Cast<UWidgetBlueprintGeneratedClass>(UFF_PrepPanelProgram::ResolveWidgetClass(
+		PanelDefaults->FacilityChoiceClass, PanelDefaults->FacilityChoiceFallbackPath)) : nullptr;
 	const UFF_FestivalDefinition* Festival = LoadObject<UFF_FestivalDefinition>(nullptr,
 		TEXT("/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan.DA_Festival_Busan"));
 	UFFZSFacilityDefinition* WorkshopFacility = LoadObject<UFFZSFacilityDefinition>(nullptr,
@@ -302,6 +308,16 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	if (!TestEqual(TEXT("The real panel finds its installed yoga facility"), Panel->FacilityOptions.Num(), 1)) return false;
 	if (!TestTrue(TEXT("The installed facility selection is valid"), Panel->FacilityOptions.IsValidIndex(Panel->SelectedFacilityIndex))) return false;
 	TestEqual(TEXT("The sole installed facility is selected"), Panel->FacilityOptions[Panel->SelectedFacilityIndex].FacilityInstanceId, InstalledYogaId);
+	UComboBoxString* FacilityCombo = Cast<UComboBoxString>(Panel->GetWidgetFromName(TEXT("Combo_Facilities")));
+	UTextBlock* SelectedProgram = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_SelectedProgram")));
+	UTextBlock* DayText = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_Day")));
+	UTextBlock* EmptyText = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_EmptyCatalog")));
+	if (!TestNotNull(TEXT("Saved sky panel facility dropdown"), FacilityCombo) ||
+		!TestNotNull(TEXT("Selected program summary"), SelectedProgram) ||
+		!TestNotNull(TEXT("Actual day label"), DayText) ||
+		!TestNotNull(TEXT("Empty catalog explanation"), EmptyText)) return false;
+	TestEqual(TEXT("One available facility is also selected in the actual dropdown"), FacilityCombo->GetSelectedIndex(), 1);
+	TestEqual(TEXT("Summary follows the selected catalog name"), SelectedProgram->GetText().ToString(), Panel->Catalog[YogaIndex].DisplayName.ToString());
 	const int32 YogaCapacity = Panel->Catalog[YogaIndex].Capacity;
 	TestEqual(TEXT("The open panel initially quotes the facility's authored fee"), Panel->GetQuote().MaxRevenue, YogaCapacity * 25);
 	RevenueRow.ProgramFeesPerPerson.Add(TEXT("Program_SunsetYoga"), 45);
@@ -312,10 +328,84 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	RevenueRow.ProgramFeesPerPerson.Add(TEXT("Program_SunsetYoga"), 0);
 	RevenueTable->AddRow(YogaFacility->Spec.FacilityDefinitionId, RevenueRow);
 	TestEqual(TEXT("An open quote immediately reflects a newly free program"), Panel->GetQuote().MaxRevenue, 0);
+
+	// 표시 이후 시설이 사라진 경우를 UI 사본에 재현한다. 명령은 실제 소유자가 거부해야 한다.
+	const int32 GoldBeforeRejectedSchedule = Progression->GetGold();
+	Panel->FacilityOptions[Panel->SelectedFacilityIndex].FacilityInstanceId = FGuid::NewGuid();
+	Panel->HandleScheduleClicked();
+	TestEqual(TEXT("Failed scheduling does not spend money"), Progression->GetGold(), GoldBeforeRejectedSchedule);
+	TestEqual(TEXT("Failed scheduling retains the program for retry"), Panel->SelectedCardIndex, YogaIndex);
+	if (!TestTrue(TEXT("Failed scheduling leaves a valid refreshed facility choice"),
+		Panel->FacilityOptions.IsValidIndex(Panel->SelectedFacilityIndex))) return false;
+	TestEqual(TEXT("Failed scheduling refreshes a stale facility handle"),
+		Panel->FacilityOptions[Panel->SelectedFacilityIndex].FacilityInstanceId, InstalledYogaId);
+	TestFalse(TEXT("Failed scheduling displays a reason"), Panel->Text_BlockReason->GetText().IsEmpty());
+
+	// 같은 이름의 시설 두 곳이 있어도 콤보 순번은 실제 GUID에 연결되어야 한다.
+	// Zone 셀은 1cm다. 고정 200셀 간격은 실제 무대와 대기열에 겹칠 수 있으므로
+	// 첫 시설의 전체 예약 영역 폭만큼 떨어진 곳에 두 번째 시설을 둔다.
+	const TArray<FFFZSCellRect> FirstReservedRects = UFFZSGridLibrary::GetReservedRects(YogaFacility->Spec, YogaPlacement);
+	if (!TestFalse(TEXT("The first facility has placement regions"), FirstReservedRects.IsEmpty())) return false;
+	int32 ReservedMinX = MAX_int32;
+	int32 ReservedMaxX = MIN_int32;
+	for (const FFFZSCellRect& Rect : FirstReservedRects)
+	{
+		ReservedMinX = FMath::Min(ReservedMinX, Rect.Min.X);
+		ReservedMaxX = FMath::Max(ReservedMaxX, Rect.Max.X);
+	}
+	FFFZSGridPlacement SecondYogaPlacement;
+	SecondYogaPlacement.OriginCell = YogaPlacement.OriginCell + FIntPoint(ReservedMaxX - ReservedMinX + 100, 0);
+	if (!TestFalse(TEXT("The second fixture clears the first facility and its queue"),
+		UFFZSGridLibrary::DoCellRectSetsOverlap(FirstReservedRects,
+			UFFZSGridLibrary::GetReservedRects(YogaFacility->Spec, SecondYogaPlacement)))) return false;
+	const FFFZSCommand InstallSecondYoga = UFFZSGridLibrary::MakeInstallCommand(
+		YogaFacility->Spec, TEXT("GZ_DadaPocha"), SecondYogaPlacement, Zones->GetWorldRevision());
+	const FFFZSCommandResult SecondInstallResult = Zones->ExecuteCommand(InstallSecondYoga);
+	if (!TestTrue(*FString::Printf(TEXT("A second facility with the same authored name installs: %s"),
+		*SecondInstallResult.Message.ToString()), SecondInstallResult.bSucceeded)) return false;
+	Panel->HandleBuildCatalogChanged();
+	if (!TestEqual(TEXT("Dropdown includes both installed facilities"), Panel->FacilityOptions.Num(), 2)) return false;
+	TestEqual(TEXT("Refresh retains the previous facility by GUID"),
+		Panel->FacilityOptions[Panel->SelectedFacilityIndex].FacilityInstanceId, InstalledYogaId);
+	TestNotEqual(TEXT("Duplicate facility names remain distinguishable dropdown entries"),
+		FacilityCombo->GetOptionAtIndex(1), FacilityCombo->GetOptionAtIndex(2));
+	FacilityCombo->SetSelectedIndex(0);
+	TestEqual(TEXT("Placeholder clears the selected facility"), Panel->SelectedFacilityIndex, INDEX_NONE);
+	TestEqual(TEXT("No facility selection hides an unconfirmed revenue amount"), Panel->GetQuote().MaxRevenue, INDEX_NONE);
+	TestFalse(TEXT("Placeholder cannot schedule a program"), Panel->Button_Schedule->GetIsEnabled());
+	const int32 SecondIndex = Panel->FacilityOptions.IndexOfByPredicate([&InstallSecondYoga](const FFF_PrepFacilityOption& Option)
+	{
+		return Option.FacilityInstanceId == InstallSecondYoga.FacilityInstanceId;
+	});
+	if (!TestTrue(TEXT("The second installed handle is in the dropdown"), SecondIndex != INDEX_NONE)) return false;
+	FacilityCombo->SetSelectedIndex(SecondIndex + 1);
+	Panel->HandleBuildCatalogChanged();
+	TestEqual(TEXT("Rebuilding dropdown options preserves the selected second handle"),
+		Panel->FacilityOptions[Panel->SelectedFacilityIndex].FacilityInstanceId, InstallSecondYoga.FacilityInstanceId);
+	Panel->HandleScheduleClicked();
+	const TArray<FFF_ScheduledProgram> Scheduled = Progression->GetScheduledPrograms();
+	if (!TestEqual(TEXT("Dropdown submission creates exactly one schedule"), Scheduled.Num(), 1)) return false;
+	TestEqual(TEXT("Schedule command uses the dropdown facility GUID"), Scheduled[0].FacilityInstanceId, InstallSecondYoga.FacilityInstanceId);
+	TestEqual(TEXT("Success event clears stale selection"), Panel->SelectedCardIndex, INDEX_NONE);
+	TestEqual(TEXT("Success summary returns to the editable placeholder"), SelectedProgram->GetText().ToString(), Panel->NoSelectionText.ToString());
+
+	// 날짜/빈 목록은 더미 일차나 0 Gold로 메우지 않는다. 격리된 데이터에서 UI 갱신만 확인한다.
+	UFF_FestivalStageSubsystem* Stage = Game->GetSubsystem<UFF_FestivalStageSubsystem>();
+	if (!TestNotNull(TEXT("Fixture stage provides the current day"), Stage)) return false;
+	Stage->CurrentDay = 2;
+	Panel->HandleStageViewChanged(Stage->CurrentStage, Stage->CurrentDay);
+	TestEqual(TEXT("Day label reads the current stage day"), DayText->GetText().ToString(),
+		FText::Format(Panel->DayTextFormat, FText::AsNumber(2)).ToString());
+	IsolatedFestival->ProgramCatalog.Reset();
+	Panel->HandleFestivalDefinitionChanged();
+	TestEqual(TEXT("Empty catalog shows an explicit explanation"), EmptyText->GetText().ToString(), Panel->EmptyCatalogText.ToString());
+	TestFalse(TEXT("Empty catalog cannot schedule"), Panel->Button_Schedule->GetIsEnabled());
+	TestEqual(TEXT("Empty catalog clears cost instead of displaying free"), Panel->GetQuote().CostGold, INDEX_NONE);
+	const int32 QuoteBeforeClose = Panel->GetQuote().MaxRevenue;
 	Panel->HandlePanelClosed();
 	RevenueRow.ProgramFeesPerPerson.Add(TEXT("Program_SunsetYoga"), 100);
 	RevenueTable->AddRow(YogaFacility->Spec.FacilityDefinitionId, RevenueRow);
-	TestEqual(TEXT("Closing the panel detaches the table-change listener"), Panel->GetQuote().MaxRevenue, 0);
+	TestEqual(TEXT("Closing the panel detaches the table-change listener"), Panel->GetQuote().MaxRevenue, QuoteBeforeClose);
 	return true;
 }
 

@@ -105,14 +105,22 @@ struct FESTAFIESTA_API FCrowdDensityGrid
 	// 셀별 구간 진입 인원. ResetThroughputWindow 이후 누적분이다
 	const TArray<int32>& GetCellThroughput() const { return CellThroughput; }
 
+	// 바닥 높이 조회. 위치의 X·Y로 지면 Z를 찾으면 true
+	using FGroundZResolver = TFunctionRef<bool(const FVector& WorldLocation, double& OutZ)>;
+
+	// Z는 격자 원점 높이 하나다. 지형을 따르지 않으므로 월드에 찍을 좌표는 GetCellCenterOnGround를 쓸 것
 	FVector GetCellCenterWorld(int32 X, int32 Y) const;
+
+	// 셀 중심을 그 자리 바닥 높이로 내린다. 바닥을 못 찾으면 원점 높이로 남는다
+	FVector GetCellCenterOnGround(int32 X, int32 Y, FGroundZResolver ResolveGroundZ) const;
 
 	static ECrowdLOS DensityToLOS(float DensityPerSqM);
 
 	static FColor LOSToColor(ECrowdLOS LOS);
 
 
-	void DrawDebug(const UWorld* World, float ZOffsetUU = 20.f, float MinDensityToDraw = 0.05f) const;
+	void DrawDebug(const UWorld* World, FGroundZResolver ResolveGroundZ,
+		float ZOffsetUU = 20.f, float MinDensityToDraw = 0.05f) const;
 
 private:
 	int32 WorldToCellIndex(const FVector& WorldLocation) const;

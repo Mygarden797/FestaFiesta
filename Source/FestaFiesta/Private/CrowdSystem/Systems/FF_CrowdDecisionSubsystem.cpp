@@ -12,6 +12,8 @@
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSFacilityActor.h"
+#include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "NPC/Destination/FF_PreferenceVectorBuilder.h"
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
@@ -153,11 +155,30 @@ void UFF_CrowdDecisionSubsystem::HandleStageChanged(
 	}
 }
 
+bool UFF_CrowdDecisionSubsystem::IsMainStageOpen() const
+{
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	if (Stage && Stage->IsLiveStage()) return Stage->IsMainProgramQueueBreakActive();
+	return !bMainStageGatingActive || bMainStageOpen;
+}
+
+bool UFF_CrowdDecisionSubsystem::IsGlobalMainStageDiscoveryActive() const
+{
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	return Stage && Stage->IsLiveStage() && Stage->IsMainProgramQueueBreakActive();
+}
+
 void UFF_CrowdDecisionSubsystem::HandleMainProgramStarted(FString EventLabel)
 {
 	bSawMainProgramThisLive = true;
 	bMainStageOpen = true;
 	bMainProgramActive = true;
+	// 이 알림은 배속 잠금이다. 시설 이용을 끝내는 공연 3분 전까지 재집결하지 않는다.
+	if (!IsGlobalMainStageDiscoveryActive()) return;
 
 	// 무대를 여는 것만으로는 아무도 모른다. 밀어 넣지 않으면 회전율만큼 서서히 차기만 하고
 	// "공연 시간에 몰린다"가 안 나온다.
@@ -627,6 +648,22 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
 	const UFF_ProgramReservationSubsystem* Reservations = GameInstance
 		? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	if (Stage && Stage->IsMainProgramQueueBreakActive())
+	{
+		const UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge =
+			GetWorld()->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>();
+		Candidates.RemoveAll([ZoneSystem, QueueBridge](const FFF_DestinationCandidate& Candidate)
+		{
+			FGuid FacilityId;
+			if (!QueueBridge || !FFF_ZoneSystemBridge::TryParseDestinationId(Candidate.DestinationId, FacilityId)
+				|| QueueBridge->FindQueueFacilityId(FacilityId) == INDEX_NONE) return false;
+			const AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(FacilityId);
+			// 공연 관람은 일반 FIFO 대기열을 사용하지 않는다.
+			return !Facility || !Facility->GetFacilitySpec().Audience.bEnabled;
+		});
+	}
 	if (Reservations)
 	{
 		Candidates.RemoveAll([Reservations](const FFF_DestinationCandidate& Candidate)

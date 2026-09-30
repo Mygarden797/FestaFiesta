@@ -25,7 +25,7 @@ enum class EFF_LiveStaffIdleState : uint8
 	/** 전원이 어딘가에 묶여 있다. */
 	AllBusy		UMETA(DisplayName = "전원 배치"),
 
-	/** 남는 인원이 있다. 사건이 더 터져도 받아낼 여력이 있다는 뜻이다. */
+	/** 출동하지 않은 인원. 실제 출동 가능 여부는 시설 배정 여부도 확인한다. */
 	HasIdle		UMETA(DisplayName = "남는 인원 있음"),
 
 	/**
@@ -54,11 +54,11 @@ struct FESTAFIESTA_API FFF_LiveStaffSummary
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	int32 Hired = INDEX_NONE;
 
-	/** 사건 대응에 배치된 인원. 모르면 `INDEX_NONE`. */
+	/** 이동·사건 대응·복귀 중인 인원. 시설 소속 인원과 별개다. 모르면 INDEX_NONE. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	int32 Assigned = INDEX_NONE;
 
-	/** 놀고 있는 인원. 모르거나 값이 어긋나면 `INDEX_NONE`. */
+	/** 출동하지 않은 인원(미배정 포함). 모르거나 값이 어긋나면 INDEX_NONE. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	int32 Idle = INDEX_NONE;
 
@@ -99,8 +99,7 @@ struct FESTAFIESTA_API FFF_LiveStaffRules
  *
  * [주의] 유료 프로그램은 인원을 쓰지 않는다. 배치는 사건 대응 전용이다.
  *
- * === 없는 것 ===
- * 시설별 배치·개인 상태(피로도·위치)는 소유자 API 가 없다. 화면에 그 사실을 적는다.
+ * 시설별 배정은 안내 시설 정보 패널에서 조절한다. 이 패널은 보유·정원·미배정·출동 인원을 읽는다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Live Panel - Staff"))
 class FESTAFIESTA_API UFF_LivePanelStaff : public UFF_LivePanelBase
@@ -117,6 +116,9 @@ protected:
 
 	UFUNCTION()
 	void HandleStaffCountChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleStaffAssignmentChanged();
 
 protected:
 	// --- 요약 3칸 ---

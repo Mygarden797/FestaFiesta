@@ -204,6 +204,8 @@ namespace FFZSFacilityKoreanTooltipsTestsPrivate
         TestCustomizationLocText(Test, Source, TEXT("AuthoringToolsCategory"), TEXT("Facility Authoring Tools"));
         TestCustomizationLocText(Test, Source, TEXT("FacilityRevenueCategory"), TEXT("Facility Revenue"));
         TestCustomizationLocText(Test, Source, TEXT("FacilityRevenueCategoryTip"));
+        TestCustomizationLocText(Test, Source, TEXT("FacilityStaffCategory"), TEXT("Facility Staff"));
+        TestCustomizationLocText(Test, Source, TEXT("FacilityStaffCategoryTip"));
         TestCustomizationLocText(Test, Source, TEXT("FacilityRevenueHelp"));
         TestCustomizationLocText(Test, Source, TEXT("ShowKoreanHelpButton"), TEXT("Show Korean Help"));
         TestCustomizationLocText(Test, Source, TEXT("ValidateDefinitionButton"), TEXT("Validate Facility Definition"));
@@ -297,6 +299,7 @@ bool FFFZSFacilityKoreanTooltipsTest::RunTest(const FString& Parameters)
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, FacilityDefinitionId),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, DisplayName),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, Category),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, StaffCapacity),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, FootprintSizeCells),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, ClearanceCells),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, QueueReservedRects),
@@ -343,6 +346,20 @@ bool FFFZSFacilityKoreanTooltipsTest::RunTest(const FString& Parameters)
             RevenueAmount->GetMetaData(TEXT("EditCondition")), FString(TEXT("bOverrideRevenuePerUseGold")));
         TestEqual(TEXT("Editor inputs prevent negative revenue"),
             RevenueAmount->GetMetaData(TEXT("ClampMin")), FString(TEXT("0")));
+    }
+
+    const FProperty* StaffCapacity = FFFZSFacilitySpec::StaticStruct()->FindPropertyByName(
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, StaffCapacity));
+    if (TestNotNull(TEXT("Staff capacity authoring property exists"), StaffCapacity))
+    {
+        TestTrue(TEXT("Staff capacity is editable, Blueprint writable and saved"),
+            StaffCapacity->HasAllPropertyFlags(CPF_Edit | CPF_BlueprintVisible | CPF_SaveGame) &&
+            !StaffCapacity->HasAnyPropertyFlags(CPF_EditConst | CPF_BlueprintReadOnly));
+        TestEqual(TEXT("Only Info facilities expose staff capacity editing"),
+            StaffCapacity->GetMetaData(TEXT("EditCondition")),
+            FString(TEXT("Category == EFFZSFacilityCategory::Info")));
+        TestEqual(TEXT("Editor input prevents negative staff slots"),
+            StaffCapacity->GetMetaData(TEXT("ClampMin")), FString(TEXT("0")));
     }
 
     TestEnglishDisplayNameAndKoreanTooltip(

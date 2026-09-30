@@ -18,6 +18,7 @@
 class UBorder;
 class UButton;
 class UPanelWidget;
+class USizeBox;
 class UTextBlock;
 class UWidget;
 class UWidgetAnimation;
@@ -155,6 +156,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep")
 	FText GetCtaLabelText() const;
 
+	/** 점검 패널도 하단 바가 확정한 동일한 차단 사유를 표시한다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep")
+	FText GetCtaReason() const { return LastCtaReason; }
+
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI|Prep")
 	FFF_OnPrepCtaStateChanged OnCtaStateChanged;
 
@@ -164,6 +169,13 @@ public:
 	/** 모든 표시를 현재값으로 다시 그린다. 부분 갱신하지 않아 이벤트 순서에 의존하지 않는다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep")
 	void RefreshAll();
+
+	/** 디자이너 SizeBox 행 높이를 읽는다. 바 크기와 패널 도킹을 따로 맞출 필요가 없다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Layout")
+	float GetBottomBarHeight() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Layout")
+	float GetBottomStatusRowHeight() const;
 
 	/** 열린 탭이 바뀔 때. 패널 밖에서 반응해야 하는 쪽(예: 배치 모드)이 구독한다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI|Prep")
@@ -184,6 +196,7 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	// --- 델리게이트 핸들러 ---
 
@@ -246,6 +259,12 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep")
 	TObjectPtr<UBorder> Border_StatusRow;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Layout")
+	TObjectPtr<USizeBox> SizeBox_MenuRow;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Layout")
+	TObjectPtr<USizeBox> SizeBox_StatusRow;
+
 	// --- 패널이 들어가는 자리 ---
 
 	/**
@@ -283,7 +302,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")
 	TObjectPtr<UWidget> Box_VisitorCount;
 
-	/** `6명 (기본 4 · 고용 2)`. 축제 시작 전에는 숨긴다. */
+	/** 사람 아이콘 옆에 총원만 표시한다. 기본/고용 상세는 인력 패널에서 확인한다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")
 	TObjectPtr<UTextBlock> Text_Staff;
 
@@ -334,11 +353,29 @@ protected:
 	// 설정
 	// =========================================================================
 
+	/** 켜면 색·배경·폰트·패딩은 Designer가 소유한다. 런타임에는 값과 선택 상태만 갱신한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Appearance")
+	bool bUseDesignerStyle = false;
+
+	/** {Amount}에 현재 보유 금화가 들어간다. 글꼴/크기는 Text_Gold에서 수정한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Text")
+	FText GoldTextFormat;
+
+	/** {Count}에 총 인원이 들어간다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Text")
+	FText StaffTextFormat;
+
+	/** {Day}와 {Stage}에 현재 일차와 단계가 들어간다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Text")
+	FText DayStageTextFormat;
+
 	/**
 	 * ★ **탭 하나 = 한 줄.** 그 탭을 열었을 때 패널이 어디에 얼마나 크게 열릴지 정한다.
 	 *
 	 * 방향마다 쓰이는 성분이 다르다 — `FFF_PrepPanelLayout` 주석의 표를 먼저 본다.
 	 * 표에 없는 탭은 `DefaultPanelLayout` 을 쓴다.
+	 * 프로그램·인력·홍보·점검의 Center는 실제 게임 화면 중앙이다. Offset=(0,0)이 정중앙이며
+	 * Size와 Offset은 DPI 적용 전 Slate 단위다. 창 크기가 바뀌어도 편집한 값은 유지한다.
 	 *
 	 * === 화면을 보면서 맞추는 순서 ===
 	 * 1. 게임에서 그 탭을 연다
@@ -539,8 +576,8 @@ private:
 	void RefreshDayStageText(EFF_FestivalStage Stage, int32 Day);
 	void RefreshCta();
 
-	/** 상태를 넣고 **바뀌었을 때만** 알린다. 매 갱신마다 쏘면 패널이 헛돈다. */
-	void SetCtaState(EFF_PrepCtaState NewState);
+	/** 같은 차단 상태에서도 설치 수나 남은 시간이 바뀌면 사유 갱신을 알린다. */
+	void SetCtaState(EFF_PrepCtaState NewState, const FText& NewReason);
 
 	/**
 	 * 이 탭의 레이아웃. 표를 먼저 보고 없으면 `DefaultPanelLayout` 을 쓴다.
@@ -552,7 +589,14 @@ private:
 	 * 패널 자리를 이 방향으로 맞춘다. **패널을 열 때마다 부른다** — 탭마다 방향이 다르다.
 	 * 호스트가 `CanvasPanel` 자식이 아니면 아무것도 하지 않는다 (위치를 디자이너가 소유한다).
 	 */
-	void ApplyPanelLayout(const FFF_PrepPanelLayout& Layout);
+	void ApplyPanelLayout(const FFF_PrepPanelLayout& Layout, const FGeometry* CurrentHudGeometry = nullptr);
+
+	/** 이번 중앙 배치 대상 네 탭만 판정한다. 배치·피날레의 기존 도킹은 유지한다. */
+	bool UsesViewportCenter(const FFF_PrepPanelLayout& Layout) const;
+	void RefreshPanelHostVisibility();
+
+	/** 첫 유효 배치 전에는 숨긴 채 크기 계산만 받는다. 하단에 잠깐 보이는 것을 방지한다. */
+	bool bAwaitingCenteredLayout = false;
 
 	/**
 	 * 행 배경을 칠한다. **`SetBrushColor` 만으로는 안 된다** — `UBorder` 의 기본 브러시가
@@ -607,6 +651,7 @@ private:
 	 * `RefreshCta` 는 값이 바뀔 때마다 불리므로 매번 찍으면 로그가 같은 줄로 가득 찬다.
 	 */
 	EFF_PrepCtaState LastCtaState = EFF_PrepCtaState::Hidden;
+	FText LastCtaReason;
 
 	/** `INDEX_NONE` 이면 아직 읽지 못했다는 뜻이다. 0 과 구분한다. */
 	int32 FacilityCount = INDEX_NONE;
@@ -622,4 +667,6 @@ private:
 	UFUNCTION()
 	void HandleRequiredFacilitiesChanged();
 	TWeakObjectPtr<class UFF_RequiredFacilitiesSubsystem> BoundRequiredFacilities;
+
+	friend class FFF_PrepCheckRules_CtaReasonRefresh;
 };

@@ -70,21 +70,32 @@ enum class EFF_AudioAmbience : uint8
 
 	// 최고 등급 3막 연출의 엔딩곡. 축제장 순회부터 끝까지 흐른다. 반복 재생을 끈 곡을 넣는다.
 	// 맨 뒤에 붙인 이유는 뱅크가 이 값을 키로 저장해서, 중간에 끼우면 뒤의 곡이 한 칸씩 밀리기 때문이다.
-	FinaleEnding    UMETA(DisplayName = "피날레 - 엔딩곡")
+	FinaleEnding    UMETA(DisplayName = "피날레 - 엔딩곡"),
+
+	// 로비(프론트엔드 레벨: 타이틀, 지구본, 국가 지도) 전용 곡. 개장 전 곡과 따로 둔다.
+	// 예전에는 로비에서도 축제 단계가 기본값(준비)이라 개장 전 곡이 흘러, 로비와 축제 준비가
+	// 한 곡으로 이어졌다. 뱅크 키가 밀리지 않게 맨 뒤에 붙인다.
+	Lobby           UMETA(DisplayName = "로비")
 };
 
-// 소리 갈래. 볼륨을 따로 조절하려면 재생 시점에 이걸 넘겨야 한다.
+// 소리 갈래. 설정 창의 음량 슬라이더와 짝을 이룬다(FFF_AudioVolumes).
 //
-// 지금은 환경설정에 마스터 볼륨만 있어서 실제로 갈라지지는 않는다.
-// 그래도 갈래를 지정해두는 이유는, 나중에 음악·효과음 분리가 붙었을 때
-// 재생 코드를 다시 뒤지지 않아도 되게 하려는 것이다.
+// 뱅크에서 소리마다 고를 수 있다. 기본값(효과음)으로 둔 소리는 이벤트 종류로 갈래를
+// 정한다(UFF_AudioSubsystem::ResolveChannel). 소리를 넣을 때마다 칸을 고르지 않아도
+// 불꽃은 불꽃놀이 슬라이더, 버튼 소리는 UI 슬라이더를 따르게 하려는 것이다.
 UENUM(BlueprintType)
 enum class EFF_AudioChannel : uint8
 {
 	Music       UMETA(DisplayName = "배경음"),
 	Effects     UMETA(DisplayName = "효과음"),
 	Ui          UMETA(DisplayName = "UI"),
-	Ambience    UMETA(DisplayName = "환경음")
+
+	// 환경음은 따로 슬라이더를 두지 않고 효과음 슬라이더를 따른다. 아직 환경음 소리가 없어서
+	// 빈 슬라이더가 되기 때문이다. 소리가 생기면 FFF_AudioVolumes 에 칸을 늘리면 된다.
+	Ambience    UMETA(DisplayName = "환경음"),
+
+	// 맨 뒤에 붙인다. 뱅크가 이 값을 숫자로 저장해서 중간에 끼우면 기존 소리의 갈래가 밀린다.
+	Fireworks   UMETA(DisplayName = "불꽃놀이")
 };
 
 // 이벤트 하나에 붙는 소리 설정.

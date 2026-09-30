@@ -9,6 +9,7 @@
 #include "CoreMinimal.h"
 #include "GenericPlatform/GenericWindow.h"
 #include "UI/FF_ActivatableScreenBase.h"
+#include "UI/Settings/FF_RuntimeSettingsSubsystem.h"
 #include "FF_FestivalSettingsScreen.generated.h"
 
 class UButton;
@@ -142,6 +143,10 @@ protected:
 	UFUNCTION() void HandleSaveClicked();
 	UFUNCTION() void HandleVSyncToggled(bool bEnabled);
 	UFUNCTION() void HandleMasterVolumeChanged(float Value);
+	UFUNCTION() void HandleMusicVolumeChanged(float Value);
+	UFUNCTION() void HandleEffectsVolumeChanged(float Value);
+	UFUNCTION() void HandleFireworksVolumeChanged(float Value);
+	UFUNCTION() void HandleUiVolumeChanged(float Value);
 	UFUNCTION() void HandleSelectionChanged(FName SettingId, int32 SelectedIndex);
 	UFUNCTION() void HandleZoomToCursorToggled(bool bEnabled);
 	UFUNCTION() void HandleEdgeScrollToggled(bool bEnabled);
@@ -253,7 +258,8 @@ private:
 		int32 FrameRateLimit = 60;
 		int32 GraphicsPreset = 3;
 		bool bVSync = true;
-		float MasterVolume = 0.8f;
+		// 마스터와 갈래별 음량. 저장 버튼을 누를 때 통째로 넘긴다.
+		FFF_AudioVolumes Audio;
 		bool bZoomToCursor = true;
 		bool bEdgeScroll = true;
 		bool bReduceMotion = false;

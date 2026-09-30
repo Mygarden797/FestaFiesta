@@ -7,7 +7,7 @@
 #include "Economy/FF_EconomyDisplayTextLibrary.h"
 #include "Engine/GameInstance.h"
 #include "FF_FFZSWorldSubsystem.h"
-#include "NPC/Party/FF_ProgramReservationSubsystem.h"
+#include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
@@ -75,6 +75,41 @@ FFF_PrepDayEstimate FFF_PrepCheckRules::BuildDayEstimate(
 	return Result;
 }
 
+FText FFF_PrepCheckRules::FormatRequiredFacilities(const FFF_RequiredFacilitiesStatus& Status,
+	const FText& RowFormat, const FText& NoRequirementsText)
+{
+	if (Status.Facilities.IsEmpty())
+	{
+		return Status.bCanProceed ? NoRequirementsText
+			: (Status.BlockingReason.IsEmpty()
+				? LOCTEXT("PrepCheck_RequiredUnknown", "필수 시설 상태를 확인할 수 없습니다.")
+				: Status.BlockingReason);
+	}
+
+	TArray<FText> Lines;
+	for (const FFF_RequiredFacilityRow& Row : Status.Facilities)
+	{
+		const FText Name = !Row.DisplayName.IsEmpty() ? Row.DisplayName
+			: (!Row.FacilityDefinitionId.IsNone() ? FText::FromName(Row.FacilityDefinitionId)
+				: LOCTEXT("PrepCheck_RequiredUnnamed", "필수 시설"));
+		if (!Row.bDefinitionValid)
+		{
+			Lines.Add(FText::Format(LOCTEXT("PrepCheck_RequiredInvalid", "! {0} · 설정 확인 필요\n{1}"),
+				Name, Row.Guidance));
+			continue;
+		}
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("Name"), Name);
+		Args.Add(TEXT("Installed"), FText::AsNumber(Row.InstalledCount));
+		Args.Add(TEXT("Required"), FText::AsNumber(Row.MinimumCount));
+		Args.Add(TEXT("State"), Row.MissingCount > 0
+			? LOCTEXT("PrepCheck_RequiredMissing", "! 추가 설치 필요")
+			: LOCTEXT("PrepCheck_RequiredSatisfied", "✓ 설치 완료"));
+		Lines.Add(FText::Format(RowFormat, Args));
+	}
+	return FText::Join(FText::FromString(TEXT("\n")), Lines);
+}
+
 // =============================================================================
 // 수명
 // =============================================================================
@@ -87,6 +122,13 @@ UFF_PrepPanelCheck::UFF_PrepPanelCheck(const FObjectInitializer& ObjectInitializ
 	WeatherLabels.Add(EFF_WeatherType::Clear, LOCTEXT("PrepCheck_WeatherClear", "맑음"));
 	WeatherLabels.Add(EFF_WeatherType::Rain, LOCTEXT("PrepCheck_WeatherRain", "비"));
 	WeatherLabels.Add(EFF_WeatherType::Windy, LOCTEXT("PrepCheck_WeatherWindy", "바람"));
+	DayLabelFormat = LOCTEXT("PrepCheck_DayLabelFormat", "{Day}일차");
+	DailyGoalValueFormat = LOCTEXT("PrepCheck_DailyGoalValueFormat", "{Count}명");
+	DailyGoalBonusFormat = LOCTEXT("PrepCheck_DailyGoalBonusFormat", "달성 시 +{Amount} Gold");
+	GoldValueFormat = LOCTEXT("PrepCheck_GoldValueFormat", "{Amount} Gold");
+	RequiredFacilityFormat = LOCTEXT("PrepCheck_RequiredFacilityFormat", "{Name} · {Installed}/{Required} · {State}");
+	NoRequiredFacilitiesText = LOCTEXT("PrepCheck_NoRequiredFacilities", "필수 시설 조건 없음");
+	OpenGateReadyText = LOCTEXT("PrepCheck_OpenGateReady", "✓ 준비가 완료되었습니다.");
 }
 
 void UFF_PrepPanelCheck::NativePreConstruct()
@@ -122,7 +164,7 @@ void UFF_PrepPanelCheck::NativeOnInitialized()
 	else
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] Button_OpenGate 가 없다. 하단 바의 CTA 로만 개장할 수 있다."), *GetName());
+			TEXT("[%s] Button_OpenGate 가 없어 점검 패널에서 개장을 요청할 수 없다."), *GetName());
 	}
 }
 
@@ -175,6 +217,15 @@ UFF_FestivalViewModelSubsystem* UFF_PrepPanelCheck::GetViewModel() const
 
 void UFF_PrepPanelCheck::BindViewModel()
 {
+	if (UWorld* World = GetWorld())
+	{
+		BoundRequiredFacilities = World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>();
+		if (UFF_RequiredFacilitiesSubsystem* Required = BoundRequiredFacilities.Get())
+		{
+			Required->OnRequiredFacilitiesChanged.AddUniqueDynamic(this, &ThisClass::HandleRequiredFacilitiesChanged);
+		}
+	}
+
 	UGameInstance* GI = GetGameInstance();
 	CachedViewModel = GI ? GI->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
 
@@ -194,7 +245,7 @@ void UFF_PrepPanelCheck::BindViewModel()
 	CachedViewModel->OnAdmissionFeeChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
 	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
 	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleStageViewChanged);
-
+	CachedViewModel->OnScheduledProgramsChanged.AddUniqueDynamic(this, &ThisClass::HandleScheduledProgramsChanged);
 
 	// 피날레는 다른 패널에서 산다. 이 요약 줄이 갱신되려면 결과 이벤트를 받아야 한다.
 	CachedViewModel->OnPurchasedFinaleGradeChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandlePurchasedFinaleGradeChanged);
@@ -211,9 +262,15 @@ void UFF_PrepPanelCheck::UnbindViewModel()
 		CachedViewModel->OnAdmissionFeeChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleStageViewChanged);
+		CachedViewModel->OnScheduledProgramsChanged.RemoveDynamic(this, &ThisClass::HandleScheduledProgramsChanged);
 		CachedViewModel->OnPurchasedFinaleGradeChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandlePurchasedFinaleGradeChanged);
 	}
 	CachedViewModel = nullptr;
+	if (UFF_RequiredFacilitiesSubsystem* Required = BoundRequiredFacilities.Get())
+	{
+		Required->OnRequiredFacilitiesChanged.RemoveDynamic(this, &ThisClass::HandleRequiredFacilitiesChanged);
+	}
+	BoundRequiredFacilities.Reset();
 }
 
 // =============================================================================
@@ -335,30 +392,38 @@ void UFF_PrepPanelCheck::RefreshAll()
 	// 🔴 소유자 값을 **먼저** 읽는다. 아래 갱신들이 전부 이 값을 본다 (수입·보너스·혼잡).
 	//
 	// 경제는 하루 단일 예상치만 준다. 범위 API 가 없어 Min·Max 에 같은 값을 넣고,
-	// 표시 쪽이 둘이 같으면 `500명` 으로 그린다. 못 읽으면 디버그로 넣어 둔 값을 남긴다 —
-	// 손으로 확인하던 화면이 갑자기 비지 않게 한다.
+	// 표시 쪽이 둘이 같으면 `500명`으로 그린다. 실제 데이터가 미확인이 되면 이전 수치를 남기지 않는다.
 	if (const UFF_FestivalViewModelSubsystem* SourceViewModel = GetViewModel())
 	{
 		const int32 Expected = SourceViewModel->GetExpectedVisitors();
-		if (Expected != INDEX_NONE)
-		{
-			ExpectedVisitorsMin = Expected;
-			ExpectedVisitorsMax = Expected;
-		}
+		ExpectedVisitorsMin = Expected;
+		ExpectedVisitorsMax = Expected;
 	}
 
 	RefreshWeather();
 	RefreshCapacity();
 	RefreshSummary();
+	RefreshRequiredFacilities();
 	RefreshEstimate();
 	RefreshOpenGate();
 
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+	FFormatNamedArguments DayArgs;
+	DayArgs.Add(TEXT("Day"), FText::AsNumber(ViewModel ? ViewModel->GetCurrentDay() : 1));
+	SetTextOrHide(Text_DayLabel, FText::Format(DayLabelFormat, DayArgs));
 	const int32 Gold = ViewModel ? ViewModel->GetGold() : INDEX_NONE;
 	SetTextOrHide(Text_Gold, FormatGoldOrUnknown(Gold));
 
 	const int32 Goal = ViewModel ? ViewModel->GetDailyVisitorGoal() : INDEX_NONE;
 	const int32 Bonus = ViewModel ? ViewModel->GetDailyGoalBonusGold() : INDEX_NONE;
+	FFormatNamedArguments GoalArgs;
+	GoalArgs.Add(TEXT("Count"), FText::AsNumber(Goal));
+	FFormatNamedArguments BonusArgs;
+	BonusArgs.Add(TEXT("Amount"), FText::AsNumber(Bonus));
+	SetTextOrHide(Text_DailyGoalValue, Goal != INDEX_NONE
+		? FText::Format(DailyGoalValueFormat, GoalArgs) : LOCTEXT("PrepCheck_Unknown", "아직 알 수 없습니다"));
+	SetTextOrHide(Text_DailyGoalBonus, Bonus != INDEX_NONE
+		? FText::Format(DailyGoalBonusFormat, BonusArgs) : LOCTEXT("PrepCheck_Unknown", "아직 알 수 없습니다"));
 	SetTextOrHide(Text_DailyGoal, (Goal != INDEX_NONE && Bonus != INDEX_NONE)
 		? FText::Format(
 			LOCTEXT("PrepCheck_DailyGoal", "{0}명 · 달성 시 +{1}"),
@@ -472,6 +537,17 @@ void UFF_PrepPanelCheck::RefreshSummary()
 				FText::AsNumber(Bonus)));
 }
 
+void UFF_PrepPanelCheck::RefreshRequiredFacilities()
+{
+	const UWorld* World = GetWorld();
+	const UFF_RequiredFacilitiesSubsystem* Required = World
+		? World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>() : nullptr;
+	SetTextOrHide(Text_RequiredFacilities, Required
+		? FFF_PrepCheckRules::FormatRequiredFacilities(Required->GetRequiredFacilitiesStatus(),
+			RequiredFacilityFormat, NoRequiredFacilitiesText)
+		: LOCTEXT("PrepCheck_RequiredUnknown", "필수 시설 상태를 확인할 수 없습니다."));
+}
+
 void UFF_PrepPanelCheck::RefreshOpenGate()
 {
 	const UFF_PrepHudBar* Bar = GetOwningBar();
@@ -480,10 +556,14 @@ void UFF_PrepPanelCheck::RefreshOpenGate()
 		// 바 없이 이 패널이 떠 있을 수 없다. 여기 오면 배선이 끊긴 것이므로 남긴다.
 		UE_LOG(LogFestaFiestaUI, Warning,
 			TEXT("[%s] 소유 바가 없어 개장 버튼 상태를 정할 수 없다."), *GetName());
+		if (Button_OpenGate) { Button_OpenGate->SetIsEnabled(false); }
+		SetTextOrHide(Text_OpenGateReason, LOCTEXT("PrepCheck_GateUnavailable", "시작 조건을 확인할 수 없습니다."));
 		return;
 	}
 
 	const EFF_PrepCtaState State = Bar->GetCtaState();
+	SetTextOrHide(Text_OpenGateReason, State == EFF_PrepCtaState::Ready
+		? OpenGateReadyText : Bar->GetCtaReason());
 
 	// 문구는 단계마다 다르다. 셋업에서 `개장하기` 를 띄우면 하루를 건너뛰는 것처럼 읽힌다.
 	const FText Label = Bar->GetCtaLabelText();
@@ -494,8 +574,7 @@ void UFF_PrepPanelCheck::RefreshOpenGate()
 
 	if (Button_OpenGate)
 	{
-		// 막힌 이유는 하단 바가 문구로 띄우고 있다. 여기서 또 쓰지 않는다 —
-		// 같은 문장이 두 곳에 있으면 읽는 사람이 서로 다른 것으로 본다.
+		// 버튼과 사유가 하단 바의 동일한 판정을 사용한다.
 		Button_OpenGate->SetIsEnabled(State == EFF_PrepCtaState::Ready);
 		Button_OpenGate->SetVisibility(State == EFF_PrepCtaState::Hidden
 			? ESlateVisibility::Collapsed
@@ -557,22 +636,9 @@ int32 UFF_PrepPanelCheck::GetTotalSoftCapacity() const
 
 int32 UFF_PrepPanelCheck::GetProgramCount() const
 {
-	const UGameInstance* GI = GetGameInstance();
-	if (!GI)
-	{
-		return INDEX_NONE;
-	}
-
-	const UFF_ProgramReservationSubsystem* Reservations =
-		GI->GetSubsystem<UFF_ProgramReservationSubsystem>();
-	if (!Reservations)
-	{
-		return INDEX_NONE;
-	}
-
-	// 구매 화면이 아직 없어서 **0 개인 것이 정상**이다 (2026-08-18 김시리 안내).
-	// 그래서 0 을 `모름` 으로 바꾸지 않는다 — 여기서 0 은 확정 정보다.
-	return Reservations->GetReservationIds().Num();
+	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+	// 예약 그룹 수가 아니라 프로그램 패널과 같은 당일 편성 목록을 읽는다.
+	return ViewModel ? ViewModel->GetScheduledProgramIds().Num() : INDEX_NONE;
 }
 
 // =============================================================================
@@ -619,6 +685,19 @@ void UFF_PrepPanelCheck::HandleGoldChanged(int32 NewValue)
 void UFF_PrepPanelCheck::HandleStaffCountChanged(int32 NewValue)
 {
 	RefreshAll();
+}
+
+void UFF_PrepPanelCheck::HandleRequiredFacilitiesChanged()
+{
+	// 전체 설치/철거 이벤트이므로 필수 조건을 만족한 상태에서도 수용량이 바뀔 수 있다.
+	RefreshCapacity();
+	RefreshRequiredFacilities();
+	RefreshOpenGate();
+}
+
+void UFF_PrepPanelCheck::HandleScheduledProgramsChanged()
+{
+	RefreshSummary();
 }
 
 void UFF_PrepPanelCheck::HandlePurchasedFinaleGradeChanged(EFF_FinaleGrade NewGrade)
@@ -671,13 +750,14 @@ void UFF_PrepPanelCheck::SetGroupTextOrHide(UWidget* Group, UTextBlock* TextBloc
 		: ESlateVisibility::SelfHitTestInvisible);
 }
 
-FText UFF_PrepPanelCheck::FormatGoldOrUnknown(int32 Amount)
+FText UFF_PrepPanelCheck::FormatGoldOrUnknown(int32 Amount) const
 {
 	// 개장 판단의 근거가 되는 화면이라 빈칸으로 두지 않는다.
 	// 빈칸은 "문제 없음"으로 읽히고, 0 은 "공짜"로 읽힌다. 둘 다 사실이 아니다.
-	return (Amount == INDEX_NONE)
-		? LOCTEXT("PrepCheck_Unknown", "아직 알 수 없습니다")
-		: FText::AsNumber(Amount);
+	if (Amount == INDEX_NONE) { return LOCTEXT("PrepCheck_Unknown", "아직 알 수 없습니다"); }
+	FFormatNamedArguments Args;
+	Args.Add(TEXT("Amount"), FText::AsNumber(Amount));
+	return FText::Format(GoldValueFormat, Args);
 }
 
 #undef LOCTEXT_NAMESPACE

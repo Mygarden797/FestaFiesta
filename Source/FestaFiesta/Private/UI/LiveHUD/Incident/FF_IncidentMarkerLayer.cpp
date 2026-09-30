@@ -50,7 +50,6 @@ void UFF_IncidentMarkerLayer::NativeDestruct()
 {
 	UnbindIncidents();
 	ClearMarkers();
-	PendingResolve.Reset();
 	Super::NativeDestruct();
 }
 
@@ -125,30 +124,7 @@ void UFF_IncidentMarkerLayer::HandleIncidentClosed(FFF_IncidentHandle Handle)
 
 void UFF_IncidentMarkerLayer::HandleMarkerClicked(FFF_IncidentHandle Handle)
 {
-	PendingResolve.AddUnique(Handle);
 	OnIncidentMarkerClicked.Broadcast(Handle);
-}
-
-void UFF_IncidentMarkerLayer::FlushPendingResolve()
-{
-	if (PendingResolve.Num() == 0)
-	{
-		return;
-	}
-
-	const TArray<FFF_IncidentHandle> ToResolve = MoveTemp(PendingResolve);
-	PendingResolve.Reset();
-
-	UFF_IncidentSubsystem* Incident = GetIncidentSubsystem();
-	if (!Incident)
-	{
-		return;
-	}
-
-	for (const FFF_IncidentHandle& Handle : ToResolve)
-	{
-		Incident->ResolveIncident(Handle);
-	}
 }
 
 void UFF_IncidentMarkerLayer::AddOrRefreshMarker(FFF_IncidentHandle Handle)
@@ -327,8 +303,6 @@ bool UFF_IncidentMarkerLayer::TryGetAnchorWorldLocation(const FFF_IncidentAnchor
 void UFF_IncidentMarkerLayer::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-
-	FlushPendingResolve();
 
 	if (Markers.Num() == 0)
 	{

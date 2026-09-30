@@ -155,6 +155,35 @@ struct FESTAFIESTA_API FFF_IncidentContext
 	float PeakIntensity = 0.f;
 };
 
+// 선택지 하나의 비용·보상을 값으로 복사한 것. UI 가 UFF_IncidentOption 을 직접 잡지 않게 한다.
+// 정의에서 선택지가 null 이어도 bValid=false 로 자리를 채워 OptionIndex 와 배열 위치를 맞춘다.
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_IncidentOptionView
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
+	int32 OptionIndex = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
+	bool bValid = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
+	FText Label;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
+	int32 CostGold = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
+	int32 MinStaff = 1;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
+	float WorkAmount = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
+	FText RewardText;
+};
+
 //UI 전달용으로 만들어진 View 전용 함수
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_IncidentView
@@ -178,6 +207,8 @@ struct FESTAFIESTA_API FFF_IncidentView
 	
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
 	float MinuteUntileLapse = 60.f;
-	
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Options")
+	TArray<FFF_IncidentOptionView> Options;
 };
 

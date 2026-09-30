@@ -60,7 +60,7 @@ protected:
 	virtual void NativeOnItemSelectionChanged(bool bIsSelected) override;
 	virtual void NativeOnEntryReleased() override;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Name;
-	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Recipe;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Recipe;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Bonus;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_State;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_ClaimReward;

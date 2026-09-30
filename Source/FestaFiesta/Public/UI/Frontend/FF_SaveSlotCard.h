@@ -7,11 +7,15 @@
 #include "UI/Widgets/FF_FocusableWidgetBase.h"
 #include "FF_SaveSlotCard.generated.h"
 
+class UButton;
 class UImage;
 class UTextBlock;
 
 /** 어느 슬롯이 선택됐는지 알린다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSaveSlotSelected, FName, SlotId);
+
+/** 이 슬롯을 지워 달라고 알린다. 확인(두 번 누르기)을 거친 뒤에만 울린다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSaveSlotDeleteRequested, FName, SlotId);
 
 /**
  * 저장 기록 한 건을 그리는 카드.
@@ -42,8 +46,18 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI")
 	FFF_OnSaveSlotSelected OnSaveSlotSelected;
 
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI")
+	FFF_OnSaveSlotDeleteRequested OnSaveSlotDeleteRequested;
+
 protected:
+	// 디자이너에서도 삭제 버튼 모양이 보이게 여기서 한 번 입힌다.
+	virtual void NativePreConstruct() override;
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+
+	// 카드에서 마우스가 나가면 삭제 확인을 푼다. 한 번 눌러 둔 채 다른 카드로 가서 잊는 것을 막는다.
+	virtual void NativeOnMouseLeave(const FPointerEvent& InMouseEvent) override;
 
 	// --- 위젯 바인딩 ---
 
@@ -68,6 +82,39 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UImage> Image_KindIcon;
 
+	/**
+	 * 삭제 버튼. 없으면 삭제를 제공하지 않는다(구형 WBP 도 그대로 돈다).
+	 *
+	 * 한 번 누르면 문구가 `한 번 더 누르면 삭제` 로 바뀌고, 한 번 더 눌러야 지운다.
+	 * 되돌릴 수 없는 동작이라 한 번에 지우지 않는다. 확인 창을 따로 띄우지 않는 이유는
+	 * 설정 화면의 `변경 버리기` 와 같은 방식으로 맞추려는 것이다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UButton> Button_Delete;
+
+	/** 삭제 버튼 문구. 없으면 버튼 안의 글자를 찾아 쓴다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UTextBlock> Text_Delete;
+
 private:
+	UFUNCTION()
+	void HandleDeleteClicked();
+
+	// 삭제 확인 상태를 바꾸고 문구와 모양을 맞춘다.
+	void SetDeleteArmed(bool bArmed);
+
+	/* 삭제 버튼 모양을 코드에서 입힌다. 평소에는 옅은 테두리의 작은 알약, 확인 중에는 붉은 알약.
+
+	   WBP 에 버튼을 넣으면 엔진 기본 회색 버튼이 되어 크림색 카드에서 튄다. 색을 손으로
+	   맞추면 다른 카드·화면과 조금씩 어긋나서, 팀 팔레트(UFF_UIPalette InGame)에서 읽어 입힌다.
+	   확인 상태를 색으로도 구분하는 이유는 문구만 바뀌면 한 번 더 누르면 지워진다는 것을 놓치기 쉬워서다.
+	*/
+	void ApplyDeleteButtonStyle(bool bArmed);
+
+	UTextBlock* ResolveDeleteLabel() const;
+
 	FName CachedSlotId;
+
+	// 삭제를 한 번 눌러 둔 상태. 한 번 더 누르면 지운다.
+	bool bDeleteArmed = false;
 };

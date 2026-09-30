@@ -134,7 +134,7 @@ namespace
 
 bool UFF_OptionsScreen::FDraft::Equals(const FDraft& Other) const
 {
-	return FMath::IsNearlyEqual(MasterVolume, Other.MasterVolume, 0.001f)
+	return Audio.Equals(Other.Audio)
 		&& bZoomToCursor == Other.bZoomToCursor
 		&& bEdgeScroll == Other.bEdgeScroll;
 }
@@ -436,15 +436,43 @@ void UFF_OptionsScreen::BuildSoundRows()
 	if (UFF_SettingSliderRow* Row = AddSliderRow(
 		LOCTEXT("OptionMasterVolume", "마스터 음량"),
 		LOCTEXT("OptionMasterVolumeDesc", "게임 전체 소리의 크기입니다"),
-		Draft.MasterVolume, 0.f, 1.f, 0.05f))
+		Draft.Audio.Master, 0.f, 1.f, 0.05f))
 	{
 		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_OptionsScreen::HandleMasterVolumeChanged);
 	}
 
-	AddInfoRow(
-		LOCTEXT("OptionSoundBusLabel", "개별 음량"),
-		LOCTEXT("OptionSoundBusValue", "준비 중"),
-		LOCTEXT("OptionSoundBusDesc", "BGM·효과음 분리는 사운드 담당의 SoundClass 구성이 들어온 뒤에 붙입니다"));
+	// 배경음·효과음은 마스터에 곱해진다. 적용은 축제 사운드(UFF_AudioSubsystem)가 설정 방송을 받아 한다.
+	if (UFF_SettingSliderRow* Row = AddSliderRow(
+		LOCTEXT("OptionMusicVolume", "배경음 음량"),
+		LOCTEXT("OptionMusicVolumeDesc", "축제 배경음과 피날레 음악의 크기입니다"),
+		Draft.Audio.Music, 0.f, 1.f, 0.05f))
+	{
+		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_OptionsScreen::HandleMusicVolumeChanged);
+	}
+
+	if (UFF_SettingSliderRow* Row = AddSliderRow(
+		LOCTEXT("OptionEffectsVolume", "효과음 음량"),
+		LOCTEXT("OptionEffectsVolumeDesc", "건설·대기열·진행 알림처럼 운영 중에 나는 소리의 크기입니다"),
+		Draft.Audio.Effects, 0.f, 1.f, 0.05f))
+	{
+		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_OptionsScreen::HandleEffectsVolumeChanged);
+	}
+
+	if (UFF_SettingSliderRow* Row = AddSliderRow(
+		LOCTEXT("OptionFireworksVolume", "불꽃놀이 음량"),
+		LOCTEXT("OptionFireworksVolumeDesc", "피날레 불꽃이 터지는 소리의 크기입니다"),
+		Draft.Audio.Fireworks, 0.f, 1.f, 0.05f))
+	{
+		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_OptionsScreen::HandleFireworksVolumeChanged);
+	}
+
+	if (UFF_SettingSliderRow* Row = AddSliderRow(
+		LOCTEXT("OptionUiVolume", "UI 소리 음량"),
+		LOCTEXT("OptionUiVolumeDesc", "버튼 클릭·확인·오류 알림 소리의 크기입니다"),
+		Draft.Audio.Ui, 0.f, 1.f, 0.05f))
+	{
+		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_OptionsScreen::HandleUiVolumeChanged);
+	}
 }
 
 void UFF_OptionsScreen::BuildGraphicsRows()
@@ -786,7 +814,7 @@ void UFF_OptionsScreen::CaptureDraft()
 		return;
 	}
 
-	Saved.MasterVolume = Runtime->GetMasterVolume();
+	Saved.Audio = Runtime->GetAudioVolumes();
 	Saved.bZoomToCursor = Runtime->IsZoomToCursorEnabled();
 	Saved.bEdgeScroll = Runtime->IsEdgeScrollEnabled();
 	Draft = Saved;
@@ -808,8 +836,8 @@ void UFF_OptionsScreen::CommitDraft()
 		return;
 	}
 
-	// 세 값을 한 번에 넘긴다. 행마다 setter 를 부르면 슬라이더를 끌 때마다 ini 를 쓴다.
-	Runtime->CommitSettings(Draft.MasterVolume, Draft.bZoomToCursor, Draft.bEdgeScroll);
+	// 다섯 값을 한 번에 넘긴다. 행마다 setter 를 부르면 슬라이더를 끌 때마다 ini 를 쓴다.
+	Runtime->CommitAllSettings(Draft.Audio, Draft.bZoomToCursor, Draft.bEdgeScroll);
 
 	// 그래픽은 엔진이 소유한다. 화면 모드가 바뀌면 여기서 15초 확인이 시작된다.
 	CommitGraphicsDraft();
@@ -919,7 +947,59 @@ void UFF_OptionsScreen::HandleReduceMotionToggled(const bool bEnabled)
 
 void UFF_OptionsScreen::HandleMasterVolumeChanged(const float Value)
 {
-	Draft.MasterVolume = Value;
+	Draft.Audio.Master = Value;
+	bDiscardArmed = false;
+
+	if (ShouldCommitImmediately())
+	{
+		CommitDraft();
+		return;
+	}
+	RefreshDirtyState();
+}
+
+void UFF_OptionsScreen::HandleMusicVolumeChanged(const float Value)
+{
+	Draft.Audio.Music = Value;
+	bDiscardArmed = false;
+
+	if (ShouldCommitImmediately())
+	{
+		CommitDraft();
+		return;
+	}
+	RefreshDirtyState();
+}
+
+void UFF_OptionsScreen::HandleEffectsVolumeChanged(const float Value)
+{
+	Draft.Audio.Effects = Value;
+	bDiscardArmed = false;
+
+	if (ShouldCommitImmediately())
+	{
+		CommitDraft();
+		return;
+	}
+	RefreshDirtyState();
+}
+
+void UFF_OptionsScreen::HandleFireworksVolumeChanged(const float Value)
+{
+	Draft.Audio.Fireworks = Value;
+	bDiscardArmed = false;
+
+	if (ShouldCommitImmediately())
+	{
+		CommitDraft();
+		return;
+	}
+	RefreshDirtyState();
+}
+
+void UFF_OptionsScreen::HandleUiVolumeChanged(const float Value)
+{
+	Draft.Audio.Ui = Value;
 	bDiscardArmed = false;
 
 	if (ShouldCommitImmediately())

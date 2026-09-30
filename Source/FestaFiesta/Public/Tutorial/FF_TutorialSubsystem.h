@@ -190,6 +190,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
 	FName GetHighlightAnchor() const { return CurrentAnchor; }
 
+	// 지금 강조를 테두리만 그릴지. 읽고 넘기는 줄의 강조는 화면을 어둡게 덮지 않는다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
+	bool IsHighlightOutlineOnly() const { return bHighlightOutlineOnly; }
+
 	// ── 조작 완료 통지 ──────────────────────────────────────────────────────
 
 	// 플레이어가 무언가 했다고 알린다. 기다리던 조건과 맞으면 다음 줄로 간다.
@@ -327,6 +331,9 @@ private:
 	// 튜토리얼 레벨이면 레벨을 끝내고 레벨 선택으로 돌아간다. 돌아갔으면 true.
 	bool LeaveIfTutorialLevel(FName FestivalId);
 
+	// 이 축제가 튜토리얼 레벨인지. 튜토리얼 설정의 TutorialFestivalId 와 비교한다.
+	static bool IsTutorialFestival(FName FestivalId);
+
 	// 카메라 조작을 감시한다.
 	//
 	// 카메라 쪽에서 알려주게 하면 카메라가 튜토리얼을 알아야 한다.
@@ -384,6 +391,18 @@ private:
 	bool bDialogueActive = false;
 
 	FName CurrentAnchor = NAME_None;
+
+	// 지금 강조가 테두리만인지. 줄이 바뀔 때 그 줄의 값으로 바꾼다.
+	bool bHighlightOutlineOnly = false;
+
+	/* 이 월드가 저장에서 이어하기로 열렸는지. 월드가 시작할 때 한 번 정한다.
+
+	   튜토리얼 레벨은 지도에서 새로 고르면 기록과 상관없이 다시 튼다. 이어하기로 들어온
+	   경우는 하던 판을 계속하려는 것이라 대사를 다시 틀지 않는다.
+	   시작할 때 읽는 이유는, 이어하기 지정은 레벨이 뜬 뒤 한 틱 만에 소비되어
+	   자동 시작 시점에는 이미 비어 있을 수 있기 때문이다.
+	*/
+	bool bWorldStartedFromContinue = false;
 
 	// 이름 → 위젯. 화면이 사라지면 자동으로 비도록 약참조로 든다.
 	TMap<FName, TWeakObjectPtr<UWidget>> AnchorWidgets;

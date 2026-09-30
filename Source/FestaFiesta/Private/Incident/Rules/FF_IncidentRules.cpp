@@ -3,6 +3,9 @@
 #include "Incident/Rules/FF_IncidentRules.h"
 
 #include "VectorUtil.h"
+#include "Incident/FF_IncidentDefinition.h"
+#include "Incident/FF_IncidentOption.h"
+#include "Incident/Effects/FF_IncidentEffect.h"
 
 FString FFF_IncidentRules::MakeAnchorId(const FFF_IncidentAnchor& Anchor)
 {
@@ -78,4 +81,31 @@ float FFF_IncidentRules::MergeIntensity(float ExistingPeak, float IncomingIntens
 {
 	
 	return FMath::Max(ExistingPeak, IncomingIntensity);
+}
+
+void FFF_IncidentRules::BuildOptionViews(const UFF_IncidentDefinition& Definition, TArray<FFF_IncidentOptionView>& OutViews)
+{
+	OutViews.Reset(Definition.Options.Num());
+
+	for (int32 Index = 0; Index < Definition.Options.Num(); ++Index)
+	{
+		FFF_IncidentOptionView& View = OutViews.AddDefaulted_GetRef();
+		View.OptionIndex = Index;
+
+		const UFF_IncidentOption* Option = Definition.GetOption(Index);
+		if (!Option)
+		{
+			continue;
+		}
+
+		View.bValid = true;
+		View.Label = Option->Label;
+		View.CostGold = FMath::Max(0, Option->CostGold);
+		View.MinStaff = FMath::Max(1, Option->MinStaff);
+		View.WorkAmount = FMath::Max(0.f, Option->WorkAmount);
+		if (Option->Effect)
+		{
+			View.RewardText = Option->Effect->GetDescription();
+		}
+	}
 }

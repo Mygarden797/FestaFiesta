@@ -10,6 +10,7 @@
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
 #include "Components/ProgressBar.h"
+#include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -57,6 +58,12 @@ float MilestoneTrackPercent(const TArray<FFF_FacilityCodexCollectionMilestone>& 
 bool UFF_FacilityCodexScreen::UpdateCollectionLayout(const FVector2D& Viewport)
 {
 	if (!Column_CollectionCategories) return false;
+	if (bUseAuthoredCollectionLayout)
+	{
+		// Saved Fill slots stretch the reward track. The saved six-column tile
+		// view measures its own pitch in Slate, including in Designer without Tick.
+		return true;
+	}
 	if (Size_Dialog)
 	{
 		if (!FMath::IsNearlyEqual(Size_Dialog->GetWidthOverride(), Viewport.X))
@@ -73,57 +80,81 @@ bool UFF_FacilityCodexScreen::UpdateCollectionLayout(const FVector2D& Viewport)
 			if (!CanvasSlot->GetSize().Equals(Size, .5)) CanvasSlot->SetSize(Size);
 		}
 	};
-	const float SidePadding = FMath::Clamp(Viewport.X * .035f, 24.f, 64.f);
-	const float NavigationWidth = FMath::Clamp(Viewport.X * .15f, 174.f, 240.f);
-	const float TopPadding = 118.f;
-	const float FooterHeight = 148.f;
+	const float SidePadding = FMath::Clamp(Viewport.X * .025f, 16.f, 48.f);
+	const float NavigationWidth = FMath::Clamp(Viewport.X * .15f, 154.f, 220.f);
+	// A dedicated filter row never competes with the title/close button. This also
+	// leaves enough width for all five Korean captions at the 720p logical size.
+	const float TopPadding = 144.f;
+	const float FooterHeight = 164.f;
 	const float GridX = SidePadding + NavigationWidth + 18.f;
 	const float GridWidth = Viewport.X - GridX - SidePadding;
 	Place(TEXT("Size_Refined_Button_Close"), {SidePadding, 24}, {330, 48});
-	Place(TEXT("Horizontal_Toolbar"), {Viewport.X * .44f, 26}, {Viewport.X * .56f - SidePadding, 44});
-	Place(TEXT("Size_CollectionSearch"), {SidePadding, 84}, {NavigationWidth, 36});
-	Place(TEXT("Scroll_CollectionCategories"), {SidePadding, 136}, {NavigationWidth, Viewport.Y - 172});
+	Place(TEXT("Button_ExitCodex"), {Viewport.X - SidePadding - 48.f, 24.f}, {48, 48});
+	Place(TEXT("Horizontal_Toolbar"), {GridX, 84}, {GridWidth, 44});
+	Place(TEXT("Size_CollectionSearch"), {SidePadding, 84}, {NavigationWidth, 44});
+	Place(TEXT("Scroll_CollectionCategories"), {SidePadding, TopPadding}, {NavigationWidth, FMath::Max(80.f, Viewport.Y - TopPadding - 24.f)});
 	Place(TEXT("Size_Browse"), {GridX, TopPadding},
 		{GridWidth, FMath::Max(120.f, Viewport.Y - TopPadding - FooterHeight - 12)});
-	Place(TEXT("Row_CollectionProgress"), {GridX, Viewport.Y - FooterHeight}, {GridWidth, 120});
-	const float DetailX = Viewport.X * .61f;
-	Place(TEXT("Size_Showcase"), {SidePadding + 54, Viewport.Y * .23f},
-		{Viewport.X * .52f - SidePadding, Viewport.Y * .56f});
-	Place(TEXT("Horizontal_PreviewRotation"), {Viewport.X * .20f, Viewport.Y * .81f}, {Viewport.X * .30f, 40});
-	Place(TEXT("Size_Detail"), {DetailX, 112}, {Viewport.X - DetailX - SidePadding, Viewport.Y - 160});
-	Place(TEXT("Button_CollectionPrevious"), {SidePadding, Viewport.Y * .48f}, {46, 62});
-	Place(TEXT("Button_CollectionNext"), {Viewport.X - SidePadding - 46, Viewport.Y * .48f}, {46, 62});
+	Place(TEXT("Row_CollectionProgress"), {GridX, Viewport.Y - FooterHeight}, {GridWidth, 140});
+	// A horizontal scroll box measures its child at its desired width. Fill all
+	// available space on wide screens, retaining scrolling only when cards need it.
+	if (auto* TrackSize = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_ReadableMilestoneTrack"))))
+	{
+		const auto* RewardScroll = GetWidgetFromName(TEXT("Scroll_ReadableMilestones"));
+		const float AvailableWidth = RewardScroll ? RewardScroll->GetCachedGeometry().GetLocalSize().X : 0.f;
+		const float CardWidth = Row_CollectionMilestones ? Row_CollectionMilestones->GetChildrenCount() * 124.f : 0.f;
+		const float TrackWidth = FMath::Max(FMath::Max(520.f, CardWidth), AvailableWidth);
+		if (!FMath::IsNearlyEqual(TrackSize->GetMinDesiredWidth(), TrackWidth, .5f))
+			TrackSize->SetMinDesiredWidth(TrackWidth);
+	}
+	// Detail navigation belongs above the card: the old next arrow covered the
+	// detail text, and a percentage-only detail width made long names unreadable.
+	const float DetailWidth = FMath::Clamp(Viewport.X * .42f, 360.f, 620.f);
+	const float DetailX = FMath::Max(SidePadding, Viewport.X - SidePadding - DetailWidth);
+	const float HeroWidth = FMath::Max(120.f, DetailX - SidePadding - 24.f);
+	Place(TEXT("Size_Showcase"), {SidePadding, 112}, {HeroWidth, FMath::Max(140.f, Viewport.Y - 176.f)});
+	Place(TEXT("Horizontal_PreviewRotation"), {SidePadding, Viewport.Y - 56.f}, {HeroWidth, 40});
+	Place(TEXT("Size_Detail"), {DetailX, 112}, {DetailWidth, FMath::Max(140.f, Viewport.Y - 136.f)});
+	Place(TEXT("Button_CollectionPrevious"), {Viewport.X - SidePadding - 240.f, 26.f}, {48, 44});
+	Place(TEXT("Button_CollectionNext"), {Viewport.X - SidePadding - 176.f, 26.f}, {48, 44});
 	if (TileView_Entries)
 	{
 		const float Width = TileView_Entries->GetCachedGeometry().GetLocalSize().X;
-		if (Width > 1.f) TileView_Entries->SetResponsiveColumns(FMath::FloorToInt(Width / 190.f));
+		if (Width > 1.f) TileView_Entries->SetResponsiveColumns(FMath::Max(1, FMath::FloorToInt(Width / 224.f)));
 	}
 	return true;
 }
 
-// 분류 버튼은 항목 수가 달라질 때만 다시 만들고 선택 표시와 발견 개수만 갱신한다.
+// 사이드바는 전체 조합 하나만 표시하고 선택 표시와 발견 개수만 갱신한다.
 void UFF_FacilityCodexScreen::RefreshCollectionNavigation()
 {
 	if (!Column_CollectionCategories || !CollectionCategoryClass) return;
-	if (CollectionCategories.Num() != CategoryChoices.Num() + 1)
+	if (CollectionCategories.Num() != 1)
 	{
-		// The presenter can set its facility filter before NativeConstruct populates categories.
+		if (Column_CollectionCategories->GetChildrenCount() == 1)
+			if (auto* Authored = Cast<UFF_PrepChoiceButton>(Column_CollectionCategories->GetChildAt(0)))
+				CollectionCategories.Add(Authored);
+	}
+	if (CollectionCategories.Num() != 1)
+	{
+		// Legacy category APIs remain available, but the collection has one clear reset action.
 		Column_CollectionCategories->ClearChildren();
 		CollectionCategories.Reset();
-		for (int32 I=0;I<=CategoryChoices.Num();++I)
+		if (auto* Choice = CreateWidget<UFF_PrepChoiceButton>(this, CollectionCategoryClass))
 		{
-			auto* Choice=CreateWidget<UFF_PrepChoiceButton>(this,CollectionCategoryClass);
-			if(!Choice) continue;
-			const FText Label=I==0?LOCTEXT("All","전체 조합"):
-				FFF_PrepBuildPresentationRules::ResolveCategoryDisplayName(CategoryChoices[I-1]);
-			Choice->ConfigureChoice(I,Label);
+			Choice->ConfigureChoice(0, LOCTEXT("All", "전체 조합"));
 			Choice->OnHudTabButtonClicked.BindUObject(this,&ThisClass::HandleCollectionCategory);
 			Column_CollectionCategories->AddChildToVerticalBox(Choice)->SetPadding(FMargin(0,0,0,12));
 			CollectionCategories.Add(Choice);
 		}
 	}
-	const int32 Selected=Filter.bFilterByCategory?CategoryChoices.IndexOfByKey(Filter.Category)+1:0;
-	for(UFF_PrepChoiceButton* C:CollectionCategories) if(C) C->SetSelected(C->GetChoiceId()==Selected);
+	for (UFF_PrepChoiceButton* Choice : CollectionCategories)
+		if (Choice)
+		{
+			Choice->ConfigureChoice(0, LOCTEXT("All", "전체 조합"));
+			Choice->OnHudTabButtonClicked.BindUObject(this, &ThisClass::HandleCollectionCategory);
+			Choice->SetSelected(!Filter.bFilterByCategory && Filter.FacilityDefinitionId.IsNone());
+		}
 	if(auto* Text=Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_CollectionCount"))))
 		Text->SetText(FText::Format(LOCTEXT("Count","{0} / {1}"),FText::AsNumber(Summary.DiscoveredCount),FText::AsNumber(Summary.TotalCount)));
 }
@@ -148,19 +179,27 @@ void UFF_FacilityCodexScreen::RefreshCollectionMilestones()
 	TArray<FName> Ids;
 	Ids.Reserve(Milestones.Num());
 	for(const auto& M:Milestones) Ids.Add(M.MilestoneId);
-	if(Ids!=CollectionMilestoneIds)
+	if(Ids!=CollectionMilestoneIds || Row_CollectionMilestones->GetChildrenCount()!=Milestones.Num())
 	{
-		Row_CollectionMilestones->ClearChildren(); CollectionMilestones.Reset(); CollectionMilestoneIds=Ids;
+		CollectionMilestones.Reset(); CollectionMilestoneIds=Ids;
+		if (Row_CollectionMilestones->GetChildrenCount() == Milestones.Num())
+			for (UWidget* Child : Row_CollectionMilestones->GetAllChildren())
+				if (auto* Choice = Cast<UFF_PrepChoiceButton>(Child)) CollectionMilestones.Add(Choice);
+		const bool bReuseAuthored = CollectionMilestones.Num() == Milestones.Num();
+		if (!bReuseAuthored) { Row_CollectionMilestones->ClearChildren(); CollectionMilestones.Reset(); }
 		for(int32 I=0;I<Milestones.Num();++I)
 		{
-			auto* Choice=CreateWidget<UFF_PrepChoiceButton>(this,CollectionMilestoneClass);
+			auto* Choice=bReuseAuthored ? CollectionMilestones[I].Get() : CreateWidget<UFF_PrepChoiceButton>(this,CollectionMilestoneClass);
 			if(!Choice) continue;
 			Choice->ConfigureChoice(I,FText::GetEmpty());
 			Choice->OnHudTabButtonClicked.BindUObject(this,&ThisClass::HandleCollectionMilestone);
-			auto* MilestoneSlot=Row_CollectionMilestones->AddChildToHorizontalBox(Choice);
-			MilestoneSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill)); MilestoneSlot->SetPadding(FMargin(12,0));
-			MilestoneSlot->SetHorizontalAlignment(HAlign_Center);
-			CollectionMilestones.Add(Choice);
+			if (!bReuseAuthored)
+			{
+				auto* MilestoneSlot=Row_CollectionMilestones->AddChildToHorizontalBox(Choice);
+				MilestoneSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill)); MilestoneSlot->SetPadding(FMargin(12,0));
+				MilestoneSlot->SetHorizontalAlignment(HAlign_Center);
+				CollectionMilestones.Add(Choice);
+			}
 		}
 	}
 	for(UFF_PrepChoiceButton* C:CollectionMilestones)

@@ -61,6 +61,10 @@ protected:
 	UFUNCTION()
 	void HandleSlotSelected(FName SlotId);
 
+	/** 카드가 삭제를 확인받았다. 목록 공급자에게 지워 달라고 한다. */
+	UFUNCTION()
+	void HandleSlotDeleteRequested(FName SlotId);
+
 	/** 목록이 바뀌면 다시 그린다. Provider 가 알려준다. */
 	UFUNCTION()
 	void HandleSaveListChanged();

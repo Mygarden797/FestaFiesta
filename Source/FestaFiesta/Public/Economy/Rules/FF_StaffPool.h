@@ -17,6 +17,10 @@ struct FESTAFIESTA_API FFF_StaffMember
 	UPROPERTY(BlueprintReadOnly, Category = "Staff")
 	int32 StaffId = INDEX_NONE;
 
+	// 설치된 안내시설의 고유 ID. 빈 값이면 미배정이며 저장/불러오기도 함께 유지한다.
+	UPROPERTY(BlueprintReadOnly, Category = "Staff")
+	FGuid AssignedFacilityId;
+
 	// 1~3. 고용 직후에는 항상 1이다.
 	UPROPERTY(BlueprintReadOnly, Category = "Staff")
 	int32 TrainingLevel = 1;
@@ -42,7 +46,7 @@ struct FESTAFIESTA_API FFF_StaffMember
  *
  * 고용은 **1회 구매이고 축제가 끝날 때까지 남는다.** 하루 경계에서 줄어들지 않는다 —
  * 영구라서 값어치가 남은 날짜에 비례한다 — 일찍 살수록 이득이고, 그것이 규칙이다.
- * 총원은 MaxHiredStaffCount 로 막는다(예전의 '하루 상한'이 아니라 축제 전체 상한이다).
+ * 고용 상한은 Progression이 기본 한도와 안내 시설 정원으로 판정한다. 명단은 정원을 소유하지 않는다.
  *
  * [주의] 스태프는 **시설 성능에 관여하지 않는다.** 시설의 회전율·객단가는 시설 강화가
  *        올리고(UFF_FacilityUpgradeSubsystem), 스태프는 사건 대응에 쓰인다.
@@ -89,6 +93,8 @@ struct FESTAFIESTA_API FFF_StaffPool
 	// StaffId 한 명을 승급시킨다. 가능 여부는 FFF_StaffEventRules::CanPromote 를 따른다.
 	// 승급했으면 true, 대상이 없거나 오늘 승급할 수 없으면 false(상태 변경 없음).
 	bool TryPromoteStaffMember(int32 StaffId, int32 CurrentDay);
+
+	bool SetAssignedFacility(int32 StaffId, FGuid FacilityId);
 
 	// InStaffCount 명을 고용하는 총 비용을 계산한다. 상태는 변경하지 않는다.
 	static int32 CalcHireCost(

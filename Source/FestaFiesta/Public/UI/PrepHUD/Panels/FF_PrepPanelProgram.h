@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Components/ComboBoxString.h"
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
@@ -195,6 +196,12 @@ protected:
 	/** 시설 클릭. `ChoiceId` 는 시설 목록 순번이다. */
 	void HandleFacilityClicked(int32 ChoiceId);
 
+	UFUNCTION()
+	void HandleFacilitySelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+	UFUNCTION()
+	UWidget* GenerateFacilityOptionWidget(FString Item);
+
 	void HandleCatalogFacilityClicked(int32 ChoiceId);
 
 	UFUNCTION()
@@ -225,6 +232,10 @@ protected:
 	/** 고른 카드를 열 수 있는 시설이 들어갈 자리. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UPanelWidget> Box_FacilityChoices;
+
+	/** 새 시안의 시설 선택. 이전 WBP의 버튼 목록은 계속 지원한다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UComboBoxString> Combo_Facilities;
 
 	/** 시설 줄 전체. 카드를 고르기 전에는 줄째 숨긴다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
@@ -263,6 +274,15 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_DailyNotice;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UTextBlock> Text_SelectedProgram;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UTextBlock> Text_Day;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UTextBlock> Text_EmptyCatalog;
+
 	// --- 설정 ---
 
 	/**
@@ -291,6 +311,22 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program")
 	FText DailyNoticeText;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Text")
+	FText NoSelectionText = NSLOCTEXT("FestaFiestaPrepProgram", "SummaryNoSelection", "프로그램을 선택하세요");
+
+	/** {0}: 축제의 실제 진행 일차. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Text")
+	FText DayTextFormat = NSLOCTEXT("FestaFiestaPrepProgram", "DayFormat", "{0}일차");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Text")
+	FText EmptyCatalogText = NSLOCTEXT("FestaFiestaPrepProgram", "EmptyCatalog", "현재 편성할 수 있는 프로그램이 없습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Text")
+	FText FacilityPlaceholderText = NSLOCTEXT("FestaFiestaPrepProgram", "FacilityPlaceholder", "시설을 선택하세요");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Text")
+	FText NoFacilityText = NSLOCTEXT("FestaFiestaPrepProgram", "NoFacilityOption", "편성 가능한 시설이 없습니다");
+
 private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_PrepProgramFacilityNavigationTest;
@@ -308,6 +344,8 @@ private:
 
 	/** 고른 카드의 시설 목록을 다시 만든다. 카드가 바뀔 때마다 부른다. */
 	void RebuildFacilityChoices();
+
+	void RefreshFacilityCombo();
 
 	void EnsureCatalogChoices();
 	void RebuildCatalogChoices();
@@ -355,6 +393,9 @@ private:
 
 	/** 고른 시설의 순번. 안 골랐으면 `INDEX_NONE`. */
 	int32 SelectedFacilityIndex = INDEX_NONE;
+
+	/** 목록 갱신 중 발생하는 ComboBox의 Direct 이벤트가 선택을 다시 덮지 않게 한다. */
+	bool bRefreshingFacilityCombo = false;
 
 	FFF_PrepProgramQuote Quote;
 };

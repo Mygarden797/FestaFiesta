@@ -28,6 +28,8 @@ void UFF_CrowdIncidentBridgeSubsystem::Initialize(FSubsystemCollectionBase& Coll
 		this, &UFF_CrowdIncidentBridgeSubsystem::HandleCongestionSampled);
 	MissingHandle = Crowd->OnMemberMissingChanged.AddUObject(
 		this, &UFF_CrowdIncidentBridgeSubsystem::HandleMemberMissingChanged);
+	ItemLostHandle = Crowd->OnCrowdItemLostEventChanged.AddUObject(
+		this, &UFF_CrowdIncidentBridgeSubsystem::HandleItemLost);
 }
 
 void UFF_CrowdIncidentBridgeSubsystem::OnWorldBeginPlay(UWorld& InWorld)
@@ -46,10 +48,12 @@ void UFF_CrowdIncidentBridgeSubsystem::Deinitialize()
 	{
 		Crowd->OnCongestionSampled.Remove(CongestionHandle);
 		Crowd->OnMemberMissingChanged.Remove(MissingHandle);
+		Crowd->OnCrowdItemLostEventChanged.Remove(ItemLostHandle);
 	}
 
 	CongestionHandle.Reset();
 	MissingHandle.Reset();
+	ItemLostHandle.Reset();
 	CongestionStreakByCell.Reset();
 	OpenCongestionCells.Reset();
 	MissingKeyByAgent.Reset();
@@ -166,4 +170,33 @@ void UFF_CrowdIncidentBridgeSubsystem::WithdrawMissing(int32 StableAgentID)
 	
 	Incident->WithdrawIncident(*IncidentDedupKey);
 	MissingKeyByAgent.Remove(StableAgentID);
+}
+
+/**
+ * 분실물은 떨어뜨린 순간 한 번뿐이고 Crowd가 거둘 일이 없다. 그래서 Report만 하고 에이전트→키 맵을 두지 않는다.
+ * 끝은 허브가 낸다(플레이어 해소 또는 만료). 주인이 퇴장해도 물건은 남는다.
+ * WorldPoint 앵커는 WorldPointDedupeGridUU 칸 단위로 합쳐지므로 같은 칸의 두 번째 분실은 기존 사건 갱신이 된다.
+ */
+void UFF_CrowdIncidentBridgeSubsystem::HandleItemLost(const TArray<FFF_CrowdItemLostEvent>& Events)
+{
+	if (Incident == nullptr)
+	{
+		FF_CI_BRIDGE_LOG("Incident is nullptr");
+		return;
+	}
+
+	for (const FFF_CrowdItemLostEvent& Event : Events)
+	{
+		FFF_IncidentReport EventReport;
+		EventReport.IncidentTag = FFIncidentTags::Crowd::ItemLost;
+		EventReport.Anchor.Kind = EFF_IncidentAnchorKind::WorldPoint;
+		EventReport.Anchor.WorldPoint = Event.LocationUU;
+		EventReport.Intensity = 1.f;
+
+		const FFF_IncidentHandle IncidentHandle = Incident->ReportIncident(EventReport);
+		if (!IncidentHandle.IsSet())
+		{
+			FF_CI_BRIDGE_LOG("ReportIncident rejected item lost of agent %d", Event.StableAgentID);
+		}
+	}
 }

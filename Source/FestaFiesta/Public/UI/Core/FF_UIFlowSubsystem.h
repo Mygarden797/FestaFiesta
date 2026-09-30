@@ -226,6 +226,11 @@ protected:
 	void HandleAtlasStartFestival(FName FestivalId);
 
 private:
+	/** 지구본↔국가 지도만 암전으로 감싼다. 화면/히스토리는 완전히 가려진 뒤 바꾼다. */
+	bool BeginAtlasScreenTransition(EFF_UIFlowScreen Destination, bool bGoingBack);
+	void GoToScreenImmediate(EFF_UIFlowScreen Screen);
+	bool GoBackImmediate();
+
 	/** 이 GameInstance가 시작한 축제 맵 로드에만 MoviePlayer 화면을 준비한다. */
 	void HandlePreLoadMapWithContext(const FWorldContext& WorldContext, const FString& MapName);
 
@@ -295,6 +300,11 @@ private:
 	 * 쓰고 나면 스스로 꺼진다 — 다음 전환까지 남으면 엉뚱한 화면이 끊겨 보인다.
 	 */
 	bool bInstantCameraForNextScreen = false;
+
+	/* 참인 동안 화면을 스택 크로스페이드 없이 올린다. 카메라 플래그와 달리 스스로 꺼지지 않고
+	   TGuardValue 범위로만 켠다. 지구본과 국가 지도 두 번의 push 에 모두 걸려야 해서다.
+	*/
+	bool bPushScreensWithoutTransition = false;
 
 	FName ActiveFestivalId;
 

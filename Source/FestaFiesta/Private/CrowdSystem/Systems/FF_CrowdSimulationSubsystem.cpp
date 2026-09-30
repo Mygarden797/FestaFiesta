@@ -378,6 +378,8 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 
 	ProcessPendingDespawns();
 	FlushMissingEvent();
+	TickItemLost();
+	FlushItemLostEvent();
 	UpdateArrivalSchedule();
 
 	{
@@ -410,7 +412,8 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 
 	if (bDrawDebugDensity)
 	{
-		DensityGrid.DrawDebug(GetWorld());
+		DensityGrid.DrawDebug(GetWorld(),
+			[this](const FVector& WorldLocation, double& OutZ) { return TryGetGroundZ(WorldLocation, OutZ); });
 	}
 	if (bDrawDebugAgents)
 	{
@@ -1015,7 +1018,14 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 		}
 
 		Unit.ArrivalRadiusUU = ArrivalRadiusUU;
-		if (Unit.LeaderAgentIndex == AgentIndex && PartyDecisionStates.IsValidIndex(AgentIndex))
+		if (Unit.bHasQueueSlot)
+		{
+			// 일행도 리더와 같은 자리 도착 기준을 쓴다. 기본 10m 반경이면
+			// 멤버가 줄 밖에 있어도 도착한 것으로 판단하고 줄 방향을 바라본다.
+			Unit.ArrivalRadiusUU = Unit.bUsePreciseSlotPosition
+				? GetAssignedSlotArrivalRadius() : QueueSlotArrivalRadiusUU;
+		}
+		else if (Unit.LeaderAgentIndex == AgentIndex && PartyDecisionStates.IsValidIndex(AgentIndex))
 		{
 			const FPartyDecisionState& RadiusState = PartyDecisionStates[AgentIndex];
 
@@ -1086,6 +1096,7 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 			}
 			else if ((State.AudiencePhase == EFF_PartyAudiencePhase::GoingToSlot
 					|| State.ProgramPhase == EFF_PartyProgramPhase::Returning)
+				&& !Unit.bUsePreciseSlotPosition
 				&& DecisionStuckSteps > 0
 				&& Unit.StuckSteps >= DecisionStuckSteps)
 			{
@@ -1372,6 +1383,10 @@ void UFF_CrowdSimulationSubsystem::PublishCongestionSnapshot()
 	const TArray<int32>& Throughput = DensityGrid.GetCellThroughput();
 	const TArray<float>& Density = DensityGrid.GetDensityField();
 	const int32 NumX = FMath::Max(1, DensityGrid.GetNumX());
+	const auto ResolveGroundZ = [this](const FVector& WorldLocation, double& OutZ)
+	{
+		return TryGetGroundZ(WorldLocation, OutZ);
+	};
 
 	CongestionSnapshot.Cells.Reset(Congested.Num());
 	CongestionSnapshot.SimTimeMinutes = GetLiveMinutes();
@@ -1385,7 +1400,7 @@ void UFF_CrowdSimulationSubsystem::PublishCongestionSnapshot()
 
 		FFF_CrowdCongestedCell& Cell = CongestionSnapshot.Cells.AddDefaulted_GetRef();
 		Cell.Cell = FIntPoint(CellX, CellY);
-		Cell.CenterWorldUU = DensityGrid.GetCellCenterWorld(CellX, CellY);
+		Cell.CenterWorldUU = DensityGrid.GetCellCenterOnGround(CellX, CellY, ResolveGroundZ);
 		Cell.DensityPerSqm = Density.IsValidIndex(CellIndex) ? Density[CellIndex] : 0.f;
 		Cell.Occupancy = Counts.IsValidIndex(CellIndex) ? Counts[CellIndex] : 0;
 		Cell.Throughput = Throughput.IsValidIndex(CellIndex) ? Throughput[CellIndex] : 0;
@@ -2241,15 +2256,23 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 		return;
 	}
 
+	// The short-approach visibility check below must use the current layout.
+	// Waiting until force calculation would cache a skipped query as failed on
+	// the first step after placing a facility between an NPC and its slot.
+	EnsureFacilityWalls();
+
 	int32 Budget = FMath::Max(PathQueriesPerStep, 1);
 	int32 Backlog = 0;
 
 	const float MinQueryDistSq = FMath::Square(FMath::Max(MinPathQueryDistanceUU, 0.f));
 	const float RepathToleranceSq = FMath::Square(FMath::Max(RepathToleranceUU, 1.f));
+	// 경로를 하나 만들 때마다 다음 프레임의 커서는 이동한다. 이번 순회도
+	// 그 커서를 쓰면 다음 멤버를 건너뛰고 앞 NPC를 중복 방문하게 된다.
+	const int32 ScanStartIndex = PathQueryCursor;
 
 	for (int32 Scanned = 0; Scanned < PoolSize; ++Scanned)
 	{
-		const int32 AgentIndex = (PathQueryCursor + Scanned) % PoolSize;
+		const int32 AgentIndex = (ScanStartIndex + Scanned) % PoolSize;
 
 		FUnitData& Unit = UnitDatas[AgentIndex];
 		FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
@@ -2263,8 +2286,10 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 			continue;
 		}
 
-		if (Unit.LeaderAgentIndex != AgentIndex)
+		if (Unit.LeaderAgentIndex != AgentIndex && !Unit.bHasQueueSlot)
 		{
+			// 자리 배정 전에는 리더를 따라가지만, 배정 후에는 멤버도 자기
+			// 자리까지 보행 경로를 구해야 꺾인 줄 안쪽의 시설을 가로지르지 않는다.
 			if (Unit.bFormationPathBlocked && UnitDatas.IsValidIndex(Unit.LeaderAgentIndex))
 			{
 				UpdateBlockedMemberPath(AgentIndex, Budget, Backlog, MinQueryDistSq);
@@ -2283,7 +2308,13 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 
 		if (!Follower.bHasPath && !Follower.bQueryFailed)
 		{
-			if (FVector::DistSquared2D(Unit.Position, Unit.TargetLocation) <= MinQueryDistSq)
+			const bool bBlockedSlotApproach = Unit.bHasQueueSlot
+				&& !FFF_CrowdWalls::IsSegmentClear(AvoidanceWalls,
+					FVector2f(Unit.Position.X, Unit.Position.Y) * FFF_CrowdUnits::MetersPerUU,
+					FVector2f(Unit.TargetLocation.X, Unit.TargetLocation.Y) * FFF_CrowdUnits::MetersPerUU,
+					Unit.Radius * FFF_CrowdUnits::MetersPerUU);
+			if (FVector::DistSquared2D(Unit.Position, Unit.TargetLocation) <= MinQueryDistSq
+				&& !bBlockedSlotApproach)
 			{
 				Follower.PlannedForTarget = Unit.TargetLocation;
 				Follower.bQueryFailed = true;
@@ -2443,8 +2474,9 @@ bool UFF_CrowdSimulationSubsystem::BuildPathForAgent(int32 AgentIndex)
 	}
 	AgentLaneIndices[AgentIndex] = INDEX_NONE;
 
-	// 레인이 먼저다. 실패는 정상 경로이며 그대로 NavMesh로 내려간다
-	if (TryBuildLanePathForAgent(AgentIndex))
+	// 줄 내부 이동은 해당 시설의 보행 경로를 쓴다. 도로 레인에 다시 합류하면
+	// 한 칸 앞으로 갈 때마다 줄에서 빠져나가 도로를 우회하게 된다.
+	if (!Unit.bHasQueueSlot && TryBuildLanePathForAgent(AgentIndex))
 	{
 		return true;
 	}
@@ -2823,9 +2855,30 @@ bool UFF_CrowdSimulationSubsystem::BeginAudienceVisit(
 {
 	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex)
 		|| !UnitDatas.IsValidIndex(LeaderAgentIndex)
-		|| IsAudienceLocked(PartyDecisionStates[LeaderAgentIndex]))
+		|| IsAudienceLocked(PartyDecisionStates[LeaderAgentIndex])
+		|| AudiencePartiesExcludedThisShow.Contains(UnitDatas[LeaderAgentIndex].PartyID))
 	{
 		return false;
+	}
+
+	// Utility로 무대에 먼저 도착해도 공연 3축제분 전보다 일찍 관람 잠금을 걸지 않는다.
+	const UWorld* World = GetWorld();
+	const UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const AFFZSFacilityActor* Facility = Zones ? Zones->FindFacility(FacilityId) : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = World && World->GetGameInstance()
+		? World->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	if (Facility && FFF_ZoneSystemBridge::IsMainStageFacility(
+		Facility->GetFacilitySpec().Category, Facility->GetFacilitySpec().FacilityDefinitionId))
+	{
+		if (!Stage || !Stage->IsMainProgramQueueBreakActive())
+		{
+			return false;
+		}
+		// 도착 콜백이 정기 집결보다 먼저 실행돼도 이용 중인 팀의 정산을 먼저 끝낸다.
+		if (UFF_ZoneSystemQueueBridgeSubsystem* Bridge = World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>())
+		{
+			Bridge->SynchronizeMainProgramQueueBreak();
+		}
 	}
 
 	// 유료 프로그램이 관람보다 우선한다. 돈을 받은 약속이고 정원이 이미 확정돼 있다.
@@ -2861,11 +2914,8 @@ bool UFF_CrowdSimulationSubsystem::BeginAudienceVisit(
 	State.AudienceSlotCount = Members.Num();
 	State.AudienceEntryLocation = Snapshot.EntryWorldCm;
 	State.AudienceExitLocation = Snapshot.ExitWorldCm;
-	// 45cm 는 줄(한 줄 12명)에서나 통한다. 수백 명이 한 블록에 들어차면 이미 앉은 사람들의
-	// 회피력에 밀려 지정 좌표 45cm 안에 못 들어간다 - 자리 간격 절반까지 넓힌다.
-	State.AudienceArrivalTolerance = FMath::Max3(
-		Snapshot.Layout.ArrivalToleranceCm, QueueSlotArrivalRadiusUU,
-		0.5f * FMath::Min(Snapshot.Layout.ColumnSpacingCm, Snapshot.Layout.RowSpacingCm));
+	// 좌석은 사람마다 다르다. 반 간격이나 3m 근방을 도착으로 인정하면 이웃 자리에 선다.
+	State.AudienceArrivalTolerance = GetAssignedSlotArrivalRadius();
 	State.CurrentDestinationId = FFF_ZoneSystemBridge::FacilityInstanceIdToDestinationId(FacilityId);
 	State.CurrentNeedRelief = FFF_ZoneSystemBridge::GetNeedReliefFlags(
 		EFFZSFacilityCategory::Performance, TEXT("Performance_MainStage_SunsetMainStage"));
@@ -2898,8 +2948,8 @@ bool UFF_CrowdSimulationSubsystem::AssignAudienceSeats(
 
 	// 한 자리라도 못 받으면 전부 되돌린다. 일부만 좌석을 들고 나머지가 리더를 따라가면
 	// 같은 파티가 두 곳으로 갈라진다.
-	TArray<FVector> SeatLocations;
-	SeatLocations.Reserve(Members.Num());
+	TArray<FTransform> SeatTransforms;
+	SeatTransforms.Reserve(Members.Num());
 	for (int32 MemberOffset = 0; MemberOffset < Members.Num(); ++MemberOffset)
 	{
 		FTransform Seat;
@@ -2908,7 +2958,7 @@ bool UFF_CrowdSimulationSubsystem::AssignAudienceSeats(
 		{
 			return false;
 		}
-		SeatLocations.Add(Seat.GetLocation());
+		SeatTransforms.Add(Seat);
 	}
 
 	for (int32 MemberOffset = 0; MemberOffset < Members.Num(); ++MemberOffset)
@@ -2918,11 +2968,27 @@ bool UFF_CrowdSimulationSubsystem::AssignAudienceSeats(
 			continue;
 		}
 		FUnitData& Member = UnitDatas[Members[MemberOffset]];
-		Member.QueueSlotLocation = SeatLocations[MemberOffset];
-		Member.bHasQueueSlot = Members[MemberOffset] != LeaderAgentIndex;
-		if (Members[MemberOffset] == LeaderAgentIndex)
+		const FTransform& Seat = SeatTransforms[MemberOffset];
+		Member.QueueSlotLocation = Seat.GetLocation();
+		Member.TargetLocation = Seat.GetLocation();
+		Member.LaneYaw = Seat.Rotator().Yaw;
+		Member.bHasQueueSlot = true;
+		Member.bUsePreciseSlotPosition = true;
+		Member.ArrivalRadiusUU = GetAssignedSlotArrivalRadius();
+		Member.Speed = Member.CruiseSpeed;
+		Member.MaxSpeed = Member.CruiseMaxSpeed;
+		Member.bHasSteerTarget = false;
+		Member.bFormationPathBlocked = false;
+		Member.FormationClearStreak = 0;
+		Member.StuckSteps = 0;
+		Member.UnstuckHoldSteps = 0;
+		if (PathFollowers.IsValidIndex(Members[MemberOffset]))
 		{
-			Member.TargetLocation = SeatLocations[MemberOffset];
+			PathFollowers[Members[MemberOffset]].Reset();
+		}
+		if (AgentLaneIndices.IsValidIndex(Members[MemberOffset]))
+		{
+			AgentLaneIndices[Members[MemberOffset]] = INDEX_NONE;
 		}
 	}
 	return true;
@@ -2976,7 +3042,20 @@ bool UFF_CrowdSimulationSubsystem::HandleAudienceArrival(const int32 LeaderAgent
 	}
 	if (State.AudiencePhase == EFF_PartyAudiencePhase::GoingToSlot)
 	{
-			State.AudiencePhase = bMainProgramShowStarted
+		// 리더만 도착하거나 막힘 콜백이 호출된 것만으로 일행 전체를 관람 중으로 바꾸지 않는다.
+		const TArray<int32> Members = GetPartyMembers(UnitDatas[LeaderAgentIndex].PartyID);
+		if (Members.IsEmpty()) return true;
+		for (const int32 MemberIndex : Members)
+		{
+			const FUnitData& Member = UnitDatas[MemberIndex];
+			if (!Member.bHasQueueSlot || !Member.bUsePreciseSlotPosition
+				|| FVector::DistSquared2D(Member.Position, Member.QueueSlotLocation)
+					> FMath::Square(GetAssignedSlotArrivalRadius()))
+			{
+				return true;
+			}
+		}
+		State.AudiencePhase = bMainProgramShowStarted
 			? EFF_PartyAudiencePhase::Spectating
 			: EFF_PartyAudiencePhase::Waiting;
 		UnitDatas[LeaderAgentIndex].Speed = 0.f;
@@ -3047,8 +3126,12 @@ void UFF_CrowdSimulationSubsystem::ReleaseAudienceParty(
 		if (UnitDatas.IsValidIndex(MemberIndex))
 		{
 			UnitDatas[MemberIndex].bHasQueueSlot = false;
+			UnitDatas[MemberIndex].bUsePreciseSlotPosition = false;
 			UnitDatas[MemberIndex].QueueSlotLocation = FVector::ZeroVector;
 			UnitDatas[MemberIndex].Speed = UnitDatas[MemberIndex].CruiseSpeed;
+			UnitDatas[MemberIndex].MaxSpeed = UnitDatas[MemberIndex].CruiseMaxSpeed;
+			UnitDatas[MemberIndex].bHasSteerTarget = false;
+			if (PathFollowers.IsValidIndex(MemberIndex)) PathFollowers[MemberIndex].Reset();
 		}
 	}
 
@@ -3086,6 +3169,7 @@ void UFF_CrowdSimulationSubsystem::ReleaseAllAudienceParties(const bool bMoveToE
 	if (!bMoveToExit)
 	{
 		OccupiedAudienceSlots.Reset();
+		AudiencePartiesExcludedThisShow.Reset();
 	}
 }
 
@@ -3123,6 +3207,18 @@ bool UFF_CrowdSimulationSubsystem::FindMainStageAudience(
 
 int32 UFF_CrowdSimulationSubsystem::GatherPartiesToMainStageAudience()
 {
+	const UWorld* World = GetWorld();
+	const UFF_FestivalStageSubsystem* Stage = World && World->GetGameInstance()
+		? World->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	if (!Stage || !Stage->IsMainProgramQueueBreakActive())
+	{
+		return 0;
+	}
+	if (UFF_ZoneSystemQueueBridgeSubsystem* Bridge = World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>())
+	{
+		Bridge->SynchronizeMainProgramQueueBreak();
+	}
+
 	++AudienceGatherAttempts;
 	FGuid FacilityId;
 	FFFZSAudienceSnapshot Snapshot;
@@ -3147,7 +3243,8 @@ int32 UFF_CrowdSimulationSubsystem::GatherPartiesToMainStageAudience()
 		const FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
 		if (Unit.bIsActive && Unit.LeaderAgentIndex == LeaderIndex && !State.bIsLeaving
 			&& State.ProgramPhase == EFF_PartyProgramPhase::None
-			&& State.AudiencePhase == EFF_PartyAudiencePhase::None)
+			&& State.AudiencePhase == EFF_PartyAudiencePhase::None
+			&& !AudiencePartiesExcludedThisShow.Contains(Unit.PartyID))
 		{
 			Leaders.Add(LeaderIndex);
 		}
@@ -3367,6 +3464,7 @@ bool UFF_CrowdSimulationSubsystem::BeginProgramReturn(
 		const FVector MemberTarget = bHasMemberSlot
 			? MemberWaitingTransform.GetLocation()
 			: State.ProgramWaitingLocation + GetPartyFormationOffset(MemberOffset);
+		Member.bUsePreciseSlotPosition = false; // 프로그램 폴백 접근점은 개별 저작 좌석이 아니다.
 		if (Members[MemberOffset] == LeaderAgentIndex)
 		{
 			Member.TargetLocation = MemberTarget;
@@ -3457,6 +3555,7 @@ void UFF_CrowdSimulationSubsystem::ReleaseProgramParty(const int32 LeaderAgentIn
 			UnitDatas[MemberIndex].bHasQueueSlot = false;
 			UnitDatas[MemberIndex].QueueSlotLocation = FVector::ZeroVector;
 			UnitDatas[MemberIndex].Speed = UnitDatas[MemberIndex].CruiseSpeed;
+			UnitDatas[MemberIndex].bUsePreciseSlotPosition = false;
 		}
 	}
 
@@ -3697,8 +3796,14 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 	// ★ 재결정을 여기서 직접 걸고 true 를 돌려준다. false 를 돌려주면 호출부가 Arrived 로
 	//   요청하는데, 그 사유는 조정자가 직전 목적지를 감점하지 않아 같은 줄에 다시 선다.
 	//   Arrived 는 쿨다운도 타므로 이탈 직후 요청이 조용히 버려질 수 있다.
+	const UFF_QueueSubsystem* QueueSystem = World->GetSubsystem<UFF_QueueSubsystem>();
+	// AtSlot includes both waiting and using teams. The queue core owns the actual
+	// start state; waiting impatience must not cancel a use that is already in progress.
+	const bool bHasStartedService = QueueSystem && QueueSystem->HasPartyStartedService(
+		Bridge->FindQueueFacilityId(State.QueuedFacilityId), Leader.PartyID);
 	if (bEnableQueuePatienceAbandon
 		&& State.QueuePhase == EFF_PartyQueuePhase::AtSlot
+		&& !bHasStartedService
 		&& AgentPersonalThresholds.IsValidIndex(LeaderAgentIndex))
 	{
 		const float WaitedMinutes = FMath::Max(SimTimeSeconds - State.QueueEnteredSimTime, 0.f)
@@ -3792,6 +3897,18 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 
 	case EFF_PartyQueuePhase::Joined:
 	{
+		// 가입 이벤트와 자리 배정은 지연 전달된다. 아직 접근점을 목표로 삼거나
+		// 일행이 따라오는 동안에는 도착 확인을 보내지 않는다.
+		for (const int32 MemberIndex : GetPartyMembers(Leader.PartyID))
+		{
+			const FUnitData& Member = UnitDatas[MemberIndex];
+			if (!Member.bHasQueueSlot
+				|| FVector::DistSquared2D(Member.Position, Member.QueueSlotLocation)
+					> FMath::Square(GetAssignedSlotArrivalRadius()))
+			{
+				return true;
+			}
+		}
 		Bridge->NotifyZoneFacilityPartyArrived(State.QueuedFacilityId, Leader.PartyID);
 		++QueueArrivalNotifies;
 
@@ -4379,6 +4496,8 @@ int32 UFF_CrowdSimulationSubsystem::ReclaimUnreachableAudienceSeats()
 		}
 
 		// 자리를 돌려주고 평소 행동으로 보낸다. 출구로 보내지 않는다 — 들어간 적이 없다.
+		// 같은 집결 호출이 이 파티를 다시 배정하면 좌석만 바뀌며 영원히 도착하지 못한다.
+		AudiencePartiesExcludedThisShow.Add(Leader.PartyID);
 		ReleaseAudienceParty(LeaderIndex, false);
 		RequestDecision(LeaderIndex, EFF_DecisionReason::Interrupted);
 		++Reclaimed;
@@ -4400,6 +4519,16 @@ void UFF_CrowdSimulationSubsystem::BeginMainStageGathering(const float ShowStart
 	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
 	const UFF_FestivalStageSubsystem* Stage = GameInstance
 		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	if (!Stage || !Stage->IsMainProgramQueueBreakActive())
+	{
+		return;
+	}
+
+	// Queue의 서비스 완료·매출 이벤트를 반영한 뒤에 파티 목적지를 관람석으로 바꾼다.
+	if (UFF_ZoneSystemQueueBridgeSubsystem* Bridge = World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>())
+	{
+		Bridge->SynchronizeMainProgramQueueBreak();
+	}
 
 	const bool bFirstCall = !bMainProgramAudienceActive;
 	bMainProgramAudienceActive = true;
@@ -4433,22 +4562,29 @@ void UFF_CrowdSimulationSubsystem::UpdateAudienceShowState()
 		return;
 	}
 
-	// 집결은 배속 잠금과 따로 움직인다. 공연 시각까지 남은 시간이 리드타임 안에 들면 시작한다.
-	if (!bMainProgramAudienceActive)
+	// Queue와 같은 창구를 사용한다. 20:00 공연이면 19:57부터이며 배속 잠금과는 별개다.
+	float ShowStartSeconds = 0.f;
+	float ShowEndSeconds = 0.f;
+	if (!Stage->TryGetMainProgramQueueBreakWindow(ShowStartSeconds, ShowEndSeconds))
 	{
-		float NextStart = 0.f;
-		if (Stage->TryGetNextMainProgramStartSeconds(NextStart)
-			&& NextStart - Stage->ElapsedLiveSeconds <= FMath::Max(AudienceGatherLeadSeconds, 0.f))
+		if (bMainProgramAudienceActive)
 		{
-			float NextEnd = 0.f;
-			MainProgramEndLiveSeconds = Stage->TryGetNextMainProgramEndSeconds(NextEnd) ? NextEnd : 0.f;
-			BeginMainStageGathering(NextStart);
+			HandleMainProgramEnded(ActiveMainStageEventLabel.ToString());
 		}
 		return;
 	}
 
+	if (bMainProgramAudienceActive && MainProgramStartLiveSeconds != ShowStartSeconds)
+	{
+		HandleMainProgramEnded(ActiveMainStageEventLabel.ToString());
+	}
+	if (!bMainProgramAudienceActive)
+	{
+		MainProgramEndLiveSeconds = ShowEndSeconds;
+		BeginMainStageGathering(ShowStartSeconds);
+	}
 	// 입장은 Live 내내 이어진다. 한 번만 훑으면 그 뒤에 온 손님이 영영 안 온다.
-	if (SimTimeSeconds >= NextAudienceGatherSimTime)
+	else if (SimTimeSeconds >= NextAudienceGatherSimTime)
 	{
 		BeginMainStageGathering(MainProgramStartLiveSeconds);
 	}
@@ -4474,26 +4610,8 @@ void UFF_CrowdSimulationSubsystem::UpdateAudienceShowState()
 
 void UFF_CrowdSimulationSubsystem::HandleMainProgramStarted(FString EventLabel)
 {
-	// 이 신호는 공연 시각이 아니라 배속 잠금 진입이다. 집결은 대개 이보다 먼저
-	// AudienceGatherLeadSeconds 로 시작해 있다 - 여기서는 못 걸린 경우만 늦게라도 연다.
+	// 이 신호는 배속 잠금 진입이다. 실제 집결 시작은 공용 3축제분 경계가 결정한다.
 	ActiveMainStageEventLabel = FName(*EventLabel);
-
-	const UWorld* World = GetWorld();
-	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-	UFF_FestivalStageSubsystem* Stage = GameInstance
-		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
-
-	float StartSeconds = MainProgramStartLiveSeconds;
-	if (Stage && Stage->TryGetActiveMainProgramStartSeconds(StartSeconds))
-	{
-		BeginMainStageGathering(StartSeconds);
-	}
-	else if (!bMainProgramAudienceActive)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[Audience] 잠금 진입에 공연 시각을 못 찾았다, 집결을 건너뛴다 (%s)"), *EventLabel);
-	}
-
 	UpdateAudienceShowState();
 }
 
@@ -4505,6 +4623,7 @@ void UFF_CrowdSimulationSubsystem::HandleMainProgramEnded(FString EventLabel)
 	MainProgramStartLiveSeconds = 0.f;
 	MainProgramEndLiveSeconds = 0.f;
 	NextAudienceGatherSimTime = 0.f;
+	AudiencePartiesExcludedThisShow.Reset();
 	bWarnedMissingAudienceThisShow = false;
 	ActiveMainStageEventLabel = NAME_None;
 	for (int32 LeaderIndex = 0; LeaderIndex < PartyDecisionStates.Num(); ++LeaderIndex)
@@ -4550,8 +4669,146 @@ void UFF_CrowdSimulationSubsystem::QueueMissingEvent(int32 AgentIndex, const FUn
 	MemberMissingEvent.Actor = GetAgentActor(AgentIndex);
 	MemberMissingEvent.LocationUU = Unit.Position;
 	MemberMissingEvent.Change = Change;
-		
+
 	CrowdMemberMissingEvents.Add(MemberMissingEvent);
+}
+
+/**
+ * 분실물 발생. NPC마다 매 스텝 확률을 굴리지 않고, 축제 전체에 ItemLostPerHour 빈도의 포아송 과정 하나를 둔다.
+ * 다음 발생 시각을 시뮬레이션 분 기준 지수분포로 미리 뽑아 두므로 인원·배속·프레임과 무관하게 빈도가 기획값을 따른다.
+ * 한 프레임에 여러 건이 밀리면 while이 모두 처리한다. 시계가 뒤로 가면(날이 바뀜) 예약을 새로 잡는다.
+ * 후보가 없어 고르지 못한 건은 버린다 — 빈도는 상한이 아니라 평균이다.
+ */
+void UFF_CrowdSimulationSubsystem::TickItemLost()
+{
+	if (ItemLostPerHour <= 0.f)
+	{
+		NextItemLostAtMinutes = -1.f;
+		return;
+	}
+
+	float NowMinutes = 0.f;
+	if (!TryGetProgramLiveMinutes(NowMinutes))
+	{
+		return;
+	}
+
+	const float RatePerMinute = ItemLostPerHour / 60.f;
+	auto SampleIntervalMinutes = [RatePerMinute]()
+	{
+		return -FMath::Loge(FMath::Max(FMath::FRand(), KINDA_SMALL_NUMBER)) / RatePerMinute;
+	};
+
+	if (NextItemLostAtMinutes < 0.f || NowMinutes < LastItemLostClockMinutes)
+	{
+		NextItemLostAtMinutes = NowMinutes + SampleIntervalMinutes();
+		UE_LOG(LogTemp, Log, TEXT("[ItemLost] 예약 — 지금 %.1f분, 다음 %.1f분 (시간당 %.1f건)"),
+			NowMinutes, NextItemLostAtMinutes, ItemLostPerHour);
+	}
+	LastItemLostClockMinutes = NowMinutes;
+
+	while (NowMinutes >= NextItemLostAtMinutes)
+	{
+		const int32 AgentIndex = PickItemLostCandidate();
+		if (AgentIndex != INDEX_NONE)
+		{
+			const FUnitData& Unit = UnitDatas[AgentIndex];
+			FFF_CrowdItemLostEvent& Event = CrowdItemLostEvents.AddDefaulted_GetRef();
+			Event.StableAgentID = Unit.StableAgentID;
+			Event.PartyID = Unit.PartyID;
+			Event.LocationUU = Unit.Position;
+			UE_LOG(LogTemp, Log, TEXT("[ItemLost] %.1f분 agent %d party %d loc %s"),
+				NowMinutes, Unit.StableAgentID, Unit.PartyID, *Unit.Position.ToCompactString());
+		}
+		NextItemLostAtMinutes += SampleIntervalMinutes();
+	}
+}
+
+/**
+ * 분실 후보 한 명. 활성 개체를 전수 순회해 적격자 중 균등하게 고른다 — 발생이 드물어 O(N) 한 번이 싸다.
+ * 적격: 방문객, 대기열 밖, 관람 단계 아님, 퇴장 중 아님, 걷는 중, 축제 경계 안.
+ * 대기열·관람석 한가운데나 출구 앞에 마커가 뜨지 않게 하려는 조건이다.
+ * 적격자가 없으면 어느 조건에서 몇 명이 걸렸는지 남긴다 — 조건 하나가 전원을 막으면 분실물이 영영 안 뜬다.
+ */
+int32 UFF_CrowdSimulationSubsystem::PickItemLostCandidate() const
+{
+	TArray<int32, TInlineAllocator<256>> Eligible;
+	int32 NumActive = 0;
+	int32 RejectRole = 0;
+	int32 RejectQueue = 0;
+	int32 RejectSpeed = 0;
+	int32 RejectLeaving = 0;
+	int32 RejectAudience = 0;
+	int32 RejectBounds = 0;
+
+	const float MinSpeedSq = ItemLostMinSpeedUU * ItemLostMinSpeedUU;
+	for (int32 AgentIndex = 0; AgentIndex < UnitDatas.Num(); ++AgentIndex)
+	{
+		const FUnitData& Unit = UnitDatas[AgentIndex];
+		if (!Unit.bIsActive)
+		{
+			continue;
+		}
+		++NumActive;
+		if (Unit.CrowdRole != EFF_CrowdRole::Visitor)
+		{
+			++RejectRole;
+			continue;
+		}
+		if (Unit.bHasQueueSlot)
+		{
+			++RejectQueue;
+			continue;
+		}
+		if (Unit.Velocity.SizeSquared2D() < MinSpeedSq)
+		{
+			++RejectSpeed;
+			continue;
+		}
+		const int32 LeaderIndex = Unit.LeaderAgentIndex;
+		if (PartyDecisionStates.IsValidIndex(LeaderIndex))
+		{
+			const FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
+			if (State.bIsLeaving)
+			{
+				++RejectLeaving;
+				continue;
+			}
+			if (IsAudienceLocked(State))
+			{
+				++RejectAudience;
+				continue;
+			}
+		}
+		if (!IsInsideFestivalBounds(Unit.Position))
+		{
+			++RejectBounds;
+			continue;
+		}
+		Eligible.Add(AgentIndex);
+	}
+
+	if (Eligible.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ItemLost] 후보 없음 — 활성 %d, 역할 %d, 대기열 %d, 정지 %d, 퇴장 %d, 관람 %d, 경계 밖 %d"),
+			NumActive, RejectRole, RejectQueue, RejectSpeed, RejectLeaving, RejectAudience, RejectBounds);
+		return INDEX_NONE;
+	}
+	return Eligible[FMath::RandRange(0, Eligible.Num() - 1)];
+}
+
+void UFF_CrowdSimulationSubsystem::FlushItemLostEvent()
+{
+	if (CrowdItemLostEvents.IsEmpty())
+	{
+		return;
+	}
+
+	const TArray<FFF_CrowdItemLostEvent> TempArray = MoveTemp(CrowdItemLostEvents);
+	CrowdItemLostEvents.Reset();
+
+	OnCrowdItemLostEventChanged.Broadcast(TempArray);
 }
 
 void UFF_CrowdSimulationSubsystem::ProcessDecisions()
@@ -4750,7 +5007,7 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 	{
 		Unit.TargetLocation = Unit.QueueSlotLocation;
 		const double DistSq = FVector::DistSquared2D(Unit.Position, Unit.QueueSlotLocation);
-		Unit.Speed = (DistSq <= FMath::Square(QueueSlotArrivalRadiusUU)) ? 0.f : Unit.CruiseSpeed;
+		Unit.Speed = (DistSq <= FMath::Square(Unit.ArrivalRadiusUU)) ? 0.f : Unit.CruiseSpeed;
 		
 		if (Unit.bMissing)
 		{
@@ -4936,6 +5193,59 @@ TArray<int32> UFF_CrowdSimulationSubsystem::GetPartyMembers(int32 PartyID) const
 	return Members;
 }
 
+TArray<int32> UFF_CrowdSimulationSubsystem::GetUnitsNearAgent(int32 AgentIndex, float RadiusMeters, int32 MaxCount) const
+{
+	TArray<int32> Result;
+	if (!UnitDatas.IsValidIndex(AgentIndex) || !UnitDatas[AgentIndex].bIsActive
+		|| RadiusMeters <= 0.f || MaxCount <= 0)
+	{
+		return Result;
+	}
+
+	const FVector& Center = UnitDatas[AgentIndex].Position;
+	const FVector2f P(
+		static_cast<float>(Center.X) * FFF_CrowdUnits::MetersPerUU,
+		static_cast<float>(Center.Y) * FFF_CrowdUnits::MetersPerUU);
+
+	const bool bUseGrid = bEnableAvoidance && AvoidanceGrid.IsValid()
+		&& ScratchPos2DMeters.Num() == UnitDatas.Num();
+
+	if (bUseGrid)
+	{
+		AvoidanceGrid.GatherNearest(ScratchPos2DMeters, P, RadiusMeters, MaxCount + 1, Result);
+	}
+	else
+	{
+		const float R2 = RadiusMeters * RadiusMeters;
+		for (int32 Index = 0; Index < UnitDatas.Num(); ++Index)
+		{
+			const FUnitData& Unit = UnitDatas[Index];
+			if (!Unit.bIsActive)
+			{
+				continue;
+			}
+			const FVector2f Q(
+				static_cast<float>(Unit.Position.X) * FFF_CrowdUnits::MetersPerUU,
+				static_cast<float>(Unit.Position.Y) * FFF_CrowdUnits::MetersPerUU);
+			if ((Q - P).SizeSquared() <= R2)
+			{
+				Result.Add(Index);
+			}
+		}
+	}
+
+	Result.RemoveAll([this, AgentIndex](int32 Id)
+	{
+		return Id == AgentIndex || !UnitDatas.IsValidIndex(Id) || !UnitDatas[Id].bIsActive;
+	});
+
+	if (Result.Num() > MaxCount)
+	{
+		Result.SetNum(MaxCount);
+	}
+	return Result;
+}
+
 void UFF_CrowdSimulationSubsystem::DespawnParty(int32 PartyID)
 {
 	if (PartyID == INDEX_NONE)
@@ -5014,24 +5324,63 @@ void UFF_CrowdSimulationSubsystem::SetAgentDestination(int32 AgentIndex, FVector
 bool UFF_CrowdSimulationSubsystem::SetPartyQueueColumn(int32 PartyID, const TArray<FVector>& Locations, float InLaneYaw)
 {
 	const int32* LeaderPtr = PartyLeaderByID.Find(PartyID);
-	
-	if (!LeaderPtr || Locations.Num() ==0 )
+	const TArray<int32> Members = GetPartyMembers(PartyID);
+	if (!LeaderPtr || !UnitDatas.IsValidIndex(*LeaderPtr) || Members.IsEmpty()
+		|| Members.Num() != Locations.Num() || !FMath::IsFinite(InLaneYaw)
+		|| Locations.ContainsByPredicate([](const FVector& Location) { return Location.ContainsNaN(); }))
 	{
 		return false;
 	}
-	
-	for ( const int32 AgentIndex : GetPartyMembers(PartyID))
+	for (const int32 AgentIndex : Members)
+	{
+		if (!Locations.IsValidIndex(UnitDatas[AgentIndex].PartySlotIndex))
+		{
+			return false; // 인원 불일치를 마지막 한 자리에 겹쳐 세우지 않는다.
+		}
+	}
+
+	bool bSlotChanged = false;
+	for (const int32 AgentIndex : Members)
 	{
 		FUnitData& Unit = UnitDatas[AgentIndex];
-		
-		const int32 Idx = FMath::Clamp(Unit.PartySlotIndex, 0, Locations.Num() - 1);
-		Unit.QueueSlotLocation = Locations[Idx];
+		const FVector& NewLocation = Locations[Unit.PartySlotIndex];
+		if (!Unit.bHasQueueSlot || !Unit.QueueSlotLocation.Equals(NewLocation, 0.1f))
+		{
+			bSlotChanged = true;
+			// 한 칸(90cm)이 일반 재탐색 오차(100cm)보다 작아도 이전 목적지의
+			// waypoint를 버린다. 멤버의 formation 우회 경로도 함께 해제한다.
+			if (PathFollowers.IsValidIndex(AgentIndex))
+			{
+				PathFollowers[AgentIndex].Reset();
+			}
+			if (AgentLaneIndices.IsValidIndex(AgentIndex))
+			{
+				AgentLaneIndices[AgentIndex] = INDEX_NONE;
+			}
+			Unit.bHasSteerTarget = false;
+			Unit.bFormationPathBlocked = false;
+			Unit.FormationClearStreak = 0;
+			Unit.StuckSteps = 0;
+			Unit.UnstuckHoldSteps = 0;
+		}
+		Unit.QueueSlotLocation = NewLocation;
+		Unit.TargetLocation = NewLocation;
 		Unit.LaneYaw = InLaneYaw;
 		Unit.bHasQueueSlot = true;
+		Unit.bUsePreciseSlotPosition = true;
+		Unit.ArrivalRadiusUU = GetAssignedSlotArrivalRadius();
+		Unit.Speed = Unit.CruiseSpeed;
 	}
-	
-	UnitDatas[*LeaderPtr].TargetLocation = Locations[0];
-	
+	if (bSlotChanged && PartyDecisionStates.IsValidIndex(*LeaderPtr))
+	{
+		FPartyDecisionState& State = PartyDecisionStates[*LeaderPtr];
+		if (State.QueuePhase == EFF_PartyQueuePhase::AtSlot)
+		{
+			// 앞팀이 떠나면 Queue도 기존 도착 확인을 지운다. 새 자리까지
+			// 이동하고 다시 확인해야 다음 팀의 서비스가 계속 진행된다.
+			State.QueuePhase = EFF_PartyQueuePhase::Joined;
+		}
+	}
 	return true;
 }
 
@@ -5051,6 +5400,7 @@ bool UFF_CrowdSimulationSubsystem::ClearPartyQueueColumn(int32 PartyID)
 		Unit.QueueSlotLocation = FVector::ZeroVector;
 		Unit.LaneYaw = 0.f;
 		Unit.bHasQueueSlot = false;
+		Unit.bUsePreciseSlotPosition = false;
 	}
 	
 	return true;
@@ -5206,6 +5556,32 @@ FFF_NeedState UFF_CrowdSimulationSubsystem::MakeInitialNeeds(int32 StableAgentId
 		InitialNeedModeFraction,
 		InitialNeedMaxFraction);
 }
+int32 UFF_CrowdSimulationSubsystem::ApplySatisfactionPenaltyInArea(
+	const FVector& Center, const float RadiusCm, const float DropPoints)
+{
+	if (RadiusCm <= 0.f || DropPoints <= 0.f)
+	{
+		return 0;
+	}
+
+	const float RadiusSquared = FMath::Square(RadiusCm);
+	int32 AffectedCount = 0;
+	for (FUnitData& Unit : UnitDatas)
+	{
+		if (!Unit.bIsActive || FVector::DistSquared2D(Unit.Position, Center) > RadiusSquared)
+		{
+			continue;
+		}
+		Unit.SatisfactionPenalty = FMath::Min(Unit.SatisfactionPenalty + DropPoints, 100.f);
+		++AffectedCount;
+	}
+
+	UE_LOG(LogFestaFiestaNpc, Log,
+		TEXT("[만족도] 영역 감점: 중심 %s 반경 %.0fcm 에서 %d명에게 %.1f점 (사람당)."),
+		*Center.ToCompactString(), RadiusCm, AffectedCount, DropPoints);
+	return AffectedCount;
+}
+
 void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Needs);
@@ -5253,6 +5629,18 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 			continue;
 		}
 		Unit.Needs = FFF_NeedRules::Advance(Unit.Needs, ElapsedMinutes, NeedRiseRates);
+
+		// 감점은 집계하지 않는 스텝에도 시간이 흐른 만큼 회복시킨다. 안 그러면 집계가 꺼진 동안 멈춰 있다.
+		if (Unit.SatisfactionPenalty > 0.f)
+		{
+			Unit.SatisfactionPenalty = FMath::Max(
+				0.f, Unit.SatisfactionPenalty - SatisfactionPenaltyRecoverPerMinute * FMath::Max(ElapsedMinutes, 0.f));
+		}
+		// 감점이 없는 방문객도 0으로 넣는다. 평균이 감점된 사람끼리가 아니라 전체 방문객 기준이 되게 하려는 것이다.
+		if (Satisfaction)
+		{
+			Satisfaction->AddPenaltySample(Unit.SatisfactionPenalty);
+		}
 
 		// 표본은 파티가 아니라 개인 단위다 — 지표가 "이 Need 가 미해소인 방문객 비율"이다.
 		if (NeedMetrics)

@@ -12,6 +12,7 @@ class UFF_AtlasPinButton;
 class UFF_CommonButtonBase;
 class UFF_FestivalAtlasCatalog;
 class UImage;
+class UMaterialInterface;
 class USizeBox;
 class UTextBlock;
 
@@ -203,6 +204,17 @@ protected:
 	/** 지도 이미지가 없을 때 대신 그리는 네모의 크기(가로:세로 비). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|Atlas")
 	FVector2D PlaceholderMapSize = FVector2D(1600.0, 1000.0);
+
+	/**
+	 * 국가별 지도 표시 머티리얼. 원본 MapImage는 크기와 핀 등록 기준으로 계속 사용한다.
+	 * 해당 국가 키가 없으면 원본 텍스처를 표시하므로 다른 나라에 한국 지형이 섞이지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|Atlas|Appearance")
+	TMap<FName, TSoftObjectPtr<UMaterialInterface>> CountryMapDisplayMaterials;
+
+	/** 고정 문구와 글자색을 Designer에 맡긴다. 축제명·운영일·잠금 문구 등 데이터만 갱신한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|Atlas|Appearance")
+	bool bUseDesignerTextAndColors = false;
 
 private:
 	/** 지도 이미지는 남기고 동적으로 만든 축제 핀만 제거한다. */

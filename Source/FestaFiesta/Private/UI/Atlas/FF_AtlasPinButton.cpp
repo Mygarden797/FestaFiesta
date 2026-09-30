@@ -91,6 +91,14 @@ void UFF_AtlasPinButton::RefreshPinVisual()
 		Image_PinChevrons->SetVisibility(
 			bSelected ? Visible : ESlateVisibility::Collapsed);
 	}
+	if (Image_PinLockGlyph)
+	{
+		Image_PinLockGlyph->SetVisibility(bSelectable ? ESlateVisibility::Collapsed : Visible);
+	}
+	if (Image_PinSelectedGlyph)
+	{
+		Image_PinSelectedGlyph->SetVisibility(bSelected ? Visible : ESlateVisibility::Collapsed);
+	}
 }
 
 void UFF_AtlasPinButton::SetPinVisible(bool bVisible)

@@ -74,6 +74,11 @@ void UFF_UIFlowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UFF_UIFlowSubsystem::Deinitialize()
 {
+	if (UFF_UIRootLayout* Layout = RootLayout.Get())
+	{
+		Layout->CancelAtlasTransition();
+	}
+
 	// **해제는 조건부, 정리는 무조건.** 여기서 조기 반환하면 아래 정리를 못 한다 (안티패턴 3).
 	if (PostLoginHandle.IsValid())
 	{
@@ -340,6 +345,8 @@ void UFF_UIFlowSubsystem::HandlePostLogin(AGameModeBase* GameMode, APlayerContro
 		//    평소 경로(지구본 → 나라 클릭 → 국가 지도)와 같은 스택을 만들어 준다.
 		if (PendingFrontendScreen == EFF_UIFlowScreen::AtlasCountry)
 		{
+			// 스택 크로스페이드(0.4초)가 돌면 지구본 위젯이 잠깐 비친다. 두 번의 push 모두 끈다.
+			TGuardValue<bool> NoStackFade(bPushScreensWithoutTransition, true);
 			GoToScreen(EFF_UIFlowScreen::AtlasGlobe);
 
 			// ★ 지구본은 **스택 바닥을 만들기 위해서만** 올린다. 보여 주려는 것이 아니다.
@@ -347,9 +354,12 @@ void UFF_UIFlowSubsystem::HandlePostLogin(AGameModeBase* GameMode, APlayerContro
 			//   나올 때마다 지구가 잠깐 돌아가는 모습이 스쳤다 (2026-09-03 백종태 지적).
 			//   레벨에 막 들어온 참이라 블렌드할 `이전 모습`도 없다 — 바로 국가로 간다.
 			bInstantCameraForNextScreen = true;
+			GoToScreen(EFF_UIFlowScreen::AtlasCountry);
 		}
-
-		GoToScreen(PendingFrontendScreen);
+		else
+		{
+			GoToScreen(PendingFrontendScreen);
+		}
 
 		// 다음 진입의 기본값은 항상 타이틀이다. `로비로` 가 한 번만 국가 지도로 보낸다.
 		PendingFrontendScreen = EFF_UIFlowScreen::Title;
@@ -381,6 +391,10 @@ bool UFF_UIFlowSubsystem::EnsureRootLayout(APlayerController* Controller)
 	if (RootLayout.IsValid() && RootLayout->GetOwningPlayer() == Controller)
 	{
 		return true;
+	}
+	if (UFF_UIRootLayout* PreviousLayout = RootLayout.Get())
+	{
+		PreviousLayout->CancelAtlasTransition();
 	}
 
 	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();
@@ -419,6 +433,15 @@ bool UFF_UIFlowSubsystem::EnsureRootLayout(APlayerController* Controller)
 	// 뒤로 가기가 이미 죽은 화면을 가리킨다.
 	FrontendHistory.Reset();
 
+	/* 현재 화면 표시도 같이 비운다. 새 레이아웃의 스택은 비어 있는데 이 값만 이전 레벨의
+	   AtlasCountry 로 남아 있으면, 축제(튜토리얼 포함)를 끝내고 돌아왔을 때 HandlePostLogin 이
+	   바닥으로 까는 지구본을 "국가 지도 -> 지구본" 뒤로 가기로 오해한다. 그러면 암전 전환이
+	   걸리고, 그 전환 중이라 바로 뒤의 국가 지도 요청이 버려져 지구본에서 멈췄다
+	   (2026-09-29 로그: 로비로 돌아간다 (국가 KR) 뒤에 AtlasGlobe 만 뜨고 AtlasCountry 가 없음).
+	   None 이면 첫 화면으로 취급돼 카메라도 즉시 맞춰지고 히스토리에도 안 남는다.
+	*/
+	CurrentFrontendScreen = EFF_UIFlowScreen::None;
+
 	if (IsVerbose())
 	{
 		UE_LOG(LogFestaFiestaUI, Log,
@@ -429,6 +452,10 @@ bool UFF_UIFlowSubsystem::EnsureRootLayout(APlayerController* Controller)
 
 void UFF_UIFlowSubsystem::StartFrontend()
 {
+	if (UFF_UIRootLayout* Layout = RootLayout.Get())
+	{
+		Layout->CancelAtlasTransition();
+	}
 	Mode = EFF_UIFlowMode::Frontend;
 
 	// 여기서 RootLayout 을 함께 보장한다. 콘솔에서 아무 레벨에서 불러도 동작해야 하고,
@@ -446,6 +473,65 @@ void UFF_UIFlowSubsystem::StartFrontend()
 }
 
 void UFF_UIFlowSubsystem::GoToScreen(EFF_UIFlowScreen Screen)
+{
+	if (UFF_UIRootLayout* Layout = RootLayout.Get(); Layout && Layout->IsAtlasTransitionActive())
+	{
+		// 연타/외부 호출이 암전 도중 화면을 한 번 더 쌓지 않게 한다.
+		return;
+	}
+	if (!BeginAtlasScreenTransition(Screen, false))
+	{
+		GoToScreenImmediate(Screen);
+	}
+}
+
+bool UFF_UIFlowSubsystem::BeginAtlasScreenTransition(EFF_UIFlowScreen Destination, bool bGoingBack)
+{
+	const bool bAtlasPair =
+		(CurrentFrontendScreen == EFF_UIFlowScreen::AtlasGlobe && Destination == EFF_UIFlowScreen::AtlasCountry)
+		|| (CurrentFrontendScreen == EFF_UIFlowScreen::AtlasCountry && Destination == EFF_UIFlowScreen::AtlasGlobe);
+	UFF_UIRootLayout* Layout = RootLayout.Get();
+	// 레벨 재진입 시 스택 바닥용 지구본은 실제 이전 화면이 아니다.
+	if (Mode != EFF_UIFlowMode::Frontend || !bAtlasPair || !Layout || bInstantCameraForNextScreen)
+	{
+		return false;
+	}
+
+	const TWeakObjectPtr<UFF_UIRootLayout> ExpectedLayout(Layout);
+	const TWeakObjectPtr<UFF_UIFlowSubsystem> WeakThis(this);
+	return Layout->BeginAtlasTransition(
+		FSimpleDelegate::CreateWeakLambda(this, [this, ExpectedLayout, Destination, bGoingBack]()
+		{
+			if (Mode != EFF_UIFlowMode::Frontend || RootLayout != ExpectedLayout)
+			{
+				if (UFF_UIRootLayout* PreviousLayout = ExpectedLayout.Get())
+				{
+					PreviousLayout->CancelAtlasTransition();
+				}
+				return;
+			}
+			// 비활성화 때 지구 중심 구도가 복원되는 프레임도 암전 안에 넣는다.
+			// 카메라는 가려진 동안 바로 맞추고, 스택 전환/새 지도 배치를 기다린다.
+			TGuardValue<bool> InstantCameraGuard(bInstantCameraForNextScreen, true);
+			if (bGoingBack)
+			{
+				GoBackImmediate();
+			}
+			else
+			{
+				GoToScreenImmediate(Destination);
+			}
+		}),
+		[WeakThis, ExpectedLayout]()
+		{
+			const UFF_UIFlowSubsystem* Flow = WeakThis.Get();
+			const UFF_UIRootLayout* CurrentLayout = ExpectedLayout.Get();
+			return !Flow || !CurrentLayout || Flow->RootLayout != ExpectedLayout
+				|| !CurrentLayout->IsScreenStackTransitioning();
+		});
+}
+
+void UFF_UIFlowSubsystem::GoToScreenImmediate(EFF_UIFlowScreen Screen)
 {
 	if (Screen == EFF_UIFlowScreen::None)
 	{
@@ -491,7 +577,9 @@ void UFF_UIFlowSubsystem::GoToScreen(EFF_UIFlowScreen Screen)
 	const EFF_UIFlowScreen PreviousScreen = CurrentFrontendScreen;
 	CurrentFrontendScreen = Screen;
 
-	UFF_ActivatableScreenBase* Pushed = Layout->PushScreen(ScreenClass);
+	UFF_ActivatableScreenBase* Pushed = bPushScreensWithoutTransition
+		? Layout->PushScreenWithoutTransition(ScreenClass)
+		: Layout->PushScreen(ScreenClass);
 	if (!Pushed)
 	{
 		// 올리지 못했으면 되돌린다. 안 그러면 뜨지도 않은 화면이 현재 화면으로 남는다.
@@ -585,6 +673,18 @@ void UFF_UIFlowSubsystem::GoToScreen(EFF_UIFlowScreen Screen)
 
 bool UFF_UIFlowSubsystem::GoBack()
 {
+	if (UFF_UIRootLayout* Layout = RootLayout.Get(); Layout && Layout->IsAtlasTransitionActive())
+	{
+		// 전환 중 뒤로 입력은 소비한다. 동일 프레임의 중복 Pop을 막는다.
+		return true;
+	}
+	const EFF_UIFlowScreen Destination = FrontendHistory.IsEmpty()
+		? EFF_UIFlowScreen::None : FrontendHistory.Last();
+	return BeginAtlasScreenTransition(Destination, true) || GoBackImmediate();
+}
+
+bool UFF_UIFlowSubsystem::GoBackImmediate()
+{
 	UFF_UIRootLayout* Layout = RootLayout.Get();
 	if (!Layout || !Layout->PopScreen())
 	{
@@ -600,7 +700,7 @@ bool UFF_UIFlowSubsystem::GoBack()
 	// 그건 지구 액터가 들고 있고 여기서 건드리지 않는다 (리셋하면 답답하다).
 	if (AFF_AtlasCameraRig* CameraRig = AFF_AtlasCameraRig::Find(this, /*bLogIfMissing=*/false))
 	{
-		CameraRig->ViewForScreen(CurrentFrontendScreen);
+		CameraRig->ViewForScreen(CurrentFrontendScreen, bInstantCameraForNextScreen);
 	}
 
 	return true;
@@ -653,6 +753,39 @@ void UFF_UIFlowSubsystem::ContinueFromSlot(const FName SlotId)
 	   GameMode 가 안다(BeginPlay 에서 TryContinueFestival 을 부른다).
 	   여기서 하는 일은 어느 슬롯인지 넘겨두고 레벨을 여는 것뿐이다.
 	*/
+	/* 로비 세이브는 레벨을 열지 않는다. 그 판의 기록을 되돌리고 그 나라의 국가 지도로 간다.
+
+	   축제를 끝내면 남는 자동 저장이 이것이다. 축제 정보 없이 나라만 들고 있어서, 아래
+	   축제 경로로 보내면 "축제 정보가 없다" 로 조용히 끝났다. 목록에서 눌러도 반응이
+	   없던 옛 기록의 정체다(피드백: 이어하기가 방금 것만 된다).
+
+	   지구본을 먼저 깔고 국가 지도를 올리는 이유는 축제를 끝내고 돌아올 때(프론트엔드 레벨
+	   진입)와 같다. 뒤로 가기가 지구본으로 가야 하고, 두 화면 사이 카메라 블렌드는 건너뛴다.
+	*/
+	if (Save->IsLobbySlot(SlotId))
+	{
+		FName CountryId = NAME_None;
+		if (!Save->LoadLobbySave(SlotId, CountryId))
+		{
+			return;
+		}
+
+		if (CountryId.IsNone())
+		{
+			// 나라를 모르는 옛 로비 세이브다. 기록은 되돌렸으니 나라부터 고르게 한다.
+			GoToScreen(EFF_UIFlowScreen::AtlasGlobe);
+			return;
+		}
+
+		SetActiveCountry(CountryId);
+		// 레벨 진입 복원과 같은 이유로 지구본이 비치지 않게 두 push 의 크로스페이드를 끈다.
+		TGuardValue<bool> NoStackFade(bPushScreensWithoutTransition, true);
+		GoToScreen(EFF_UIFlowScreen::AtlasGlobe);
+		bInstantCameraForNextScreen = true;
+		GoToScreen(EFF_UIFlowScreen::AtlasCountry);
+		return;
+	}
+
 	const FName FestivalId = Save->PeekFestivalIdInSlot(SlotId);
 	if (FestivalId.IsNone())
 	{
@@ -698,6 +831,10 @@ void UFF_UIFlowSubsystem::HandleFrontendBackRequested()
 
 void UFF_UIFlowSubsystem::HandleAtlasBrowseFestivals(FName CountryId)
 {
+	if (UFF_UIRootLayout* Layout = RootLayout.Get(); Layout && Layout->IsAtlasTransitionActive())
+	{
+		return;
+	}
 	if (CountryId.IsNone())
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,
@@ -765,6 +902,10 @@ const FFF_FestivalAtlasEntry* UFF_UIFlowSubsystem::FindStartableEntry(FName Fest
 
 bool UFF_UIFlowSubsystem::StartFestival(FName FestivalId)
 {
+	if (UFF_UIRootLayout* Layout = RootLayout.Get(); Layout && Layout->IsAtlasTransitionActive())
+	{
+		return false;
+	}
 	const FFF_FestivalAtlasEntry* Entry = FindStartableEntry(FestivalId);
 	if (!Entry)
 	{
@@ -904,6 +1045,10 @@ void UFF_UIFlowSubsystem::HandleLoadingScreenFinished()
 
 void UFF_UIFlowSubsystem::ReturnToAtlas()
 {
+	if (UFF_UIRootLayout* Layout = RootLayout.Get())
+	{
+		Layout->CancelAtlasTransition();
+	}
 	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();
 	if (!Settings || Settings->FrontendLevel.IsNull())
 	{

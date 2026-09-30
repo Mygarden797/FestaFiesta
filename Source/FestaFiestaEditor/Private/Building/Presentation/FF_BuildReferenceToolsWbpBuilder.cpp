@@ -1555,6 +1555,23 @@ bool ApplyQueueShortcutKeys(UWidgetBlueprint& BP)
     return false;
 }
 
+bool RemoveTopWallet(UWidgetBlueprint& BP)
+{
+    constexpr const TCHAR* Key = TEXT("FF.BuildReferenceTools.RemoveTopWalletV12");
+    auto& Metadata = BP.GetOutermost()->GetMetaData();
+    auto* Gold = Cast<UBorder>(BP.WidgetTree->FindWidget(TEXT("Border_BuildToolbarGold")));
+    if (!Gold) return false;
+    if (Metadata.GetValue(&BP, Key) == TEXT("1") && Gold->GetVisibility() == ESlateVisibility::Collapsed)
+        return true;
+    BP.Modify();
+    Gold->Modify();
+    Gold->SetVisibility(ESlateVisibility::Collapsed);
+    Metadata.SetValue(&BP, Key, TEXT("1"));
+    if (SaveNewBlueprint(TEXT("FF_BUILD_REFERENCE_TOOLS_REMOVE_TOP_WALLET_V12"), BP)) return true;
+    Metadata.RemoveValue(&BP, Key);
+    return false;
+}
+
 void Apply()
 {
     UWidgetBlueprint* BP = LoadExistingBlueprint(FFBuildUIAssetPaths::BuildToolsPackage);
@@ -1570,7 +1587,7 @@ void Apply()
             ApplyPearlToolbarAndDrawer(*BP) && ApplyPearlPolish(*BP) &&
             ApplyPearlReadableCards(*BP) && ApplyIconHelp(*BP) &&
             ApplyActionLanguage(*BP) && ApplyKeyboardHelp(*BP) && ApplyConstructionEditingHelp(*BP) &&
-            ApplyQueueShortcutKeys(*BP))
+            ApplyQueueShortcutKeys(*BP) && RemoveTopWallet(*BP))
         {
             UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_BUILD_REFERENCE_TOOLS_REUSE"));
         }
@@ -1595,7 +1612,7 @@ void Apply()
         !ApplyPearlToolbarAndDrawer(*BP) || !ApplyPearlPolish(*BP) ||
         !ApplyPearlReadableCards(*BP) || !ApplyIconHelp(*BP) ||
         !ApplyActionLanguage(*BP) || !ApplyKeyboardHelp(*BP) || !ApplyConstructionEditingHelp(*BP) ||
-        !ApplyQueueShortcutKeys(*BP))
+        !ApplyQueueShortcutKeys(*BP) || !RemoveTopWallet(*BP))
     {
         UE_LOG(LogFFUIWbpBuilder, Error, TEXT("FF_BUILD_REFERENCE_TOOLS_FAIL: refinement failed"));
     }

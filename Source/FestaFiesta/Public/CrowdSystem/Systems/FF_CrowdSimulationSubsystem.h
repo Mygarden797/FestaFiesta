@@ -14,6 +14,7 @@
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_CrowdAvoidanceConfig.h"
 #include "CrowdSystem/Types/FF_CrowdCongestionSnapshot.h"
+#include "CrowdSystem/Types/FF_CrowdItemLostEvent.h"
 #include "CrowdSystem/Types/FF_CrowdMemberMissingEvent.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "Math/RandomStream.h"
@@ -64,6 +65,9 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FFF_OnCrowdCongestionSampled,
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FFF_OnCrowdMemberMissingChanged,
 	const TArray<FFF_CrowdMemberMissingEvent>& );
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FFF_OnCrowdItemLost,
+	const TArray<FFF_CrowdItemLostEvent>&  );
 
 // "도착해서 서 있는가, 가려는데 못 가는가"를 가른 집계.
 //
@@ -233,6 +237,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Crowd")
 	int32 GetAgentPoolSize() const { return UnitDatas.Num(); }
+	
 	UFUNCTION(BlueprintPure, Category = "Crowd")
 	FName GetAgentArchetypeID(int32 AgentIndex) const
 	{
@@ -268,6 +273,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Party")
 	TArray<int32> GetPartyMembers(int32 PartyID) const;
 
+	/**
+	 * AgentIndex 주변 RadiusMeters(m) 안의 활성 Unit 인덱스. 자기 자신은 빠지고, 인덱스 오름차순이다.
+	 * 회피 격자가 이번 풀과 맞으면 격자로 찾고(가까운 순으로 MaxCount개), 아니면 활성 Unit 전수 순회로 대신한다.
+	 * 격자 경로의 위치는 마지막 회피 스텝 기준이라 한 스텝 늦을 수 있다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Crowd|Query")
+	TArray<int32> GetUnitsNearAgent(int32 AgentIndex, float RadiusMeters, int32 MaxCount = 32) const;
+
 	UFUNCTION(BlueprintPure, Category = "Crowd|Metrics")
 	float GetDensityAtLocation(FVector WorldLocation) const { return DensityGrid.GetDensityAtLocation(WorldLocation); }
 
@@ -291,6 +304,19 @@ public:
 	const FFF_CrowdCongestionSnapshot& GetCongestionSnapshot() const { return CongestionSnapshot; }
 
 	FFF_OnCrowdMemberMissingChanged OnMemberMissingChanged;
+	
+	FFF_OnCrowdItemLost OnCrowdItemLostEventChanged;
+
+	/**
+	 * 분실물 발생 빈도. 축제 시간 1시간당 평균 건수이고, 인원·배속과 무관하다. 0이면 끈다.
+	 * 발생 시각은 시뮬레이션 분 기준 지수분포로 미리 뽑고, 그 시각이 되면 조건에 맞는 방문객 한 명을 고른다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|ItemLost", meta = (ClampMin = "0.0"))
+	float ItemLostPerHour = 6.f;
+
+	// 이 속도(UU/s) 미만이면 서 있는 것으로 보고 분실 후보에서 뺀다
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|ItemLost", meta = (ClampMin = "0.0"))
+	float ItemLostMinSpeedUU = 30.f;
 
 	AActor* GetAgentActor(int32 AgentIndex) const;
 
@@ -318,6 +344,30 @@ public:
 	// 매 프레임 확정하면 OnNeedUnmetRatioChanged 가 초당 수십 번 뜬다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Metrics", meta = (ClampMin = "1"))
 	int32 NeedMetricsIntervalSteps = 30;
+
+	/**
+	 * 영역 안에 있는 방문객 전원의 만족도를 DropPoints 점 깎는다. 사건 처리 실패 같은 벌칙용이다.
+	 *
+	 * 만족도는 방문객별 값이 아니라 창마다 다시 계산되는 전체 지수라서, 감점을 방문객 한 명 한 명에게
+	 * 붙여 두고 전체 평균으로 반영한다. 그래서 영역 안 인원이 전체의 20% 면 DropPoints 의
+	 * 20% 만큼만 전체 점수가 내려간다. 영역을 벗어나도 감점은 그 사람에게 남는다.
+	 *
+	 * 여러 번 부르면 쌓이고(사람당 최대 100), 시간이 지나면 SatisfactionPenaltyRecoverPerMinute 로 회복된다.
+	 *
+	 * @param Center     영역 중심(월드 좌표, cm). 높이는 무시하고 평면 거리로 잰다.
+	 * @param RadiusCm   영역 반지름(cm).
+	 * @param DropPoints 한 사람당 깎을 점수(0~100).
+	 * @return 감점이 붙은 방문객 수. 0이면 영역에 아무도 없었던 것이다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Satisfaction")
+	int32 ApplySatisfactionPenaltyInArea(const FVector& Center, float RadiusCm, float DropPoints);
+
+	/**
+	 * 방문객에게 붙은 감점이 회복되는 속도. 축제 시간 1분당 몇 점씩 줄어드는지.
+	 * 임시로 2점으로 둔다. (30점 감점이 축제 시간 15분 뒤 사라진다)
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Satisfaction", meta = (ClampMin = "0.0"))
+	float SatisfactionPenaltyRecoverPerMinute = 2.f;
 
 	// 만족도 대기 항의 큐 성공률 계산용 — 직전 확정 창에서의 누적 카운터 스냅샷.
 	// QueueJoinAccepted/QueueJoinRejected/QueuePatienceAbandons는 시뮬레이션 시작부터의
@@ -348,21 +398,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crowd|Decision")
 	int32 RequestRedecisionForIdleParties(int32 MaxParties = 0);
 
-	/** 메인 공연장의 Audience 정원만큼 적격 파티를 Utility를 거치지 않고 직접 집결시킨다. */
+	/** Stage의 공연 3축제분 전 휴식 구간에만 정원만큼 적격 파티를 직접 집결시킨다. */
 	int32 GatherPartiesToMainStageAudience();
-
-	/**
-	 * 집결을 검토하기 시작하는 시점(공연 시각 이만큼 전, Live 초 = 축제 분).
-	 *
-	 * 실제 출발 시각은 파티마다 다르다 — 아래 `AudienceTravelSlack` 로 자기 이동시간을
-	 * 환산해서 **늦지 않을 만큼만 일찍** 떠난다. 이 값은 그 판정을 시작하는 바깥 창일 뿐이라
-	 * 넉넉히 잡아도 가까운 손님이 일찍 끌려가지 않는다.
-	 *
-	 * ★ 배속 잠금(`MainProgramLockLeadSeconds`)과 다른 값이다. 잠금은 플레이어가 공연을
-	 *   1배속으로 보게 하는 구간이고, 이 값은 군중 동선의 창이다.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0"))
-	float AudienceGatherLeadSeconds = 180.f;
 
 	/**
 	 * 직선거리 이동시간에 곱하는 여유 배수. 실제 경로는 시설을 우회하고 군중에 막혀 느리다.
@@ -623,6 +660,16 @@ public:
 	// 대기열 슬롯·서비스 지점의 도착 판정 반경, UU. **슬롯 간격보다 작아야 한다.**
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "10.0"))
 	float QueueSlotArrivalRadiusUU = 45.f;
+
+	// 개별 좌표가 배정된 줄·관람석의 최종 오차. 공용 입구/프로그램 접근점에는 적용하지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "1.0", ClampMax = "10.0"))
+	float AssignedSlotArrivalRadiusUU = 5.f;
+
+	float GetAssignedSlotArrivalRadius() const
+	{
+		return FMath::Min(FMath::Max(QueueSlotArrivalRadiusUU, 1.f),
+			FMath::Clamp(AssignedSlotArrivalRadiusUU, 1.f, 10.f));
+	}
 
 	// 시설 접근점(큐에 가입하기 전)의 도착 판정 반경, UU.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "10.0"))
@@ -1252,6 +1299,7 @@ private:
 	void ReleaseProgramParty(int32 LeaderAgentIndex);
 	
 	friend struct FFF_CrowdProgramTestAccess;
+	friend struct FFF_CrowdQueueTestAccess;
 
 	void ClearPartyQueueState(int32 LeaderAgentIndex, bool bLeaveQueue);
 
@@ -1590,6 +1638,8 @@ private:
 
 	// 시설별 점유 좌석. 좌석 API는 예약을 소유하지 않으므로 Crowd가 수명과 중복을 관리한다.
 	TMap<FGuid, TSet<int32>> OccupiedAudienceSlots;
+	// 도착 불가로 회수된 파티는 이번 공연에서만 제외한다. 다음 공연에는 다시 참여한다.
+	TSet<int32> AudiencePartiesExcludedThisShow;
 	TSet<FGuid> MissingProgramApproachWarnings;
 	TMap<FGuid, FVector> CachedProgramApproachByFacility;
 	int64 ProgramApproachCacheRevision = -1;
@@ -1637,8 +1687,16 @@ private:
 	void FlushMissingEvent();
 	
 	void QueueMissingEvent(int32 AgentIndex, const FUnitData& Unit, EFF_CrowdMissingChange Change);
-	
+
+	void TickItemLost();
+	int32 PickItemLostCandidate() const;
+	void FlushItemLostEvent();
+
 	//이벤트 관련
 private:
 	TArray<FFF_CrowdMemberMissingEvent> CrowdMemberMissingEvents;
+
+	TArray<FFF_CrowdItemLostEvent> CrowdItemLostEvents;
+	float NextItemLostAtMinutes = -1.f;
+	float LastItemLostClockMinutes = -1.f;
 };

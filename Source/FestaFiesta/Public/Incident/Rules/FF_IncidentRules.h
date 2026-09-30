@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "Incident/FF_IncidentTypes.h"
 
+class UFF_IncidentDefinition;
+
 /**
  * 사건 판정 용 순수 구조체
  *
@@ -34,4 +36,9 @@ struct FESTAFIESTA_API FFF_IncidentRules
 
 	// 같은 키가 다시 올라왔을 때 남길 Intensity. 평균이 아니라 최대다.
 	static float MergeIntensity(float ExistingPeak, float IncomingIntensity);
+
+	// --- 선택지 View -------------------------------------------------------
+
+	// 정의의 Options 를 UI 용 값으로 복사한다. null 선택지도 자리를 채우고, MinStaff 는 1 이상으로 정리한다.
+	static void BuildOptionViews(const UFF_IncidentDefinition& Definition, TArray<FFF_IncidentOptionView>& OutViews);
 };

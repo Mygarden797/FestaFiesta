@@ -870,6 +870,163 @@ bool FFF_FacilityQueue_OneAuthoredAnchorPerTeam::RunTest(const FString& Paramete
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_ConstrainedStraightPatternIsStable,
+	"FestaFiesta.Queue.FacilityQueue.ConstrainedStraightPatternIsStable",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_ConstrainedStraightPatternIsStable::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FFF_QueueLaneGeometry Lane = MakeLane();
+	Lane.bConstrainMemberPlacement = true;
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, MakeConfig(3, 5.f), Lane);
+	TestEqual(TEXT("A normal six-member team still fits the straight lane"),
+		Join(Queue, MakeRequest(10, 6), 0.f), EFF_QueueJoinResult::Accepted);
+	TArray<FFF_SlotAssignment> Before;
+	Queue.BuildSlotAssignments(Before);
+	if (Before.Num() != 6) return false;
+	const float ExpectedOffsets[] = {0.f, 90.f, -90.f, 180.f, -180.f, 270.f};
+	for (int32 Member = 0; Member < 6; ++Member)
+	{
+		TestEqual(TEXT("Valid legacy member order and positions are preserved"),
+			Before[Member].TargetLocation, FVector(0.f, ExpectedOffsets[Member], 0.f));
+	}
+	Queue.Advance(1.f, 1.f);
+	TestEqual(TEXT("The first team is using its normal five-second service"), Queue.GetActiveServicePartyCount(), 1);
+	TestEqual(TEXT("A second team joins without repacking the active team"),
+		Join(Queue, MakeRequest(20, 4), 1.f), EFF_QueueJoinResult::Accepted);
+	TArray<FFF_SlotAssignment> After;
+	Queue.BuildSlotAssignments(After);
+	if (After.Num() != 10) return false;
+	for (int32 Member = 0; Member < 6; ++Member)
+	{
+		TestEqual(TEXT("New arrivals cannot move a team already being served"),
+			After[Member].TargetLocation, Before[Member].TargetLocation);
+	}
+	TestEqual(TEXT("Physical placement does not change the advertised team capacity"), Queue.GetState().MaxCapacityParties, 3);
+	TestEqual(TEXT("Physical placement does not change the service rate"), Queue.GetServiceRate(), .2f, .001f);
+	Queue.Advance(4.f, 5.f);
+	TestEqual(TEXT("The first service still completes at exactly five seconds"), Queue.GetState().CompletedPartyCount, 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_UShapedFourMemberPatternsNeverOverlap,
+	"FestaFiesta.Queue.FacilityQueue.UShapedFourMemberPatternsNeverOverlap",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_UShapedFourMemberPatternsNeverOverlap::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FFF_QueueLaneGeometry Lane = MakeLane();
+	Lane.bConstrainMemberPlacement = true;
+	// Opposite arms are 345cm apart. The old inward fourth members were only
+	// 15cm apart (345 - 180 - 180), so actual body-sized occupants could not settle.
+	Lane.PolylinePoints = {FVector(0, 0, 0), FVector(0, 345, 0), FVector(345, 345, 0), FVector(345, 0, 0)};
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, MakeConfig(10, 5.f), Lane);
+	TestEqual(TEXT("The first four-member team fits with all future leaders reserved"),
+		Join(Queue, MakeRequest(10, 4), 0.f), EFF_QueueJoinResult::Accepted);
+	TArray<FFF_SlotAssignment> FirstTeam;
+	Queue.BuildSlotAssignments(FirstTeam);
+	for (int32 Party = 1; Party < 10; ++Party)
+	{
+		TestEqual(TEXT("Every U-shaped team slot accepts a four-member team"),
+			Join(Queue, MakeRequest((Party + 1) * 10, 4), 0.f), EFF_QueueJoinResult::Accepted);
+	}
+	TArray<FFF_SlotAssignment> Full;
+	Queue.BuildSlotAssignments(Full);
+	TestEqual(TEXT("Ten team slots retain forty independent member targets"), Full.Num(), 40);
+	if (Full.Num() != 40 || FirstTeam.Num() != 4) return false;
+	for (int32 Member = 0; Member < 4; ++Member)
+	{
+		TestEqual(TEXT("Filling the opposite arm never retargets an existing team"),
+			Full[Member].TargetLocation, FirstTeam[Member].TargetLocation);
+	}
+	for (int32 Index = 0; Index < Full.Num(); ++Index)
+	{
+		const FFF_SlotAssignment Anchor = Queue.ResolveSlot(INDEX_NONE, INDEX_NONE, Index / 4);
+		TestEqual(TEXT("Every teammate consumes only its team's authored slot"), Full[Index].SlotIndex, Index / 4);
+		if (Index % 4 == 0)
+		{
+			TestEqual(TEXT("Authored leader coordinates are unchanged"), Full[Index].TargetLocation, Anchor.TargetLocation);
+		}
+		TestTrue(TEXT("Member packing stays inside the fixed local envelope"),
+			FVector::Dist2D(Full[Index].TargetLocation, Anchor.TargetLocation) <= 270.f + .01f);
+		for (int32 Other = 0; Other < Index; ++Other)
+		{
+			TestTrue(TEXT("Every pair retains two complete body/arrival clearances"),
+				FVector::Dist2D(Full[Index].TargetLocation, Full[Other].TargetLocation) >= 80.f - .01f);
+		}
+	}
+	Queue.Advance(5.f, 5.f);
+	TArray<FFF_SlotAssignment> Shifted;
+	Queue.BuildSlotAssignments(Shifted);
+	TestEqual(TEXT("Completing the first team preserves nine team slots"), Shifted.Num(), 36);
+	if (Shifted.Num() != 36) return false;
+	for (int32 Index = 0; Index < Shifted.Num(); ++Index)
+	{
+		TestEqual(TEXT("Advancing uses the same collision-free pattern as the previous occupant"),
+			Shifted[Index].TargetLocation, Full[Index].TargetLocation);
+	}
+	for (int32 Completion = 2; Completion <= 10; ++Completion) Queue.Advance(5.f, Completion * 5.f);
+	TestEqual(TEXT("All four-member teams can advance and finish without a packing deadlock"), Queue.GetState().CompletedPartyCount, 10);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_PlacementObstaclesAndFutureSlotsRejectSafely,
+	"FestaFiesta.Queue.FacilityQueue.PlacementObstaclesAndFutureSlotsRejectSafely",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_PlacementObstaclesAndFutureSlotsRejectSafely::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FFF_QueueLaneGeometry Lane = MakeLane();
+	Lane.bConstrainMemberPlacement = true;
+	Lane.MaxMemberLateralOffsetCm = 180.f;
+	Lane.SlotSpacingCm = 1000.f;
+	FFF_QueuePlacementObstacle Wall;
+	Wall.Center = FVector(0, 180, 0);
+	Wall.HalfExtentsCm = FVector2D(120, 10);
+	Wall.YawDegrees = 90.f;
+	Lane.PlacementObstacles.Add(Wall);
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, MakeConfig(2, 5.f), Lane);
+	TestEqual(TEXT("A clear leader can use the head slot beside the wall"),
+		Join(Queue, MakeRequest(10, 1), 0.f), EFF_QueueJoinResult::Accepted);
+	// The tail has five candidates, but the head has only leader,-90,-180.
+	// Checking just the incoming slot would admit this team and deadlock after a shift.
+	TestEqual(TEXT("A team that cannot fit a future front slot is deferred before admission"),
+		Join(Queue, MakeRequest(20, 4), 0.f), EFF_QueueJoinResult::RejectedFull);
+	TestEqual(TEXT("A compatible three-member party remains admissible"),
+		Join(Queue, MakeRequest(30, 3), 0.f), EFF_QueueJoinResult::Accepted);
+	TArray<FFF_SlotAssignment> Before;
+	Queue.BuildSlotAssignments(Before);
+	FFF_QueuePlacementObstacle FutureBlocker;
+	FutureBlocker.Center = FVector(0, -90, 0);
+	FutureBlocker.HalfExtentsCm = FVector2D(10, 10);
+	TArray<FFF_QueuePlacementObstacle> NewObstacles = Lane.PlacementObstacles;
+	NewObstacles.Add(FutureBlocker);
+	TestFalse(TEXT("Construction cannot cover a waiting party's future member slot"), Queue.CanUsePlacementObstacles(NewObstacles));
+	TestFalse(TEXT("A rejected obstacle refresh does not alter the active queue"), Queue.RefreshPlacementObstacles(NewObstacles));
+	TArray<FFF_SlotAssignment> After;
+	Queue.BuildSlotAssignments(After);
+	if (Before.Num() != 4 || After.Num() != 4) return false;
+	for (int32 Index = 0; Index < Before.Num(); ++Index)
+	{
+		TestEqual(TEXT("Rejected construction preserves all existing member targets"), After[Index].TargetLocation, Before[Index].TargetLocation);
+	}
+	Queue.Advance(5.f, 5.f);
+	Queue.BuildSlotAssignments(After);
+	if (After.Num() != 3) return false;
+	TestEqual(TEXT("The advanced leader uses the unchanged authored head"), After[0].TargetLocation, FVector::ZeroVector);
+	TestEqual(TEXT("The blocked positive side uses the bounded clear opposite candidate"), After[1].TargetLocation, FVector(0, -90, 0));
+	TestEqual(TEXT("The third member remains bounded and outside the footprint"), After[2].TargetLocation, FVector(0, -180, 0));
+	Queue.Advance(5.f, 10.f);
+	TestEqual(TEXT("Both admitted teams still complete normal service"), Queue.GetState().CompletedPartyCount, 2);
+	TestTrue(TEXT("Once empty the queue can adopt a different safe obstacle layout"), Queue.RefreshPlacementObstacles({}));
+	TestEqual(TEXT("Removing the obstacle restores the previously deferred party's admission"),
+		Join(Queue, MakeRequest(40, 4), 10.f), EFF_QueueJoinResult::Accepted);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_ShiftedTeamNeedsFreshArrival,
 	"FestaFiesta.Queue.FacilityQueue.ShiftedTeamNeedsFreshArrival",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -912,6 +1069,121 @@ bool FFF_FacilityQueue_TeamCapacityDoesNotTruncateMembers::RunTest(const FString
 	Queue.Configure(1, MakeConfig(0, 10.f, 4), MakeLane());
 	TestEqual(TEXT("팀 자리가 없으면 처리율도 0"), Queue.GetServiceRate(), 0.f, 0.001f);
 	TestEqual(TEXT("팀 자리가 없으면 도달 불가 대기"), Queue.GetExpectedWaitSeconds(1), FFF_QueueTimings::UnreachableWaitSeconds, 0.001f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_PerformanceBreakSettlesOnlyStartedTeams,
+	"FestaFiesta.Queue.FacilityQueue.PerformanceBreakSettlesOnlyStartedTeams",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_PerformanceBreakSettlesOnlyStartedTeams::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FFF_QueueConfig Config = MakeConfig(4, 10.f, 3);
+	Config.bRequireArrivalConfirmation = true;
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, Config, MakeLane());
+	Join(Queue, MakeRequest(10, 4), 0.f);
+	Join(Queue, MakeRequest(20, 2), 0.f);
+	Join(Queue, MakeRequest(30, 3), 0.f);
+	Join(Queue, MakeRequest(40, 1), 0.f);
+	Queue.NotifyPartyArrived(10);
+	Queue.NotifyPartyArrived(20);
+	Queue.Advance(2.f, 2.f);
+	TestEqual(TEXT("두 팀은 아직 이용 시간 중간이다"), Queue.GetActiveServicePartyCount(), 2);
+	TestEqual(TEXT("정상 이용 시간은 아직 끝나지 않았다"), Queue.GetState().CompletedPartyCount, 0);
+	Queue.NotifyPartyArrived(30); // 도착만 하고 서비스 시작 스텝은 아직 지나지 않았다.
+	TArray<FFF_QueueEvent> Events;
+	Queue.ConsumePendingEvents(Events);
+	Events.Reset();
+	Queue.ConsumeSlotTargetsDirty();
+
+	Queue.SetPerformanceBreak(true, 2.f);
+	TestTrue(TEXT("공연 휴지는 운영 중인 시설을 폐쇄하지 않는다"), Queue.GetState().bIsOpen);
+	TestFalse(TEXT("공연 준비부터 신규 이용을 받지 않는다"), Queue.GetState().bAcceptingNew);
+	TestEqual(TEXT("이용 중이던 팀만 완료 집계"), Queue.GetState().CompletedPartyCount, 2);
+	TestEqual(TEXT("기존 모든 팀을 내보낸다"), Queue.GetWaitingPartyCount(), 0);
+	TestTrue(TEXT("Crowd에 비워진 대기열을 알린다"), Queue.ConsumeSlotTargetsDirty());
+	Queue.ConsumePendingEvents(Events);
+	TestEqual(TEXT("각 팀에 퇴장 이벤트 한 번"), Events.Num(), 4);
+	int32 ServedMembers = 0;
+	for (int32 Index = 0; Index < Events.Num(); ++Index)
+	{
+		const FFF_QueueEvent& Event = Events[Index];
+		TestEqual(TEXT("서비스를 새로 시작하지 않고 퇴장만 알린다"), Event.Type, EFF_QueueEventType::PartyExited);
+		TestEqual(TEXT("기존 FIFO 순서대로 퇴장"), Event.PartyId, (Index + 1) * 10);
+		TestEqual(TEXT("이용 시작 여부로 정산과 취소를 구분한다"), Event.ExitType,
+			Index < 2 ? EFF_QueueExit::Served : EFF_QueueExit::Cancelled);
+		if (Index >= 2)
+		{
+			TestEqual(TEXT("도착만 한 팀과 미도착 대기 팀은 정산하지 않는다"), Event.ServedMemberCount, 0);
+		}
+		ServedMembers += Event.ServedMemberCount;
+	}
+	TestEqual(TEXT("이용 중이던 4인과 2인 팀의 여섯 명만 정산"), ServedMembers, 6);
+	TArray<FFF_QueueLog> Logs;
+	Queue.ConsumePendingLogs(Logs);
+	TestEqual(TEXT("완료 로그 두 건"), CountExits(Logs, EFF_QueueExit::Served), 2);
+	TestEqual(TEXT("취소 로그 두 건"), CountExits(Logs, EFF_QueueExit::Cancelled), 2);
+	for (const FFF_QueueLog& Log : Logs)
+	{
+		TestEqual(TEXT("공연 준비 경계 시각에 처리한다"), Log.ExitSimTime, 2.f);
+		TestEqual(TEXT("실제 이용 시간만 기록한다"), Log.ServiceSeconds,
+			Log.ExitType == EFF_QueueExit::Served ? 2.f : 0.f);
+	}
+
+	Events.Reset();
+	Logs.Reset();
+	Queue.SetPerformanceBreak(true, 3.f);
+	Queue.NotifyPartyArrived(30); // 늦게 도착한 알림도 이미 취소된 팀을 살리지 않는다.
+	Queue.Advance(20.f, 22.f);
+	Queue.ConsumePendingEvents(Events);
+	Queue.ConsumePendingLogs(Logs);
+	TestEqual(TEXT("반복 휴지와 시간 경과는 추가 정산이나 서비스 시작을 만들지 않는다"), Events.Num(), 0);
+	TestEqual(TEXT("반복 휴지는 로그를 중복 기록하지 않는다"), Logs.Num(), 0);
+	TestEqual(TEXT("완료 수는 두 팀을 유지한다"), Queue.GetState().CompletedPartyCount, 2);
+	Queue.ReopenFacility();
+	TestFalse(TEXT("시설 개방 명령도 공연 중 신규 이용 제한을 우회하지 않는다"), Queue.IsAcceptingNew());
+	TestEqual(TEXT("공연 중 신규 가입 거절"), Join(Queue, MakeRequest(50, 1), 22.f), EFF_QueueJoinResult::RejectedClosed);
+
+	Queue.SetPerformanceBreak(false, 22.f);
+	TestTrue(TEXT("운영 중인 시설은 공연 휴지 해제 후 신규 이용 가능"), Queue.IsAcceptingNew());
+	TestEqual(TEXT("공연 후 새로운 팀을 받는다"), Join(Queue, MakeRequest(60, 1), 22.f), EFF_QueueJoinResult::Accepted);
+	Queue.Advance(1.f, 23.f);
+	TestEqual(TEXT("재개 후에도 실제 도착을 기다린다"), Queue.GetActiveServicePartyCount(), 0);
+	Queue.NotifyPartyArrived(60);
+	Queue.Advance(10.f, 33.f);
+	TestEqual(TEXT("공연 후 팀은 정상 이용 시간을 거쳐 한 번 완료"), Queue.GetState().CompletedPartyCount, 3);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_PerformanceBreakPreservesClosedState,
+	"FestaFiesta.Queue.FacilityQueue.PerformanceBreakPreservesClosedState",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_PerformanceBreakPreservesClosedState::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	for (const bool bCloseBeforeBreak : { false, true })
+	{
+		FFF_FacilityQueue Queue;
+		Queue.Configure(1, MakeConfig(2, 10.f), MakeLane());
+		if (bCloseBeforeBreak)
+		{
+			Queue.CloseFacility(EFF_QueueCloseReason::Emergency, 0.f);
+		}
+		Queue.SetPerformanceBreak(true, 0.f);
+		if (!bCloseBeforeBreak)
+		{
+			Queue.CloseFacility(EFF_QueueCloseReason::Emergency, 1.f);
+		}
+		Queue.SetPerformanceBreak(false, 2.f);
+		Queue.SetPerformanceBreak(false, 3.f);
+		TestFalse(TEXT("휴지 전이나 중간에 닫은 시설을 자동 개방하지 않는다"), Queue.GetState().bIsOpen);
+		TestFalse(TEXT("닫힌 시설은 휴지 해제 뒤에도 이용 불가"), Queue.GetState().bAcceptingNew);
+		TestEqual(TEXT("닫힌 시설 가입은 계속 거절한다"),
+			Join(Queue, MakeRequest(10, 1), 3.f), EFF_QueueJoinResult::RejectedClosed);
+		Queue.ReopenFacility();
+		TestTrue(TEXT("별도 운영 재개 후에만 이용 가능"), Queue.IsAcceptingNew());
+	}
 	return true;
 }
 

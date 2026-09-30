@@ -100,6 +100,7 @@ void UFF_AtlasGlobeScreen::NativeConstruct()
 
 	DragTracker.DragThresholdPixels = DragThresholdPixels;
 	DragTracker.Reset();
+	UpdateGlobeHoverFeedback(NAME_None, true);
 
 	if (AFF_AtlasGlobeActor* Globe = GetGlobe())
 	{
@@ -111,6 +112,7 @@ void UFF_AtlasGlobeScreen::NativeConstruct()
 
 void UFF_AtlasGlobeScreen::NativeDestruct()
 {
+	UpdateGlobeHoverFeedback(NAME_None, true);
 	// 해제는 조건부, 정리는 무조건.
 	if (UFF_CommonButtonBase* SelectButton = GetSelectCountryButton())
 	{
@@ -127,6 +129,7 @@ void UFF_AtlasGlobeScreen::NativeDestruct()
 	if (AFF_AtlasGlobeActor* Globe = CachedGlobe.Get())
 	{
 		Globe->SetHoveredCountry(NAME_None);
+		Globe->SetCountryRegionMode(false);
 		Globe->ClearFocusViewportPosition();
 		Globe->OnCountryFocused.RemoveDynamic(this, &UFF_AtlasGlobeScreen::HandleCountryFocused);
 	}
@@ -134,6 +137,7 @@ void UFF_AtlasGlobeScreen::NativeDestruct()
 	ClearPinButtons();
 	ClearFestivalRows();
 	PanelCountryId = NAME_None;
+	PressedCountryId = NAME_None;
 	DragTracker.Reset();
 	CachedGlobe.Reset();
 
@@ -142,6 +146,16 @@ void UFF_AtlasGlobeScreen::NativeDestruct()
 
 void UFF_AtlasGlobeScreen::NativeOnActivated()
 {
+	if (AFF_AtlasGlobeActor* Globe = GetGlobe())
+	{
+		Globe->SetCountryRegionMode(true);
+		if (Text_ControlHints)
+		{
+			Text_ControlHints->SetText(Globe->IsCountryRegionMode()
+				? LOCTEXT("AtlasGlobeRegionHints", "드래그: 회전    국가 목록 / 나라 영역: 살펴보기    Esc: 뒤로")
+				: LOCTEXT("AtlasGlobeHints", "드래그: 회전    국가 목록 / 조형물: 살펴보기    Esc: 뒤로"));
+		}
+	}
 	UpdateCountryFocusViewport();
 	// 화면에 올라올 때마다 핀을 다시 만든다. 카탈로그가 이 화면 밖에서 바뀔 수 있고
 	// (`FF.Atlas.Rebuild`), 위젯이 풀에서 재사용되므로 이전 핀이 남아 있을 수 있다.
@@ -163,28 +177,35 @@ void UFF_AtlasGlobeScreen::NativeOnActivated()
 void UFF_AtlasGlobeScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (!IsActivated()) { return; }
 	UpdateCountryFocusViewport();
 
-	// 지구 자전 중에도 커서 아래 프랍이 바뀌므로 호버를 매 프레임 확인한다.
+	// 지구 자전 중에도 커서 아래 국가가 바뀌므로 호버를 매 프레임 확인한다.
 	UpdatePinPositions();
+	FName HoveredCountry;
 	if (AFF_AtlasGlobeActor* Globe = GetGlobe())
 	{
-		Globe->SetHoveredCountry(!DragTracker.IsPressed() && Border_DragSurface && Border_DragSurface->IsHovered()
-			? PickCursorLandmark() : NAME_None);
+		HoveredCountry = !DragTracker.IsPressed() && Border_DragSurface && Border_DragSurface->IsHovered()
+			? PickCursorCountry() : NAME_None;
+		Globe->SetHoveredCountry(HoveredCountry);
 	}
+	UpdateGlobeHoverFeedback(HoveredCountry);
 
 	TickDrag();
 }
 
 void UFF_AtlasGlobeScreen::NativeOnDeactivated()
 {
+	UpdateGlobeHoverFeedback(NAME_None, true);
 	if (AFF_AtlasGlobeActor* Globe = CachedGlobe.Get())
 	{
 		Globe->SetSelectedCountry(NAME_None);
 		Globe->SetHoveredCountry(NAME_None);
+		Globe->SetCountryRegionMode(false);
 		Globe->ClearFocusViewportPosition();
 	}
 	PanelCountryId = NAME_None;
+	PressedCountryId = NAME_None;
 	DragTracker.Reset();
 	Super::NativeOnDeactivated();
 }
@@ -262,8 +283,10 @@ FReply UFF_AtlasGlobeScreen::NativeOnMouseButtonDown(const FGeometry& InGeometry
 			*GetName(), PC->bShowMouseCursor ? 1 : 0);
 	}
 
-	PressedCountryId = PickCursorLandmark();
+	PressedCountryId = PickCursorCountry();
 	DragTracker.Press(InMouseEvent.GetScreenSpacePosition());
+	UpdateGlobeHoverFeedback(NAME_None);
+	if (AFF_AtlasGlobeActor* Globe = CachedGlobe.Get()) { Globe->SetHoveredCountry(NAME_None); }
 
 	// 🔴 **캡처하지 않는다** (2026-09-03 정정).
 	//
@@ -327,7 +350,7 @@ void UFF_AtlasGlobeScreen::EndDrag()
 	const bool bWasDragging = DragTracker.IsDragging();
 	DragTracker.Release();
 	if (!bWasDragging && !PressedCountryId.IsNone() && Border_DragSurface && Border_DragSurface->IsHovered()
-		&& PickCursorLandmark() == PressedCountryId)
+		&& PickCursorCountry() == PressedCountryId)
 	{
 		InspectCountry(PressedCountryId);
 	}
@@ -335,13 +358,36 @@ void UFF_AtlasGlobeScreen::EndDrag()
 	PressedCountryId = NAME_None;
 }
 
-FName UFF_AtlasGlobeScreen::PickCursorLandmark() const
+FName UFF_AtlasGlobeScreen::PickCursorCountry() const
 {
 	APlayerController* PC = GetOwningPlayer();
 	AFF_AtlasGlobeActor* Globe = GetGlobe();
 	FVector Origin, Direction;
 	return PC && Globe && PC->DeprojectMousePositionToWorld(Origin, Direction)
-		? Globe->PickLandmark(Origin, Direction) : NAME_None;
+		? Globe->PickCountry(Origin, Direction) : NAME_None;
+}
+
+void UFF_AtlasGlobeScreen::UpdateGlobeHoverFeedback(FName CountryId, bool bForce)
+{
+	if (!bForce && HoverFeedbackCountryId == CountryId) { return; }
+	HoverFeedbackCountryId = CountryId;
+	if (!Border_DragSurface) { return; }
+	const UFF_FestivalAtlasCatalog* Catalog = CountryId.IsNone() ? nullptr : GetCatalog();
+	const FFF_AtlasCountryEntry* Country = Catalog ? Catalog->FindCountry(CountryId) : nullptr;
+	if (!Country)
+	{
+		Border_DragSurface->ResetCursor();
+		Border_DragSurface->SetToolTipText(FText::GetEmpty());
+		return;
+	}
+	Border_DragSurface->SetCursor(EMouseCursor::Hand);
+	TArray<const FFF_FestivalAtlasEntry*> Festivals;
+	Catalog->GetFestivalsInCountry(CountryId, Festivals);
+	const FText Status = Country->bUnlocked && !Festivals.IsEmpty()
+		? FText::Format(LOCTEXT("AtlasGlobeHoverFestivalCount", "축제 {0}개"), FText::AsNumber(Festivals.Num()))
+		: (Country->LockReason.IsEmpty() ? LOCTEXT("AtlasGlobeHoverComingSoon", "준비 중") : Country->LockReason);
+	Border_DragSurface->SetToolTipText(FText::Format(
+		LOCTEXT("AtlasGlobeCountryHoverHint", "{0} · {1}\n클릭하여 살펴보기"), Country->DisplayName, Status));
 }
 
 FReply UFF_AtlasGlobeScreen::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -370,6 +416,9 @@ void UFF_AtlasGlobeScreen::NativeOnMouseCaptureLost(const FCaptureLostEvent& Cap
 {
 	// 캡처를 잃으면 드래그 상태가 남아 다음 클릭이 이어지는 드래그로 오인된다.
 	DragTracker.Reset();
+	PressedCountryId = NAME_None;
+	UpdateGlobeHoverFeedback(NAME_None);
+	if (AFF_AtlasGlobeActor* Globe = CachedGlobe.Get()) { Globe->SetHoveredCountry(NAME_None); }
 
 	Super::NativeOnMouseCaptureLost(CaptureLostEvent);
 }

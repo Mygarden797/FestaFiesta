@@ -4,6 +4,9 @@
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Festival/FF_RequiredFacilitiesSubsystem.h"
 
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Blueprint/WidgetTree.h"
+
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
@@ -11,8 +14,10 @@
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/PanelWidget.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 #include "Engine/Texture2D.h"
 #include "FF_FFZSWorldSubsystem.h"
@@ -57,9 +62,31 @@ namespace FFPrepHudBarLocal
 	}
 }
 
+bool FFF_PrepPanelLayout::TryResolveCenteredPosition(const FGeometry& ViewportGeometry,
+	const FGeometry& CanvasGeometry, FVector2D& OutPosition) const
+{
+	const FVector2D ViewportSize = ViewportGeometry.GetLocalSize();
+	const FVector2D CanvasSize = CanvasGeometry.GetLocalSize();
+	if (ViewportSize.X <= 0.0 || ViewportSize.Y <= 0.0 || CanvasSize.X <= 0.0 || CanvasSize.Y <= 0.0)
+	{
+		return false;
+	}
+
+	// Geometry 변환에 DPI와 창의 화면상 원점이 이미 포함된다. ViewportScale로 다시 나누지 않는다.
+	const FVector2D CenterAbsolute = ViewportGeometry.LocalToAbsolute(ViewportSize * 0.5);
+	// 0.5 앵커를 유지해야 Canvas DesiredSize가 이동량 때문에 늘어나지 않는다.
+	// (0,0) 앵커는 |Offset|을 DesiredSize에 더해 Auto 높이 부모에서 재배치 피드백이 생긴다.
+	OutPosition = FVector2D(CanvasGeometry.AbsoluteToLocal(CenterAbsolute)) - CanvasSize * 0.5 + Offset;
+	return !OutPosition.ContainsNaN();
+}
+
 UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+	GoldTextFormat = LOCTEXT("PrepStatus_GoldFormat", "{Amount} Gold");
+	StaffTextFormat = LOCTEXT("PrepStatus_StaffFormat", "{Count}명");
+	DayStageTextFormat = LOCTEXT("PrepStatus_DayStageFormat", "{Day}일차 · {Stage}");
+
 	// === CTA 문구 기본값 ===
 	// `{Day}` 는 현재 일차로 치환된다. 문구에 `Day 1` 을 박으면 2·3일차에 거짓말이 된다.
 	//
@@ -94,15 +121,15 @@ UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 
 	// 인력 — 스텝퍼와 짧은 표뿐이다. 크게 열면 빈 공간만 늘어난다.
 	PanelLayouts.Add(EFF_PrepHudTab::Staff,
-		{ EFF_PrepPanelDock::Center, FVector2D(760.0, 520.0), CenterNudge });
+		{ EFF_PrepPanelDock::Center, FVector2D(760.0, 520.0), FVector2D::ZeroVector });
 
 	// 프로그램 — 슬롯·후보·예상 효과 3열.
 	PanelLayouts.Add(EFF_PrepHudTab::Program,
-		{ EFF_PrepPanelDock::Center, FVector2D(1160.0, 640.0), CenterNudge });
+		{ EFF_PrepPanelDock::Center, FVector2D(1160.0, 640.0), FVector2D::ZeroVector });
 
 	// 홍보 — 등급 카드 3장 + 예상 방문객 범위.
 	PanelLayouts.Add(EFF_PrepHudTab::Promotion,
-		{ EFF_PrepPanelDock::Center, FVector2D(1080.0, 600.0), CenterNudge });
+		{ EFF_PrepPanelDock::Center, FVector2D(1080.0, 600.0), FVector2D::ZeroVector });
 
 	// 피날레 — 등급 카드를 가로로 5장 놓아야 해서 가장 넓다.
 	PanelLayouts.Add(EFF_PrepHudTab::Finale,
@@ -110,7 +137,7 @@ UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 
 	// 점검 — 개장 직전 마지막 확인이라 카드·요약·견적을 한 번에 봐야 한다.
 	PanelLayouts.Add(EFF_PrepHudTab::Check,
-		{ EFF_PrepPanelDock::Center, FVector2D(1280.0, 780.0), CenterNudge });
+		{ EFF_PrepPanelDock::Center, FVector2D(1280.0, 780.0), FVector2D::ZeroVector });
 
 	DefaultPanelLayout = { EFF_PrepPanelDock::Center, FVector2D(1160.0, 640.0), CenterNudge };
 
@@ -125,6 +152,10 @@ UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 void UFF_PrepHudBar::NativePreConstruct()
 {
 	Super::NativePreConstruct();
+	if (bUseDesignerStyle)
+	{
+		return;
+	}
 
 	// 색은 팔레트가 소유한다. 디자이너에서 손으로 바꾼 색은 여기서 매번 덮인다 —
 	// 크기·패딩·폰트는 그대로 두므로 마감은 에디터에서 계속 할 수 있다.
@@ -197,11 +228,7 @@ void UFF_PrepHudBar::NativeOnInitialized()
 	{
 		Button_Cta->OnClicked.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleCtaClicked);
 	}
-	else
-	{
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] Button_Cta 가 없어 단계를 넘길 버튼이 없다."), *GetName());
-	}
+	// 하단 바에는 사유만 표시하고 진행 버튼은 기존 점검 패널이 소유한다.
 
 	// 도킹은 **패널을 열 때** 정한다. 탭마다 방향이 다르므로 여기서 한 번 맞춰 두면 틀린다.
 
@@ -243,6 +270,20 @@ void UFF_PrepHudBar::NativeDestruct()
 
 	UnbindSources();
 	Super::NativeDestruct();
+}
+
+void UFF_PrepHudBar::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (Selection.bHasSelection)
+	{
+		const FFF_PrepPanelLayout Layout = ResolveLayout(Selection.Tab);
+		if (UsesViewportCenter(Layout))
+		{
+			// 창 크기·DPI·부모 레이아웃 변화만 위치에 반영하고 Designer의 Size/Offset은 덮어쓰지 않는다.
+			ApplyPanelLayout(Layout, &MyGeometry);
+		}
+	}
 }
 
 // =============================================================================
@@ -511,12 +552,7 @@ void UFF_PrepHudBar::ApplySelection(const FFF_PrepTabSelection& NewSelection)
 
 	// 3) 호스트는 `SelfHitTestInvisible` 로 띄운다. `Visible` 이면 패널 바깥의 빈 영역까지
 	//    월드 클릭을 먹는다. 자식(패널)은 그대로 클릭을 받는다.
-	if (Panel_PanelHost)
-	{
-		Panel_PanelHost->SetVisibility(Selection.bHasSelection
-			? ESlateVisibility::SelfHitTestInvisible
-			: ESlateVisibility::Collapsed);
-	}
+	RefreshPanelHostVisibility();
 
 	// 4) 탭 선택 표시. 색만 바꾸지 않고 배경 브러시가 함께 바뀐다 (AT-011).
 	for (UFF_PrepHudTabButton* TabButton : TabButtons)
@@ -794,8 +830,51 @@ FFF_PrepPanelLayout UFF_PrepHudBar::ResolveLayout(EFF_PrepHudTab Tab) const
 	return Layout;
 }
 
-void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
+float UFF_PrepHudBar::GetBottomStatusRowHeight() const
 {
+	if (SizeBox_StatusRow)
+	{
+		return SizeBox_StatusRow->IsHeightOverride()
+			? SizeBox_StatusRow->GetHeightOverride()
+			: SizeBox_StatusRow->GetDesiredSize().Y;
+	}
+	return StatusRowHeight;
+}
+
+float UFF_PrepHudBar::GetBottomBarHeight() const
+{
+	if (SizeBox_StatusRow && SizeBox_MenuRow)
+	{
+		const float MenuHeight = Border_MenuRow && Border_MenuRow->GetVisibility() == ESlateVisibility::Collapsed
+			? 0.f : (SizeBox_MenuRow->IsHeightOverride()
+				? SizeBox_MenuRow->GetHeightOverride() : SizeBox_MenuRow->GetDesiredSize().Y);
+		return GetBottomStatusRowHeight() + MenuHeight;
+	}
+	return BarHeight;
+}
+
+bool UFF_PrepHudBar::UsesViewportCenter(const FFF_PrepPanelLayout& Layout) const
+{
+	if (!Selection.bHasSelection || Layout.Dock != EFF_PrepPanelDock::Center)
+	{
+		return false;
+	}
+	return Selection.Tab == EFF_PrepHudTab::Program || Selection.Tab == EFF_PrepHudTab::Staff
+		|| Selection.Tab == EFF_PrepHudTab::Promotion || Selection.Tab == EFF_PrepHudTab::Check;
+}
+
+void UFF_PrepHudBar::RefreshPanelHostVisibility()
+{
+	if (Panel_PanelHost)
+	{
+		Panel_PanelHost->SetVisibility(!Selection.bHasSelection ? ESlateVisibility::Collapsed
+			: bAwaitingCenteredLayout ? ESlateVisibility::Hidden : ESlateVisibility::SelfHitTestInvisible);
+	}
+}
+
+void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout, const FGeometry* CurrentHudGeometry)
+{
+	bAwaitingCenteredLayout = false;
 	if (!Panel_PanelHost)
 	{
 		return;
@@ -805,6 +884,7 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 	if (Dock == EFF_PrepPanelDock::Designer)
 	{
 		// 손으로 잡은 자리를 그대로 쓴다. 여기서 손대면 디자이너 작업이 매번 사라진다.
+		RefreshPanelHostVisibility();
 		return;
 	}
 
@@ -815,8 +895,37 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 		UE_LOG(LogFestaFiestaUI, Verbose,
 			TEXT("[%s] Panel_PanelHost 가 CanvasPanel 자식이 아니라 도킹을 코드가 정하지 않는다."),
 			*GetName());
+		RefreshPanelHostVisibility();
 		return;
 	}
+
+	if (UsesViewportCenter(Layout))
+	{
+		const UWidget* Canvas = Panel_PanelHost->GetParent();
+		const FGeometry HudGeometry = CurrentHudGeometry ? *CurrentHudGeometry : GetCachedGeometry();
+		// 루트 Canvas는 HUD와 같은 공간이다. Tick의 최신 geometry를 써 resize 직전 캐시를 피한다.
+		const FGeometry CanvasGeometry = WidgetTree && WidgetTree->RootWidget == Canvas
+			? HudGeometry : Canvas->GetCachedGeometry();
+		const UWorld* World = GetWorld();
+		// 게임에서는 실제 viewport만 쓴다. 에디터의 독립 WidgetRenderer는 HUD 표면을 기준으로 검증한다.
+		const FGeometry ViewportGeometry = World && World->IsGameWorld()
+			? UWidgetLayoutLibrary::GetViewportWidgetGeometry(this) : HudGeometry;
+		FVector2D Position;
+		bAwaitingCenteredLayout = !Layout.TryResolveCenteredPosition(ViewportGeometry, CanvasGeometry, Position);
+		if (!bAwaitingCenteredLayout)
+		{
+			const FAnchors Anchors(0.5f, 0.5f);
+			const FVector2D Alignment(0.5, 0.5);
+			const FMargin Offsets(Position.X, Position.Y, Layout.Size.X, Layout.Size.Y);
+			if (CanvasSlot->GetAutoSize()) { CanvasSlot->SetAutoSize(false); }
+			if (CanvasSlot->GetAnchors() != Anchors) { CanvasSlot->SetAnchors(Anchors); }
+			if (CanvasSlot->GetAlignment() != Alignment) { CanvasSlot->SetAlignment(Alignment); }
+			if (CanvasSlot->GetOffsets() != Offsets) { CanvasSlot->SetOffsets(Offsets); }
+		}
+		RefreshPanelHostVisibility();
+		return;
+	}
+	RefreshPanelHostVisibility();
 
 	// === CanvasPanelSlot 의 Offsets 는 앵커에 따라 뜻이 달라진다 ===
 	// 그 축이 늘어나 있으면(min != max) 양쪽 **여백**이고, 점 앵커면 **위치와 크기**다.
@@ -837,7 +946,7 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 			//    바 위에 **동동 떠 있었고**, 가운데 패널들(`CenterNudge` = -29)과 아래 끝이
 			//    어긋났다 (2026-09-03 백종태 지적). 상태 행 높이만 띄워 다른 패널과 맞춘다 —
 			//    패널 아래 끝이 탭 줄 밑으로 들어가서 버튼이 패널에 얹힌 것처럼 보인다.
-			-StatusRowHeight + static_cast<float>(Layout.Offset.Y),
+			-GetBottomStatusRowHeight() + static_cast<float>(Layout.Offset.Y),
 
 			PanelMargin,													// 오른쪽 여백
 			static_cast<float>(Layout.Size.Y)));							// 높이
@@ -850,7 +959,7 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 		CanvasSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 		CanvasSlot->SetOffsets(FMargin(
 			static_cast<float>(Layout.Offset.X),	// X 위치 (중앙 정렬 기준)
-			static_cast<float>(Layout.Offset.Y),	// Y 위치
+			static_cast<float>(Layout.Offset.Y) - (SizeBox_StatusRow ? GetBottomStatusRowHeight() - StatusRowHeight : 0.f),
 			static_cast<float>(Layout.Size.X),		// 폭
 			static_cast<float>(Layout.Size.Y)));	// 높이
 		break;
@@ -864,7 +973,7 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 			-PanelMargin + static_cast<float>(Layout.Offset.X),	// X 위치 (오른쪽 정렬이라 음수)
 			PanelMargin,										// 위쪽 여백
 			static_cast<float>(Layout.Size.X),					// 폭
-			BarHeight + PanelMargin));							// 아래쪽 여백
+			GetBottomBarHeight() + PanelMargin));
 		break;
 
 	case EFF_PrepPanelDock::Left:
@@ -875,7 +984,7 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 			PanelMargin + static_cast<float>(Layout.Offset.X),
 			PanelMargin,
 			static_cast<float>(Layout.Size.X),
-			BarHeight + PanelMargin));
+			GetBottomBarHeight() + PanelMargin));
 		break;
 	}
 }
@@ -1026,7 +1135,7 @@ void UFF_PrepHudBar::RefreshCta()
 			Box_Cta->SetVisibility(ESlateVisibility::Collapsed);
 		}
 		SetGroupTextOrHide(nullptr, Text_CtaReason, FText::GetEmpty());
-		SetCtaState(State);
+		SetCtaState(State, FText::GetEmpty());
 		return;
 	}
 
@@ -1077,6 +1186,10 @@ void UFF_PrepHudBar::RefreshCta()
 		}
 	}
 	SetGroupTextOrHide(nullptr, Text_CtaReason, Reason);
+	if (Text_CtaReason)
+	{
+		Text_CtaReason->SetToolTipText(Reason);
+	}
 
 	// 버튼을 접었으니 사유가 없으면 줄째 접는다. 안 그러면 빈 띠가 남는다.
 	if (Box_Cta)
@@ -1106,17 +1219,18 @@ void UFF_PrepHudBar::RefreshCta()
 		}
 	}
 
-	SetCtaState(State);
+	SetCtaState(State, Reason);
 }
 
-void UFF_PrepHudBar::SetCtaState(EFF_PrepCtaState NewState)
+void UFF_PrepHudBar::SetCtaState(EFF_PrepCtaState NewState, const FText& NewReason)
 {
-	if (NewState == LastCtaState)
+	if (NewState == LastCtaState && LastCtaReason.EqualTo(NewReason))
 	{
 		return;
 	}
 
 	LastCtaState = NewState;
+	LastCtaReason = NewReason;
 
 	// 점검 패널의 `개장하기` 가 이 판정을 그대로 쓴다. 바가 시설 수를 다시 세는 순간
 	// 알려 주지 않으면 패널 버튼이 예전 상태로 남는다.
@@ -1171,26 +1285,24 @@ void UFF_PrepHudBar::HandleGoldChanged(int32 NewValue)
 {
 	if (Text_Gold)
 	{
-		Text_Gold->SetText(FormatGold(NewValue));
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("Amount"), FormatGold(NewValue));
+		Text_Gold->SetText(FText::Format(GoldTextFormat, Args));
 	}
 }
 
 void UFF_PrepHudBar::HandleStaffCountChanged(int32 NewValue)
 {
-	// !! 인자를 쓰지 않는다 !! 내역까지 다시 읽어야 한 프레임 어긋나지 않는다.
+	// 총원은 ViewModel이 소유한다. 세부 인원은 인력 패널에서 보여준다.
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	const int32 Total = ViewModel ? ViewModel->GetTotalStaffCount() : INDEX_NONE;
-	const int32 Base = ViewModel ? ViewModel->GetBaseStaffCount() : INDEX_NONE;
-	const int32 Hired = ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE;
 
 	FText StaffText;
 	if (Total >= 0)
 	{
-		StaffText = (Base >= 0 && Hired >= 0)
-			? FText::Format(
-				LOCTEXT("PrepStatus_StaffDetailed", "{0}명 (기본 {1} · 고용 {2})"),
-				FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Hired))
-			: FText::Format(LOCTEXT("PrepStatus_Staff", "{0}명"), FText::AsNumber(Total));
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("Count"), FText::AsNumber(Total));
+		StaffText = FText::Format(StaffTextFormat, Args);
 	}
 
 	SetGroupTextOrHide(Box_Staff, Text_Staff, StaffText);
@@ -1221,10 +1333,10 @@ void UFF_PrepHudBar::RefreshDayStageText(EFF_FestivalStage Stage, int32 Day)
 	// Stage 표시명은 ViewModel 이 소유한다. 위젯이 enum 을 문자열로 바꾸지 않는다 —
 	// 기획 7단계와 코드 8단계가 아직 다르고, 모르는 값이 와도 빈 화면이 되면 안 된다.
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
-	Text_DayStage->SetText(FText::Format(
-		LOCTEXT("PrepStatus_DayStage", "{0}일차 · {1}"),
-		FText::AsNumber(Day),
-		ViewModel ? ViewModel->GetCurrentStageDisplayText() : FText::GetEmpty()));
+	FFormatNamedArguments Args;
+	Args.Add(TEXT("Day"), FText::AsNumber(Day));
+	Args.Add(TEXT("Stage"), ViewModel ? ViewModel->GetCurrentStageDisplayText() : FText::GetEmpty());
+	Text_DayStage->SetText(FText::Format(DayStageTextFormat, Args));
 }
 
 void UFF_PrepHudBar::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)

@@ -109,6 +109,15 @@ bool FFF_StaffPool::TryPromoteStaffMember(int32 StaffId, int32 CurrentDay)
 	return true;
 }
 
+bool FFF_StaffPool::SetAssignedFacility(int32 StaffId, FGuid FacilityId)
+{
+	FFF_StaffMember* Member = AllStaff.FindByPredicate(
+		[StaffId](const FFF_StaffMember& Candidate) { return Candidate.StaffId == StaffId; });
+	if (!Member || Member->AssignedFacilityId == FacilityId) return false;
+	Member->AssignedFacilityId = FacilityId;
+	return true;
+}
+
 int32 FFF_StaffPool::CalcHireCost(int32 InStaffCount, int32 HireCostGold)
 {
 	if (InStaffCount <= 0 || HireCostGold <= 0) return 0;

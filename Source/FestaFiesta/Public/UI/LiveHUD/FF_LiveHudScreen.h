@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Styling/SlateTypes.h"
+#include "Incident/FF_IncidentTypes.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/LiveHUD/FF_LiveHudTypes.h"
 #include "FF_LiveHudScreen.generated.h"
@@ -12,6 +14,7 @@ class UBorder;
 class UImage;
 class UButton;
 class UFF_FestivalViewModelSubsystem;
+class UFF_IncidentDetailPanel;
 class UFF_IncidentMarkerLayer;
 class UFF_LivePanelBase;
 class UFF_LivePlaceholderPanel;
@@ -68,6 +71,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Live")
 	void RefreshAll();
 
+	/** 실제 Designer 행 치수. 패널 도킹도 이 값을 따른다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Layout")
+	float GetBottomStatusRowHeight() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Layout")
+	float GetBottomBarHeight() const;
+
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI|Live")
 	FFF_OnLiveTabSelectionChanged OnTabSelectionChanged;
 
@@ -76,6 +86,7 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	// --- 결과 이벤트 ---
 
@@ -174,6 +185,12 @@ protected:
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
 	TObjectPtr<class USizeBox> SizeBox_Bar;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Layout")
+	TObjectPtr<class USizeBox> SizeBox_MenuRow;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Layout")
+	TObjectPtr<class USizeBox> SizeBox_StatusRow;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live")
 	TObjectPtr<UBorder> Border_StatusRow;
@@ -328,6 +345,25 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Layout")
 	float PanelMargin = 12.f;
 
+	/** 중괄호 이름은 유지하고 표시 문구만 바꾼다. 실제 값은 ViewModel에서 읽는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Text")
+	FText GoldTextFormat = NSLOCTEXT("FestaFiestaLiveHud", "GoldFormat", "{Amount} Gold");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Text")
+	FText RevenueTextFormat = NSLOCTEXT("FestaFiestaLiveHud", "RevenueFormat", "{Amount}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Text")
+	FText StaffTextFormat = NSLOCTEXT("FestaFiestaLiveHud", "StaffFormat", "{Count}명");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Text")
+	FText VisitorTextFormat = NSLOCTEXT("FestaFiestaLiveHud", "VisitorFormat", "{Count}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Text")
+	FText DayStageTextFormat = NSLOCTEXT("FestaFiestaLiveHud", "DayStageFormat", "{Day}일차 · {Stage}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Text")
+	FText ClockTextFormat = NSLOCTEXT("FestaFiestaLiveHud", "ClockFormat", "{Clock} · 남은 {Seconds}초");
+
 	/**
 	 * 이름 규칙에서 벗어나는 패널만 여기 넣는다.
 	 * 보통은 비워 두고 `PanelClassNameFormat` 으로 찾게 한다.
@@ -449,6 +485,21 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_IncidentMarkerLayer> IncidentMarkerLayer;
 
+	/**
+	 * 아이콘 클릭 → 상세 패널. 패널도 루트 높이 제약 때문에 뷰포트에 직접 올리고 아이콘 레이어보다 위에 둔다.
+	 * 🔴 배치 관리자가 없는 동안 [보내기]는 여기서 임시로 ResolveIncident 를 부른다. 생기면 TryDispatch 로 바꾼다.
+	 */
+	void EnsureIncidentDetailPanel();
+
+	UFUNCTION()
+	void HandleIncidentMarkerClicked(FFF_IncidentHandle Handle);
+
+	UFUNCTION()
+	void HandleIncidentDispatchRequested(FFF_IncidentHandle Handle, int32 OptionIndex, int32 StaffCount);
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_IncidentDetailPanel> IncidentDetailPanel;
+
 	void RefreshTabs();
 	void RefreshStatusRow();
 	void RefreshSpeed();
@@ -464,6 +515,10 @@ private:
 	TMap<EFF_LiveTab, TObjectPtr<UFF_LivePanelBase>> PanelWidgets;
 
 	FFF_LiveTabSelection Selection;
+
+	/** 배속 버튼의 Designer 브러시를 보존하고 선택된 값에만 Pressed 모양을 쓴다. */
+	TArray<FButtonStyle> SpeedButtonStyles;
+	float LastShownTimeScale = -1.f;
 
 	// 캐시하지 않는다 — `GetCtaState()` 주석 참고.
 

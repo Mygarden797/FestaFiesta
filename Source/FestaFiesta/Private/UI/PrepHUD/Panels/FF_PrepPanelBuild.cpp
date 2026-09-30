@@ -42,6 +42,7 @@
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildCategoryChoice.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "UI/Settings/FF_FestivalSettingsSubsystem.h"
 
@@ -88,7 +89,7 @@ void UFF_PrepPanelBuild::NativeOnInitialized()
 void UFF_PrepPanelBuild::NativeConstruct()
 {
 	Super::NativeConstruct();
-	MatchCatalogHeaderActions();
+	if (!bUseDesignerCatalogLayout) MatchCatalogHeaderActions();
 	// Preserve legacy named bindings while retiring the redundant confirmation strip.
 	if (UWidget* Selection = GetWidgetFromName(TEXT("Border_AuroraSelection")))
 		Selection->SetVisibility(ESlateVisibility::Collapsed);
@@ -166,6 +167,37 @@ void UFF_PrepPanelBuild::NativeConstruct()
 	}
 	RefreshCategoryChoiceSelection();
 	RefreshMinorCategorySurface();
+}
+
+void UFF_PrepPanelBuild::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+#if WITH_EDITOR
+	if (IsDesignTime())
+	{
+		// UMG Designer does not honor runtime Collapsed, so show either the empty
+		// message or the preview cards, never both. No gameplay state is touched.
+		if (Panel_Empty)
+		{
+			Panel_Empty->bHiddenInDesigner = !bPreviewEmptyCatalog;
+			Panel_Empty->InvalidateLayoutAndVolatility();
+		}
+		if (TileView_Facilities)
+		{
+			TileView_Facilities->bHiddenInDesigner = bPreviewEmptyCatalog;
+			TileView_Facilities->InvalidateLayoutAndVolatility();
+		}
+	}
+#endif
+	// Preview is the saved tree itself. Do not resolve gameplay systems or create a
+	// second layout in Designer. Capture its dimensions before runtime state changes.
+	if (Size_ClarityCatalogDock && (!AuthoredCatalogHeight || IsDesignTime()))
+	{
+		AuthoredCatalogHeight = Size_ClarityCatalogDock->IsHeightOverride()
+			? Size_ClarityCatalogDock->GetHeightOverride() : CatalogHeight;
+		AuthoredCatalogWidth = Size_ClarityCatalogDock->IsWidthOverride()
+			? Size_ClarityCatalogDock->GetWidthOverride() : 1560.f;
+	}
 }
 
 void UFF_PrepPanelBuild::NativeDestruct()
@@ -249,9 +281,9 @@ void UFF_PrepPanelBuild::NativeTick(const FGeometry& MyGeometry, const float InD
 	{
 		const float ViewportScale = FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(this));
 		const float LogicalViewportWidth = UWidgetLayoutLibrary::GetViewportSize(this).X / ViewportScale;
-		if (LogicalViewportWidth > 64.f)
+		if (bFitCatalogToViewport && LogicalViewportWidth > CatalogViewportMargin)
 		{
-			const float DockWidth = LogicalViewportWidth - 64.f;
+			const float DockWidth = LogicalViewportWidth - CatalogViewportMargin;
 			if (!Size_ClarityCatalogDock->IsWidthOverride() ||
 				!FMath::IsNearlyEqual(Size_ClarityCatalogDock->GetWidthOverride(), DockWidth, .5f))
 			{
@@ -1273,18 +1305,25 @@ void UFF_PrepPanelBuild::RefreshMinorCategorySurface()
 		{
 			if (Choice) { Choice->OnHudTabButtonClicked.Unbind(); }
 		}
-		HorizontalBox_Subcategories->ClearChildren();
+		auto* AuthoredAll = bUseDesignerCatalogLayout
+			? Cast<UFF_PrepBuildCategoryChoice>(GetWidgetFromName(TEXT("Choice_AllSubcategories"))) : nullptr;
+		for (UWidget* Child : HorizontalBox_Subcategories->GetAllChildren())
+		{
+			if (Child != AuthoredAll) HorizontalBox_Subcategories->RemoveChild(Child);
+		}
 		MinorChoices.Reset();
 		MinorTokens = MoveTemp(AvailableTokens);
 		for (int32 Index = 0; Index < MinorTokens.Num(); ++Index)
 		{
-			UFF_PrepChoiceButton* Choice = CreateWidget<UFF_PrepChoiceButton>(this, ChoiceClass);
+			UFF_PrepChoiceButton* Choice = Index == 0 && AuthoredAll
+				? AuthoredAll : CreateWidget<UFF_PrepChoiceButton>(this, ChoiceClass);
 			if (!Choice) { continue; }
 			Choice->ConfigureChoice(Index, Index == 0
 				? (Filter.bFilterByCategory ? LOCTEXT("AllMinorCategories", "전체 종류") : LOCTEXT("AllFacilities", "전체 시설"))
 				: FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(MinorTokens[Index]));
-			if (UHorizontalBoxSlot* ChoiceSlot = HorizontalBox_Subcategories->AddChildToHorizontalBox(Choice))
+			if (Choice != AuthoredAll)
 			{
+				UHorizontalBoxSlot* ChoiceSlot = HorizontalBox_Subcategories->AddChildToHorizontalBox(Choice);
 				ChoiceSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 				ChoiceSlot->SetVerticalAlignment(VAlign_Center);
 				ChoiceSlot->SetPadding(FMargin(0, 0, 6, 0));
@@ -1313,6 +1352,23 @@ void UFF_PrepPanelBuild::BuildCategoryFilterSurface()
 	if (HorizontalBox_Categories)
 	{
 		if (CategoryChoices.Num() == ExpectedChoiceCount) { return; }
+		// Saved tabs remain directly editable in WBP. Register their data and events
+		// without replacing widgets, labels, icons, styles, spacing or designer order.
+		if (bUseDesignerCatalogLayout)
+		{
+			CategoryChoices.Reset();
+			for (UWidget* Child : HorizontalBox_Categories->GetAllChildren())
+			{
+				if (auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(Child))
+				{
+					Choice->ConfigureTab(Choice->AuthoredChoiceId, Choice->AuthoredLabel, Choice->AuthoredIcon);
+					Choice->OnHudTabButtonClicked.BindUObject(this, &ThisClass::HandleCategoryChoiceClicked);
+					CategoryChoices.Add(Choice);
+				}
+			}
+			RefreshCategoryChoiceSelection();
+			return;
+		}
 		UClass* ChoiceClass = ResolveWidgetClass(CategoryChoiceClass, CategoryChoiceFallbackPath);
 		if (!ChoiceClass || !ChoiceClass->IsChildOf(UFF_PrepChoiceButton::StaticClass())) { return; }
 		const auto AddAuthoredChoice = [this, ChoiceClass](int32 Id, FText Label)
@@ -1874,15 +1930,17 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 	const bool bShowCatalog = State == EFF_BuildModeState::CatalogOpen;
 	const bool bShowCompact = bUsePagination && State == EFF_BuildModeState::BuildMode;
 	const bool bShowSeparateTools = State == EFF_BuildModeState::Placing || State == EFF_BuildModeState::Moving;
+	const float ExpandedHeight = bUseDesignerCatalogLayout && AuthoredCatalogHeight > 0.f
+		? AuthoredCatalogHeight : CatalogHeight;
 	if (Size_ClarityCatalogDock)
 	{
-		Size_ClarityCatalogDock->SetHeightOverride(bShowCatalog ? CatalogHeight : CompactHeight);
-		float CatalogWidth = 1560.f;
-		if (!bUsePagination && bShowCatalog)
+		Size_ClarityCatalogDock->SetHeightOverride(bShowCatalog ? ExpandedHeight : CompactHeight);
+		float CatalogWidth = bUseDesignerCatalogLayout && AuthoredCatalogWidth > 0.f ? AuthoredCatalogWidth : 1560.f;
+		if (!bUsePagination && bShowCatalog && bFitCatalogToViewport)
 		{
 			const float Scale = FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(this));
 			const float LogicalWidth = UWidgetLayoutLibrary::GetViewportSize(this).X / Scale;
-			if (LogicalWidth > 64.f) CatalogWidth = LogicalWidth - 64.f;
+			if (LogicalWidth > CatalogViewportMargin) CatalogWidth = LogicalWidth - CatalogViewportMargin;
 		}
 		Size_ClarityCatalogDock->SetWidthOverride(bShowCatalog ? CatalogWidth : 1080.f);
 	}
@@ -1953,7 +2011,7 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		FFF_PrepPanelLayout Layout = Bar->GetOpenPanelLayout();
 
 		// 배치 중에는 얇은 띠로, 카탈로그일 때는 원래 크기로.
-		Layout.Size.Y = bShowCatalog ? CatalogHeight : CompactHeight;
+		Layout.Size.Y = bShowCatalog ? ExpandedHeight : CompactHeight;
 
 		// ★ 자리도 같이 옮긴다. 배치 중에는 바 **위**에 얹어 탭 줄과 겹치지 않게 한다 —
 		//   겹치면 흰 띠 안에 초록 칩이 들어가고, 띠를 키울수록 칩이 아래로 밀린다.

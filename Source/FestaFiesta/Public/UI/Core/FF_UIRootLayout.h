@@ -4,9 +4,13 @@
 
 #include "CoreMinimal.h"
 #include "CommonUserWidget.h"
+#include "Containers/Ticker.h"
 #include "FF_UIRootLayout.generated.h"
 
+class IInputProcessor;
+class SFF_AtlasTransitionOverlay;
 class UPanelWidget;
+class UCommonActivatableWidgetContainerBase;
 class UCommonActivatableWidgetStack;
 class UFF_ActivatableScreenBase;
 
@@ -33,6 +37,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI",
 		meta = (DeterminesOutputType = "ScreenClass"))
 	UFF_ActivatableScreenBase* PushScreen(TSubclassOf<UFF_ActivatableScreenBase> ScreenClass);
+
+	/* PushScreen 과 같지만 이번 한 번만 스택의 크로스페이드를 건너뛴다.
+	   레벨에 들어오면서 지구본(스택 바닥용)과 국가 지도를 연달아 올릴 때, 페이드가 돌면
+	   그 사이 지구본이 비쳐 보인다. 스택 설정값은 바로 되돌리므로 다른 전환은 그대로다.
+	*/
+	UFF_ActivatableScreenBase* PushScreenWithoutTransition(TSubclassOf<UFF_ActivatableScreenBase> ScreenClass);
 
 	/** 화면 위에 겹치는 상세 패널을 밀어 넣는다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI",
@@ -62,7 +72,29 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
 	UPanelWidget* GetToastLayer() const { return ToastLayer; }
 
+	/** 불투명 프레임 뒤 한 번만 교체한다. 비활성 설정/준비 실패면 false로 즉시 전환을 허용한다. */
+	bool BeginAtlasTransition(FSimpleDelegate SwapUnderCover, TFunction<bool()> IsReady);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Atlas Transition")
+	bool IsAtlasTransitionActive() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Atlas Transition")
+	float GetAtlasTransitionOpacity() const { return AtlasTransitionOpacity; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Atlas Transition")
+	bool IsScreenStackTransitioning() const { return bScreenStackTransitioning; }
+
+	/** 화면 이력은 수정하지 않고 페이드·예약 콜백·입력 차단만 정리한다. */
+	void CancelAtlasTransition();
+
+	virtual void BeginDestroy() override;
+	virtual void ReleaseSlateResources(bool bReleaseChildren) override;
+
 protected:
+	virtual TSharedRef<SWidget> RebuildWidget() override;
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+
 	// --- 위젯 바인딩. WBP_FF_UIRootLayout의 위젯 이름이 아래와 같아야 한다 ---
 
 	/** 일반 UMG 컨테이너(Overlay 등). CommonUI 스택이 아니다. */
@@ -80,6 +112,34 @@ protected:
 	TObjectPtr<UPanelWidget> ToastLayer;
 
 private:
+	enum class EAtlasTransitionPhase : uint8
+	{
+		Inactive,
+		FadingOut,
+		WaitingForOpaquePaint,
+		HoldingOpaque,
+		FadingIn
+	};
+
+	bool TickAtlasTransition(float DeltaTime);
+	void SetAtlasTransitionOpacity(float Opacity);
+	void HandleScreenStackTransitioning(UCommonActivatableWidgetContainerBase* Container, bool bIsTransitioning);
+
+	TSharedPtr<SFF_AtlasTransitionOverlay> AtlasTransitionOverlay;
+	TSharedPtr<IInputProcessor> AtlasTransitionInputProcessor;
+	FTSTicker::FDelegateHandle AtlasTransitionTicker;
+	FSimpleDelegate AtlasSwapUnderCover;
+	TFunction<bool()> AtlasIsReady;
+	EAtlasTransitionPhase AtlasTransitionPhase = EAtlasTransitionPhase::Inactive;
+	uint32 AtlasTransitionGeneration = 0;
+	float AtlasTransitionOpacity = 0.f;
+	float AtlasPhaseElapsed = 0.f;
+	float AtlasFadeOutDuration = 0.15f;
+	float AtlasOpaqueHoldDuration = 0.05f;
+	float AtlasFadeInDuration = 0.25f;
+	FLinearColor AtlasTransitionColor = FLinearColor::Black;
+	bool bScreenStackTransitioning = false;
+
 	UFF_ActivatableScreenBase* PushToStack(
 		UCommonActivatableWidgetStack* TargetStack,
 		TSubclassOf<UFF_ActivatableScreenBase> WidgetClass,

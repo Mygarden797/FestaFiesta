@@ -2,6 +2,7 @@
 
 #include "CrowdSystem/Systems/FF_CrowdForces.h"
 #include "CrowdSystem/Systems/FF_CrowdSpatialGrid.h"
+#include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "Async/ParallelFor.h"
 #include "Async/TaskGraphInterfaces.h"
@@ -55,6 +56,16 @@ namespace
 
 		return ((D1 > 0.f && D2 < 0.f) || (D1 < 0.f && D2 > 0.f))
 			&& ((D3 > 0.f && D4 < 0.f) || (D3 < 0.f && D4 > 0.f));
+	}
+
+	bool SegmentsHaveClearance(const FVector2f& From, const FVector2f& To,
+		const FVector2f& WallA, const FVector2f& WallB, float ClearanceSq)
+	{
+		return !SegmentsCrossProperly(From, To, WallA, WallB)
+			&& PointSegmentDistSq(From, WallA, WallB) > ClearanceSq
+			&& PointSegmentDistSq(To, WallA, WallB) > ClearanceSq
+			&& PointSegmentDistSq(WallA, From, To) > ClearanceSq
+			&& PointSegmentDistSq(WallB, From, To) > ClearanceSq;
 	}
 }
 
@@ -333,15 +344,7 @@ bool FFF_CrowdWalls::IsSegmentClear(const TArray<FFF_CrowdWallSegment>& Walls,
 			continue;
 		}
 
-		if (SegmentsCrossProperly(FromMeters, ToMeters, Wall.A, Wall.B))
-		{
-			return false;
-		}
-
-		if (PointSegmentDistSq(FromMeters, Wall.A, Wall.B) <= ClearanceSq
-			|| PointSegmentDistSq(ToMeters, Wall.A, Wall.B) <= ClearanceSq
-			|| PointSegmentDistSq(Wall.A, FromMeters, ToMeters) <= ClearanceSq
-			|| PointSegmentDistSq(Wall.B, FromMeters, ToMeters) <= ClearanceSq)
+		if (!SegmentsHaveClearance(FromMeters, ToMeters, Wall.A, Wall.B, ClearanceSq))
 		{
 			return false;
 		}
@@ -458,12 +461,25 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 				{
 					continue;
 				}
-				Terms += ComputeAgentInteractionTerms(
+				FFF_CrowdForceTerms Interaction = ComputeAgentInteractionTerms(
 					Pos[i], Vel[i], Radius[i],
 					Pos[j], Vel[j], Radius[j],
 					Config, MassKg, FixedDt);
+				// 서로 다른, 몸이 겹치지 않는 자리를 배정받은 사람끼리는 가까이 설 수 있다.
+				// 일반 보행자의 개인 공간을 그대로 적용하면 90cm 자리 밖에서 평형을 이룬다.
+				// 접촉력은 유지하므로 걸어가는 동안 몸을 통과할 수는 없다.
+				const bool bCompatibleAssignedSlots = CrowdSteering::IsApproachingAssignedSlot(U)
+					&& Units.IsValidIndex(j) && CrowdSteering::IsApproachingAssignedSlot(Units[j])
+					&& FVector::DistSquared2D(U.QueueSlotLocation, Units[j].QueueSlotLocation)
+						>= FMath::Square(U.Radius + Units[j].Radius
+							+ U.ArrivalRadiusUU + Units[j].ArrivalRadiusUU);
+				if (bCompatibleAssignedSlots)
+				{
+					Interaction.Social = FVector2f::ZeroVector;
+				}
+				Terms += Interaction;
 
-				if (bUseLaneBias)
+				if (bUseLaneBias && !bCompatibleAssignedSlots)
 				{
 					Terms.Social += ComputeLaneBias(
 						Pos[i], Radius[i], Pos[j], Radius[j],
@@ -480,6 +496,11 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 			FFF_CrowdForceTerms WallTerms;
 			{
 				const float CullDist = (bCullWalls ? (Radius[i] + Config.WallCullRadiusMeters) : 0.f);
+				const bool bApproachingAssignedSlot = CrowdSteering::IsApproachingAssignedSlot(U);
+				const FVector2f AssignedSlotMeters(U.QueueSlotLocation.X * FFF_CrowdUnits::MetersPerUU,
+					U.QueueSlotLocation.Y * FFF_CrowdUnits::MetersPerUU);
+				const float SlotClearanceSq = FMath::Square(Radius[i]
+					+ U.ArrivalRadiusUU * FFF_CrowdUnits::MetersPerUU);
 
 				for (const FFF_CrowdWallSegment& Wall : Walls)
 				{
@@ -496,8 +517,17 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 						}
 					}
 
-					WallTerms += ComputeWallForceTerms(Pos[i], Vel[i], Radius[i], Wall.A, Wall.B,
+					FFF_CrowdForceTerms WallInteraction = ComputeWallForceTerms(Pos[i], Vel[i], Radius[i], Wall.A, Wall.B,
 						Config, MassKg, FixedDt);
+					// 벽 밖 40cm의 유효한 자리도 일반 벽 반발과 감속이 균형을 이루면 도착하지 못한다.
+					// 몸체·도착 오차를 포함한 접근 선분 전체가 이 벽을 피할 때만 개인 공간을 줄인다.
+					// 벽 너머의 잘못된 목표와 실제 접촉은 기존 힘을 그대로 받는다.
+					if (bApproachingAssignedSlot && SegmentsHaveClearance(Pos[i], AssignedSlotMeters,
+						Wall.A, Wall.B, SlotClearanceSq))
+					{
+						WallInteraction.Social = FVector2f::ZeroVector;
+					}
+					WallTerms += WallInteraction;
 				}
 			}
 
@@ -506,7 +536,7 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 			FVector2f Accel = ComposeAcceleration(Terms, WallTerms, Vel[i], Desired,
 				bHasDesired, bUseDrivingForce, MassKg, Config);
 
-			if (bUnstuckEnabled)
+			if (bUnstuckEnabled && !CrowdSteering::IsApproachingAssignedSlot(U))
 			{
 				const int32 HoldMax = FMath::Max(1, Config.UnstuckHoldSteps);
 				const float HoldScale = (U.StuckSteps >= Config.StuckDetectSteps)

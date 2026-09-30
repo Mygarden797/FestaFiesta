@@ -6,7 +6,10 @@ UE_LOG(LogTemp, Warning, TEXT(Format), ##__VA_ARGS__)
 
 #include "Incident/FF_IncidentSubsystem.h"
 
+#include "Engine/World.h"
+#include "Incident/Effects/FF_IncidentEffect.h"
 #include "Incident/FF_IncidentSettings.h"
+#include "Incident/FF_StaffDispatchSubsystem.h"
 #include "Incident/Rules/FF_IncidentRules.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 
@@ -66,19 +69,72 @@ void UFF_IncidentSubsystem::WithdrawIncident(FName DedupeKey)
 	
 }
 
-bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex)
+bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex, int32 StaffCount)
 {
-	if (!FindSlot(Handle))
+	const FIncidentSlot* Slot = FindSlot(Handle);
+	if (!Slot)
 	{
 		FF_INCIDENT_LOG("ResolveIncident: handle %d/%d is not active", Handle.Index, Handle.Serial);
 		return false;
 	}
 
+	const UFF_IncidentDefinition* Definition = CachedDef.FindRef(Slot->IncidentTag);
+	if (!Definition)
+	{
+		return false;
+	}
+	const UFF_IncidentOption* Option = Definition->GetOption(OptionIndex);
+	if (OptionIndex != INDEX_NONE && !Option)
+	{
+		return false;
+	}
+	int32 RequiredStaff = FMath::Max(0, Definition->RequiredStaff);
+	float WorkAmount = 0.f;
+	if (Option)
+	{
+		RequiredStaff = FMath::Max(FMath::Max(1, Option->MinStaff), StaffCount);
+		WorkAmount = FMath::Max(0.f, Option->WorkAmount);
+	}
+	UFF_StaffDispatchSubsystem* Dispatch = GetWorld() ? GetWorld()->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr;
+	if (Dispatch && Dispatch->IsResponding(Handle))
+	{
+		return false;
+	}
+	if (RequiredStaff > 0)
+	{
+		return Dispatch && Dispatch->TryDispatch(Handle, OptionIndex, RequiredStaff, Slot->Anchor, WorkAmount);
+	}
+	return CompleteStaffResponse(Handle, OptionIndex);
+}
+
+bool UFF_IncidentSubsystem::CompleteStaffResponse(FFF_IncidentHandle Handle, int32 OptionIndex)
+{
+	const FIncidentSlot* Slot = FindSlot(Handle);
+	if (!Slot)
+	{
+		return false;
+	}
+	// Copy effect context before CloseSlot broadcasts; observers may immediately reuse this slot.
+	FFF_IncidentContext Context;
+	Context.World = GetWorld();
+	Context.Handle = Handle;
+	Context.IncidentTag = Slot->IncidentTag;
+	Context.Anchor = Slot->Anchor;
+	Context.ContextTags = Slot->ContextTags;
+	Context.OptionIndex = OptionIndex;
+	Context.PeakIntensity = Slot->PeakIntensity;
+	const UFF_IncidentDefinition* Definition = CachedDef.FindRef(Slot->IncidentTag);
+	const UFF_IncidentOption* Option = Definition ? Definition->GetOption(OptionIndex) : nullptr;
+	UFF_IncidentEffect* Effect = Option ? Option->Effect.Get() : nullptr;
 	float Now = 0.f;
 	TryGetNowMinutes(Now);
 
 	IncidentSlots[Handle.Index].ChosenOptionIndex = OptionIndex;
 	CloseSlot(Handle.Index, EFF_IncidentState::Resolved, Now);
+	if (Effect)
+	{
+		Effect->Apply(Context);
+	}
 	return true;
 }
 
@@ -132,7 +188,8 @@ bool UFF_IncidentSubsystem::GetIncidentView(FFF_IncidentHandle Handle, FFF_Incid
 	OutView.Body = Def->Body;
 	OutView.MarkerIcon = Def->MarkerIcon;
 	OutView.Anchor = Slot->Anchor;
-	
+	FFF_IncidentRules::BuildOptionViews(*Def, OutView.Options);
+
 	return true;
 }
 
@@ -166,6 +223,12 @@ void UFF_IncidentSubsystem::LoadDefinitions()
 				}
 				
 				CachedDef.Add(Def->IncidentTag,Def);
+				
+				if (Def->MaxActive != INDEX_NONE)
+				{
+					IncidentMaxCheck.Add(Def->IncidentTag,0);
+				}
+				
 			}
 		}
 		
@@ -231,8 +294,30 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	}
 	
 	
+
+	
+	
 	FIncidentSlot& Slot = IncidentSlots[Index];
+	
+	bool bEscalateTo = ((FinalState == EFF_IncidentState::Ignored) && Slot.EscalateTo.IsValid());
+	FFF_IncidentReport EscalateToReport;
+	
+	if (bEscalateTo)
+	{
+		
+		EscalateToReport.IncidentTag = Slot.EscalateTo; 
+		EscalateToReport.Anchor = Slot.Anchor;
+		EscalateToReport.ContextTags = Slot.ContextTags;
+		EscalateToReport.Intensity = Slot.PeakIntensity;
+	}
+	
 	FFF_IncidentHandle Handle;
+	
+	int32* IncidentMaxNum = IncidentMaxCheck.Find(Slot.IncidentTag);
+	if (IncidentMaxNum != nullptr)
+	{
+		*IncidentMaxNum -=1;
+	}
 	
 	Handle.Index = Index;
 	Handle.Serial = Slot.Serial;
@@ -245,11 +330,18 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	
 
 	
+
+	
 	ActiveByKey.Remove(Slot.DedupeKey);
 	FreeSlots.Push(Index);
 	
 	
 	OnIncidentClosed.Broadcast(Handle);
+	
+	if (bEscalateTo)
+	{
+		ReportIncident(EscalateToReport);
+	}
 
 	
 	
@@ -281,6 +373,8 @@ void UFF_IncidentSubsystem::Tick(float DeltaTime)
 		
 		if (FFF_IncidentRules::HasLapsed(Now,Slot.OccurredAtMinutes,Slot.MinutesUntilLapse))
 		{
+			
+			
 			CloseSlot(index,FFF_IncidentRules::LapseStateFor(Slot.Tone),Now);
 		}
 	}
@@ -294,6 +388,7 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 	
 	
 	TObjectPtr<UFF_IncidentDefinition> IncDef = CachedDef.FindRef(Report.IncidentTag);
+
 	if (!IncDef)
 	{
 		FF_INCIDENT_LOG("DefinitionView is Null. it is wrong IncidentTag.");
@@ -301,14 +396,14 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 	}
 	
 	float Now = 0.f;
-	
+
 	if (!TryGetNowMinutes(Now))
 	{
 		FF_INCIDENT_LOG("Current Time has not found");
 		return FFF_IncidentHandle();
 	}
-	
-	
+
+
 	const FName Key = FFF_IncidentRules::MakeDedupeKey(Report.IncidentTag,Report.Anchor);
 	if (const FFF_IncidentHandle* Found = ActiveByKey.Find(Key))
 	{
@@ -328,6 +423,16 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 	{
 		FF_INCIDENT_LOG("IncidentSlot is Max");
 		return FFF_IncidentHandle();
+	}
+
+	int32* IncidentMaxNum = IncidentMaxCheck.Find(Report.IncidentTag);
+	if (IncidentMaxNum)
+	{
+		if (*IncidentMaxNum >= IncDef->MaxActive)
+		{
+			return FFF_IncidentHandle();
+		}
+		(*IncidentMaxNum)++;
 	}
 
 	const int32 Index = FreeSlots.Num() > 0 ? FreeSlots.Pop() : IncidentSlots.AddDefaulted();

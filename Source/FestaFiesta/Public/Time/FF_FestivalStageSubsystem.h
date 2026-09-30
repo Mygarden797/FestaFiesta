@@ -310,6 +310,13 @@ public:
 	/** 아직 끝나지 않은 다음 메인 공연의 종료 시각(Live 경과 초). 다음 이벤트가 없으면 그날 Live 끝이다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Time")
 	bool TryGetNextMainProgramEndSeconds(float& OutSeconds);
+
+	/** 화면 시계 기준 공연 3분 전부터 실제 공연 종료 직전까지 일반 시설을 쉬게 한다. */
+	static constexpr float MainProgramQueueBreakLeadMinutes = 3.f;
+	bool TryGetMainProgramQueueBreakWindow(float& OutStartSeconds, float& OutEndSeconds) const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Time")
+	bool IsMainProgramQueueBreakActive() const;
 	// 지금 메인 공연 배속 잠금 구간인지 확인
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
