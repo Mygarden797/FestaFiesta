@@ -23,6 +23,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Option|Cost", meta = (ClampMin = "0"))
 	int32 CostGold = 0;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Option|Cost", meta = (ClampMin = "0"))
+	int32 CostStaff = 0;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Option|Staff", meta = (ClampMin = "1"))
 	int32 MinStaff = 1;
 
