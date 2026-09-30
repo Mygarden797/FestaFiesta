@@ -7,6 +7,13 @@
 
 namespace CrowdSteering
 {
+	bool IsApproachingAssignedSlot(const FUnitData& Unit)
+	{
+		return Unit.bHasQueueSlot && Unit.bUsePreciseSlotPosition
+			&& FVector::DistSquared2D(Unit.Position, Unit.QueueSlotLocation)
+				<= FMath::Square(AssignedSlotApproachDistanceUU);
+	}
+
 	float ComputeVelocityAlpha(float SmoothTime, float FixedDt)
 	{
 		if (SmoothTime <= KINDA_SMALL_NUMBER)
@@ -27,6 +34,10 @@ namespace CrowdSteering
 
 	FVector ComputeDesiredVelocity(const FUnitData& Unit, const FStepParams& Params)
 	{
+		if (Unit.bHasQueueSlot && HasArrived(Unit, Unit.ArrivalRadiusUU))
+		{
+			return FVector::ZeroVector;
+		}
 		FVector ToTarget = Unit.GetSteerTarget() - Unit.Position;
 		ToTarget.Z = 0.f;
 
@@ -37,7 +48,12 @@ namespace CrowdSteering
 
 		const FVector Direction = ToTarget.GetSafeNormal2D();
 
-		const float BrakingDistance = FMath::Max(Params.BrakingDistanceUU, KINDA_SMALL_NUMBER);
+		// 보행용 4.5m 감속을 90cm 간격 줄에 그대로 쓰면 한 칸 전진 속도가 너무 낮다.
+		// 자리에는 순간이동하지 않고 마지막 약 1m에서만 감속해 작은 도착 반경까지 걷는다.
+		const float BrakingDistance = Unit.bHasQueueSlot && Unit.bUsePreciseSlotPosition
+			? FMath::Min(FMath::Max(Params.BrakingDistanceUU, KINDA_SMALL_NUMBER),
+				FMath::Max(Unit.Radius * 3.f, Unit.ArrivalRadiusUU * 2.f))
+			: FMath::Max(Params.BrakingDistanceUU, KINDA_SMALL_NUMBER);
 		const float SpeedScale = FMath::Clamp(ToTarget.Size() / BrakingDistance, 0.f, 1.f);
 
 		return Direction * (Unit.Speed * SpeedScale);
@@ -53,7 +69,18 @@ namespace CrowdSteering
 		FVector ToSteer = Unit.GetSteerTarget() - Unit.Position;
 		ToSteer.Z = 0.f;
 
-		if (Params.bDrivingForceInForce)
+		const bool bHoldingQueueSlot = Unit.bHasQueueSlot
+			&& ToFinal.SizeSquared() <= FMath::Square(Unit.ArrivalRadiusUU);
+		if (bHoldingQueueSlot)
+		{
+			// 대기 자리는 잠시 멈추는 목적지다. 도착한 뒤에도 관성·사회력으로
+			// 밀려나면 다시 돌아오는 동작을 반복하므로 제자리를 유지한다.
+			// 다른 NPC의 회피 계산에는 계속 참여해 통행자가 줄을 피하게 한다.
+			Unit.Velocity = FVector::ZeroVector;
+			Unit.Force = FVector::ZeroVector;
+			Unit.FacingVelocity = FVector::ZeroVector;
+		}
+		else if (Params.bDrivingForceInForce)
 		{
 			// 구동력 경로. Force = 구동 + 회피(둘 다 UU/s^2)이므로 적분 한 번으로 끝난다.
 			//

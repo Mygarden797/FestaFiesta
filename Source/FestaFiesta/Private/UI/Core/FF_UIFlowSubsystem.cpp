@@ -345,6 +345,8 @@ void UFF_UIFlowSubsystem::HandlePostLogin(AGameModeBase* GameMode, APlayerContro
 		//    평소 경로(지구본 → 나라 클릭 → 국가 지도)와 같은 스택을 만들어 준다.
 		if (PendingFrontendScreen == EFF_UIFlowScreen::AtlasCountry)
 		{
+			// 스택 크로스페이드(0.4초)가 돌면 지구본 위젯이 잠깐 비친다. 두 번의 push 모두 끈다.
+			TGuardValue<bool> NoStackFade(bPushScreensWithoutTransition, true);
 			GoToScreen(EFF_UIFlowScreen::AtlasGlobe);
 
 			// ★ 지구본은 **스택 바닥을 만들기 위해서만** 올린다. 보여 주려는 것이 아니다.
@@ -352,9 +354,12 @@ void UFF_UIFlowSubsystem::HandlePostLogin(AGameModeBase* GameMode, APlayerContro
 			//   나올 때마다 지구가 잠깐 돌아가는 모습이 스쳤다 (2026-09-03 백종태 지적).
 			//   레벨에 막 들어온 참이라 블렌드할 `이전 모습`도 없다 — 바로 국가로 간다.
 			bInstantCameraForNextScreen = true;
+			GoToScreen(EFF_UIFlowScreen::AtlasCountry);
 		}
-
-		GoToScreen(PendingFrontendScreen);
+		else
+		{
+			GoToScreen(PendingFrontendScreen);
+		}
 
 		// 다음 진입의 기본값은 항상 타이틀이다. `로비로` 가 한 번만 국가 지도로 보낸다.
 		PendingFrontendScreen = EFF_UIFlowScreen::Title;
@@ -427,6 +432,15 @@ bool UFF_UIFlowSubsystem::EnsureRootLayout(APlayerController* Controller)
 	// 새 레이아웃은 새 화면 세션이다. 이전 레벨의 히스토리를 물고 가면
 	// 뒤로 가기가 이미 죽은 화면을 가리킨다.
 	FrontendHistory.Reset();
+
+	/* 현재 화면 표시도 같이 비운다. 새 레이아웃의 스택은 비어 있는데 이 값만 이전 레벨의
+	   AtlasCountry 로 남아 있으면, 축제(튜토리얼 포함)를 끝내고 돌아왔을 때 HandlePostLogin 이
+	   바닥으로 까는 지구본을 "국가 지도 -> 지구본" 뒤로 가기로 오해한다. 그러면 암전 전환이
+	   걸리고, 그 전환 중이라 바로 뒤의 국가 지도 요청이 버려져 지구본에서 멈췄다
+	   (2026-09-29 로그: 로비로 돌아간다 (국가 KR) 뒤에 AtlasGlobe 만 뜨고 AtlasCountry 가 없음).
+	   None 이면 첫 화면으로 취급돼 카메라도 즉시 맞춰지고 히스토리에도 안 남는다.
+	*/
+	CurrentFrontendScreen = EFF_UIFlowScreen::None;
 
 	if (IsVerbose())
 	{
@@ -563,7 +577,9 @@ void UFF_UIFlowSubsystem::GoToScreenImmediate(EFF_UIFlowScreen Screen)
 	const EFF_UIFlowScreen PreviousScreen = CurrentFrontendScreen;
 	CurrentFrontendScreen = Screen;
 
-	UFF_ActivatableScreenBase* Pushed = Layout->PushScreen(ScreenClass);
+	UFF_ActivatableScreenBase* Pushed = bPushScreensWithoutTransition
+		? Layout->PushScreenWithoutTransition(ScreenClass)
+		: Layout->PushScreen(ScreenClass);
 	if (!Pushed)
 	{
 		// 올리지 못했으면 되돌린다. 안 그러면 뜨지도 않은 화면이 현재 화면으로 남는다.
@@ -737,6 +753,39 @@ void UFF_UIFlowSubsystem::ContinueFromSlot(const FName SlotId)
 	   GameMode 가 안다(BeginPlay 에서 TryContinueFestival 을 부른다).
 	   여기서 하는 일은 어느 슬롯인지 넘겨두고 레벨을 여는 것뿐이다.
 	*/
+	/* 로비 세이브는 레벨을 열지 않는다. 그 판의 기록을 되돌리고 그 나라의 국가 지도로 간다.
+
+	   축제를 끝내면 남는 자동 저장이 이것이다. 축제 정보 없이 나라만 들고 있어서, 아래
+	   축제 경로로 보내면 "축제 정보가 없다" 로 조용히 끝났다. 목록에서 눌러도 반응이
+	   없던 옛 기록의 정체다(피드백: 이어하기가 방금 것만 된다).
+
+	   지구본을 먼저 깔고 국가 지도를 올리는 이유는 축제를 끝내고 돌아올 때(프론트엔드 레벨
+	   진입)와 같다. 뒤로 가기가 지구본으로 가야 하고, 두 화면 사이 카메라 블렌드는 건너뛴다.
+	*/
+	if (Save->IsLobbySlot(SlotId))
+	{
+		FName CountryId = NAME_None;
+		if (!Save->LoadLobbySave(SlotId, CountryId))
+		{
+			return;
+		}
+
+		if (CountryId.IsNone())
+		{
+			// 나라를 모르는 옛 로비 세이브다. 기록은 되돌렸으니 나라부터 고르게 한다.
+			GoToScreen(EFF_UIFlowScreen::AtlasGlobe);
+			return;
+		}
+
+		SetActiveCountry(CountryId);
+		// 레벨 진입 복원과 같은 이유로 지구본이 비치지 않게 두 push 의 크로스페이드를 끈다.
+		TGuardValue<bool> NoStackFade(bPushScreensWithoutTransition, true);
+		GoToScreen(EFF_UIFlowScreen::AtlasGlobe);
+		bInstantCameraForNextScreen = true;
+		GoToScreen(EFF_UIFlowScreen::AtlasCountry);
+		return;
+	}
+
 	const FName FestivalId = Save->PeekFestivalIdInSlot(SlotId);
 	if (FestivalId.IsNone())
 	{

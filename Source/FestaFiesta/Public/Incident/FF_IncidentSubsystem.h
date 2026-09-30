@@ -71,7 +71,7 @@ public:
 	FFF_IncidentHandle ReportIncident(const FFF_IncidentReport& Report);
 	//사건 철회
 	void WithdrawIncident(FName DedupeKey);
-	//플레이어가 사건을 처리했다
+	// 필요한 스태프가 있으면 배정 시설에서 출동한다. 전원 도착한 뒤 사건을 닫는다.
 	bool ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex = INDEX_NONE);
 	//핸들 유효 관계
 	bool IsHandleValid(FFF_IncidentHandle Handle) const;
@@ -87,8 +87,13 @@ public:
 	
 	
 private:
+	friend class UFF_StaffDispatchSubsystem;
+	bool CompleteStaffResponse(FFF_IncidentHandle Handle, int32 OptionIndex);
+
 	#if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_IncidentCatalogLoadTest;
+	friend class FFF_StaffDispatchIncidentTest;
+	friend class FFF_StaffFacilityDispatchTest;
 	#endif
 
 	void LoadDefinitions();

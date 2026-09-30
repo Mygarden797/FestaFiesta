@@ -161,6 +161,16 @@ struct FFF_DialogueLine
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
 	FName HighlightAnchor;
 
+	/* 강조를 테두리만 그릴지. 켜면 화면을 어둡게 덮지 않는다.
+
+	   덮개는 플레이어가 무언가 눌러야 할 때 시선을 모으는 것이다. 읽고 넘기는 대사에서
+	   덮으면 대사를 읽는 내내 시야를 가린다. 그렇다고 강조를 빼면 "여기가 예산이에요" 처럼
+	   가리키며 설명하는 줄을 만들 수 없다. 그래서 그런 줄은 테두리만 그린다.
+	   표에서 읽을 때는 조작을 기다리지 않는 줄이면 자동으로 켜진다(FF_DialogueRow).
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
+	bool bHighlightOutlineOnly = false;
+
 	/* 이 줄을 넘기려면 어디를 눌러야 하는가.
 
 	   기본이 화면 전체인 이유는 대사의 대부분이 스토리라서다.

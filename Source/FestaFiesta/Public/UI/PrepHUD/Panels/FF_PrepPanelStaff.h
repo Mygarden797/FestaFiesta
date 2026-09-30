@@ -7,6 +7,7 @@
 #include "FF_PrepPanelStaff.generated.h"
 
 class UButton;
+class UProgressBar;
 class UTextBlock;
 class UWidget;
 class UFF_FestivalViewModelSubsystem;
@@ -103,6 +104,9 @@ struct FESTAFIESTA_API FFF_PrepStaffRules
 		int32 RemainingCap,
 		int32 HireCostPerStaff,
 		int32 Gold);
+
+	/** 표시용 수용 비율. 모르는 값이면 false, 최대 0이면 0이며 결과는 항상 0~1이다. */
+	static bool TryGetCapacityFraction(int32 Current, int32 Maximum, float& OutFraction);
 };
 
 /**
@@ -127,6 +131,8 @@ class FESTAFIESTA_API UFF_PrepPanelStaff : public UFF_PrepPanelBase
 	GENERATED_BODY()
 
 public:
+	UFF_PrepPanelStaff(const FObjectInitializer& ObjectInitializer);
+
 	/** 현재 견적. 표시용이고 이 값으로 고용을 막지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Staff")
 	FFF_PrepHireQuote GetQuote() const { return Quote; }
@@ -172,6 +178,16 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_MaxStaff;
 
+	// 두 열 시안용 바인딩. 기존 WBP의 현재/최대 인원 표시는 그대로 지원한다.
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
+	TObjectPtr<UTextBlock> Text_StaffCapacity;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
+	TObjectPtr<UTextBlock> Text_StaffBreakdown;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
+	TObjectPtr<UProgressBar> Progress_StaffCapacity;
+
 	// --- 스텝퍼 ---
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
@@ -194,7 +210,19 @@ protected:
 	TObjectPtr<UTextBlock> Text_GoldAfterHire;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
+	TObjectPtr<UTextBlock> Text_HireUnitCost;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
+	TObjectPtr<UTextBlock> Text_HireCostTotal;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
+	TObjectPtr<UTextBlock> Text_GoldAfterValue;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UButton> Button_Hire;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
+	TObjectPtr<UTextBlock> Text_HireAction;
 
 	/** 못 누르는 이유. **비활성 흐려짐만으로는 알 수 없다** (AT-011). */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
@@ -204,6 +232,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_WageCost;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
+	TObjectPtr<UTextBlock> Text_HireSpentValue;
 
 	/** 축제 끝까지 남는다는 안내. 문구를 바꿀 수 있게 값으로 뺀다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
@@ -222,6 +253,30 @@ protected:
 	/** 패널을 열 때 스텝퍼 기본값. 1 이면 바로 누를 수 있는 상태로 시작한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Staff", meta = (ClampMin = "0"))
 	int32 DefaultSelectedCount = 1;
+
+	/** 치환값: {Current}, {Maximum}. 글꼴과 크기는 Designer에서 편집한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Staff|Text")
+	FText StaffCapacityTextFormat;
+
+	/** 치환값: {Base}, {Hired}. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Staff|Text")
+	FText StaffBreakdownTextFormat;
+
+	/** 치환값: {Count}. 기존 WBP는 숫자만 표시하며 새 시안은 `{Count}명`으로 설정한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Staff|Text")
+	FText SelectedCountTextFormat;
+
+	/** 치환값: {Count}, {UnitCost}. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Staff|Text")
+	FText HireUnitCostTextFormat;
+
+	/** 치환값: {Gold}. 총 고용비·고용 후 잔액·누적 고용비에 함께 쓴다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Staff|Text")
+	FText GoldValueTextFormat;
+
+	/** 치환값: {Count}. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Staff|Text")
+	FText HireActionTextFormat;
 
 private:
 	UFF_FestivalViewModelSubsystem* GetViewModel() const;

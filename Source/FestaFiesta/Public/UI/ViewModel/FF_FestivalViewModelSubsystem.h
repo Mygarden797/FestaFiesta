@@ -21,6 +21,7 @@ class UFF_StageEconomyBridgeSubsystem;
 class UFF_SatisfactionMetricsSubsystem;
 class UFF_CrowdInsightsSubsystem;
 class UFF_FestivalBuzzSubsystem;
+class UFF_StaffFacilitySubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIntMetricChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_FestivalStage, NewStage, int32, NewDay);
@@ -402,6 +403,22 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	int32 GetTotalStaffCount() const { return TotalStaffCount; }
+
+	/** Installed Info facilities increase capacity; only hiring increases the roster. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetMaxTotalStaffCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetBusyStaffCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetUnassignedStaffCount() const;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Staff")
+	FFF_OnIntMetricChanged OnStaffCapacityChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Staff")
+	FFF_OnStaffRosterViewChanged OnStaffAssignmentChanged;
 
 	/** 전체 인원이 바뀔 때. 기본·고용 내역도 이때 함께 갱신된다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Staff")
@@ -1056,6 +1073,12 @@ protected:
 	void HandleOwnerStaffRosterChanged();
 
 	UFUNCTION()
+	void HandleOwnerStaffCapacityChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleOwnerStaffAssignmentChanged();
+
+	UFUNCTION()
 	void HandleOwnerBuzzChanged(float NewBuzz, float PreviousBuzz);
 
 	/**
@@ -1109,6 +1132,7 @@ private:
 
 	/** 경제 시스템 구독을 시도한다. */
 	void TryBindProgressionSubsystem();
+	void TryBindStaffFacilitySubsystem();
 
 	/** 만족도 시스템 구독을 시도한다. */
 	void TryBindSatisfactionSubsystem();
@@ -1216,6 +1240,10 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalProgressionSubsystem> CachedProgressionSubsystem;
+
+	/** World ownership must not retain a previous map through this GameInstance subsystem. */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<UFF_StaffFacilitySubsystem> CachedStaffFacilitySubsystem;
 
 	/** 경제 시스템을 못 찾았을 때 재시도한 횟수. */
 	int32 ProgressionBindRetryCount = 0;

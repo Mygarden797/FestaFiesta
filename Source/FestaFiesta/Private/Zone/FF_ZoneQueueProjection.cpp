@@ -21,6 +21,22 @@ namespace
 	}
 }
 
+bool UFF_ZoneSystemQueueBridgeSubsystem::TryBuildPlacementObstacle(
+	const FFFZSFacilitySpec& Spec, const FTransform& Transform, FFF_QueuePlacementObstacle& OutObstacle)
+{
+	if (Spec.IsGroundSurface() || Transform.ContainsNaN()
+		|| Spec.FootprintSizeCells.X <= 0 || Spec.FootprintSizeCells.Y <= 0)
+	{
+		return false;
+	}
+	const FVector Scale = Transform.GetScale3D().GetAbs();
+	OutObstacle.Center = Transform.GetLocation();
+	OutObstacle.HalfExtentsCm = FVector2D(Spec.FootprintSizeCells.X * Scale.X * .5,
+		Spec.FootprintSizeCells.Y * Scale.Y * .5);
+	OutObstacle.YawDegrees = Transform.Rotator().Yaw;
+	return true;
+}
+
 FFF_QueueConfig UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(
 	const FFFZSQueueRules& Rules,
 	const FVector& ExitLocation)
@@ -36,9 +52,8 @@ FFF_QueueConfig UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(
 	Config.ServiceSecondsPerParty = FMath::Max(Rules.ServiceDurationSeconds, KINDA_SMALL_NUMBER);
 	Config.ExitLocation = ExitLocation;
 
-	// 현재 생산 Crowd에는 NotifyPartyArrived 호출자가 없다. 기본값 false로 두어 서비스 정지를 막고,
-	// 호출자가 준비되면 NotifyZoneFacilityPartyArrived façade와 함께 전환한다.
-	Config.bRequireArrivalConfirmation = false;
+	// 실제 일행이 배정된 자리에 도착한 뒤에만 이용 시간을 센다.
+	Config.bRequireArrivalConfirmation = true;
 	return Config;
 }
 
@@ -155,6 +170,14 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(
 		OutLane.TailDirection = FVector::ForwardVector;
 	}
 	OutLane.SlotYawDegrees = OutLane.ExplicitSlotTransforms[0].Rotator().Yaw;
+	OutLane.bConstrainMemberPlacement = true;
+	OutLane.MemberPlacementClearanceCm = 40.f;
+	OutLane.MaxMemberLateralOffsetCm = 270.f;
+	FFF_QueuePlacementObstacle OwnFootprint;
+	if (TryBuildPlacementObstacle(Spec, FacilityTransform, OwnFootprint))
+	{
+		OutLane.PlacementObstacles.Add(OwnFootprint);
+	}
 	return true;
 }
 

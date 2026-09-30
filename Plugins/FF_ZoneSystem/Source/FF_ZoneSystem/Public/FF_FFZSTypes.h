@@ -313,7 +313,7 @@ struct FF_ZONESYSTEM_API FFFZSQueueRules
     // 동시에 ServiceIndex를 배정할 수 있는 최대 팀 수다.
     
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Service Duration per Team (Seconds)", ToolTip = "한 팀이 Service 앵커에 도착한 뒤 이용을 완료할 때까지 걸리는 시간(초)입니다. 팀 인원수와 관계없이 같은 시간이 걸리며, 완료 수익은 실제 이용 인원수로 계산합니다.", ClampMin = "0.01", Units = "s"))
-    float ServiceDurationSeconds = 4.0f;
+    float ServiceDurationSeconds = 5.0f;
     // Service 앵커 도착 보고 뒤 완료까지 필요한 시뮬레이션 시간이다.
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Abandon After (Seconds)", ToolTip = "대기 시간이 이 값(초)에 도달하면 포기 흐름을 시작합니다. 0은 자동 포기를 끕니다.", ClampMin = "0.0", Units = "s"))
@@ -545,7 +545,7 @@ struct FF_ZONESYSTEM_API FFFZSFacilityUpgradeTier
     float CostMultiplier = 0.3f;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Service Duration Multiplier", ToolTip = "Lv.1 서비스 시간에 곱하는 절대 배수입니다. 0보다 큰 유한한 값을 사용합니다. 이전 단계보다 증가·감소하거나 같아도 됩니다."))
-    float ServiceDurationMultiplier = 0.8f;
+    float ServiceDurationMultiplier = 1.0f;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Revenue Multiplier", ToolTip = "Lv.1 시설 수익에 곱하는 절대 배수입니다. 0 이상의 유한한 값을 사용합니다. 1.5이면 기본 수익의 150%이며 0이면 수익이 없습니다. 이전 단계와 크기를 비교하지 않습니다."))
     float RevenueMultiplier = 1.5f;
@@ -580,6 +580,9 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     // 스키마를 올릴 때 한 군데를 빠뜨리기 쉬웠다. 세 곳이 이 상수를 공유한다.
     static constexpr int32 CurrentSchemaVersion = 2;
 
+    // Tagged assets/saves created before staffing was authored use this same fallback.
+    static constexpr int32 DefaultStaffCapacity = 2;
+
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Schema Version", ToolTip = "시설 정의 저장 형식 버전입니다. 마이그레이션 코드 없이 제작자가 임의로 바꾸면 안 됩니다.", ClampMin = "1"))
     int32 SchemaVersion = CurrentSchemaVersion;
 
@@ -591,6 +594,9 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Category", ToolTip = "시설의 기능 분류입니다. Zone 허용 규칙과 카탈로그 분류에 사용됩니다."))
     EFFZSFacilityCategory Category = EFFZSFacilityCategory::Booth;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Staff", meta = (DisplayName = "Staff Capacity", ToolTip = "Info 안내 시설 한 곳에 배정할 수 있는 스태프 최대 인원입니다. 설치하면 고용 상한과 배정 자리만 늘어나며 스태프를 자동 고용하지 않습니다. 0이면 스태프를 배정하지 않습니다. 설치 시 복사·저장되므로 변경한 값은 새로 설치하는 시설부터 적용됩니다.", EditCondition = "Category == EFFZSFacilityCategory::Info", EditConditionHides, ClampMin = "0", UIMin = "0"))
+    int32 StaffCapacity = DefaultStaffCapacity;
     
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Footprint Size (cm)", ToolTip = "회전 전 건물이 차지하는 바닥 크기입니다. 1 Cell은 1cm이므로 X=가로 폭, Y=세로 깊이입니다. 예: 600×300은 6m×3m입니다. (가로+여유)×(깊이+여유)와 대기열 예약 면적의 안전 예산이 10,000,000셀을 넘으면 검증에 실패합니다.", ClampMin = "1"))
     FIntPoint FootprintSizeCells = FIntPoint(100, 100);
@@ -694,6 +700,12 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     bool AllowsFacilityPlacementOnTop() const
     {
         return Category == EFFZSFacilityCategory::Tile;
+    }
+
+    /** Only Info facilities provide staff slots; never interpret slots as hired staff. */
+    int32 GetStaffCapacity() const
+    {
+        return Category == EFFZSFacilityCategory::Info ? FMath::Max(0, StaffCapacity) : 0;
     }
     
     bool IsValid(TArray<FText>& OutErrors) const;

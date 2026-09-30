@@ -73,11 +73,18 @@ public:
 
 	/* 갈래별 개인 설정 비율(0~1). 마스터는 빠져 있다. 마스터는 엔진이 이미 곱한다.
 
-	   배경음은 배경음 슬라이더, 나머지(효과음·UI·환경음)는 효과음 슬라이더를 따른다.
-	   설정 창에 슬라이더를 넷 두면 플레이어는 UI 와 효과음의 차이를 모른다. 둘이면 충분하다.
+	   배경음·효과음·불꽃놀이·UI 는 설정 창의 같은 이름 슬라이더를 따른다.
+	   환경음은 아직 소리가 없어 효과음 슬라이더에 묶는다.
 	*/
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Audio")
 	float GetChannelVolume(EFF_AudioChannel Channel) const;
+
+	/* 이 소리가 따를 갈래. 뱅크에서 고른 값이 먼저다.
+
+	   기본값(효과음)으로 둔 소리만 이벤트 종류로 가른다. 피날레 이벤트는 불꽃놀이,
+	   UI 이벤트는 UI 로 보낸다. 뱅크의 칸을 일일이 고치지 않아도 슬라이더가 먹게 하려는 것이다.
+	*/
+	static EFF_AudioChannel ResolveChannel(EFF_AudioEvent Event, const FFF_AudioCue& Cue);
 
 	// ── 진단 ────────────────────────────────────────────────────────────────
 
@@ -124,6 +131,15 @@ private:
 
 	void BindRuntimeSettings();
 	void UnbindRuntimeSettings();
+
+	/* 배경음이 끝까지 재생됐다. 반복할 곡이면 처음부터 다시 튼다.
+
+	   반복은 원래 사운드 애셋의 Looping 체크로 정한다. 그런데 곡을 새로 넣을 때마다
+	   그 칸을 빠뜨려서 타이틀·준비 곡이 한 번 돌고 끊겼다(피드백). 배경음은 엔딩곡을
+	   빼면 전부 반복이 맞으므로 여기서 보장한다. 애셋이 이미 반복이면 끝나지 않아
+	   이 함수가 불리지 않는다.
+	*/
+	void HandleAmbienceFinished(UAudioComponent* Component);
 
 	bool bAudioEnabled = true;
 

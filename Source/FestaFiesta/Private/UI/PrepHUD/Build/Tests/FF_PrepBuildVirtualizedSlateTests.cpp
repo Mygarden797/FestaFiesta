@@ -339,8 +339,8 @@ namespace FFPrepBuildVirtualizedSlateTest
                 Launcher->GetParent() == Panel->GetWidgetFromName(TEXT("Row_BuildCodexCategory")) &&
                 CodexLabel->GetText().ToString().Contains(TEXT("조합 도감")) &&
                 RankingLabel->GetFont() == CodexLabel->GetFont());
-            Test.TestTrue(TEXT("The redundant selection confirmation strip is fully collapsed"),
-                Panel->GetWidgetFromName(TEXT("Border_AuroraSelection"))->GetVisibility() == ESlateVisibility::Collapsed);
+            Test.TestNull(TEXT("The redundant selection confirmation strip is deleted from the saved catalog"),
+                Panel->GetWidgetFromName(TEXT("Border_AuroraSelection")));
             Test.TestEqual(TEXT("Continuous catalog has one logical page"), Panel->GetCatalogPageCount(), 1);
             Test.TestEqual(TEXT("The complete filtered catalog remains in the virtualized list"),
                 List->GetListItems().Num(), Panel->GetCatalogPageItems().Num());
@@ -672,9 +672,8 @@ namespace FFPrepBuildVirtualizedSlateTest
             List->SetListItems(PageItems);
             List->ScrollToTop();
             List->RegenerateAllEntries();
-            auto* Status = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_Status")));
-            if (!Test.TestNotNull(TEXT("The actual status widget explains the selected facility's recommendation"), Status)) { return false; }
-            Status->SetText(FText::Format(FText::FromString(TEXT("{0} 조합 1/1종 강조 · 배치 시 거리 조건 확인")), Source->DisplayName));
+            Test.TestNull(TEXT("The retired hidden footer is removed; recommendation remains on the real card badge"),
+                Panel->GetWidgetFromName(TEXT("Border_CatalogFooter")));
             return true;
         }
 
@@ -786,65 +785,10 @@ namespace FFPrepBuildVirtualizedSlateTest
 
         bool CheckRequiredCatalogPreview(FAutomationTestBase& Test, const bool bInstalled)
         {
-            auto* RequiredGuide = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Border_CatalogRequiredGuide")));
-            auto* RequiredLegend = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_ClarityRequiredLegend")));
-            auto* RequiredExplanation = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_StudioHint")));
-            auto* ProgramLegend = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Border_CatalogProgramLegend")));
-            auto* ProgramLabel = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_CatalogProgramLegend")));
-            auto* ProgramGuide = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_CatalogProgramGuide")));
-            auto* Title = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_PanelTitle")));
-            UWidget* Header = Panel->GetWidgetFromName(TEXT("Box_Header"));
-            if (!Test.TestNotNull(TEXT("Required header guide uses the actual saved WBP border"), RequiredGuide) ||
-                !Test.TestNotNull(TEXT("Required header uses a concise badge"), RequiredLegend) ||
-                !Test.TestNotNull(TEXT("Required header retains its explanation"), RequiredExplanation) ||
-                !Test.TestNotNull(TEXT("Program header legend uses the actual saved WBP border"), ProgramLegend) ||
-                !Test.TestNotNull(TEXT("Program header legend retains its authored caption"), ProgramLabel) ||
-                !Test.TestNotNull(TEXT("Program header legend retains its authored explanation"), ProgramGuide) ||
-                !Test.TestNotNull(TEXT("Catalog title anchors the header legend"), Title) ||
-                !Test.TestNotNull(TEXT("Catalog header contains the legend"), Header)) { return false; }
-            Test.TestTrue(TEXT("The required header guide collapses on installation and reappears after removal"),
-                RequiredGuide->GetVisibility() == (bInstalled ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible));
-            Test.TestTrue(TEXT("The program legend stays visible and does not intercept input"),
-                ProgramLegend->GetVisibility() == ESlateVisibility::HitTestInvisible &&
-                ProgramGuide->GetVisibility() == ESlateVisibility::HitTestInvisible);
-            const FSlateRect HeaderRect = Header->GetCachedGeometry().GetLayoutBoundingRect();
-            const FSlateRect TitleRect = Title->GetCachedGeometry().GetLayoutBoundingRect();
-            const FSlateRect ProgramRect = ProgramLegend->GetCachedGeometry().GetLayoutBoundingRect();
-            const FSlateRect ProgramGuideRect = ProgramGuide->GetCachedGeometry().GetLayoutBoundingRect();
-            Test.TestTrue(TEXT("The program legend remains below the title and its explanation does not overlap"),
-                ProgramRect.Top >= TitleRect.Bottom - 1.5f && ProgramRect.Right <= ProgramGuideRect.Left + 1.5f);
-            for (const UTextBlock* Label : { ProgramLabel, ProgramGuide })
-            {
-                const FSlateRect Rect = Label->GetCachedGeometry().GetLayoutBoundingRect();
-                Test.TestTrue(TEXT("Program header labels retain readable space inside the header"),
-                    Rect.GetSize().X >= Label->GetDesiredSize().X * DpiScale - 1.5f &&
-                    Rect.GetSize().Y >= Label->GetFont().Size * DpiScale * 0.7f &&
-                    Rect.Left >= HeaderRect.Left - 1.5f && Rect.Right <= HeaderRect.Right + 1.5f &&
-                    Rect.Top >= HeaderRect.Top - 1.5f && Rect.Bottom <= HeaderRect.Bottom + 1.5f);
-            }
-            if (bInstalled)
-            {
-                Test.TestTrue(TEXT("Collapsing the required guide moves the program legend to the title's left edge without a gap"),
-                    FMath::IsNearlyEqual(ProgramRect.Left, TitleRect.Left, 1.5f));
-            }
-            else
-            {
-                const FSlateRect RequiredGuideRect = RequiredGuide->GetCachedGeometry().GetLayoutBoundingRect();
-                const FSlateRect RequiredLegendRect = RequiredLegend->GetCachedGeometry().GetLayoutBoundingRect();
-                const FSlateRect RequiredExplanationRect = RequiredExplanation->GetCachedGeometry().GetLayoutBoundingRect();
-                Test.TestEqual(TEXT("Required legend is concise like the program legend"), RequiredLegend->GetText().ToString(), FString(TEXT("필수")));
-                Test.TestEqual(TEXT("Required and program legends share the authored small caption size"),
-                    RequiredLegend->GetFont().Size, ProgramLabel->GetFont().Size);
-                Test.TestTrue(TEXT("The short required badge and its day-one explanation do not overlap"),
-                    RequiredExplanation->GetText().ToString().Contains(TEXT("1일차")) &&
-                    RequiredLegendRect.Right < RequiredExplanationRect.Left &&
-                    RequiredExplanationRect.Right <= RequiredGuideRect.Right + 1.5f);
-                Test.TestTrue(TEXT("A missing or removed main facility restores the guide before the program legend without overlap"),
-                    RequiredGuideRect.GetSize().X > 1.0f && RequiredGuideRect.GetSize().Y > 1.0f &&
-                    FMath::IsNearlyEqual(RequiredGuideRect.Left, TitleRect.Left, 1.5f) &&
-                    ProgramRect.Left > RequiredGuideRect.Right);
-            }
-
+            // The hidden old header was removed from the Designer tree. The live
+            // required/program state remains represented by each actual card below.
+            Test.TestNull(TEXT("Retired title/gold header is removed"), Panel->GetWidgetFromName(TEXT("Box_Header")));
+            Test.TestNull(TEXT("Retired header legend is removed"), Panel->GetWidgetFromName(TEXT("Border_CatalogRequiredGuide")));
             UFF_PrepBuildTileWidget* RequiredRow = nullptr;
             for (UUserWidget* Row : List->GetDisplayedEntryWidgets())
             {

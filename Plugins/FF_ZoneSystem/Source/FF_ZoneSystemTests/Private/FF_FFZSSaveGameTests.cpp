@@ -94,6 +94,7 @@ namespace
         Spec.RevenueRuleKey = TEXT("Revenue.SaveProbe");
         Spec.bOverrideRevenuePerUseGold = true;
         Spec.RevenuePerUseGold = 375;
+        Spec.StaffCapacity = 7;
         Spec.ExperienceEffectKey = TEXT("Experience.SaveProbe");
         Spec.VisualMesh = TSoftObjectPtr<UStaticMesh>(
             FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")));
@@ -370,6 +371,8 @@ bool FFFZSSaveGameByteRoundTripTest::RunTest(const FString& Parameters)
     const FFFZSFacilitySpec& SourceSpec = SourceFacility.FacilitySpec;
     const FFFZSFacilitySpec& LoadedSpec = LoadedFacility.FacilitySpec;
     TestEqual(TEXT("시설 명세 스키마가 보존된다"), LoadedSpec.SchemaVersion, SourceSpec.SchemaVersion);
+    TestEqual(TEXT("시설별 스태프 정원이 실제 SaveGame 바이트 왕복에서 보존된다"),
+        LoadedSpec.StaffCapacity, SourceSpec.StaffCapacity);
     TestEqual(TEXT("시설별 매출 사용 여부가 실제 SaveGame 바이트 왕복에서 보존된다"),
         LoadedSpec.bOverrideRevenuePerUseGold, SourceSpec.bOverrideRevenuePerUseGold);
     TestEqual(TEXT("시설별 이용 1회 매출이 실제 SaveGame 바이트 왕복에서 보존된다"),

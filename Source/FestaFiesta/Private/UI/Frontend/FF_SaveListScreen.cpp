@@ -118,6 +118,7 @@ void UFF_SaveListScreen::RebuildList()
 
 			Card->SetEntry(Entry);
 			Card->OnSaveSlotSelected.AddUniqueDynamic(this, &UFF_SaveListScreen::HandleSlotSelected);
+			Card->OnSaveSlotDeleteRequested.AddUniqueDynamic(this, &UFF_SaveListScreen::HandleSlotDeleteRequested);
 			Target->AddChild(Card);
 
 			Entry.bAutoSave ? ++AutoCount : ++ManualCount;
@@ -163,6 +164,18 @@ void UFF_SaveListScreen::HandleSlotSelected(FName SlotId)
 		TEXT("UFF_SaveListScreen: 슬롯 `%s` 선택."), *SlotId.ToString());
 
 	OnSlotChosen.Broadcast(SlotId);
+}
+
+void UFF_SaveListScreen::HandleSlotDeleteRequested(FName SlotId)
+{
+	UE_LOG(LogFestaFiestaUI, Log,
+		TEXT("UFF_SaveListScreen: 슬롯 `%s` 삭제 요청."), *SlotId.ToString());
+
+	// 지워지면 공급자가 목록을 다시 읽어 OnSaveListChanged 로 알려온다. 여기서 다시 그리지 않는다.
+	if (UFF_SaveListProvider* Provider = UFF_SaveListProvider::Get(this))
+	{
+		Provider->DeleteSlot(SlotId);
+	}
 }
 
 void UFF_SaveListScreen::HandleBackClicked(UFF_CommonButtonBase* Button)

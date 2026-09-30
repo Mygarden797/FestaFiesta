@@ -103,6 +103,41 @@ bool FFF_PrepStaffRules_QuoteClamps::RunTest(const FString& Parameters)
 		TestEqual(TEXT("상한 이유"), Quote.BlockReason, EFF_PrepHireBlockReason::CapReached);
 		TestFalse(TEXT("고용 불가"), Quote.CanHire());
 	}
+
+	// 상한과 잔액 부족을 구분하되 스텝퍼, 합계, 잔액은 같은 견적을 따른다.
+	{
+		const FFF_PrepHireQuote Quote = FFF_PrepStaffRules::BuildQuote(
+			/*Desired*/ 1, /*Affordable*/ 0, /*RemainingCap*/ 6, HireCostPerStaff, /*Gold*/ 449);
+
+		TestEqual(TEXT("잔액 부족으로 0명 선택"), Quote.SelectedCount, 0);
+		TestEqual(TEXT("표시 합계는 선택한 0명 기준"), Quote.HireCostTotal, 0);
+		TestEqual(TEXT("고용하지 않아 잔액은 유지"), Quote.GoldAfterHire, 449);
+		TestEqual(TEXT("상한 대신 잔액 이유"), Quote.BlockReason, EFF_PrepHireBlockReason::NotEnoughGold);
+		TestFalse(TEXT("잔액 부족이면 고용 버튼 비활성"), Quote.CanHire());
+	}
+	return true;
+}
+
+// 축제별로 인원 상한이 달라도 막대에 NaN, 음수나 100% 초과가 전달되지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepStaffRules_Capacity, "FestaFiesta.UI.PrepStaff.Capacity", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_PrepStaffRules_Capacity::RunTest(const FString& Parameters)
+{
+	float Fraction = -1.f;
+	TestTrue(TEXT("기본 팀도 현재 수용량에 포함"), FFF_PrepStaffRules::TryGetCapacityFraction(6, 12, Fraction));
+	TestEqual(TEXT("6 / 12명은 50%"), Fraction, 0.5f);
+
+	TestTrue(TEXT("상한 도달도 알려진 값"), FFF_PrepStaffRules::TryGetCapacityFraction(12, 12, Fraction));
+	TestEqual(TEXT("상한이면 100%"), Fraction, 1.f);
+
+	TestTrue(TEXT("상한보다 많은 기존 인원도 안전하게 표시"), FFF_PrepStaffRules::TryGetCapacityFraction(15, 12, Fraction));
+	TestEqual(TEXT("막대가 영역을 넘어가지 않는다"), Fraction, 1.f);
+
+	TestTrue(TEXT("최대 0은 미확인과 구분"), FFF_PrepStaffRules::TryGetCapacityFraction(0, 0, Fraction));
+	TestEqual(TEXT("0으로 나누지 않고 빈 막대"), Fraction, 0.f);
+
+	TestFalse(TEXT("현재 인원을 못 읽으면 숨긴다"), FFF_PrepStaffRules::TryGetCapacityFraction(INDEX_NONE, 12, Fraction));
+	TestEqual(TEXT("미확인 시 이전 비율을 남기지 않는다"), Fraction, 0.f);
+	TestFalse(TEXT("최대 인원을 못 읽으면 숨긴다"), FFF_PrepStaffRules::TryGetCapacityFraction(6, INDEX_NONE, Fraction));
 	return true;
 }
 

@@ -6,6 +6,8 @@
 #include "Time/FF_FestivalStage.h"
 #include "FF_PrepHudTypes.generated.h"
 
+struct FGeometry;
+
 /**
  * 준비 단계 하단 바의 탭 6종.
  *
@@ -87,20 +89,25 @@ struct FESTAFIESTA_API FFF_PrepPanelLayout
 	EFF_PrepPanelDock Dock = EFF_PrepPanelDock::Center;
 
 	/**
-	 * 크기(px). 방향에 따라 쓰이는 성분이 다르다 — 구조체 주석의 표를 본다.
+	 * 크기(Slate 단위, DPI 적용 전). 방향에 따라 쓰이는 성분이 다르다 — 구조체 주석의 표를 본다.
 	 * 0 이하면 패널이 사라지므로 그때는 기본 레이아웃 값으로 되돌린다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Prep Panel Layout")
 	FVector2D Size = FVector2D(1160.0, 640.0);
 
 	/**
-	 * 기준 위치에서 미는 양(px). 양수 X 는 오른쪽, 양수 Y 는 아래.
+	 * 기준 위치에서 미는 양(Slate 단위, DPI 적용 전). 양수 X 는 오른쪽, 양수 Y 는 아래.
+	 * 프로그램·인력·홍보·점검의 Center에서는 (0,0)이 하단 HUD를 포함한 게임 화면 정중앙이다.
 	 *
 	 * ★ 게임에서 패널을 끌어 옮기면 **이 값이 바뀐다.** 마음에 드는 자리를 찾은 뒤
 	 *   `FF.PrepHud.Layout` 으로 숫자를 확인해 WBP 기본값에 적으면 확정된다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Prep Panel Layout")
 	FVector2D Offset = FVector2D::ZeroVector;
+
+	/** 화면 중앙을 Canvas 0.5 앵커의 위치 오프셋으로 바꾼다. 배치 전 geometry는 false를 돌린다. */
+	bool TryResolveCenteredPosition(const FGeometry& ViewportGeometry, const FGeometry& CanvasGeometry,
+		FVector2D& OutPosition) const;
 };
 
 /**

@@ -33,8 +33,8 @@ def run():
         'allowed_types': ['Booth_FoodStall', 'Booth_MarketGoods', 'Booth_CraftExperience',
                           'Booth_ActivityGame', 'Booth_Nightlife'],
         'tiers': [
-            {'target_level': 2, 'cost_multiplier': .3, 'service_duration_multiplier': .8},
-            {'target_level': 3, 'cost_multiplier': .6, 'service_duration_multiplier': .65},
+            {'target_level': 2, 'cost_multiplier': .3, 'service_duration_multiplier': 1.0},
+            {'target_level': 3, 'cost_multiplier': .6, 'service_duration_multiplier': 1.0},
         ],
     }
     artifact_dir = os.path.join(unreal.Paths.project_dir(), 'Artifacts/FacilityUpgrade')

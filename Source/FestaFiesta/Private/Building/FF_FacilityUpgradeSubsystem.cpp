@@ -132,6 +132,15 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 				FFF_BoothRevenueRules::ResolveRevenueMultiplier(BaseSpec, 1, 1.f, RevenueTable));
 			OutPreview.CurrentRevenuePerUseGold = FFF_BoothRevenueRules::ResolveCommission(
 				RevenuePerUse, 1, CommissionRate, static_cast<double>(OutPreview.CurrentRevenueMultiplier) * SynergyMultiplier);
+			// Quote representative team sizes from the original inputs. Multiplying the
+			// rounded one-person estimate would disagree with actual team payments.
+			OutPreview.CurrentRevenueByTeamSizeGold.Reserve(6);
+			for (int32 MemberCount = 1; MemberCount <= 6; ++MemberCount)
+			{
+				OutPreview.CurrentRevenueByTeamSizeGold.Add(FFF_BoothRevenueRules::ResolveCommission(
+					RevenuePerUse, MemberCount, CommissionRate,
+					static_cast<double>(OutPreview.CurrentRevenueMultiplier) * SynergyMultiplier));
+			}
 			OutPreview.NextRevenuePerUseGold = OutPreview.CurrentRevenuePerUseGold;
 		}
 	}

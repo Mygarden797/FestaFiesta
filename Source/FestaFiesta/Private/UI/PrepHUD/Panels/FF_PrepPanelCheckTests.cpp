@@ -5,14 +5,20 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "DataTables/FF_FacilityCostRow.h"
+#include "Components/Button.h"
+#include "Components/TextBlock.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Festival/FF_RequiredFacilitiesSubsystem.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Tests/AutomationCommon.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
+#include "UObject/StrongObjectPtr.h"
 
 /**
  * 점검 패널 견적 고정 테스트 (U5).
@@ -259,6 +265,88 @@ bool FFF_PrepCheckRules_RevenueAndBonus::RunTest(const FString& Parameters)
 		TestEqual(TEXT("수입은 계산된다"), E.ExpectedAdmissionRevenue, 3000);
 		TestEqual(TEXT("보너스는 비운다"), E.ExpectedGoalBonus, static_cast<int32>(INDEX_NONE));
 	}
+	return true;
+}
+
+// 필수 목록을 재판정하지 않고 소유자의 설치 개수/누락/저작 오류를 그대로 알린다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepCheckRules_RequiredSummary,
+	"FestaFiesta.UI.PrepCheck.RequiredSummary",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_PrepCheckRules_RequiredSummary::RunTest(const FString& Parameters)
+{
+	UFF_FestivalDefinition* Definition = NewObject<UFF_FestivalDefinition>();
+	UFFZSFacilityDefinition* Facility = NewObject<UFFZSFacilityDefinition>(Definition);
+	Facility->Spec.FacilityDefinitionId = TEXT("Stage.MainStage");
+	Facility->Spec.DisplayName = FText::FromString(TEXT("시험 공연장"));
+	Facility->Spec.MaxInstancesPerWorld = 3;
+	FFF_RequiredFacility& Requirement = Definition->RequiredSetupFacilities.AddDefaulted_GetRef();
+	Requirement.FacilityDefinition = Facility;
+	Requirement.MinimumCount = 2;
+	FFFZSReadModel Model;
+	FFFZSFacilityReadModel& Installed = Model.Facilities.AddDefaulted_GetRef();
+	Installed.FacilityDefinitionId = Facility->Spec.FacilityDefinitionId;
+	Installed.State = EFFZSFacilityState::Active;
+	const FText Format = FText::FromString(TEXT("{Name} · {Installed}/{Required} · {State}"));
+	const FText Empty = FText::FromString(TEXT("필수 시설 조건 없음"));
+	const auto Display = [&Format, &Empty](const FFF_RequiredFacilitiesStatus& Status)
+	{
+		return FFF_PrepCheckRules::FormatRequiredFacilities(Status, Format, Empty).ToString();
+	};
+	FFF_RequiredFacilitiesStatus Status = UFF_RequiredFacilitiesSubsystem::EvaluateRequirements(Definition, Model);
+	TestTrue(TEXT("실제 설치 1/2와 미충족 표시"), Display(Status).Contains(TEXT("시험 공연장 · 1/2 · ! 추가 설치 필요")));
+	const FFFZSFacilityReadModel SecondInstalled = Installed;
+	Model.Facilities.Add(SecondInstalled);
+	Status = UFF_RequiredFacilitiesSubsystem::EvaluateRequirements(Definition, Model);
+	TestTrue(TEXT("실제 설치 2/2는 체크와 완료 문구"), Display(Status).Contains(TEXT("2/2 · ✓ 설치 완료")));
+	Model.Facilities.Last().bNeedsRelocation = true;
+	Status = UFF_RequiredFacilitiesSubsystem::EvaluateRequirements(Definition, Model);
+	TestTrue(TEXT("이전 완료 상태를 남기지 않고 재배치 필요 시설은 제외"), Display(Status).Contains(TEXT("1/2 · ! 추가 설치 필요")));
+	Requirement.MinimumCount = 4;
+	Status = UFF_RequiredFacilitiesSubsystem::EvaluateRequirements(Definition, Model);
+	TestTrue(TEXT("저작 오류는 설치 완료로 표시하지 않음"), Display(Status).Contains(TEXT("설정 확인 필요")));
+	Definition->RequiredSetupFacilities.Reset();
+	Status = UFF_RequiredFacilitiesSubsystem::EvaluateRequirements(Definition, Model);
+	TestEqual(TEXT("빈 필수 목록에 새 선택조건을 추가하지 않음"), Display(Status), Empty.ToString());
+	Status = UFF_RequiredFacilitiesSubsystem::EvaluateRequirements(nullptr, Model);
+	TestEqual(TEXT("원본 미확인 사유를 그대로 표시"), Display(Status), Status.BlockingReason.ToString());
+	return true;
+}
+
+// 같은 차단 enum에서 설치 수가 바뀌어도 열린 패널의 사유가 갱신되어야 한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepCheckRules_CtaReasonRefresh,
+	"FestaFiesta.UI.PrepCheck.CtaReasonRefresh",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_PrepCheckRules_CtaReasonRefresh::RunTest(const FString& Parameters)
+{
+	UClass* BarClass = LoadClass<UFF_PrepHudBar>(nullptr,
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepHudBar.WBP_FF_PrepHudBar_C"));
+	UClass* PanelClass = LoadClass<UFF_PrepPanelCheck>(nullptr,
+		TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelCheck.WBP_FF_PrepPanelCheck_C"));
+	if (!TestNotNull(TEXT("저장 HUD 클래스"), BarClass) || !TestNotNull(TEXT("저장 점검 클래스"), PanelClass)) { return false; }
+	TStrongObjectPtr<UFF_PrepHudBar> Bar(NewObject<UFF_PrepHudBar>(GetTransientPackage(), BarClass));
+	TStrongObjectPtr<UFF_PrepPanelCheck> Panel(NewObject<UFF_PrepPanelCheck>(GetTransientPackage(), PanelClass));
+	Panel->Text_OpenGateReason = NewObject<UTextBlock>(Panel.Get());
+	Panel->Text_OpenGateLabel = NewObject<UTextBlock>(Panel.Get());
+	Panel->Button_OpenGate = NewObject<UButton>(Panel.Get());
+	Panel->InitializePanel(Bar.Get(), EFF_PrepHudTab::Check, FText::FromString(TEXT("점검")));
+	Bar->OnCtaStateChanged.AddUniqueDynamic(Panel.Get(), &UFF_PrepPanelCheck::HandleCtaStateChanged);
+
+	const FText Before = FText::FromString(TEXT("시험 공연장: 설치 0/2"));
+	const FText After = FText::FromString(TEXT("시험 공연장: 설치 1/2"));
+	Bar->SetCtaState(EFF_PrepCtaState::BlockedStageLocked, Before);
+	TestEqual(TEXT("첫 차단 사유"), Panel->Text_OpenGateReason->GetText().ToString(), Before.ToString());
+	Bar->SetCtaState(EFF_PrepCtaState::BlockedStageLocked, After);
+	TestEqual(TEXT("동일 상태의 사유 변경도 구독자에 전달"), Panel->Text_OpenGateReason->GetText().ToString(), After.ToString());
+	TestEqual(TEXT("공개 사유가 화면과 일치"), Bar->GetCtaReason().ToString(), After.ToString());
+	TestFalse(TEXT("필수 시설 미충족에서는 시작 비활성"), Panel->Button_OpenGate->GetIsEnabled());
+	Bar->SetCtaState(EFF_PrepCtaState::Ready, FText::GetEmpty());
+	TestTrue(TEXT("소유 판정이 Ready면 선택사항을 추가로 요구하지 않음"), Panel->Button_OpenGate->GetIsEnabled());
+	TestEqual(TEXT("Ready 안내는 편집값 사용"), Panel->Text_OpenGateReason->GetText().ToString(), Panel->OpenGateReadyText.ToString());
+	TestTrue(TEXT("Setup 시작 문구 유지"), Panel->Text_OpenGateLabel->GetText().ToString().Contains(TEXT("시작")));
+	Bar->SetCtaState(EFF_PrepCtaState::Hidden, FText::GetEmpty());
+	TestEqual(TEXT("진행 액션이 없는 단계는 숨김"), Panel->Button_OpenGate->GetVisibility(), ESlateVisibility::Collapsed);
+	TestTrue(TEXT("숨긴 단계는 이전 사유 제거"), Panel->Text_OpenGateReason->GetText().IsEmpty());
+	Bar->OnCtaStateChanged.RemoveDynamic(Panel.Get(), &UFF_PrepPanelCheck::HandleCtaStateChanged);
 	return true;
 }
 

@@ -94,6 +94,86 @@ bool FFF_ZoneSystemBridge_OnlyCurrentAndNeighborZones::RunTest(const FString& Pa
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ZoneSystemBridge_EmptyLocalZonesDiscoverConnectedBusinesses,
+	"FestaFiesta.NPC.ZoneSystemBridge.EmptyLocalZonesDiscoverConnectedBusinesses",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ZoneSystemBridge_EmptyLocalZonesDiscoverConnectedBusinesses::RunTest(const FString& Parameters)
+{
+	FFFZSReadModel Model;
+	Model.Zones.Add(MakeBridgeTestZone(TEXT("Entrance"), {TEXT("Walkway")}));
+	Model.Zones.Add(MakeBridgeTestZone(TEXT("Walkway"), {TEXT("Entrance"), TEXT("Shops")}));
+	Model.Zones.Add(MakeBridgeTestZone(TEXT("Shops"), {TEXT("Walkway")}));
+	Model.Zones.Add(MakeBridgeTestZone(TEXT("Island"), {}));
+	Model.Facilities.Add(MakeBridgeTestFacility(1, TEXT("Entrance"), EFFZSFacilityCategory::Info,
+		TEXT("Info_GeneralInfo_Entrance")));
+	Model.Facilities.Add(MakeBridgeTestFacility(2, TEXT("Walkway")));
+	Model.Facilities.Last().State = EFFZSFacilityState::Closed;
+	Model.Facilities.Add(MakeBridgeTestFacility(3, TEXT("Shops")));
+	Model.Facilities.Add(MakeBridgeTestFacility(4, TEXT("Island")));
+	const auto Candidates = FFF_ZoneSystemBridge::BuildCandidates(Model, TEXT("Entrance"), FVector::ZeroVector);
+	TestEqual(TEXT("An empty entrance discovers the connected business beyond its neighbor"), Candidates.Num(), 1);
+	TestTrue(TEXT("The open paid booth is reachable as a destination"), ContainsFacility(Candidates, 3));
+	TestFalse(TEXT("Disconnected facilities are not invented as destinations"), ContainsFacility(Candidates, 4));
+	FFF_WalkDistanceMatrix StalePaths;
+	FFF_WalkDistanceMatrix::FZoneAnchor FirstAnchor;
+	FirstAnchor.ZoneId = TEXT("Walkway");
+	FFF_WalkDistanceMatrix::FZoneAnchor SecondAnchor;
+	SecondAnchor.ZoneId = TEXT("Shops");
+	SecondAnchor.WorldLocationCm = FVector(1000.f, 0.f, 0.f);
+	StalePaths.Build({FirstAnchor, SecondAnchor}, [](const FVector& From, const FVector& To, float& OutDistance)
+	{
+		OutDistance = FVector::Dist(From, To);
+		return true;
+	});
+	const auto Stale = FFF_ZoneSystemBridge::BuildCandidates(Model, TEXT("Entrance"), FVector::ZeroVector, 12, &StalePaths);
+	TestTrue(TEXT("A stale matrix missing the entrance retains graph-based discovery"), ContainsFacility(Stale, 3));
+	Model.Facilities[1].State = EFFZSFacilityState::Active;
+	const auto Local = FFF_ZoneSystemBridge::BuildCandidates(Model, TEXT("Entrance"), FVector::ZeroVector);
+	TestEqual(TEXT("An open local destination keeps the existing local search policy"), Local.Num(), 1);
+	TestTrue(TEXT("The neighbor remains preferred when it is open"), ContainsFacility(Local, 2));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ZoneSystemBridge_EmptyLocalZonesRespectPathsAndCap,
+	"FestaFiesta.NPC.ZoneSystemBridge.EmptyLocalZonesRespectPathsAndCap",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ZoneSystemBridge_EmptyLocalZonesRespectPathsAndCap::RunTest(const FString& Parameters)
+{
+	FFFZSReadModel Model;
+	Model.Zones.Add(MakeBridgeTestZone(TEXT("Entrance"), {}));
+	Model.Zones.Add(MakeBridgeTestZone(TEXT("Shops"), {}));
+	Model.Zones.Add(MakeBridgeTestZone(TEXT("Island"), {}));
+	TArray<FFF_WalkDistanceMatrix::FZoneAnchor> Anchors;
+	for (int32 Index = 0; Index < Model.Zones.Num(); ++Index)
+	{
+		FFF_WalkDistanceMatrix::FZoneAnchor Anchor;
+		Anchor.ZoneId = Model.Zones[Index].ZoneId;
+		Anchor.WorldLocationCm = FVector(Index * 1000.f, 0.f, 0.f);
+		Anchors.Add(Anchor);
+	}
+	FFF_WalkDistanceMatrix Paths;
+	Paths.Build(Anchors, [](const FVector& From, const FVector& To, float& OutDistance)
+	{
+		OutDistance = FVector::Dist(From, To);
+		return From.X < 2000.f && To.X < 2000.f;
+	});
+	for (int32 Index = 1; Index <= 15; ++Index)
+	{
+		Model.Facilities.Add(MakeBridgeTestFacility(Index, TEXT("Shops")));
+		Model.Facilities.Last().WorldLocation = FVector(1000.f + Index * 100.f, 0.f, 0.f);
+	}
+	Model.Facilities.Add(MakeBridgeTestFacility(20, TEXT("Island")));
+	const auto Candidates = FFF_ZoneSystemBridge::BuildCandidates(
+		Model, TEXT("Entrance"), FVector::ZeroVector, 3, &Paths);
+	if (!TestEqual(TEXT("Expanded discovery still respects the candidate budget"), Candidates.Num(), 3)) return false;
+	TestTrue(TEXT("The nearest business remains available despite missing authored neighbors"), ContainsFacility(Candidates, 1));
+	TestTrue(TEXT("The next closest business is considered"), ContainsFacility(Candidates, 2));
+	TestTrue(TEXT("The third closest business is considered"), ContainsFacility(Candidates, 3));
+	TestFalse(TEXT("An unreachable zone never uses a straight-line fallback during expansion"), ContainsFacility(Candidates, 20));
+	TestEqual(TEXT("A reachable business keeps its real route distance"), Candidates[0].DistanceMeters, 11.f);
+	return true;
+}
+
 // 없는 ZoneId 를 넘기면 빈 배열이다. 조용히 넘어가면 "후보 없음"과 구분되지 않아 Warning 을 남긴다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ZoneSystemBridge_UnknownZoneReturnsEmpty, "FestaFiesta.NPC.ZoneSystemBridge.UnknownZoneReturnsEmpty", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_ZoneSystemBridge_UnknownZoneReturnsEmpty::RunTest(const FString& Parameters)

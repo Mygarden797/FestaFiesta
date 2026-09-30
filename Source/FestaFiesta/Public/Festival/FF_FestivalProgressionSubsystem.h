@@ -259,7 +259,7 @@ public:
 	// 고용은 1회 구매이고 축제가 끝날 때까지 남는다. 하루 경계에서 줄지 않는다.
 	// [주의] 스태프는 시설 성능(회전율·객단가)에도, 유료 프로그램 편성에도 관여하지 않는다.
 	//        시설은 시설 강화가 올리고, 프로그램은 Gold 로만 산다. 스태프가 쓰일 곳은
-	//        앞으로 붙을 사건 대응뿐이다.
+	//        안내 시설에 배정된 인원이 사건 대응에 출동한다.
 
 	// 무페이 기본 Staff.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
@@ -297,6 +297,16 @@ public:
 	// [주의] "왜 더 못 뽑는가"를 화면에 쓰기 위한 것이다. 고용 가능 판정에 쓰지 말 것.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetRemainingHireCap() const;
+
+	/** 기본 고용 한도 + 현재 설치된 Info 시설의 정원. 설치는 명단을 늘리지 않는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetMaxHiredStaffCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetMaxTotalStaffCount() const;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnEconomyValueChanged OnStaffCapacityChanged;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
 	FFF_OnEconomyValueChanged OnTotalStaffCountChanged;
@@ -486,6 +496,12 @@ public:
 
 private:
 	friend class UFF_FacilityUpgradeSubsystem;
+	friend class UFF_StaffFacilitySubsystem;
+	// 시설 배정 검증과 통지는 StaffFacilitySubsystem만 수행한다.
+	bool SetStaffFacilityAssignment(int32 StaffId, FGuid FacilityId)
+	{
+		return StaffPool.SetAssignedFacility(StaffId, FacilityId);
+	}
 	// Synchronous facility purchase: reserve without events, record on commit, publish only after all systems commit.
 	bool ReserveFacilityUpgradeSpend(FGuid CommandId, int32 Amount);
 	void CommitFacilityUpgradeSpend(FGuid CommandId);

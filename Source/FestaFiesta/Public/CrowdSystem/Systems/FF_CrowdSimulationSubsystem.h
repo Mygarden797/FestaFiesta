@@ -345,6 +345,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Metrics", meta = (ClampMin = "1"))
 	int32 NeedMetricsIntervalSteps = 30;
 
+	/**
+	 * 영역 안에 있는 방문객 전원의 만족도를 DropPoints 점 깎는다. 사건 처리 실패 같은 벌칙용이다.
+	 *
+	 * 만족도는 방문객별 값이 아니라 창마다 다시 계산되는 전체 지수라서, 감점을 방문객 한 명 한 명에게
+	 * 붙여 두고 전체 평균으로 반영한다. 그래서 영역 안 인원이 전체의 20% 면 DropPoints 의
+	 * 20% 만큼만 전체 점수가 내려간다. 영역을 벗어나도 감점은 그 사람에게 남는다.
+	 *
+	 * 여러 번 부르면 쌓이고(사람당 최대 100), 시간이 지나면 SatisfactionPenaltyRecoverPerMinute 로 회복된다.
+	 *
+	 * @param Center     영역 중심(월드 좌표, cm). 높이는 무시하고 평면 거리로 잰다.
+	 * @param RadiusCm   영역 반지름(cm).
+	 * @param DropPoints 한 사람당 깎을 점수(0~100).
+	 * @return 감점이 붙은 방문객 수. 0이면 영역에 아무도 없었던 것이다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Satisfaction")
+	int32 ApplySatisfactionPenaltyInArea(const FVector& Center, float RadiusCm, float DropPoints);
+
+	/**
+	 * 방문객에게 붙은 감점이 회복되는 속도. 축제 시간 1분당 몇 점씩 줄어드는지.
+	 * 임시로 2점으로 둔다. (30점 감점이 축제 시간 15분 뒤 사라진다)
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Satisfaction", meta = (ClampMin = "0.0"))
+	float SatisfactionPenaltyRecoverPerMinute = 2.f;
+
 	// 만족도 대기 항의 큐 성공률 계산용 — 직전 확정 창에서의 누적 카운터 스냅샷.
 	// QueueJoinAccepted/QueueJoinRejected/QueuePatienceAbandons는 시뮬레이션 시작부터의
 	// 누적값이라, 이번 창만의 델타를 구하려면 지난 창의 값을 들고 있어야 한다.
@@ -374,21 +398,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crowd|Decision")
 	int32 RequestRedecisionForIdleParties(int32 MaxParties = 0);
 
-	/** 메인 공연장의 Audience 정원만큼 적격 파티를 Utility를 거치지 않고 직접 집결시킨다. */
+	/** Stage의 공연 3축제분 전 휴식 구간에만 정원만큼 적격 파티를 직접 집결시킨다. */
 	int32 GatherPartiesToMainStageAudience();
-
-	/**
-	 * 집결을 검토하기 시작하는 시점(공연 시각 이만큼 전, Live 초 = 축제 분).
-	 *
-	 * 실제 출발 시각은 파티마다 다르다 — 아래 `AudienceTravelSlack` 로 자기 이동시간을
-	 * 환산해서 **늦지 않을 만큼만 일찍** 떠난다. 이 값은 그 판정을 시작하는 바깥 창일 뿐이라
-	 * 넉넉히 잡아도 가까운 손님이 일찍 끌려가지 않는다.
-	 *
-	 * ★ 배속 잠금(`MainProgramLockLeadSeconds`)과 다른 값이다. 잠금은 플레이어가 공연을
-	 *   1배속으로 보게 하는 구간이고, 이 값은 군중 동선의 창이다.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0"))
-	float AudienceGatherLeadSeconds = 180.f;
 
 	/**
 	 * 직선거리 이동시간에 곱하는 여유 배수. 실제 경로는 시설을 우회하고 군중에 막혀 느리다.
@@ -649,6 +660,16 @@ public:
 	// 대기열 슬롯·서비스 지점의 도착 판정 반경, UU. **슬롯 간격보다 작아야 한다.**
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "10.0"))
 	float QueueSlotArrivalRadiusUU = 45.f;
+
+	// 개별 좌표가 배정된 줄·관람석의 최종 오차. 공용 입구/프로그램 접근점에는 적용하지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "1.0", ClampMax = "10.0"))
+	float AssignedSlotArrivalRadiusUU = 5.f;
+
+	float GetAssignedSlotArrivalRadius() const
+	{
+		return FMath::Min(FMath::Max(QueueSlotArrivalRadiusUU, 1.f),
+			FMath::Clamp(AssignedSlotArrivalRadiusUU, 1.f, 10.f));
+	}
 
 	// 시설 접근점(큐에 가입하기 전)의 도착 판정 반경, UU.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "10.0"))
@@ -1278,6 +1299,7 @@ private:
 	void ReleaseProgramParty(int32 LeaderAgentIndex);
 	
 	friend struct FFF_CrowdProgramTestAccess;
+	friend struct FFF_CrowdQueueTestAccess;
 
 	void ClearPartyQueueState(int32 LeaderAgentIndex, bool bLeaveQueue);
 
@@ -1616,6 +1638,8 @@ private:
 
 	// 시설별 점유 좌석. 좌석 API는 예약을 소유하지 않으므로 Crowd가 수명과 중복을 관리한다.
 	TMap<FGuid, TSet<int32>> OccupiedAudienceSlots;
+	// 도착 불가로 회수된 파티는 이번 공연에서만 제외한다. 다음 공연에는 다시 참여한다.
+	TSet<int32> AudiencePartiesExcludedThisShow;
 	TSet<FGuid> MissingProgramApproachWarnings;
 	TMap<FGuid, FVector> CachedProgramApproachByFacility;
 	int64 ProgramApproachCacheRevision = -1;

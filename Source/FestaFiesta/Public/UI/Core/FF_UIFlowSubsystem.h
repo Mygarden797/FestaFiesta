@@ -301,6 +301,11 @@ private:
 	 */
 	bool bInstantCameraForNextScreen = false;
 
+	/* 참인 동안 화면을 스택 크로스페이드 없이 올린다. 카메라 플래그와 달리 스스로 꺼지지 않고
+	   TGuardValue 범위로만 켠다. 지구본과 국가 지도 두 번의 push 에 모두 걸려야 해서다.
+	*/
+	bool bPushScreensWithoutTransition = false;
+
 	FName ActiveFestivalId;
 
 	/**

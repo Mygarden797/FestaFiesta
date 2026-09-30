@@ -6,7 +6,10 @@ UE_LOG(LogTemp, Warning, TEXT(Format), ##__VA_ARGS__)
 
 #include "Incident/FF_IncidentSubsystem.h"
 
+#include "Engine/World.h"
+#include "Incident/Effects/FF_IncidentEffect.h"
 #include "Incident/FF_IncidentSettings.h"
+#include "Incident/FF_StaffDispatchSubsystem.h"
 #include "Incident/Rules/FF_IncidentRules.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 
@@ -68,17 +71,64 @@ void UFF_IncidentSubsystem::WithdrawIncident(FName DedupeKey)
 
 bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex)
 {
-	if (!FindSlot(Handle))
+	const FIncidentSlot* Slot = FindSlot(Handle);
+	if (!Slot)
 	{
 		FF_INCIDENT_LOG("ResolveIncident: handle %d/%d is not active", Handle.Index, Handle.Serial);
 		return false;
 	}
 
+	const UFF_IncidentDefinition* Definition = CachedDef.FindRef(Slot->IncidentTag);
+	if (!Definition)
+	{
+		return false;
+	}
+	const UFF_IncidentOption* Option = Definition->GetOption(OptionIndex);
+	if (OptionIndex != INDEX_NONE && !Option)
+	{
+		return false;
+	}
+	const int32 RequiredStaff = FMath::Max(0, Option ? Option->CostStaff : Definition->RequiredStaff);
+	UFF_StaffDispatchSubsystem* Dispatch = GetWorld() ? GetWorld()->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr;
+	if (Dispatch && Dispatch->IsResponding(Handle))
+	{
+		return false;
+	}
+	if (RequiredStaff > 0)
+	{
+		return Dispatch && Dispatch->TryDispatch(Handle, OptionIndex, RequiredStaff, Slot->Anchor);
+	}
+	return CompleteStaffResponse(Handle, OptionIndex);
+}
+
+bool UFF_IncidentSubsystem::CompleteStaffResponse(FFF_IncidentHandle Handle, int32 OptionIndex)
+{
+	const FIncidentSlot* Slot = FindSlot(Handle);
+	if (!Slot)
+	{
+		return false;
+	}
+	// Copy effect context before CloseSlot broadcasts; observers may immediately reuse this slot.
+	FFF_IncidentContext Context;
+	Context.World = GetWorld();
+	Context.Handle = Handle;
+	Context.IncidentTag = Slot->IncidentTag;
+	Context.Anchor = Slot->Anchor;
+	Context.ContextTags = Slot->ContextTags;
+	Context.OptionIndex = OptionIndex;
+	Context.PeakIntensity = Slot->PeakIntensity;
+	const UFF_IncidentDefinition* Definition = CachedDef.FindRef(Slot->IncidentTag);
+	const UFF_IncidentOption* Option = Definition ? Definition->GetOption(OptionIndex) : nullptr;
+	UFF_IncidentEffect* Effect = Option ? Option->Effect.Get() : nullptr;
 	float Now = 0.f;
 	TryGetNowMinutes(Now);
 
 	IncidentSlots[Handle.Index].ChosenOptionIndex = OptionIndex;
 	CloseSlot(Handle.Index, EFF_IncidentState::Resolved, Now);
+	if (Effect)
+	{
+		Effect->Apply(Context);
+	}
 	return true;
 }
 
