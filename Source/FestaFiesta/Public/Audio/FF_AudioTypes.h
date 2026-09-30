@@ -70,7 +70,12 @@ enum class EFF_AudioAmbience : uint8
 
 	// 최고 등급 3막 연출의 엔딩곡. 축제장 순회부터 끝까지 흐른다. 반복 재생을 끈 곡을 넣는다.
 	// 맨 뒤에 붙인 이유는 뱅크가 이 값을 키로 저장해서, 중간에 끼우면 뒤의 곡이 한 칸씩 밀리기 때문이다.
-	FinaleEnding    UMETA(DisplayName = "피날레 - 엔딩곡")
+	FinaleEnding    UMETA(DisplayName = "피날레 - 엔딩곡"),
+
+	// 로비(프론트엔드 레벨: 타이틀, 지구본, 국가 지도) 전용 곡. 개장 전 곡과 따로 둔다.
+	// 예전에는 로비에서도 축제 단계가 기본값(준비)이라 개장 전 곡이 흘러, 로비와 축제 준비가
+	// 한 곡으로 이어졌다. 뱅크 키가 밀리지 않게 맨 뒤에 붙인다.
+	Lobby           UMETA(DisplayName = "로비")
 };
 
 // 소리 갈래. 설정 창의 음량 슬라이더와 짝을 이룬다(FFF_AudioVolumes).

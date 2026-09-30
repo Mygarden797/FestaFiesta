@@ -95,12 +95,21 @@ private:
 
 	UFF_AudioSubsystem* GetAudio() const;
 
+	// 불꽃 소리가 듣는 자리까지 오는 데 걸리는 시간. 설정이 꺼져 있으면 0.
+	float ResolveBurstSoundDelay(const FVector& WorldLocation) const;
+
 	bool bLinkEnabled = true;
 	bool bBoundFinale = false;
 	bool bBoundQueue = false;
 	bool bBoundStage = false;
 	bool bBoundBuild = false;
 	bool bBoundZoneWorld = false;
+
+	// 이 월드가 로비(프론트엔드 레벨)인지. 로비면 축제 단계와 상관없이 로비 곡을 튼다.
+	bool bIsLobbyWorld = false;
+
+	// 로비 곡이 뱅크에 없다는 것을 한 번만 알린다.
+	bool bWarnedMissingLobbyTrack = false;
 
 	// 마지막으로 받은 상태. 두 신호를 합쳐서 배경음을 정하려면 둘 다 들고 있어야 한다.
 	EFF_FestivalStage LastStage = EFF_FestivalStage::Setup;
