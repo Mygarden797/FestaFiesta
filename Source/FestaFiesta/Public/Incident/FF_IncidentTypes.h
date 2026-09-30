@@ -178,9 +178,6 @@ struct FESTAFIESTA_API FFF_IncidentOptionView
 	int32 MinStaff = 1;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
-	int32 MaxStaff = 1;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
 	float WorkAmount = 0.f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")

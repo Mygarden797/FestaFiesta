@@ -1,6 +1,7 @@
 #include "Incident/FF_StaffDispatchSubsystem.h"
 
 #include "CrowdSystem/FF_BaseCrowd.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
@@ -9,6 +10,7 @@
 #include "NavigationPath.h"
 #include "NavigationSystem.h"
 #include "Staff/FF_StaffFacilitySubsystem.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 
 bool UFF_StaffDispatchSubsystem::DoesSupportWorldType(EWorldType::Type WorldType) const
 {
@@ -140,8 +142,31 @@ bool UFF_StaffDispatchSubsystem::IsResponding(FFF_IncidentHandle Handle) const
 	});
 }
 
+bool UFF_StaffDispatchSubsystem::GetRemainingWorkMinutes(FFF_IncidentHandle Handle, float& OutMinutes) const
+{
+	const FDispatch* Found = Dispatches.FindByPredicate([Handle](const FDispatch& Dispatch)
+	{
+		return Dispatch.Handle == Handle && Dispatch.bWorking && !Dispatch.bReturning;
+	});
+	if (!Found)
+	{
+		return false;
+	}
+	OutMinutes = Found->RemainingWorkMinutes;
+	return true;
+}
+
+// 작업 시간은 배속과 맞아야 하므로 실시간 DeltaTime 이 아니라 축제 시계로 흘린다. Live 가 아니면 작업도 멈춘다.
+bool UFF_StaffDispatchSubsystem::TryGetFestivalMinutes(float& OutMinutes) const
+{
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	return Stage && Stage->TryGetLiveElapsedMinutes(OutMinutes);
+}
+
 bool UFF_StaffDispatchSubsystem::TryDispatch(FFF_IncidentHandle Handle, int32 OptionIndex,
-	int32 RequiredStaff, const FFF_IncidentAnchor& Anchor)
+	int32 RequiredStaff, const FFF_IncidentAnchor& Anchor, float WorkAmount)
 {
 	if (!Staffing || !Incident || !Incident->IsHandleValid(Handle) || RequiredStaff <= 0 || IsResponding(Handle))
 	{
@@ -188,6 +213,11 @@ bool UFF_StaffDispatchSubsystem::TryDispatch(FFF_IncidentHandle Handle, int32 Op
 		Actor->SetActorEnableCollision(false);
 		Actor->Tags.Add(TEXT("StaffResponder"));
 		Journey.Actor = Actor;
+	}
+	Pending.RemainingWorkMinutes = WorkAmount > 0.f ? WorkAmount / static_cast<float>(Pending.Journeys.Num()) : 0.f;
+	if (Dispatches.IsEmpty())
+	{
+		LastWorkClockMinutes = -1.f;
 	}
 	Dispatches.Add(MoveTemp(Pending));
 	Incident->OnIncidentUpdated.Broadcast(Handle);
@@ -314,12 +344,50 @@ void UFF_StaffDispatchSubsystem::Tick(float DeltaTime)
 	{
 		return;
 	}
+	float WorkDeltaMinutes = 0.f;
+	float NowMinutes = 0.f;
+	if (TryGetFestivalMinutes(NowMinutes))
+	{
+		if (LastWorkClockMinutes >= 0.f)
+		{
+			WorkDeltaMinutes = FMath::Max(0.f, NowMinutes - LastWorkClockMinutes);
+		}
+		LastWorkClockMinutes = NowMinutes;
+	}
+
 	TArray<TPair<FFF_IncidentHandle, int32>> Arrivals;
 	TArray<FFF_IncidentHandle> Cancellations;
+	TArray<FFF_IncidentHandle> WorkStarted;
 	for (int32 Index = Dispatches.Num() - 1; Index >= 0; --Index)
 	{
 		FDispatch& Dispatch = Dispatches[Index];
 		const bool bWasReturning = Dispatch.bReturning;
+		if (Dispatch.bWorking && !Dispatch.bReturning)
+		{
+			FVector WorkSite;
+			if (!Incident || !Incident->IsHandleValid(Dispatch.Handle) || !TryGetLocation(Dispatch.Anchor, WorkSite))
+			{
+				Dispatch.bWorking = false;
+				BeginReturn(Dispatch);
+			}
+			else if (!WorkSite.Equals(Dispatch.Destination, 200.f))
+			{
+				// The incident moved away (e.g. a walking actor anchor): follow it again, keeping the progress made.
+				Dispatch.bWorking = false;
+			}
+			else
+			{
+				Dispatch.RemainingWorkMinutes -= WorkDeltaMinutes;
+				if (Dispatch.RemainingWorkMinutes <= 0.f)
+				{
+					Dispatch.RemainingWorkMinutes = 0.f;
+					Dispatch.bWorking = false;
+					Arrivals.Emplace(Dispatch.Handle, Dispatch.OptionIndex);
+					BeginReturn(Dispatch);
+				}
+				continue;
+			}
+		}
 		if (!Dispatch.bReturning)
 		{
 			FVector LatestDestination;
@@ -403,6 +471,19 @@ void UFF_StaffDispatchSubsystem::Tick(float DeltaTime)
 					Cancellations.Add(Dispatch.Handle);
 					continue;
 				}
+				if (Dispatch.RemainingWorkMinutes > 0.f)
+				{
+					for (FJourney& Journey : Dispatch.Journeys)
+					{
+						if (AFF_BaseCrowd* Actor = Journey.Actor.Get())
+						{
+							Actor->PushPresentation(Journey.Position, Actor->GetActorRotation(), 0.f);
+						}
+					}
+					Dispatch.bWorking = true;
+					WorkStarted.Add(Dispatch.Handle);
+					continue;
+				}
 				Arrivals.Emplace(Dispatch.Handle, Dispatch.OptionIndex);
 				BeginReturn(Dispatch);
 			}
@@ -410,6 +491,13 @@ void UFF_StaffDispatchSubsystem::Tick(float DeltaTime)
 	}
 	// Close callbacks may affect other responses: dispatch them only after iteration.
 	for (FFF_IncidentHandle Handle : Cancellations)
+	{
+		if (Incident && Incident->IsHandleValid(Handle))
+		{
+			Incident->OnIncidentUpdated.Broadcast(Handle);
+		}
+	}
+	for (FFF_IncidentHandle Handle : WorkStarted)
 	{
 		if (Incident && Incident->IsHandleValid(Handle))
 		{
