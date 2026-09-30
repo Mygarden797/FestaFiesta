@@ -10,6 +10,8 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "FF_RuntimeSettingsSubsystem.generated.h"
 
+struct FActorsInitializedParams;
+
 /* 소리 갈래별 음량. 마스터를 뺀 나머지는 마스터에 곱해지는 비율(0~1)이다.
 
    값을 하나의 묶음으로 두는 이유는 갈래가 늘어날 때 고칠 곳을 줄이려는 것이다.
@@ -129,6 +131,7 @@ class FESTAFIESTA_API UFF_RuntimeSettingsSubsystem : public UGameInstanceSubsyst
 
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
 
 	static UFF_RuntimeSettingsSubsystem* Get(const UObject* WorldContextObject);
 
@@ -187,6 +190,12 @@ private:
 	void LoadFromUserSettings();
 	void SaveToUserSettings() const;
 	void NotifyChanged();
+
+	// 레벨이 바뀌면 엔진이 마스터 음량을 1.0 으로 되돌리므로 새 월드마다 다시 건다.
+	void HandleWorldActorsInitialized(const FActorsInitializedParams& Params);
+	void ApplyAudioSettingsToWorld(UWorld* World) const;
+
+	FDelegateHandle WorldActorsInitializedHandle;
 
 	FFF_AudioVolumes Volumes;
 	bool bZoomToCursor = true;

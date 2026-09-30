@@ -2,13 +2,17 @@
 
 #include "Audio/FF_AudioEventLink.h"
 
+#include "Audio/FF_AudioSettings.h"
 #include "Audio/FF_AudioSubsystem.h"
+#include "GameFramework/PlayerController.h"
+#include "TimerManager.h"
 #include "Engine/World.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Finale/FF_FinaleShowSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "UI/Core/FF_UIFlowSettings.h"
 
 bool UFF_AudioEventLink::DoesSupportWorldType(const EWorldType::Type WorldType) const
 {
@@ -18,6 +22,23 @@ bool UFF_AudioEventLink::DoesSupportWorldType(const EWorldType::Type WorldType) 
 void UFF_AudioEventLink::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
+
+	/* 로비인지는 레벨로 가른다.
+
+	   축제 단계는 게임 인스턴스가 들고 있어서 로비에 와도 값이 남는다. 처음 켜면 기본값인
+	   준비 단계, 축제를 끝내고 돌아오면 결산 단계라 단계만 보면 로비에서 개장 전 곡이나
+	   폐장 곡이 흘렀다. UI 흐름이 로비로 쓰는 레벨 설정을 그대로 읽어 같은 기준을 쓴다.
+	*/
+	bIsLobbyWorld = false;
+	if (const UFF_UIFlowSettings* FlowSettings = UFF_UIFlowSettings::Get())
+	{
+		if (!FlowSettings->FrontendLevel.IsNull())
+		{
+			// PIE 에서는 패키지 이름에 UEDPIE_0_ 접두어가 붙어 떼고 비교한다.
+			const FString WorldPackage = UWorld::RemovePIEPrefix(InWorld.GetOutermost()->GetName());
+			bIsLobbyWorld = WorldPackage == FlowSettings->FrontendLevel.ToSoftObjectPath().GetLongPackageName();
+		}
+	}
 
 	// Initialize 가 아니라 여기서 묶는다. 서브시스템 생성 순서는 보장되지 않아서
 	// Initialize 시점엔 상대가 아직 없을 수 있다.
@@ -185,10 +206,63 @@ void UFF_AudioEventLink::HandleFinaleBurst(const FVector WorldLocation, const FL
 	}
 
 	// 터진 자리에서 소리를 낸다. 멀리서 터지면 작게 들려야 거리감이 산다.
-	if (UFF_AudioSubsystem* Audio = GetAudio())
+	UWorld* World = GetWorld();
+	const float Delay = ResolveBurstSoundDelay(WorldLocation);
+	if (!World || Delay <= 0.02f)
 	{
-		Audio->PlayEventAtLocation(EFF_AudioEvent::FinaleBurst, WorldLocation);
+		if (UFF_AudioSubsystem* Audio = GetAudio())
+		{
+			Audio->PlayEventAtLocation(EFF_AudioEvent::FinaleBurst, WorldLocation);
+		}
+		return;
 	}
+
+	/* 소리가 날아오는 시간만큼 뒤에 낸다(FF_AudioSettings 주석).
+
+	   타이머는 월드가 소유해서 레벨이 바뀌면 같이 사라진다. 연출을 중간에 멈춰도 이미 터진
+	   불꽃의 소리는 늦게라도 들리는 게 맞으므로 따로 취소하지 않는다. 결선을 끈 뒤에는 내지 않는다.
+	*/
+	FTimerHandle Handle;
+	World->GetTimerManager().SetTimer(Handle,
+		FTimerDelegate::CreateWeakLambda(this, [this, WorldLocation]()
+		{
+			if (!bLinkEnabled)
+			{
+				return;
+			}
+			if (UFF_AudioSubsystem* Audio = GetAudio())
+			{
+				Audio->PlayEventAtLocation(EFF_AudioEvent::FinaleBurst, WorldLocation);
+			}
+		}),
+		Delay, false);
+}
+
+float UFF_AudioEventLink::ResolveBurstSoundDelay(const FVector& WorldLocation) const
+{
+	const UFF_AudioSettings* Settings = UFF_AudioSettings::Get();
+	const UWorld* World = GetWorld();
+	if (!Settings || !Settings->bDelayFinaleBurstBySoundTravel || !World)
+	{
+		return 0.f;
+	}
+
+	// 듣는 사람 자리는 오디오 리스너다. 카메라가 순회 중이면 그 시점에서 잰다.
+	const APlayerController* Controller = World->GetFirstPlayerController();
+	if (!Controller)
+	{
+		return 0.f;
+	}
+
+	FVector ListenerLocation = FVector::ZeroVector;
+	FVector FrontDir = FVector::ForwardVector;
+	FVector RightDir = FVector::RightVector;
+	Controller->GetAudioListenerPosition(ListenerLocation, FrontDir, RightDir);
+
+	return UFF_AudioSettings::ComputeSoundTravelDelay(
+		FVector::Dist(ListenerLocation, WorldLocation),
+		Settings->SpeedOfSoundCmPerSecond,
+		Settings->MaxFinaleBurstSoundDelaySeconds);
 }
 
 void UFF_AudioEventLink::HandleFinaleShowStateChanged(const bool bInProgress)
@@ -397,6 +471,28 @@ void UFF_AudioEventLink::RefreshAmbience()
 	}
 
 	EFF_AudioAmbience Next = EFF_AudioAmbience::None;
+
+	/* 로비는 단계와 상관없이 로비 곡이다.
+
+	   로비 곡을 아직 뱅크에 안 넣었으면 예전처럼 개장 전 곡으로 둔다. 곡을 넣기 전까지
+	   로비가 조용해지면 소리가 고장 난 것처럼 보인다.
+	*/
+	if (bIsLobbyWorld)
+	{
+		if (Audio->HasAmbienceTrack(EFF_AudioAmbience::Lobby))
+		{
+			Audio->SetAmbience(EFF_AudioAmbience::Lobby);
+			return;
+		}
+		if (!bWarnedMissingLobbyTrack)
+		{
+			bWarnedMissingLobbyTrack = true;
+			UE_LOG(LogFestaFiestaAudio, Warning,
+				TEXT("[사운드] 로비 곡이 뱅크에 없어 개장 전 곡을 대신 튼다. 오디오 뱅크의 배경음에 `로비` 를 넣을 것."));
+		}
+		Audio->SetAmbience(EFF_AudioAmbience::Setup);
+		return;
+	}
 
 	switch (LastStage)
 	{

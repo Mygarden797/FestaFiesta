@@ -313,6 +313,16 @@ struct FFF_FinaleGradeSpec
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.1"))
 	float BurstScale = 1.f;
 
+	/* 높이 터지는 발일수록 크게 터뜨리는 폭. 0 이면 모든 발이 같은 크기다.
+
+	   실제 불꽃은 알(구경)이 클수록 높이 올라가서 크게 터진다. 3인치 약 120m, 6인치 약 210m,
+	   12인치 약 350m (Skylighter 표). 높이만 무작위로 두고 크기를 고정하면 높은 발이
+	   오히려 작아 보여 원근이 뒤집힌다. 0.25 면 가장 낮은 발 0.75배, 가장 높은 발 1.25배다.
+	   모양 패턴은 크기가 섞이면 모양이 안 읽혀서 이 값을 쓰지 않는다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.0", ClampMax = "0.9"))
+	float CaliberScaleSpread = 0.25f;
+
 	// 올라가는 궤적의 길이 배수. 크기와 따로 두면 "작지만 높이 올라가는" 연출도 만들 수 있다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.1"))
 	float TrailLength = 1.f;
@@ -419,6 +429,21 @@ struct FFF_FinaleGradeSpec
 	bool IsPlayable() const
 	{
 		return BurstCount > 0 && DurationSeconds > 0.f;
+	}
+
+	// 발사 지점 위 높이로 크기 배수를 정한다. 높이 범위 아래 끝 1-폭, 위 끝 1+폭.
+	float ResolveCaliberScale(const float HeightAboveLaunchCm) const
+	{
+		const float Spread = FMath::Clamp(CaliberScaleSpread, 0.f, 0.9f);
+		const float Low = FMath::Min(BurstHeightMin, BurstHeightMax);
+		const float High = FMath::Max(BurstHeightMin, BurstHeightMax);
+		if (Spread <= 0.f || High - Low <= KINDA_SMALL_NUMBER)
+		{
+			return 1.f;
+		}
+
+		const float Alpha = FMath::Clamp((HeightAboveLaunchCm - Low) / (High - Low), 0.f, 1.f);
+		return FMath::Lerp(1.f - Spread, 1.f + Spread, Alpha);
 	}
 
 	// 3막일 때 마무리 막 몫으로 남겨둘 발수. 3막이 아니면 0 이다.

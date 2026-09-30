@@ -46,6 +46,33 @@ void UFF_RuntimeSettingsSubsystem::Initialize(FSubsystemCollectionBase& Collecti
 	Super::Initialize(Collection);
 	LoadFromUserSettings();
 	ApplyAudioSettings();
+
+	/* 마스터 음량은 오디오 디바이스에 거는 값인데, 엔진이 LoadMap 에서 이 값을 1.0 으로 되돌린다.
+	   그래서 메인 메뉴에서 줄여 두고 축제 레벨에 들어가면 원래 크기로 튀었다(2026-09-30 제보).
+	   지금까지는 일시정지 허브를 열 때만 다시 걸어서, ESC 를 누르기 전까지 큰 소리가 났다.
+	   새 월드의 액터가 준비된 시점은 그 리셋 이후이고 BeginPlay 이전이라, 첫 소리가 나기 전에 맞출 수 있다.
+	   PIE 첫 월드처럼 LoadMap 을 거치지 않는 경우도 이 신호는 온다.
+	*/
+	WorldActorsInitializedHandle = FWorldDelegates::OnWorldInitializedActors.AddUObject(
+		this, &UFF_RuntimeSettingsSubsystem::HandleWorldActorsInitialized);
+}
+
+void UFF_RuntimeSettingsSubsystem::Deinitialize()
+{
+	FWorldDelegates::OnWorldInitializedActors.Remove(WorldActorsInitializedHandle);
+	WorldActorsInitializedHandle.Reset();
+	Super::Deinitialize();
+}
+
+void UFF_RuntimeSettingsSubsystem::HandleWorldActorsInitialized(const FActorsInitializedParams& Params)
+{
+	// 에디터 미리보기 월드나 다른 PIE 인스턴스의 월드는 건드리지 않는다.
+	UWorld* World = Params.World;
+	if (!World || World->GetGameInstance() != GetGameInstance())
+	{
+		return;
+	}
+	ApplyAudioSettingsToWorld(World);
 }
 
 UFF_RuntimeSettingsSubsystem* UFF_RuntimeSettingsSubsystem::Get(const UObject* WorldContextObject)
@@ -205,7 +232,12 @@ void UFF_RuntimeSettingsSubsystem::ApplyAudioSettings()
 {
 	// 마스터만 엔진 전체에 건다. 배경음·효과음은 재생하는 쪽이 방송을 받아 곱한다.
 	// 사운드 클래스 애셋 없이 돌게 하려는 것이다. 애셋을 만들고 모든 소리에 지정하는 일이 끝나기 전에도 슬라이더가 먹어야 한다.
-	UWorld* World = GetWorld();
+	ApplyAudioSettingsToWorld(GetWorld());
+}
+
+void UFF_RuntimeSettingsSubsystem::ApplyAudioSettingsToWorld(UWorld* World) const
+{
+	// 게임 인스턴스가 막 만들어진 시점에는 월드가 없다. 그 경우는 첫 월드가 준비될 때 위 신호가 채운다.
 	if (!World)
 	{
 		return;

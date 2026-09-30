@@ -4,6 +4,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Finale/FF_FinaleLaunchSite.h"
 #include "Finale/FF_FinaleShowTypes.h"
 
 // 등급 수치는 화면을 봐야 정해지는 값이라 절대값을 고정하지 않는다.
@@ -201,6 +202,57 @@ bool FFF_FinaleGrandFinaleReserve::RunTest(const FString& Parameters)
 
 	Edge.GrandFinaleShare = 0.f;
 	TestEqual(TEXT("비율 0 이면 남기지 않는다"), Edge.GetGrandFinaleReserve(), 0);
+	return true;
+}
+
+// 8. 바지선은 가운데를 기준으로 좌우 대칭으로 늘어선다.
+//    한쪽으로 쏠리면 액터를 해변 가운데에 놔도 불꽃이 한쪽에서만 올라간다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinaleBargeOffsets, "FestaFiesta.Finale.Spec.BargeOffsets", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FinaleBargeOffsets::RunTest(const FString& Parameters)
+{
+	TArray<float> Offsets;
+	AFF_FinaleLaunchSite::ComputeBargeOffsets(3, 100.f, Offsets);
+	if (TestEqual(TEXT("3척이면 위치가 셋"), Offsets.Num(), 3))
+	{
+		TestEqual(TEXT("왼쪽"), Offsets[0], -100.f);
+		TestEqual(TEXT("가운데"), Offsets[1], 0.f);
+		TestEqual(TEXT("오른쪽"), Offsets[2], 100.f);
+	}
+
+	AFF_FinaleLaunchSite::ComputeBargeOffsets(2, 100.f, Offsets);
+	if (TestEqual(TEXT("2척이면 위치가 둘"), Offsets.Num(), 2))
+	{
+		TestEqual(TEXT("짝수 척은 반 칸씩 비킨다"), Offsets[0], -50.f);
+		TestEqual(TEXT("짝수 척 대칭"), Offsets[1], 50.f);
+	}
+
+	AFF_FinaleLaunchSite::ComputeBargeOffsets(0, 100.f, Offsets);
+	TestEqual(TEXT("0 척은 1척으로 본다"), Offsets.Num(), 1);
+	TestEqual(TEXT("1척은 제자리"), Offsets.Num() > 0 ? Offsets[0] : -1.f, 0.f);
+	return true;
+}
+
+// 9. 높이 터지는 발일수록 크게 터진다. 폭이 0 이거나 높이 범위가 없으면 모두 같은 크기다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinaleCaliberScale, "FestaFiesta.Finale.Spec.CaliberScale", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FinaleCaliberScale::RunTest(const FString& Parameters)
+{
+	FFF_FinaleGradeSpec Spec = FFF_FinaleDefaults::MakeSpec(EFF_FinaleGrade::S);
+	Spec.BurstHeightMin = 10000.f;
+	Spec.BurstHeightMax = 30000.f;
+	Spec.CaliberScaleSpread = 0.25f;
+
+	TestEqual(TEXT("가장 낮은 발은 0.75배"), Spec.ResolveCaliberScale(10000.f), 0.75f);
+	TestEqual(TEXT("가운데 높이는 1배"), Spec.ResolveCaliberScale(20000.f), 1.f);
+	TestEqual(TEXT("가장 높은 발은 1.25배"), Spec.ResolveCaliberScale(30000.f), 1.25f);
+	TestEqual(TEXT("범위 밖은 끝값에서 멈춘다"), Spec.ResolveCaliberScale(90000.f), 1.25f);
+	TestTrue(TEXT("높을수록 크다"), Spec.ResolveCaliberScale(25000.f) > Spec.ResolveCaliberScale(15000.f));
+
+	Spec.CaliberScaleSpread = 0.f;
+	TestEqual(TEXT("폭 0 이면 모두 1배"), Spec.ResolveCaliberScale(30000.f), 1.f);
+
+	Spec.CaliberScaleSpread = 0.25f;
+	Spec.BurstHeightMax = Spec.BurstHeightMin;
+	TestEqual(TEXT("높이 범위가 없으면 1배"), Spec.ResolveCaliberScale(10000.f), 1.f);
 	return true;
 }
 

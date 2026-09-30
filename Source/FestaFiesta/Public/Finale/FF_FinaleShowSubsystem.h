@@ -221,7 +221,9 @@ private:
 	const FFF_FinaleVolley& PickVolley(int32 RemainingShells) const;
 
 	// 한 발을 실제로 띄운다. 패턴이 정한 자리든 흩뿌린 자리든 여기로 모인다.
-	void SpawnShell(const FVector& Location, const FLinearColor& Color, class UNiagaraSystem* Effect);
+	// SizeScale 은 등급 크기에 곱한다. 높이에 따른 구경 차이를 여기로 넘긴다.
+	void SpawnShell(const FVector& Location, const FLinearColor& Color, class UNiagaraSystem* Effect,
+		float SizeScale = 1.f);
 
 	// 아직 쏘지도 예약하지도 않은 발수. 연출의 끝을 이것으로 정한다.
 	int32 GetRemainingShells() const;
@@ -241,6 +243,8 @@ private:
 		// 터질 때 다시 고르면 한 패턴 안에서 종류가 섞인다. 일렬로 날아가는데
 		// 모양이 제각각이면 줄로 안 보인다.
 		TWeakObjectPtr<class UNiagaraSystem> Effect;
+
+		float SizeScale = 1.f;
 	};
 
 	TArray<FPendingShell> PendingShells;
@@ -288,6 +292,9 @@ private:
 
 	// 발사 지점을 구한다. 레벨에 발사대가 없으면 원점 위를 쓴다.
 	FVector ResolveLaunchOrigin() const;
+
+	// 바지선까지 펼친 발사 위치 목록. 없으면 원점 하나를 담는다.
+	void CollectLaunchPoints(TArray<FVector>& OutPoints) const;
 
 	// 터질 지점 하나를 뽑는다. 반경 안에 흩고 높이도 범위 안에서 고른다.
 	FVector PickBurstLocation(const FVector& Origin) const;

@@ -18,6 +18,7 @@
 #include "NiagaraComponent.h"
 #include "NiagaraParameterStore.h"
 #include "NiagaraSystem.h"
+#include "DrawDebugHelpers.h"
 
 // 콘솔 명령의 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다(Debug/FF_DebugConsole.h).
 // 예전에는 이 파일에만 그 규칙이 있었고, 다른 모듈은 절반만 지켰다.
@@ -182,6 +183,30 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 			SkipCinematicCamera();
 		}));
 
+	/* 발사 위치를 월드에 그린다.
+
+	   바지선은 액터 하나에서 계산으로 펼쳐져 에디터 뷰포트에 따로 보이지 않는다.
+	   바다 위에 제대로 늘어섰는지, 해변과 평행한지 PIE 에서 바로 확인하려고 둔다.
+	*/
+	DebugCommands.Add(
+		TEXT("FF.Finale.ShowLaunchPoints"),
+		TEXT("피날레 발사 위치(바지선 포함)를 10초 동안 월드에 표시한다."),
+		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+		{
+			TArray<FVector> Points;
+			CollectLaunchPoints(Points);
+			const UWorld* World = GetWorld();
+			for (int32 Index = 0; Index < Points.Num(); ++Index)
+			{
+				DrawDebugSphere(World, Points[Index], 800.f, 12, FColor::Orange, false, 10.f, 0, 40.f);
+				DrawDebugLine(World, Points[Index], Points[Index] + FVector(0.f, 0.f, ActiveSpec.BurstHeightMax > 0.f
+					? ActiveSpec.BurstHeightMax : 25000.f), FColor::Yellow, false, 10.f, 0, 20.f);
+				DrawDebugString(World, Points[Index] + FVector(0.f, 0.f, 1500.f),
+					FString::Printf(TEXT("발사 %d"), Index + 1), nullptr, FColor::White, 10.f);
+			}
+			UE_LOG(LogFestaFiestaFinale, Display, TEXT("[피날레] 발사 위치 %d곳을 표시했다."), Points.Num());
+		}));
+
 	DebugCommands.Add(
 		TEXT("FF.Finale.Stat"),
 		TEXT("현재 연출 상태와 등급별 수치를 출력한다."),
@@ -213,9 +238,11 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 
 			TArray<AFF_FinaleLaunchSite*> Sites;
 			AFF_FinaleLaunchSite::CollectAll(GetWorld(), Sites);
+			TArray<FVector> LaunchPoints;
+			AFF_FinaleLaunchSite::CollectLaunchPoints(GetWorld(), LaunchPoints);
 			UE_LOG(LogFestaFiestaFinale, Display,
-				TEXT("  발사 지점 %d개 / 연출 시점 %s"),
-				Sites.Num(),
+				TEXT("  발사 지점 %d개 (바지선 포함 발사 위치 %d곳) / 연출 시점 %s"),
+				Sites.Num(), LaunchPoints.Num(),
 				AFF_FinaleViewpoint::FindBest(GetWorld()) ? TEXT("있음") : TEXT("없음"));
 
 			TArray<AFF_FinaleViewpoint*> TourCandidates;
@@ -454,7 +481,7 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 		{
 			return;
 		}
-		SpawnShell(Due.Location, Due.Color, Due.Effect.Get());
+		SpawnShell(Due.Location, Due.Color, Due.Effect.Get(), Due.SizeScale);
 	}
 
 	if (!bShowInProgress)
@@ -597,20 +624,22 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 	}
 }
 
-FVector UFF_FinaleShowSubsystem::ResolveLaunchOrigin() const
+void UFF_FinaleShowSubsystem::CollectLaunchPoints(TArray<FVector>& OutPoints) const
 {
-	TArray<AFF_FinaleLaunchSite*> Sites;
-	AFF_FinaleLaunchSite::CollectAll(GetWorld(), Sites);
-
-	if (Sites.Num() == 0)
+	AFF_FinaleLaunchSite::CollectLaunchPoints(GetWorld(), OutPoints);
+	if (OutPoints.Num() == 0)
 	{
 		// 레벨이 아직 없는 단계다. 원점 위에서 터뜨리고 연출 자체는 굴린다.
-		return FVector::ZeroVector;
+		OutPoints.Add(FVector::ZeroVector);
 	}
+}
 
-	// 지점이 여럿이면 차례로 돌아간다. 좌우에 하나씩 두면 번갈아 터진다.
-	const int32 Index = FiredVolleys % Sites.Num();
-	return Sites[Index]->GetActorLocation();
+FVector UFF_FinaleShowSubsystem::ResolveLaunchOrigin() const
+{
+	// 위치가 여럿이면 차례로 돌아간다. 바지선 3척이면 왼쪽, 가운데, 오른쪽 순이다.
+	TArray<FVector> Points;
+	CollectLaunchPoints(Points);
+	return Points[FiredVolleys % Points.Num()];
 }
 
 FVector UFF_FinaleShowSubsystem::PickBurstLocation(const FVector& Origin) const
@@ -956,19 +985,20 @@ void UFF_FinaleShowSubsystem::FireFinalSalvo()
 	   평소에는 차례마다 발사대를 번갈아 쓰는데(ResolveLaunchOrigin), 마지막까지 한 곳에서만
 	   올리면 일제 발사가 한 덩어리로 뭉친다. 하늘 전체가 한꺼번에 차야 끝난다는 게 읽힌다.
 	*/
-	TArray<AFF_FinaleLaunchSite*> Sites;
-	AFF_FinaleLaunchSite::CollectAll(GetWorld(), Sites);
+	// 바지선까지 펼친 위치를 쓴다. 실제 해상 불꽃처럼 모든 배에서 한꺼번에 올라가야 하늘 폭이 넓게 찬다.
+	TArray<FVector> Points;
+	CollectLaunchPoints(Points);
 
-	UE_LOG(LogFestaFiestaFinale, Log, TEXT("[피날레] 일제 발사 %d발 (발사대 %d곳)"), ShellCount, Sites.Num());
+	UE_LOG(LogFestaFiestaFinale, Log, TEXT("[피날레] 일제 발사 %d발 (발사 위치 %d곳)"), ShellCount, Points.Num());
 
 	for (int32 Shell = 0; Shell < ShellCount; ++Shell)
 	{
-		const FVector Origin = Sites.Num() > 0
-			? Sites[Shell % Sites.Num()]->GetActorLocation()
-			: FVector::ZeroVector;
+		const FVector& Origin = Points[Shell % Points.Num()];
+		const FVector Location = PickBurstLocation(Origin);
 
-		SpawnShell(PickBurstLocation(Origin), PickColor(ColorCursor++),
-			ActiveSpec.PickEffect(ShowRandom.GetUnsignedInt()));
+		SpawnShell(Location, PickColor(ColorCursor++),
+			ActiveSpec.PickEffect(ShowRandom.GetUnsignedInt()),
+			ActiveSpec.ResolveCaliberScale(Location.Z - Origin.Z));
 
 		// OnBurst 를 받은 쪽이 연출을 멈췄다. 남은 발을 쏘지 않는다.
 		if (!bShowInProgress)
@@ -1084,7 +1114,7 @@ const FFF_FinaleVolley& UFF_FinaleShowSubsystem::PickVolley(const int32 Remainin
 }
 
 void UFF_FinaleShowSubsystem::SpawnShell(
-	const FVector& Location, const FLinearColor& Color, UNiagaraSystem* Effect)
+	const FVector& Location, const FLinearColor& Color, UNiagaraSystem* Effect, const float SizeScale)
 {
 	UWorld* World = GetWorld();
 	if (!World)
@@ -1113,7 +1143,7 @@ void UFF_FinaleShowSubsystem::SpawnShell(
 			// 이펙트에 같은 이름의 User 파라미터가 없으면 조용히 무시된다.
 			// 크래시가 안 나는 대신 "왜 색이 안 바뀌지" 로 나타나므로, 이름은 상수로만 쓴다.
 			Spawned->SetColorParameter(FFF_FinaleParams::BurstColor, Color);
-			Spawned->SetFloatParameter(FFF_FinaleParams::BurstScale, ActiveSpec.BurstScale);
+			Spawned->SetFloatParameter(FFF_FinaleParams::BurstScale, ActiveSpec.BurstScale * FMath::Max(0.1f, SizeScale));
 			Spawned->SetFloatParameter(FFF_FinaleParams::TrailLength, ActiveSpec.TrailLength);
 		}
 	}
@@ -1196,6 +1226,9 @@ void UFF_FinaleShowSubsystem::FireVolley()
 	*/
 	TArray<FVector> ShellLocations;
 
+	// 발마다 어느 위치에서 올라갔는지. 크기 배수를 그 위치 기준 높이로 정한다.
+	TArray<FVector> ShellOrigins;
+
 	if (Volley.HasFixedLayout())
 	{
 		FFF_FinaleLayoutContext Layout;
@@ -1224,11 +1257,22 @@ void UFF_FinaleShowSubsystem::FireVolley()
 	}
 	else
 	{
-		// 단발과 동시는 흩뿌린다. 발마다 따로 뽑는 것이 여기서는 의도다.
+		/* 단발과 동시는 흩뿌린다. 발마다 따로 뽑는 것이 여기서는 의도다.
+
+		   동시 발사는 발마다 다음 발사 위치로 넘긴다. 예전에는 한 차례를 한 곳에서만 올려서
+		   바지선을 여럿 둬도 동시 발이 한 배 위에 뭉쳤다. 실제 해상 불꽃은 여러 배가 함께 쏴서
+		   좌우로 넓게 찬다. 위치가 하나뿐이면 예전과 같다.
+		*/
+		TArray<FVector> Points;
+		CollectLaunchPoints(Points);
+
 		ShellLocations.Reserve(ShellCount);
+		ShellOrigins.Reserve(ShellCount);
 		for (int32 Shell = 0; Shell < ShellCount; ++Shell)
 		{
-			ShellLocations.Add(PickBurstLocation(Origin));
+			const FVector& ShellOrigin = Points[(FiredVolleys + Shell) % Points.Num()];
+			ShellOrigins.Add(ShellOrigin);
+			ShellLocations.Add(PickBurstLocation(ShellOrigin));
 		}
 	}
 
@@ -1243,6 +1287,11 @@ void UFF_FinaleShowSubsystem::FireVolley()
 			? UniformEffect
 			: ActiveSpec.PickEffect(ShowRandom.GetUnsignedInt());
 
+		// 모양 패턴은 크기를 맞춘다. 흩뿌린 발만 높이에 따라 구경을 바꾼다.
+		const float SizeScale = ShellOrigins.IsValidIndex(Shell)
+			? ActiveSpec.ResolveCaliberScale(Location.Z - ShellOrigins[Shell].Z)
+			: 1.f;
+
 		if (Volley.ShellDelaySeconds > 0.f && Shell > 0)
 		{
 			// 줄지어 흐르는 느낌은 이 지연에서 나온다. 한꺼번에 쏘면 그냥 모양일 뿐이다.
@@ -1251,10 +1300,11 @@ void UFF_FinaleShowSubsystem::FireVolley()
 			Pending.Color = Color;
 			Pending.DelayRemaining = Volley.ShellDelaySeconds * static_cast<float>(Shell);
 			Pending.Effect = Effect;
+			Pending.SizeScale = SizeScale;
 			continue;
 		}
 
-		SpawnShell(Location, Color, Effect);
+		SpawnShell(Location, Color, Effect, SizeScale);
 
 		// OnBurst 를 받은 쪽이 연출을 멈췄다. 남은 발을 쏘지 않는다.
 		if (!bShowInProgress)
