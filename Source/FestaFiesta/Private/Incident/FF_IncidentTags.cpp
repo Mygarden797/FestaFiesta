@@ -9,6 +9,8 @@ namespace FFIncidentTags
 		UE_DEFINE_GAMEPLAY_TAG_COMMENT(Congestion, "Incident.Crowd.Congestion", "문제형. 밀집 셀이 Fruin 임계를 넘음");
 		UE_DEFINE_GAMEPLAY_TAG_COMMENT(Crush, "Incident.Crowd.Crush", "문제형. Congestion 방치 시 EscalateTo 대상");
 		UE_DEFINE_GAMEPLAY_TAG_COMMENT(MemberMissing, "Incident.Crowd.MemberMissing", "문제형. 파티원이 리더와 일정 시간 이상 떨어짐 (미아)");
+		UE_DEFINE_GAMEPLAY_TAG_COMMENT(ItemLost, "Incident.Crowd.ItemLost", "문제형. 누군가가 아이템을 떨어뜨림");
+		UE_DEFINE_GAMEPLAY_TAG_COMMENT(ChildCrying, "Incident.Crowd.ChildCrying", "문제형. 아이가 울기 시작");
 	}
 
 	namespace Facility

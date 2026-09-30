@@ -82,7 +82,6 @@ private:
 	void ClearMarkers();
 
 	void HandleMarkerClicked(FFF_IncidentHandle Handle);
-	void FlushPendingResolve();
 
 	void ApplyIcon(UFF_IncidentMarkerButton& Button, const FFF_IncidentView& View);
 	UTexture2D* ResolveIcon(const FFF_IncidentView& View);
@@ -98,6 +97,5 @@ private:
 	TMap<FGameplayTag, TObjectPtr<UTexture2D>> IconCache;
 
 	TMap<FFF_IncidentHandle, FMarker> Markers;
-	TArray<FFF_IncidentHandle> PendingResolve;
 	TSet<FGameplayTag> WarnedMissingIcon;
 };

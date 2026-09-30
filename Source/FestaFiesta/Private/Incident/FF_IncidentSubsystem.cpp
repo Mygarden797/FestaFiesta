@@ -132,7 +132,8 @@ bool UFF_IncidentSubsystem::GetIncidentView(FFF_IncidentHandle Handle, FFF_Incid
 	OutView.Body = Def->Body;
 	OutView.MarkerIcon = Def->MarkerIcon;
 	OutView.Anchor = Slot->Anchor;
-	
+	FFF_IncidentRules::BuildOptionViews(*Def, OutView.Options);
+
 	return true;
 }
 
@@ -166,6 +167,12 @@ void UFF_IncidentSubsystem::LoadDefinitions()
 				}
 				
 				CachedDef.Add(Def->IncidentTag,Def);
+				
+				if (Def->MaxActive != INDEX_NONE)
+				{
+					IncidentMaxCheck.Add(Def->IncidentTag,0);
+				}
+				
 			}
 		}
 		
@@ -231,8 +238,30 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	}
 	
 	
+
+	
+	
 	FIncidentSlot& Slot = IncidentSlots[Index];
+	
+	bool bEscalateTo = ((FinalState == EFF_IncidentState::Ignored) && Slot.EscalateTo.IsValid());
+	FFF_IncidentReport EscalateToReport;
+	
+	if (bEscalateTo)
+	{
+		
+		EscalateToReport.IncidentTag = Slot.EscalateTo; 
+		EscalateToReport.Anchor = Slot.Anchor;
+		EscalateToReport.ContextTags = Slot.ContextTags;
+		EscalateToReport.Intensity = Slot.PeakIntensity;
+	}
+	
 	FFF_IncidentHandle Handle;
+	
+	int32* IncidentMaxNum = IncidentMaxCheck.Find(Slot.IncidentTag);
+	if (IncidentMaxNum != nullptr)
+	{
+		*IncidentMaxNum -=1;
+	}
 	
 	Handle.Index = Index;
 	Handle.Serial = Slot.Serial;
@@ -245,11 +274,18 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	
 
 	
+
+	
 	ActiveByKey.Remove(Slot.DedupeKey);
 	FreeSlots.Push(Index);
 	
 	
 	OnIncidentClosed.Broadcast(Handle);
+	
+	if (bEscalateTo)
+	{
+		ReportIncident(EscalateToReport);
+	}
 
 	
 	
@@ -281,6 +317,8 @@ void UFF_IncidentSubsystem::Tick(float DeltaTime)
 		
 		if (FFF_IncidentRules::HasLapsed(Now,Slot.OccurredAtMinutes,Slot.MinutesUntilLapse))
 		{
+			
+			
 			CloseSlot(index,FFF_IncidentRules::LapseStateFor(Slot.Tone),Now);
 		}
 	}
@@ -294,6 +332,7 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 	
 	
 	TObjectPtr<UFF_IncidentDefinition> IncDef = CachedDef.FindRef(Report.IncidentTag);
+
 	if (!IncDef)
 	{
 		FF_INCIDENT_LOG("DefinitionView is Null. it is wrong IncidentTag.");
@@ -301,14 +340,14 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 	}
 	
 	float Now = 0.f;
-	
+
 	if (!TryGetNowMinutes(Now))
 	{
 		FF_INCIDENT_LOG("Current Time has not found");
 		return FFF_IncidentHandle();
 	}
-	
-	
+
+
 	const FName Key = FFF_IncidentRules::MakeDedupeKey(Report.IncidentTag,Report.Anchor);
 	if (const FFF_IncidentHandle* Found = ActiveByKey.Find(Key))
 	{
@@ -328,6 +367,16 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 	{
 		FF_INCIDENT_LOG("IncidentSlot is Max");
 		return FFF_IncidentHandle();
+	}
+
+	int32* IncidentMaxNum = IncidentMaxCheck.Find(Report.IncidentTag);
+	if (IncidentMaxNum)
+	{
+		if (*IncidentMaxNum >= IncDef->MaxActive)
+		{
+			return FFF_IncidentHandle();
+		}
+		(*IncidentMaxNum)++;
 	}
 
 	const int32 Index = FreeSlots.Num() > 0 ? FreeSlots.Pop() : IncidentSlots.AddDefaulted();

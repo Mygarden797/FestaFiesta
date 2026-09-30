@@ -113,6 +113,9 @@ private:
 	UPROPERTY()
 	TMap<FGameplayTag,TObjectPtr<UFF_IncidentDefinition>> CachedDef;
 	
+	
+	TMap<FGameplayTag, int32> IncidentMaxCheck;
+	
 	int32 MaxConcurrent = 64;
 	
 };

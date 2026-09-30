@@ -45,6 +45,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Instanced, Category = "Incident|Options")
 	TArray<TObjectPtr<UFF_IncidentOption>> Options;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Incident|Options")
+	int32 MaxActive = INDEX_NONE;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Incident|Options")
+	int32 MaxPerDay = INDEX_NONE;
+	
+	
+	
 	const UFF_IncidentOption* GetOption(int32 OptionIndex) const
 	{
 		return Options.IsValidIndex(OptionIndex) ? Options[OptionIndex].Get() : nullptr;

@@ -17,6 +17,8 @@
 #include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
+#include "Incident/FF_IncidentSubsystem.h"
+#include "UI/LiveHUD/Incident/FF_IncidentDetailPanel.h"
 #include "UI/LiveHUD/Incident/FF_IncidentMarkerLayer.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
@@ -116,6 +118,57 @@ void UFF_LiveHudScreen::EnsureIncidentMarkerLayer()
 	{
 		IncidentMarkerLayer->AddToViewport(-10);
 	}
+
+	if (IncidentMarkerLayer)
+	{
+		IncidentMarkerLayer->OnIncidentMarkerClicked.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleIncidentMarkerClicked);
+	}
+}
+
+void UFF_LiveHudScreen::EnsureIncidentDetailPanel()
+{
+	if (!IncidentDetailPanel)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			IncidentDetailPanel = CreateWidget<UFF_IncidentDetailPanel>(PC, UFF_IncidentDetailPanel::StaticClass());
+		}
+		else if (UWorld* World = GetWorld())
+		{
+			IncidentDetailPanel = CreateWidget<UFF_IncidentDetailPanel>(World, UFF_IncidentDetailPanel::StaticClass());
+		}
+	}
+
+	if (IncidentDetailPanel && !IncidentDetailPanel->IsInViewport())
+	{
+		IncidentDetailPanel->AddToViewport(10);
+	}
+
+	if (IncidentDetailPanel)
+	{
+		IncidentDetailPanel->OnDispatchRequested.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleIncidentDispatchRequested);
+	}
+}
+
+void UFF_LiveHudScreen::HandleIncidentMarkerClicked(FFF_IncidentHandle Handle)
+{
+	EnsureIncidentDetailPanel();
+	if (IncidentDetailPanel)
+	{
+		IncidentDetailPanel->OpenFor(Handle);
+	}
+}
+
+void UFF_LiveHudScreen::HandleIncidentDispatchRequested(FFF_IncidentHandle Handle, int32 OptionIndex, int32 StaffCount)
+{
+	UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 사건 H=%d/%d Option=%d Staff=%d 요청 — 배치 관리자 전이라 즉시 해결"),
+		*GetName(), Handle.Index, Handle.Serial, OptionIndex, StaffCount);
+
+	const UWorld* World = GetWorld();
+	if (UFF_IncidentSubsystem* Incident = World ? World->GetSubsystem<UFF_IncidentSubsystem>() : nullptr)
+	{
+		Incident->ResolveIncident(Handle, OptionIndex);
+	}
 }
 
 void UFF_LiveHudScreen::NativeConstruct()
@@ -129,6 +182,7 @@ void UFF_LiveHudScreen::NativeConstruct()
 	BindViewModel();
 	RefreshAll();
 	EnsureIncidentMarkerLayer();
+	EnsureIncidentDetailPanel();
 }
 
 void UFF_LiveHudScreen::NativeDestruct()
@@ -136,7 +190,14 @@ void UFF_LiveHudScreen::NativeDestruct()
 	UnbindViewModel();
 	if (IncidentMarkerLayer)
 	{
+		IncidentMarkerLayer->OnIncidentMarkerClicked.RemoveDynamic(this, &UFF_LiveHudScreen::HandleIncidentMarkerClicked);
 		IncidentMarkerLayer->RemoveFromParent();
+	}
+	if (IncidentDetailPanel)
+	{
+		IncidentDetailPanel->OnDispatchRequested.RemoveDynamic(this, &UFF_LiveHudScreen::HandleIncidentDispatchRequested);
+		IncidentDetailPanel->Close();
+		IncidentDetailPanel->RemoveFromParent();
 	}
 	Super::NativeDestruct();
 }
