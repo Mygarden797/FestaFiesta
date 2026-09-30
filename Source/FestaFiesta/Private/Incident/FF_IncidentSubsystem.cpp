@@ -69,7 +69,7 @@ void UFF_IncidentSubsystem::WithdrawIncident(FName DedupeKey)
 	
 }
 
-bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex)
+bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex, int32 StaffCount)
 {
 	const FIncidentSlot* Slot = FindSlot(Handle);
 	if (!Slot)
@@ -88,7 +88,13 @@ bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 Opt
 	{
 		return false;
 	}
-	const int32 RequiredStaff = FMath::Max(0, Option ? Option->CostStaff : Definition->RequiredStaff);
+	int32 RequiredStaff = FMath::Max(0, Definition->RequiredStaff);
+	float WorkAmount = 0.f;
+	if (Option)
+	{
+		RequiredStaff = FMath::Max(FMath::Max(1, Option->MinStaff), StaffCount);
+		WorkAmount = FMath::Max(0.f, Option->WorkAmount);
+	}
 	UFF_StaffDispatchSubsystem* Dispatch = GetWorld() ? GetWorld()->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr;
 	if (Dispatch && Dispatch->IsResponding(Handle))
 	{
@@ -96,7 +102,7 @@ bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 Opt
 	}
 	if (RequiredStaff > 0)
 	{
-		return Dispatch && Dispatch->TryDispatch(Handle, OptionIndex, RequiredStaff, Slot->Anchor);
+		return Dispatch && Dispatch->TryDispatch(Handle, OptionIndex, RequiredStaff, Slot->Anchor, WorkAmount);
 	}
 	return CompleteStaffResponse(Handle, OptionIndex);
 }

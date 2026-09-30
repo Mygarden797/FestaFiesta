@@ -15,6 +15,7 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/World.h"
 #include "Incident/FF_IncidentSubsystem.h"
+#include "Staff/FF_StaffFacilitySubsystem.h"
 #include "UI/FF_UILog.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaIncidentDetail"
@@ -187,6 +188,15 @@ void UFF_IncidentDetailPanel::BindIncidents()
 	CachedIncident = Incident;
 	Incident->OnIncidentUpdated.AddUniqueDynamic(this, &UFF_IncidentDetailPanel::HandleIncidentUpdated);
 	Incident->OnIncidentClosed.AddUniqueDynamic(this, &UFF_IncidentDetailPanel::HandleIncidentClosed);
+
+	if (const UWorld* World = GetWorld())
+	{
+		CachedStaffing = World->GetSubsystem<UFF_StaffFacilitySubsystem>();
+		if (CachedStaffing)
+		{
+			CachedStaffing->OnStaffingChanged.AddUniqueDynamic(this, &UFF_IncidentDetailPanel::HandleStaffingChanged);
+		}
+	}
 }
 
 void UFF_IncidentDetailPanel::UnbindIncidents()
@@ -197,6 +207,25 @@ void UFF_IncidentDetailPanel::UnbindIncidents()
 		CachedIncident->OnIncidentClosed.RemoveDynamic(this, &UFF_IncidentDetailPanel::HandleIncidentClosed);
 	}
 	CachedIncident = nullptr;
+
+	if (CachedStaffing)
+	{
+		CachedStaffing->OnStaffingChanged.RemoveDynamic(this, &UFF_IncidentDetailPanel::HandleStaffingChanged);
+	}
+	CachedStaffing = nullptr;
+}
+
+int32 UFF_IncidentDetailPanel::GetDispatchableStaff() const
+{
+	return CachedStaffing ? CachedStaffing->GetDispatchableStaffCount() : 0;
+}
+
+void UFF_IncidentDetailPanel::HandleStaffingChanged()
+{
+	if (IsOpen() && CurrentOption.bValid)
+	{
+		RefreshStaff();
+	}
 }
 
 void UFF_IncidentDetailPanel::OpenFor(FFF_IncidentHandle Handle)
@@ -265,36 +294,41 @@ bool UFF_IncidentDetailPanel::Refresh()
 	Text_OptionLabel->SetText(CurrentOption.Label);
 	Text_OptionLabel->SetVisibility(CurrentOption.Label.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
-	Text_StaffRange->SetText(CurrentOption.MinStaff == CurrentOption.MaxStaff
-		? FText::Format(LOCTEXT("StaffExact", "필요 인원: {0}명"), FText::AsNumber(CurrentOption.MinStaff))
-		: FText::Format(LOCTEXT("StaffRange", "필요 인원: {0}~{1}명"),
-			FText::AsNumber(CurrentOption.MinStaff), FText::AsNumber(CurrentOption.MaxStaff)));
-
-	FNumberFormattingOptions WorkFormat;
-	WorkFormat.MinimumFractionalDigits = 0;
-	WorkFormat.MaximumFractionalDigits = 1;
-	Text_WorkAmount->SetText(FText::Format(LOCTEXT("WorkAmount", "작업량: {0} 사람-분"),
-		FText::AsNumber(CurrentOption.WorkAmount, &WorkFormat)));
-
 	Text_Cost->SetText(FText::Format(LOCTEXT("Cost", "비용: {0} G"), FText::AsNumber(CurrentOption.CostGold)));
 	Text_Cost->SetVisibility(CurrentOption.CostGold > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 
 	Text_Reward->SetText(FText::Format(LOCTEXT("Reward", "보상: {0}"), CurrentOption.RewardText));
 	Text_Reward->SetVisibility(CurrentOption.RewardText.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
-	SelectedStaff = SelectedStaff <= 0
-		? CurrentOption.MinStaff
-		: FMath::Clamp(SelectedStaff, CurrentOption.MinStaff, CurrentOption.MaxStaff);
 	RefreshStaff();
 	return true;
 }
 
 void UFF_IncidentDetailPanel::RefreshStaff()
 {
+	const int32 Available = GetDispatchableStaff();
+	const int32 MaxSelectable = FMath::Max(CurrentOption.MinStaff, Available);
+	SelectedStaff = SelectedStaff <= 0
+		? CurrentOption.MinStaff
+		: FMath::Clamp(SelectedStaff, CurrentOption.MinStaff, MaxSelectable);
+
+	Text_StaffRange->SetText(FText::Format(LOCTEXT("StaffRange", "필요 인원: 최소 {0}명 · 가용 {1}명"),
+		FText::AsNumber(CurrentOption.MinStaff), FText::AsNumber(Available)));
+
+	FNumberFormattingOptions WorkFormat;
+	WorkFormat.MinimumFractionalDigits = 0;
+	WorkFormat.MaximumFractionalDigits = 1;
+	Text_WorkAmount->SetText(CurrentOption.WorkAmount > 0.f && SelectedStaff > 0
+		? FText::Format(LOCTEXT("WorkAmountEstimate", "작업량: {0} 사람-분 · 예상 {1}분"),
+			FText::AsNumber(CurrentOption.WorkAmount, &WorkFormat),
+			FText::AsNumber(CurrentOption.WorkAmount / SelectedStaff, &WorkFormat))
+		: FText::Format(LOCTEXT("WorkAmount", "작업량: {0} 사람-분"),
+			FText::AsNumber(CurrentOption.WorkAmount, &WorkFormat)));
+
 	Text_StaffCount->SetText(FText::AsNumber(SelectedStaff));
 	Button_Minus->SetIsEnabled(SelectedStaff > CurrentOption.MinStaff);
-	Button_Plus->SetIsEnabled(SelectedStaff < CurrentOption.MaxStaff);
-	Button_Send->SetIsEnabled(SelectedStaff >= CurrentOption.MinStaff && SelectedStaff <= CurrentOption.MaxStaff);
+	Button_Plus->SetIsEnabled(SelectedStaff < Available);
+	Button_Send->SetIsEnabled(SelectedStaff >= CurrentOption.MinStaff && SelectedStaff <= Available);
 }
 
 void UFF_IncidentDetailPanel::HandleIncidentUpdated(FFF_IncidentHandle Handle)
@@ -319,7 +353,7 @@ void UFF_IncidentDetailPanel::HandleMinusClicked()
 	{
 		return;
 	}
-	SelectedStaff = FMath::Clamp(SelectedStaff - 1, CurrentOption.MinStaff, CurrentOption.MaxStaff);
+	SelectedStaff = FMath::Max(CurrentOption.MinStaff, SelectedStaff - 1);
 	RefreshStaff();
 }
 
@@ -329,7 +363,7 @@ void UFF_IncidentDetailPanel::HandlePlusClicked()
 	{
 		return;
 	}
-	SelectedStaff = FMath::Clamp(SelectedStaff + 1, CurrentOption.MinStaff, CurrentOption.MaxStaff);
+	SelectedStaff = FMath::Min(SelectedStaff + 1, FMath::Max(CurrentOption.MinStaff, GetDispatchableStaff()));
 	RefreshStaff();
 }
 

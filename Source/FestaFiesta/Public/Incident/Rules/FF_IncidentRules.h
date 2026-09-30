@@ -39,6 +39,6 @@ struct FESTAFIESTA_API FFF_IncidentRules
 
 	// --- 선택지 View -------------------------------------------------------
 
-	// 정의의 Options 를 UI 용 값으로 복사한다. null 선택지도 자리를 채우고, MinStaff/MaxStaff 역전은 여기서 정리한다.
+	// 정의의 Options 를 UI 용 값으로 복사한다. null 선택지도 자리를 채우고, MinStaff 는 1 이상으로 정리한다.
 	static void BuildOptionViews(const UFF_IncidentDefinition& Definition, TArray<FFF_IncidentOptionView>& OutViews);
 };

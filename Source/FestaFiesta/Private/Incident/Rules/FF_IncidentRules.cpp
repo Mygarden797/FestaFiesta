@@ -102,7 +102,6 @@ void FFF_IncidentRules::BuildOptionViews(const UFF_IncidentDefinition& Definitio
 		View.Label = Option->Label;
 		View.CostGold = FMath::Max(0, Option->CostGold);
 		View.MinStaff = FMath::Max(1, Option->MinStaff);
-		View.MaxStaff = FMath::Max(View.MinStaff, Option->MaxStaff);
 		View.WorkAmount = FMath::Max(0.f, Option->WorkAmount);
 		if (Option->Effect)
 		{

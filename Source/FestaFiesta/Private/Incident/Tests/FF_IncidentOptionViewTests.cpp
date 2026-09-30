@@ -25,15 +25,13 @@ bool FFF_IncidentOptionView_BuildKeepsIndexAndClamps::RunTest(const FString& Par
 	Swapped->Label = FText::FromString(TEXT("Swapped"));
 	Swapped->CostGold = 30;
 	Swapped->MinStaff = 3;
-	Swapped->MaxStaff = 1;
 	Swapped->WorkAmount = 2.f;
 	UFF_IncidentEffect_Reward* Reward = NewObject<UFF_IncidentEffect_Reward>(Swapped);
 	Reward->RewardGold = 50;
 	Swapped->Effect = Reward;
 
 	UFF_IncidentOption* NoEffect = NewObject<UFF_IncidentOption>(Definition);
-	NoEffect->MinStaff = 1;
-	NoEffect->MaxStaff = 2;
+	NoEffect->MinStaff = 0;
 
 	Definition->Options.Add(Swapped);
 	Definition->Options.Add(nullptr);
@@ -51,8 +49,7 @@ bool FFF_IncidentOptionView_BuildKeepsIndexAndClamps::RunTest(const FString& Par
 	TestEqual(TEXT("0번 인덱스"), Views[0].OptionIndex, 0);
 	TestTrue(TEXT("0번 유효"), Views[0].bValid);
 	TestEqual(TEXT("0번 비용"), Views[0].CostGold, 30);
-	TestEqual(TEXT("역전된 MinStaff 는 유지"), Views[0].MinStaff, 3);
-	TestEqual(TEXT("역전된 MaxStaff 는 MinStaff 로 올림"), Views[0].MaxStaff, 3);
+	TestEqual(TEXT("0번 MinStaff"), Views[0].MinStaff, 3);
 	TestEqual(TEXT("0번 작업량"), Views[0].WorkAmount, 2.f);
 	TestFalse(TEXT("보상 문구는 효과에서 온다"), Views[0].RewardText.IsEmpty());
 
@@ -61,7 +58,7 @@ bool FFF_IncidentOptionView_BuildKeepsIndexAndClamps::RunTest(const FString& Par
 
 	TestEqual(TEXT("2번 인덱스는 밀리지 않는다"), Views[2].OptionIndex, 2);
 	TestTrue(TEXT("2번 유효"), Views[2].bValid);
-	TestEqual(TEXT("2번 MaxStaff"), Views[2].MaxStaff, 2);
+	TestEqual(TEXT("MinStaff 는 1 미만으로 내려가지 않는다"), Views[2].MinStaff, 1);
 	TestTrue(TEXT("효과가 없으면 보상 문구가 비었다"), Views[2].RewardText.IsEmpty());
 
 	return true;
