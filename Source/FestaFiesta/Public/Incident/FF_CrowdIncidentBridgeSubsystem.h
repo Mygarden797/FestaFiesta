@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_CrowdIncidentBridgeSubsystem.generated.h"
 
@@ -30,6 +31,9 @@ private:
 	void HandleMemberMissingChanged(const TArray<FFF_CrowdMemberMissingEvent>& Events);
 	void ReportMissing(const FFF_CrowdMemberMissingEvent& Event);
 	void WithdrawMissing(int32 StableAgentID);
+	
+	//---분실물 ---
+	void HandleItemLost(const TArray<FFF_CrowdItemLostEvent>& Events);
 
 	UPROPERTY()
 	TObjectPtr<UFF_CrowdSimulationSubsystem> Crowd;
@@ -39,6 +43,7 @@ private:
 
 	FDelegateHandle CongestionHandle;
 	FDelegateHandle MissingHandle;
+	FDelegateHandle ItemLostHandle;
 
 	TMap<FIntPoint, int32> CongestionStreakByCell;
 	TSet<FIntPoint> OpenCongestionCells;

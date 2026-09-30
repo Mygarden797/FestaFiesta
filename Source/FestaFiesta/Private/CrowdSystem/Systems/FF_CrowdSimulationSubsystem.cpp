@@ -378,6 +378,8 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 
 	ProcessPendingDespawns();
 	FlushMissingEvent();
+	TickItemLost();
+	FlushItemLostEvent();
 	UpdateArrivalSchedule();
 
 	{
@@ -4555,8 +4557,146 @@ void UFF_CrowdSimulationSubsystem::QueueMissingEvent(int32 AgentIndex, const FUn
 	MemberMissingEvent.Actor = GetAgentActor(AgentIndex);
 	MemberMissingEvent.LocationUU = Unit.Position;
 	MemberMissingEvent.Change = Change;
-		
+
 	CrowdMemberMissingEvents.Add(MemberMissingEvent);
+}
+
+/**
+ * 분실물 발생. NPC마다 매 스텝 확률을 굴리지 않고, 축제 전체에 ItemLostPerHour 빈도의 포아송 과정 하나를 둔다.
+ * 다음 발생 시각을 시뮬레이션 분 기준 지수분포로 미리 뽑아 두므로 인원·배속·프레임과 무관하게 빈도가 기획값을 따른다.
+ * 한 프레임에 여러 건이 밀리면 while이 모두 처리한다. 시계가 뒤로 가면(날이 바뀜) 예약을 새로 잡는다.
+ * 후보가 없어 고르지 못한 건은 버린다 — 빈도는 상한이 아니라 평균이다.
+ */
+void UFF_CrowdSimulationSubsystem::TickItemLost()
+{
+	if (ItemLostPerHour <= 0.f)
+	{
+		NextItemLostAtMinutes = -1.f;
+		return;
+	}
+
+	float NowMinutes = 0.f;
+	if (!TryGetProgramLiveMinutes(NowMinutes))
+	{
+		return;
+	}
+
+	const float RatePerMinute = ItemLostPerHour / 60.f;
+	auto SampleIntervalMinutes = [RatePerMinute]()
+	{
+		return -FMath::Loge(FMath::Max(FMath::FRand(), KINDA_SMALL_NUMBER)) / RatePerMinute;
+	};
+
+	if (NextItemLostAtMinutes < 0.f || NowMinutes < LastItemLostClockMinutes)
+	{
+		NextItemLostAtMinutes = NowMinutes + SampleIntervalMinutes();
+		UE_LOG(LogTemp, Log, TEXT("[ItemLost] 예약 — 지금 %.1f분, 다음 %.1f분 (시간당 %.1f건)"),
+			NowMinutes, NextItemLostAtMinutes, ItemLostPerHour);
+	}
+	LastItemLostClockMinutes = NowMinutes;
+
+	while (NowMinutes >= NextItemLostAtMinutes)
+	{
+		const int32 AgentIndex = PickItemLostCandidate();
+		if (AgentIndex != INDEX_NONE)
+		{
+			const FUnitData& Unit = UnitDatas[AgentIndex];
+			FFF_CrowdItemLostEvent& Event = CrowdItemLostEvents.AddDefaulted_GetRef();
+			Event.StableAgentID = Unit.StableAgentID;
+			Event.PartyID = Unit.PartyID;
+			Event.LocationUU = Unit.Position;
+			UE_LOG(LogTemp, Log, TEXT("[ItemLost] %.1f분 agent %d party %d loc %s"),
+				NowMinutes, Unit.StableAgentID, Unit.PartyID, *Unit.Position.ToCompactString());
+		}
+		NextItemLostAtMinutes += SampleIntervalMinutes();
+	}
+}
+
+/**
+ * 분실 후보 한 명. 활성 개체를 전수 순회해 적격자 중 균등하게 고른다 — 발생이 드물어 O(N) 한 번이 싸다.
+ * 적격: 방문객, 대기열 밖, 관람 단계 아님, 퇴장 중 아님, 걷는 중, 축제 경계 안.
+ * 대기열·관람석 한가운데나 출구 앞에 마커가 뜨지 않게 하려는 조건이다.
+ * 적격자가 없으면 어느 조건에서 몇 명이 걸렸는지 남긴다 — 조건 하나가 전원을 막으면 분실물이 영영 안 뜬다.
+ */
+int32 UFF_CrowdSimulationSubsystem::PickItemLostCandidate() const
+{
+	TArray<int32, TInlineAllocator<256>> Eligible;
+	int32 NumActive = 0;
+	int32 RejectRole = 0;
+	int32 RejectQueue = 0;
+	int32 RejectSpeed = 0;
+	int32 RejectLeaving = 0;
+	int32 RejectAudience = 0;
+	int32 RejectBounds = 0;
+
+	const float MinSpeedSq = ItemLostMinSpeedUU * ItemLostMinSpeedUU;
+	for (int32 AgentIndex = 0; AgentIndex < UnitDatas.Num(); ++AgentIndex)
+	{
+		const FUnitData& Unit = UnitDatas[AgentIndex];
+		if (!Unit.bIsActive)
+		{
+			continue;
+		}
+		++NumActive;
+		if (Unit.CrowdRole != EFF_CrowdRole::Visitor)
+		{
+			++RejectRole;
+			continue;
+		}
+		if (Unit.bHasQueueSlot)
+		{
+			++RejectQueue;
+			continue;
+		}
+		if (Unit.Velocity.SizeSquared2D() < MinSpeedSq)
+		{
+			++RejectSpeed;
+			continue;
+		}
+		const int32 LeaderIndex = Unit.LeaderAgentIndex;
+		if (PartyDecisionStates.IsValidIndex(LeaderIndex))
+		{
+			const FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
+			if (State.bIsLeaving)
+			{
+				++RejectLeaving;
+				continue;
+			}
+			if (IsAudienceLocked(State))
+			{
+				++RejectAudience;
+				continue;
+			}
+		}
+		if (!IsInsideFestivalBounds(Unit.Position))
+		{
+			++RejectBounds;
+			continue;
+		}
+		Eligible.Add(AgentIndex);
+	}
+
+	if (Eligible.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ItemLost] 후보 없음 — 활성 %d, 역할 %d, 대기열 %d, 정지 %d, 퇴장 %d, 관람 %d, 경계 밖 %d"),
+			NumActive, RejectRole, RejectQueue, RejectSpeed, RejectLeaving, RejectAudience, RejectBounds);
+		return INDEX_NONE;
+	}
+	return Eligible[FMath::RandRange(0, Eligible.Num() - 1)];
+}
+
+void UFF_CrowdSimulationSubsystem::FlushItemLostEvent()
+{
+	if (CrowdItemLostEvents.IsEmpty())
+	{
+		return;
+	}
+
+	const TArray<FFF_CrowdItemLostEvent> TempArray = MoveTemp(CrowdItemLostEvents);
+	CrowdItemLostEvents.Reset();
+
+	OnCrowdItemLostEventChanged.Broadcast(TempArray);
 }
 
 void UFF_CrowdSimulationSubsystem::ProcessDecisions()
@@ -4939,6 +5079,59 @@ TArray<int32> UFF_CrowdSimulationSubsystem::GetPartyMembers(int32 PartyID) const
 		}
 	}
 	return Members;
+}
+
+TArray<int32> UFF_CrowdSimulationSubsystem::GetUnitsNearAgent(int32 AgentIndex, float RadiusMeters, int32 MaxCount) const
+{
+	TArray<int32> Result;
+	if (!UnitDatas.IsValidIndex(AgentIndex) || !UnitDatas[AgentIndex].bIsActive
+		|| RadiusMeters <= 0.f || MaxCount <= 0)
+	{
+		return Result;
+	}
+
+	const FVector& Center = UnitDatas[AgentIndex].Position;
+	const FVector2f P(
+		static_cast<float>(Center.X) * FFF_CrowdUnits::MetersPerUU,
+		static_cast<float>(Center.Y) * FFF_CrowdUnits::MetersPerUU);
+
+	const bool bUseGrid = bEnableAvoidance && AvoidanceGrid.IsValid()
+		&& ScratchPos2DMeters.Num() == UnitDatas.Num();
+
+	if (bUseGrid)
+	{
+		AvoidanceGrid.GatherNearest(ScratchPos2DMeters, P, RadiusMeters, MaxCount + 1, Result);
+	}
+	else
+	{
+		const float R2 = RadiusMeters * RadiusMeters;
+		for (int32 Index = 0; Index < UnitDatas.Num(); ++Index)
+		{
+			const FUnitData& Unit = UnitDatas[Index];
+			if (!Unit.bIsActive)
+			{
+				continue;
+			}
+			const FVector2f Q(
+				static_cast<float>(Unit.Position.X) * FFF_CrowdUnits::MetersPerUU,
+				static_cast<float>(Unit.Position.Y) * FFF_CrowdUnits::MetersPerUU);
+			if ((Q - P).SizeSquared() <= R2)
+			{
+				Result.Add(Index);
+			}
+		}
+	}
+
+	Result.RemoveAll([this, AgentIndex](int32 Id)
+	{
+		return Id == AgentIndex || !UnitDatas.IsValidIndex(Id) || !UnitDatas[Id].bIsActive;
+	});
+
+	if (Result.Num() > MaxCount)
+	{
+		Result.SetNum(MaxCount);
+	}
+	return Result;
 }
 
 void UFF_CrowdSimulationSubsystem::DespawnParty(int32 PartyID)
