@@ -1287,7 +1287,11 @@ namespace FFPrepBuildVirtualizedSlateTest
                     Measurements.ThumbnailSize = ThumbnailSize;
                 }
                 const auto* CardFrame = Cast<USizeBox>(Row->GetWidgetFromName(TEXT("SizeBox_Card")));
-                Test.TestTrue(*FString::Printf(TEXT("%s: card respects its authored height and allocated column width"), *Label),
+                Test.TestTrue(*FString::Printf(TEXT("%s: card respects its authored height and allocated column width (painted %.1fx%.1f, frame width %.1f enabled=%d height %.1f enabled=%d, list entry %.1fx%.1f)"),
+                    *Label, CardSize.X, CardSize.Y,
+                    CardFrame ? CardFrame->GetWidthOverride() : -1.f, CardFrame && CardFrame->IsWidthOverride(),
+                    CardFrame ? CardFrame->GetHeightOverride() : -1.f, CardFrame && CardFrame->IsHeightOverride(),
+                    List->GetEntryWidth(), List->GetEntryHeight()),
                     CardFrame && CardSize.X > 0.0 && CardSize.X <= List->GetEntryWidth() + 1.0 &&
                     (!CardFrame->IsWidthOverride() || FMath::IsNearlyEqual(CardSize.X, static_cast<double>(CardFrame->GetWidthOverride()), 1.0)) &&
                     (!CardFrame->IsHeightOverride() || FMath::IsNearlyEqual(CardSize.Y, static_cast<double>(CardFrame->GetHeightOverride()), 1.0)));
@@ -1319,7 +1323,9 @@ namespace FFPrepBuildVirtualizedSlateTest
                 if (const auto* Cost = Cast<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_Cost"))))
                 {
                     const FSlateRect CostRect = Cost->GetCachedGeometry().GetLayoutBoundingRect();
-                    Test.TestTrue(*FString::Printf(TEXT("%s: installation price stays below the name and inside the card"), *Label),
+                    Test.TestTrue(*FString::Printf(TEXT("%s: installation price stays below the name and inside the card (card LTRB %.1f,%.1f,%.1f,%.1f; name bottom %.1f; cost LTRB %.1f,%.1f,%.1f,%.1f)"),
+                        *Label, CardRect.Left, CardRect.Top, CardRect.Right, CardRect.Bottom, NameRect.Bottom,
+                        CostRect.Left, CostRect.Top, CostRect.Right, CostRect.Bottom),
                         CostRect.Top >= NameRect.Bottom - 1.0 && CostRect.Bottom <= CardRect.Bottom + 1.0 &&
                         CostRect.Left >= CardRect.Left - 1.0 && CostRect.Right <= CardRect.Right + 1.0);
                 }

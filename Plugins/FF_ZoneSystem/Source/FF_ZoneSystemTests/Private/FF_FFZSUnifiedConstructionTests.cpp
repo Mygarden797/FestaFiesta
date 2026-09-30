@@ -96,6 +96,7 @@ namespace
         {
             Spec.bUsesFacilityLevels = true;
             FFFZSFacilityUpgradeTier Tier;
+            Tier.ServiceDurationMultiplier = 0.8f;
             Tier.SizeMultiplier = 2.0f;
             Tier.RevenueMultiplier = 1.0f;
             Spec.UpgradeTiers = {Tier};
@@ -209,8 +210,12 @@ bool FFFZSUnifiedConstructionLifecycleTest::RunTest(const FString& Parameters)
     Upgrade.UpgradeServiceDurationMultiplier = 0.8f;
     Upgrade.UpgradeSizeMultiplier = 2.0f;
     const int64 BeforeFailure = System.GetWorldRevision();
-    TestFalse(TEXT("Enlargement checks reservations from the neighboring region"),
-        System.ExecuteCommand(Upgrade).bSucceeded);
+    const FFFZSCommandResult CollidingUpgrade = System.ExecuteCommand(Upgrade);
+    TestFalse(TEXT("Enlargement checks reservations from the neighboring region"), CollidingUpgrade.bSucceeded);
+    TestTrue(TEXT("Cross-region enlargement reaches spatial validation"),
+        CollidingUpgrade.FailureReason == EFFZSPlacementFailure::PlacementCollision ||
+        CollidingUpgrade.FailureReason == EFFZSPlacementFailure::InsufficientClearance ||
+        CollidingUpgrade.FailureReason == EFFZSPlacementFailure::QueueFootprintBlocked);
     TestEqual(TEXT("Rejected enlargement leaves authority unchanged"), System.GetWorldRevision(), BeforeFailure);
     if (!TestTrue(TEXT("Remove the neighboring blocker"), System.ExecuteCommand(UnifiedFacilityCommand(
         EFFZSCommandType::Remove, Neighbor.FacilityActor->GetFacilityInstanceId())).bSucceeded)) { return false; }

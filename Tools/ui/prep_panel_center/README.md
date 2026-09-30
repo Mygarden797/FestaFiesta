@@ -45,9 +45,9 @@ Offset과 Size는 DPI 적용 전 Slate 단위다. 화면 해상도의 픽셀 수
 & Tools/ui/blender/bright_globe/run_editor.ps1 -Script Tools/ui/prep_panel_center/apply.py -Label prep_panel_center_apply -NullRHI
 ```
 
-## 검증 기록
+## P1 당시 검증 기록
 
-현재 상태: **P1 중앙 배치·편집값 보존 완료. P2는 사용자 시작 지시 대기**.
+P1 당시 상태: **중앙 배치·편집값 보존 완료. P2는 사용자 시작 지시 대기**였다.
 
 | 항목 | 결과 |
 | --- | --- |
@@ -62,8 +62,20 @@ Offset과 Size는 DPI 적용 전 Slate 단위다. 화면 해상도의 픽셀 수
 개인 Saved 설정 ini 2개는 검증 전 내용으로 복원하고 SHA256 일치를 확인했다(`settings-restored.json`).
 Python의 `FGeometry`가 0으로 반환되는 문제는 Native C++ Slate 측정 명령으로 우회했다. 0 좌표를 성공으로 처리하지 않았다.
 
-현재 상태 행 높이 32 / `Box_Cta` 상하 여백 5에서 `Text_CtaReason`의 글자 높이 부족이 검출돼 셋업 RenderedLayout 검사가 세 해상도에서 실패했다.
-여백 보정은 미검증이다. 중앙 배치 경로와 구분한 기존 HUD 항목으로 남겼으며 P1에서 수정하지 않았다. 전체 회귀 검사를 모두 통과한 것은 아니다.
+P1 당시 상태 행 높이 32 / `Box_Cta` 상하 여백 5에서 `Text_CtaReason`의 글자 높이 부족이 검출돼 셋업 RenderedLayout 검사가 세 해상도에서 실패했다.
+당시 여백 보정은 미검증이었다. 중앙 배치 경로와 구분한 기존 HUD 항목으로 남겼으며 P1에서 수정하지 않았다. P1 기록은 전체 회귀 검사를 모두 통과한 결과가 아니다.
 
 일괄 생성 PNG 12장은 실제 PIE가 아닌 다른 에디터 뷰포트(555×186)를 찍어 검증 근거에서 제외했다.
-이번 완료 근거는 실제 PIE의 좌표·레이아웃 설정 측정이며, 물리 마우스 입력·전체 화면 시각 수용·패키징은 미검증이다.
+P1 완료 근거는 실제 PIE의 좌표·레이아웃 설정 측정이며, 당시 물리 마우스 입력·전체 화면 시각 수용·패키징은 미검증이었다.
+
+## 2026-09-30 CTA 후속 검증
+
+셋업의 저장된 메뉴/상태 높이 32/32를 유지하고 [HUD spacing v2](../hud_sky_outline/README.md)의
+`Box_Cta` 상하 여백 5→2 보정을 적용했다. P1 때 기록한 CTA 글자 높이 부족은 자동 레이아웃 검사에서 해결됐다.
+`FestaFiesta.UI.PrepHUD.BrightBottom.RenderedLayout`이 실제 GPU `-RenderOffscreen`으로
+1280×720, 1920×1080, 2560×1080 세 해상도에서 통과했다.
+
+`FF-Win64-Shipping-20260930-05`에서는 전체 자동화 1,030건(FestaFiesta 899 / FF_ZoneSystem 131)이 통과했고
+실패·미실행·진행 중 항목은 모두 0건이었다. 두 테스트 그룹의 `Validation/<그룹>/Report/index.json`이 근거다.
+이 후속 기록은 P1 당시 실패 이력을 보존하면서 현재 CTA 회귀가 해소됐음을 기록한다.
+물리 마우스 입력·전체 화면 시각 수용과 실제 게임의 수동 플레이 완료는 이 자동 검증으로 판단하지 않는다.
