@@ -1941,6 +1941,7 @@ bool FFFZSFacilityUpgradeTransactionTest::RunTest(const FString& Parameters)
     Spec.bUsesFacilityLevels = true;
     FFFZSFacilityUpgradeTier Level2;
     FFFZSFacilityUpgradeTier Level3;
+    Level2.ServiceDurationMultiplier = 0.8f;
     Level2.RevenueMultiplier = 1.0f;
     Level3.RevenueMultiplier = 1.0f;
     Level3.TargetLevel = 3;
@@ -2298,6 +2299,7 @@ bool FFFZSFacilityUpgradeSizeTransactionTest::RunTest(const FString& Parameters)
     FFFZSFacilitySpec Base = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
     Base.bUsesFacilityLevels = true;
     FFFZSFacilityUpgradeTier Tier;
+    Tier.ServiceDurationMultiplier = 0.8f;
     Tier.SizeMultiplier = 2.f;
     Tier.RevenueMultiplier = 1.f;
     Base.UpgradeTiers = { Tier };
@@ -2329,7 +2331,10 @@ bool FFFZSFacilityUpgradeSizeTransactionTest::RunTest(const FString& Parameters)
         Collision.Reasons.Contains(EFFZSPlacementFailure::PlacementCollision) ||
         Collision.Reasons.Contains(EFFZSPlacementFailure::InsufficientClearance) ||
         Collision.Reasons.Contains(EFFZSPlacementFailure::QueueFootprintBlocked));
-    TestFalse(TEXT("Colliding enlargement cannot commit"), Subsystem->ExecuteCommand(Upgrade(FacilityId)).bSucceeded);
+    const FFFZSCommandResult CollidingUpgrade = Subsystem->ExecuteCommand(Upgrade(FacilityId));
+    TestFalse(TEXT("Colliding enlargement cannot commit"), CollidingUpgrade.bSucceeded);
+    TestTrue(TEXT("Colliding enlargement reaches spatial validation"),
+        Collision.Reasons.Contains(CollidingUpgrade.FailureReason));
     TestEqual(TEXT("Colliding enlargement preserves revision"), Subsystem->GetWorldRevision(), BeforeFailure);
     TestEqual(TEXT("Colliding enlargement preserves dimensions"), Facility->GetFacilitySpec().FootprintSizeCells, Base.FootprintSizeCells);
     TestTrue(TEXT("Colliding enlargement preserves actor placement"), Facility->GetActorTransform().Equals(OriginalTransform));
@@ -2343,7 +2348,10 @@ bool FFFZSFacilityUpgradeSizeTransactionTest::RunTest(const FString& Parameters)
     RejectingPolicy->bAllowTentativeApply = false;
     Subsystem->RegisterExternalPolicy(RejectingPolicy);
     const int64 BeforeRollback = Subsystem->GetWorldRevision();
-    TestFalse(TEXT("Late policy can reject a spatially valid enlargement"), Subsystem->ExecuteCommand(Upgrade(FacilityId)).bSucceeded);
+    const FFFZSCommandResult PolicyRejectedUpgrade = Subsystem->ExecuteCommand(Upgrade(FacilityId));
+    TestFalse(TEXT("Late policy can reject a spatially valid enlargement"), PolicyRejectedUpgrade.bSucceeded);
+    TestEqual(TEXT("Spatially valid enlargement reaches the external policy"),
+        PolicyRejectedUpgrade.FailureReason, EFFZSPlacementFailure::ExternalPolicyRejected);
     TestEqual(TEXT("Rejected size transaction invokes rollback"), RejectingPolicy->RollbackCount, 1);
     TestEqual(TEXT("Rollback preserves the old dimensions"), Facility->GetFacilitySpec().FootprintSizeCells, Base.FootprintSizeCells);
     TestEqual(TEXT("Rollback preserves the original revision"), Subsystem->GetWorldRevision(), BeforeRollback);

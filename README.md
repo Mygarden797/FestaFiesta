@@ -206,7 +206,7 @@
 | [구역·시설 플러그인](Plugins/FF_ZoneSystem/FF_README_KO.md) | 배치 검증, 대기열, 외부 정책과 저장 구조 |
 | [UI API](UI_API.md) | UI와 게임 시스템 간 호출·이벤트 계약 |
 | [공공데이터](data/README.md) | 방문객 데이터의 출처, 가공 과정과 가정 |
-| [빌드·패키징](Tools/Build/PACKAGING_GUIDE_KO.md) | 개발 환경, 검증 절차와 Windows 배포 |
+| [패키징 운영 안내](Tools/Build/README_KO.md) · [상세 가이드](Tools/Build/PACKAGING_GUIDE_KO.md) | 표준 빌드 명령, 산출물 관리, 검증 절차와 Windows 배포 |
 
 ## 크레딧과 참고 자료
 

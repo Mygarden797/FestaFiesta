@@ -1,7 +1,7 @@
 # 흰 HUD 탭 + 하늘색 테두리
 
 셋업과 라이브의 메뉴 탭에 적용한다. 상태 바·버튼 폭·행 높이·문구·아이콘은 그대로 유지한다.
-셋업은 높이32/36에서 글자가 눌리지 않도록 탭/단계 표시의 세로 여백만 줄였다.
+현재 저장된 셋업의 메뉴/상태 행 높이는 32/32다. 이 높이를 유지하며 탭·단계 표시·CTA의 세로 여백만 줄였다.
 런타임에 고정 색상이나 크기를 덮는 코드를 추가하지 않는다.
 
 ## 에디터에서 수정
@@ -31,8 +31,8 @@
 
 - 셋업 부모: 같은 폴더의 `WBP_FF_PrepHudBar`
 - 라이브 부모: 같은 폴더의 `WBP_FF_LiveHudScreen`
-- `SizeBox_MenuRow → Height Override`: 현재 32
-- `SizeBox_StatusRow → Height Override`: 현재 36
+- `SizeBox_MenuRow → Height Override`: 셋업 현재 32; 라이브는 부모 에셋 값 확인
+- `SizeBox_StatusRow → Height Override`: 셋업 현재 32; 라이브는 부모 에셋 값 확인
 - 높이를 늘리면 글자/아이콘은 자동 확대되지 않으므로 별도로 조절한다.
 - 셋업 부모의 `Use Designer Style`은 켜 둔다.
 - 수정 후 탭 에셋과 부모 HUD를 Compile / Save한다. 기존 `FF.Apply…BrightBottomDesign`을 재실행하지 않는다.
@@ -42,8 +42,9 @@
 `apply.py`는 기존 WBP의 스타일 속성만 바꾸고 저장한다. 전체 위젯 트리를 재생성하지 않는다.
 변경 전 4개 에셋을 `Saved/HudSkyOutline/Before-*`에 복사하고, 전후 치수/문구/슬롯을 비교한다.
 성공 후 재실행은 막아 디자이너의 후속 수정을 보호한다.
-`finish_spacing.py`는 후속 검사에서 확인한 셋업의 예전 44/52용 여백을 32/36에 맞춘다.
-탭 슬롯의 위쪽3→0, 버튼 내용 위아래3→2, 단계 칩 위아래5→2. 가로 여백과 글꼴은 유지한다.
+`finish_spacing.py`의 spacing v2는 후속 검사에서 확인한 셋업의 예전 44/52용 여백을 현재 32/32에 맞춘다.
+탭 슬롯의 세로 여백3→0, 버튼 내용 위아래3→2, 단계 칩 위아래5→2에 더해 `Box_Cta`의 위아래 여백도 5→2로 줄인다. 가로 여백·글꼴·저장된 행 높이는 유지한다.
+`spacing-report.json`이 `status=passed`이고 `spacing_version=2`이면 재적용하지 않는다. v1 기록만 있으면 v2 보정을 한 번 수행한다.
 
 ```powershell
 & Tools/ui/blender/bright_globe/run_editor.ps1 -Script Tools/ui/hud_sky_outline/apply.py -Label hud_sky_outline_apply -NullRHI
@@ -62,3 +63,9 @@
 (1280×720, 1920×1080, 2560×1080 및 행 높이 변경) 통과.
 실제 PIE에서 셋업 프로그램/라이브 SNS 선택·해제 시 흰 채움, 짙은 글자·아이콘,
 2.5→1.25 테두리 복귀를 확인했다. 물리 마우스·게임패드 입력과 패키징은 이번 확인에 포함하지 않았다.
+
+2026-09-30 후속 검증: spacing v2의 CTA 여백 보정 후 `FestaFiesta.UI.PrepHUD.BrightBottom.RenderedLayout`이
+1280×720, 1920×1080, 2560×1080에서 통과했다. `FF-Win64-Shipping-20260930-05`의 GPU `-RenderOffscreen`
+전체 자동화 1,030건도 통과했다(FestaFiesta 899 / FF_ZoneSystem 131, 실패·미실행·진행 중 0건).
+근거는 해당 릴리스의 `Validation/FestaFiesta/Report/index.json`과 `Validation/FF_ZoneSystem/Report/index.json`이다.
+이는 자동 레이아웃·회귀 검증 기록이며 물리 입력이나 실제 게임의 수동 플레이 완료를 뜻하지 않는다.

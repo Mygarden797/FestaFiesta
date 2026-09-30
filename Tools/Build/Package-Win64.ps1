@@ -43,14 +43,125 @@ function Write-Utf8Json {
         [Parameter(Mandatory = $true)]
         [string] $Path,
 
-        [int] $Depth = 8
+        [int] $Depth = 8,
+
+        [switch] $Atomic
     )
 
     $json = $Value | ConvertTo-Json -Depth $Depth
-    [System.IO.File]::WriteAllText(
-        [System.IO.Path]::GetFullPath($Path),
-        $json + [Environment]::NewLine,
-        (New-Object System.Text.UTF8Encoding($false)))
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $encoding = New-Object System.Text.UTF8Encoding($false)
+    if (-not $Atomic) {
+        [System.IO.File]::WriteAllText($fullPath, $json + [Environment]::NewLine, $encoding)
+        return
+    }
+
+    # Keep the temporary file on the same volume: readers see either the old
+    # complete index or the new complete index, even if publication fails.
+    $temporaryPath = Join-Path ([System.IO.Path]::GetDirectoryName($fullPath)) (
+        '.{0}.{1}.tmp' -f [System.IO.Path]::GetFileName($fullPath), [Guid]::NewGuid().ToString('N'))
+    try {
+        [System.IO.File]::WriteAllText($temporaryPath, $json + [Environment]::NewLine, $encoding)
+        if ([System.IO.File]::Exists($fullPath)) {
+            # PowerShell converts $null to an empty string for this overload;
+            # NullString passes an actual null backup path on both 5.1 and 7.
+            [System.IO.File]::Replace($temporaryPath, $fullPath, [NullString]::Value)
+        }
+        else {
+            [System.IO.File]::Move($temporaryPath, $fullPath)
+        }
+    }
+    finally {
+        if ([System.IO.File]::Exists($temporaryPath)) {
+            [System.IO.File]::Delete($temporaryPath)
+        }
+    }
+}
+
+function Get-GitSourcePaths {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Root,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Untracked', 'TrackedChanges')]
+        [string] $Kind
+    )
+
+    # Porcelain text quotes Unicode and special characters. Read Git's UTF-8
+    # NUL-delimited output directly so the snapshot uses the actual filenames,
+    # independent of the console encoding or core.quotepath setting.
+    $fullRoot = [System.IO.Path]::GetFullPath($Root)
+    $safeRoot = $fullRoot.Replace('\', '/')
+    $gitArguments = if ($Kind -eq 'Untracked') {
+        'ls-files --others --exclude-standard -z'
+    }
+    else {
+        # Deleted paths remain in the patch; the archive holds files that exist.
+        'diff --name-only --diff-filter=ACMRT -z HEAD'
+    }
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = 'git'
+    $startInfo.Arguments = '-c "safe.directory={0}" -C "{1}" {2}' -f $safeRoot, $fullRoot, $gitArguments
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $startInfo.StandardErrorEncoding = New-Object System.Text.UTF8Encoding($false)
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) {
+            throw "Git could not start while enumerating $Kind source files."
+        }
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0) {
+            throw "Git $Kind file enumeration failed with exit code $($process.ExitCode): $stderr"
+        }
+        return $stdout.Split([char[]]@([char]0), [System.StringSplitOptions]::RemoveEmptyEntries)
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
+function Write-SourceArchive {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Root,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]] $Paths,
+
+        [Parameter(Mandatory = $true)]
+        [string] $ArchivePath
+    )
+
+    if ($Paths.Count -eq 0) { return }
+    $rootPrefix = [System.IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+    Add-Type -AssemblyName @('System.IO.Compression', 'System.IO.Compression.FileSystem')
+    $zip = [System.IO.Compression.ZipFile]::Open($ArchivePath,
+        [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($relativePath in $Paths) {
+            $absolutePath = [System.IO.Path]::GetFullPath((Join-Path $Root $relativePath))
+            if (-not $absolutePath.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+                -not (Test-Path -LiteralPath $absolutePath -PathType Leaf)) {
+                throw "Unsafe or missing source file: $relativePath"
+            }
+            # Store a normalized path, even if a caller supplied redundant segments.
+            $entryPath = $absolutePath.Substring($rootPrefix.Length).Replace('\', '/')
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $zip, $absolutePath, $entryPath) | Out-Null
+        }
+    }
+    finally { $zip.Dispose() }
 }
 
 function Resolve-PayloadRoot {
@@ -216,12 +327,20 @@ try {
 
     if ($git.Dirty) {
         # A commit hash alone cannot rebuild a dirty artifact. Keep the exact
-        # tracked delta and the untracked file list beside the build metadata.
+        # tracked delta and exact working file bytes beside the build metadata.
         $safeRoot = $projectRoot.Replace('\', '/')
         & git -c "safe.directory=$safeRoot" -C $projectRoot diff HEAD --binary `
             "--output=$(Join-Path $metadataRoot 'source-dirty.patch')"
-        $untracked = @(& git -c "safe.directory=$safeRoot" -C $projectRoot status --porcelain --untracked-files=all |
-            Where-Object { $_.StartsWith('??') })
+        if ($LASTEXITCODE -ne 0) {
+            throw "Git tracked-source snapshot failed with exit code $LASTEXITCODE."
+        }
+        $trackedPaths = @(Get-GitSourcePaths -Root $projectRoot -Kind TrackedChanges)
+        # Git LFS diffs contain pointers, not the changed asset's bytes. Retain
+        # the materialized files as well; the patch still records deletions.
+        Write-SourceArchive -Root $projectRoot -Paths $trackedPaths `
+            -ArchivePath (Join-Path $metadataRoot 'source-dirty-tracked.zip')
+        $untrackedPaths = @(Get-GitSourcePaths -Root $projectRoot -Kind Untracked)
+        $untracked = @($untrackedPaths | ForEach-Object { "?? $_" })
         [System.IO.File]::WriteAllLines(
             (Join-Path $metadataRoot 'source-dirty-untracked.txt'),
             [string[]]$untracked,
@@ -229,27 +348,9 @@ try {
         # A patch cannot reconstruct files that have not been added to Git.
         # Keep their exact bytes beside the manifest so a dirty candidate can
         # be reproduced without silently omitting newly added code or scripts.
-        $untrackedPaths = @($untracked | ForEach-Object { $_.Substring(3) })
-        if ($untrackedPaths.Count -gt 0) {
-            Add-Type -AssemblyName System.IO.Compression
-            $untrackedArchive = Join-Path $metadataRoot 'source-dirty-untracked.zip'
-            $zip = [System.IO.Compression.ZipFile]::Open($untrackedArchive,
-                [System.IO.Compression.ZipArchiveMode]::Create)
-            try {
-                foreach ($relativePath in $untrackedPaths) {
-                    $absolutePath = [System.IO.Path]::GetFullPath((Join-Path $projectRoot $relativePath))
-                    if (-not $absolutePath.StartsWith($projectRoot.TrimEnd('\') + '\',
-                        [System.StringComparison]::OrdinalIgnoreCase) -or
-                        -not (Test-Path -LiteralPath $absolutePath -PathType Leaf)) {
-                        throw "Unsafe or missing untracked source file: $relativePath"
-                    }
-                    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                        $zip, $absolutePath, $relativePath.Replace('\', '/')) | Out-Null
-                }
-            }
-            finally { $zip.Dispose() }
-        }
-        Write-Warning 'Building from a dirty working tree; the delta is stored in Metadata/source-dirty.patch.'
+        Write-SourceArchive -Root $projectRoot -Paths $untrackedPaths `
+            -ArchivePath (Join-Path $metadataRoot 'source-dirty-untracked.zip')
+        Write-Warning 'Building from a dirty working tree; the patch and exact source files are stored in Metadata/source-dirty*.'
     }
 
     $currentPhase = 'validation'
@@ -556,10 +657,9 @@ try {
         updatedAtUtc  = [DateTime]::UtcNow.ToString('o')
     }
     [System.IO.Directory]::CreateDirectory($OutputRoot) | Out-Null
+    $currentPhase = 'release-promotion'
+    $currentLog = 'Metadata/verification.json'
     [System.IO.Directory]::Move($releaseRoot, $finalReleaseRoot)
-    if (-not $hasQualityOverride) {
-        Write-Utf8Json -Value $latest -Path (Join-Path $OutputRoot 'latest.json')
-    }
 
     $finalPayloadRoot = Join-Path $finalReleaseRoot (Get-FFRelativePath -BasePath $releaseRoot -Path $payloadRoot)
     $finalSymbolsRoot = Join-Path $finalReleaseRoot 'Symbols'
@@ -576,6 +676,13 @@ try {
     }
     else {
         $null
+    }
+
+    # Publish only after final metadata is complete. A failed promotion keeps
+    # the previous successful build discoverable through an intact latest.json.
+    if (-not $hasQualityOverride) {
+        $currentLog = 'latest.json'
+        Write-Utf8Json -Value $latest -Path (Join-Path $OutputRoot 'latest.json') -Atomic
     }
 
     Write-Host 'Release packaging completed successfully.' -ForegroundColor Green

@@ -4,6 +4,7 @@
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
+#include "AI/Navigation/NavQueryFilter.h"
 #include "CrowdSystem/FF_SpawnActor.h"
 #include "CrowdSystem/Systems/FF_CrowdDecisionSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
@@ -21,13 +22,28 @@
 namespace
 {
 bool HasCompleteNavigationPath(UNavigationSystemV1& Navigation, const ANavigationData& Data,
-    const FVector& Start, const FVector& End)
+    const FVector& Start, const FVector& End, FAutomationTestBase& Test)
 {
     FPathFindingQuery Query(nullptr, Data, Start, End);
     Query.SetAllowPartialPaths(false);
     const FPathFindingResult Result = Navigation.FindPathSync(Query);
-    return Result.IsSuccessful() && !Result.IsPartial() && Result.Path.IsValid()
+    const bool bComplete = Result.IsSuccessful() && !Result.IsPartial() && Result.Path.IsValid()
         && Result.Path->GetPathPoints().Num() > 0;
+    if (!bComplete)
+    {
+        // Preserve the release gate while distinguishing exhausted A* budgets,
+        // disconnected tiles/links, and failed endpoint projections.
+        const FNavigationPath* Path = Result.Path.Get();
+        Test.AddInfo(FString::Printf(TEXT("Navigation query failure: result=%d partial=%d searchLimit=%d pathValid=%d points=%d startProjectionError=%d endProjectionError=%d maxSearchNodes=%d start=(%s) end=(%s)"),
+            static_cast<int32>(Result.Result), Result.IsPartial(),
+            Path ? Path->DidSearchReachedLimit() : false, Path ? Path->IsValid() : false,
+            Path ? Path->GetPathPoints().Num() : 0,
+            Path ? Path->IsErrorStartLocationNonNavigable() : false,
+            Path ? Path->IsErrorEndLocationNonNavigable() : false,
+            Query.QueryFilter.IsValid() ? Query.QueryFilter->GetMaxSearchNodes() : -1,
+            *Start.ToString(), *End.ToString()));
+    }
+    return bComplete;
 }
 
 class FFF_CheckProductionNavigation final : public IAutomationLatentCommand
@@ -63,6 +79,10 @@ public:
         }
 
         const UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
+        Test->AddInfo(FString::Printf(TEXT("Production navigation query defaults: data=%s maxSearchNodes=%d projectionExtent=(%s)"),
+            *Data->GetPathName(), Data->GetDefaultQueryFilter().IsValid()
+                ? Data->GetDefaultQueryFilter()->GetMaxSearchNodes() : -1,
+            *Data->GetDefaultQueryExtent().ToString()));
         if (!Test->TestNotNull(TEXT("Runtime zone registry exists"), Zones))
         {
             return true;
@@ -168,12 +188,12 @@ public:
             if (bSpawnProjects)
             {
                 Test->TestTrue(FString::Printf(TEXT("Actual spawn has a complete path to %s"), *ExitName),
-                    HasCompleteNavigationPath(*Navigation, *Data, SpawnNav.Location, ExitNav.Location));
+                    HasCompleteNavigationPath(*Navigation, *Data, SpawnNav.Location, ExitNav.Location, *Test));
             }
             for (int32 I = 0; I < Points.Num(); ++I)
             {
                 Test->TestTrue(FString::Printf(TEXT("%s can reach %s without a partial path"),
-                    *Ids[I].ToString(), *ExitName), HasCompleteNavigationPath(*Navigation, *Data, Points[I], ExitNav.Location));
+                    *Ids[I].ToString(), *ExitName), HasCompleteNavigationPath(*Navigation, *Data, Points[I], ExitNav.Location, *Test));
                 FPathFindingQuery ExitQuery(nullptr, *Data, Points[I], Exit);
                 ExitQuery.SetAllowPartialPaths(true);
                 ExitQuery.SetRequireNavigableEndLocation(false);
@@ -192,7 +212,7 @@ public:
                 {
                     Test->TestTrue(FString::Printf(TEXT("Complete directed path: %s -> %s"),
                         *Ids[I].ToString(), *Ids[J].ToString()),
-                        HasCompleteNavigationPath(*Navigation, *Data, Points[I], Points[J]));
+                        HasCompleteNavigationPath(*Navigation, *Data, Points[I], Points[J], *Test));
                 }
             }
         }
