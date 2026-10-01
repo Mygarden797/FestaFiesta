@@ -28,6 +28,14 @@ public:
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float DeltaTime) override;
 
+	/* 보기 전용 패널이 열려 있을 때만 클릭을 받는다. 받으면 패널을 닫는다.
+
+	   평소에는 클릭을 그대로 아래로 흘린다(아래 "입력을 막지 않는다" 참고). 대사 중에 준비 화면
+	   패널이 열려 있으면 그 패널은 보여주기만 하고 누를 수 없어야 한다(피드백). 이 위젯이 이미
+	   준비 화면 위에 화면 전체로 떠 있어서, 그동안만 클릭을 받아 패널을 닫는 데 쓴다.
+	*/
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+
 	virtual int32 NativePaint(
 		const FPaintArgs& Args,
 		const FGeometry& AllottedGeometry,
@@ -107,4 +115,10 @@ private:
 
 	float PulseTime = 0.f;
 	bool bBound = false;
+
+	// 보기 전용 패널 때문에 지금 클릭을 받고 있는지.
+	bool bBlockingViewOnlyPanel = false;
+
+	// 클릭을 받을지에 맞춰 보이기 설정을 바꾼다.
+	void SetBlockingViewOnlyPanel(bool bBlock);
 };
