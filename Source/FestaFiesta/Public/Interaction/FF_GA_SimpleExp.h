@@ -31,9 +31,10 @@ public:
 	void PlayExperienceEffect();
 	// 체험 중 연출 (사운드 등, 블루프린트에서 구현)
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Trigger")
-	void PlayCompletionEffect();
-	// 끝날 때 연출 (완료 텍스트, 블루프린트에서 구현)
+	UFUNCTION(BlueprintNativeEvent, Category = "Trigger")
+	void PlayCompletionEffect(const FText& Message);
+	virtual void PlayCompletionEffect_Implementation(const FText& Message);
+	//  BP에서 안 바꾸면 C++이 문구를 화면에 출력
 
 private:
 
@@ -47,4 +48,7 @@ private:
 	const FGameplayAbilityActorInfo* CachedActorInfo = nullptr;
 	FGameplayAbilityActivationInfo CachedActivationInfo;
 	// 나중에 EndAbility 부를 때 쓰려고 저장해두는 값들
+
+	FText CachedCompletionMessage;
+	// NEW 데이터 에셋에서 읽어온 완료 문구
 };
