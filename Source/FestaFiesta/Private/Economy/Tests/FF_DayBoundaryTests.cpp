@@ -45,7 +45,7 @@ namespace FFF_DayBoundaryTestHelpers
 	{
 		int32 Total = 0;
 		for (int32 Index = 0;
-			Index <= static_cast<int32>(EFF_EarnReason::MinigameReward);
+			Index <= static_cast<int32>(EFF_EarnReason::IncidentReward);
 			++Index)
 		{
 			Total += Ledger.GetEarnByReason(static_cast<EFF_EarnReason>(Index));

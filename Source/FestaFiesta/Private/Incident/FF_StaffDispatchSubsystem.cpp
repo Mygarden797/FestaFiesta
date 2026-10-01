@@ -3,10 +3,9 @@
 #include "CrowdSystem/FF_BaseCrowd.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "FF_FFZSWorldSubsystem.h"
-#include "FF_FFZSZoneActor.h"
 #include "Incident/FF_IncidentSettings.h"
 #include "Incident/FF_IncidentSubsystem.h"
+#include "Incident/Rules/FF_IncidentRules.h"
 #include "NavigationPath.h"
 #include "NavigationSystem.h"
 #include "Staff/FF_StaffFacilitySubsystem.h"
@@ -69,35 +68,8 @@ TStatId UFF_StaffDispatchSubsystem::GetStatId() const
 
 bool UFF_StaffDispatchSubsystem::TryGetLocation(const FFF_IncidentAnchor& Anchor, FVector& OutLocation) const
 {
-	if (Anchor.Kind == EFF_IncidentAnchorKind::Actor)
-	{
-		const AActor* Actor = Anchor.Actor.Get();
-		if (!IsValid(Actor) || Actor->IsHidden())
-		{
-			return false;
-		}
-		OutLocation = Actor->GetActorLocation();
-		return !OutLocation.ContainsNaN();
-	}
-	if (Anchor.Kind == EFF_IncidentAnchorKind::WorldPoint || Anchor.Kind == EFF_IncidentAnchorKind::DensityCell)
-	{
-		OutLocation = Anchor.WorldPoint;
-		return !OutLocation.ContainsNaN();
-	}
-	if (Anchor.Kind == EFF_IncidentAnchorKind::Zone)
-	{
-		const UFFZSWorldSubsystem* Zones = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
-		const AFFZSGameplayZone* Zone = Zones ? Zones->FindZone(Anchor.ZoneId) : nullptr;
-		if (!Zone)
-		{
-			return false;
-		}
-		OutLocation = Zone->EntryExitAnchors.IsEmpty() ? Zone->GetActorLocation()
-			: Zone->GetActorTransform().TransformPosition(Zone->EntryExitAnchors[0].GetLocation());
-		return !OutLocation.ContainsNaN();
-	}
-	// Screenspace notifications have no physical target and must author RequiredStaff/CostStaff as zero.
-	return false;
+	//IncidentRules에 옮기게 되었습니다
+	return FFF_IncidentRules::TryGetAnchorLocation(GetWorld(), Anchor, OutLocation);
 }
 
 bool UFF_StaffDispatchSubsystem::BuildPath(const FVector& Start, const FVector& End, TArray<FVector>& OutPath) const

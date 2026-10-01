@@ -524,7 +524,7 @@ TArray<FFF_LedgerRow> UFF_FestivalProgressionSubsystem::GetEarnRowsForDay(int32 
 	// 이후 enum 값의 내부 이름/표시 이름을 얻을 때 사용.
 	const UEnum* ReasonEnum = StaticEnum<EFF_EarnReason>();
 	
-	for (int64 Value = 0; Value <= static_cast<int64>(EFF_EarnReason::MinigameReward); ++Value)
+	for (int64 Value = 0; Value <= static_cast<int64>(EFF_EarnReason::IncidentReward); ++Value)
 	{
 		const int32 Amount = Ledger->GetEarnByReason(static_cast<EFF_EarnReason>(Value));
 		if (Amount == 0) continue;

@@ -107,6 +107,32 @@ bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 Opt
 	return CompleteStaffResponse(Handle, OptionIndex);
 }
 
+/**
+ * 만료는 플레이어가 아무것도 고르지 않은 상태라 Context 의 OptionIndex 는 INDEX_NONE 이다.
+ * Context·상태·정의를 먼저 잡고 닫는다 — CloseSlot 의 방송을 받은 쪽이 이 슬롯을 곧바로 재사용할 수 있다.
+ * 정의를 못 찾아도 사건은 닫는다. 그러지 않으면 매 틱 다시 만료 판정에 걸린다.
+ */
+void UFF_IncidentSubsystem::LapseIncident(FFF_IncidentHandle Handle, float NowMinutes)
+{
+	const FIncidentSlot* Slot = FindSlot(Handle);
+	if (!Slot)
+	{
+		FF_INCIDENT_LOG("LapseIncident: handle %d/%d is not active", Handle.Index, Handle.Serial);
+		return;
+	}
+
+	const FFF_IncidentContext Context = MakeContext(Handle, *Slot, INDEX_NONE);
+	const EFF_IncidentState FinalState = FFF_IncidentRules::LapseStateFor(Slot->Tone);
+	const UFF_IncidentDefinition* Definition = CachedDef.FindRef(Slot->IncidentTag);
+
+	CloseSlot(Handle.Index, FinalState, NowMinutes);
+
+	if (Definition && FinalState == EFF_IncidentState::Ignored)
+	{
+		ApplyEffects(Definition->OnFailedEffect, Context);
+	}
+}
+
 bool UFF_IncidentSubsystem::CompleteStaffResponse(FFF_IncidentHandle Handle, int32 OptionIndex)
 {
 	const FIncidentSlot* Slot = FindSlot(Handle);
@@ -125,15 +151,14 @@ bool UFF_IncidentSubsystem::CompleteStaffResponse(FFF_IncidentHandle Handle, int
 	Context.PeakIntensity = Slot->PeakIntensity;
 	const UFF_IncidentDefinition* Definition = CachedDef.FindRef(Slot->IncidentTag);
 	const UFF_IncidentOption* Option = Definition ? Definition->GetOption(OptionIndex) : nullptr;
-	UFF_IncidentEffect* Effect = Option ? Option->Effect.Get() : nullptr;
 	float Now = 0.f;
 	TryGetNowMinutes(Now);
 
 	IncidentSlots[Handle.Index].ChosenOptionIndex = OptionIndex;
 	CloseSlot(Handle.Index, EFF_IncidentState::Resolved, Now);
-	if (Effect)
+	if (Option)
 	{
-		Effect->Apply(Context);
+		ApplyEffects(Option->OnResolvedEffect, Context);
 	}
 	return true;
 }
@@ -393,6 +418,33 @@ void UFF_IncidentSubsystem::SetResponding(FFF_IncidentHandle Handle, bool bRespo
 
 }
 
+void UFF_IncidentSubsystem::ApplyEffects(const TArray<TObjectPtr<UFF_IncidentEffect>>& Effects, const FFF_IncidentContext& Context)
+{
+	for (UFF_IncidentEffect* Effect : Effects)
+	{
+		if (Effect && Effect->CanApply(Context))
+		{
+			Effect->Apply(Context);
+		}
+	}
+}
+
+FFF_IncidentContext UFF_IncidentSubsystem::MakeContext(FFF_IncidentHandle Handle, const FIncidentSlot& Slot,
+	int32 OptionIndex)
+{
+	FFF_IncidentContext Context;
+	Context.World = GetWorld();
+	Context.Handle = Handle;
+	Context.IncidentTag = Slot.IncidentTag;
+	Context.Anchor = Slot.Anchor;
+	Context.ContextTags = Slot.ContextTags;
+	Context.OptionIndex = OptionIndex;
+	Context.PeakIntensity = Slot.PeakIntensity;
+	return Context;
+}
+
+
+
 void UFF_IncidentSubsystem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -418,9 +470,10 @@ void UFF_IncidentSubsystem::Tick(float DeltaTime)
 		
 		if (FFF_IncidentRules::HasLapsed(Now,Slot.OccurredAtMinutes,Slot.MinutesUntilLapse))
 		{
-			
-			
-			CloseSlot(index,FFF_IncidentRules::LapseStateFor(Slot.Tone),Now);
+			FFF_IncidentHandle Handle;
+			Handle.Index = index;
+			Handle.Serial = Slot.Serial;
+			LapseIncident(Handle, Now);
 		}
 	}
 	

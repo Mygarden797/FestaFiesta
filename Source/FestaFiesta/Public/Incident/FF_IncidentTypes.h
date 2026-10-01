@@ -153,6 +153,7 @@ struct FESTAFIESTA_API FFF_IncidentContext
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
 	float PeakIntensity = 0.f;
+
 };
 
 // 선택지 하나의 비용·보상을 값으로 복사한 것. UI 가 UFF_IncidentOption 을 직접 잡지 않게 한다.

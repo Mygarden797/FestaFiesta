@@ -9,7 +9,8 @@
 
 
 class UFF_IncidentDefinition;
-class UFF_IncidentCatalog; 
+class UFF_IncidentCatalog;
+class UFF_IncidentEffect;
 /**
  * 
  */
@@ -77,12 +78,14 @@ public:
 	// 선택지가 있으면 플레이어가 고른 StaffCount 를 보내되 선택지의 MinStaff 아래로는 내리지 않는다.
 	// 작업 시간(축제 분) = 선택지의 WorkAmount ÷ 보낸 인원. 선택지가 없으면 정의의 RequiredStaff 를 쓰고 작업량은 0이다.
 	bool ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex = INDEX_NONE, int32 StaffCount = INDEX_NONE);
+
 	//핸들 유효 관계
 	bool IsHandleValid(FFF_IncidentHandle Handle) const;
 	
 	void GetActiveHandle(TArray<FFF_IncidentHandle>& OutHandles) const;
 	
 	bool GetIncidentView(FFF_IncidentHandle Handle, FFF_IncidentView& OutView) const;
+	
 	
 	//사건 발생, 종료 시에 전달되는 델리게이트
 	FFF_OnIncidentRaised OnIncidentRaised;
@@ -106,10 +109,15 @@ private:
 	const FIncidentSlot* FindSlot(FFF_IncidentHandle Handle) const;
 	
 	void CloseSlot(int32 Index, EFF_IncidentState FinalState, float NowMinutes);
-	
+
+	// 수명이 다한 사건을 톤에 맞는 상태로 닫는다. Ignored 면 정의의 OnFailedEffect 를 적용한다. Tick 만 부른다.
+	void LapseIncident(FFF_IncidentHandle Handle, float NowMinutes);
+
 	void SetResponding(FFF_IncidentHandle Handle, bool bRespond);
 	
+	void ApplyEffects(const TArray<TObjectPtr<UFF_IncidentEffect>>& Effects, const FFF_IncidentContext& Context);
 	
+	FFF_IncidentContext MakeContext(FFF_IncidentHandle Handle,const FIncidentSlot& Slot, int32 OptionIndex);
 	
 private:
 
