@@ -26,6 +26,7 @@
 #include "Components/ScrollBox.h"
 #include "Components/VerticalBox.h"
 #include "DataTables/FF_FacilityCostRow.h"
+#include "DataTables/FF_FacilityRevenueTableRow.h"
 #include "Editor.h"
 #include "Engine/Blueprint.h"
 #include "Engine/DataTable.h"
@@ -419,12 +420,14 @@ bool FFF_FacilityInfoUpgradeReadModelTest::RunTest(const FString& Parameters)
 	Preview.CurrentRevenuePerUseGold = 0;
 	Preview.NextRevenuePerUseGold = 0;
 	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
-	TestTrue(TEXT("무료 시설은 현재 수익 0을 표시한다"), ViewData.FacilityRevenueText.ToString().Contains(TEXT("0 Gold")));
+	TestTrue(TEXT("무료 시설은 현재 수익 표시를 비운다"), ViewData.FacilityRevenueText.IsEmpty());
+	TestTrue(TEXT("무료 시설의 강화 수익 셀과 효과도 비운다"),
+		ViewData.UpgradeCurrentValues.Revenue.IsEmpty() && ViewData.UpgradeNextValues.Revenue.IsEmpty() &&
+		ViewData.UpgradeRevenueEffectText.IsEmpty());
 	TestFalse(TEXT("현재 수익 0일 때 증가율을 나눗셈으로 만들지 않는다"), ViewData.UpgradeRevenueEffectText.ToString().Contains(TEXT("%")));
 	Preview.bRevenueAvailable = false;
 	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
-	TestEqual(TEXT("수익 원본 미제공은 실제 0과 구분한다"),
-		ViewData.UpgradeCurrentValues.Revenue.ToString(), FString(TEXT("정보 없음")));
+	TestTrue(TEXT("수익 원본이 없으면 강화 수익 셀을 숨긴다"), ViewData.UpgradeCurrentValues.Revenue.IsEmpty());
 	TestEqual(TEXT("수익 미제공이어도 유효한 시간 견적은 남는다"),
 		ViewData.UpgradeNextValues.ServiceTime.ToString(), FString(TEXT("8.0초")));
 	return true;
@@ -530,6 +533,23 @@ bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	// Ordinary use is free in this fixture; only this facility's effective program fee
+	// can expose its revenue section before the first payment.
+	UDataTable* RevenueTable = NewObject<UDataTable>(GameInstance);
+	if (!TestNotNull(TEXT("프로그램 수익 표시용 시설 요금표"), RevenueTable)) return false;
+	RevenueTable->RowStruct = FFF_FacilityRevenueTableRow::StaticStruct();
+	FFF_FacilityRevenueTableRow RevenueRow;
+	RevenueRow.RevenuePerUseGold = 0;
+	const FName WorkshopId(TEXT("Program_SandArtWorkshop"));
+	RevenueRow.ProgramFeesPerPerson.Add(WorkshopId, 30);
+	RevenueTable->AddRow(FacilitySpec.FacilityDefinitionId, RevenueRow);
+	Definition->FacilityRevenueTable = RevenueTable;
+	FFF_ProgramCard* Workshop = Definition->ProgramCatalog.FindByPredicate(
+		[WorkshopId](const FFF_ProgramCard& Card) { return Card.ProgramId == WorkshopId; });
+	if (!TestNotNull(TEXT("수익 표시를 검증할 공방 프로그램"), Workshop) ||
+		!TestTrue(TEXT("공방 프로그램 견적은 유효하다"), Workshop->IsValid()) ||
+		!TestTrue(TEXT("공방의 기본 참가비는 유료다"), Workshop->FeePerPerson > 0)) return false;
+
 	Coordinator->SelectionContext = EFF_FacilityInfoContext::Build;
 	Stage->CurrentStage = EFF_FestivalStage::Setup;
 	FFF_FacilityInfoViewData ViewData;
@@ -538,6 +558,40 @@ bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	TestFalse(TEXT("유료 프로그램은 아직 편성하지 않았다"), ViewData.bHasScheduledProgram);
+	TestTrue(TEXT("일반 이용료가 0이어도 호환 유료 프로그램은 수익 섹션을 표시한다"),
+		ViewData.bShowRevenueSection && ViewData.bFacilityGeneratesRevenue);
+	TestEqual(TEXT("유료 프로그램 호환성은 가상의 매출을 만들지 않는다"), ViewData.TotalRevenueGold, 0);
+
+	const TArray<FName> CompatibleFacilityTypes = Workshop->AllowedFacilityTypes;
+	Workshop->AllowedFacilityTypes = {TEXT("Performance_ExperienceStage")};
+	TestTrue(TEXT("호환되지 않는 유료 프로그램으로 시설 정보를 다시 평탄화한다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
+	TestFalse(TEXT("다른 시설용 유료 프로그램은 무료 시설의 수익 섹션을 열지 않는다"),
+		ViewData.bShowRevenueSection);
+	TestFalse(TEXT("호환되지 않는 유료 프로그램은 수익 시설로 판단하지 않는다"),
+		ViewData.bFacilityGeneratesRevenue);
+	Workshop->AllowedFacilityTypes = CompatibleFacilityTypes;
+
+	RevenueRow.ProgramFeesPerPerson.Add(WorkshopId, 0);
+	RevenueTable->AddRow(FacilitySpec.FacilityDefinitionId, RevenueRow);
+	TestEqual(TEXT("시설 GUID와 함께 무료 참가비 공방 프로그램을 편성한다"),
+		Progression->TryScheduleProgram(WorkshopId, InstallCommand.FacilityInstanceId),
+		EFF_ProgramPurchaseResult::Success);
+	TestTrue(TEXT("시설별 무료 참가비를 편성 뒤 시설 정보에 반영한다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
+	TestTrue(TEXT("무료 참가비 프로그램도 실제 편성 요약을 유지한다"), ViewData.bHasScheduledProgram);
+	TestFalse(TEXT("기본 참가비가 유료여도 시설별 0원 참가비는 수익 섹션을 숨긴다"),
+		ViewData.bShowRevenueSection);
+	TestFalse(TEXT("무료 편성 자체는 수익 시설로 판단하지 않는다"), ViewData.bFacilityGeneratesRevenue);
+	TestTrue(TEXT("무료 시설에는 이전 매출 문구가 남지 않는다"),
+		ViewData.TodayRevenueText.IsEmpty() && ViewData.TotalRevenueText.IsEmpty() &&
+		ViewData.RevenuePaymentCountText.IsEmpty() && ViewData.RevenueShareText.IsEmpty() &&
+		ViewData.RevenueStatusText.IsEmpty());
+	RevenueRow.ProgramFeesPerPerson.Add(WorkshopId, 30);
+	RevenueTable->AddRow(FacilitySpec.FacilityDefinitionId, RevenueRow);
+	TestTrue(TEXT("시설별 참가비 변경을 시설 정보에 다시 반영한다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
 	// 설치 시설 한 곳의 실제 매출은 경제의 인스턴스 장부에서 온다. 종류별 합계로 대체하지 않는다.
 	TestTrue(TEXT("설치 시설은 수익 섹션을 표시한다"), ViewData.bShowRevenueSection);
 	TestEqual(TEXT("결제 전 오늘 매출은 0 이다"), ViewData.TodayRevenueGold, 0);
@@ -554,6 +608,15 @@ bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
 		FMath::IsNearlyEqual(ViewData.TodayRevenueSharePercent, 20.f, 0.01f));
 	TestTrue(TEXT("실제 매출이 있으면 수익 시설로 본다"), ViewData.bFacilityGeneratesRevenue);
 	TestTrue(TEXT("오늘 결제가 있으면 안내 문구를 비운다"), ViewData.RevenueStatusText.IsEmpty());
+	RevenueRow.ProgramFeesPerPerson.Add(WorkshopId, 0);
+	RevenueTable->AddRow(FacilitySpec.FacilityDefinitionId, RevenueRow);
+	TestTrue(TEXT("참가비를 무료로 바꿔도 실제 매출 장부를 다시 읽는다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
+	TestTrue(TEXT("새 매출을 낼 수 없어도 이미 발생한 시설 매출은 표시한다"),
+		ViewData.bShowRevenueSection && ViewData.bFacilityGeneratesRevenue);
+	TestEqual(TEXT("무료 변경은 이미 발생한 180 Gold를 지우지 않는다"), ViewData.TotalRevenueGold, 180);
+	RevenueRow.ProgramFeesPerPerson.Add(WorkshopId, 30);
+	RevenueTable->AddRow(FacilitySpec.FacilityDefinitionId, RevenueRow);
 	TestTrue(TEXT("Setup Build 시설은 프로그램 섹션을 표시한다"), ViewData.bShowProgramSection);
 	TestTrue(TEXT("Setup Build 시설은 편성 CTA를 표시한다"), ViewData.bShowProgramScheduleAction);
 	TestTrue(TEXT("호환 프로그램과 자원이 있으면 CTA가 활성화된다"), ViewData.bCanScheduleProgram);
@@ -569,10 +632,6 @@ bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
 		ViewData.ProgramScheduleDisabledReasonText.ToString().Contains(TEXT("단계")));
 
 	Stage->CurrentStage = EFF_FestivalStage::Setup;
-	TestEqual(TEXT("시설 GUID와 함께 공방 프로그램을 편성한다"),
-		Progression->TryScheduleProgram(
-			TEXT("Program_SandArtWorkshop"), InstallCommand.FacilityInstanceId),
-		EFF_ProgramPurchaseResult::Success);
 	TestTrue(TEXT("편성 뒤 시설 정보를 다시 평탄화한다"),
 		Coordinator->BuildViewData(*Facility, ViewData));
 	TestTrue(TEXT("예약 핸들로 현재 시설의 편성을 찾는다"), ViewData.bHasScheduledProgram);
@@ -1413,11 +1472,19 @@ bool FFF_FacilityInfoRevenueReadModelTest::RunTest(const FString& Parameters)
 	FFF_FacilityInstanceRevenue Revenue;
 	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, true, false, 500, ViewData);
 	TestFalse(TEXT("객단가도 매출도 없는 시설은 수익 시설이 아니다"), ViewData.bFacilityGeneratesRevenue);
-	TestTrue(TEXT("무료 시설은 집객 안내를 붙인다"), ViewData.RevenueStatusText.ToString().Contains(TEXT("집객")));
-	TestTrue(TEXT("무료 시설도 0 Gold 를 표시한다"), ViewData.TodayRevenueText.ToString().Contains(TEXT("0 Gold")));
+	TestFalse(TEXT("객단가도 매출도 없는 시설은 수익 섹션을 숨긴다"), ViewData.bShowRevenueSection);
+	TestTrue(TEXT("무료 시설은 금액·비중·건수·요약·상태 문구를 모두 비운다"),
+		ViewData.TodayRevenueText.IsEmpty() && ViewData.TotalRevenueText.IsEmpty() &&
+		ViewData.RevenuePaymentCountText.IsEmpty() && ViewData.RevenueShareText.IsEmpty() &&
+		ViewData.RevenueSummaryText.IsEmpty() && ViewData.RevenueStatusText.IsEmpty());
+	FFFacilityInfoModel::ApplyFacilityRevenue(nullptr, true, false, 0, ViewData);
+	TestFalse(TEXT("수익 기능도 장부도 없는 시설에는 준비 중 수익 섹션을 만들지 않는다"), ViewData.bShowRevenueSection);
+	TestTrue(TEXT("수익 없는 시설은 장부를 기다리는 안내도 비운다"), ViewData.RevenueStatusText.IsEmpty());
 
 	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, true, true, 500, ViewData);
 	TestTrue(TEXT("객단가가 있으면 결제 전에도 수익 시설이다"), ViewData.bFacilityGeneratesRevenue);
+	TestTrue(TEXT("일반 이용이나 유료 프로그램 수익 기능은 매출 0이어도 섹션을 유지한다"), ViewData.bShowRevenueSection);
+	TestTrue(TEXT("아직 손님이 없는 수익 시설은 0 Gold를 표시한다"), ViewData.TodayRevenueText.ToString().Contains(TEXT("0 Gold")));
 	TestTrue(TEXT("결제가 없으면 아직 결제 없음 안내를 붙인다"),
 		ViewData.RevenueStatusText.ToString().Contains(TEXT("아직 결제")));
 	TestTrue(TEXT("결제가 없으면 비중은 0% 다"), ViewData.RevenueShareText.ToString().Contains(TEXT("0%")));
@@ -1428,6 +1495,7 @@ bool FFF_FacilityInfoRevenueReadModelTest::RunTest(const FString& Parameters)
 	Revenue.TotalPaymentCount = 12;
 	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, true, false, 1000, ViewData);
 	TestTrue(TEXT("실제 매출이 있으면 객단가 정보가 없어도 수익 시설이다"), ViewData.bFacilityGeneratesRevenue);
+	TestTrue(TEXT("일반 수익이 없어도 과거 프로그램 등 실제 매출이 있으면 장부를 유지한다"), ViewData.bShowRevenueSection);
 	TestEqual(TEXT("오늘 매출 원본 값을 그대로 넘긴다"), ViewData.TodayRevenueGold, 250);
 	TestEqual(TEXT("누적 매출 원본 값을 그대로 넘긴다"), ViewData.TotalRevenueGold, 1250);
 	TestTrue(TEXT("오늘 매출 문구"), ViewData.TodayRevenueText.ToString().Contains(TEXT("250 Gold")));
@@ -1451,6 +1519,12 @@ bool FFF_FacilityInfoRevenueReadModelTest::RunTest(const FString& Parameters)
 
 	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, false, true, 1000, ViewData);
 	TestFalse(TEXT("조명·바닥 시설은 수익 섹션을 숨긴다"), ViewData.bShowRevenueSection);
+	TestEqual(TEXT("섹션이 숨겨져도 누적 매출 원본 값은 보존한다"), ViewData.TotalRevenueGold, 1250);
+	TestEqual(TEXT("섹션이 숨겨져도 누적 결제 건수는 보존한다"), ViewData.TotalPaymentCount, 12);
+	TestTrue(TEXT("숨긴 섹션은 이전 수익 표시를 모두 비운다"),
+		ViewData.TodayRevenueText.IsEmpty() && ViewData.TotalRevenueText.IsEmpty() &&
+		ViewData.RevenuePaymentCountText.IsEmpty() && ViewData.RevenueShareText.IsEmpty() &&
+		ViewData.RevenueSummaryText.IsEmpty() && ViewData.RevenueStatusText.IsEmpty());
 	return true;
 }
 
