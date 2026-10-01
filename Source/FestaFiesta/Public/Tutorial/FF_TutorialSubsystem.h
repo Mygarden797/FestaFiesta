@@ -285,6 +285,20 @@ private:
 	*/
 	void CheckPrepTabAlreadyOpen();
 
+	/* 시킨 조작을 마쳤으면 열려 있는 준비 화면 패널을 닫는다.
+
+	   튜토리얼 레벨의 대사창은 준비 HUD 아래에 깔린다(DialogueBoxZOrder 가 음수).
+	   조작 대기 줄에서 HUD 를 눌러야 하기 때문이다. 그래서 탭을 연 채로 다음 대사로
+	   넘어가면 패널이 대사창과 선택지를 덮었다. 조작이 끝났으면 패널을 내리고 대사를 보인다.
+
+	   다음 줄도 조작 대기면 닫지 않는다. "탭 열기 → 시설 설치" 처럼 같은 패널에서
+	   이어서 해야 하는 일이 있기 때문이다. 그래서 대사나 선택지 줄에 도착했을 때만 닫는다.
+
+	   배치 탭을 닫으면 패널이 건축 세션도 끝낸다(UFF_PrepPanelBuild::EndPanelSession).
+	   연속 설치 상태로 남은 배치 화면도 같이 정리된다.
+	*/
+	void DismissPrepPanelForDialogue();
+
 	void BindGameSignals();
 	void UnbindGameSignals();
 
@@ -439,6 +453,14 @@ private:
 
 	// 지금 구독 중인 탭 바. 화면이 다시 만들어지면 바뀐다.
 	TWeakObjectPtr<class UFF_PrepHudBar> BoundPrepHudBar;
+
+	/* 조작을 마쳐서 패널을 닫아야 한다. 다음 Tick 에서 처리한다.
+
+	   그 자리에서 닫지 않는 이유: 조작 신호는 탭 전환 방송이나 설치 확정 도중에 온다.
+	   그 안에서 패널을 닫으면 탭 바의 선택 적용과 건축 세션 종료가 진행 중인 호출 위로
+	   다시 들어간다. 호출이 다 풀린 다음 틱에 닫는다.
+	*/
+	bool bPrepPanelDismissPending = false;
 
 	// 마지막으로 구독한 허브. 로그와 디버그 확인용이다. 구독 여부는 허브 쪽 델리게이트로 판단한다.
 	TWeakObjectPtr<class UFF_PlayHubScreen> BoundPlayHub;

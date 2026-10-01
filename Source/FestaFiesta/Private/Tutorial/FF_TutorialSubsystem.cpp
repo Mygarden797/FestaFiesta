@@ -244,6 +244,14 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// 지난 틱에 조작이 끝났다. 헤더의 bPrepPanelDismissPending 참고.
+	// 맨 앞에서 처리한다. 아래 카메라 감시가 이번 틱에 새로 통과시킨 것은 다음 틱에 닫힌다.
+	if (bPrepPanelDismissPending)
+	{
+		bPrepPanelDismissPending = false;
+		DismissPrepPanelForDialogue();
+	}
+
 	if (AutoStartCountdown >= 0.f)
 	{
 		AutoStartCountdown -= DeltaTime;
@@ -478,6 +486,36 @@ void UFF_TutorialSubsystem::HandlePrepTabSelectionChanged(const FFF_PrepTabSelec
 	}
 
 	NotifyAction(EFF_TutorialWaitCondition::PrepTabOpened);
+}
+
+void UFF_TutorialSubsystem::DismissPrepPanelForDialogue()
+{
+	if (!bDialogueActive)
+	{
+		return;
+	}
+
+	// 도착한 줄이 또 조작 대기면 패널이 필요할 수 있다. 연출 줄은 대사창을 띄우지 않는다.
+	const EFF_DialogueLineKind Kind = GetCurrentLine().Kind;
+	if (Kind != EFF_DialogueLineKind::Speech && Kind != EFF_DialogueLineKind::Choice)
+	{
+		return;
+	}
+
+	// 탭 대기 줄을 거치지 않고 왔을 수 있다(설치 대기 등). 화면에 있는 탭 바를 다시 확인한다.
+	TryBindPrepHudBar();
+
+	UFF_PrepHudBar* Bar = BoundPrepHudBar.Get();
+	if (!Bar || !Bar->GetSelection().bHasSelection)
+	{
+		return;
+	}
+
+	UE_LOG(LogFestaFiestaTutorial, Log,
+		TEXT("[튜토리얼] 조작을 마쳐 열린 패널을 닫는다. 대사를 가리지 않게 한다."));
+
+	// 닫힘도 탭 전환 방송으로 오지만 HandlePrepTabSelectionChanged 가 여는 것만 보므로 대사는 그대로다.
+	Bar->CloseCurrentPanel();
 }
 
 void UFF_TutorialSubsystem::HandleStageChanged(
@@ -1082,6 +1120,9 @@ void UFF_TutorialSubsystem::NotifyAction(const EFF_TutorialWaitCondition Conditi
 
 	UE_LOG(LogFestaFiestaTutorial, Log,
 		TEXT("[튜토리얼] 조작 확인. 조건=%d"), static_cast<int32>(Condition));
+
+	// 패널은 다음 틱에 닫는다. 그때 도착한 줄을 보고 닫을지 정한다.
+	bPrepPanelDismissPending = true;
 
 	GoToLine(ResolveNextLineIndex());
 }
