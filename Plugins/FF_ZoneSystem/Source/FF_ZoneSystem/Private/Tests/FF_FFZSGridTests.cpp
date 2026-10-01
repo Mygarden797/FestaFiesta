@@ -352,6 +352,68 @@ bool FFFZSCompressedRegionContractTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSNativeStageAreaBudgetTest,
+    "FF_ZoneSystem.Unit.Grid.NativeStageFitsCompressedAreaBudget",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSNativeStageAreaBudgetTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    UFFZSDeveloperSettings* MutableSettings = GetMutableDefault<UFFZSDeveloperSettings>();
+    TGuardValue<int32> BudgetGuard(MutableSettings->MaxEnumeratedCellsPerFacility,
+        UFFZSDeveloperSettings::DefaultMaxEnumeratedCellsPerFacility);
+
+    // Actual main-stage mesh bounds rounded outward to whole centimeters, with a 1m clearance.
+    // The area remains compressed even though it exceeds the previous 1,000m2 allowance.
+    FFFZSFacilitySpec Spec;
+    Spec.FootprintSizeCells = FIntPoint(5071, 3149);
+    Spec.ClearanceCells = 100;
+    const FFFZSGridPlacement Placement;
+    TestTrue(TEXT("Native main-stage dimensions and clearance fit the production area budget"),
+        UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
+    const TArray<FFFZSCellRect> Footprint = UFFZSGridLibrary::GetFootprintRects(Spec, Placement);
+    TestEqual(TEXT("A native-size stage stays one authoritative footprint rectangle"), Footprint.Num(), 1);
+    TestEqual(TEXT("The stage rectangle preserves its full native footprint area"),
+        UFFZSGridLibrary::GetCellRectArea(Footprint), static_cast<int64>(15'968'579));
+    TestEqual(TEXT("The stage reservation includes the full one-meter clearance"),
+        UFFZSGridLibrary::GetCellRectArea(UFFZSGridLibrary::GetReservedRects(Spec, Placement)),
+        static_cast<int64>(17'652'579));
+    TestTrue(TEXT("Native stage size does not enable massive debug cell materialization"),
+        UFFZSGridLibrary::GetReservedCells(Spec, Placement).IsEmpty());
+
+    // A separate audience allowance must remain independent of the stage body/queue limit.
+    Spec.Audience.bEnabled = true;
+    Spec.Audience.Columns = 22;
+    Spec.Audience.Rows = 22;
+    Spec.Audience.FirstSlotLocalCm = FVector(0, 2500, 0);
+    if (!TestTrue(TEXT("The audience layout can arrange its seats and portals"),
+            Spec.Audience.TryCenterAndArrangePortals()))
+    {
+        return false;
+    }
+    TestFalse(TEXT("The large stage and audience exceed the shared area budget"),
+        UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
+    Spec.Audience.AreaLimitM2 = 909.f;
+    TestTrue(TEXT("A 909-square-meter audience allowance permits the native-size stage audience"),
+        UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
+    TestTrue(TEXT("The separate audience allowance still leaves large debug cell arrays empty"),
+        UFFZSGridLibrary::GetReservedCells(Spec, Placement).IsEmpty());
+
+    Spec.Audience.bEnabled = false;
+    Spec.ClearanceCells = 0;
+    Spec.FootprintSizeCells = FIntPoint(5000, 4000);
+    TestTrue(TEXT("Exactly 20,000,000 square centimeters are permitted"),
+        UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
+    Spec.FootprintSizeCells.X += 1;
+    TestFalse(TEXT("A footprint beyond 20,000,000 square centimeters is rejected"),
+        UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
+    TestTrue(TEXT("An oversized footprint cannot expose partial authority rectangles"),
+        UFFZSGridLibrary::GetFootprintRects(Spec, Placement).IsEmpty());
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FFFZSArbitraryYawFootprintGeometryTest,
     "FF_ZoneSystem.Unit.Grid.OrientedPlacement.FortyFiveDegreeFootprint",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

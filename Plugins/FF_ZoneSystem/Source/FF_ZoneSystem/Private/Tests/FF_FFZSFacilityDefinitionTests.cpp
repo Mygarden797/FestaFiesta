@@ -475,7 +475,8 @@ bool FFFZSOneCentimeterFacilityDefinitionValidationTest::RunTest(
             MutableSettings->MaxEnumeratedCellsPerFacility,
             TNumericLimits<int32>::Max());
         TestEqual(TEXT("Region 작업 제한은 최대 안전 한도로 제한된다"),
-            UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility(), 10'000'000);
+            UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility(),
+            UFFZSDeveloperSettings::DefaultMaxEnumeratedCellsPerFacility);
     }
 
     FFFZSFacilitySpec Spec =
