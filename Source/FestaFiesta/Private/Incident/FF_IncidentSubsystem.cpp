@@ -351,6 +351,48 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	
 }
 
+void UFF_IncidentSubsystem::SetResponding(FFF_IncidentHandle Handle, bool bRespond)
+{
+	if (!FindSlot(Handle))
+	{
+		FF_INCIDENT_LOG("SetResponding: handle %d/%d is not active", Handle.Index, Handle.Serial);
+		return;
+	}
+	
+	
+	float Now = 0.f;
+	const bool bHasNow = TryGetNowMinutes(Now);
+	FIncidentSlot& Slot = IncidentSlots[Handle.Index];
+	
+	if (bRespond)
+	{
+		
+		if (!bHasNow)
+		{
+			FF_INCIDENT_LOG("AcknowledgeAtMinutes is not recorded");
+			return;
+		}
+		Slot.State = EFF_IncidentState::Acknowledged;
+		Slot.AcknowledgedAtMinutes = Now;
+		return;
+		
+		
+	}
+	if (Slot.State != EFF_IncidentState::Acknowledged)
+	{
+		return;
+	}
+	
+	Slot.State = EFF_IncidentState::Active;
+	if (bHasNow)
+	{
+		Slot.OccurredAtMinutes +=FMath::Max(0.f, Now-Slot.AcknowledgedAtMinutes);
+	}
+	
+	
+
+}
+
 void UFF_IncidentSubsystem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -369,6 +411,9 @@ void UFF_IncidentSubsystem::Tick(float DeltaTime)
 		{
 			continue;
 		}
+		
+		if (Slot.State ==EFF_IncidentState::Acknowledged)
+			continue;
 		
 		
 		if (FFF_IncidentRules::HasLapsed(Now,Slot.OccurredAtMinutes,Slot.MinutesUntilLapse))

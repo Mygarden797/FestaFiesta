@@ -220,6 +220,7 @@ bool UFF_StaffDispatchSubsystem::TryDispatch(FFF_IncidentHandle Handle, int32 Op
 		LastWorkClockMinutes = -1.f;
 	}
 	Dispatches.Add(MoveTemp(Pending));
+	Incident->SetResponding(Handle,true);
 	Incident->OnIncidentUpdated.Broadcast(Handle);
 	return true;
 }
@@ -284,6 +285,10 @@ void UFF_StaffDispatchSubsystem::HandleReservationsReset()
 	Dispatches.Reset();
 	for (FDispatch& Dispatch : Previous)
 	{
+		if (!Dispatch.bReturning && Incident && Incident->IsHandleValid(Dispatch.Handle))
+		{
+			Incident->SetResponding(Dispatch.Handle, false);
+		}
 		ReleaseDispatch(Dispatch);
 	}
 }
@@ -494,6 +499,7 @@ void UFF_StaffDispatchSubsystem::Tick(float DeltaTime)
 	{
 		if (Incident && Incident->IsHandleValid(Handle))
 		{
+			Incident->SetResponding(Handle,false);
 			Incident->OnIncidentUpdated.Broadcast(Handle);
 		}
 	}

@@ -11,6 +11,9 @@ void UFF_IncidentEffect_Reward::Apply(const FFF_IncidentContext& Context)
 		Context.Handle.Index, Context.Handle.Serial,
 		Context.OptionIndex,
 		RewardGold);
+	
+	
+	
 }
 
 FText UFF_IncidentEffect_Reward::GetDescription() const

@@ -52,6 +52,8 @@ private:
 		
 		EFF_IncidentState State = EFF_IncidentState::Active;
 		float OccurredAtMinutes = 0.f;
+		float AcknowledgedAtMinutes = 0.f;
+		
 		float LastSeenMinutes = 0.f;
 		float Intensity = 0.f;
 		float PeakIntensity = 0.f;
@@ -104,6 +106,8 @@ private:
 	const FIncidentSlot* FindSlot(FFF_IncidentHandle Handle) const;
 	
 	void CloseSlot(int32 Index, EFF_IncidentState FinalState, float NowMinutes);
+	
+	void SetResponding(FFF_IncidentHandle Handle, bool bRespond);
 	
 	
 	
