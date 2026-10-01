@@ -75,7 +75,23 @@ enum class EFF_AudioAmbience : uint8
 	// 로비(프론트엔드 레벨: 타이틀, 지구본, 국가 지도) 전용 곡. 개장 전 곡과 따로 둔다.
 	// 예전에는 로비에서도 축제 단계가 기본값(준비)이라 개장 전 곡이 흘러, 로비와 축제 준비가
 	// 한 곡으로 이어졌다. 뱅크 키가 밀리지 않게 맨 뒤에 붙인다.
-	Lobby           UMETA(DisplayName = "로비")
+	Lobby           UMETA(DisplayName = "로비"),
+
+	/* 타이틀 화면 전용 곡. 로비(플레이 허브·지구본·국가 지도)와 따로 둔다.
+
+	   로비와 타이틀은 같은 프론트엔드 레벨이라 레벨로는 가를 수 없다. 화면(EFF_UIFlowScreen)으로
+	   가른다(UFF_AudioEventLink). 예전에는 둘 다 로비 곡이라 타이틀 곡이 로비까지 이어졌다(피드백).
+	   뱅크에 없으면 로비 곡을 대신 튼다. 뱅크 키가 밀리지 않게 맨 뒤에 붙인다.
+	*/
+	Title           UMETA(DisplayName = "타이틀"),
+
+	/* 축제 플레이리스트. 준비·운영(낮/밤) 내내 뱅크의 Festival Playlist 를 차례로 튼다.
+
+	   뱅크의 배경음 표(Ambiences)에 넣는 키가 아니다. 곡 목록은 뱅크의 Festival Playlist 에 넣는다.
+	   예전에는 단계·밤낮마다 곡이 갈렸는데, 낮밤이 빠르게 바뀌어 곡이 자주 끊겼다(피드백).
+	   플레이리스트가 비어 있으면 예전처럼 준비·낮·밤 곡을 쓴다.
+	*/
+	Playlist        UMETA(DisplayName = "축제 플레이리스트 (뱅크 키 아님)")
 };
 
 // 소리 갈래. 설정 창의 음량 슬라이더와 짝을 이룬다(FFF_AudioVolumes).
@@ -149,6 +165,10 @@ struct FFF_AudioAmbienceTrack
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
 	TSoftObjectPtr<USoundBase> Sound;
+
+	// 플레이리스트 플레이어에 보일 곡 이름. 비워두면 사운드 애셋 이름에서 만든다(밑줄은 공백으로).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
+	FText DisplayName;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (ClampMin = "0.0", ClampMax = "4.0"))
 	float VolumeMultiplier = 1.f;

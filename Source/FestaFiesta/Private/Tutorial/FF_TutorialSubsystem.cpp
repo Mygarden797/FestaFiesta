@@ -14,6 +14,8 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Save/FF_SaveSubsystem.h"
 #include "Tutorial/FF_TutorialMarker.h"
+#include "Tutorial/FF_TutorialExitWidget.h"
+#include "GameFramework/PlayerController.h"
 #include "Engine/GameInstance.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/Frontend/FF_PlayHubScreen.h"
@@ -244,14 +246,6 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// 지난 틱에 조작이 끝났다. 헤더의 bPrepPanelDismissPending 참고.
-	// 맨 앞에서 처리한다. 아래 카메라 감시가 이번 틱에 새로 통과시킨 것은 다음 틱에 닫힌다.
-	if (bPrepPanelDismissPending)
-	{
-		bPrepPanelDismissPending = false;
-		DismissPrepPanelForDialogue();
-	}
-
 	if (AutoStartCountdown >= 0.f)
 	{
 		AutoStartCountdown -= DeltaTime;
@@ -277,6 +271,27 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 					CheckPrepTabAlreadyOpen();
 				}
 			}
+		}
+	}
+
+	/* 준비 화면 패널을 보기 전용으로 둘지 정한다. IsPrepPanelViewOnly 참고.
+
+	   대사 중 패널은 탭 대기 줄에서 연 것이 대부분이지만, 플레이어가 대사 도중 직접 열 수도 있다.
+	   그래서 탭 바를 아직 구독하지 않았으면 주기적으로 찾는다.
+	*/
+	bPrepPanelViewOnly = false;
+	if (bDialogueActive && !IsWaitingForAction())
+	{
+		PrepPanelScanCountdown -= DeltaTime;
+		if (PrepPanelScanCountdown <= 0.f)
+		{
+			PrepPanelScanCountdown = 0.5f;
+			TryBindPrepHudBar();
+		}
+
+		if (const UFF_PrepHudBar* Bar = BoundPrepHudBar.Get())
+		{
+			bPrepPanelViewOnly = Bar->GetSelection().bHasSelection;
 		}
 	}
 
@@ -488,34 +503,35 @@ void UFF_TutorialSubsystem::HandlePrepTabSelectionChanged(const FFF_PrepTabSelec
 	NotifyAction(EFF_TutorialWaitCondition::PrepTabOpened);
 }
 
-void UFF_TutorialSubsystem::DismissPrepPanelForDialogue()
+bool UFF_TutorialSubsystem::DismissViewOnlyPrepPanel()
 {
-	if (!bDialogueActive)
+	if (!bPrepPanelViewOnly)
 	{
-		return;
+		return false;
 	}
 
-	// 도착한 줄이 또 조작 대기면 패널이 필요할 수 있다. 연출 줄은 대사창을 띄우지 않는다.
-	const EFF_DialogueLineKind Kind = GetCurrentLine().Kind;
-	if (Kind != EFF_DialogueLineKind::Speech && Kind != EFF_DialogueLineKind::Choice)
-	{
-		return;
-	}
+	// 다음 Tick 이 다시 판정하기 전까지 오버레이가 클릭을 계속 막지 않게 바로 내린다.
+	bPrepPanelViewOnly = false;
+	return ClosePrepPanelForDialogue();
+}
 
+bool UFF_TutorialSubsystem::ClosePrepPanelForDialogue()
+{
 	// 탭 대기 줄을 거치지 않고 왔을 수 있다(설치 대기 등). 화면에 있는 탭 바를 다시 확인한다.
 	TryBindPrepHudBar();
 
 	UFF_PrepHudBar* Bar = BoundPrepHudBar.Get();
 	if (!Bar || !Bar->GetSelection().bHasSelection)
 	{
-		return;
+		return false;
 	}
 
 	UE_LOG(LogFestaFiestaTutorial, Log,
-		TEXT("[튜토리얼] 조작을 마쳐 열린 패널을 닫는다. 대사를 가리지 않게 한다."));
+		TEXT("[튜토리얼] 대사를 넘기려 해서 열린 패널부터 닫는다. 이번 클릭으로는 줄을 넘기지 않는다."));
 
 	// 닫힘도 탭 전환 방송으로 오지만 HandlePrepTabSelectionChanged 가 여는 것만 보므로 대사는 그대로다.
 	Bar->CloseCurrentPanel();
+	return true;
 }
 
 void UFF_TutorialSubsystem::HandleStageChanged(
@@ -596,6 +612,12 @@ void UFF_TutorialSubsystem::RemoveWidgets()
 	{
 		OverlayWidget->RemoveFromParent();
 		OverlayWidget = nullptr;
+	}
+
+	if (ExitWidget)
+	{
+		ExitWidget->RemoveFromParent();
+		ExitWidget = nullptr;
 	}
 }
 
@@ -987,6 +1009,19 @@ void UFF_TutorialSubsystem::Advance()
 		return;
 	}
 
+	/* 준비 화면 패널이 열려 있으면 이번 클릭은 패널을 닫는 데만 쓴다.
+
+	   튜토리얼 레벨의 대사창은 준비 HUD 아래에 깔린다(DialogueBoxZOrder 가 음수).
+	   그래서 시킨 탭을 연 채로 다음 대사가 오면 패널이 대사를 가린다. 조작을 마친 순간
+	   바로 닫으면 열린 탭을 볼 틈이 없으므로(피드백), 탭은 그대로 보여주고 플레이어가
+	   직접 닫거나 대사를 넘기려 할 때 닫는다. 닫는 클릭과 넘기는 클릭을 나눠야
+	   가려져 있던 대사를 읽지 못한 채 지나가지 않는다.
+	*/
+	if (ClosePrepPanelForDialogue())
+	{
+		return;
+	}
+
 	GoToLine(ResolveNextLineIndex());
 }
 
@@ -1121,9 +1156,6 @@ void UFF_TutorialSubsystem::NotifyAction(const EFF_TutorialWaitCondition Conditi
 	UE_LOG(LogFestaFiestaTutorial, Log,
 		TEXT("[튜토리얼] 조작 확인. 조건=%d"), static_cast<int32>(Condition));
 
-	// 패널은 다음 틱에 닫는다. 그때 도착한 줄을 보고 닫을지 정한다.
-	bPrepPanelDismissPending = true;
-
 	GoToLine(ResolveNextLineIndex());
 }
 
@@ -1150,9 +1182,80 @@ void UFF_TutorialSubsystem::FinishScript()
 	   3. 방송 — 맨 마지막. 받는 쪽이 다음 대사를 틀 수 있는데, 방송을 먼저 하면
 	      그 대사를 바로 뒤의 StopScript 가 지운다.
 	*/
+	/* 튜토리얼 레벨이면 대사가 끝나는 대로 레벨을 끝내고 레벨 선택으로 돌아간다.
+
+	   튜토리얼 대사는 개장 직후에 마무리까지 이어진다. 그 뒤에 레벨에 남겨 두면 할 일 없는
+	   축제를 끝까지 치러야 해서, 대사를 다 본 것을 실습의 끝으로 본다(피드백).
+	   범위는 StopScript 가 지우므로 그 전에 판단해 둔다.
+	*/
+	const bool bTutorialLevelFinished = ActiveScope == EFF_TutorialScope::Festival
+		&& (IsTutorialFestival(ActiveScopeFestivalId) || IsTutorialLevel());
+
 	RecordScopeCompleted();
 	StopScript();
 	OnTutorialCompleted.Broadcast();
+
+	if (!bTutorialLevelFinished)
+	{
+		return;
+	}
+
+	/* 건너뛰기 버튼은 대사창과 함께 사라진다. 그 자리에 "나가기" 를 남긴다.
+
+	   흐름을 타고 들어왔으면 바로 아래에서 레벨을 떠나 이 버튼은 잠깐만 보인다. 흐름 밖에서
+	   맵을 바로 열었으면 자동으로 떠나지 않으므로(LeaveIfTutorialLevel), 이 버튼이 유일한 출구다.
+	*/
+	ShowExitButton();
+
+	// 방송 뒤에 떠난다. 레벨을 떠나면 이 월드의 구독자들이 곧 사라지므로 알릴 것은 먼저 알린다.
+	LeaveIfTutorialLevel(ResolveCurrentFestivalId());
+}
+
+void UFF_TutorialSubsystem::ShowExitButton()
+{
+	if (ExitWidget)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+	if (!Controller)
+	{
+		return;
+	}
+
+	ExitWidget = CreateWidget<UFF_TutorialExitWidget>(Controller, UFF_TutorialExitWidget::StaticClass());
+	if (ExitWidget)
+	{
+		// UI 루트(0) 아래에 둔다. 일시정지 화면이 위를 덮고, 오른쪽 위는 HUD 가 비워 둔 자리라 눌린다.
+		ExitWidget->AddToViewport(-40);
+	}
+}
+
+void UFF_TutorialSubsystem::ExitTutorialLevel()
+{
+	UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!Flow)
+	{
+		return;
+	}
+
+	UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 나가기를 눌렀다. 레벨 선택으로 돌아간다."));
+	Flow->ReturnToAtlas();
+}
+
+bool UFF_TutorialSubsystem::IsTutorialLevel() const
+{
+	if (IsTutorialFestival(ResolveCurrentFestivalId()))
+	{
+		return true;
+	}
+
+	const UWorld* World = GetWorld();
+	const AFF_FestivalGameMode* GameMode =
+		World ? Cast<AFF_FestivalGameMode>(World->GetAuthGameMode()) : nullptr;
+	return GameMode && !GameMode->TutorialStartTable.IsNull();
 }
 
 void UFF_TutorialSubsystem::RequestSkipConfirm()
@@ -1265,7 +1368,8 @@ bool UFF_TutorialSubsystem::LeaveIfTutorialLevel(const FName FestivalId)
 	   흐름을 타고 들어온 경우(UIFlow 가 축제 중)에만 돌려보낸다. 에디터에서 레벨을
 	   직접 열어 테스트할 때 쫓겨나면 튜토리얼 레벨을 고칠 수가 없다.
 	*/
-	if (!IsTutorialFestival(FestivalId))
+	// 식별자가 달라도 튜토리얼 레벨이면 떠난다. IsTutorialLevel 참고.
+	if (!IsTutorialFestival(FestivalId) && !IsTutorialLevel())
 	{
 		return false;
 	}

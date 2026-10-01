@@ -28,6 +28,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio")
 	TMap<EFF_AudioAmbience, FFF_AudioAmbienceTrack> Ambiences;
 
+	/* 축제 플레이리스트. 준비·운영(낮/밤) 내내 위에서부터 차례로 튼다. 끝까지 가면 처음으로.
+
+	   곡의 Looping 은 꺼 둔다. 켜져 있으면 곡 길이만큼 지난 뒤 코드가 다음 곡으로 넘기지만,
+	   곡 끝이 정확히 맞지 않을 수 있다. 볼륨은 배경음 슬라이더를 따른다.
+	   비워두면 예전처럼 Ambiences 의 준비·낮·밤 곡을 쓴다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio|Playlist")
+	TArray<FFF_AudioAmbienceTrack> FestivalPlaylist;
+
+	// 켜면 한 바퀴마다 순서를 섞는다. 바퀴가 바뀔 때 같은 곡이 연달아 나오지는 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio|Playlist")
+	bool bShufflePlaylist = false;
+
 	// 없으면 nullptr. 호출부가 조용히 넘어간다.
 	const FFF_AudioCue* FindCue(EFF_AudioEvent Event) const
 	{

@@ -99,7 +99,38 @@ void UFF_TutorialOverlayWidget::HandleHighlightAnchorChanged(const FName AnchorI
 void UFF_TutorialOverlayWidget::HandleDialogueActiveChanged(const bool bActive)
 {
 	// 대사가 없으면 덮개도 없앤다. 대사 중이 아닌데 화면이 어두우면 버그로 보인다.
+	bBlockingViewOnlyPanel = false;
 	SetVisibility(bActive ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+}
+
+void UFF_TutorialOverlayWidget::SetBlockingViewOnlyPanel(const bool bBlock)
+{
+	if (bBlock == bBlockingViewOnlyPanel)
+	{
+		return;
+	}
+	bBlockingViewOnlyPanel = bBlock;
+
+	// 막을 때만 Visible 로 올린다. 화면 전체를 덮는 위젯이라 이 동안은 아래 UI 가 눌리지 않는다.
+	SetVisibility(bBlock ? ESlateVisibility::Visible : ESlateVisibility::HitTestInvisible);
+}
+
+FReply UFF_TutorialOverlayWidget::NativeOnMouseButtonDown(
+	const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (!bBlockingViewOnlyPanel)
+	{
+		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+	}
+
+	// 어디를 눌렀든 패널만 닫는다. 이 클릭은 아래로 보내지 않는다 — 대사를 넘기거나
+	// 배치 중인 시설을 놓는 데 쓰이면 플레이어가 예상하지 못한 일이 생긴다.
+	if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
+	{
+		Tutorial->DismissViewOnlyPrepPanel();
+	}
+	SetBlockingViewOnlyPanel(false);
+	return FReply::Handled();
 }
 
 bool UFF_TutorialOverlayWidget::ResolveHighlightRect(
@@ -215,6 +246,12 @@ bool UFF_TutorialOverlayWidget::ResolveWorldCircle(FVector2D& OutCenter, float& 
 void UFF_TutorialOverlayWidget::NativeTick(const FGeometry& MyGeometry, const float DeltaTime)
 {
 	Super::NativeTick(MyGeometry, DeltaTime);
+
+	// 보기 전용 패널이 열려 있으면 클릭을 받는다. NativeOnMouseButtonDown 참고.
+	{
+		const UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
+		SetBlockingViewOnlyPanel(Tutorial && Tutorial->IsDialogueActive() && Tutorial->IsPrepPanelViewOnly());
+	}
 
 	PulseTime += DeltaTime;
 

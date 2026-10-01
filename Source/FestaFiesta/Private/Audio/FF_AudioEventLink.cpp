@@ -4,6 +4,7 @@
 
 #include "Audio/FF_AudioSettings.h"
 #include "Audio/FF_AudioSubsystem.h"
+#include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -13,6 +14,8 @@
 #include "Queue/FF_QueueSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Core/FF_UIFlowSettings.h"
+#include "UI/Core/FF_UIFlowSubsystem.h"
+#include "UI/Core/FF_UIFlowTypes.h"
 
 bool UFF_AudioEventLink::DoesSupportWorldType(const EWorldType::Type WorldType) const
 {
@@ -43,10 +46,37 @@ void UFF_AudioEventLink::OnWorldBeginPlay(UWorld& InWorld)
 	// Initialize 가 아니라 여기서 묶는다. 서브시스템 생성 순서는 보장되지 않아서
 	// Initialize 시점엔 상대가 아직 없을 수 있다.
 	BindAll();
+
+	// 로비는 화면(타이틀/허브·지도)에 따라 곡이 갈린다. 화면 전환 신호가 없어 주기적으로 본다.
+	if (bIsLobbyWorld)
+	{
+		InWorld.GetTimerManager().SetTimer(
+			FrontendScreenPollTimer,
+			FTimerDelegate::CreateWeakLambda(this, [this]() { PollFrontendScreen(); }),
+			0.2f, true, 0.f);
+	}
+	else
+	{
+		// 축제 레벨이면 플레이리스트 플레이어를 띄운다.
+		InWorld.GetTimerManager().SetTimer(
+			PlaylistPlayerCreateTimer,
+			FTimerDelegate::CreateWeakLambda(this, [this]() { TryCreatePlaylistPlayer(); }),
+			0.5f, true, 0.f);
+	}
 }
 
 void UFF_AudioEventLink::Deinitialize()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(FrontendScreenPollTimer);
+		World->GetTimerManager().ClearTimer(PlaylistPlayerCreateTimer);
+	}
+	if (PlaylistPlayerWidget)
+	{
+		PlaylistPlayerWidget->RemoveFromParent();
+		PlaylistPlayerWidget = nullptr;
+	}
 	UnbindAll();
 	Super::Deinitialize();
 }
@@ -472,40 +502,47 @@ void UFF_AudioEventLink::RefreshAmbience()
 
 	EFF_AudioAmbience Next = EFF_AudioAmbience::None;
 
-	/* 로비는 단계와 상관없이 로비 곡이다.
+	/* 로비는 단계와 상관없이 화면으로 곡을 정한다. 타이틀 화면은 타이틀 곡, 나머지는 로비 곡.
 
-	   로비 곡을 아직 뱅크에 안 넣었으면 예전처럼 개장 전 곡으로 둔다. 곡을 넣기 전까지
-	   로비가 조용해지면 소리가 고장 난 것처럼 보인다.
+	   축제 단계는 게임 인스턴스가 들고 있어서 로비에 와도 값이 남는다. 그래서 로비에서는 단계를 보지 않는다.
 	*/
 	if (bIsLobbyWorld)
 	{
-		if (Audio->HasAmbienceTrack(EFF_AudioAmbience::Lobby))
+		const EFF_AudioAmbience LobbyNext = ResolveLobbyAmbience(*Audio);
+		if (LobbyNext != EFF_AudioAmbience::None)
 		{
-			Audio->SetAmbience(EFF_AudioAmbience::Lobby);
-			return;
+			Audio->SetAmbience(LobbyNext);
 		}
-		if (!bWarnedMissingLobbyTrack)
-		{
-			bWarnedMissingLobbyTrack = true;
-			UE_LOG(LogFestaFiestaAudio, Warning,
-				TEXT("[사운드] 로비 곡이 뱅크에 없어 개장 전 곡을 대신 튼다. 오디오 뱅크의 배경음에 `로비` 를 넣을 것."));
-		}
-		Audio->SetAmbience(EFF_AudioAmbience::Setup);
 		return;
 	}
+
+	/* 준비·운영은 플레이리스트 하나로 흐른다.
+
+	   예전에는 준비·낮·밤마다 곡이 갈렸는데, 낮밤이 빠르게 바뀌어 곡이 자주 끊겼다(피드백).
+	   같은 곡을 다시 요청하면 무시되므로 단계나 밤낮이 바뀌어도 듣던 곡이 이어진다.
+	   플레이리스트가 비어 있으면 예전 규칙으로 간다.
+	*/
+	const bool bUsePlaylist = Audio->HasPlaylist();
 
 	switch (LastStage)
 	{
 	case EFF_FestivalStage::Setup:
 	case EFF_FestivalStage::MorningCheck:
 	case EFF_FestivalStage::PromotionPreview:
-		Next = EFF_AudioAmbience::Setup;
+		Next = bUsePlaylist ? EFF_AudioAmbience::Playlist : EFF_AudioAmbience::Setup;
 		break;
 
 	case EFF_FestivalStage::Live:
 	case EFF_FestivalStage::SunsetTransition:
-		// 운영 중에는 밤낮으로 갈린다. 같은 곡이면 시간이 흐르는 느낌이 안 난다.
-		Next = bLastIsNight ? EFF_AudioAmbience::NightLive : EFF_AudioAmbience::DayLive;
+		// 플레이리스트가 없으면 밤낮으로 갈린다(예전 규칙).
+		if (bUsePlaylist)
+		{
+			Next = EFF_AudioAmbience::Playlist;
+		}
+		else
+		{
+			Next = bLastIsNight ? EFF_AudioAmbience::NightLive : EFF_AudioAmbience::DayLive;
+		}
 		break;
 
 	case EFF_FestivalStage::Finale:
@@ -522,6 +559,127 @@ void UFF_AudioEventLink::RefreshAmbience()
 	}
 
 	Audio->SetAmbience(Next);
+}
+
+EFF_AudioAmbience UFF_AudioEventLink::ResolveLobbyAmbience(const UFF_AudioSubsystem& Audio) const
+{
+	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	const EFF_UIFlowScreen Screen = Flow ? Flow->GetFrontendScreen() : EFF_UIFlowScreen::None;
+	const bool bSomethingPlaying = Audio.GetCurrentAmbience() != EFF_AudioAmbience::None;
+
+	switch (Screen)
+	{
+	case EFF_UIFlowScreen::Title:
+		// 타이틀 곡을 아직 안 넣었으면 로비 곡으로 둔다(예전 동작).
+		if (Audio.HasAmbienceTrack(EFF_AudioAmbience::Title))
+		{
+			return EFF_AudioAmbience::Title;
+		}
+		break;
+
+	case EFF_UIFlowScreen::SaveList:
+	case EFF_UIFlowScreen::Options:
+		// 타이틀과 로비 양쪽에서 열린다. 열기 전에 흐르던 곡을 그대로 둔다.
+		if (bSomethingPlaying)
+		{
+			return EFF_AudioAmbience::None;
+		}
+		break;
+
+	case EFF_UIFlowScreen::None:
+		/* 화면이 아직 없다. 시작 영상 중이거나 레벨 전환 직후다.
+
+		   여기서 곡을 정하면 곧 뜰 화면과 다른 곡이 잠깐 흐른다. 화면을 기다리되, 흐름 없이
+		   레벨을 직접 열어 화면이 끝내 안 뜨면 로비 곡을 튼다(PollFrontendScreen).
+		*/
+		if (bSomethingPlaying || !bFrontendScreenWaitExpired)
+		{
+			return EFF_AudioAmbience::None;
+		}
+		break;
+
+	default:
+		// 플레이 허브, 지구본, 국가 지도.
+		break;
+	}
+
+	if (Audio.HasAmbienceTrack(EFF_AudioAmbience::Lobby))
+	{
+		return EFF_AudioAmbience::Lobby;
+	}
+
+	// 로비 곡을 아직 뱅크에 안 넣었으면 예전처럼 개장 전 곡으로 둔다.
+	// 곡을 넣기 전까지 로비가 조용해지면 소리가 고장 난 것처럼 보인다.
+	if (!bWarnedMissingLobbyTrack)
+	{
+		bWarnedMissingLobbyTrack = true;
+		UE_LOG(LogFestaFiestaAudio, Warning,
+			TEXT("[사운드] 로비 곡이 뱅크에 없어 개장 전 곡을 대신 튼다. 오디오 뱅크의 배경음에 `로비` 를 넣을 것."));
+	}
+	return EFF_AudioAmbience::Setup;
+}
+
+void UFF_AudioEventLink::PollFrontendScreen()
+{
+	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	const EFF_UIFlowScreen Screen = Flow ? Flow->GetFrontendScreen() : EFF_UIFlowScreen::None;
+
+	// 화면 없이 오래 기다렸으면 로비 곡으로 정한다. 한 번만.
+	if (Screen == EFF_UIFlowScreen::None && !bFrontendScreenWaitExpired)
+	{
+		FrontendScreenWaitSeconds += 0.2f;
+		if (FrontendScreenWaitSeconds >= 2.f)
+		{
+			bFrontendScreenWaitExpired = true;
+			RefreshAmbience();
+		}
+	}
+
+	const uint8 ScreenValue = static_cast<uint8>(Screen);
+	if (ScreenValue == LastFrontendScreen)
+	{
+		return;
+	}
+	LastFrontendScreen = ScreenValue;
+
+	RefreshAmbience();
+}
+
+void UFF_AudioEventLink::TryCreatePlaylistPlayer()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const UFF_AudioSettings* Settings = UFF_AudioSettings::Get();
+	UClass* WidgetClass = Settings ? Settings->PlaylistPlayerWidgetClass.LoadSynchronous() : nullptr;
+	if (!WidgetClass || PlaylistPlayerWidget)
+	{
+		// 클래스가 없으면(아직 WBP 를 안 만들었으면) 조용히 그만둔다. 소리는 그대로 돈다.
+		if (!WidgetClass && !PlaylistPlayerWidget)
+		{
+			UE_LOG(LogFestaFiestaAudio, Log,
+				TEXT("[사운드] 플레이리스트 플레이어 WBP 가 없어 띄우지 않는다. 에디터 콘솔에서 FF.PlaylistPlayerUMG 를 실행할 것."));
+		}
+		World->GetTimerManager().ClearTimer(PlaylistPlayerCreateTimer);
+		return;
+	}
+
+	APlayerController* Controller = World->GetFirstPlayerController();
+	if (!Controller || !Controller->IsLocalController())
+	{
+		// 아직 플레이어가 없다. 다음 시도에서 다시 본다.
+		return;
+	}
+
+	PlaylistPlayerWidget = CreateWidget<UUserWidget>(Controller, WidgetClass);
+	if (PlaylistPlayerWidget)
+	{
+		PlaylistPlayerWidget->AddToViewport(Settings->PlaylistPlayerZOrder);
+	}
+	World->GetTimerManager().ClearTimer(PlaylistPlayerCreateTimer);
 }
 
 void UFF_AudioEventLink::HandleBuildModeStateChanged(

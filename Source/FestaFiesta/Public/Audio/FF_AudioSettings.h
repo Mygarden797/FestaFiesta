@@ -7,6 +7,7 @@
 #include "FF_AudioSettings.generated.h"
 
 class UFF_AudioBankData;
+class UUserWidget;
 
 // 축제 사운드의 프로젝트 기본값.
 // Project Settings > Game > FestaFiesta Audio 에서 지정한다.
@@ -47,6 +48,23 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Audio|Finale",
 		meta = (ClampMin = "0.0", EditCondition = "bDelayFinaleBurstBySoundTravel"))
 	float MaxFinaleBurstSoundDelaySeconds = 3.f;
+
+	/* 축제 플레이리스트 플레이어 위젯. 축제 레벨에서 플레이리스트가 흐르는 동안 화면에 띄운다.
+
+	   HUD(LiveHUD·준비 HUD) 안에 넣지 않고 따로 화면에 올린다. HUD 를 고치지 않으려는 것이다.
+	   WBP 는 에디터 콘솔의 `FF.PlaylistPlayerUMG` 로 만든다. 비우면 띄우지 않는다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Audio|Playlist")
+	TSoftClassPtr<UUserWidget> PlaylistPlayerWidgetClass = TSoftClassPtr<UUserWidget>(FSoftObjectPath(
+		TEXT("/Game/FestaFiesta/UI/Audio/WBP_FF_PlaylistPlayer.WBP_FF_PlaylistPlayer_C")));
+
+	/* 플레이어 위젯의 화면 순서.
+
+	   UI 루트(0)보다 아래로 둔다. 일시정지·설정 화면이 그 위를 덮어야 하고, HUD 는 비어 있는 곳으로
+	   클릭을 흘려보내서 아래에 있어도 눌린다. 튜토리얼 대사창(-100)보다는 위다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Audio|Playlist")
+	int32 PlaylistPlayerZOrder = -50;
 
 	// 거리(cm)에서 소리가 도착하기까지 걸리는 시간(초). 속도가 0 이하이면 지연하지 않는다.
 	static float ComputeSoundTravelDelay(float DistanceCm, float SpeedCmPerSecond, float MaxDelaySeconds);
