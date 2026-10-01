@@ -37,6 +37,8 @@ FFF_BuildPlacementGuidance UFF_BuildModeSubsystem::GetPlacementGuidance(const in
     Result.Title = FFBuildPlacementAssistance::ReasonTitle(Reason);
     Result.Advice = UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(Reason, FText::GetEmpty(), State == EFF_BuildModeState::Moving);
     Result.bCanFindNearby = FFBuildPlacementAssistance::CanResolveByMoving(LastValidation.Reasons);
+    if (Result.bCanFindNearby)
+        Result.Advice = FText::Format(LOCTEXT("NearbyShortcutAdvice", "{0}\nN으로 가까운 빈자리로 이동할 수 있어요."), Result.Advice);
     // These are diagnostics from the original validation, not another collision query.
     for (const auto& Blocker : LastValidation.Obstructions)
     {
@@ -121,7 +123,7 @@ void UFF_BuildModeSubsystem::TickPlacementAssistance()
             CancelNearbyPlacementSearch();
             RefreshCurrentPlacementValidation();
             PlacementAssistanceMessage = LastValidation.bIsValid
-                ? LOCTEXT("Found", "가까운 배치 가능 위치예요. 확인한 뒤 배치 확정을 눌러 주세요.")
+                ? LOCTEXT("Found", "가까운 빈자리로 이동했어요. Enter 또는 배치 확정을 눌러 완료하세요.")
                 : LOCTEXT("ChangedBeforeApply", "조건이 바뀌었어요. 표시된 원인을 확인해 주세요.");
             FFBuildFeedback::Pulse(GetLocalPlayerController());
             OnBuildToolsChanged.Broadcast();

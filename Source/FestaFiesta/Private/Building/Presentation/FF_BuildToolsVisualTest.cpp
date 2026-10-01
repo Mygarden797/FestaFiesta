@@ -108,7 +108,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
     Text(TEXT("Text_BuildHelpRotate"), TEXT("시설 방향 회전"));
     Text(TEXT("Text_BuildHelpMove"), TEXT("카메라 이동"));
     Text(TEXT("Text_BuildHelpPrecision"), TEXT("정밀 위치 맞춤"));
-    for (FName Name : {TEXT("Row_BuildHelpRotate"), TEXT("Row_BuildHelpPrecision")})
+    for (FName Name : {TEXT("Row_BuildHelpRotate"), TEXT("Row_BuildHelpPrecision"), TEXT("Row_BuildHelpNearby")})
         if (UWidget* Row = Widget->GetWidgetFromName(Name))
             Row->SetVisibility(ESlateVisibility::HitTestInvisible);
     Text(TEXT("Text_Legend"), TEXT("배치 가능 · 눌러서 설치"));
@@ -300,7 +300,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
                     TestTrue(ContextName + TEXT(": help shows the input device: ") + Name.ToString(),
                         IsRendered(Widget->GetWidgetFromName(Name)));
                 for (const TCHAR* Key : {TEXT("Q"), TEXT("E"), TEXT("W"), TEXT("A"), TEXT("S"),
-                    TEXT("D"), TEXT("Ctrl"), TEXT("G"), TEXT("B"), TEXT("Esc"), TEXT("Z"), TEXT("Y")})
+                    TEXT("D"), TEXT("Ctrl"), TEXT("G"), TEXT("B"), TEXT("Esc"), TEXT("Z"), TEXT("Y"), TEXT("N")})
                 {
                     const FString Name = FString(TEXT("Text_BuildHelpKey_")) + Key;
                     TestTrue(ContextName + TEXT(": physical keyboard key is visible: ") + Key,

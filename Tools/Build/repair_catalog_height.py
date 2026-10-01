@@ -1,8 +1,8 @@
 """Inspect the saved catalog/card sizing contract; apply only with explicit opt-in.
 
 Use an idle Entry editor with -ExecutePythonScript. The current card remains
-authored at 264 units; only the active catalog's stale 200-unit row allocation
-and insufficient dock/default height can change. Every application is backed up.
+authored at 210 units; the active catalog's row allocation and dock/default
+height follow the compact card. Every application is backed up.
 """
 
 from datetime import datetime, timezone
@@ -24,7 +24,7 @@ CARD = "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile"
 TARGET = ROOT / "Content" / (PANEL.removeprefix("/Game/") + ".uasset")
 APPLY = os.environ.get("FF_APPLY_CATALOG_HEIGHT_REPAIR") == "1"
 REPORT = {"status": "RUNNING", "applyRequested": APPLY, "package": PANEL,
-          "cardPackage": CARD, "sourceContract": "FF_BuildReadabilityBuilder.cpp: Catalog/Card 264, dock/default 378"}
+          "cardPackage": CARD, "sourceContract": "FF_BuildReadabilityBuilder.cpp: Catalog/Card 210, dock/default 324"}
 
 
 def digest(path):
@@ -74,10 +74,10 @@ def main():
     before_hashes = all_ui_hashes()
     panel, tiles, dock, default, before = inspect()
     REPORT.update(before=before, beforeSha256=digest(TARGET))
-    assert before["cardHeight"] == 264.0, "Authored card changed; review its new layout before repairing"
+    assert before["cardHeight"] == 210.0, "Authored card changed; review its new layout before repairing"
     desired = {"entryHeight": before["cardHeight"],
-               "dockHeight": max(before["dockHeight"], 378.0),
-               "catalogHeight": max(before["catalogHeight"], 378.0)}
+               "dockHeight": 324.0,
+               "catalogHeight": 324.0}
     changes = {key: {"before": before[key], "after": value}
                for key, value in desired.items() if before[key] != value}
     REPORT["requiredChanges"] = changes

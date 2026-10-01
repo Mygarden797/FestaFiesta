@@ -1264,6 +1264,8 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 		ToggleDirectPlacementAdjustment();
 		return;
 	}
+	if (Controller.WasInputKeyJustPressed(EKeys::N) &&
+		HandleNearbyPlacementShortcut(EKeys::N, bQueueModifierDown)) return;
 	if (HandlePlacementGizmoInput(Controller, bBlockWorldClickThisFrame || bPointerOverDebugPanel ||
 		bPointerOverTools || bPointerOverFacilityInfo || IsPointerBlockedByUi(&Controller))) return;
 	// 회전과 설치 입력은 독립적으로 검사하므로 같은 프레임에 들어오면 최신 회전을 포함한 배치를 설치한다.
@@ -1301,6 +1303,12 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 		ProcessDragPlacement();
 		RefreshDragPlacementPreview(false, false, &GroundHit);
 	}
+}
+
+bool UFF_BuildModeSubsystem::HandleNearbyPlacementShortcut(const FKey& Key, const bool bModifierDown, const bool bIsRepeat)
+{
+	return FFBuildModeModel::ShouldProcessNearbyPlacementShortcut(State, Key,
+		IsEditableSlateTextFocused(), bModifierDown, bIsRepeat, bInputSuspendedForPauseMenu) && FindNearbyPlacement();
 }
 
 void UFF_BuildModeSubsystem::TogglePlacementGrid()

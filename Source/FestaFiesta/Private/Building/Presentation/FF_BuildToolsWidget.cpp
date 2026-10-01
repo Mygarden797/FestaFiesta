@@ -640,6 +640,10 @@ bool UFF_BuildToolsWidget::IsEditingAngle() const
 
 FReply UFF_BuildToolsWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
 {
+    if (UFF_BuildModeSubsystem* System = BuildMode.Get())
+        if (System->HandleNearbyPlacementShortcut(KeyEvent.GetKey(),
+            KeyEvent.IsControlDown() || KeyEvent.IsShiftDown() || KeyEvent.IsAltDown() || KeyEvent.IsCommandDown(),
+            KeyEvent.IsRepeat())) return FReply::Handled();
     if (IsEditingAngle() && KeyEvent.GetKey() == EKeys::Escape)
     {
         if (UFF_BuildModeSubsystem* System = BuildMode.Get())
@@ -846,6 +850,8 @@ void UFF_BuildToolsWidget::RefreshTools()
     if (Row_BuildHelpPrecision)
         Row_BuildHelpPrecision->SetVisibility(bPreview
             ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    if (UWidget* NearbyHelp = GetWidgetFromName(TEXT("Row_BuildHelpNearby")))
+        NearbyHelp->SetVisibility(bPreview ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
     if (Text_ActiveSnap)
     {
         Text_ActiveSnap->SetText(FText::Format(ActiveSnap == PreferredSnap
@@ -939,7 +945,9 @@ void UFF_BuildToolsWidget::RefreshTools()
             Button_FindNearby->SetVisibility(Guidance.bCanFindNearby || bFinding ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
             Button_FindNearby->SetIsEnabled(!bFinding);
             if (auto* Label = Cast<UTextBlock>(Button_FindNearby->GetContent()))
-                Label->SetText(bFinding ? LOCTEXT("FindingNearby", "찾는 중…") : LOCTEXT("FindNearby", "가까운 빈자리"));
+                Label->SetText(bFinding ? LOCTEXT("FindingNearby", "빈자리 찾는 중…") : LOCTEXT("FindNearby", "[N] 가까운 빈자리"));
+            Button_FindNearby->SetToolTipText(LOCTEXT("NearbyShortcutTooltip",
+                "N 또는 클릭으로 가까운 빈자리로 이동합니다. Enter로 배치를 확정하세요."));
         }
         if (Button_NextPlacementProblem)
             Button_NextPlacementProblem->SetVisibility(Guidance.ProblemCount > 1 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);

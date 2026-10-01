@@ -37,15 +37,56 @@ bool FFF_FacilityTeamRevenueModelTest::RunTest(const FString& Parameters)
 
 	Preview.CurrentRevenueByTeamSizeGold = {0, 0, 0, 0, 0, 0};
 	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
-	TestTrue(TEXT("Explicit free service displays zero rather than unavailable"),
-		ViewData.FacilityRevenueText.ToString().Contains(TEXT("4명 0 · 5명 0 · 6명 0 Gold")));
+	TestTrue(TEXT("An explicitly free service clears the previous team estimate"), ViewData.FacilityRevenueText.IsEmpty());
+
+	ViewData.Context = EFF_FacilityInfoContext::Build;
+	Preview.bHasLevels = Preview.bSupported = Preview.bHasUpgradeQuote = true;
+	Preview.TargetLevel = 2;
+	Preview.CostGold = 50;
+	Preview.GoldAfterUpgrade = 100;
+	Preview.CurrentServiceDurationSeconds = 10.f;
+	Preview.NextServiceDurationSeconds = 8.f;
+	Preview.CurrentThroughputPerMinute = 6.f;
+	Preview.NextThroughputPerMinute = 7.5f;
+	Preview.CurrentFootprintCentimeters = FIntPoint(200, 200);
+	Preview.NextFootprintCentimeters = FIntPoint(300, 300);
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestTrue(TEXT("Free facilities retain their valid upgrade quote"), ViewData.bShowUpgradeDetails);
+	TestTrue(TEXT("Free upgrades hide both revenue columns and the revenue effect"),
+		ViewData.UpgradeCurrentValues.Revenue.IsEmpty() && ViewData.UpgradeNextValues.Revenue.IsEmpty() &&
+		ViewData.UpgradeRevenueEffectText.IsEmpty());
+	TestFalse(TEXT("Free upgrade comparison omits the per-person revenue caption"),
+		ViewData.UpgradeCurrentText.ToString().Contains(TEXT("1인 수익")) ||
+		ViewData.UpgradeNextText.ToString().Contains(TEXT("1인 수익")));
+	TestTrue(TEXT("Hiding income preserves time, throughput, size and price"),
+		!ViewData.UpgradeCurrentValues.ServiceTime.IsEmpty() && !ViewData.UpgradeNextValues.Throughput.IsEmpty() &&
+		!ViewData.UpgradeCurrentValues.Footprint.IsEmpty() && !ViewData.UpgradePriceText.IsEmpty());
+
+	Preview.NextRevenuePerUseGold = 5;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestTrue(TEXT("Future income does not invent a current ordinary-use estimate"), ViewData.FacilityRevenueText.IsEmpty());
+	TestTrue(TEXT("An upgrade that introduces income keeps both comparison cells and its effect"),
+		ViewData.UpgradeCurrentValues.Revenue.ToString().Contains(TEXT("0 Gold")) &&
+		ViewData.UpgradeNextValues.Revenue.ToString().Contains(TEXT("5 Gold")) &&
+		!ViewData.UpgradeRevenueEffectText.IsEmpty());
+
+	Preview.NextRevenuePerUseGold = 0;
+	Preview.CurrentRevenueByTeamSizeGold = {0, 0, 0, 1, 1, 1};
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestTrue(TEXT("Larger-team income retains upgrade revenue when both one-person quotes round to zero"),
+		!ViewData.UpgradeCurrentValues.Revenue.IsEmpty() && !ViewData.UpgradeNextValues.Revenue.IsEmpty() &&
+		!ViewData.UpgradeRevenueEffectText.IsEmpty());
 	Preview.bRevenueAvailable = false;
 	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
-	TestEqual(TEXT("Unavailable pricing replaces stale team quotes"), ViewData.FacilityRevenueText.ToString(),
-		FString(TEXT("팀당 예상 수익  정보 없음")));
+	TestTrue(TEXT("Unavailable pricing clears stale team and upgrade income"),
+		ViewData.FacilityRevenueText.IsEmpty() && ViewData.UpgradeCurrentValues.Revenue.IsEmpty() &&
+		ViewData.UpgradeNextValues.Revenue.IsEmpty() && ViewData.UpgradeRevenueEffectText.IsEmpty());
+	TestFalse(TEXT("Unavailable income does not leave a revenue caption in the legacy comparison"),
+		ViewData.UpgradeCurrentText.ToString().Contains(TEXT("1인 수익")));
 	FFFacilityInfoModel::ApplyUpgradePreview(nullptr, ViewData);
-	TestEqual(TEXT("Missing preview cannot retain a previous facility price"), ViewData.FacilityRevenueText.ToString(),
-		FString(TEXT("팀당 예상 수익  정보 없음")));
+	TestTrue(TEXT("Missing preview cannot retain previous income or upgrade comparisons"),
+		ViewData.FacilityRevenueText.IsEmpty() && ViewData.UpgradeCurrentText.IsEmpty() &&
+		ViewData.UpgradeNextValues.Revenue.IsEmpty());
 	return true;
 }
 #endif

@@ -236,7 +236,7 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
         Cast<UScrollBox>(Tree->FindWidget(TEXT("Scroll_BuildHelp"))));
     for (const TCHAR* Key : {TEXT("Q"), TEXT("E"), TEXT("W"), TEXT("A"), TEXT("S"),
         TEXT("D"), TEXT("Ctrl"), TEXT("G"), TEXT("B"), TEXT("Esc"),
-        TEXT("Z"), TEXT("Y")})
+        TEXT("Z"), TEXT("Y"), TEXT("N")})
     {
         const FString Name = FString(TEXT("Text_BuildHelpKey_")) + Key;
         const UTextBlock* KeyText = Cast<UTextBlock>(Tree->FindWidget(FName(*Name)));
@@ -253,6 +253,13 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
             KeyText && KeyText->GetText().ToString() == QueueKeys[Index] && KeyText->GetFont().Size >= 14);
     }
     const UTextBlock* QueueHint = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_BuildHelpQueueHint")));
+    const auto* NearbyHelp = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_BuildHelpNearby")));
+    TestTrue(TEXT("The N keycap explains nearby movement in the placement guide"),
+        NearbyHelp && NearbyHelp->GetText().ToString().Contains(TEXT("가까운 빈자리")));
+    const auto* NearbyButton = Cast<UButton>(Tree->FindWidget(TEXT("Button_FindNearby")));
+    const auto* NearbyLabel = NearbyButton ? Cast<UTextBlock>(NearbyButton->GetContent()) : nullptr;
+    TestTrue(TEXT("Nearby button exposes the N shortcut before runtime refresh"),
+        NearbyLabel && NearbyLabel->GetText().ToString().Contains(TEXT("[N]")));
     TestTrue(TEXT("Saved queue mapping matches the active number shortcuts"),
         QueueHint && QueueHint->GetText().ToString() == TEXT("7 기본 · 8 좌측 · 9 우측 · 0 U자"));
     for (const TCHAR* Name : {TEXT("Text_BuildHelpUndo"), TEXT("Text_BuildHelpRedo"), TEXT("Text_BuildHelpQueue"), TEXT("Text_BuildHelpQueueHint")})
