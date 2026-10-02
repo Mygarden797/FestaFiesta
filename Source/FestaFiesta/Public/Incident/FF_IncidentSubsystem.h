@@ -100,6 +100,7 @@ private:
 	#if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_IncidentCatalogLoadTest;
 	friend class FFF_StaffDispatchIncidentTest;
+	friend class FFF_StaffDispatchGiveUpTest;
 	friend class FFF_StaffFacilityDispatchTest;
 	#endif
 

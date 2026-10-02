@@ -6,10 +6,11 @@ UE_LOG(LogTemp, Warning, TEXT(Format), ##__VA_ARGS__)
 
 #include "Incident/FF_IncidentSubsystem.h"
 
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Incident/Effects/FF_IncidentEffect.h"
 #include "Incident/FF_IncidentSettings.h"
-#include "Incident/FF_StaffDispatchSubsystem.h"
+#include "Staff/FF_StaffDispatchSubsystem.h"
 #include "Incident/Rules/FF_IncidentRules.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 

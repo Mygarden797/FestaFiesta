@@ -7,6 +7,7 @@
 #include "FF_IncidentTypes.generated.h"
 
 class AActor;
+class UTexture2D;
 class UWorld;
 
 // 값이 저장·집계 키가 된다. 중간에 끼워 넣지 않고 뒤에만 추가한다.
