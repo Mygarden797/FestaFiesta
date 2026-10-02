@@ -16,6 +16,7 @@
 #include "Components/BoxComponent.h"
 #include "Economy/FF_FacilityCostResolver.h"
 #include "Economy/FF_ProgramSchedulingSubsystem.h"
+#include "Economy/Rules/FF_ProgramScheduleRules.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
@@ -764,7 +765,7 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		: Spec.DisplayName;
 	FFF_FacilityNameParts NameParts;
 	FString NamingFailure;
-	UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+	const bool bFacilityNameKnown = UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
 		Spec.Category, Spec.FacilityDefinitionId, NameParts, NamingFailure);
 	OutViewData.CategoryText = FFF_PrepBuildPresentationRules::ResolveCategoryPathText(
 		Spec.Category, NameParts.MinorToken);
@@ -983,7 +984,7 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		? GetWorld()->GetSubsystem<UFF_ProgramSchedulingSubsystem>()
 		: nullptr;
 	const TArray<FFF_ProgramCard> ProgramCatalog = Progression
-		? Progression->GetProgramCatalog()
+		? Progression->GetProgramCatalogForFacility(OutViewData.FacilityInstanceId)
 		: TArray<FFF_ProgramCard>();
 	TArray<FString> ScheduledProgramSummaries;
 	if (ProgramScheduling && ProgramReservations)
@@ -1103,7 +1104,14 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		(bHasUpgradePreview && UpgradePreview.bRevenueAvailable &&
 			(UpgradePreview.CurrentRevenuePerUseGold > 0 ||
 			 UpgradePreview.CurrentRevenueByTeamSizeGold.ContainsByPredicate([](int32 Gold) { return Gold > 0; }))) ||
-		OutViewData.bHasScheduledProgram;
+		ProgramCatalog.ContainsByPredicate([&](const FFF_ProgramCard& Card)
+		{
+			// Program income is independent of the ordinary-use quote and of today's sales.
+			// Facility-specific fee overrides also apply to programs that have not been scheduled yet.
+			return Card.IsValid() && Card.FeePerPerson > 0 &&
+				(Card.AllowedFacilityTypes.IsEmpty() || (bFacilityNameKnown &&
+					FFF_ProgramScheduleRules::IsFacilityTypeAllowed(Card, NameParts.MajorToken, NameParts.MinorToken)));
+		});
 	FFFacilityInfoModel::ApplyFacilityRevenue(
 		bEconomyAvailable ? &InstanceRevenue : nullptr,
 		!(Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface()),

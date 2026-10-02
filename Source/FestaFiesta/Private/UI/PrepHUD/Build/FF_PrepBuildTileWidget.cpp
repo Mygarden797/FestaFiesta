@@ -84,7 +84,7 @@ void UFF_PrepBuildTileView::ConfigureHorizontalRibbon()
 {
 	Orientation = Orient_Horizontal;
 	EntryWidth = 184.f;
-	EntryHeight = 218.f;
+	EntryHeight = 210.f;
 	SetHorizontalEntrySpacing(10.f);
 	SetVerticalEntrySpacing(0.f);
 	ConsumeMouseWheel = EConsumeMouseWheel::Never;

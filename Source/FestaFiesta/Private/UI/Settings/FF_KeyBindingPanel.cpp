@@ -36,6 +36,14 @@ namespace
 	constexpr TCHAR PretendardFontPath[] =
 		TEXT("/Game/FestaFiesta/UI/Fonts/F_UI_Pretendard.F_UI_Pretendard");
 	const FName FixedBuildModeBindingName(TEXT("FF.Fixed.BuildMode"));
+	const FName FixedNearbyPlacementBindingName(TEXT("FF.Fixed.NearbyPlacement"));
+
+	FText GetFixedActionLabel(const FKey& Key)
+	{
+		return Key == UFF_KeyBindingPanel::GetFixedNearbyPlacementKey()
+			? LOCTEXT("NearbyPlacementFixedAction", "가까운 빈자리로 이동 (시설 배치 중)")
+			: LOCTEXT("BuildModeFixedAction", "건축 모드 / 시설 목록 전환");
+	}
 
 	struct FAnsiKeyDefinition
 	{
@@ -254,9 +262,9 @@ void UFF_KeyBindingKeyButton::Configure(
 	KeyStyle.PressedPadding = FMargin(3.0f, 4.0f, 3.0f, 2.0f);
 	SetStyle(KeyStyle);
 	SetToolTipText(bFixedActionKey
-		? LOCTEXT(
-			"FixedBuildKeyTooltip",
-			"건축 모드 / 시설 목록 전환에 고정된 키입니다. 클릭하면 현재 설정을 확인합니다.")
+		? FText::Format(
+			LOCTEXT("FixedActionKeyTooltip", "{0}에 고정된 키입니다. 클릭하면 현재 설정을 확인합니다."),
+			GetFixedActionLabel(InKey))
 		: (bReservedKey
 			? LOCTEXT("SystemOptionKeyTooltip", "현재 옵션 열기 / 닫기 키입니다. 클릭하면 연결된 동작을 확인합니다.")
 			: FText::Format(LOCTEXT("InspectableKeyTooltip", "{0} 키의 현재 설정 확인 / 키 지정"), InLabel)));
@@ -376,9 +384,14 @@ FKey UFF_KeyBindingPanel::GetFixedBuildModeKey()
 	return EKeys::B;
 }
 
+FKey UFF_KeyBindingPanel::GetFixedNearbyPlacementKey()
+{
+	return EKeys::N;
+}
+
 bool UFF_KeyBindingPanel::IsFixedActionKey(const FKey& Key)
 {
-	return Key == GetFixedBuildModeKey();
+	return Key == GetFixedBuildModeKey() || Key == GetFixedNearbyPlacementKey();
 }
 
 FKey UFF_KeyBindingPanel::GetDefaultKeyForMapping(const FName MappingName)
@@ -891,28 +904,35 @@ void UFF_KeyBindingPanel::BuildFixedBindingRows()
 		}
 	}
 
-	USizeBox* RowSize = WidgetTree->ConstructWidget<USizeBox>();
-	UFF_KeyBindingActionButton* ActionButton =
-		WidgetTree->ConstructWidget<UFF_KeyBindingActionButton>(
-			UFF_KeyBindingActionButton::StaticClass(),
-			TEXT("KeyBindingFixedAction_BuildMode"));
-	if (!RowSize || !ActionButton)
+	struct FFixedBindingRow
 	{
-		return;
-	}
-
-	RowSize->SetMinDesiredHeight(44.0f);
-	ActionButton->Configure(
-		FixedBuildModeBindingName,
-		LOCTEXT("BuildModeFixedAction", "건축 모드 / 시설 목록 전환"),
-		GetFixedBuildModeKey(),
-		true);
-	ActionButton->OnMappingChosen.AddUniqueDynamic(this, &ThisClass::HandleMappingChosen);
-	RowSize->SetContent(ActionButton);
-	if (UVerticalBoxSlot* RowSlot = VerticalBox_BindingRows->AddChildToVerticalBox(RowSize))
+		FName MappingName;
+		const TCHAR* WidgetName;
+		FKey Key;
+	};
+	const FFixedBindingRow FixedRows[] = {
+		{FixedBuildModeBindingName, TEXT("KeyBindingFixedAction_BuildMode"), GetFixedBuildModeKey()},
+		{FixedNearbyPlacementBindingName, TEXT("KeyBindingFixedAction_NearbyPlacement"), GetFixedNearbyPlacementKey()}
+	};
+	for (const FFixedBindingRow& Fixed : FixedRows)
 	{
-		RowSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
-		RowSlot->SetHorizontalAlignment(HAlign_Fill);
+		USizeBox* RowSize = WidgetTree->ConstructWidget<USizeBox>();
+		UFF_KeyBindingActionButton* ActionButton =
+			WidgetTree->ConstructWidget<UFF_KeyBindingActionButton>(
+				UFF_KeyBindingActionButton::StaticClass(), Fixed.WidgetName);
+		if (!RowSize || !ActionButton)
+		{
+			continue;
+		}
+		RowSize->SetMinDesiredHeight(44.0f);
+		ActionButton->Configure(Fixed.MappingName, GetFixedActionLabel(Fixed.Key), Fixed.Key, true);
+		ActionButton->OnMappingChosen.AddUniqueDynamic(this, &ThisClass::HandleMappingChosen);
+		RowSize->SetContent(ActionButton);
+		if (UVerticalBoxSlot* RowSlot = VerticalBox_BindingRows->AddChildToVerticalBox(RowSize))
+		{
+			RowSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+			RowSlot->SetHorizontalAlignment(HAlign_Fill);
+		}
 	}
 }
 
@@ -931,12 +951,13 @@ void UFF_KeyBindingPanel::HandleKeyChosen(const FKey Key)
 
 void UFF_KeyBindingPanel::HandleMappingChosen(const FName MappingName)
 {
-	if (MappingName == FixedBuildModeBindingName)
+	if (MappingName == FixedBuildModeBindingName || MappingName == FixedNearbyPlacementBindingName)
 	{
 		SetCaptureInProgress(false);
 		SelectedMappingName = NAME_None;
 		RefreshBindings();
-		InspectKey(GetFixedBuildModeKey());
+		InspectKey(MappingName == FixedNearbyPlacementBindingName
+			? GetFixedNearbyPlacementKey() : GetFixedBuildModeKey());
 		SetKeyboardFocus();
 		return;
 	}
@@ -978,12 +999,12 @@ FText UFF_KeyBindingPanel::GetCurrentBindingSummary(const FKey Key) const
 	}
 
 	TArray<FString> ActionLines;
-	const bool bHasFixedBuildAction = IsFixedActionKey(Key);
-	if (bHasFixedBuildAction)
+	const bool bHasFixedAction = IsFixedActionKey(Key);
+	if (bHasFixedAction)
 	{
-		ActionLines.Add(LOCTEXT(
-			"FixedBuildActionSummary",
-			"• 건축 모드 / 시설 목록 전환 (고정 · 변경 불가)").ToString());
+		ActionLines.Add(FText::Format(
+			LOCTEXT("FixedActionSummary", "• {0} (고정 · 변경 불가)"),
+			GetFixedActionLabel(Key)).ToString());
 	}
 
 	int32 PlayerMappableActionCount = 0;
@@ -1008,12 +1029,13 @@ FText UFF_KeyBindingPanel::GetCurrentBindingSummary(const FKey Key) const
 		KeyDisplayText(Key)).ToString();
 	Summary += TEXT("\n");
 	Summary += FString::Join(ActionLines, TEXT("\n"));
-	if (bHasFixedBuildAction && PlayerMappableActionCount > 0)
+	if (bHasFixedAction && PlayerMappableActionCount > 0)
 	{
 		Summary += TEXT("\n");
-		Summary += LOCTEXT(
-			"FixedBuildConflictWarning",
-			"주의: B의 고정 건축 입력과 사용자 동작이 함께 실행될 수 있습니다. 사용자 동작을 다른 키로 변경하거나 기본값을 복원하세요.").ToString();
+		Summary += FText::Format(
+			LOCTEXT("FixedActionConflictWarning",
+				"주의: {0}의 고정 건축 입력과 사용자 동작이 함께 실행될 수 있습니다. 사용자 동작을 다른 키로 변경하거나 기본값을 복원하세요."),
+			KeyDisplayText(Key)).ToString();
 	}
 	return FText::FromString(MoveTemp(Summary));
 }
@@ -1037,9 +1059,9 @@ void UFF_KeyBindingPanel::TryAssignKey(const FKey& NewKey)
 	}
 	if (IsFixedActionKey(NewKey))
 	{
-		SetStatus(LOCTEXT(
-			"FixedBuildKeyRejected",
-			"B 키는 건축 모드 / 시설 목록 전환에 고정되어 다른 동작에 지정할 수 없습니다."), true);
+		SetStatus(FText::Format(
+			LOCTEXT("FixedActionKeyRejected", "{0} 키는 {1}에 고정되어 다른 동작에 지정할 수 없습니다."),
+			KeyDisplayText(NewKey), GetFixedActionLabel(NewKey)), true);
 		return;
 	}
 	if (!IsSupportedKeyboardKey(NewKey))

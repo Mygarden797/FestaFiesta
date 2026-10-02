@@ -13,6 +13,7 @@
 #include "FF_AudioEventLink.generated.h"
 
 class UFF_AudioSubsystem;
+class UUserWidget;
 
 // 우리 파트에서 나오는 신호를 사운드로 잇는다.
 //
@@ -90,6 +91,28 @@ private:
 	// 두 신호가 따로 오므로 어느 쪽이 바뀌든 여기서 다시 계산한다.
 	void RefreshAmbience();
 
+	/* 로비 레벨에서 틀 곡. 타이틀 화면이면 타이틀 곡, 그 밖의 로비 화면이면 로비 곡이다.
+
+	   None 이면 지금 곡을 그대로 둔다는 뜻이다. 저장 기록·옵션은 타이틀과 로비 양쪽에서
+	   열리므로 곡을 바꾸지 않는다. 화면이 아직 없을 때(시작 영상, 레벨 전환 직후)도 기다린다.
+	*/
+	EFF_AudioAmbience ResolveLobbyAmbience(const UFF_AudioSubsystem& Audio) const;
+
+	/* 로비 화면이 바뀌었는지 본다. 바뀌었으면 곡을 다시 정한다.
+
+	   UI 흐름이 화면 전환을 방송하지 않아 짧은 주기로 확인한다. 튜토리얼도 같은 값을
+	   매 틱 읽는다. UI 쪽 코드를 고치지 않으려고 이렇게 둔다.
+	*/
+	void PollFrontendScreen();
+
+	/* 플레이리스트 플레이어 위젯을 화면에 올린다. 올렸거나 올릴 수 없으면 재시도를 멈춘다.
+
+	   축제 레벨에서만 쓴다(로비는 타이틀·로비 곡이 고정이다). 위젯은 HUD 밖에 따로 올려서
+	   HUD 코드를 건드리지 않는다. 플레이어 컨트롤러가 늦게 생길 수 있어 잠깐씩 다시 시도한다.
+	   보일지 말지는 위젯이 스스로 정한다(플레이리스트가 흐를 때만).
+	*/
+	void TryCreatePlaylistPlayer();
+
 	void BindAll();
 	void UnbindAll();
 
@@ -109,7 +132,24 @@ private:
 	bool bIsLobbyWorld = false;
 
 	// 로비 곡이 뱅크에 없다는 것을 한 번만 알린다.
-	bool bWarnedMissingLobbyTrack = false;
+	// 곡을 고르는 const 함수에서 남기므로 mutable 이다.
+	mutable bool bWarnedMissingLobbyTrack = false;
+
+	// 로비 화면 확인 주기.
+	FTimerHandle FrontendScreenPollTimer;
+
+	// 플레이리스트 플레이어를 올릴 때까지의 재시도 주기.
+	FTimerHandle PlaylistPlayerCreateTimer;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> PlaylistPlayerWidget;
+
+	// 마지막으로 본 로비 화면(EFF_UIFlowScreen 값). 처음엔 어떤 화면과도 다르게 둔다.
+	uint8 LastFrontendScreen = MAX_uint8;
+
+	// 화면 없이 기다린 시간. 오래 비어 있으면(흐름 없이 레벨을 직접 연 경우) 로비 곡을 튼다.
+	float FrontendScreenWaitSeconds = 0.f;
+	bool bFrontendScreenWaitExpired = false;
 
 	// 마지막으로 받은 상태. 두 신호를 합쳐서 배경음을 정하려면 둘 다 들고 있어야 한다.
 	EFF_FestivalStage LastStage = EFF_FestivalStage::Setup;
