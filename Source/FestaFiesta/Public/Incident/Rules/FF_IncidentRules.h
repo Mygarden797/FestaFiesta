@@ -6,11 +6,12 @@
 #include "Incident/FF_IncidentTypes.h"
 
 class UFF_IncidentDefinition;
+class UWorld;
 
 /**
  * 사건 판정 용 순수 구조체
  *
- * 중복 억제 키 · 수명 판정 · 상태 전이를 갖는다. 전부 World 없이 테스트된다.
+ * 중복 억제 키 · 수명 판정 · 상태 전이 · 앵커 위치를 갖는다. Zone 앵커 위치만 World 가 필요하고 나머지는 World 없이 테스트된다.
  * UFF_IncidentSubsystem 은 보관 · 수명주기 · 조회만 하고 판정은 여기로 넘긴다.
  */
 struct FESTAFIESTA_API FFF_IncidentRules
@@ -36,6 +37,13 @@ struct FESTAFIESTA_API FFF_IncidentRules
 
 	// 같은 키가 다시 올라왔을 때 남길 Intensity. 평균이 아니라 최대다.
 	static float MergeIntensity(float ExistingPeak, float IncomingIntensity);
+
+	// --- 앵커 위치 --------------------------------------------------------
+
+	// 앵커가 지금 가리키는 월드 위치. 위치가 없거나(Screenspace) 대상이 사라졌으면 false.
+	// DensityCell 은 셀 번호를 변환하지 않고 신고자가 함께 채운 WorldPoint(셀 중심)를 쓴다.
+	// World 는 Zone 조회에만 쓰며, 나머지 종류는 nullptr 이어도 된다.
+	static bool TryGetAnchorLocation(const UWorld* World, const FFF_IncidentAnchor& Anchor, FVector& OutLocation);
 
 	// --- 선택지 View -------------------------------------------------------
 

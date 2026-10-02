@@ -309,7 +309,8 @@ enum class EFF_EarnReason : uint8
 	FacilityCommission  = 1		UMETA(DisplayName = "부스 수수료"),
 	ProgramFee          = 2		UMETA(DisplayName = "유료 프로그램 체험비"),
 	DailyGoalBonus      = 3		UMETA(DisplayName = "일일 목표 보너스"),
-	MinigameReward      = 4		UMETA(DisplayName = "미니게임 보상")
+	MinigameReward      = 4		UMETA(DisplayName = "미니게임 보상"),
+	IncidentReward		= 5		UMETA(DisplayName = "사건 보상")
 };
 
 // 원인별 결산 표의 한 줄. UI 가 받아서 그대로 그린다.

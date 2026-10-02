@@ -28,7 +28,8 @@ bool FFF_IncidentOptionView_BuildKeepsIndexAndClamps::RunTest(const FString& Par
 	Swapped->WorkAmount = 2.f;
 	UFF_IncidentEffect_Reward* Reward = NewObject<UFF_IncidentEffect_Reward>(Swapped);
 	Reward->RewardGold = 50;
-	Swapped->Effect = Reward;
+	Swapped->OnResolvedEffect.Add(nullptr);
+	Swapped->OnResolvedEffect.Add(Reward);
 
 	UFF_IncidentOption* NoEffect = NewObject<UFF_IncidentOption>(Definition);
 	NoEffect->MinStaff = 0;
@@ -51,7 +52,7 @@ bool FFF_IncidentOptionView_BuildKeepsIndexAndClamps::RunTest(const FString& Par
 	TestEqual(TEXT("0번 비용"), Views[0].CostGold, 30);
 	TestEqual(TEXT("0번 MinStaff"), Views[0].MinStaff, 3);
 	TestEqual(TEXT("0번 작업량"), Views[0].WorkAmount, 2.f);
-	TestFalse(TEXT("보상 문구는 효과에서 온다"), Views[0].RewardText.IsEmpty());
+	TestEqual(TEXT("보상 문구는 효과에서 오고 빈 효과 칸은 건너뛴다"), Views[0].RewardText.ToString(), FString(TEXT("50 G")));
 
 	TestEqual(TEXT("null 선택지도 자리를 지킨다"), Views[1].OptionIndex, 1);
 	TestFalse(TEXT("null 선택지는 무효"), Views[1].bValid);

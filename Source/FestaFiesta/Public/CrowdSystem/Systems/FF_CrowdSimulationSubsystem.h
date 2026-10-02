@@ -756,6 +756,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
 	float HeightFieldTraceAboveUU = 5000.f;
 
+	// 트레이스가 맞은 면 근처에 NavMesh가 있을 때만 지면으로 인정한다. 아치·가로등·지붕처럼
+	// 걸을 수 없는 물체는 건너뛰고 그 아래 면을 다시 찾는다. NavMesh가 없으면 이 검사는 생략된다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	bool bHeightFieldRequireNavMesh = true;
+
 	// SimOrigin.Z 기준 상대 통행 상한(UU). 지면이 이보다 높은 곳으로는 들어가지 않는다.
 	// 0 이하면 제한이 없다.
 	//

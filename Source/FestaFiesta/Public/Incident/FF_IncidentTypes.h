@@ -7,6 +7,7 @@
 #include "FF_IncidentTypes.generated.h"
 
 class AActor;
+class UTexture2D;
 class UWorld;
 
 // 값이 저장·집계 키가 된다. 중간에 끼워 넣지 않고 뒤에만 추가한다.
@@ -153,6 +154,7 @@ struct FESTAFIESTA_API FFF_IncidentContext
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
 	float PeakIntensity = 0.f;
+
 };
 
 // 선택지 하나의 비용·보상을 값으로 복사한 것. UI 가 UFF_IncidentOption 을 직접 잡지 않게 한다.

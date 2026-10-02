@@ -10,8 +10,8 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "CrowdSystem/Systems/FF_CrowdDensityHeatmapSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
-#include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "UI/FF_UILog.h"
 
@@ -47,24 +47,10 @@ namespace FFDensityLocal
 		return Options;
 	}
 
-	/**
-	 * 히트맵 상태를 쥔 곳.
-	 *
-	 * 🔴 처음엔 `FF.Crowd.Debug` 콘솔 **변수**를 찾으려 했는데 그건 변수가 아니라
-	 *    **명령**(`FAutoConsoleCommandWithWorldArgsAndOutputDevice`)이라
-	 *    `FindConsoleVariable()` 이 항상 null 을 돌려줬다. 그래서 버튼이 꺼진 채로 떴다.
-	 *
-	 *    실제 상태는 서브시스템의 `bDrawDebugDensity` 이고 `BlueprintReadWrite` 라 공개돼
-	 *    있다. 콘솔을 흉내 내지 말고 그 값을 직접 읽고 쓴다.
-	 *
-	 * ⚠️ 이것은 월드·경제 상태가 아니라 **디버그 표시 플래그**다. UI 가 상태를 직접
-	 *    바꾸지 않는다는 규칙(AGENTS.md 2)에 걸리지 않는다. 제품용 토글 API 가 오면
-	 *    그쪽으로 옮긴다 (`UI_API.md` 11번).
-	 */
-	UFF_CrowdSimulationSubsystem* FindCrowd(const UObject* WorldContext)
+	UFF_CrowdDensityHeatmapSubsystem* FindHeatmap(const UObject* WorldContext)
 	{
 		const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
-		return World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr;
+		return World ? World->GetSubsystem<UFF_CrowdDensityHeatmapSubsystem>() : nullptr;
 	}
 
 	UTextBlock* MakeLegendText(UObject* Outer, const UTextBlock* FontSource,
@@ -228,28 +214,29 @@ void UFF_LivePanelDensity::NativeTick(const FGeometry& MyGeometry, float InDelta
 
 void UFF_LivePanelDensity::HandleToggleClicked()
 {
-#if ENABLE_DRAW_DEBUG
-	UFF_CrowdSimulationSubsystem* Crowd = FFDensityLocal::FindCrowd(this);
-	if (!Crowd || !Crowd->GetDensityGrid().IsBuilt())
+	UFF_CrowdDensityHeatmapSubsystem* Heatmap = FFDensityLocal::FindHeatmap(this);
+	if (!Heatmap)
 	{
-		// 조용히 넘기지 않는다 — 버튼이 눌리는데 아무 일도 안 나는 것이 제일 헷갈린다.
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] Crowd 밀도 격자가 준비되지 않아 히트맵을 켤 수 없다."), *GetName());
+		UE_LOG(LogFestaFiestaUI, Warning, TEXT("[%s] 히트맵 서브시스템이 없어 히트맵을 켤 수 없다."), *GetName());
 		RefreshToggleLabel();
 		return;
 	}
 
-	Crowd->bDrawDebugDensity = !Crowd->bDrawDebugDensity;
-#endif
+	const bool bTurnOn = !Heatmap->IsHeatmapVisible();
+	if (Heatmap->SetHeatmapVisible(bTurnOn) != bTurnOn)
+	{
+		// 조용히 넘기지 않는다 — 버튼이 눌리는데 아무 일도 안 나는 것이 제일 헷갈린다.
+		UE_LOG(LogFestaFiestaUI, Warning, TEXT("[%s] 히트맵을 켜지 못했다."), *GetName());
+	}
 	RefreshToggleLabel();
 }
 
 void UFF_LivePanelDensity::RefreshToggleLabel()
 {
-#if ENABLE_DRAW_DEBUG
-	const UFF_CrowdSimulationSubsystem* Crowd = FFDensityLocal::FindCrowd(this);
-	const bool bReady = Crowd && Crowd->GetDensityGrid().IsBuilt();
-	const bool bOn = Crowd && Crowd->bDrawDebugDensity;
+	const UFF_CrowdDensityHeatmapSubsystem* Heatmap = FFDensityLocal::FindHeatmap(this);
+	const bool bHasMaterial = Heatmap && Heatmap->HasHeatmapMaterial();
+	const bool bGridReady = Heatmap && Heatmap->IsDensityGridReady();
+	const bool bOn = Heatmap && Heatmap->IsHeatmapVisible();
 
 	// !! 상태를 색으로만 말하지 않는다 !! 라벨이 지금 상태를 글자로 적는다 (AT-011).
 	SetTextOrHide(Text_ToggleLabel, bOn
@@ -258,20 +245,22 @@ void UFF_LivePanelDensity::RefreshToggleLabel()
 
 	if (Button_Toggle)
 	{
-		Button_Toggle->SetIsEnabled(bReady);
+		Button_Toggle->SetIsEnabled(bOn || (bHasMaterial && bGridReady));
 	}
-	SetTextOrHide(Text_MissingNote, bReady
-		? LOCTEXT("LiveDensity_DebugBuildNote", "바닥 히트맵은 개발용 표시입니다. 출시 빌드에서는 지원하지 않습니다.")
-		: LOCTEXT("LiveDensity_GridPendingNote", "밀도 격자가 준비되면 히트맵을 켤 수 있습니다."));
-#else
-	SetTextOrHide(Text_ToggleLabel, LOCTEXT("LiveDensity_HeatmapUnavailable", "히트맵 미지원"));
-	if (Button_Toggle)
+
+	if (!bHasMaterial)
 	{
-		Button_Toggle->SetIsEnabled(false);
+		SetTextOrHide(Text_MissingNote, LOCTEXT("LiveDensity_NoMaterialNote",
+			"히트맵 표시 자료가 설정되지 않았습니다. 밀도 수치와 등급은 계속 확인할 수 있습니다."));
 	}
-	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveDensity_NoDebugDrawNote",
-		"이 빌드는 바닥 히트맵을 지원하지 않습니다. 밀도 수치와 등급은 계속 확인할 수 있습니다."));
-#endif
+	else if (!bGridReady)
+	{
+		SetTextOrHide(Text_MissingNote, LOCTEXT("LiveDensity_GridPendingNote", "밀도 격자가 준비되면 히트맵을 켤 수 있습니다."));
+	}
+	else
+	{
+		SetTextOrHide(Text_MissingNote, FText::GetEmpty());
+	}
 }
 
 void UFF_LivePanelDensity::RebuildLegend()

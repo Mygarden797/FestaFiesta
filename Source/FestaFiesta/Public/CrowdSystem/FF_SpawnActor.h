@@ -61,9 +61,9 @@ protected:
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Debug")
 	bool bDrawDebugAgents = false;
 
-	// 에디터에서 밀도 그리드를 LOS 색상 박스로 그린다
+	// 에디터에서 밀도 그리드를 LOS 색상 박스로 그린다. 밀집 패널 히트맵(데칼)과 별개라 기본은 끈다 (켜려면 FF.Crowd.Debug 1)
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Debug")
-	bool bDrawDebugDensity = true;
+	bool bDrawDebugDensity = false;
 	
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
 	TObjectPtr<AActor> SpawnAchor;

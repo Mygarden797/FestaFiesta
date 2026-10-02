@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
+#include "Materials/MaterialInterface.h"
 #include "FF_SimulationSettings.generated.h"
 
 /**
@@ -60,5 +61,8 @@ public:
 
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "SNS")
 	TSoftObjectPtr<UDataTable> SnsPostTemplateTable;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Heatmap")
+	TSoftObjectPtr<UMaterialInterface> DensityHeatmapMaterial;
 
 };

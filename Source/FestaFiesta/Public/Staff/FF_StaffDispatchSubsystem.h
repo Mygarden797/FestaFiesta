@@ -5,11 +5,13 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_StaffDispatchSubsystem.generated.h"
 
-class AFF_BaseCrowd;
 class UFF_IncidentSubsystem;
 class UFF_StaffFacilitySubsystem;
+class UFF_StaffSubsystem;
 
-/** Staff reservations belong to StaffFacility; this subsystem owns only journeys and presentation. */
+/** Staff reservations belong to StaffFacility and staff movement belongs to StaffSubsystem; this subsystem owns only the incident response.
+ *  It only says "send" / "recall" and reads each member's state: all Working = start work, any member gave up = cancel,
+ *  Idle while returning = that member is home and its reservation is released. */
 UCLASS()
 class FESTAFIESTA_API UFF_StaffDispatchSubsystem : public UTickableWorldSubsystem
 {
@@ -33,26 +35,13 @@ public:
 	bool GetRemainingWorkMinutes(FFF_IncidentHandle Handle, float& OutMinutes) const;
 
 private:
-	struct FJourney
-	{
-		int32 StaffId = INDEX_NONE;
-		FVector Position = FVector::ZeroVector;
-		FVector HomeLocation = FVector::ZeroVector;
-		TWeakObjectPtr<AFF_BaseCrowd> Actor;
-		TArray<FVector> Path;
-		TArray<FVector> Travelled;
-		int32 NextPoint = 0;
-	};
-
 	struct FDispatch
 	{
 		FFF_IncidentHandle Handle;
 		int32 OptionIndex = INDEX_NONE;
 		FFF_IncidentAnchor Anchor;
-		FVector Destination = FVector::ZeroVector;
-		TArray<FJourney> Journeys;
+		TArray<int32> StaffIds;
 		bool bReturning = false;
-		float RepathElapsed = 0.f;
 		bool bWorking = false;
 		float RemainingWorkMinutes = 0.f;
 	};
@@ -60,10 +49,8 @@ private:
 	bool TryGetFestivalMinutes(float& OutMinutes) const;
 
 	bool TryGetLocation(const FFF_IncidentAnchor& Anchor, FVector& OutLocation) const;
-	bool BuildPath(const FVector& Start, const FVector& End, TArray<FVector>& OutPath) const;
-	static bool AdvanceJourney(FJourney& Journey, float Distance);
-	static void BeginReturn(FDispatch& Dispatch);
-	void RefreshReturnHomes(FDispatch& Dispatch);
+	void BeginReturn(FDispatch& Dispatch);
+	void ReleaseReturnedStaff(FDispatch& Dispatch);
 	void ReleaseDispatch(FDispatch& Dispatch);
 
 	UFUNCTION()
@@ -76,14 +63,14 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_StaffFacilitySubsystem> Staffing;
 	UPROPERTY(Transient)
-	TSubclassOf<AFF_BaseCrowd> ResponderClass;
+	TObjectPtr<UFF_StaffSubsystem> StaffBodies;
 
 	TArray<FDispatch> Dispatches;
-	float TravelSpeed = 300.f;
 	float LastWorkClockMinutes = -1.f;
 
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_StaffDispatchJourneyTest;
 	friend class FFF_StaffDispatchIncidentTest;
+	friend class FFF_StaffDispatchGiveUpTest;
 #endif
 };

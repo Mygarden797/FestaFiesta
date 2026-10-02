@@ -11,6 +11,8 @@ class UAnimInstance;
 class UFF_CrowdAnimInstance;
 class UFF_CrowdMovementComponent;
 class UFF_CrowdVisualComponent;
+class USkeletalMesh;
+class USkeletalMeshComponent;
 class UStaticMeshComponent;
 
 
