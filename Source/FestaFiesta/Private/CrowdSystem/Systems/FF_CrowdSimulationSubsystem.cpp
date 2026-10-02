@@ -7,6 +7,8 @@
 #include "CrowdSystem/Lane/FF_CrowdLane.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/GameInstance.h"
+#include "Engine/SkeletalMesh.h"
 #include "EngineUtils.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
@@ -1647,26 +1649,64 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 	const double EndZ = FMath::Min(SimOrigin.Z, TopZ) - TraceBelowCm;
 
 	int32 TraceCount = 0;
+	int32 SkippedNonWalkableHits = 0;
+
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+	const ANavigationData* NavData = (bHeightFieldRequireNavMesh && NavSys) ? NavSys->GetDefaultNavDataInstance() : nullptr;
+	if (bHeightFieldRequireNavMesh && !NavData)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("높이 격자: NavMesh가 없어 걸을 수 있는 면 검사를 생략한다 — 아치·지붕 같은 물체도 지면으로 잡힌다"));
+	}
+
+	const FVector NavSnapExtentCm(100.0, 100.0, 60.0);
+	constexpr int32 MaxSkippedLayers = 4;
+
+	auto IsWalkableHit = [&](const FHitResult& Hit) -> bool
+	{
+		FNavLocation OnNav;
+		return NavSys->ProjectPointToNavigation(Hit.ImpactPoint, OnNav, NavSnapExtentCm, NavData);
+	};
 
 	auto Sampler = [&](const FVector2D& QueryCm, double& OutHeightCm) -> bool
 	{
+		const FVector TraceStart(QueryCm.X, QueryCm.Y, StartZ);
+		const FVector TraceEnd(QueryCm.X, QueryCm.Y, EndZ);
+
 		++TraceCount;
-
 		FHitResult Hit;
-		const bool bHit = World->LineTraceSingleByChannel(
-			Hit,
-			FVector(QueryCm.X, QueryCm.Y, StartZ),
-			FVector(QueryCm.X, QueryCm.Y, EndZ),
-			ECC_WorldStatic,
-			Params);
-
-		if (!bHit)
+		if (!World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, Params))
 		{
 			return false;
 		}
+		if (!NavData || IsWalkableHit(Hit))
+		{
+			OutHeightCm = Hit.ImpactPoint.Z;
+			return true;
+		}
 
-		OutHeightCm = Hit.ImpactPoint.Z;
-		return true;
+		FCollisionQueryParams LayerParams = Params;
+		for (int32 Layer = 0; Layer < MaxSkippedLayers; ++Layer)
+		{
+			++SkippedNonWalkableHits;
+			if (!Hit.GetComponent())
+			{
+				return false;
+			}
+			LayerParams.AddIgnoredComponent(Hit.GetComponent());
+
+			++TraceCount;
+			if (!World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, LayerParams))
+			{
+				return false;
+			}
+			if (IsWalkableHit(Hit))
+			{
+				OutHeightCm = Hit.ImpactPoint.Z;
+				return true;
+			}
+		}
+		return false;
 	};
 
 	const double SpacingCm = FMath::Max(static_cast<double>(HeightFieldSpacingUU), 10.0);
@@ -1692,6 +1732,13 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		Stats.HitCount, Stats.SampleCount,
 		Stats.MinHeightCm, Stats.MaxHeightCm, Stats.HeightSpanCm(),
 		IgnoredFacilities);
+
+	if (NavData)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("높이 격자: NavMesh가 없는 면 %d개를 건너뛰었다 (아치·가로등·지붕 등, 트레이스 %d회)"),
+			SkippedNonWalkableHits, TraceCount);
+	}
 
 	UE_LOG(LogTemp, Log,
 		TEXT("높이 격자: 중심 (%.0f, %.0f) 반폭 %.0f (%s), 간격 %.0f, 트레이스 시작 Z=%.0f"),

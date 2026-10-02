@@ -30,7 +30,8 @@ AFF_BaseCrowd::AFF_BaseCrowd()
 
 	SkeletalMeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>("SkeletalMeshComponent");
 	SkeletalMeshComponent->SetupAttachment(RootSceneComponent);
-	
+	SkeletalMeshComponent->SetReceivesDecals(false);
+
 
 	// 대체 표시용 원기둥. 기본은 꺼 둔다 — SkeletalMesh가 없을 때만 BeginPlay에서 켠다.
 	ProxyMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>("ProxyMeshComponent");
@@ -44,6 +45,7 @@ AFF_BaseCrowd::AFF_BaseCrowd()
 	ProxyMeshComponent->SetCanEverAffectNavigation(false);
 	// 500개가 그림자를 던지면 표시 비용이 시뮬레이션 비용을 덮어 버린다. 확인용이므로 끈다.
 	ProxyMeshComponent->SetCastShadow(false);
+	ProxyMeshComponent->SetReceivesDecals(false);
 	ProxyMeshComponent->SetVisibility(false);
 
 	// 생성자에서 찾아야 쿠킹 시 참조로 잡혀 패키징 빌드에서도 빠지지 않는다.
