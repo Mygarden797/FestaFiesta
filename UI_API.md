@@ -2257,6 +2257,83 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 ---
 
+## 축제 종료·최종 결산 — UI 가 해야 할 일 (2026-10-03 코드 대조)
+
+> 작성: 김시리. 산출(경제·평가)과 종료 이벤트는 코드에서 닫았고, 아래는 **화면이 읽거나 불러야 하는 것**입니다.
+> 이 절이 최신입니다. 앞 절의 "마지막 날 Report 이후" 표현은 이 절로 대체됩니다.
+
+### 3일차 종료 흐름 (바뀐 것)
+
+`DT_DaySequence` 에 `Day3_Report` 행이 **없어서** 예전에는 `OnFestivalEnded` 가 한 번도 울리지 않았습니다
+(최종 결산 화면·클리어 기록·마지막 SNS 글이 전부 불발). 마지막 날은 **마감이 마지막 화면**이라는 UI 규칙
+(`FF_LiveHudRules`)에 맞춰, 종료를 "축제 마치기" 버튼이 일으키게 했습니다.
+
+```text
+3일차 Closing ─ "축제 마치기" ─▶ UFF_UIFlowSubsystem::RequestFinishFestival()
+   └ UFF_FestivalStageSubsystem::FinishFestival()   (3일차 Closing/Report 에서만 통하고 한 번만)
+        └ OnFestivalEnded  → FinalReportScreenClass 올림 / 클리어 기록 저장 / 마지막 SNS 글
+   └ 최종 결산 화면이 올라갔으면 거기서 대기, 안 올라갔으면(클래스 미배선) 곧장 나라 지도로
+최종 결산 화면의 "로비로" ─▶ UFF_UIFlowSubsystem::RequestFinishFestival()  (이미 끝났으므로 나라 지도로 복귀)
+```
+
+| 항목 | 위치 | 비고 |
+|---|---|---|
+| `FinishFestival()` | `UFF_FestivalStageSubsystem` | BlueprintCallable. 성공하면 true |
+| `HasFestivalEnded()` | `UFF_FestivalStageSubsystem` | BlueprintPure. 최종 결산이 떠 있는 동안 true |
+| `RequestFinishFestival()` | `UFF_UIFlowSubsystem` | BlueprintCallable. **최종 결산 화면의 `로비로` 는 이것을 부르면 됩니다** |
+
+- `FinalReportScreenClass` 는 지금 `WBP_FF_FlowStub`(임시)입니다. 실제 화면으로 교체하면 임시 분기
+  (`FF_UIFlowStubScreen` 의 `bFinalReport`)는 지워도 됩니다.
+- 3일차 Report 단계는 쓰지 않아도 됩니다. Report 행이 생기더라도 같은 `FinishFestival()` 로 한 번만 울립니다.
+- 새 축제를 시작하면(`OnFestivalStarted`) 만족도·욕구 집계·SNS 피드·배속·날씨·미니게임 상태가 **초기화**됩니다.
+  화면은 `OnFestivalStarted` 이후 다시 읽으면 됩니다.
+
+### 최종 결산 화면이 읽을 값 (산출은 전부 구현됨 — 호출만 하면 됩니다)
+
+| 보여줄 것 | 읽는 곳 | 비고 |
+|---|---|---|
+| 등급 S~D, 총점, 4축 점수, 한 줄 평 | `ViewModel::GetFestivalEvaluation()` | **실시간 계산**입니다. 화면을 열 때 한 번 읽어 고정하세요 |
+| 날짜별 만족도 | `ViewModel::GetDailySatisfactionHistory()` | |
+| 누적 방문객 | `ViewModel::GetTotalAdmittedVisitors()` | |
+| 누적 매출, Gold | `ViewModel::GetTotalRevenue()`, `GetGold()` | |
+| 원인별 매출·지출, 부스별 매출, 환급 | `Progression::GetEarnRowsForDay / GetSpendRowsForDay / GetRevenueByFacilityRowsForDay / GetTotalRefundForDay (Day)` | 원장은 이제 끝난 날을 모두 보관합니다. 3일 합계는 아래 `ForFestival` 표 |
+
+### 10/3 추가 — 최종 결산에서 쓸 수 있게 된 것
+
+| 항목 | 위치 | 비고 |
+|---|---|---|
+| 축제 전체(3일 합계) 결산 표 | `Progression::GetEarnRowsForFestival / GetSpendRowsForFestival / GetRevenueByFacilityRowsForFestival / GetTotalRefundForFestival` | `ForDay` 표와 같은 모양. 끝난 날 원장을 **전부** 보관하게 바꿨으므로 Day1 도 `GetEarnRowsForDay(1)` 로 읽힌다(이전엔 2일치만) |
+| 평가가 굳는다 | `GetFestivalEvaluation()` / `IsFestivalEvaluationFrozen()` | `OnFestivalEnded` 이후엔 그 순간 값으로 **고정**. 새 축제에서 풀림. 화면에서 따로 캐시할 필요 없음 |
+| 날짜별 만족도 3칸 | `GetDailySatisfactionHistory()` | 종료 시 마지막 날 값이 들어가 3칸이 된다 |
+| 예보의 평판 배수 | `FFF_VisitorForecast.ReputationMultiplier` | 어제 만족도 → ×0.88~1.08(50 에서 1.0, 첫날 1.0). 예상 방문객에 이미 반영됨. 미리보기 문구에 "어제 만족도 영향" 줄을 넣을 수 있다 |
+| 클리어 기록에 평가 | `UFF_SaveSubsystem::GetRecord(FestivalId)` → `BestScore`, `BestGrade`, `BestSatisfaction`(평가의 날짜별 평균) | `HasClearedFestival(FestivalId)` 는 국가 지도의 해금/뱃지 표시에 쓸 수 있다. 지금은 호출하는 UI 가 없다 |
+| 이어하기 후 결산 | — | 끝난 날 원장·시설별 누적 매출이 저장에 담긴다. 이어하기 직후 "어제 결산"이 비지 않는다 |
+
+### 아직 화면이 없는 것 — 호출·구독하는 UI 가 0 인 항목
+
+| # | 화면 | 쓰는 API | 영향 |
+|---|---|---|---|
+| 1 | **피날레 구매 패널** (3일차 MorningCheck) | `RequestPurchaseFinale`, `GetFinaleTiers`, `CanPurchaseFinaleNow` | 없으면 피날레 보너스·불꽃이 영구히 꺼져 있습니다. Finale 탭은 "만드는 중" |
+| 2 | **입장료 슬라이더 + 예상 방문객 미리보기** | `RequestSetAdmissionFee`, `CanSetAdmissionFeeNow`, `GetAdmissionFeeRange`, `PreviewVisitorForecast`, `GetVisitorForecast` | 없으면 입장료가 기준값 5 에 고정되어 평가의 재무·방문객 축이 플레이어 입력과 무관해집니다 |
+| 3 | **화제성 게이지** | `GetBuzz`, `GetBuzzChangeToday`, `OnBuzzChanged` | |
+| 4 | **일일 목표 진행도** | `GetAdmittedVisitorsToday`, `IsDailyGoalBonusPaid`, `OnAdmittedVisitorsTodayChanged` | 지금은 `Debug_SetVisitorCount` 로만 채워져 늘 "아직 알 수 없습니다" |
+| 5 | **마감 리포트 보강** | 결산 표 5종(위), `GetDayLedger` | 지금 패널은 매출·Gold·만족도·스태프 수만 보여줍니다. 지출·순이익·방문객·목표 달성이 없습니다 |
+| 6 | **스태프 승급** | `RequestPromoteStaff`, `CanPromoteStaff`, `GetStaffRoster`, `OnStaffRosterChanged` | 승급은 Gold 를 빼지 않습니다(비용 미정, `economy_todo` E1) |
+| 7 | 준비 바 "예상 N~M명" | `GetExpectedVisitors` | `Debug_SetPlaceholders` 로만 채워져 항상 숨겨짐 |
+
+### 화면에 나가는 잘못된 값·문구 — 고쳐야 합니다
+
+| 위치 | 문제 |
+|---|---|
+| `FF_LivePanelReport.cpp:20,173` | "원인 집계가 붙으면 여기에 들어갑니다" 가 그대로 노출됨. "피날레·연출 보정"의 연출 보정은 정의가 없음 |
+| `FF_LivePanelFinale.cpp:18` | "피날레는 셋업에서만 고를 수 있다" 는 틀렸음. 실제 구매 시점은 **3일차 MorningCheck** |
+| `ViewModel` `Safety` | 소유자가 없어 **88 고정**. 평가에도 안 들어갑니다. 실값처럼 보이지 않게 숨기거나 문구로 알려 주세요 |
+| `FF_LiveHudStatusBar` | `bUsePlaceholderResourceValues=true` 기본값(관객 284 등 가짜값). 지금은 참조하는 WBP 가 없어 노출되지 않음 |
+| `UFF_ReportScreen` | 사용하는 WBP 가 없는 죽은 코드. 최종 결산 화면을 새로 만들 때 흡수하거나 지우세요 |
+
+
+---
+
 ## 변경 이력
 
 당시 작업 기록입니다. 현재 연결 상태와 남은 요청은 위 본문을 기준으로 확인합니다.
@@ -2325,3 +2402,4 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 | 2026-09-21 | 김시리 | 🔴 **임대료·미납 제거 + Staff 영구 고용 + 프로그램에서 Staff 분리.** 화면에서 **빼셔야 하는 것**: ① 미납 관련 전부(`GetTotalArrears`·`OnTotalArrearsChanged` **삭제**) ② `가용 인원` 개념 전부(`GetAvailableStaffCount`·`GetStaffAssignedToPrograms`·`OnAvailableStaffCountChanged` **삭제**) — 프로그램이 인원을 안 쓰므로 `GetTotalStaffCount()` 하나면 됩니다 ③ 프로그램 카드·패널·시설 피커의 `필요 인력` 칸(`FFF_ProgramCard::RequiredStaff` **필드째 삭제**). **이름이 바뀐 것**: `TryHireTemporaryStaff`→`TryHireStaff`, `GetAffordableTemporaryStaffCount`→`GetAffordableHireCount`, `GetTemporaryStaffCount`→`GetHiredStaffCount`, `DailyStaffWageGold`→`StaffHireCostGold`(150/일 → 450/1회), `MaxHiredStaffPerDay`→`MaxHiredStaffCount`(**하루 상한이 아니라 축제 총원 상한**). `EFF_SpendReason::StaffWages` 와 결과 enum 3종의 `NotEnoughStaff` 도 삭제됐고 뒤 값이 재번호됐습니다. ✅ 8/26 요청하신 `GetRemainingHireCap()` public 전환 완료 — UI 쪽 중복 식 지우셔도 됩니다. ⚠️ **WBP 자산 9종은 재생성했습니다**(`FF.RebuildPrepHudStaffUI`·`FF.RebuildLiveHudStaffUI`·`FF.RefreshFacilityPaidProgramUMG`) — 죽은 칸이 자산에만 남아 `밀린 임대료 미납 2,400` 이 화면에 나오던 문제입니다. 스태프 강화(승급)는 **세부 미정이라 이번에 안 넣었습니다** |
 | 2026-09-22 | 김시리 | 🆕 **스태프 강화(승급) 규칙 확정 + API 완성.** 위 「스태프 강화(승급)」 절 새로 씀. 핵심 3개: `GetStaffRoster()`(개인별 명단, `FFF_StaffMember{StaffId, TrainingLevel, HiredOnDay, LastPromotedDay, bIsBaseStaff}`) · `TryPromoteStaff(int32 StaffId)`(승급 실행) · `OnStaffRosterChanged`(고용·승급 둘 다 이걸로 옴 — 승급은 `OnTotalStaffCountChanged` 로 안 옵니다, 인원수가 안 바뀌니까요). 규칙: 고용 다음 날 아침부터 승급 가능(당일 불가), 한 아침에 1인당 1단계만, 최대 Lv3. **⚠️ 아직 체감 효과는 없습니다** — 승급해도 사건 시스템(이정원)이 없어서 게임 안에서 달라지는 게 없습니다. 그래도 화면은 지금 만드셔도 나중에 API가 안 바뀝니다. 사건별 배치(`스태프 N명 배치`)는 여전히 이번 범위 밖 — §6 참고 |
+| 2026-10-03 | 김시리 | 🔴 **3일차 종료 이벤트 복구 + 최종 결산 UI 계약.** `DT_DaySequence` 에 `Day3_Report` 가 없어 `OnFestivalEnded` 가 안 울리던 문제를 `FinishFestival()`/`RequestFinishFestival()` 로 해결(「축제 종료·최종 결산」 절). 최종 결산 화면의 `로비로` 는 `RequestFinishFestival()`. 새 축제 시작 시 만족도·욕구·SNS·배속·날씨 초기화. 화면이 아직 없는 7건과 잘못 나가는 문구 목록 수록 |
