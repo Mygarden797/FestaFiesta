@@ -407,19 +407,19 @@ bool FFF_LedgerRows_UnheldDayIsDistinguishableFromZero::RunTest(const FString& P
 		return false;
 	}
 
-	// 원장은 두 칸만 산다. Day3 까지 가면 Day1 은 버려진다.
+	// 끝난 날의 원장은 모두 보관한다(최종 결산이 3일 합계를 내려고). 아직 안 일어난 Day4 는 없다.
 	Harness.Progression->AddRevenue(100, EFF_EarnReason::AdmissionFee);
 	Harness.Progression->BeginNewDay(2);
 	Harness.Progression->BeginNewDay(3);
 
-	TestFalse(TEXT("Day1 은 더 이상 들고 있지 않다"), Harness.Progression->HasLedgerForDay(1));
+	TestTrue(TEXT("Day1 도 계속 들고 있다"), Harness.Progression->HasLedgerForDay(1));
 	TestTrue(TEXT("Day2 는 스냅샷으로 들고 있다"), Harness.Progression->HasLedgerForDay(2));
 	TestTrue(TEXT("Day3 은 라이브로 들고 있다"), Harness.Progression->HasLedgerForDay(3));
 
-	// 안 들고 있는 날은 빈 표를 준다 (크래시하지 않는다).
-	TestEqual(TEXT("Day1 매출 표가 비어 있다"),
-		Harness.Progression->GetEarnRowsForDay(1).Num(), 0);
-	TestEqual(TEXT("Day1 지출 표가 비어 있다"),
+	// 안 들고 있는 날(Day4)은 빈 표를 준다 (크래시하지 않는다). Day1 은 100 Gold 입장료 한 줄이 남아 있다.
+	TestEqual(TEXT("Day1 매출 표에 입장료 한 줄이 남아 있다"),
+		Harness.Progression->GetEarnRowsForDay(1).Num(), 1);
+	TestEqual(TEXT("Day1 지출 표는 비어 있다"),
 		Harness.Progression->GetSpendRowsForDay(1).Num(), 0);
 	TestEqual(TEXT("Day1 부스별 표가 비어 있다"),
 		Harness.Progression->GetRevenueByFacilityRowsForDay(1).Num(), 0);

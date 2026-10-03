@@ -69,9 +69,13 @@ private:
 	// 오늘 입장료와 기준값을 Signals에 채운다(화제15·16). 축제 전이면 둘 다 0 이라 두 화제 점수가 0 이다
 	void FillAdmissionFeeSignals(struct FFF_SnsFeedSignals& Signals) const;
 
-	// Report 단계 + 마지막 날이면 화제9(피날레)를 강제로 한 번만 생성
+	// 축제 종료(마지막 날)에 화제9(피날레)를 강제로 한 번만 생성. 종료 이벤트가 한 번만 나간다
 	UFUNCTION()
-	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+	void HandleFestivalEnded();
+
+	// 새 축제를 시작하면 이전 판의 피드·시퀀스·델타 기준을 비운다. 이 서브시스템은 레벨을 건너 산다
+	UFUNCTION()
+	void HandleFestivalStarted();
 
 	// 이하 다섯 개는 다른 서브시스템을 매번 새로 조회하는 헬퍼 — 캐시하지 않는다
 	// (subsystem-scope-rule: GameInstance보다 짧게 사는 World 스코프 포인터를 들고 있지 않는다)

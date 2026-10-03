@@ -253,6 +253,10 @@ struct FFF_VisitorForecast
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
 	float BuzzMultiplier = 1.f;
+
+	// 어제 만족도가 만든 배수. 만족도 50 이거나 첫날이면 1.0.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	float ReputationMultiplier = 1.f;
 };
 
 // 홍보 구매 결과. 화면이 실패 사유를 그대로 쓴다.

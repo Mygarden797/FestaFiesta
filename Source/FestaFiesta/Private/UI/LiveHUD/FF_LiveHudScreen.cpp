@@ -1100,10 +1100,10 @@ void UFF_LiveHudScreen::HandleCtaClicked()
 		return;
 
 	case EFF_LiveCtaState::ReadyFinishFestival:
-		// 나라 지도 복귀는 `UFF_UIFlowSubsystem` 이 소유한다 — UI 가 레벨을 직접 열지 않는다.
+		// 축제 종료와 나라 지도 복귀는 `UFF_UIFlowSubsystem` 이 소유한다 — UI 가 레벨을 직접 열지 않는다.
 		if (UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this))
 		{
-			Flow->ReturnToAtlas();
+			Flow->RequestFinishFestival();
 		}
 		else
 		{

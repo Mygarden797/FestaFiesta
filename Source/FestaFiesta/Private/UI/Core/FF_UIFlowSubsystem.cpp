@@ -1062,6 +1062,7 @@ void UFF_UIFlowSubsystem::ReturnToAtlas()
 	PendingFrontendScreen = EFF_UIFlowScreen::AtlasCountry;
 	ActiveFestivalId = NAME_None;
 	bPendingFestivalStart = false;
+	bFinalReportShown = false;
 	ClearStageHudWidget();
 
 	// ★ `ActiveCountryId` 는 **비우지 않는다.** 국가 지도로 돌아가는데 어느 나라인지
@@ -1078,6 +1079,23 @@ void UFF_UIFlowSubsystem::ReturnToAtlas()
 	UGameplayStatics::OpenLevelBySoftObjectPtr(this, Settings->FrontendLevel);
 }
 
+void UFF_UIFlowSubsystem::RequestFinishFestival()
+{
+	UFF_FestivalStageSubsystem* Stage = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()
+		: nullptr;
+
+	// 처음 누르면 축제를 끝내고 최종 결산을 올린다. 올라갔으면 거기서 `로비로` 를 기다린다.
+	// 이미 끝났거나, 끝낼 수 없는 단계이거나, 올릴 화면이 없으면 곧장 나라 지도로 간다.
+	const bool bAlreadyEnded = Stage && Stage->HasFestivalEnded();
+	if (Stage && !bAlreadyEnded && Stage->FinishFestival() && bFinalReportShown)
+	{
+		return;
+	}
+
+	ReturnToAtlas();
+}
+
 void UFF_UIFlowSubsystem::RequestAdvanceStage()
 {
 	UFF_FestivalStageSubsystem* Stage = GetGameInstance()
@@ -1090,21 +1108,20 @@ void UFF_UIFlowSubsystem::RequestAdvanceStage()
 		return;
 	}
 
+	// 축제가 이미 끝났다면(최종 결산이 떠 있는 동안) 어느 단계에서 눌려도 로비로 간다.
+	if (Stage->HasFestivalEnded())
+	{
+		RequestFinishFestival();
+		return;
+	}
+
 	// Report 는 타이머가 끝나도 자동 전환하지 않는다. 플레이어가 `다음 날` 을 눌러야 넘어간다.
 	if (Stage->IsReportStage())
 	{
 		if (Stage->IsFinalDay())
 		{
-			/* 마지막 날에는 다음 날이 없다. 한 사이클을 닫아 로비로 보낸다.
-
-			   예전에는 여기서 로그만 남기고 돌아갔다. 최종 결산 화면이 제대로 붙기
-			   전까지는 그게 "버튼을 눌러도 아무 일도 없고 나갈 데도 없는" 상태였다.
-			   결산 화면이 붙으면 그 화면의 `로비로` 가 이 역할을 가져간다.
-			*/
-			UE_LOG(LogFestaFiestaUI, Log,
-				TEXT("UFF_UIFlowSubsystem: 마지막 날 Report 다. 로비로 돌아간다."));
-
-			ReturnToAtlas();
+			// 마지막 날에는 다음 날이 없다. 축제를 끝내고 최종 결산으로 보낸다.
+			RequestFinishFestival();
 			return;
 		}
 
@@ -1341,6 +1358,7 @@ void UFF_UIFlowSubsystem::HandleFestivalEnded()
 	// 일자별 결산 시트를 내리고 최종 결산을 올린다.
 	ClearStageHudWidget();
 	StageScreenWidget = Layout->PushScreen(ScreenClass);
+	bFinalReportShown = StageScreenWidget.IsValid();
 
 	UE_LOG(LogFestaFiestaUI, Log, TEXT("UFF_UIFlowSubsystem: 축제 종료 — 최종 결산을 띄운다."));
 }

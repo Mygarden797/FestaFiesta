@@ -9,7 +9,7 @@ namespace
 {
 	void CollectPeriodicTopicIds(EFF_SnsSentiment Polarity, TArray<int32>& OutIds)
 	{
-		// 9(피날레)는 뺀다 — 주기 선택 대상이 아니라 Report 단계 진입 시점에 ForcedTopicId로만 나간다
+		// 9(피날레)는 뺀다 — 주기 선택 대상이 아니라 축제 종료 시점에 ForcedTopicId로만 나간다
 		static const int32 AllTopicIds[] = { 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16 };
 		for (int32 Id : AllTopicIds)
 		{
