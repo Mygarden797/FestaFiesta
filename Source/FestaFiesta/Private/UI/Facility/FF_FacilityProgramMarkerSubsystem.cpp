@@ -10,6 +10,7 @@
 #include "Building/Synergy/FF_FacilitySynergySubsystem.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Camera/FF_FestivalPlayerController.h"
 #include "Components/BoxComponent.h"
 #include "Components/PanelWidget.h"
 #include "Components/StaticMeshComponent.h"
@@ -457,6 +458,12 @@ void UFF_FacilityProgramMarkerSubsystem::UpdateMarkerLocations()
 			ViewportGeometry.AbsoluteToLocal(Geometry.LocalToAbsolute(Geometry.GetLocalSize()))));
 	}
 	const UFF_FacilityInfoSubsystem* Info = GetWorld()->GetSubsystem<UFF_FacilityInfoSubsystem>();
+	const AFF_FestivalPlayerController* FestivalController = Cast<AFF_FestivalPlayerController>(Controller);
+	const bool bGroundMode = FestivalController && FestivalController->GetViewMode() == EFF_CameraViewMode::Character;
+	// 그라운드 모드에서는 현재 커서가 가리키는 시설만 표시한다. 클릭 선택은 포커스를 유지하지 않는다.
+	const AFFZSFacilityActor* FocusedFacility = bGroundMode && !bModalOpen && Info &&
+		FestivalController->IsPickingAllowed() && Controller->bShowMouseCursor && !Info->IsPointerOverPanel()
+		? Info->ResolveFacilityUnderCursor(*Controller) : nullptr;
 	const FGuid Selected = Info ? Info->GetSelectedFacilityId() : FGuid();
 	RefreshMarkerOrder(Selected);
 	for (const FGuid& Id : MarkerOrder)
@@ -464,7 +471,8 @@ void UFF_FacilityProgramMarkerSubsystem::UpdateMarkerLocations()
 		UFF_FacilityProgramMarkerWidget* Marker = Markers.FindRef(Id);
 		AFFZSFacilityActor* Facility = MarkerActors.FindRef(Id).Get();
 		if (!IsValid(Marker)) continue;
-		if (bModalOpen || !IsValid(Facility) || Facility->IsHidden())
+		if (bModalOpen || !IsValid(Facility) || Facility->IsHidden() ||
+			(bGroundMode && Facility != FocusedFacility))
 		{
 			Marker->SetVisibility(ESlateVisibility::Hidden);
 			continue;
