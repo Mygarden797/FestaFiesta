@@ -48,6 +48,7 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedStageSubsystem->OnStageChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleStageChanged);
 		CachedStageSubsystem->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleRemainingSecondsChanged);
 		CachedStageSubsystem->OnEnvironmentStateChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged);
+		CachedStageSubsystem->OnFestivalStarted.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFestivalStarted);
 		CachedStageSubsystem->OnMainProgramStarted.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramStarted);
 		CachedStageSubsystem->OnMainProgramEnded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramEnded);
 	}
@@ -215,6 +216,7 @@ void UFF_FestivalViewModelSubsystem::TryBindStageSubsystem()
 	CachedStageSubsystem->OnStageChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleStageChanged);
 	CachedStageSubsystem->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleRemainingSecondsChanged);
 	CachedStageSubsystem->OnEnvironmentStateChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged);
+	CachedStageSubsystem->OnFestivalStarted.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFestivalStarted);
 
 	// 🔴 둘 다 받는다. 시작만 받으면 공연이 끝나도 화면은 계속 `잠김` 으로 남는다.
 	CachedStageSubsystem->OnMainProgramStarted.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramStarted);
@@ -418,6 +420,11 @@ void UFF_FestivalViewModelSubsystem::TryBindInsightsSubsystem()
 	{
 		RecentSnsPosts.Add(ConvertSnsPostToLiveSocialPost(Row));
 	}
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerFestivalStarted()
+{
+	RecentSnsPosts.Reset();
 }
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded(FFF_SnsPostRow NewPost)

@@ -254,4 +254,75 @@ bool FFF_StageTime_MultipleMainPrograms::RunTest(const FString& Parameters)
 	return true;
 }
 
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageTime_FinishFestival,
+	"FestaFiesta.Time.StageClock.FinishFestival",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_StageTime_FinishFestival::RunTest(const FString& Parameters)
+{
+	FFF_StageTimeTestHelpers::FClockHarness Harness;
+	if (!TestTrue(TEXT("Create stage"), Harness.Initialize(EFF_FestivalStage::Closing, 0.f))) return false;
+
+	// 마지막 날이 아니면 끝나지 않는다.
+	Harness.Stage->CurrentDay = 2;
+	TestFalse(TEXT("2일차 마감에서는 축제가 끝나지 않는다"), Harness.Stage->FinishFestival());
+	TestFalse(TEXT("끝난 것으로 기록되지 않는다"), Harness.Stage->HasFestivalEnded());
+
+	// 마지막 날이라도 Live 중에는 끝낼 수 없다.
+	Harness.Stage->CurrentDay = 3;
+	Harness.Stage->CurrentStage = EFF_FestivalStage::Live;
+	TestFalse(TEXT("Live 중에는 끝낼 수 없다"), Harness.Stage->FinishFestival());
+
+	// Report 행이 없어도 마감에서 끝낼 수 있다. 두 번째 호출은 아무 일도 하지 않는다.
+	Harness.Stage->CurrentStage = EFF_FestivalStage::Closing;
+	TestTrue(TEXT("3일차 마감에서 축제를 끝낸다"), Harness.Stage->FinishFestival());
+	TestTrue(TEXT("종료가 기록된다"), Harness.Stage->HasFestivalEnded());
+	TestFalse(TEXT("두 번 끝내지 않는다"), Harness.Stage->FinishFestival());
+
+	// 새 축제를 시작하면 다시 끝낼 수 있다.
+	Harness.Stage->StartNewFestival();
+	TestFalse(TEXT("새 축제는 끝나지 않은 상태로 시작한다"), Harness.Stage->HasFestivalEnded());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageTime_ShowWindowIsIndependentOfQueueBreak,
+	"FestaFiesta.Time.StageClock.ShowWindowIsIndependentOfQueueBreak",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_StageTime_ShowWindowIsIndependentOfQueueBreak::RunTest(const FString& Parameters)
+{
+	FFF_StageTimeTestHelpers::FClockHarness Harness;
+	if (!TestTrue(TEXT("Create stage"), Harness.Initialize(EFF_FestivalStage::Live, 0.f))) return false;
+	UDataTable* Table = NewObject<UDataTable>(Harness.GameInstance);
+	Table->RowStruct = FFF_LiveTriggerEvent::StaticStruct();
+	FFF_LiveTriggerEvent Row;
+	Row.Day = 1;
+	Row.TriggerSeconds = 180.f;
+	Row.bIsMainProgramLockStart = true;
+	Table->AddRow(TEXT("Start"), Row);
+	Row.TriggerSeconds = 210.f;
+	Row.bIsMainProgramLockStart = false;
+	Table->AddRow(TEXT("End"), Row);
+	FObjectPropertyBase* Property = FindFProperty<FObjectPropertyBase>(
+		UFF_FestivalStageSubsystem::StaticClass(), TEXT("ProgramScheduleTable"));
+	if (!TestNotNull(TEXT("Schedule property"), Property)) return false;
+	Property->SetObjectPropertyValue_InContainer(Harness.Stage, Table);
+	Harness.Stage->CurrentDay = 1;
+
+	// 집결 창(180초 전)은 열려 있지만 대기열 중단(3축제분 전)은 아직이다. 둘을 한 값으로 묶으면
+	// 전원이 공연 3초 전에 출발해 공연 후반에야 도착한다.
+	float Start = 0.f;
+	float End = 0.f;
+	Harness.Stage->ElapsedLiveSeconds = 10.f;
+	TestTrue(TEXT("공연 170초 전에 집결 창이 열려 있다"), Harness.Stage->TryGetMainProgramShowWindow(180.f, Start, End));
+	TestEqual(TEXT("공연 시작 시각"), Start, 180.f);
+	TestEqual(TEXT("공연 종료 시각"), End, 210.f);
+	TestFalse(TEXT("대기열 중단은 아직 아니다"), Harness.Stage->IsMainProgramQueueBreakActive());
+	Harness.Stage->ElapsedLiveSeconds = 176.99f;
+	TestFalse(TEXT("공연 3초 전 직전까지 대기열은 열려 있다"), Harness.Stage->IsMainProgramQueueBreakActive());
+	Harness.Stage->ElapsedLiveSeconds = 177.f;
+	TestTrue(TEXT("공연 3초 전부터 대기열이 닫힌다"), Harness.Stage->IsMainProgramQueueBreakActive());
+	Harness.Stage->ElapsedLiveSeconds = 210.f;
+	TestFalse(TEXT("공연이 끝나면 창이 닫힌다"), Harness.Stage->TryGetMainProgramShowWindow(180.f, Start, End));
+	return true;
+}
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -1117,6 +1117,10 @@ protected:
 	UFUNCTION()
 	void HandleOwnerSnsPostAdded(FFF_SnsPostRow NewPost);
 
+	/** 새 축제가 시작되면 이전 판의 SNS 표시 캐시를 비운다(Insights 쪽 피드도 같은 시점에 비워진다). */
+	UFUNCTION()
+	void HandleOwnerFestivalStarted();
+
 	/** `FFF_SnsPostRow`(값)를 `FFF_LiveSocialPost`(표현)로 바꾼다. 도메인↔표현 경계는 이 함수 하나뿐이다. */
 	static FFF_LiveSocialPost ConvertSnsPostToLiveSocialPost(const FFF_SnsPostRow& Row);
 

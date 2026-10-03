@@ -256,6 +256,12 @@ public:
 	// DataTable을 읽지 않는다
 	void CommitAggregation(const FFF_SatisfactionCoefficients& Coefficients);
 
+	/** 새 축제를 시작할 때 이전 판의 집계를 중립값으로 되돌린다. 이 서브시스템은 레벨을 건너 살아남는다. */
+	void ResetForNewFestival();
+
 private:
+	UFUNCTION()
+	void HandleFestivalStarted() { ResetForNewFestival(); }
+
 	FFF_SatisfactionAggregator Aggregator;
 };

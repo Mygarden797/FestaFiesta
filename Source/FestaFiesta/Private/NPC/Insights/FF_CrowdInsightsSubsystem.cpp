@@ -32,7 +32,8 @@ void UFF_CrowdInsightsSubsystem::Initialize(FSubsystemCollectionBase& Collection
 
 	if (UFF_FestivalStageSubsystem* Stage = GetStageSubsystem())
 	{
-		Stage->OnStageChanged.AddDynamic(this, &UFF_CrowdInsightsSubsystem::HandleStageChanged);
+		Stage->OnFestivalEnded.AddDynamic(this, &UFF_CrowdInsightsSubsystem::HandleFestivalEnded);
+		Stage->OnFestivalStarted.AddUniqueDynamic(this, &UFF_CrowdInsightsSubsystem::HandleFestivalStarted);
 	}
 
 	ScheduleNextPost();
@@ -42,16 +43,25 @@ void UFF_CrowdInsightsSubsystem::Deinitialize()
 {
 	if (UFF_FestivalStageSubsystem* Stage = GetStageSubsystem())
 	{
-		Stage->OnStageChanged.RemoveDynamic(this, &UFF_CrowdInsightsSubsystem::HandleStageChanged);
+		Stage->OnFestivalEnded.RemoveDynamic(this, &UFF_CrowdInsightsSubsystem::HandleFestivalEnded);
+		Stage->OnFestivalStarted.RemoveDynamic(this, &UFF_CrowdInsightsSubsystem::HandleFestivalStarted);
 	}
 
 	Super::Deinitialize();
 }
 
-void UFF_CrowdInsightsSubsystem::HandleStageChanged(EFF_FestivalStage /*PreviousStage*/, EFF_FestivalStage /*NewStage*/)
+void UFF_CrowdInsightsSubsystem::HandleFestivalStarted()
+{
+	RecentPosts.Reset();
+	PostSequenceIndex = 0;
+	LastObservedFailedDestinationPenalized = 0;
+	ScheduleNextPost();
+}
+
+void UFF_CrowdInsightsSubsystem::HandleFestivalEnded()
 {
 	UFF_FestivalStageSubsystem* Stage = GetStageSubsystem();
-	if (!Stage || !Stage->IsReportStage() || !Stage->IsFinalDay())
+	if (!Stage)
 	{
 		return;
 	}

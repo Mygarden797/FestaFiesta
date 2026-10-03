@@ -3,6 +3,8 @@
 #include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h" // LogFestaFiestaNpc
+#include "Time/FF_FestivalStageSubsystem.h"
+#include "Engine/GameInstance.h"
 
 FFF_SatisfactionCoefficients FFF_SatisfactionCoefficients::LoadFromTable(const UDataTable* UtilityCoefficientTable)
 {
@@ -283,15 +285,34 @@ bool FFF_SatisfactionAggregator::Commit(const FFF_SatisfactionCoefficients& Coef
 
 void UFF_SatisfactionMetricsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
+	Collection.InitializeDependency<UFF_FestivalStageSubsystem>();
 	Super::Initialize(Collection);
+
+	if (UFF_FestivalStageSubsystem* Stage = GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>())
+	{
+		Stage->OnFestivalStarted.AddUniqueDynamic(this, &UFF_SatisfactionMetricsSubsystem::HandleFestivalStarted);
+	}
 
 	UE_LOG(LogFestaFiestaNpc, Log,
 		TEXT("UFF_SatisfactionMetricsSubsystem 초기화. 첫 확정 전까지는 중립값 50을 돌려준다 ")
 		TEXT("(GetSampleCount()==0으로 '아직 안 걸림'을 구분할 것)."));
 }
 
+void UFF_SatisfactionMetricsSubsystem::ResetForNewFestival()
+{
+	Aggregator = FFF_SatisfactionAggregator();
+	OnSimSatisfactionChanged.Broadcast(Aggregator.GetSimSatisfaction());
+}
+
 void UFF_SatisfactionMetricsSubsystem::Deinitialize()
 {
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+		{
+			Stage->OnFestivalStarted.RemoveDynamic(this, &UFF_SatisfactionMetricsSubsystem::HandleFestivalStarted);
+		}
+	}
 	OnSimSatisfactionChanged.Clear();
 	Super::Deinitialize();
 }

@@ -36,6 +36,20 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFacilityRevenueChanged, FGuid,
  * [참고] 전부 Gold(int32)이고 상한이 없다.
  */
  
+// 하루 원장의 저장 표현. FFF_DayLedger 가 UObject 계층 밖의 값 타입이라 평탄하게 푼다.
+USTRUCT()
+struct FFF_DayLedgerSave
+{
+	GENERATED_BODY()
+
+	UPROPERTY() int32 Day = 0;
+	UPROPERTY() TArray<int32> SpendByReason;
+	UPROPERTY() TArray<int32> EarnByReason;
+	UPROPERTY() int32 TotalRefund = 0;
+	UPROPERTY() TArray<FName> FacilityIds;
+	UPROPERTY() TArray<int32> FacilityRevenue;
+};
+
 USTRUCT()
 struct FFF_ProgressionSave
 {
@@ -57,6 +71,12 @@ struct FFF_ProgressionSave
 	UPROPERTY() int32 AdmissionFeeGold = INDEX_NONE;
 	// 끝난 날의 만족도(0~100). 축제 평가가 평균을 낸다.
 	UPROPERTY() TArray<int32> DailySatisfaction;
+	// 끝난 날들의 원장과 진행 중인 날의 원장. 이어하기 뒤에도 결산 표가 비지 않게 한다.
+	UPROPERTY() TArray<FFF_DayLedgerSave> LedgerHistory;
+	UPROPERTY() FFF_DayLedgerSave CurrentLedger;
+	// 시설별(인스턴스) 매출 장부. 시설 정보 패널의 누적 매출이 이어하기 뒤에도 이어진다.
+	UPROPERTY() TArray<FGuid> FacilityRevenueIds;
+	UPROPERTY() TArray<FFF_FacilityInstanceRevenue> FacilityRevenues;
 };
  
 UCLASS()
@@ -241,6 +261,13 @@ public:
 	// 시설 철거 환급 총액. **매출이 아니다** — GetEarnRowsForDay 에 섞이지 않는다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetTotalRefundForDay(int32 Day) const;
+
+	// 축제 전체(끝난 날 전부 + 진행 중인 날) 합계. 최종 결산 화면용. 위 ForDay 표와 같은 모양이다.
+	// 축제가 시작되지 않았으면 빈 표/0.
+	TArray<FFF_LedgerRow> GetEarnRowsForFestival() const;
+	TArray<FFF_LedgerRow> GetSpendRowsForFestival() const;
+	TArray<FFF_FacilityRevenueRow> GetRevenueByFacilityRowsForFestival() const;
+	int32 GetTotalRefundForFestival() const;
 	
 	
 	
@@ -408,8 +435,13 @@ public:
 
 	// 지금까지의 성과로 매긴 축제 평가. 축제 도중에 불러도 된다(진행 중 평가).
 	// 마지막 날은 아직 하루 경계를 안 넘었으므로 현재 만족도를 그날 값으로 쓴다.
+	// 축제가 끝난 뒤(OnFestivalEnded)에는 그 순간의 값으로 굳어서 최종 화면이 열려 있는 동안 변하지 않는다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	FFF_FestivalEvaluation GetFestivalEvaluation() const;
+
+	// 축제 종료로 평가가 굳었는지. 새 축제를 시작하면 풀린다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	bool IsFestivalEvaluationFrozen() const { return bEvaluationFrozen; }
 
 	// 끝난 날의 만족도 기록(1일차부터). 결과 화면의 날짜별 그래프용.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
@@ -554,6 +586,13 @@ private:
 	// 직전 하루의 원장 스냅샷. TryProcessNewDay 의 Reset 직전에서만 갱신한다
 	FFF_DayLedger EndedDayLedger;
 
+	// 끝난 모든 날의 원장(날짜 -> 원장). 최대 3개. 최종 결산이 3일 합계를 낼 수 있게 한다.
+	// EndedDayLedger 는 이 중 가장 최근 것의 복사본이다.
+	TMap<int32, FFF_DayLedger> LedgerHistory;
+
+	// 끝난 날 전부와 진행 중인 날을 합친 축제 전체 원장.
+	FFF_DayLedger BuildFestivalLedger() const;
+
 	// 설치 시설별(인스턴스) 매출. 부스별 표(종류)와 달리 하루 경계에서 오늘 값만 지운다.
 	FFF_FacilityRevenueBook FacilityRevenueBook;
 
@@ -597,6 +636,19 @@ private:
 
 	// 현재 만족도(0~100). 만족도 서브시스템이 없으면 중립 50.
 	int32 ReadCurrentSatisfaction() const;
+
+	// 축제가 끝나는 순간 마지막 날 만족도를 기록에 넣고 평가를 굳힌다.
+	UFUNCTION()
+	void HandleFestivalEnded();
+
+	FFF_FestivalEvaluation ComputeFestivalEvaluation() const;
+
+	bool bEvaluationFrozen = false;
+	FFF_FestivalEvaluation FrozenEvaluation;
+
+	// 어제 만족도가 만든 방문객 배수. 첫날(어제 없음)이거나 정의가 없으면 1.0.
+	// 오늘이 N일차일 때 어제 값은 DailySatisfaction 의 마지막 항목이다(하루 경계에서 쌓인다).
+	float GetReputationMultiplier() const;
 
 	// 오늘 입장료. 축제 시작 시 기준값으로 초기화된다.
 	int32 CurrentAdmissionFeeGold = 0;
