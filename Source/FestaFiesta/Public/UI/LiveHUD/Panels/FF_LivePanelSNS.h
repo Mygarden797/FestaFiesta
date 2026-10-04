@@ -76,6 +76,8 @@ class FESTAFIESTA_API UFF_LivePanelSNS : public UFF_LivePanelBase
 	GENERATED_BODY()
 
 public:
+	UFF_LivePanelSNS(const FObjectInitializer& ObjectInitializer);
+
 	/** 테스트·기존 디자이너 호출 호환 전용. 실제 열기에서는 ViewModel로 동기화한다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Live|Debug")
 	void Debug_SetPosts(const TArray<FFF_LiveSocialPost>& InPosts);
@@ -133,6 +135,37 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Live|SNS")
 	TSubclassOf<UFF_LiveSnsPostEntry> PostEntryClass;
 
+	/** 글 사이 간격. 글 자체의 크기·글꼴·내부 여백은 행 WBP Designer에서 편집한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Style", meta = (ClampMin = "0.0", UIMax = "40.0"))
+	float PostSpacing = 10.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Style")
+	FLinearColor SelectedFilterBackgroundColor = FLinearColor::FromSRGBColor(FColor(225, 244, 251));
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Style")
+	FLinearColor UnselectedFilterBackgroundColor = FLinearColor::White;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Style")
+	FLinearColor SelectedFilterTextColor = FLinearColor::FromSRGBColor(FColor(24, 70, 58));
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Style")
+	FLinearColor UnselectedFilterTextColor = FLinearColor::FromSRGBColor(FColor(24, 70, 58));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Text")
+	TMap<EFF_LiveSnsFilter, FText> FilterLabels;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Text", meta = (ToolTip = "{Label}: 선택한 필터 이름"))
+	FText SelectedFilterTextFormat = NSLOCTEXT("FestaFiestaLiveSNS", "SelectedFilter", "✓ {Label}");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Text", meta = (ToolTip = "{Count}: 현재 표시 중인 글 수"))
+	FText CountTextFormat = NSLOCTEXT("FestaFiestaLiveSNS", "DisplayedCount", "최근 {Count}개 · 최신순");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Text", meta = (ToolTip = "{Count}: 선택 필터에 맞는 새 글 수"))
+	FText NewPostsTextFormat = NSLOCTEXT("FestaFiestaLiveSNS", "PendingCount", "↑ 새 글 {Count}개 보기");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Text")
+	FText MissingCountText = NSLOCTEXT("FestaFiestaLiveSNS", "MissingCount", "—");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Text")
+	FText SourceUnavailableText = NSLOCTEXT("FestaFiestaLiveSNS", "SourceMissing", "관객 반응을 아직 읽을 수 없습니다.");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Text")
+	FText NoPostsText = NSLOCTEXT("FestaFiestaLiveSNS", "Empty", "아직 올라온 반응이 없습니다.");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Text")
+	FText FilterEmptyText = NSLOCTEXT("FestaFiestaLiveSNS", "FilterEmpty", "이 조건에 맞는 반응이 아직 없습니다.");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Text")
+	FText EntryUnavailableText = NSLOCTEXT("FestaFiestaLiveSNS", "EntryMissing", "반응 표시 위젯을 불러오지 못했습니다.");
+
 private:
 	void BindControls();
 	void Unbind();
@@ -143,6 +176,9 @@ private:
 	void RefreshAll();
 
 	FFF_LiveSnsFeedState Feed;
+	// 원본에서 읽은 빈 목록과 읽기 자체가 불가능한 상태를 구분한다.
+	bool bSourceAvailable = false;
+	bool bHasSourcePosts = false;
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
 };

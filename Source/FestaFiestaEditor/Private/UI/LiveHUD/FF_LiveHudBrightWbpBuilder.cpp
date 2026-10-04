@@ -243,7 +243,7 @@ namespace FFLiveHudBrightBuilder
 		SetBorderContent(*Status, *Columns);
 		AddRow(*Rows, *StatusSize, HAlign_Fill);
 		AddStatusGroup(BP, Tree, *Left, TEXT("Box_FestivalName"), TEXT("Text_FestivalName"), LOCTEXT("FestivalPreview", "다대포 바다축제"));
-		AddStatusGroup(BP, Tree, *Left, TEXT("Box_Gold"), TEXT("Text_Gold"), LOCTEXT("GoldPreview", "10,000 Gold"),
+		AddStatusGroup(BP, Tree, *Left, TEXT("Box_Gold"), TEXT("Text_Gold"), LOCTEXT("GoldPreview", "10,000"),
 			TEXT("Metrics/T_FF_LH_Icon_Gold_White_256"), FLinearColor::White);
 		UWidget* Revenue = AddStatusGroup(BP, Tree, *Left, TEXT("Box_TodayRevenue"), TEXT("Text_TodayRevenue"), LOCTEXT("RevenuePreview", "840"),
 			TEXT("Metrics/T_FF_LH_Icon_Revenue_White_256"));

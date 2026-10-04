@@ -78,6 +78,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Layout")
 	float GetBottomBarHeight() const;
 
+	/** Designer/드래그 원본 치수. 작은 창에 맞춘 표시 크기와 구분한다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Layout")
+	FFF_LivePanelLayout GetOpenPanelLayout() const;
+
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI|Live")
 	FFF_OnLiveTabSelectionChanged OnTabSelectionChanged;
 
@@ -347,7 +351,7 @@ protected:
 
 	/** 중괄호 이름은 유지하고 표시 문구만 바꾼다. 실제 값은 ViewModel에서 읽는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Text")
-	FText GoldTextFormat = NSLOCTEXT("FestaFiestaLiveHud", "GoldFormat", "{Amount} Gold");
+	FText GoldTextFormat = NSLOCTEXT("FestaFiestaLiveHud", "GoldFormat", "{Amount}");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Text")
 	FText RevenueTextFormat = NSLOCTEXT("FestaFiestaLiveHud", "RevenueFormat", "{Amount}");
@@ -453,7 +457,9 @@ private:
 	UClass* ResolvePanelClass(EFF_LiveTab Tab, const FString& EnumName, bool& bOutIsPlaceholder) const;
 
 	FFF_LivePanelLayout ResolveLayout(EFF_LiveTab Tab) const;
-	void ApplyPanelLayout(const FFF_LivePanelLayout& Layout);
+	void ApplyPanelLayout(const FFF_LivePanelLayout& Layout, const FGeometry* CurrentHudGeometry = nullptr);
+	void RefreshPanelHostVisibility();
+	bool bAwaitingCenteredLayout = false;
 
 	/**
 	 * 다음 틱에 패널·호스트의 **실제 크기**를 로그로 찍는다.

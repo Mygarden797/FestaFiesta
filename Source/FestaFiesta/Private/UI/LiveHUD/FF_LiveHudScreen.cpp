@@ -2,6 +2,9 @@
 
 #include "UI/LiveHUD/FF_LiveHudScreen.h"
 
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Blueprint/WidgetTree.h"
+
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
@@ -12,6 +15,7 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "UI/FF_UILog.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
@@ -46,6 +50,59 @@ namespace FFLiveHudScreenLocal
 			OutDisplayName = FText::FromString(OutEnumName);
 		}
 	}
+}
+
+bool FFF_LivePanelLayout::UsesViewportCenter(EFF_LiveTab Tab) const
+{
+	if (Dock != EFF_LivePanelDock::Center) { return false; }
+	switch (Tab)
+	{
+	case EFF_LiveTab::Operations:
+	case EFF_LiveTab::Facilities:
+	case EFF_LiveTab::Guests:
+	case EFF_LiveTab::Queues:
+	case EFF_LiveTab::SNS:
+	case EFF_LiveTab::Staff:
+	case EFF_LiveTab::Density:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool FFF_LivePanelLayout::TryResolveCenteredLayout(const FGeometry& ViewportGeometry,
+	const FGeometry& CanvasGeometry, float BottomReserve, float Margin,
+	FVector2D& OutPosition, FVector2D& OutSize) const
+{
+	const FVector2D ViewportSize = ViewportGeometry.GetLocalSize();
+	const FVector2D CanvasSize = CanvasGeometry.GetLocalSize();
+	if (ViewportSize.ContainsNaN() || CanvasSize.ContainsNaN() || Offset.ContainsNaN()
+		|| ViewportSize.X <= 0.0 || ViewportSize.Y <= 0.0 || CanvasSize.X <= 0.0 || CanvasSize.Y <= 0.0
+		|| !FMath::IsFinite(Width) || !FMath::IsFinite(Height) || Width <= 0.f || Height <= 0.f
+		|| !FMath::IsFinite(BottomReserve) || !FMath::IsFinite(Margin))
+	{
+		return false;
+	}
+	// 창 원점과 DPI는 Geometry에 포함된다. 별도 ViewportScale 나눗셈을 하지 않는다.
+	const FVector2D ViewMin = CanvasGeometry.AbsoluteToLocal(ViewportGeometry.LocalToAbsolute(FVector2D::ZeroVector));
+	const FVector2D ViewMax = CanvasGeometry.AbsoluteToLocal(ViewportGeometry.LocalToAbsolute(ViewportSize));
+	const FVector2D SafeMin = ViewMin + FVector2D(FMath::Max(0.f, Margin), FMath::Max(0.f, Margin));
+	const FVector2D SafeMax = ViewMax - FVector2D(FMath::Max(0.f, Margin),
+		FMath::Max(0.f, Margin) + FMath::Max(0.f, BottomReserve));
+	const FVector2D Available = SafeMax - SafeMin;
+	if (Available.ContainsNaN() || Available.X <= 0.0 || Available.Y <= 0.0) { return false; }
+	const FVector2D DisplaySize(FMath::Min(static_cast<double>(Width), Available.X),
+		FMath::Min(static_cast<double>(Height), Available.Y));
+	const FVector2D HalfSize = DisplaySize * 0.5;
+	const FVector2D RequestedCenter = (ViewMin + ViewMax) * 0.5 + Offset;
+	const FVector2D Center(FMath::Clamp(RequestedCenter.X, SafeMin.X + HalfSize.X, SafeMax.X - HalfSize.X),
+		FMath::Clamp(RequestedCenter.Y, SafeMin.Y + HalfSize.Y, SafeMax.Y - HalfSize.Y));
+	// 점 앵커 0.5를 유지해 높이가 작은 HUD 부모의 DesiredSize 재배치 피드백을 피한다.
+	const FVector2D Position = Center - CanvasSize * 0.5;
+	if (Position.ContainsNaN() || DisplaySize.ContainsNaN()) { return false; }
+	OutPosition = Position;
+	OutSize = DisplaySize;
+	return true;
 }
 
 // =============================================================================
@@ -205,6 +262,14 @@ void UFF_LiveHudScreen::NativeDestruct()
 void UFF_LiveHudScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (Selection.bHasSelection)
+	{
+		const FFF_LivePanelLayout Layout = ResolveLayout(Selection.Tab);
+		if (Layout.UsesViewportCenter(Selection.Tab))
+		{
+			ApplyPanelLayout(Layout, &MyGeometry);
+		}
+	}
 	// 배속은 외부 시스템에서도 변경된다. 실제 값이 바뀔 때만 버튼 표시를 갱신한다.
 	if (const UFF_FestivalViewModelSubsystem* VM = GetViewModel())
 	{
@@ -381,12 +446,7 @@ void UFF_LiveHudScreen::ApplySelection(const FFF_LiveTabSelection& NewSelection)
 
 	// 🔴 호스트를 함께 켜고 끈다. 생성기가 `Collapsed` 로 만들어 두기 때문에 패널만
 	// `Visible` 로 바꾸면 **접힌 부모 안에 들어가 아무것도 안 보인다** (2026-08-27 실기 확인).
-	if (Panel_PanelHost)
-	{
-		Panel_PanelHost->SetVisibility(Selection.bHasSelection
-			? ESlateVisibility::SelfHitTestInvisible
-			: ESlateVisibility::Collapsed);
-	}
+	RefreshPanelHostVisibility();
 
 	RefreshTabs();
 	OnTabSelectionChanged.Broadcast(Selection);
@@ -659,8 +719,23 @@ FFF_LivePanelLayout UFF_LiveHudScreen::ResolveLayout(EFF_LiveTab Tab) const
 	return Layout;
 }
 
-void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout)
+FFF_LivePanelLayout UFF_LiveHudScreen::GetOpenPanelLayout() const
 {
+	return Selection.bHasSelection ? ResolveLayout(Selection.Tab) : DefaultPanelLayout;
+}
+
+void UFF_LiveHudScreen::RefreshPanelHostVisibility()
+{
+	if (Panel_PanelHost)
+	{
+		Panel_PanelHost->SetVisibility(!Selection.bHasSelection ? ESlateVisibility::Collapsed
+			: bAwaitingCenteredLayout ? ESlateVisibility::Hidden : ESlateVisibility::SelfHitTestInvisible);
+	}
+}
+
+void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout, const FGeometry* CurrentHudGeometry)
+{
+	bAwaitingCenteredLayout = false;
 	if (!Panel_PanelHost)
 	{
 		return;
@@ -668,6 +743,7 @@ void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout)
 
 	if (Layout.Dock == EFF_LivePanelDock::Designer)
 	{
+		RefreshPanelHostVisibility();
 		return;
 	}
 
@@ -683,8 +759,36 @@ void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout)
 				 "WBP 에서 Canvas_Root 바로 아래에 두거나 디자이너에서 자리를 잡는다."),
 			*GetName(),
 			Panel_PanelHost->Slot ? *Panel_PanelHost->Slot->GetClass()->GetName() : TEXT("슬롯 없음"));
+		RefreshPanelHostVisibility();
 		return;
 	}
+
+	if (Selection.bHasSelection && Layout.UsesViewportCenter(Selection.Tab))
+	{
+		const UWidget* Canvas = Panel_PanelHost->GetParent();
+		const FGeometry HudGeometry = CurrentHudGeometry ? *CurrentHudGeometry : GetCachedGeometry();
+		const FGeometry CanvasGeometry = WidgetTree && WidgetTree->RootWidget == Canvas
+			? HudGeometry : Canvas->GetCachedGeometry();
+		const UWorld* World = GetWorld();
+		const FGeometry ViewportGeometry = World && World->IsGameWorld()
+			? UWidgetLayoutLibrary::GetViewportWidgetGeometry(this) : HudGeometry;
+		FVector2D Position, DisplaySize;
+		bAwaitingCenteredLayout = !Layout.TryResolveCenteredLayout(ViewportGeometry, CanvasGeometry,
+			GetBottomBarHeight(), PanelMargin, Position, DisplaySize);
+		if (!bAwaitingCenteredLayout)
+		{
+			const FAnchors Anchors(0.5f, 0.5f);
+			const FVector2D Alignment(0.5, 0.5);
+			const FMargin Offsets(Position.X, Position.Y, DisplaySize.X, DisplaySize.Y);
+			if (CanvasSlot->GetAutoSize()) { CanvasSlot->SetAutoSize(false); }
+			if (CanvasSlot->GetAnchors() != Anchors) { CanvasSlot->SetAnchors(Anchors); }
+			if (CanvasSlot->GetAlignment() != Alignment) { CanvasSlot->SetAlignment(Alignment); }
+			if (CanvasSlot->GetOffsets() != Offsets) { CanvasSlot->SetOffsets(Offsets); }
+		}
+		RefreshPanelHostVisibility();
+		return;
+	}
+	RefreshPanelHostVisibility();
 
 	// === CanvasPanelSlot 의 Offsets 는 앵커에 따라 뜻이 달라진다 ===
 	// 늘어난 축(min != max)이면 양쪽 **여백**이고, 점 앵커면 **위치와 크기**다.

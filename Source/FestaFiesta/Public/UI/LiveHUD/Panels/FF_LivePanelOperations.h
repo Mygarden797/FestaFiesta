@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Time/FF_FestivalStage.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
 #include "FF_LivePanelOperations.generated.h"
 
@@ -64,10 +65,9 @@ struct FESTAFIESTA_API FFF_LiveOperationsRules
 	/**
 	 * 일일 목표 진행을 만든다.
 	 *
-	 * 🔴 **못 읽은 값을 0 으로 바꾸지 않는다.** 관객 수 소유자 API 가 아직 없어서
-	 * `INDEX_NONE` 이 흔하고, 그것을 0 으로 치면 화면이 `0%` 라는 **틀린 사실**을 말한다.
+	 * 못 읽은 값을 0으로 바꾸지 않는다. 입장객 미집계와 실제 0명을 구분한다.
 	 *
-	 * @param VisitorCount 지금 관객 수. `INDEX_NONE` 이면 모름
+	 * @param VisitorCount 오늘 누적 입장객. `INDEX_NONE`이면 모름 (현재 체류 인원과 다름)
 	 * @param DailyGoal    하루 목표. `INDEX_NONE` 이거나 0 이하면 모름
 	 */
 	static FFF_LiveGoalProgress BuildGoalProgress(int32 VisitorCount, int32 DailyGoal);
@@ -99,22 +99,56 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Operations")
 	FFF_LiveGoalProgress GetGoalProgress() const { return GoalProgress; }
 
-	/**
-	 * 관객 수를 손으로 넣는다. **소유자 API 가 생기면 이 함수를 지운다.**
-	 * 하단 바의 `Debug_SetPlaceholders` 와 같은 이유다.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Live|Debug")
-	void Debug_SetVisitorCount(int32 InVisitorCount);
+	/** 동적 문구는 각 운영 WBP Class Defaults에서 편집한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text")
+	FText MissingValueText = NSLOCTEXT("FestaFiestaLiveOperations", "MissingValue", "—");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text", meta = (ToolTip = "{Day}: 현재 일차"))
+	FText DayTextFormat = NSLOCTEXT("FestaFiestaLiveOperations", "DayFormat", "{Day}일차");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text", meta = (ToolTip = "{Current}: 오늘 누적 입장객, {Goal}: 하루 목표"))
+	FText GoalProgressTextFormat = NSLOCTEXT("FestaFiestaLiveOperations", "GoalProgressFormat", "오늘 입장객 {Current} / {Goal}명");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text", meta = (ToolTip = "{Percent}: 목표 진행률(0~100)"))
+	FText GoalPercentTextFormat = NSLOCTEXT("FestaFiestaLiveOperations", "GoalPercentFormat", "{Percent}%");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text", meta = (ToolTip = "{Remaining}: 남은 입장객, {Bonus}: 목표 보너스"))
+	FText GoalRemainingTextFormat = NSLOCTEXT("FestaFiestaLiveOperations", "GoalRemainingFormat", "{Remaining}명 더 오면 보너스 +{Bonus}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text", meta = (ToolTip = "{Remaining}: 남은 입장객"))
+	FText GoalRemainingNoBonusTextFormat = NSLOCTEXT("FestaFiestaLiveOperations", "GoalRemainingNoBonusFormat", "목표까지 {Remaining}명 남음");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text", meta = (ToolTip = "{Bonus}: 목표 보너스"))
+	FText GoalReachedTextFormat = NSLOCTEXT("FestaFiestaLiveOperations", "GoalReachedFormat", "목표 달성 · 보너스 +{Bonus}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text", meta = (ToolTip = "{Bonus}: 지급된 목표 보너스"))
+	FText GoalBonusPaidTextFormat = NSLOCTEXT("FestaFiestaLiveOperations", "GoalBonusPaidFormat", "목표 달성 · 보너스 +{Bonus} 지급 완료");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text")
+	FText GoalReachedNoBonusText = NSLOCTEXT("FestaFiestaLiveOperations", "GoalReachedNoBonus", "목표 달성");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text")
+	FText GoalUnknownText = NSLOCTEXT("FestaFiestaLiveOperations", "GoalUnknown", "집계 준비 중");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text")
+	FText SatisfactionNoteText = NSLOCTEXT("FestaFiestaLiveOperations", "SatisfactionNote", "실시간 관객 만족도");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text")
+	FText FooterNoteText = NSLOCTEXT("FestaFiestaLiveOperations", "FooterNote", "관객 현황과 대기열은 각 탭에서 확인할 수 있습니다.");
 
 protected:
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
+	virtual void NativeDestruct() override;
 
 	UFUNCTION()
 	void HandleSimSatisfactionChanged(int32 NewValue);
 
 	UFUNCTION()
-	void HandleSafetyChanged(int32 NewValue);
+	void HandleAdmittedVisitorsChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
 
 	UFUNCTION()
 	void HandleTodayRevenueChanged(int32 NewValue);
@@ -129,6 +163,9 @@ protected:
 	TObjectPtr<UTextBlock> Text_Satisfaction;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
+	TObjectPtr<UTextBlock> Text_SatisfactionNote;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
 	TObjectPtr<UTextBlock> Text_Safety;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
@@ -139,13 +176,20 @@ protected:
 
 	// --- 일일 목표 ---
 
-	/** `320 / 500명` 또는 `아직 알 수 없습니다`. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
+	TObjectPtr<UTextBlock> Text_Day;
+
+	/** 오늘 누적 입장객과 목표. 공급이 없으면 `—`다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
 	TObjectPtr<UTextBlock> Text_GoalProgress;
 
 	/** `180명 더 오면 +300` 또는 `달성 · +300`. **막대만으로는 알 수 없다** (AT-011). */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
 	TObjectPtr<UTextBlock> Text_GoalDetail;
+
+	/** 숫자 진행률. 실제 0%와 미집계 `—`를 구분한다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
+	TObjectPtr<UTextBlock> Text_GoalPercent;
 
 	/** 모르면 숨긴다. **0% 로 그리지 않는다** — 안 온 것과 못 읽은 것은 다르다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
@@ -160,7 +204,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
 	TObjectPtr<UWidget> Box_Warning;
 
-	/** 아직 소유자 API 가 없는 값을 적어 둔다. **비우지 않는다.** */
+	/** 하단 안내. 기존 WBP 바인딩 이름을 유지한다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
 	TObjectPtr<UTextBlock> Text_DummyNotice;
 
@@ -177,9 +221,6 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
-
-	/** 소유자 API 가 없다. `Debug_SetVisitorCount` 로만 들어온다. */
-	int32 VisitorCount = INDEX_NONE;
 
 	FFF_LiveGoalProgress GoalProgress;
 };
