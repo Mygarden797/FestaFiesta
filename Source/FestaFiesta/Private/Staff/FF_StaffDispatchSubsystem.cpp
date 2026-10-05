@@ -84,6 +84,21 @@ bool UFF_StaffDispatchSubsystem::GetRemainingWorkMinutes(FFF_IncidentHandle Hand
 	return true;
 }
 
+bool UFF_StaffDispatchSubsystem::ShouldAnnounceWorkMinute(float PreviousMinutes, float CurrentMinutes)
+{
+	return CurrentMinutes > 0.f && FMath::CeilToInt(PreviousMinutes) != FMath::CeilToInt(CurrentMinutes);
+}
+
+EFF_IncidentResponseStage UFF_StaffDispatchSubsystem::GetResponseStage(FFF_IncidentHandle Handle, float& OutRemainingMinutes) const
+{
+	OutRemainingMinutes = 0.f;
+	if (GetRemainingWorkMinutes(Handle, OutRemainingMinutes))
+	{
+		return EFF_IncidentResponseStage::Working;
+	}
+	return IsResponding(Handle) ? EFF_IncidentResponseStage::Travelling : EFF_IncidentResponseStage::None;
+}
+
 // 작업 시간은 배속과 맞아야 하므로 실시간 DeltaTime 이 아니라 축제 시계로 흘린다. Live 가 아니면 작업도 멈춘다.
 bool UFF_StaffDispatchSubsystem::TryGetFestivalMinutes(float& OutMinutes) const
 {
@@ -249,7 +264,7 @@ void UFF_StaffDispatchSubsystem::Tick(float DeltaTime)
 
 	TArray<TPair<FFF_IncidentHandle, int32>> Arrivals;
 	TArray<FFF_IncidentHandle> Cancellations;
-	TArray<FFF_IncidentHandle> WorkStarted;
+	TArray<FFF_IncidentHandle> ViewChanged;
 	for (int32 Index = Dispatches.Num() - 1; Index >= 0; --Index)
 	{
 		FDispatch& Dispatch = Dispatches[Index];
@@ -288,16 +303,22 @@ void UFF_StaffDispatchSubsystem::Tick(float DeltaTime)
 			if (!bAllWorking)
 			{
 				Dispatch.bWorking = false;
+				ViewChanged.Add(Dispatch.Handle);
 				continue;
 			}
+			const float PreviousMinutes = Dispatch.RemainingWorkMinutes;
 			Dispatch.RemainingWorkMinutes -= WorkDeltaMinutes;
+			if (ShouldAnnounceWorkMinute(PreviousMinutes, Dispatch.RemainingWorkMinutes))
+			{
+				ViewChanged.Add(Dispatch.Handle);
+			}
 		}
 		else if (bAllWorking)
 		{
 			if (Dispatch.RemainingWorkMinutes > 0.f)
 			{
 				Dispatch.bWorking = true;
-				WorkStarted.Add(Dispatch.Handle);
+				ViewChanged.Add(Dispatch.Handle);
 				continue;
 			}
 		}
@@ -321,7 +342,7 @@ void UFF_StaffDispatchSubsystem::Tick(float DeltaTime)
 			Incident->OnIncidentUpdated.Broadcast(Handle);
 		}
 	}
-	for (FFF_IncidentHandle Handle : WorkStarted)
+	for (FFF_IncidentHandle Handle : ViewChanged)
 	{
 		if (Incident && Incident->IsHandleValid(Handle))
 		{

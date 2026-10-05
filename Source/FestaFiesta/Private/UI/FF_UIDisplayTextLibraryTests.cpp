@@ -94,6 +94,12 @@ bool FFF_UIDisplayText_AllEnums::RunTest(const FString& Parameters)
 	VerifyAll<EFF_IncidentResolveResult>(*this, TEXT("EFF_IncidentResolveResult"),
 		&UFF_UIDisplayTextLibrary::GetIncidentResolveResultText, {});
 
+	VerifyAll<EFF_IncidentResolveResult>(*this, TEXT("EFF_IncidentResolveResult(Label)"),
+		&UFF_UIDisplayTextLibrary::GetIncidentResolveResultLabel, {});
+
+	VerifyAll<EFF_IncidentResponseStage>(*this, TEXT("EFF_IncidentResponseStage"),
+		&UFF_UIDisplayTextLibrary::GetIncidentResponseStageText, {});
+
 	// 몇 개는 값까지 못으로 박는다. 위 검사는 "영문이 아니다" 까지만 보므로
 	// 문구가 통째로 바뀌는 것은 못 잡는다.
 	TestEqual(TEXT("셋업 문구"),

@@ -275,6 +275,11 @@ bool FFF_StaffFacilityDispatchTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("A world without navigation still starts a staff journey"),
         Dispatch->TryDispatch(Handle, INDEX_NONE, 2, Slot.Anchor, 0.f, &Result));
     TestEqual(TEXT("An accepted dispatch is reported as dispatched"), Result, EFF_IncidentResolveResult::Dispatched);
+    FFF_IncidentView View;
+    if (TestTrue(TEXT("The dispatched incident still has a view"), Incident->GetIncidentView(Handle, View)))
+    {
+        TestEqual(TEXT("The incident view shows staff on the way"), View.ResponseStage, EFF_IncidentResponseStage::Travelling);
+    }
     TestFalse(TEXT("The same incident cannot be dispatched twice"),
         Incident->ResolveIncident(Handle, INDEX_NONE, INDEX_NONE, &Result));
     TestEqual(TEXT("A second request is reported as already responding"), Result, EFF_IncidentResolveResult::AlreadyResponding);

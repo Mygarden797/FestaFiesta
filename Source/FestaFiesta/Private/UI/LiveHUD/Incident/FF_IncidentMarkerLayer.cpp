@@ -17,6 +17,7 @@
 #include "UI/LiveHUD/Incident/FF_IncidentMarkerButton.h"
 #include "Kismet/GameplayStatics.h"
 #include "UI/FF_UILog.h"
+#include "UI/Data/FF_UIPalette.h"
 
 namespace FFIncidentMarkerDebug
 {
@@ -249,7 +250,9 @@ void UFF_IncidentMarkerLayer::ClearMarkers()
 void UFF_IncidentMarkerLayer::ApplyIcon(UFF_IncidentMarkerButton& Button, const FFF_IncidentView& View)
 {
 	UTexture2D* Icon = ResolveIcon(View);
-	Button.SetIcon(Icon, FallbackColor, IconSize);
+	const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+	Button.SetIcon(Icon, Palette ? Palette->InGame.Danger : FLinearColor::Red, IconSize);
+	Button.SetResponseStage(View.ResponseStage);
 
 	if (!Icon)
 	{

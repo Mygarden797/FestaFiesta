@@ -186,6 +186,9 @@ bool FFF_StaffDispatchWarpTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A target that walks away pulls the worker back to moving"), Bodies->GetStaffState(StaffId), EFF_StaffState::Moving);
 	TestFalse(TEXT("Work pauses while a member follows the target"), Dispatch->GetRemainingWorkMinutes(Handle, Remaining));
 	TestTrue(TEXT("Following is still a response"), Dispatch->IsResponding(Handle));
+	float StageRemaining = -1.f;
+	TestEqual(TEXT("A member walking to the site is shown as travelling"),
+		Dispatch->GetResponseStage(Handle, StageRemaining), EFF_IncidentResponseStage::Travelling);
 
 	Step(0.1f);
 	TestEqual(TEXT("One failed path search keeps the member trying"), Bodies->GetStaffState(StaffId), EFF_StaffState::Moving);
@@ -197,10 +200,15 @@ bool FFF_StaffDispatchWarpTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Warping keeps the response alive"), Dispatch->IsResponding(Handle));
 	Step(0.1f);
 	TestTrue(TEXT("Work resumes after the warp"), Dispatch->GetRemainingWorkMinutes(Handle, Remaining));
+	TestEqual(TEXT("Everyone at the site is shown as working"),
+		Dispatch->GetResponseStage(Handle, StageRemaining), EFF_IncidentResponseStage::Working);
+	TestTrue(TEXT("The working stage carries the remaining work time"), StageRemaining > 0.f);
 	TestTrue(TEXT("Warping does not resolve the incident by itself"), Incident->IsHandleValid(Handle));
 
 	Bodies->RecallStaff(StaffId);
 	Step(0.1f);
+	TestEqual(TEXT("A cancelled response is no longer shown as a dispatch"),
+		Dispatch->GetResponseStage(Handle, StageRemaining), EFF_IncidentResponseStage::None);
 	TestTrue(TEXT("A warped member has no route to retrace and leaves on the spot"), Bodies->IsIdle(StaffId));
 	Step(0.1f);
 	TestTrue(TEXT("The recalled response is cleared once everyone is home"), Dispatch->Dispatches.IsEmpty());

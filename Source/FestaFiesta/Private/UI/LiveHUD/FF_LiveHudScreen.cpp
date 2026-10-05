@@ -236,7 +236,8 @@ void UFF_LiveHudScreen::HandleIncidentDispatchRequested(FFF_IncidentHandle Handl
 	EnsureIncidentToast();
 	if (IncidentToast)
 	{
-		IncidentToast->Show(UFF_UIDisplayTextLibrary::GetIncidentResolveResultText(Result),
+		IncidentToast->Show(UFF_UIDisplayTextLibrary::GetIncidentResolveResultLabel(Result),
+			UFF_UIDisplayTextLibrary::GetIncidentResolveResultText(Result),
 			UFF_UIDisplayTextLibrary::IsIncidentResolveAccepted(Result));
 	}
 }

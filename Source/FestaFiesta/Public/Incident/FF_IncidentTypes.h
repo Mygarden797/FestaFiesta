@@ -56,6 +56,15 @@ enum class EFF_IncidentResolveResult : uint8
 	DispatchFailed    = 7	UMETA(DisplayName = "출동 실패")
 };
 
+// 사건에 보낸 스태프가 지금 어디까지 왔는지. 화면 문구는 UFF_UIDisplayTextLibrary 가 낸다.
+UENUM(BlueprintType)
+enum class EFF_IncidentResponseStage : uint8
+{
+	None       = 0	UMETA(DisplayName = "출동 없음"),
+	Travelling = 1	UMETA(DisplayName = "이동 중"),
+	Working    = 2	UMETA(DisplayName = "작업 중")
+};
+
 // Crowd 발 사건은 개별 NPC 가 아니라 DensityCell 로만 올린다.
 UENUM(BlueprintType)
 enum class EFF_IncidentAnchorKind : uint8
@@ -226,5 +235,13 @@ struct FESTAFIESTA_API FFF_IncidentView
 
 	UPROPERTY(BlueprintReadOnly, Category = "Incident|Options")
 	TArray<FFF_IncidentOptionView> Options;
+
+	// 출동 단계. None 이면 아직 아무도 보내지 않았거나 출동이 취소된 것이다.
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Response")
+	EFF_IncidentResponseStage ResponseStage = EFF_IncidentResponseStage::None;
+
+	// Working 일 때만 의미가 있다. 축제 분 단위.
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Response")
+	float RemainingWorkMinutes = 0.f;
 };
 

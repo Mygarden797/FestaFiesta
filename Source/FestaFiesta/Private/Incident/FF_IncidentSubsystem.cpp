@@ -231,6 +231,13 @@ bool UFF_IncidentSubsystem::GetIncidentView(FFF_IncidentHandle Handle, FFF_Incid
 	OutView.Anchor = Slot->Anchor;
 	FFF_IncidentRules::BuildOptionViews(*Def, OutView.Options);
 
+	OutView.ResponseStage = EFF_IncidentResponseStage::None;
+	OutView.RemainingWorkMinutes = 0.f;
+	if (const UFF_StaffDispatchSubsystem* Dispatch = GetWorld() ? GetWorld()->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr)
+	{
+		OutView.ResponseStage = Dispatch->GetResponseStage(Handle, OutView.RemainingWorkMinutes);
+	}
+
 	return true;
 }
 

@@ -52,9 +52,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Incident")
 	float ActorHeightOffset = 120.f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Incident")
-	FLinearColor FallbackColor = FLinearColor(0.84f, 0.18f, 0.14f, 1.f);
-
 private:
 	struct FMarker
 	{
