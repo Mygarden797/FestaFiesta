@@ -70,23 +70,30 @@ void UFF_IncidentSubsystem::WithdrawIncident(FName DedupeKey)
 	
 }
 
-bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex, int32 StaffCount)
+bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex, int32 StaffCount,
+	EFF_IncidentResolveResult* OutResult)
 {
+	EFF_IncidentResolveResult LocalResult = EFF_IncidentResolveResult::DispatchFailed;
+	EFF_IncidentResolveResult& Result = OutResult ? *OutResult : LocalResult;
+
 	const FIncidentSlot* Slot = FindSlot(Handle);
 	if (!Slot)
 	{
 		FF_INCIDENT_LOG("ResolveIncident: handle %d/%d is not active", Handle.Index, Handle.Serial);
+		Result = EFF_IncidentResolveResult::InvalidIncident;
 		return false;
 	}
 
 	const UFF_IncidentDefinition* Definition = CachedDef.FindRef(Slot->IncidentTag);
 	if (!Definition)
 	{
+		Result = EFF_IncidentResolveResult::InvalidIncident;
 		return false;
 	}
 	const UFF_IncidentOption* Option = Definition->GetOption(OptionIndex);
 	if (OptionIndex != INDEX_NONE && !Option)
 	{
+		Result = EFF_IncidentResolveResult::InvalidOption;
 		return false;
 	}
 	int32 RequiredStaff = FMath::Max(0, Definition->RequiredStaff);
@@ -99,13 +106,21 @@ bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 Opt
 	UFF_StaffDispatchSubsystem* Dispatch = GetWorld() ? GetWorld()->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr;
 	if (Dispatch && Dispatch->IsResponding(Handle))
 	{
+		Result = EFF_IncidentResolveResult::AlreadyResponding;
 		return false;
 	}
 	if (RequiredStaff > 0)
 	{
-		return Dispatch && Dispatch->TryDispatch(Handle, OptionIndex, RequiredStaff, Slot->Anchor, WorkAmount);
+		if (!Dispatch)
+		{
+			Result = EFF_IncidentResolveResult::DispatchFailed;
+			return false;
+		}
+		return Dispatch->TryDispatch(Handle, OptionIndex, RequiredStaff, Slot->Anchor, WorkAmount, &Result);
 	}
-	return CompleteStaffResponse(Handle, OptionIndex);
+	const bool bResolved = CompleteStaffResponse(Handle, OptionIndex);
+	Result = bResolved ? EFF_IncidentResolveResult::Resolved : EFF_IncidentResolveResult::InvalidIncident;
+	return bResolved;
 }
 
 /**

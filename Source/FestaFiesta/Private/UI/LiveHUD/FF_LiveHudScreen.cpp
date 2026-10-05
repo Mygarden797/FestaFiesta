@@ -24,6 +24,7 @@
 #include "Incident/FF_IncidentSubsystem.h"
 #include "UI/LiveHUD/Incident/FF_IncidentDetailPanel.h"
 #include "UI/LiveHUD/Incident/FF_IncidentMarkerLayer.h"
+#include "UI/LiveHUD/Incident/FF_IncidentToast.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
@@ -220,11 +221,44 @@ void UFF_LiveHudScreen::HandleIncidentDispatchRequested(FFF_IncidentHandle Handl
 {
 	const UWorld* World = GetWorld();
 	UFF_IncidentSubsystem* Incident = World ? World->GetSubsystem<UFF_IncidentSubsystem>() : nullptr;
-	const bool bAccepted = Incident && Incident->ResolveIncident(Handle, OptionIndex, StaffCount);
+	EFF_IncidentResolveResult Result = EFF_IncidentResolveResult::DispatchFailed;
+	const bool bAccepted = Incident && Incident->ResolveIncident(Handle, OptionIndex, StaffCount, &Result);
 
-	UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 사건 H=%d/%d Option=%d Staff=%d 요청 — %s"),
+	FString ResultName;
+	if (const UEnum* ResultEnum = StaticEnum<EFF_IncidentResolveResult>())
+	{
+		ResultName = ResultEnum->GetNameStringByValue(static_cast<int64>(Result));
+	}
+	UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 사건 H=%d/%d Option=%d Staff=%d 요청 — %s (%s)"),
 		*GetName(), Handle.Index, Handle.Serial, OptionIndex, StaffCount,
-		bAccepted ? TEXT("접수") : TEXT("거부(가용 스태프 부족·경로 없음 등)"));
+		bAccepted ? TEXT("접수") : TEXT("거부"), *ResultName);
+
+	EnsureIncidentToast();
+	if (IncidentToast)
+	{
+		IncidentToast->Show(UFF_UIDisplayTextLibrary::GetIncidentResolveResultText(Result),
+			UFF_UIDisplayTextLibrary::IsIncidentResolveAccepted(Result));
+	}
+}
+
+void UFF_LiveHudScreen::EnsureIncidentToast()
+{
+	if (!IncidentToast)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			IncidentToast = CreateWidget<UFF_IncidentToast>(PC, UFF_IncidentToast::StaticClass());
+		}
+		else if (UWorld* World = GetWorld())
+		{
+			IncidentToast = CreateWidget<UFF_IncidentToast>(World, UFF_IncidentToast::StaticClass());
+		}
+	}
+
+	if (IncidentToast && !IncidentToast->IsInViewport())
+	{
+		IncidentToast->AddToViewport(20);
+	}
 }
 
 void UFF_LiveHudScreen::NativeConstruct()
@@ -254,6 +288,10 @@ void UFF_LiveHudScreen::NativeDestruct()
 		IncidentDetailPanel->OnDispatchRequested.RemoveDynamic(this, &UFF_LiveHudScreen::HandleIncidentDispatchRequested);
 		IncidentDetailPanel->Close();
 		IncidentDetailPanel->RemoveFromParent();
+	}
+	if (IncidentToast)
+	{
+		IncidentToast->RemoveFromParent();
 	}
 	Super::NativeDestruct();
 }

@@ -77,7 +77,9 @@ public:
 	// 필요한 스태프가 있으면 배정 시설에서 출동한다. 전원 도착해 작업량을 마친 뒤 사건을 닫는다.
 	// 선택지가 있으면 플레이어가 고른 StaffCount 를 보내되 선택지의 MinStaff 아래로는 내리지 않는다.
 	// 작업 시간(축제 분) = 선택지의 WorkAmount ÷ 보낸 인원. 선택지가 없으면 정의의 RequiredStaff 를 쓰고 작업량은 0이다.
-	bool ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex = INDEX_NONE, int32 StaffCount = INDEX_NONE);
+	// OutResult 를 주면 접수(Dispatched/Resolved)인지, 거부라면 왜인지를 채운다.
+	bool ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex = INDEX_NONE, int32 StaffCount = INDEX_NONE,
+		EFF_IncidentResolveResult* OutResult = nullptr);
 
 	//핸들 유효 관계
 	bool IsHandleValid(FFF_IncidentHandle Handle) const;
@@ -100,7 +102,7 @@ private:
 	#if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_IncidentCatalogLoadTest;
 	friend class FFF_StaffDispatchIncidentTest;
-	friend class FFF_StaffDispatchGiveUpTest;
+	friend class FFF_StaffDispatchWarpTest;
 	friend class FFF_StaffFacilityDispatchTest;
 	#endif
 
