@@ -47,6 +47,15 @@ void FFF_LiveSnsFeedState::RecordArrival(const FFF_LiveSocialPost& Post)
 	if (Matches(Post, Filter)) { PendingCount = FMath::Min(PendingCount + 1, 80); }
 }
 
+UFF_LivePanelSNS::UFF_LivePanelSNS(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	FilterLabels = {
+		{EFF_LiveSnsFilter::All, LOCTEXT("All", "전체")},
+		{EFF_LiveSnsFilter::Positive, LOCTEXT("Positive", "긍정")},
+		{EFF_LiveSnsFilter::Negative, LOCTEXT("Negative", "아쉬움")}};
+}
+
 void UFF_LivePanelSNS::NativeOnPanelOpened()
 {
 	Super::NativeOnPanelOpened();
@@ -95,9 +104,11 @@ void UFF_LivePanelSNS::Unbind()
 
 void UFF_LivePanelSNS::SyncFromViewModel()
 {
-	Feed.Sync(CachedViewModel ? CachedViewModel->GetRecentSnsPosts() : TArray<FFF_LiveSocialPost>(), DisplayLimit);
-	SetTextOrHide(Text_MissingNote, CachedViewModel ? FText::GetEmpty()
-		: LOCTEXT("SourceMissing", "관객 반응을 아직 읽을 수 없습니다."));
+	bSourceAvailable = IsValid(CachedViewModel);
+	const TArray<FFF_LiveSocialPost> NoPosts;
+	const TArray<FFF_LiveSocialPost>& RecentPosts = bSourceAvailable ? CachedViewModel->GetRecentSnsPosts() : NoPosts;
+	bHasSourcePosts = !RecentPosts.IsEmpty();
+	Feed.Sync(RecentPosts, DisplayLimit);
 	RefreshAll();
 	if (Scroll_Posts)
 	{
@@ -125,8 +136,9 @@ void UFF_LivePanelSNS::HandleNewPosts() { SyncFromViewModel(); }
 
 void UFF_LivePanelSNS::Debug_SetPosts(const TArray<FFF_LiveSocialPost>& InPosts)
 {
+	bSourceAvailable = true;
+	bHasSourcePosts = !InPosts.IsEmpty();
 	Feed.Sync(InPosts, DisplayLimit);
-	SetTextOrHide(Text_MissingNote, FText::GetEmpty());
 	RefreshAll();
 }
 
@@ -137,39 +149,50 @@ void UFF_LivePanelSNS::RefreshPending()
 		// 높이를 예약해 새 글 버튼이 나타날 때 목록을 밀어내지 않는다.
 		Button_NewPosts->SetVisibility(Feed.PendingCount > 0 ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
 	}
-	SetTextOrHide(Text_NewPosts, FText::Format(LOCTEXT("NewPosts", "↑ 새 글 {0}개 보기"), FText::AsNumber(Feed.PendingCount)));
+	SetTextOrHide(Text_NewPosts, FText::Format(NewPostsTextFormat,
+		FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Feed.PendingCount)}}));
 }
 
 void UFF_LivePanelSNS::RefreshFilters()
 {
-	const auto Apply = [](UButton* Button, UTextBlock* Label, bool bSelected, const FText& Text)
+	const auto Apply = [this](UButton* Button, UTextBlock* Label, EFF_LiveSnsFilter Filter)
 	{
+		const bool bSelected = Feed.Filter == Filter;
 		if (Button)
 		{
 			// 원본 브러시는 유지하므로 필터를 왕복해도 디자이너 스타일이 누적 변형되지 않는다.
-			Button->SetBackgroundColor(bSelected ? FLinearColor(0.075f, 0.22f, 0.16f, 1.f) : FLinearColor::White);
+			Button->SetBackgroundColor(bSelected ? SelectedFilterBackgroundColor : UnselectedFilterBackgroundColor);
 		}
 		if (Label)
 		{
-			Label->SetText(Text);
-			Label->SetColorAndOpacity(bSelected ? FSlateColor(FLinearColor::White)
-				: FSlateColor(FLinearColor(0.12f, 0.18f, 0.15f, 1.f)));
+			const FText* ConfiguredText = FilterLabels.Find(Filter);
+			const FText Text = ConfiguredText ? *ConfiguredText : FText::GetEmpty();
+			Label->SetText(bSelected ? FText::Format(SelectedFilterTextFormat,
+				FFormatNamedArguments{{TEXT("Label"), Text}}) : Text);
+			Label->SetColorAndOpacity(FSlateColor(bSelected ? SelectedFilterTextColor : UnselectedFilterTextColor));
 		}
 	};
-	Apply(Button_FilterAll, Text_FilterAll, Feed.Filter == EFF_LiveSnsFilter::All,
-		Feed.Filter == EFF_LiveSnsFilter::All ? LOCTEXT("AllSelected", "✓ 전체") : LOCTEXT("All", "전체"));
-	Apply(Button_FilterPositive, Text_FilterPositive, Feed.Filter == EFF_LiveSnsFilter::Positive,
-		Feed.Filter == EFF_LiveSnsFilter::Positive ? LOCTEXT("PositiveSelected", "✓ 긍정") : LOCTEXT("Positive", "긍정"));
-	Apply(Button_FilterNegative, Text_FilterNegative, Feed.Filter == EFF_LiveSnsFilter::Negative,
-		Feed.Filter == EFF_LiveSnsFilter::Negative ? LOCTEXT("NegativeSelected", "✓ 아쉬움") : LOCTEXT("Negative", "아쉬움"));
+	Apply(Button_FilterAll, Text_FilterAll, EFF_LiveSnsFilter::All);
+	Apply(Button_FilterPositive, Text_FilterPositive, EFF_LiveSnsFilter::Positive);
+	Apply(Button_FilterNegative, Text_FilterNegative, EFF_LiveSnsFilter::Negative);
 }
 
 void UFF_LivePanelSNS::RefreshAll()
 {
 	RefreshFilters();
-	SetTextOrHide(Text_Count, FText::Format(LOCTEXT("Count", "최근 {0}개 · 최신순"), FText::AsNumber(Feed.DisplayedPosts.Num())));
+	SetTextOrHide(Text_Count, bSourceAvailable ? FText::Format(CountTextFormat,
+		FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Feed.DisplayedPosts.Num())}}) : MissingCountText);
+	SetTextOrHide(Text_MissingNote, FText::GetEmpty());
 	RefreshPending();
-	if (!Box_Posts) { return; }
+	const bool bEmpty = Feed.DisplayedPosts.IsEmpty();
+	SetTextOrHide(Text_Empty, !bSourceAvailable ? SourceUnavailableText
+		: bEmpty ? (bHasSourcePosts && Feed.Filter != EFF_LiveSnsFilter::All ? FilterEmptyText : NoPostsText)
+		: FText::GetEmpty());
+	if (!Box_Posts)
+	{
+		if (!bEmpty) { SetTextOrHide(Text_MissingNote, EntryUnavailableText); }
+		return;
+	}
 	Box_Posts->ClearChildren();
 
 	if (!PostEntryClass && !Feed.DisplayedPosts.IsEmpty())
@@ -186,16 +209,11 @@ void UFF_LivePanelSNS::RefreshAll()
 		if (UVerticalBoxSlot* EntrySlot = Box_Posts->AddChildToVerticalBox(Entry))
 		{
 			EntrySlot->SetHorizontalAlignment(HAlign_Fill);
-			EntrySlot->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+			EntrySlot->SetPadding(FMargin(0.f, 0.f, 0.f, FMath::Max(0.f, PostSpacing)));
 		}
 	}
-	const bool bEmpty = Feed.DisplayedPosts.IsEmpty();
 	Box_Posts->SetVisibility(bEmpty ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
-	SetTextOrHide(Text_Empty, bEmpty
-		? (Feed.Filter == EFF_LiveSnsFilter::All ? LOCTEXT("Empty", "아직 올라온 반응이 없습니다.")
-			: LOCTEXT("FilterEmpty", "이 조건에 맞는 반응이 아직 없습니다."))
-		: FText::GetEmpty());
-	if (bRenderFailed) { SetTextOrHide(Text_MissingNote, LOCTEXT("EntryMissing", "반응 표시 위젯을 불러오지 못했습니다.")); }
+	if (bRenderFailed) { SetTextOrHide(Text_MissingNote, EntryUnavailableText); }
 }
 
 #undef LOCTEXT_NAMESPACE

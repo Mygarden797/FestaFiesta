@@ -8,10 +8,24 @@
 #include "UI/LiveHUD/FF_LiveHudScreen.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Styling/CoreStyle.h"
 
 // =============================================================================
 // UFF_LivePanelBase
 // =============================================================================
+
+UFF_LivePanelBase::UFF_LivePanelBase(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DynamicRowFont = FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), 16);
+}
+
+void UFF_LivePanelBase::ApplyDynamicRowStyle(UTextBlock& TextBlock, const bool bNote) const
+{
+	TextBlock.SetFont(DynamicRowFont);
+	TextBlock.SetColorAndOpacity(FSlateColor(bNote ? DynamicRowNoteColor : DynamicRowColor));
+	TextBlock.SetAutoWrapText(true);
+}
 
 void UFF_LivePanelBase::NativeOnInitialized()
 {

@@ -8,8 +8,6 @@
 #include "UI/FF_UILog.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
-#define LOCTEXT_NAMESPACE "FestaFiestaLiveOperations"
-
 // =============================================================================
 // FFF_LiveOperationsRules — 순수 함수
 // =============================================================================
@@ -18,8 +16,7 @@ FFF_LiveGoalProgress FFF_LiveOperationsRules::BuildGoalProgress(int32 VisitorCou
 {
 	FFF_LiveGoalProgress Result;
 
-	// 🔴 못 읽은 값을 0 으로 바꾸지 않는다. `0%` 는 "아무도 안 왔다"는 확정 사실이 되는데,
-	// 관객 수 소유자 API 가 아직 없어서 지금은 그 오해가 기본 상태가 된다.
+	// 미집계는 실제 입장객 0명과 구분한다.
 	if (VisitorCount < 0 || DailyGoal <= 0)
 	{
 		return Result;
@@ -48,10 +45,6 @@ void UFF_LivePanelOperations::NativeOnPanelOpened()
 {
 	Super::NativeOnPanelOpened();
 
-	// ★ 어떤 값이 아직 진짜가 아닌지 화면에 적는다. 안 적으면 더미 숫자를 실제로 믿게 된다.
-	SetTextOrHide(Text_DummyNotice, LOCTEXT("LiveOps_DummyNotice",
-		"관객 만족도·안전은 아직 임시 값이고, 관객 수는 소유자 API 가 없어 비어 있습니다."));
-
 	BindViewModel();
 	RefreshAll();
 }
@@ -60,6 +53,12 @@ void UFF_LivePanelOperations::NativeOnPanelClosed()
 {
 	UnbindViewModel();
 	Super::NativeOnPanelClosed();
+}
+
+void UFF_LivePanelOperations::NativeDestruct()
+{
+	UnbindViewModel();
+	Super::NativeDestruct();
 }
 
 UFF_FestivalViewModelSubsystem* UFF_LivePanelOperations::GetViewModel() const
@@ -75,6 +74,7 @@ UFF_FestivalViewModelSubsystem* UFF_LivePanelOperations::GetViewModel() const
 
 void UFF_LivePanelOperations::BindViewModel()
 {
+	UnbindViewModel();
 	UGameInstance* GI = GetGameInstance();
 	CachedViewModel = GI ? GI->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
 
@@ -86,7 +86,8 @@ void UFF_LivePanelOperations::BindViewModel()
 	}
 
 	CachedViewModel->OnSimSatisfactionChanged.AddUniqueDynamic(this, &UFF_LivePanelOperations::HandleSimSatisfactionChanged);
-	CachedViewModel->OnSafetyChanged.AddUniqueDynamic(this, &UFF_LivePanelOperations::HandleSafetyChanged);
+	CachedViewModel->OnAdmittedVisitorsTodayChanged.AddUniqueDynamic(this, &UFF_LivePanelOperations::HandleAdmittedVisitorsChanged);
+	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_LivePanelOperations::HandleStageViewChanged);
 	CachedViewModel->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_LivePanelOperations::HandleTodayRevenueChanged);
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_LivePanelOperations::HandleGoldChanged);
 }
@@ -97,7 +98,8 @@ void UFF_LivePanelOperations::UnbindViewModel()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnSimSatisfactionChanged.RemoveDynamic(this, &UFF_LivePanelOperations::HandleSimSatisfactionChanged);
-		CachedViewModel->OnSafetyChanged.RemoveDynamic(this, &UFF_LivePanelOperations::HandleSafetyChanged);
+		CachedViewModel->OnAdmittedVisitorsTodayChanged.RemoveDynamic(this, &UFF_LivePanelOperations::HandleAdmittedVisitorsChanged);
+		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_LivePanelOperations::HandleStageViewChanged);
 		CachedViewModel->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_LivePanelOperations::HandleTodayRevenueChanged);
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_LivePanelOperations::HandleGoldChanged);
 	}
@@ -107,53 +109,61 @@ void UFF_LivePanelOperations::UnbindViewModel()
 void UFF_LivePanelOperations::RefreshAll()
 {
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
-	if (!ViewModel)
-	{
-		return;
-	}
 
 	// --- 지표 4종 ---
 	// ★ 만족도는 `SimSatisfaction` 하나만 쓴다. Live 중에는 `ScoreSatisfaction` 과 값이 같아서
 	//   둘 다 띄우면 다른 지표로 읽힌다 (U6 계획).
-	SetTextOrHide(Text_Satisfaction, FText::AsNumber(ViewModel->GetSimSatisfaction()));
-	SetTextOrHide(Text_Safety, FText::AsNumber(ViewModel->GetSafety()));
-	SetTextOrHide(Text_TodayRevenue, FText::AsNumber(ViewModel->GetTodayRevenue()));
-	SetTextOrHide(Text_Gold, FText::AsNumber(ViewModel->GetGold()));
+	SetTextOrHide(Text_Satisfaction, ViewModel ? FText::AsNumber(ViewModel->GetSimSatisfaction()) : MissingValueText);
+	SetTextOrHide(Text_SatisfactionNote, ViewModel ? SatisfactionNoteText : GoalUnknownText);
+	// 안전의 VM 기본값 88은 아직 실제 집계가 아니다. 점수처럼 표시하지 않는다.
+	SetTextOrHide(Text_Safety, MissingValueText);
+	SetTextOrHide(Text_TodayRevenue, ViewModel ? FText::AsNumber(ViewModel->GetTodayRevenue()) : MissingValueText);
+	SetTextOrHide(Text_Gold, ViewModel ? FText::AsNumber(ViewModel->GetGold()) : MissingValueText);
+	SetTextOrHide(Text_DummyNotice, FooterNoteText);
+
+	const int32 Day = ViewModel ? ViewModel->GetCurrentDay() : INDEX_NONE;
+	SetTextOrHide(Text_Day, Day > 0
+		? FText::Format(DayTextFormat, FFormatNamedArguments{{TEXT("Day"), FText::AsNumber(Day)}}) : MissingValueText);
 
 	// --- 일일 목표 ---
-	const int32 DailyGoal = ViewModel->GetDailyVisitorGoal();
-	const int32 BonusGold = ViewModel->GetDailyGoalBonusGold();
+	// 현재 체류 인원이 아니라 오늘 실제 입장한 누적 인원이다.
+	const int32 VisitorCount = ViewModel ? ViewModel->GetAdmittedVisitorsToday() : INDEX_NONE;
+	const int32 DailyGoal = ViewModel ? ViewModel->GetDailyVisitorGoal() : INDEX_NONE;
+	const int32 BonusGold = ViewModel ? ViewModel->GetDailyGoalBonusGold() : INDEX_NONE;
 	GoalProgress = FFF_LiveOperationsRules::BuildGoalProgress(VisitorCount, DailyGoal);
 
 	SetTextOrHide(Text_GoalProgress, GoalProgress.IsKnown()
 		? FText::Format(
-			LOCTEXT("LiveOps_GoalProgress", "{0} / {1}명"),
-			FText::AsNumber(VisitorCount), FText::AsNumber(DailyGoal))
-		: LOCTEXT("LiveOps_GoalUnknown", "아직 알 수 없습니다"));
+			GoalProgressTextFormat,
+			FFormatNamedArguments{{TEXT("Current"), FText::AsNumber(VisitorCount)}, {TEXT("Goal"), FText::AsNumber(DailyGoal)}})
+		: MissingValueText);
+	SetTextOrHide(Text_GoalPercent, GoalProgress.IsKnown()
+		? FText::Format(GoalPercentTextFormat, FFormatNamedArguments{{TEXT("Percent"), FText::AsNumber(FMath::FloorToInt(GoalProgress.Ratio * 100.f))}})
+		: MissingValueText);
 
 	// !! 막대만으로는 얼마나 남았는지 알 수 없다 !! 숫자와 문구를 함께 둔다 (AT-011).
 	FText GoalDetail;
 	switch (GoalProgress.State)
 	{
 	case EFF_LiveGoalState::Reached:
-		GoalDetail = (BonusGold != INDEX_NONE)
-			? FText::Format(LOCTEXT("LiveOps_GoalReached", "달성 · 보너스 +{0}"), FText::AsNumber(BonusGold))
-			: LOCTEXT("LiveOps_GoalReachedNoBonus", "달성");
+		GoalDetail = BonusGold >= 0
+			? FText::Format(ViewModel && ViewModel->IsDailyGoalBonusPaid() ? GoalBonusPaidTextFormat : GoalReachedTextFormat,
+				FFormatNamedArguments{{TEXT("Bonus"), FText::AsNumber(BonusGold)}})
+			: GoalReachedNoBonusText;
 		break;
 
 	case EFF_LiveGoalState::InProgress:
-		GoalDetail = (BonusGold != INDEX_NONE)
+		GoalDetail = BonusGold >= 0
 			? FText::Format(
-				LOCTEXT("LiveOps_GoalRemaining", "{0}명 더 오면 +{1}"),
-				FText::AsNumber(GoalProgress.Remaining), FText::AsNumber(BonusGold))
+				GoalRemainingTextFormat,
+				FFormatNamedArguments{{TEXT("Remaining"), FText::AsNumber(GoalProgress.Remaining)}, {TEXT("Bonus"), FText::AsNumber(BonusGold)}})
 			: FText::Format(
-				LOCTEXT("LiveOps_GoalRemainingNoBonus", "{0}명 남음"),
-				FText::AsNumber(GoalProgress.Remaining));
+				GoalRemainingNoBonusTextFormat,
+				FFormatNamedArguments{{TEXT("Remaining"), FText::AsNumber(GoalProgress.Remaining)}});
 		break;
 
 	default:
-		// 모를 때는 이유를 적는다. 빈 줄로 두면 고장난 것으로 보인다.
-		GoalDetail = LOCTEXT("LiveOps_GoalNoData", "관객 수를 아직 읽지 못했습니다.");
+		GoalDetail = GoalUnknownText;
 		break;
 	}
 	SetTextOrHide(Text_GoalDetail, GoalDetail);
@@ -173,18 +183,17 @@ void UFF_LivePanelOperations::RefreshAll()
 	SetGroupTextOrHide(Box_Warning, Text_Warning, FText::GetEmpty());
 }
 
-void UFF_LivePanelOperations::Debug_SetVisitorCount(int32 InVisitorCount)
-{
-	VisitorCount = InVisitorCount;
-	RefreshAll();
-}
-
 void UFF_LivePanelOperations::HandleSimSatisfactionChanged(int32 NewValue)
 {
 	RefreshAll();
 }
 
-void UFF_LivePanelOperations::HandleSafetyChanged(int32 NewValue)
+void UFF_LivePanelOperations::HandleAdmittedVisitorsChanged(int32 NewValue)
+{
+	RefreshAll();
+}
+
+void UFF_LivePanelOperations::HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay)
 {
 	RefreshAll();
 }
@@ -225,5 +234,3 @@ void UFF_LivePanelOperations::SetGroupTextOrHide(UWidget* Group, UTextBlock* Tex
 		? ESlateVisibility::Collapsed
 		: ESlateVisibility::SelfHitTestInvisible);
 }
-
-#undef LOCTEXT_NAMESPACE

@@ -9,6 +9,7 @@
 
 class UTextBlock;
 class UVerticalBox;
+class UFF_LiveFacilityRowWidget;
 
 /**
  * 시설 하나가 얼마나 급한가.
@@ -106,6 +107,34 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Facilities")
 	TArray<FFF_LiveFacilityRow> GetRows() const { return Rows; }
 
+	/** 행의 배치·글꼴은 이 클래스로 만든 WBP의 Designer에서 편집한다. 비우면 기존 텍스트 행을 쓴다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Facilities")
+	TSubclassOf<UFF_LiveFacilityRowWidget> RowWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Facilities|Text")
+	FText MissingValueText = NSLOCTEXT("FestaFiestaLiveFacilities", "MissingValue", "—");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Facilities|Text", meta = (ToolTip = "{Count}: 시설 수"))
+	FText CountTextFormat = NSLOCTEXT("FestaFiestaLiveFacilities", "CountFormat", "{Count}개");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Facilities|Text")
+	FText AllOkText = NSLOCTEXT("FestaFiestaLiveFacilities", "AllOk", "모두 정상 운영 중입니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Facilities|Text", meta = (ToolTip = "{Blocked}: 막힘, {Watch}: 주의, {Unknown}: 미확인 시설 수"))
+	FText SummaryTextFormat = NSLOCTEXT("FestaFiestaLiveFacilities", "SummaryFormat", "막힘 {Blocked}개 · 주의 {Watch}개 · 미확인 {Unknown}개");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Facilities|Text")
+	FText CheckingText = NSLOCTEXT("FestaFiestaLiveFacilities", "Checking", "시설 정보를 확인하고 있습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Facilities|Text")
+	FText EmptyText = NSLOCTEXT("FestaFiestaLiveFacilities", "Empty", "놓인 시설이 없습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Facilities|Text")
+	FText FooterNoteText = NSLOCTEXT("FestaFiestaLiveFacilities", "FooterNote", "시설의 운영 상태를 확인하는 화면입니다. 시설 이동과 개폐는 건축 화면에서 합니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Facilities|Text", meta = (ToolTip = "{Count}: 표시되지 않은 시설 수"))
+	FText MoreRowsTextFormat = NSLOCTEXT("FestaFiestaLiveFacilities", "MoreRowsFormat", "…외 {Count}개는 목록에 없습니다");
+
 protected:
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
@@ -118,6 +147,14 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Facilities")
 	TObjectPtr<UTextBlock> Text_FacilityCount;
+
+	/** 상태가 Active인 시설 수. 막힘·주의 수와는 독립된 지표다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Facilities")
+	TObjectPtr<UTextBlock> Text_ActiveCount;
+
+	/** 막힘·주의·미확인인 시설 수. 미확인 수는 요약 문구에도 별도로 표시한다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Facilities")
+	TObjectPtr<UTextBlock> Text_AttentionCount;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Facilities")
 	TObjectPtr<UTextBlock> Text_Summary;
@@ -153,16 +190,28 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Facilities", meta = (ClampMin = "0.1"))
 	float RefreshIntervalSeconds = 1.f;
 
-	/** 한 번에 보여줄 최대 줄 수. 넘치면 아래에 몇 개가 더 있는지 적는다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Facilities", meta = (ClampMin = "1"))
+	/** 한 번에 보여줄 최대 줄 수. 0이면 전체 표시. 넘치면 아래에 몇 개가 더 있는지 적는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Facilities", meta = (ClampMin = "0"))
 	int32 MaxRows = 8;
 
 private:
 	void RefreshAll();
+	void RefreshRowWidgets();
+	void UpdateFallbackLine(UTextBlock& Line, const FFF_LiveFacilityRow& Row) const;
 
 	static void SetTextOrHide(UTextBlock* TextBlock, const FText& Value);
 
 	TArray<FFF_LiveFacilityRow> Rows;
+
+	/** 순서별 행을 재사용한다. 값 갱신만으로 스크롤이나 위젯 트리를 초기화하지 않는다. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UFF_LiveFacilityRowWidget>> CachedRowWidgets;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> CachedFallbackLines;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> MoreRowsText;
 
 	float TimeSinceRefresh = 0.f;
 };

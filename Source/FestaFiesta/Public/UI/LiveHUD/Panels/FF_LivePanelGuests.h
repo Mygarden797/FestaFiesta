@@ -9,6 +9,7 @@
 
 class UTextBlock;
 class UVerticalBox;
+class UFF_LiveNeedRowWidget;
 
 /**
  * 욕구 하나가 얼마나 급한가.
@@ -74,7 +75,7 @@ struct FESTAFIESTA_API FFF_LiveGuestRules
  * 처럼 대처를 함께 둔다 — 그것이 이 화면의 값어치다.
  *
  * === 없는 것 ===
- * 관객 개인·그룹 구성(가족·친구·혼자)과 누적 방문객 수는 아직 읽을 수 없다.
+ * 관객 개인·그룹 구성(가족·친구·혼자)은 표시하지 않는다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Live Panel - Guests"))
 class FESTAFIESTA_API UFF_LivePanelGuests : public UFF_LivePanelBase
@@ -84,6 +85,46 @@ class FESTAFIESTA_API UFF_LivePanelGuests : public UFF_LivePanelBase
 public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Guests")
 	TArray<FFF_LiveNeedRow> GetRows() const { return Rows; }
+
+	/** 행의 크기·배치는 파생 WBP에서 편집한다. 비우면 텍스트 행을 사용한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests")
+	TSubclassOf<UFF_LiveNeedRowWidget> RowWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests|Text")
+	FText MissingValueText = NSLOCTEXT("FestaFiestaLiveGuests", "MissingValue", "—");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests|Text", meta = (ToolTip = "{Count}: 관객 수"))
+	FText CountTextFormat = NSLOCTEXT("FestaFiestaLiveGuests", "CountFormat", "{Count}명");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests|Text")
+	FText VisitorNoteText = NSLOCTEXT("FestaFiestaLiveGuests", "CurrentNote", "지금 축제장 안에 있는 관객입니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests|Text")
+	FText AdmittedNoteText = NSLOCTEXT("FestaFiestaLiveGuests", "AdmittedNote", "오늘 입장한 누적 관객입니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests|Text")
+	FText CheckingText = NSLOCTEXT("FestaFiestaLiveGuests", "Checking", "관객 정보를 확인하고 있습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests|Text")
+	FText NoSampleText = NSLOCTEXT("FestaFiestaLiveGuests", "NoSampleReady", "아직 관객 표본이 없어 욕구를 집계하고 있습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests|Text")
+	FText EmptyText = NSLOCTEXT("FestaFiestaLiveGuests", "EmptyReady", "욕구 집계가 아직 준비되지 않았습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests|Text", meta = (ToolTip = "{Sample}: 집계 관객 수"))
+	FText AllOkTextFormat = NSLOCTEXT("FestaFiestaLiveGuests", "AllOkFormat", "관객 {Sample}명 기준 · 급한 불편은 없습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests|Text", meta = (ToolTip = "{Sample}: 집계 관객, {Bad}: 나쁨, {Watch}: 주의, {Unknown}: 미확인 항목 수"))
+	FText SummaryTextFormat = NSLOCTEXT("FestaFiestaLiveGuests", "SummaryFormat", "관객 {Sample}명 기준 · 나쁨 {Bad} · 주의 {Watch} · 미확인 {Unknown}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests|Text")
+	FText FooterNoteText = NSLOCTEXT("FestaFiestaLiveGuests", "FooterNote", "불편 비율은 집계된 관객을 기준으로 표시합니다. 주의·나쁨 항목의 안내를 확인하세요.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests|Text", meta = (ToolTip = "{Count}: 불편 집계 표본 수"))
+	FText SampleCountTextFormat = NSLOCTEXT("FestaFiestaLiveGuests", "SampleCountFormat", "집계 표본 {Count}명");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Guests|Text")
+	FText SampleUnknownText = NSLOCTEXT("FestaFiestaLiveGuests", "SampleUnknown", "집계 준비 중");
 
 protected:
 	virtual void NativeOnPanelOpened() override;
@@ -101,6 +142,15 @@ protected:
 	/** 동시 인원임을 밝힌다. 일일 목표(누적)와 다른 값이라 오해를 막는다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Guests")
 	TObjectPtr<UTextBlock> Text_VisitorNote;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Guests")
+	TObjectPtr<UTextBlock> Text_AdmittedCount;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Guests")
+	TObjectPtr<UTextBlock> Text_AdmittedNote;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Guests")
+	TObjectPtr<UTextBlock> Text_SampleCount;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Guests")
 	TObjectPtr<UTextBlock> Text_Summary;
@@ -135,10 +185,18 @@ protected:
 
 private:
 	void RefreshAll();
+	void RefreshRowWidgets();
+	void UpdateFallbackLine(UTextBlock& Line, const FFF_LiveNeedRow& Row) const;
 
 	static void SetTextOrHide(UTextBlock* TextBlock, const FText& Value);
 
 	TArray<FFF_LiveNeedRow> Rows;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UFF_LiveNeedRowWidget>> CachedRowWidgets;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> CachedFallbackLines;
 
 	float TimeSinceRefresh = 0.f;
 };

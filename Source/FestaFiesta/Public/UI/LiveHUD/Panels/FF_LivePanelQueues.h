@@ -9,6 +9,7 @@
 
 class UTextBlock;
 class UVerticalBox;
+class UFF_LiveQueueRowWidget;
 
 /**
  * 대기열 전체를 한눈에 보는 값 한 벌. 화면은 이 값을 그대로 그리고 계산을 하지 않는다.
@@ -126,6 +127,52 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Queues")
 	FFF_LiveQueueSummary GetSummary() const { return Summary; }
 
+	/** 행 크기·열 폭·글꼴을 편집할 WBP. 비우면 기존 텍스트 행을 사용한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues")
+	TSubclassOf<UFF_LiveQueueRowWidget> RowWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text")
+	FText MissingValueText = NSLOCTEXT("FestaFiestaLiveQueues", "MissingValue", "—");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text", meta = (ToolTip = "{Count}: 팀 수"))
+	FText TeamCountTextFormat = NSLOCTEXT("FestaFiestaLiveQueues", "TeamCountFormat", "{Count}팀");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text", meta = (ToolTip = "{Seconds}: 대기 시간"))
+	FText WaitSecondsTextFormat = NSLOCTEXT("FestaFiestaLiveQueues", "WaitSecondsFormat", "{Seconds}초");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text", meta = (ToolTip = "{Count}: 평균 대기 기록이 있는 시설 수. 고객 수 가중 평균이 아니다."))
+	FText AverageNoteTextFormat = NSLOCTEXT("FestaFiestaLiveQueues", "AverageNoteFormat", "완료 기록이 있는 {Count}곳의 시설별 평균을 평균한 값입니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text")
+	FText AverageNoSampleText = NSLOCTEXT("FestaFiestaLiveQueues", "AverageNoSample", "완료 기록이 없어 평균을 집계하고 있습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text", meta = (ToolTip = "{Name}: 시설 이름, {Count}: 대기 팀 수"))
+	FText LongestTextFormat = NSLOCTEXT("FestaFiestaLiveQueues", "LongestFormat", "가장 긴 줄 · {Name} {Count}팀");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text")
+	FText NoQueueText = NSLOCTEXT("FestaFiestaLiveQueues", "NoQueue", "현재 대기 중인 팀이 없습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text", meta = (ToolTip = "{Name}: 시설 이름, {Seconds}: 지금 줄을 서면 예상되는 대기 시간"))
+	FText WorstWaitTextFormat = NSLOCTEXT("FestaFiestaLiveQueues", "WorstWaitFormat", "지금 서면 가장 오래 · {Name} {Seconds}초");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text")
+	FText ExpectedWaitUnknownText = NSLOCTEXT("FestaFiestaLiveQueues", "ExpectedWaitUnknown", "지금 서면 예상 대기 · —");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text", meta = (ToolTip = "{Open}, {Full}, {NotAccepting}, {Blocked}, {Unknown}: 상태별 시설 수"))
+	FText StateCountsTextFormat = NSLOCTEXT("FestaFiestaLiveQueues", "StateCountsFormat", "접수 중 {Open} · 정원 참 {Full} · 미접수/마감 {NotAccepting} · 막힘 {Blocked} · 미확인 {Unknown}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text")
+	FText CheckingText = NSLOCTEXT("FestaFiestaLiveQueues", "Checking", "대기열 정보를 확인하고 있습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text")
+	FText EmptyText = NSLOCTEXT("FestaFiestaLiveQueues", "Empty", "대기열을 확인할 시설이 없습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text")
+	FText FooterNoteText = NSLOCTEXT("FestaFiestaLiveQueues", "FooterNote", "대기·이용 수는 팀 기준입니다. 줄을 포기한 팀 수는 아직 읽을 수 없습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text", meta = (ToolTip = "{Count}: 표시되지 않은 시설 수"))
+	FText MoreRowsTextFormat = NSLOCTEXT("FestaFiestaLiveQueues", "MoreRowsFormat", "…외 {Count}개는 목록에 없습니다");
+
 protected:
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
@@ -152,7 +199,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Queues")
 	TObjectPtr<UTextBlock> Text_Longest;
 
-	/** 지금 서면 가장 오래 걸리는 곳. 못 읽었으면 접힌다. */
+	/** 지금 서면 가장 오래 걸리는 곳. 못 읽었으면 —로 구분한다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Queues")
 	TObjectPtr<UTextBlock> Text_WorstWait;
 
@@ -176,16 +223,29 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues", meta = (ClampMin = "0.1"))
 	float RefreshIntervalSeconds = 1.f;
 
-	/** 한 번에 보여줄 최대 줄 수. 넘치면 아래에 몇 개가 더 있는지 적는다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues", meta = (ClampMin = "1"))
+	/** 한 번에 보여줄 최대 줄 수. 0이면 전체 표시. 넘치면 아래에 몇 개가 더 있는지 적는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues", meta = (ClampMin = "0"))
 	int32 MaxRows = 8;
 
 private:
 	void RefreshAll();
+	void RefreshRowWidgets();
+	void UpdateFallbackLine(UTextBlock& Line, const FFF_LiveFacilityView& Row) const;
 
 	static void SetTextOrHide(UTextBlock* TextBlock, const FText& Value);
 
 	FFF_LiveQueueSummary Summary;
+	TArray<FFF_LiveFacilityView> Rows;
+
+	/** 갱신 때 순서별 행을 재사용해 스크롤 위치와 위젯 트리를 유지한다. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UFF_LiveQueueRowWidget>> CachedRowWidgets;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> CachedFallbackLines;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> MoreRowsText;
 
 	float TimeSinceRefresh = 0.f;
 };

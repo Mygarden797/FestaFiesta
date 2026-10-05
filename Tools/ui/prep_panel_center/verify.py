@@ -8,6 +8,7 @@ from pathlib import Path
 import gc
 import hashlib
 import json
+import os
 import struct
 import time
 import traceback
@@ -15,7 +16,7 @@ import unreal
 
 
 ROOT = Path(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()))
-OUT = ROOT / 'Saved/PrepPanelCenter'
+OUT = ROOT / os.environ.get('FF_PREP_PANEL_VERIFY_OUT', 'Saved/PrepPanelCenter')
 OUT.mkdir(parents=True, exist_ok=True)
 REQUEST = OUT / 'verify-request.json'
 OPTIONS = json.loads(REQUEST.read_text(encoding='utf-8-sig')) if REQUEST.exists() else {}
@@ -260,8 +261,8 @@ def inspect_center(label, expected=None):
     # 유효하다. 에디터 전용 읽기 probe가 실제 Slate geometry를 숫자 JSON으로 내보낸다.
     # 빈 Python 값을 대체 계산하여 통과시키지 않고 같은 기존 실측 판정을 native에 적용한다.
     tag = f"case_{STATE['case_index']}_sample_{len(case_report()['measurements'])}_{time.monotonic_ns()}"
-    command('FF.PrepPanelCenterProbe ' + tag)
-    native_path = OUT / 'native-geometry.json'
+    command(OPTIONS.get('native_probe_command', 'FF.PrepPanelCenterProbe') + ' ' + tag)
+    native_path = ROOT / OPTIONS.get('native_probe_path', 'Saved/PrepPanelCenter/native-geometry.json')
     assert native_path.exists(), 'Native geometry probe 결과 파일 없음'
     native = json.loads(native_path.read_text(encoding='utf-8-sig'))
     case_report()['last_native_probe'] = native
@@ -506,7 +507,7 @@ def tick(delta):
         elif stage == 'warm_panel_again':
             # 첫 paint에서 얻은 geometry로 NativeTick이 위치를 반영한 뒤 다시 그린다.
             name = case_report()['name'] + '-' + TABS[STATE['tab_index']].lower()
-            command('Shot SHOWUI filename="' + (OUT / (name + '.png')).as_posix() + '" -nosuffix')
+            capture(name)
             advance('measure_panel', 1)
         elif stage == 'measure_panel':
             tab_name = TABS[STATE['tab_index']]

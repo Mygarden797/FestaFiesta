@@ -25,6 +25,8 @@ public class FestaFiesta : ModuleRules
 		PrivateDependencyModuleNames.Add("MoviePlayer");
 		// 패키지 시작 진단에서 실제로 선택된 그래픽 API를 기록한다.
 		PrivateDependencyModuleNames.Add("RHI");
+		// 타이틀 인트로 영상(MediaPlayer·FileMediaSource·MediaTexture). 재생은 기본 활성 WmfMedia 가 맡는다.
+		PrivateDependencyModuleNames.Add("MediaAssets");
 		
 		// 제작 도구는 FestaFiestaEditor에 있다. 여기에는 기존 회귀 테스트와
 		// 런타임 타입의 에디터 전용 검증 함수가 직접 사용하는 의존성만 둔다.

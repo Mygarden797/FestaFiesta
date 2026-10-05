@@ -74,6 +74,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Atlas|Camera")
 	void SkipCameraMove(bool bIncludeInspection = true);
 
+	/**
+	 * 인트로 영상의 흰 빛이 걷힐 때 부른다. **가운데 구도로 즉시 옮긴 뒤 멀리서 지구를 펑 하고 당겨 온다.**
+	 *
+	 * 지구를 키우지 않고 카메라를 당긴다 — 지구 반지름은 핀·선택 판정이 쓰는 값이라 연출로 건드리지 않는다.
+	 * 뷰 타깃도 여기서 다시 잡는다. 프론트엔드 첫 화면은 액터 `BeginPlay` 보다 먼저 올라가서
+	 * (`UEngine::LoadMap` 이 PostLogin 뒤에 `World->BeginPlay`) 그때 정한 구도를 `BeginPlay` 가 타이틀로 덮는다.
+	 * `움직임 감소` 면 당기지 않고 제자리다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Atlas|Camera")
+	void PlayIntroReveal();
+
 	/** 국가별 접근 비율. 음수면 Atlas Settings의 공통 값을 사용한다. */
 	void SetCountryInspection(bool bInspect, float ApproachFractionOverride = -1.f);
 
@@ -115,6 +126,14 @@ protected:
 	TObjectPtr<ACameraActor> CountryMapCamera;
 
 	/**
+	 * 인트로의 「아무 키」 구도. **지구가 화면 가운데에 통째로 보인다.**
+	 * 비워 두면 타이틀 카메라 쪽에서 지구 중심을 바라보는 구도를 실행 중에 계산한다
+	 * (`UFF_AtlasSettings` 의 Title Intro 값). 눈으로 잡은 구도가 있으면 여기 넣는다.
+	 */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "FestaFiesta|Atlas|Camera")
+	TObjectPtr<ACameraActor> IntroCamera;
+
+	/**
 	 * 이징. `VTBlend_EaseInOut` 이 기본이다 — 등속(`Linear`)으로 다가가면 기계처럼 보이고,
 	 * 시작·끝이 부드러워야 "다가온다" 는 느낌이 난다.
 	 */
@@ -134,6 +153,17 @@ private:
 	 */
 	static int32 GetScreenDepth(EFF_UIFlowScreen Screen);
 
+	/** `IntroCamera` 가 비었을 때 쓰는 계산 구도 카메라를 만든다. 타이틀 카메라의 렌즈를 물려받는다. */
+	void EnsureDerivedIntroCamera();
+
+	/** 계산 구도 카메라를 지구가 가운데 오도록 놓는다. 손으로 놓은 `IntroCamera` 는 건드리지 않는다. */
+	void FrameDerivedIntroCamera();
+
+	/** 진행 중인 인트로 당김을 끝 위치에 붙인다. 타이틀로 넘어갈 때 블렌드 출발점이 흔들리지 않게 한다. */
+	void FinishIntroReveal();
+
+	void TickIntroReveal(float DeltaSeconds);
+
 	/** 두 화면 사이 이동 시간. `움직임 감소` 를 여기서 걸러 준다. */
 	float GetBlendSeconds(EFF_UIFlowScreen FromScreen, EFF_UIFlowScreen ToScreen) const;
 
@@ -149,6 +179,16 @@ private:
 
 	/** Skip 이 붙일 목표. */
 	TWeakObjectPtr<ACameraActor> PendingCamera;
+
+	/** `IntroCamera` 가 비었을 때 실행 중에 만든 카메라. 레벨에 저장되지 않는다. */
+	UPROPERTY(Transient)
+	TObjectPtr<ACameraActor> DerivedIntroCamera;
+
+	TWeakObjectPtr<ACameraActor> IntroRevealCamera;
+	FVector IntroRevealCenter = FVector::ZeroVector;
+	FVector IntroRevealFinalLocation = FVector::ZeroVector;
+	float IntroRevealAlpha = 0.f;
+	bool bIntroRevealing = false;
 
 	void ResetCountryInspection();
 	TWeakObjectPtr<ACameraActor> InspectionCamera;

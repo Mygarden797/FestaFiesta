@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/Ticker.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Time/FF_FestivalStage.h"
 #include "UI/Core/FF_UIFlowTypes.h"
@@ -13,6 +14,7 @@ class APlayerController;
 class UFF_FestivalAtlasCatalog;
 class UFF_ActivatableScreenBase;
 class UFF_LoadingScreenWidget;
+class UFF_TitleIntroScreen;
 class UFF_TitleScreen;
 class UFF_UIRootLayout;
 class UUserWidget;
@@ -198,6 +200,13 @@ protected:
 	UFUNCTION()
 	void HandleTitlePlayRequested();
 
+	/**
+	 * 인트로의 「아무 키」. 타이틀을 올리고 인트로는 히스토리와 스택에서 뺀다.
+	 * 그래야 타이틀에서 `뒤로` 를 눌러도 인트로가 다시 나오지 않는다.
+	 */
+	UFUNCTION()
+	void HandleTitleIntroFinished();
+
 	UFUNCTION()
 	void HandleTitleOptionsRequested();
 
@@ -267,6 +276,15 @@ private:
 	/** 로그를 남길지. 설정의 `bVerboseFlowLogging` 을 읽는다. */
 	bool IsVerbose() const;
 
+	/**
+	 * 이번 프론트엔드 진입에서 인트로를 틀지. 게임을 켜고 **처음 한 번**만이다.
+	 * 콘솔 `FF.Intro.Enable 0` 이거나 `FrontendScreens` 에 TitleIntro 가 없으면 바로 타이틀이다.
+	 */
+	bool ShouldPlayTitleIntro() const;
+
+	/** 스택 전환(크로스페이드)이 끝난 뒤 인트로 위젯을 스택에서 뺀다. 전환 중에 빼면 화면이 끊긴다. */
+	void ScheduleTitleIntroRemoval(UFF_TitleIntroScreen* Intro);
+
 	// --- 상태 ---
 
 	/** 위젯은 월드와 함께 죽는다. 강한 참조로 들면 죽은 위젯을 붙들게 된다. */
@@ -274,6 +292,17 @@ private:
 
 	/** 타이틀 델리게이트를 해제하기 위해 들고 있는다. */
 	TWeakObjectPtr<UFF_TitleScreen> TitleScreen;
+
+	/** 떠 있는 인트로. 끝나면 비운다. */
+	TWeakObjectPtr<UFF_TitleIntroScreen> TitleIntroScreen;
+
+	/**
+	 * 이 GameInstance 에서 인트로를 이미 틀었는지. 축제를 끝내고 돌아오거나 레벨을 다시 열어도
+	 * 다시 틀지 않는다 — 인트로는 게임을 켤 때 한 번이다.
+	 */
+	bool bTitleIntroPlayed = false;
+
+	FTSTicker::FDelegateHandle TitleIntroRemovalTicker;
 
 	/** HUD 레이어에 올린 Stage 화면. 다음 Stage 로 갈 때 내린다. */
 	TWeakObjectPtr<UUserWidget> StageHudWidget;
