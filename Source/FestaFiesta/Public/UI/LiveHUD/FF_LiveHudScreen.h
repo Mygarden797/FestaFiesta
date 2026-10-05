@@ -16,6 +16,7 @@ class UButton;
 class UFF_FestivalViewModelSubsystem;
 class UFF_IncidentDetailPanel;
 class UFF_IncidentMarkerLayer;
+class UFF_IncidentToast;
 class UFF_LivePanelBase;
 class UFF_LivePlaceholderPanel;
 class UFF_LiveTabButton;
@@ -499,6 +500,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_IncidentDetailPanel> IncidentDetailPanel;
+
+	/** [보내기]/[확인] 결과를 잠깐 띄운다. 거부면 이유를 적는다. 상세 패널보다 위에 둔다. */
+	void EnsureIncidentToast();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_IncidentToast> IncidentToast;
 
 	void RefreshTabs();
 	void RefreshStatusRow();

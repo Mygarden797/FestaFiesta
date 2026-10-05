@@ -149,4 +149,26 @@ FText UFF_UIDisplayTextLibrary::GetNeedRemedyText(EFF_NeedType NeedType)
 	}
 }
 
+FText UFF_UIDisplayTextLibrary::GetIncidentResolveResultText(EFF_IncidentResolveResult Result)
+{
+	switch (Result)
+	{
+	case EFF_IncidentResolveResult::Dispatched:			return LOCTEXT("IncidentResult_Dispatched", "스태프가 현장으로 출동했습니다");
+	case EFF_IncidentResolveResult::Resolved:			return LOCTEXT("IncidentResult_Resolved", "사건을 처리했습니다");
+	case EFF_IncidentResolveResult::InvalidIncident:	return LOCTEXT("IncidentResult_InvalidIncident", "이미 끝난 사건입니다");
+	case EFF_IncidentResolveResult::InvalidOption:		return LOCTEXT("IncidentResult_InvalidOption", "고를 수 없는 선택지입니다");
+	case EFF_IncidentResolveResult::AlreadyResponding:	return LOCTEXT("IncidentResult_AlreadyResponding", "이미 스태프가 출동 중입니다");
+	case EFF_IncidentResolveResult::NotEnoughStaff:		return LOCTEXT("IncidentResult_NotEnoughStaff", "출동할 스태프가 부족합니다. 안내 시설에 스태프를 배정하세요");
+	case EFF_IncidentResolveResult::NoSite:				return LOCTEXT("IncidentResult_NoSite", "사건 현장을 찾을 수 없습니다");
+	case EFF_IncidentResolveResult::DispatchFailed:		return LOCTEXT("IncidentResult_DispatchFailed", "출동하지 못했습니다");
+	}
+
+	return FText::GetEmpty();
+}
+
+bool UFF_UIDisplayTextLibrary::IsIncidentResolveAccepted(EFF_IncidentResolveResult Result)
+{
+	return Result == EFF_IncidentResolveResult::Dispatched || Result == EFF_IncidentResolveResult::Resolved;
+}
+
 #undef LOCTEXT_NAMESPACE
