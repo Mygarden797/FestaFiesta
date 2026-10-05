@@ -32,6 +32,8 @@ struct FFF_StaffDispatchOrigin;
 //  안 되면 넓게(수평 500·수직 100 탐색) 다시 올린다. 시설 출구처럼 NavMesh 구멍 안에 있는 점이 밑층이 아니라 같은 높이 바닥에 붙게 하려는 것이다.
 //  수직 100cm 제한은 두 경우 모두 지킨다. 경로는 출발점 → NavMesh 경로 → 목표점 순서이고, 앞뒤는 직선으로 잇는다(몸 충돌이 꺼져 있다).
 //  중간에 끊긴 경로(Partial)도 받아서 끊긴 곳까지 걷는다. 그 뒤는 재경로와 도착 보험이 처리한다.
+// 여럿이 함께 나가면 MakeSpreadOffsets 의 오프셋이 스폰 위치와 목표 위치에 같이 더해진다. 집(HomeLocation)은 출구 그대로다.
+//  경로는 오프셋을 뺀 기준 위치로 찾은 뒤 통째로 오프셋만큼 평행이동한다(FindSpreadPath). 그래서 걷는 내내 대형 간격이 유지된다.
 UCLASS()
 class FESTAFIESTA_API UFF_StaffSubsystem : public UTickableWorldSubsystem
 {
@@ -45,7 +47,9 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 
-	bool SendStaff(const FFF_StaffDispatchOrigin& Origin, const FFF_IncidentAnchor& Target);
+	bool SendStaff(const FFF_StaffDispatchOrigin& Origin, const FFF_IncidentAnchor& Target,
+		const FVector& SpreadOffset = FVector::ZeroVector);
+	static void MakeSpreadOffsets(int32 Count, TArray<FVector>& OutOffsets);
 	void RecallStaff(int32 StaffId);
 	void DespawnStaff(int32 StaffId);
 
@@ -64,6 +68,7 @@ private:
 		EFF_StaffState State = EFF_StaffState::Idle;
 		int32 SlotIndex = INDEX_NONE;
 		FFF_IncidentAnchor Target;
+		FVector SpreadOffset = FVector::ZeroVector;
 		FVector Position = FVector::ZeroVector;
 		FVector HomeLocation = FVector::ZeroVector;
 		TArray<FVector> Path;
@@ -90,6 +95,8 @@ private:
 	bool ResolveTargetLocation(const FStaffRuntime& Runtime, FVector& OutLocation) const;
 	bool RefreshReturnHome(int32 StaffId, FStaffRuntime& Runtime);
 	bool FindPath(const FVector& From, const FVector& To, TArray<FVector>& OutPath) const;
+	bool FindSpreadPath(const FStaffRuntime& Runtime, const FVector& From, const FVector& To, TArray<FVector>& OutPath) const;
+	static void ShiftPath(TArray<FVector>& Path, const FVector& Offset);
 	static bool ProjectEndpoint(const UNavigationSystemV1& Navigation, const FVector& Point, const TCHAR* Label, FVector& OutNavLocation);
 	static bool IsProjectionAcceptable(const FVector& Point, const FVector& Projected, float MaxGap2DCm);
 	static void AssemblePath(const FVector& From, const FVector& To, const TArray<FVector>& NavPoints, bool bPartial, TArray<FVector>& OutPath);
@@ -139,6 +146,8 @@ private:
 	static constexpr float NearProjectionGapCm = 100.f;
 	static constexpr float WideProjectionHorizontalCm = 500.f;
 	static constexpr float ProjectionMaxGapZCm = 100.f;
+	static constexpr float SpreadSpacingCm = 130.f;
+	static constexpr float SpreadJitterCm = 50.f;
 
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_StaffDispatchJourneyTest;
@@ -147,5 +156,7 @@ private:
 	friend class FFF_StaffDispatchStallTest;
 	friend class FFF_StaffTimeScaleTest;
 	friend class FFF_StaffPathProjectionTest;
+	friend class FFF_StaffSpreadTest;
+	friend class FFF_StaffFacilityDispatchTest;
 #endif
 };

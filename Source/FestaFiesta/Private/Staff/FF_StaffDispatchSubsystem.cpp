@@ -149,9 +149,11 @@ bool UFF_StaffDispatchSubsystem::TryDispatch(FFF_IncidentHandle Handle, int32 Op
 	{
 		Pending.StaffIds.Add(Origin.StaffId);
 	}
-	for (const FFF_StaffDispatchOrigin& Origin : Origins)
+	TArray<FVector> SpreadOffsets;
+	UFF_StaffSubsystem::MakeSpreadOffsets(Origins.Num(), SpreadOffsets);
+	for (int32 Index = 0; Index < Origins.Num(); ++Index)
 	{
-		if (!StaffBodies->SendStaff(Origin, Anchor))
+		if (!StaffBodies->SendStaff(Origins[Index], Anchor, SpreadOffsets[Index]))
 		{
 			ReleaseDispatch(Pending);
 			return false;

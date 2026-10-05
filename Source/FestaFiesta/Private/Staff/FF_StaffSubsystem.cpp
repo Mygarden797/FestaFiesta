@@ -101,7 +101,8 @@ TStatId UFF_StaffSubsystem::GetStatId() const
 	STATGROUP_Tickables);
 }
 
-bool UFF_StaffSubsystem::SendStaff(const FFF_StaffDispatchOrigin& Origin, const FFF_IncidentAnchor& Target)
+bool UFF_StaffSubsystem::SendStaff(const FFF_StaffDispatchOrigin& Origin, const FFF_IncidentAnchor& Target,
+	const FVector& SpreadOffset)
 {
 	UWorld* World = GetWorld();
 	if (!World || Staff.Contains(Origin.StaffId))
@@ -110,14 +111,19 @@ bool UFF_StaffSubsystem::SendStaff(const FFF_StaffDispatchOrigin& Origin, const 
 	}
 	FStaffRuntime Runtime;
 	Runtime.Target = Target;
-	Runtime.Position = Origin.Location;
+	Runtime.SpreadOffset = FVector(SpreadOffset.X, SpreadOffset.Y, 0.f);
+	Runtime.Position = Origin.Location + Runtime.SpreadOffset;
 	Runtime.HomeLocation = Origin.Location;
 	Runtime.Travelled.Add(Origin.Location);
+	if (!Runtime.SpreadOffset.IsNearlyZero())
+	{
+		Runtime.Travelled.Add(Runtime.Position);
+	}
 	if (!ResolveTargetLocation(Runtime, Runtime.PathGoal))
 	{
 		return false;
 	}
-	const bool bHasPath = FindPath(Runtime.Position, Runtime.PathGoal, Runtime.Path);
+	const bool bHasPath = FindSpreadPath(Runtime, Runtime.Position, Runtime.PathGoal, Runtime.Path);
 	ResetProgress(Runtime, Runtime.PathGoal);
 	Runtime.FailCount = bHasPath ? 0 : 1;
 	FActorSpawnParameters Parameters;
@@ -135,6 +141,23 @@ bool UFF_StaffSubsystem::SendStaff(const FFF_StaffDispatchOrigin& Origin, const 
 	SetState(Runtime, EFF_StaffState::Moving);
 	Staff.Add(Origin.StaffId, MoveTemp(Runtime));
 	return true;
+}
+
+void UFF_StaffSubsystem::MakeSpreadOffsets(int32 Count, TArray<FVector>& OutOffsets)
+{
+	OutOffsets.Init(FVector::ZeroVector, FMath::Max(0, Count));
+	if (Count < 2)
+	{
+		return;
+	}
+	const float MinRadius = SpreadSpacingCm * 0.5f / FMath::Sin(PI / Count);
+	const float BaseAngle = FMath::FRandRange(0.f, 2.f * PI);
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		const float Angle = BaseAngle + 2.f * PI * Index / Count;
+		const float Radius = MinRadius + FMath::FRandRange(0.f, SpreadJitterCm);
+		OutOffsets[Index] = FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.f) * Radius;
+	}
 }
 
 void UFF_StaffSubsystem::RecallStaff(int32 StaffId)
@@ -167,7 +190,7 @@ bool UFF_StaffSubsystem::TickRuntime(int32 StaffId, FStaffRuntime& Runtime, floa
 			Runtime.RepathElapsed = 0.f;
 			Runtime.Travelled.Add(Runtime.Position);
 			TArray<FVector> NewPath;
-			if (FindPath(Runtime.Position, TargetNow, NewPath))
+			if (FindSpreadPath(Runtime, Runtime.Position, TargetNow, NewPath))
 			{
 				Runtime.Path = MoveTemp(NewPath);
 				Runtime.NextIndex = 0;
@@ -255,7 +278,12 @@ void UFF_StaffSubsystem::GiveUp(FStaffRuntime& Runtime)
 
 bool UFF_StaffSubsystem::ResolveTargetLocation(const FStaffRuntime& Runtime, FVector& OutLocation) const
 {
-	return FFF_IncidentRules::TryGetAnchorLocation(GetWorld(), Runtime.Target, OutLocation);
+	if (!FFF_IncidentRules::TryGetAnchorLocation(GetWorld(), Runtime.Target, OutLocation))
+	{
+		return false;
+	}
+	OutLocation += Runtime.SpreadOffset;
+	return true;
 }
 
 bool UFF_StaffSubsystem::RefreshReturnHome(int32 StaffId, FStaffRuntime& Runtime)
@@ -354,6 +382,25 @@ bool UFF_StaffSubsystem::FindPath(const FVector& From, const FVector& To, TArray
 	}
 	AssemblePath(From, To, Path->PathPoints, Path->IsPartial(), OutPath);
 	return true;
+}
+
+bool UFF_StaffSubsystem::FindSpreadPath(const FStaffRuntime& Runtime, const FVector& From, const FVector& To,
+	TArray<FVector>& OutPath) const
+{
+	if (!FindPath(From - Runtime.SpreadOffset, To - Runtime.SpreadOffset, OutPath))
+	{
+		return false;
+	}
+	ShiftPath(OutPath, Runtime.SpreadOffset);
+	return true;
+}
+
+void UFF_StaffSubsystem::ShiftPath(TArray<FVector>& Path, const FVector& Offset)
+{
+	for (FVector& Point : Path)
+	{
+		Point += Offset;
+	}
 }
 
 bool UFF_StaffSubsystem::ProjectEndpoint(const UNavigationSystemV1& Navigation, const FVector& Point,
