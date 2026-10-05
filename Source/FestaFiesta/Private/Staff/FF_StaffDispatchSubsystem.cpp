@@ -94,11 +94,23 @@ bool UFF_StaffDispatchSubsystem::TryGetFestivalMinutes(float& OutMinutes) const
 }
 
 bool UFF_StaffDispatchSubsystem::TryDispatch(FFF_IncidentHandle Handle, int32 OptionIndex,
-	int32 RequiredStaff, const FFF_IncidentAnchor& Anchor, float WorkAmount)
+	int32 RequiredStaff, const FFF_IncidentAnchor& Anchor, float WorkAmount, EFF_IncidentResolveResult* OutResult)
 {
-	if (!Staffing || !StaffBodies || !Incident || !Incident->IsHandleValid(Handle) || RequiredStaff <= 0
-		|| IsResponding(Handle))
+	EFF_IncidentResolveResult LocalResult = EFF_IncidentResolveResult::DispatchFailed;
+	EFF_IncidentResolveResult& Result = OutResult ? *OutResult : LocalResult;
+	Result = EFF_IncidentResolveResult::DispatchFailed;
+	if (!Staffing || !StaffBodies || !Incident || RequiredStaff <= 0)
 	{
+		return false;
+	}
+	if (!Incident->IsHandleValid(Handle))
+	{
+		Result = EFF_IncidentResolveResult::InvalidIncident;
+		return false;
+	}
+	if (IsResponding(Handle))
+	{
+		Result = EFF_IncidentResolveResult::AlreadyResponding;
 		return false;
 	}
 	FDispatch Pending;
@@ -108,11 +120,13 @@ bool UFF_StaffDispatchSubsystem::TryDispatch(FFF_IncidentHandle Handle, int32 Op
 	FVector Destination;
 	if (!TryGetLocation(Anchor, Destination))
 	{
+		Result = EFF_IncidentResolveResult::NoSite;
 		return false;
 	}
 	TArray<FFF_StaffDispatchOrigin> Origins;
 	if (!Staffing->TryReserveStaff(RequiredStaff, Destination, Origins))
 	{
+		Result = EFF_IncidentResolveResult::NotEnoughStaff;
 		return false;
 	}
 	// Register all reservations in Pending before any fallible work, so rollback is always complete.
@@ -136,6 +150,7 @@ bool UFF_StaffDispatchSubsystem::TryDispatch(FFF_IncidentHandle Handle, int32 Op
 	Dispatches.Add(MoveTemp(Pending));
 	Incident->SetResponding(Handle,true);
 	Incident->OnIncidentUpdated.Broadcast(Handle);
+	Result = EFF_IncidentResolveResult::Dispatched;
 	return true;
 }
 

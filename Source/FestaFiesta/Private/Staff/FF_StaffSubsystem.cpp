@@ -5,7 +5,7 @@ UE_LOG(LogTemp, Warning, TEXT("[FF_StaffSubsystem] " Format), ##__VA_ARGS__)
 
 #include "Staff/FF_StaffSubsystem.h"
 
-#include "CrowdSystem/FF_BaseCrowd.h"
+#include "Engine/GameInstance.h"
 #include "EngineUtils.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "GameplayEffect.h"
@@ -45,13 +45,15 @@ void UFF_StaffSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	Staffing = Collection.InitializeDependency<UFF_StaffFacilitySubsystem>();
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	Stage = GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
 	const UFF_IncidentSettings* Settings = UFF_IncidentSettings::Get();
 	TravelSpeed = FMath::Max(1.f, Settings->StaffTravelSpeed);
-	ResponderClass = Settings->StaffResponderClass.IsNull()
-		? AFF_BaseCrowd::StaticClass() : Settings->StaffResponderClass.LoadSynchronous();
-	if (!ResponderClass)
+	StaffActorClass = Settings->StaffActorClass.IsNull()
+		? AFF_StaffActor::StaticClass() : Settings->StaffActorClass.LoadSynchronous();
+	if (!StaffActorClass)
 	{
-		ResponderClass = AFF_BaseCrowd::StaticClass();
+		StaffActorClass = AFF_StaffActor::StaticClass();
 	}
 }
 
@@ -69,13 +71,15 @@ void UFF_StaffSubsystem::Deinitialize()
 		DespawnStaff(StaffId);
 	}
 	Staffing = nullptr;
-	ResponderClass = nullptr;
+	Stage = nullptr;
+	StaffActorClass = nullptr;
 	Super::Deinitialize();
 }
 
 void UFF_StaffSubsystem::Tick(float DeltaTime)
 {
-	if (DeltaTime <= 0.f || Staff.IsEmpty())
+	const float SimDeltaTime = DeltaTime * GetEffectiveTimeScale();
+	if (SimDeltaTime <= 0.f || Staff.IsEmpty())
 	{
 		return;
 	}
@@ -85,7 +89,7 @@ void UFF_StaffSubsystem::Tick(float DeltaTime)
 	{
 		if (FStaffRuntime* Runtime = Staff.Find(StaffId))
 		{
-			TickRuntime(StaffId, *Runtime, DeltaTime);
+			TickRuntime(StaffId, *Runtime, SimDeltaTime);
 		}
 	}
 }
@@ -109,22 +113,25 @@ bool UFF_StaffSubsystem::SendStaff(const FFF_StaffDispatchOrigin& Origin, const 
 	Runtime.Position = Origin.Location;
 	Runtime.HomeLocation = Origin.Location;
 	Runtime.Travelled.Add(Origin.Location);
-	if (!ResolveTargetLocation(Runtime, Runtime.PathGoal)
-		|| !FindPath(Runtime.Position, Runtime.PathGoal, Runtime.Path))
+	if (!ResolveTargetLocation(Runtime, Runtime.PathGoal))
 	{
 		return false;
 	}
+	const bool bHasPath = FindPath(Runtime.Position, Runtime.PathGoal, Runtime.Path);
+	ResetProgress(Runtime, Runtime.PathGoal);
+	Runtime.FailCount = bHasPath ? 0 : 1;
 	FActorSpawnParameters Parameters;
 	Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AFF_BaseCrowd* Actor = World->SpawnActor<AFF_BaseCrowd>(ResponderClass,
+	AFF_StaffActor* Actor = World->SpawnActor<AFF_StaffActor>(
+		StaffActorClass ? StaffActorClass.Get() : AFF_StaffActor::StaticClass(),
 		Runtime.Position, FRotator::ZeroRotator, Parameters);
 	if (!Actor)
 	{
 		return false;
 	}
 	Actor->SetActorEnableCollision(false);
-	Actor->Tags.Add(TEXT("StaffResponder"));
-	Runtime.Responder = Actor;
+	Actor->SetStaffId(Origin.StaffId);
+	Runtime.Actor = Actor;
 	SetState(Runtime, EFF_StaffState::Moving);
 	Staff.Add(Origin.StaffId, MoveTemp(Runtime));
 	return true;
@@ -147,38 +154,48 @@ bool UFF_StaffSubsystem::TickRuntime(int32 StaffId, FStaffRuntime& Runtime, floa
 	switch (Runtime.State)
 	{
 	case EFF_StaffState::Moving:
-		if (Runtime.RepathElapsed >= RepathIntervalSeconds && ResolveTargetLocation(Runtime, TargetNow)
-			&& !TargetNow.Equals(Runtime.PathGoal, RepathTargetMoveCm))
+	{
+		if (!ResolveTargetLocation(Runtime, TargetNow))
+		{
+			return true;
+		}
+		const bool bTargetMoved = !TargetNow.Equals(Runtime.PathGoal, RepathTargetMoveCm);
+		const bool bPathEnded = !Runtime.Path.IsValidIndex(Runtime.NextIndex);
+		const bool bShortOfTarget = FVector::DistSquared(Runtime.Position, TargetNow) > FMath::Square(ArrivalRadiusCm);
+		if ((bTargetMoved || (bPathEnded && bShortOfTarget)) && Runtime.RepathElapsed >= RepathIntervalSeconds)
 		{
 			Runtime.RepathElapsed = 0.f;
 			Runtime.Travelled.Add(Runtime.Position);
-			if (!FindPath(Runtime.Position, TargetNow, Runtime.Path))
+			TArray<FVector> NewPath;
+			if (FindPath(Runtime.Position, TargetNow, NewPath))
 			{
-				GiveUp(Runtime);
-				return true;
+				Runtime.Path = MoveTemp(NewPath);
+				Runtime.NextIndex = 0;
+				Runtime.PathGoal = TargetNow;
+				Runtime.BestDistance = GetRemainingDistance(Runtime, TargetNow);
 			}
-			Runtime.PathGoal = TargetNow;
-			Runtime.NextIndex = 0;
+			else
+			{
+				++Runtime.FailCount;
+			}
 		}
-		if (!MoveStaff(Runtime, DeltaTime))
+		const bool bArrived = MoveStaff(Runtime, DeltaTime);
+		if (bArrived && FVector::DistSquared(Runtime.Position, TargetNow) <= FMath::Square(ArrivalRadiusCm))
 		{
+			HoldAtTarget(StaffId, Runtime, TargetNow);
 			return true;
 		}
-		if (!ResolveTargetLocation(Runtime, TargetNow) || !TargetNow.Equals(Runtime.PathGoal, RepathTargetMoveCm))
+		if (CheckProgress(Runtime, TargetNow, DeltaTime))
 		{
-			return true;
+			WarpToTarget(StaffId, Runtime, TargetNow);
 		}
-		if (FVector::DistSquared(Runtime.Position, TargetNow) > FMath::Square(ArrivalRadiusCm))
-		{
-			GiveUp(Runtime);
-			return true;
-		}
-		HoldAtTarget(StaffId, Runtime);
 		return true;
+	}
 
 	case EFF_StaffState::Working:
 		if (ResolveTargetLocation(Runtime, TargetNow) && !TargetNow.Equals(Runtime.PathGoal, WorkLeaveRadiusCm))
 		{
+			ResetProgress(Runtime, TargetNow);
 			SetState(Runtime, EFF_StaffState::Moving);
 		}
 		return true;
@@ -209,7 +226,7 @@ bool UFF_StaffSubsystem::MoveStaff(FStaffRuntime& Runtime, float DeltaTime)
 {
 	const FVector Previous = Runtime.Position;
 	const bool bArrived = AdvanceAlongPath(Runtime, TravelSpeed * DeltaTime);
-	if (AFF_BaseCrowd* Actor = Runtime.Responder.Get())
+	if (AFF_StaffActor* Actor = Runtime.Actor.Get())
 	{
 		const FVector Movement = Runtime.Position - Previous;
 		const FRotator Rotation = Movement.IsNearlyZero() ? Actor->GetActorRotation() : Movement.Rotation();
@@ -218,10 +235,11 @@ bool UFF_StaffSubsystem::MoveStaff(FStaffRuntime& Runtime, float DeltaTime)
 	return bArrived;
 }
 
-void UFF_StaffSubsystem::HoldAtTarget(int32 StaffId, FStaffRuntime& Runtime)
+void UFF_StaffSubsystem::HoldAtTarget(int32 StaffId, FStaffRuntime& Runtime, const FVector& TargetNow)
 {
+	Runtime.PathGoal = TargetNow;
 	SetState(Runtime, EFF_StaffState::Working);
-	if (AFF_BaseCrowd* Actor = Runtime.Responder.Get())
+	if (AFF_StaffActor* Actor = Runtime.Actor.Get())
 	{
 		Actor->PushPresentation(Runtime.Position, Actor->GetActorRotation(), 0.f);
 	}
@@ -268,7 +286,7 @@ void UFF_StaffSubsystem::DespawnStaff(int32 StaffId)
 	{
 		return;
 	}
-	if (AFF_BaseCrowd* Actor = Runtime.Responder.Get())
+	if (AFF_StaffActor* Actor = Runtime.Actor.Get())
 	{
 		Actor->Destroy();
 	}
@@ -287,7 +305,8 @@ EFF_StaffState UFF_StaffSubsystem::GetStaffState(int32 StaffId) const
 
 AFF_StaffActor* UFF_StaffSubsystem::FindStaffActor(int32 StaffId) const
 {
-	return nullptr;
+	const FStaffRuntime* Runtime = Staff.Find(StaffId);
+	return Runtime ? Runtime->Actor.Get() : nullptr;
 }
 
 bool UFF_StaffSubsystem::ApplyEffectToStaff(int32 StaffId, TSubclassOf<UGameplayEffect> Effect)
@@ -309,30 +328,87 @@ bool UFF_StaffSubsystem::FindPath(const FVector& From, const FVector& To, TArray
 	UNavigationSystemV1* Navigation = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
 	if (!Navigation)
 	{
+		FF_STAFF_LOG("경로 실패[내비 없음] %s → %s", *From.ToCompactString(), *To.ToCompactString());
 		return false;
 	}
-	FNavLocation NavStart;
-	FNavLocation NavEnd;
-	const FVector ProjectionExtent(200.f, 200.f, 400.f);
-	if (!Navigation->ProjectPointToNavigation(From, NavStart, ProjectionExtent)
-		|| !Navigation->ProjectPointToNavigation(To, NavEnd, ProjectionExtent))
+	FVector NavStart;
+	FVector NavEnd;
+	if (!ProjectEndpoint(*Navigation, From, TEXT("출발"), NavStart)
+		|| !ProjectEndpoint(*Navigation, To, TEXT("목표"), NavEnd))
 	{
 		return false;
 	}
-	if (FVector::Dist2D(From, NavStart.Location) > 100.f || FMath::Abs(From.Z - NavStart.Location.Z) > 100.f
-		|| FVector::Dist2D(To, NavEnd.Location) > 100.f || FMath::Abs(To.Z - NavEnd.Location.Z) > 100.f)
+	const UNavigationPath* Path = UNavigationSystemV1::FindPathToLocationSynchronously(GetWorld(), NavStart, NavEnd);
+	if (!Path || !Path->IsValid() || Path->PathPoints.IsEmpty())
 	{
+		FF_STAFF_LOG("경로 실패[%s] 내비 출발 %s → 내비 목표 %s",
+			!Path ? TEXT("경로 객체 없음") : !Path->IsValid() ? TEXT("무효 경로") : TEXT("점 없음"),
+			*NavStart.ToCompactString(), *NavEnd.ToCompactString());
 		return false;
 	}
-	const UNavigationPath* Path = UNavigationSystemV1::FindPathToLocationSynchronously(
-		GetWorld(), NavStart.Location, NavEnd.Location);
-	if (!Path || !Path->IsValid() || Path->IsPartial() || Path->PathPoints.IsEmpty())
+	if (Path->IsPartial())
 	{
-		return false;
+		FF_STAFF_LOG("중간 끊김 경로 사용: 내비 출발 %s → 내비 목표 %s, 경로 끝 %s (목표까지 %.0f)",
+			*NavStart.ToCompactString(), *NavEnd.ToCompactString(),
+			*Path->PathPoints.Last().ToCompactString(), FVector::Dist(Path->PathPoints.Last(), NavEnd));
 	}
-	OutPath.Add(From);
-	OutPath.Append(Path->PathPoints);
+	AssemblePath(From, To, Path->PathPoints, Path->IsPartial(), OutPath);
 	return true;
+}
+
+bool UFF_StaffSubsystem::ProjectEndpoint(const UNavigationSystemV1& Navigation, const FVector& Point,
+	const TCHAR* Label, FVector& OutNavLocation)
+{
+	const FVector NearExtent(200.f, 200.f, 400.f);
+	FNavLocation Near;
+	const bool bNearProjected = Navigation.ProjectPointToNavigation(Point, Near, NearExtent);
+	if (bNearProjected && IsProjectionAcceptable(Point, Near.Location, NearProjectionGapCm))
+	{
+		OutNavLocation = Near.Location;
+		return true;
+	}
+	const FVector WideExtent(WideProjectionHorizontalCm, WideProjectionHorizontalCm, ProjectionMaxGapZCm);
+	FNavLocation Wide;
+	if (Navigation.ProjectPointToNavigation(Point, Wide, WideExtent)
+		&& IsProjectionAcceptable(Point, Wide.Location, WideExtent.Size2D()))
+	{
+		FF_STAFF_LOG("넓은 투영 사용[%s] %s → 내비 %s (수평 %.0f, 수직 %.0f). 좁은 투영: %s",
+			Label, *Point.ToCompactString(), *Wide.Location.ToCompactString(),
+			FVector::Dist2D(Point, Wide.Location), FMath::Abs(Point.Z - Wide.Location.Z),
+			bNearProjected ? *FString::Printf(TEXT("%s (수평 %.0f, 수직 %.0f)"), *Near.Location.ToCompactString(),
+				FVector::Dist2D(Point, Near.Location), FMath::Abs(Point.Z - Near.Location.Z)) : TEXT("없음"));
+		OutNavLocation = Wide.Location;
+		return true;
+	}
+	FF_STAFF_LOG("경로 실패[투영 불가 %s] %s. 좁은 투영: %s, 넓은 투영(수평 %.0f, 수직 %.0f): 없음",
+		Label, *Point.ToCompactString(),
+		bNearProjected ? *FString::Printf(TEXT("%s (수평 %.0f, 수직 %.0f)"), *Near.Location.ToCompactString(),
+			FVector::Dist2D(Point, Near.Location), FMath::Abs(Point.Z - Near.Location.Z)) : TEXT("없음"),
+		WideProjectionHorizontalCm, ProjectionMaxGapZCm);
+	return false;
+}
+
+bool UFF_StaffSubsystem::IsProjectionAcceptable(const FVector& Point, const FVector& Projected, float MaxGap2DCm)
+{
+	return FVector::Dist2D(Point, Projected) <= MaxGap2DCm && FMath::Abs(Point.Z - Projected.Z) <= ProjectionMaxGapZCm;
+}
+
+void UFF_StaffSubsystem::AssemblePath(const FVector& From, const FVector& To, const TArray<FVector>& NavPoints,
+	bool bPartial, TArray<FVector>& OutPath)
+{
+	OutPath.Reset(NavPoints.Num() + 2);
+	OutPath.Add(From);
+	for (const FVector& Point : NavPoints)
+	{
+		if (!OutPath.Last().Equals(Point, 1.f))
+		{
+			OutPath.Add(Point);
+		}
+	}
+	if (!bPartial && !OutPath.Last().Equals(To, 1.f))
+	{
+		OutPath.Add(To);
+	}
 }
 
 bool UFF_StaffSubsystem::AdvanceAlongPath(FStaffRuntime& Runtime, float Distance)
@@ -367,13 +443,56 @@ void UFF_StaffSubsystem::ReverseTravelledPath(FStaffRuntime& Runtime)
 	Runtime.NextIndex = 0;
 }
 
-bool UFF_StaffSubsystem::CheckProgress(FStaffRuntime& Runtime, const FVector& TargetNow, float NowMinutes)
+float UFF_StaffSubsystem::GetRemainingDistance(const FStaffRuntime& Runtime, const FVector& TargetNow)
 {
-	return false;
+	float Remaining = 0.f;
+	FVector From = Runtime.Position;
+	for (int32 Index = FMath::Max(0, Runtime.NextIndex); Index < Runtime.Path.Num(); ++Index)
+	{
+		Remaining += FVector::Distance(From, Runtime.Path[Index]);
+		From = Runtime.Path[Index];
+	}
+	return Remaining + FVector::Distance(From, TargetNow);
+}
+
+void UFF_StaffSubsystem::ResetProgress(FStaffRuntime& Runtime, const FVector& TargetNow)
+{
+	Runtime.BestDistance = GetRemainingDistance(Runtime, TargetNow);
+	Runtime.StallElapsed = 0.f;
+	Runtime.FailCount = 0;
+}
+
+bool UFF_StaffSubsystem::CheckProgress(FStaffRuntime& Runtime, const FVector& TargetNow, float DeltaTime)
+{
+	const float Remaining = GetRemainingDistance(Runtime, TargetNow);
+	if (Remaining <= Runtime.BestDistance - MinProgressCm)
+	{
+		Runtime.BestDistance = Remaining;
+		Runtime.StallElapsed = 0.f;
+		Runtime.FailCount = 0;
+		return false;
+	}
+	Runtime.StallElapsed += DeltaTime;
+	if (Runtime.StallElapsed >= StallTimeoutSeconds)
+	{
+		Runtime.StallElapsed = 0.f;
+		++Runtime.FailCount;
+	}
+	return Runtime.FailCount >= MaxFailCount;
 }
 
 void UFF_StaffSubsystem::WarpToTarget(int32 StaffId, FStaffRuntime& Runtime, const FVector& TargetNow)
 {
+	FF_STAFF_LOG("스태프 %d 순간이동: 실패 %d회, %s → %s", StaffId, Runtime.FailCount,
+		*Runtime.Position.ToCompactString(), *TargetNow.ToCompactString());
+	Runtime.Position = TargetNow;
+	Runtime.Path.Reset();
+	Runtime.Path.Add(TargetNow);
+	Runtime.NextIndex = Runtime.Path.Num();
+	Runtime.Travelled.Reset();
+	Runtime.Travelled.Add(TargetNow);
+	ResetProgress(Runtime, TargetNow);
+	HoldAtTarget(StaffId, Runtime, TargetNow);
 }
 
 void UFF_StaffSubsystem::SetState(FStaffRuntime& Runtime, EFF_StaffState NewState)
@@ -401,5 +520,5 @@ bool UFF_StaffSubsystem::TryGetNowMinutes(float& OutMinutes) const
 
 float UFF_StaffSubsystem::GetEffectiveTimeScale() const
 {
-	return 1.f;
+	return Stage ? FMath::Max(0.f, Stage->GetEffectiveTimeScale()) : 1.f;
 }

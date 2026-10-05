@@ -18,6 +18,8 @@
 #include "Incident/FF_IncidentSubsystem.h"
 #include "Incident/FF_IncidentTags.h"
 #include "Staff/FF_StaffDispatchSubsystem.h"
+#include "Staff/FF_StaffActor.h"
+#include "Staff/FF_StaffSubsystem.h"
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
@@ -253,15 +255,49 @@ bool FFF_StaffFacilityDispatchTest::RunTest(const FString& Parameters)
     Slot.Anchor.WorldPoint = Target;
     Slot.DedupeKey = TEXT("StaffFacilityNoNavDispatch");
     Incident->ActiveByKey.Add(Slot.DedupeKey, Handle);
-    TestFalse(TEXT("A world without navigation cannot start a staff journey"),
-        Dispatch->TryDispatch(Handle, INDEX_NONE, 2, Slot.Anchor));
-    TestEqual(TEXT("Path failure rolls back every reserved staff member"), H.Staffing->GetBusyStaffCount(), 0);
-    TestTrue(TEXT("Path failure keeps the incident available for a later retry"), Incident->IsHandleValid(Handle));
-    TestFalse(TEXT("Path failure retains no in-flight dispatch"), Dispatch->IsResponding(Handle));
-    int32 ResponderCount = 0;
-    for (TActorIterator<AActor> It(H.World); It; ++It)
-        if (It->ActorHasTag(TEXT("StaffResponder"))) ++ResponderCount;
-    TestEqual(TEXT("Path failure leaves no staff actor behind"), ResponderCount, 0);
+    auto CountResponders = [&H]()
+    {
+        int32 Count = 0;
+        for (TActorIterator<AFF_StaffActor> It(H.World); It; ++It) ++Count;
+        return Count;
+    };
+    UFF_StaffSubsystem* Bodies = H.World->GetSubsystem<UFF_StaffSubsystem>();
+    if (!TestNotNull(TEXT("The actual staff body owner exists"), Bodies)) return false;
+    EFF_IncidentResolveResult Result = EFF_IncidentResolveResult::Dispatched;
+    TestFalse(TEXT("More staff than are assigned cannot be sent"),
+        Dispatch->TryDispatch(Handle, INDEX_NONE, 4, Slot.Anchor, 0.f, &Result));
+    TestEqual(TEXT("A shortage is reported as a shortage"), Result, EFF_IncidentResolveResult::NotEnoughStaff);
+    FFF_IncidentAnchor NoSite;
+    NoSite.Kind = EFF_IncidentAnchorKind::Screenspace;
+    TestFalse(TEXT("A screen-only anchor has no site"), Dispatch->TryDispatch(Handle, INDEX_NONE, 2, NoSite, 0.f, &Result));
+    TestEqual(TEXT("A missing site is reported as a missing site"), Result, EFF_IncidentResolveResult::NoSite);
+    TestEqual(TEXT("Rejected dispatches reserve nobody"), H.Staffing->GetBusyStaffCount(), 0);
+    TestTrue(TEXT("A world without navigation still starts a staff journey"),
+        Dispatch->TryDispatch(Handle, INDEX_NONE, 2, Slot.Anchor, 0.f, &Result));
+    TestEqual(TEXT("An accepted dispatch is reported as dispatched"), Result, EFF_IncidentResolveResult::Dispatched);
+    TestFalse(TEXT("The same incident cannot be dispatched twice"),
+        Incident->ResolveIncident(Handle, INDEX_NONE, INDEX_NONE, &Result));
+    TestEqual(TEXT("A second request is reported as already responding"), Result, EFF_IncidentResolveResult::AlreadyResponding);
+    TestEqual(TEXT("Both members stay reserved while travelling without a path"), H.Staffing->GetBusyStaffCount(), 2);
+    TestTrue(TEXT("The pathless journey is an active response"), Dispatch->IsResponding(Handle));
+    TestEqual(TEXT("Each member gets a body at the facility exit"), CountResponders(), 2);
+    const AFF_StaffActor* Body = Bodies->FindStaffActor(2);
+    if (TestNotNull(TEXT("A dispatched member can be looked up by its staff ID"), Body))
+    {
+        TestEqual(TEXT("The body knows which member it is"), Body->GetStaffId(), 2);
+        TestTrue(TEXT("The body starts at its facility exit"), Body->GetActorLocation().Equals(Target, 1.f));
+        TestFalse(TEXT("The body never collides with the crowd"), Body->GetActorEnableCollision());
+    }
+    TestNull(TEXT("An undispatched member has no body"), Bodies->FindStaffActor(1));
+
+    Incident->WithdrawIncident(Slot.DedupeKey);
+    Bodies->Tick(0.1f);
+    Dispatch->Tick(0.1f);
+    TestEqual(TEXT("A recalled pathless member is home at once and releases its reservation"), H.Staffing->GetBusyStaffCount(), 0);
+    TestFalse(TEXT("The withdrawn response is cleared"), Dispatch->IsResponding(Handle));
+    TestEqual(TEXT("Returning home removes every staff actor"), CountResponders(), 0);
+    TestFalse(TEXT("A withdrawn incident cannot be resolved"), Incident->ResolveIncident(Handle, INDEX_NONE, INDEX_NONE, &Result));
+    TestEqual(TEXT("A withdrawn incident is reported as gone"), Result, EFF_IncidentResolveResult::InvalidIncident);
 
     TestTrue(TEXT("Returning staff can be reassigned"), H.Staffing->TryAssignStaff(2, FarHome));
     TestTrue(TEXT("Returning staff can move back into the released home slot"), H.Staffing->TryAssignStaff(2, NearHome));
