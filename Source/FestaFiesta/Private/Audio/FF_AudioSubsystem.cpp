@@ -30,8 +30,22 @@ namespace
 	// 이전 곡 버튼: 지금 곡을 이만큼 넘게 들었으면 지금 곡의 처음으로 간다.
 	constexpr float PlaylistPreviousRestartSeconds = 3.f;
 
+	// 끝났다는 알림이 곡 끝에서 이만큼 안쪽이면 끝까지 간 것으로 본다(IsAmbienceCutShort).
+	// 오디오 시각과 실제 재생 사이에는 작은 어긋남이 있다.
+	constexpr float AmbienceEndToleranceSeconds = 1.f;
+
+	// 끊긴 곡을 이을 때 소리를 올리는 시간. 0 이면 툭 하고 들어온다.
+	constexpr float AmbienceResumeFadeSeconds = 0.3f;
+
 	// 플레이리스트 설정을 남기는 자리(GameUserSettings.ini).
 	const TCHAR* const PlaylistConfigSection = TEXT("FestaFiesta.Playlist");
+
+	// 고른 소리를 틀 위치(초). 큐의 소리별 시작 위치 표에 없으면 처음부터(FFF_AudioCue::SoundStartSeconds).
+	float ResolveStartSeconds(const FFF_AudioCue& Cue, USoundBase* Sound)
+	{
+		const float* Found = Sound ? Cue.SoundStartSeconds.Find(TSoftObjectPtr<USoundBase>(Sound)) : nullptr;
+		return Found ? FMath::Max(0.f, *Found) : 0.f;
+	}
 }
 
 bool UFF_AudioSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
@@ -175,7 +189,7 @@ bool UFF_AudioSubsystem::PlayEvent2D(const EFF_AudioEvent Event)
 		this, Sound,
 		Cue->VolumeMultiplier * GetChannelVolume(ResolveChannel(Event, *Cue)),
 		FMath::FRandRange(Cue->PitchMin, Cue->PitchMax),
-		0.f, nullptr, nullptr, true);
+		ResolveStartSeconds(*Cue, Sound), nullptr, nullptr, true);
 
 	++PlayedCues;
 	return true;
@@ -206,7 +220,7 @@ bool UFF_AudioSubsystem::PlayEventAtLocation(const EFF_AudioEvent Event, const F
 		World, Sound, WorldLocation, FRotator::ZeroRotator,
 		Cue->VolumeMultiplier * GetChannelVolume(ResolveChannel(Event, *Cue)),
 		FMath::FRandRange(Cue->PitchMin, Cue->PitchMax),
-		0.f, nullptr,
+		ResolveStartSeconds(*Cue, Sound), nullptr,
 		Cue->Concurrency.LoadSynchronous());
 
 	++PlayedCues;
@@ -238,6 +252,22 @@ void UFF_AudioSubsystem::SetAmbience(const EFF_AudioAmbience Ambience)
 	}
 
 	const UFF_AudioBankData* Bank = ResolveBank();
+
+	/* 이름만 다르고 같은 곡이면 끊지 않고 이름만 바꾼다.
+
+	   뱅크에서 피날레 곡과 최고 등급 전용곡에 같은 곡을 넣어 두었더니, 둘 사이를 오갈 때마다
+	   곡이 처음부터 다시 시작해 끊겼다(2026-10-05 피드백). 플레이리스트는 곡 목록이라 여기서 다루지 않는다.
+	*/
+	if (Bank && Ambience != EFF_AudioAmbience::Playlist && CurrentAmbience != EFF_AudioAmbience::Playlist)
+	{
+		const FFF_AudioAmbienceTrack* Playing = FindActiveTrack(Bank);
+		const FFF_AudioAmbienceTrack* Next = Bank->FindAmbience(Ambience);
+		if (Playing && Next && Playing->IsValid() && Next->Sound == Playing->Sound)
+		{
+			CurrentAmbience = Ambience;
+			return;
+		}
+	}
 
 	// 플레이리스트를 떠나면 들은 자리를 남긴다. 돌아오면 거기서 잇는다.
 	// 멈춰 둔 상태는 풀어 둔다. 다음에 돌아왔을 때 소리가 안 나면 고장으로 보인다.
@@ -329,16 +359,57 @@ void UFF_AudioSubsystem::SpawnAmbienceComponent(
 	   0.5 로 두면 0.25 로 들렸다. 볼륨을 한 곳에 모아야 설정이 바뀌었을 때 그 값만 다시 걸 수 있다.
 	*/
 	AmbienceTrackVolume = Track.VolumeMultiplier;
-	AmbienceComponent = UGameplayStatics::SpawnSound2D(
+	++StartedAmbienceTracks;
+
+	/* 만들기만 하고 틀기는 FadeIn 이 한 번에 한다. 틀기 전에 우선순위를 올려야 해서다.
+
+	   불꽃이 한꺼번에 수십 발 터지면 동시에 낼 수 있는 소리 수(엔진 기본 32)를 넘는다. 엔진은 그때
+	   우선순위가 낮은 소리를 끄는데 배경음도 그 대상이었다. 꺼진 곡은 "끝났다"로 알려와 처음부터 다시
+	   틀었고, S 등급 전용곡이 불꽃 도중에 세 번쯤 처음으로 돌아갔다(2026-10-05 피드백).
+	   배경음은 한 곡뿐이고 끊기면 바로 들리므로 늘 이기게 한다(bAlwaysPlay).
+	*/
+	AmbienceComponent = UGameplayStatics::CreateSound2D(
 		World, Sound, AmbienceTrackVolume * GetChannelVolume(EFF_AudioChannel::Music),
 		1.f, StartSeconds, nullptr, true, false);
 
 	if (AmbienceComponent)
 	{
-		// FadeIn 은 재생을 다시 건다. 시작 위치를 같이 넘겨야 이어 틀기가 처음으로 돌아가지 않는다.
-		AmbienceComponent->FadeIn(FMath::Max(0.f, Track.FadeInSeconds), 1.f, StartSeconds);
+		AmbienceComponent->bAlwaysPlay = true;
 		AmbienceComponent->OnAudioFinishedNative.AddUObject(this, &UFF_AudioSubsystem::HandleAmbienceFinished);
+
+		// 시작 위치를 같이 넘겨야 이어 틀기가 처음으로 돌아가지 않는다.
+		AmbienceComponent->FadeIn(FMath::Max(0.f, Track.FadeInSeconds), 1.f, StartSeconds);
+
+		// 반복 곡은 GetDuration 이 "무한" 을 돌려준다. 파형이면 실제 길이를 읽는다.
+		const USoundWave* Wave = Cast<USoundWave>(Sound);
+		AmbienceLength = Wave ? Wave->Duration : (Sound->IsLooping() ? 0.f : Sound->GetDuration());
+		AmbienceStartAudioTime = World->GetAudioTimeSeconds();
+		AmbienceStartOffset = StartSeconds;
 	}
+}
+
+bool UFF_AudioSubsystem::IsAmbienceCutShort(
+	const float PlayedSeconds, const float TrackLengthSeconds, const float ToleranceSeconds)
+{
+	return TrackLengthSeconds > 0.f && PlayedSeconds < TrackLengthSeconds - FMath::Max(0.f, ToleranceSeconds);
+}
+
+float UFF_AudioSubsystem::GetAmbiencePlaybackSeconds() const
+{
+	if (CurrentAmbience == EFF_AudioAmbience::Playlist)
+	{
+		return GetPlaylistPlaybackSeconds();
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World || !AmbienceComponent)
+	{
+		return 0.f;
+	}
+
+	const float Position = AmbienceStartOffset
+		+ static_cast<float>(World->GetAudioTimeSeconds() - AmbienceStartAudioTime);
+	return AmbienceLength > 0.f ? FMath::Clamp(Position, 0.f, AmbienceLength) : FMath::Max(0.f, Position);
 }
 
 const FFF_AudioAmbienceTrack* UFF_AudioSubsystem::FindActiveTrack(const UFF_AudioBankData* Bank) const
@@ -803,6 +874,29 @@ void UFF_AudioSubsystem::HandleAmbienceFinished(UAudioComponent* Component)
 		return;
 	}
 
+	/* 곡 중간에 끊겼으면 끊긴 자리부터 잇는다.
+
+	   우선순위를 올려 두어(SpawnAmbienceComponent) 생기지 않아야 하지만, 생기면 처음으로 돌아가는 것보다
+	   잇는 편이 훨씬 덜 거슬린다. 플레이리스트도 같다 — 안 그러면 다음 곡으로 넘어가 버린다.
+	   이어 튼 위치와 지금 시각이 그대로 맞물리므로 플레이리스트의 위치 계산은 손대지 않는다.
+	*/
+	const float Played = GetAmbiencePlaybackSeconds();
+	const float Length = CurrentAmbience == EFF_AudioAmbience::Playlist ? PlaylistTrackLength : AmbienceLength;
+	if (IsAmbienceCutShort(Played, Length, AmbienceEndToleranceSeconds))
+	{
+		++InterruptedAmbienceTracks;
+		UE_LOG(LogFestaFiestaAudio, Warning,
+			TEXT("[사운드] 배경음 %s 이 %.1f/%.1f초에서 끊겨 그 자리부터 잇는다. 끊긴 횟수 %d."),
+			Component->Sound ? *Component->Sound->GetName() : TEXT("?"), Played, Length, InterruptedAmbienceTracks);
+		Component->FadeIn(AmbienceResumeFadeSeconds, 1.f, Played);
+		if (const UWorld* World = GetWorld())
+		{
+			AmbienceStartAudioTime = World->GetAudioTimeSeconds();
+		}
+		AmbienceStartOffset = Played;
+		return;
+	}
+
 	// 플레이리스트는 다음 곡(또는 같은 곡)으로 간다. 끝난 곡은 페이드아웃할 것이 없으니 비우고 넘긴다.
 	if (CurrentAmbience == EFF_AudioAmbience::Playlist)
 	{
@@ -811,13 +905,14 @@ void UFF_AudioSubsystem::HandleAmbienceFinished(UAudioComponent* Component)
 		return;
 	}
 
-	// 엔딩곡은 한 번만 흐른다. 연출이 끝나기 전에 곡이 끝나도 되풀이하면 끝났다는 느낌이 사라진다.
-	if (CurrentAmbience == EFF_AudioAmbience::FinaleEnding)
-	{
-		return;
-	}
-
+	// 최고 등급 전용곡도 연출이 끝날 때까지 되풀이한다. 곡이 연출보다 짧아도 끝까지 조용해지지 않는다.
+	// 연출이 끝나면 오디오 결선이 다음 곡으로 갈아탄다(UFF_AudioEventLink::HandleFinaleShowStateChanged).
 	Component->Play(0.f);
+	if (const UWorld* World = GetWorld())
+	{
+		AmbienceStartAudioTime = World->GetAudioTimeSeconds();
+	}
+	AmbienceStartOffset = 0.f;
 }
 
 bool UFF_AudioSubsystem::HasAmbienceTrack(const EFF_AudioAmbience Ambience) const
@@ -856,6 +951,7 @@ EFF_AudioChannel UFF_AudioSubsystem::ResolveChannel(const EFF_AudioEvent Event, 
 	switch (Event)
 	{
 	case EFF_AudioEvent::FinaleBurst:
+	case EFF_AudioEvent::FinaleLaunch:
 	case EFF_AudioEvent::FinaleShowStarted:
 	case EFF_AudioEvent::FinaleShowEnded:
 		return EFF_AudioChannel::Fireworks;
@@ -964,9 +1060,12 @@ void UFF_AudioSubsystem::RegisterDebugConsoleCommands()
 		{
 			const UFF_AudioBankData* Bank = ResolveBank();
 			UE_LOG(LogFestaFiestaAudio, Display,
-				TEXT("[사운드] 켜짐=%s 재생=%d 누락=%d 억제=%d 배경음=%d"),
+				TEXT("[사운드] 켜짐=%s 재생=%d 누락=%d 억제=%d 배경음=%d (%.1f/%.1f초, 곡 시작 %d · 중간 끊김 %d)"),
 				bAudioEnabled ? TEXT("예") : TEXT("아니오"),
-				PlayedCues, MissingCues, SuppressedCues, static_cast<int32>(CurrentAmbience));
+				PlayedCues, MissingCues, SuppressedCues, static_cast<int32>(CurrentAmbience),
+				GetAmbiencePlaybackSeconds(),
+				CurrentAmbience == EFF_AudioAmbience::Playlist ? PlaylistTrackLength : AmbienceLength,
+				StartedAmbienceTracks, InterruptedAmbienceTracks);
 			UE_LOG(LogFestaFiestaAudio, Display,
 				TEXT("  뱅크: %s / 등록된 효과음 %d개 / 배경음 %d개"),
 				Bank ? *Bank->GetName() : TEXT("없음"),
