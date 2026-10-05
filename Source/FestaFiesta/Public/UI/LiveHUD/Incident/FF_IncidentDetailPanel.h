@@ -11,6 +11,7 @@ class UBorder;
 class UButton;
 class UCanvasPanel;
 class UFF_IncidentSubsystem;
+class UFF_StaffFacilitySubsystem;
 class UHorizontalBox;
 class UPanelWidget;
 class UTextBlock;
@@ -23,7 +24,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FFF_OnIncidentDispatchRequested,
  * 사건 아이콘을 눌렀을 때 뜨는 상세 패널. WBP 없이 C++ 만으로 트리를 만든다.
  *
  * 허브의 FFF_IncidentView 만 읽어 제목·본문과 첫 번째 유효 선택지의 비용·작업량·보상을 보여 주고,
- * 작업 인원을 MinStaff~MaxStaff 안에서 고르게 한다. 가능 인원(배치 중 제외)은 배치 관리자가 생기면 상한에 더한다.
+ * 작업 인원을 MinStaff 이상, 지금 출동 가능한 스태프 수 이하에서 고르게 하고 예상 작업 시간(작업량 ÷ 인원)을 보여 준다.
+ * 가능 인원은 StaffFacility 가 알려 주고, 출동·복귀로 바뀌면(OnStaffingChanged) 다시 계산한다.
  *
  * [보내기]는 OnDispatchRequested 만 방송한다. 패널은 허브도 배치 관리자도 부르지 않는다.
  * 선택지가 없는 사건은 [확인]으로 바뀌고 OptionIndex=INDEX_NONE, StaffCount=0 으로 방송한다.
@@ -74,6 +76,9 @@ private:
 	void HandleIncidentClosed(FFF_IncidentHandle Handle);
 
 	UFUNCTION()
+	void HandleStaffingChanged();
+
+	UFUNCTION()
 	void HandleMinusClicked();
 
 	UFUNCTION()
@@ -95,6 +100,7 @@ private:
 
 	bool Refresh();
 	void RefreshStaff();
+	int32 GetDispatchableStaff() const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCanvasPanel> Canvas;
@@ -149,6 +155,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_IncidentSubsystem> CachedIncident;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_StaffFacilitySubsystem> CachedStaffing;
 
 	FFF_IncidentHandle CurrentHandle;
 	FFF_IncidentOptionView CurrentOption;

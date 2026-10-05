@@ -133,6 +133,17 @@ TArray<FFF_StaffMember> UFF_StaffFacilitySubsystem::GetFacilityStaff(FGuid Facil
 
 int32 UFF_StaffFacilitySubsystem::GetAssignedStaffCount(FGuid FacilityId) const { return GetFacilityStaff(FacilityId).Num(); }
 
+int32 UFF_StaffFacilitySubsystem::GetDispatchableStaffCount() const
+{
+	EnsureFresh();
+	if (!Progression || bResettingReservations || (Save && Save->IsRestoring())) return 0;
+	int32 Count = 0;
+	FFF_StaffDispatchOrigin Origin;
+	for (const FFF_StaffMember& Member : Progression->GetStaffRoster())
+		if (!IsStaffBusy(Member.StaffId) && BuildDispatchOrigin(Member, Origin)) ++Count;
+	return Count;
+}
+
 int32 UFF_StaffFacilitySubsystem::GetUnassignedStaffCount() const
 {
 	EnsureFresh();

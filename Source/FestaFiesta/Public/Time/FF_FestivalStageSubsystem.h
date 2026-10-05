@@ -315,6 +315,12 @@ public:
 	static constexpr float MainProgramQueueBreakLeadMinutes = 3.f;
 	bool TryGetMainProgramQueueBreakWindow(float& OutStartSeconds, float& OutEndSeconds) const;
 
+	/**
+	 * 공연 시작 LeadStageSeconds(Live 경과 초) 전부터 공연 종료 전까지의 창. 대기열 중단 창
+	 * (3축제분 = 몇 초)과 다르다 - 관객이 걸어올 시간은 그보다 훨씬 길어 집결은 이 창을 쓴다.
+	 */
+	bool TryGetMainProgramShowWindow(float LeadStageSeconds, float& OutStartSeconds, float& OutEndSeconds) const;
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Time")
 	bool IsMainProgramQueueBreakActive() const;
 	// 지금 메인 공연 배속 잠금 구간인지 확인
@@ -367,6 +373,20 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsFinalDay() const;
+
+	/**
+	 * 3일차 축제를 끝낸다. `OnFestivalEnded` 를 한 번만 방송한다.
+	 *
+	 * DaySequence 에 `Day3_Report` 행이 없으면 Report 타이머가 없어 이벤트가 영영 울리지 않는다.
+	 * 마지막 날은 마감이 마지막 화면이라(`FF_LiveHudRules`) 플레이어의 "축제 마치기" 가 이 함수를 부른다.
+	 * 3일차 마감·리포트에서만 통하고, 이미 끝났으면 false.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
+	bool FinishFestival();
+
+	/** 이번 축제의 종료 이벤트가 이미 나갔는지. 최종 결산 화면이 떠 있는 동안 true. */
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	bool HasFestivalEnded() const { return bFestivalEndedBroadcasted; }
 	// 지금 3일차인지
 
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")

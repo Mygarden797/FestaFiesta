@@ -1,6 +1,6 @@
 # FestaFiesta Windows 패키징 실무 가이드 — SM5 / SM6 함께 지원하기
 
-문서 기준: 2026-09-11 · 프로젝트 `FestaFiesta` · Unreal Engine **5.7.4 / CL 51494982** · Windows 64비트 Shipping 배포
+문서 기준: 2026-09-30 · 프로젝트 `FestaFiesta` · Unreal Engine **5.7.4 / CL 51494982** · Windows 64비트 Shipping 배포
 
 Development 진단 빌드도 같은 스크립트의 `-Configuration Development`로 만들 수 있다. NPC 문제를 직접 확인하는 실행·콘솔·로그 절차는 [Development 테스트 안내](../../Distribution/DEVELOPMENT_TEST_GUIDE_KO.md)를 따른다. 현재 사용자 실행 방식은 **루트의 `FestaFiesta.exe` 하나를 더블클릭**하는 것이다. 새 Development 제작 명령의 라벨은 `FestaFiesta-Win64-Development-SingleExe-20260911`이다. 아래 0장의 수치는 최초 Shipping 배포 이력이며, 새 라벨의 검사 완료를 뜻하지 않는다. 각 빌드의 결과는 해당 라벨의 `Metadata`와 `Validation`에서 확인한다.
 
@@ -199,7 +199,7 @@ GPU를 직접 사용할 수 있는 제작 PC에서는 다음 명령으로 자동
 & '.\Tools\Build\Package-Win64.ps1' -EngineRoot $FFEngine -GraphicsSmokeTest
 ```
 
-`-GraphicsSmokeTest`는 선택 사항이다. GPU가 없는 CI 서버에서는 이를 제외하고 다음 명령을 사용한 뒤 결과물을 GPU가 있는 QA PC로 보내 9장의 그래픽 검사와 10장의 플레이 검사를 수행한다.
+`-GraphicsSmokeTest`는 패키지의 두 그래픽 경로 초기화를 검사하는 선택 사항이다. 현재 전체 자동화에는 실제 위젯 픽셀 검사가 포함되므로 `Run-AutomationTests.ps1`은 `-RenderOffscreen`으로 실행하고 GPU·드라이버가 있는 Windows runner가 필요하다. 창을 띄우지 않는 것과 그래픽 장치가 필요 없는 것은 다르다. 데이터 검증은 `-nullrhi`를 유지한다. 아래 명령은 패키지 그래픽 초기화만 생략하므로, 결과물을 QA PC로 보내 9장의 그래픽 검사와 10장의 플레이 검사를 수행한다.
 
 ```powershell
 & '.\Tools\Build\Package-Win64.ps1' -EngineRoot $FFEngine
@@ -207,7 +207,16 @@ GPU를 직접 사용할 수 있는 제작 PC에서는 다음 명령으로 자동
 
 아무 출력이 잠시 없다고 곧바로 실패는 아니다. 처음에는 셰이더 컴파일과 데이터 가공에 시간이 많이 걸릴 수 있다. 작업 관리자에서 프로세스의 CPU·디스크 사용과 로그의 최종 수정 시간을 확인한다. 기종·캐시·변경량에 따라 시간 차이가 커서 고정 소요 시간을 약속하지 않는다.
 
-**경로 길이 주의.** 스크립트는 시작할 때 출력 경로가 Windows 260자 제한 안에 들어오는지 먼저 검사한다. 프로젝트가 `OneDrive\Desktop\...`처럼 깊은 곳에 있으면 자동 라벨로는 한도를 넘어 바로 멈춘다. 이때는 `-BuildLabel 'FestaFiesta-Win64-Shipping-20260918'`처럼 짧은 라벨을 쓰거나 `-OutputRoot 'C:\Builds\FestaFiesta'`처럼 짧은 출력 위치를 지정한다.
+**경로 길이 주의.** 스크립트는 소스의 `Saved\Cooked\Windows\FestaFiesta\Content` 아래 에셋 경로와 출력의 `.staging\<라벨>\Package` 아래 배포 경로를 각각 검사한다. `-OutputRoot`나 짧은 라벨은 출력·ZIP 경로를 줄이지만 소스의 Cook 경로를 줄이지 않는다. 프로젝트가 `OneDrive\Desktop\...`처럼 깊은 곳에 있으면 짧은 checkout이나 같은 checkout을 가리키는 junction을 쓰고 `-ProjectFile`로 짧은 프로젝트 경로를 전달한다. 콘텐츠를 삭제하거나 이름을 바꿔 경로 문제를 우회하지 않는다.
+
+다음은 현재 checkout을 `C:\FFProj`로 연결하는 예시다. 해당 경로가 없을 때 한 번만 junction을 만들며, 이미 있다면 원하는 checkout을 가리키는지 확인한다. 경로·드라이브·라벨은 팀원 환경에 맞게 바꾼다. `-ProjectFile`은 junction의 짧은 경로를 유지하고 같은 FestaFiesta 프로젝트인지 검사한다.
+
+```powershell
+$FFCheckout = (Get-Location).Path
+New-Item -ItemType Junction -Path 'C:\FFProj' -Target $FFCheckout
+$FFProject = 'C:\FFProj\FestaFiesta.uproject'
+& '.\Tools\Build\Package-Win64.ps1' -EngineRoot $FFEngine -ProjectFile $FFProject -OutputRoot 'C:\Builds\FestaFiesta' -BuildLabel 'FF-Win64-Shipping-20260930-01' -GraphicsSmokeTest
+```
 
 기본 결과 위치는 `Artifacts\Releases`다. 빌드 라벨은 UTC 시각과 Git 커밋으로 자동 생성된다. 예를 들어 `FestaFiesta-Win64-Shipping-20260911-120000-abcdef123456`처럼 구분되며, 변경된 작업 트리는 `-dirty`가 붙을 수 있다.
 
@@ -224,10 +233,10 @@ $FFLabel = 'FestaFiesta-Win64-Shipping-SM5-SM6-20260911-01'
 
 1. 선택한 엔진 버전과 CL, 고정 SDK·MSVC 설치 위치, Git LFS 최소 버전·파일 무결성·포인터 잔존 여부, 출력 드라이브 여유를 검사한다.
 2. 검증에 사용할 `FestaFiestaEditor Win64 Development`를 빌드한다.
-3. 기본 `FestaFiesta`, `FF_ZoneSystem` 자동화 테스트와 프로젝트 데이터 검증을 실행한다.
+3. 기본 `FestaFiesta`, `FF_ZoneSystem` 전체 자동화 테스트를 `-RenderOffscreen`으로 실행하고, 프로젝트 데이터 검증은 `-nullrhi`로 실행한다.
 4. UAT로 `FestaFiesta Win64 Shipping`을 Build → Cook → Stage → Package → Archive한다. UAT 로그에 실제 MSVC·SDK 선택이 보고되면 잠금 버전과 대조하고 불일치 시 중단한다.
 5. 필요한 런타임·라이선스·한국어 실행 안내를 구성한다. 사용자는 엔진이 만든 루트 `FestaFiesta.exe`를 더블클릭하며, 데이터·라이브러리는 원래 하위 폴더에 유지한다. Win64에 불필요한 ARM64 재배포 설치기는 제외한다.
-6. Shipping PDB를 내부 `Symbols`에 따로 보관한다.
+6. Shipping PDB를 내부 `Symbols`에 따로 보관한다. dirty 작업 트리에서는 `Metadata/source-dirty.patch`와 함께 수정된 추적 파일의 실제 바이트를 `source-dirty-tracked.zip`, 미추적 파일을 `source-dirty-untracked.zip`에 보관하여 LFS 포인터만 남는 경우도 복원할 수 있게 한다.
 7. 컨테이너, 필수 맵·데이터·UI, 두 종류의 셰이더 라이브러리 포함 여부와 기본 초기 실행을 검사한다. 요청했으면 두 그래픽 경로의 초기화 검사도 수행한다.
 8. 파일·ZIP의 SHA-256, 빌드 메타데이터, 검증 보고서를 남긴다.
 9. 성공한 결과를 `.staging`에서 최종 라벨 폴더로 승격하고 정상 품질 검사를 거친 빌드의 `latest.json`을 갱신한다.
@@ -239,6 +248,7 @@ $FFLabel = 'FestaFiesta-Win64-Shipping-SM5-SM6-20260911-01'
 | `Package-Win64.ps1` 옵션 | 기본 동작 / 용도 | 사용할 때 판단 |
 | --- | --- | --- |
 | `-EngineRoot <경로>` | 엔진 위치 지정 | 여러 엔진이 설치된 PC에서 명시하는 편이 이해하기 쉬움 |
+| `-ProjectFile <경로>` | 기본은 스크립트가 속한 저장소의 `FestaFiesta.uproject` | 깊은 checkout은 `C:\FFProj\FestaFiesta.uproject`처럼 짧은 junction 경로로 Cook 경로를 줄임 |
 | `-OutputRoot <경로>` | 기본 `Artifacts\Releases` | 결과를 별도 드라이브에 둘 때 |
 | `-BuildLabel <이름>` | 기본 UTC 시각 + Git 커밋 | 회차를 사람이 알아보기 쉽게 구분할 때 |
 | `-Configuration Shipping 또는 Development` | 기본 `Shipping` | 콘솔과 로그로 문제를 직접 확인하는 빌드는 `Development`를 명시 |
@@ -382,9 +392,13 @@ Artifacts/Releases/
       Smoke-NullRHI.json
       Smoke-DX11-SM5.json       # GraphicsSmokeTest를 수행한 경우
       Smoke-DX12-SM6.json       # GraphicsSmokeTest를 수행한 경우
+      Smoke-Default-EXE.json    # GraphicsSmokeTest: 기본 런처·기본 RHI 초기화
       IoStore-Contents.csv
       size-report.json          # 용량 분해·직전 승격 빌드 대비 증감
       source-dirty.patch        # dirty 작업 트리에서 만든 경우에만
+      source-dirty-tracked.zip  # 변경된 추적 파일이 있으면 실제 바이트 보관; LFS 포함
+      source-dirty-untracked.zip # 미추적 파일이 있으면 실제 바이트 보관
+      source-dirty-untracked.txt # dirty 후보의 UTF-8 미추적 파일 목록
       PACKAGE-SHA256SUMS.txt
       SYMBOLS-SHA256SUMS.txt
       ARCHIVE-SHA256.txt
@@ -541,7 +555,7 @@ Select-String -LiteralPath (Join-Path $FFFailed 'Logs\BuildCookRun.log') -Patter
 | 초기화 검사 시간 초과 | 초기 셰이더·드라이버 지연 또는 멈춤 | 팝업·프로세스·GPU 상태 확인 → 필요할 때 검증 타임아웃 증가 |
 | 에디터는 정상, 패키지만 UI 실패 | 문자열 참조·쿠킹 누락 가능 | IoStore 목록과 AlwaysCook/AssetManager 규칙 → 실제 클릭 흐름 확인 |
 
-자동화 테스트만 빠르게 재현할 때는 다음처럼 실행한다. `-TestFilter`는 PowerShell 문자열 배열이며, 기본값은 `FestaFiesta`, `FF_ZoneSystem` 두 범위다.
+자동화 테스트만 빠르게 재현할 때는 다음처럼 실행한다. `-TestFilter`는 PowerShell 문자열 배열이며, 기본값은 `FestaFiesta`, `FF_ZoneSystem` 두 범위다. 현재 렌더링 테스트를 포함한 전체 범위를 실행하려면 GPU·드라이버가 필요하다.
 
 ```powershell
 & '.\Tools\Build\Run-AutomationTests.ps1' -EngineRoot $FFEngine -TestFilter @('FestaFiesta', 'FF_ZoneSystem') -OutputRoot '.\Artifacts\Validation\Manual-Recheck-01'

@@ -87,12 +87,7 @@ struct FESTAFIESTA_API FFF_DensityRules
 /**
  * 라이브 `밀집` 패널 — 히트맵 토글 · 범례 · 지금 상태.
  *
- * === 현재 히트맵은 디버그 표시다 ===
- * 바닥에 깔리는 히트맵은 `FCrowdDensityGrid::DrawDebug()` 이고 그 안은 `DrawDebugSolidBox`
- * 다. `ENABLE_DRAW_DEBUG`가 켜진 에디터·개발 빌드에서만 지원하며 출시 빌드는 미지원이다.
- * 제품용 렌더링과 토글 API 를 `UI_API.md` 11번으로 요청해 뒀다 (이정원 님).
- *
- * 그때까지 `bDrawDebugDensity` 표시 플래그만 켠다. API가 오면 토글 경로를 교체한다.
+ * 바닥 히트맵은 `UFF_CrowdDensityHeatmapSubsystem`(데칼)이 그리며 출시 빌드에서도 켜진다.
  *
  * === UI 가 밀도를 계산하지 않는다 ===
  * 최댓값·혼잡 셀 수는 Crowd 가 이미 세어 둔 값을 그대로 읽는다 (C-009 규칙).
@@ -142,9 +137,6 @@ public:
 	FText ToggleOffText = NSLOCTEXT("FestaFiestaLiveDensity", "LiveDensity_ToggleOff", "히트맵 켜기");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
-	FText ToggleUnavailableText = NSLOCTEXT("FestaFiestaLiveDensity", "LiveDensity_HeatmapUnavailable", "히트맵 미지원");
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
 	FText HeatmapOnText = NSLOCTEXT("FestaFiestaLiveDensity", "HeatmapOn", "바닥 히트맵 · 켜짐");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
@@ -153,17 +145,16 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
 	FText HeatmapPendingText = NSLOCTEXT("FestaFiestaLiveDensity", "HeatmapPending", "바닥 히트맵 · 준비 중");
 
+	/** 히트맵 표시 자료가 없어 켤 수 없을 때의 상태 줄. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
 	FText HeatmapUnavailableText = NSLOCTEXT("FestaFiestaLiveDensity", "HeatmapUnavailable", "바닥 히트맵 · 미지원");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
-	FText DebugBuildNoteText = NSLOCTEXT("FestaFiestaLiveDensity", "LiveDensity_DebugBuildNote", "바닥 히트맵은 개발용 표시입니다. 출시 빌드에서는 지원하지 않습니다.");
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
 	FText GridPendingNoteText = NSLOCTEXT("FestaFiestaLiveDensity", "LiveDensity_GridPendingNote", "밀도 격자가 준비되면 히트맵을 켤 수 있습니다.");
 
+	/** 히트맵 표시 자료(머티리얼)가 설정되지 않았을 때. 출시 빌드도 히트맵을 지원하므로 「빌드 미지원」 문구는 없앴다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
-	FText UnsupportedBuildNoteText = NSLOCTEXT("FestaFiestaLiveDensity", "LiveDensity_NoDebugDrawNote", "이 빌드는 바닥 히트맵을 지원하지 않습니다. 밀도 수치와 등급은 계속 확인할 수 있습니다.");
+	FText NoMaterialNoteText = NSLOCTEXT("FestaFiestaLiveDensity", "LiveDensity_NoMaterialNote", "히트맵 표시 자료가 설정되지 않았습니다. 밀도 수치와 등급은 계속 확인할 수 있습니다.");
 
 protected:
 	virtual void NativeDestruct() override;

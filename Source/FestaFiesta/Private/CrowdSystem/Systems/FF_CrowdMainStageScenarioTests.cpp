@@ -294,6 +294,24 @@ public:
 		PeakSeated = FMath::Max(PeakSeated, Seated);
 		PeakProgramAtVenue = FMath::Max(PeakProgramAtVenue, AtVenue);
 
+		// 10초마다 걷는 관람 파티의 이동을 남긴다. 도착이 늦는 원인을 거리·속도·막힘으로 가른다.
+		if (Stage->ElapsedLiveSeconds >= NextWalkSampleLiveSeconds)
+		{
+			NextWalkSampleLiveSeconds = Stage->ElapsedLiveSeconds + 10.f;
+			int32 WalkingLeaders = 0, StalledLeaders = 0, NoPath = 0, QueryFailed = 0, BlockedLine = 0;
+			float MeanRemaining = 0.f, MaxRemaining = 0.f, MeanSpeed = 0.f, MeanCruise = 0.f, StalledRemaining = 0.f;
+			Crowd->GetAudienceWalkDiagnostics(
+				WalkingLeaders, MeanRemaining, MaxRemaining, MeanSpeed, MeanCruise, StalledLeaders,
+				NoPath, QueryFailed, StalledRemaining, BlockedLine);
+			if (WalkingLeaders > 0)
+			{
+				Test->AddInfo(FString::Printf(
+					TEXT("[도보] Live %.0f초 — 걷는 파티 %d · 남은 거리 평균 %.0fm 최대 %.0fm · 실제 속도 평균 %.2fm/s(기본 %.2f) · 정지 %d(남은 거리 평균 %.0fm) · 경로없음 %d · 쿼리실패 %d · 정지 중 벽에 막힌 직선 %d"),
+					Stage->ElapsedLiveSeconds, WalkingLeaders, MeanRemaining, MaxRemaining,
+					MeanSpeed, MeanCruise, StalledLeaders, StalledRemaining, NoPath, QueryFailed, BlockedLine));
+			}
+		}
+
 		// -NullRHI 로 돌리면 렌더 비용이 빠져 게임 스레드(군중 시뮬) 비용만 남는다.
 		PeakActive = FMath::Max(PeakActive, Crowd->GetActiveAgentCount());
 		// 파티 최대 인원(6)만큼도 안 남으면 입장이 밀리는 중이다.
@@ -334,6 +352,8 @@ public:
 		Test->AddInfo(FString::Printf(
 			TEXT("[군중] 활성 %d명 · 버려진 시뮬 시간 %.2f초 (0 이 아니면 위 수치를 믿지 말 것)"),
 			Crowd->GetActiveAgentCount(), Crowd->GetDroppedSimSeconds()));
+		Test->AddInfo(FString::Printf(
+			TEXT("[이동] 높이 격자에 막혀 되돌린 스텝 누적 %d"), Crowd->GetHeightBlockedSteps()));
 
 		const UFF_FestivalProgressionSubsystem* Progression =
 			Game ? Game->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
@@ -354,6 +374,7 @@ public:
 private:
 	FAutomationTestBase* Test;
 	double StartedAt = -1.0;
+	float NextWalkSampleLiveSeconds = 0.f;
 	int32 PeakSeated = 0;
 	int32 PeakProgramAtVenue = 0;
 	int32 PeakActive = 0;

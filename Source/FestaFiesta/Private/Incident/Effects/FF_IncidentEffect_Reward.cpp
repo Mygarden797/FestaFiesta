@@ -2,7 +2,12 @@
 
 #include "Incident/Effects/FF_IncidentEffect_Reward.h"
 
+#include "Economy/FF_FestivalEconomyTypes.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
+
 #define LOCTEXT_NAMESPACE "FestaFiestaIncidentReward"
+
+class UFF_FestivalProgressionSubsystem;
 
 void UFF_IncidentEffect_Reward::Apply(const FFF_IncidentContext& Context)
 {
@@ -11,6 +16,21 @@ void UFF_IncidentEffect_Reward::Apply(const FFF_IncidentContext& Context)
 		Context.Handle.Index, Context.Handle.Serial,
 		Context.OptionIndex,
 		RewardGold);
+	
+	UWorld* World = Context.World;
+	if (!World)
+	{
+		return;
+	}
+
+	const UGameInstance* GameInstance = World->GetGameInstance();
+	UFF_FestivalProgressionSubsystem* Progression =
+	GameInstance ? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+	if (Progression && RewardGold > 0)
+	{
+		Progression->AddRevenue(RewardGold, EFF_EarnReason::IncidentReward);
+	}
+	
 }
 
 FText UFF_IncidentEffect_Reward::GetDescription() const

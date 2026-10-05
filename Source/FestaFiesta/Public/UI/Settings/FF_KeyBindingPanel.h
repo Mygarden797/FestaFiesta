@@ -123,6 +123,8 @@ public:
 
 	/** The build-mode key is a raw fixed input until that consumer moves to Enhanced Input. */
 	static FKey GetFixedBuildModeKey();
+	/** Nearby placement uses N as a fixed shortcut while a facility preview is active. */
+	static FKey GetFixedNearbyPlacementKey();
 	static bool IsFixedActionKey(const FKey& Key);
 
 	/** Project-authored fallback used when the local profile has no valid override. */
@@ -137,6 +139,8 @@ protected:
 		const FKeyEvent& InKeyEvent) override;
 
 private:
+	friend class FFF_KeyBindingFixedBuildModeContractTest;
+
 	bool BuildFallbackWidgetTree();
 	void ResolveWidgetBindings();
 	void InitializeUserSettings();

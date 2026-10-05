@@ -140,6 +140,13 @@ namespace FFBuildModeModel
 			State == EFF_BuildModeState::Moving;
 	}
 
+	inline bool ShouldProcessNearbyPlacementShortcut(const EFF_BuildModeState State, const FKey Key,
+		const bool bTextFocused, const bool bModifierDown, const bool bIsRepeat, const bool bSuspended)
+	{
+		return Key == EKeys::N && IsPreviewActive(State) && !bTextFocused &&
+			!bModifierDown && !bIsRepeat && !bSuspended;
+	}
+
 	// 시설 선택 전에도 주변의 사용 가능한 땅을 살펴볼 수 있다. 일반 플레이에서는 숨긴다.
 	inline bool ShouldShowPlacementGrid(const EFF_BuildModeState State)
 	{
@@ -607,6 +614,8 @@ public:
 	bool IsDirectPlacementAdjustment() const { return bDirectPlacementAdjustment; }
 	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
 	bool FindNearbyPlacement();
+	/** Fixed N shortcut, shared by world input and a focused construction widget. */
+	bool HandleNearbyPlacementShortcut(const FKey& Key, bool bModifierDown = false, bool bIsRepeat = false);
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	bool IsFindingNearbyPlacement() const { return bFindingNearbyPlacement; }
 	FText GetPlacementAssistanceMessage() const { return PlacementAssistanceMessage; }

@@ -19,6 +19,8 @@
 #include "Queue/FF_QueueSubsystem.h"
 #include "TimerManager.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Engine/GameInstance.h"
+#include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "UObject/UObjectGlobals.h"
 #include "UnrealClient.h"
 
@@ -1567,5 +1569,71 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdArrivalCommand(
 	TEXT("FF.Crowd.Arrival"),
 	TEXT("입장 곡선 진행 상태와 배선을 출력한다. 곡선이 꺼져 있으면 원인까지 좁혀준다"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdArrivalCommand));
+
+static UFF_SatisfactionMetricsSubsystem* GetSatisfaction(UWorld* World, FOutputDevice& Ar)
+{
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_SatisfactionMetricsSubsystem* Satisfaction =
+		GameInstance ? GameInstance->GetSubsystem<UFF_SatisfactionMetricsSubsystem>() : nullptr;
+	if (!Satisfaction)
+	{
+		Ar.Logf(ELogVerbosity::Error, TEXT("SatisfactionMetricsSubsystem을 찾을 수 없습니다 (게임이 실행 중인지 확인)"));
+	}
+	return Satisfaction;
+}
+
+static void SatShowCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	const UFF_SatisfactionMetricsSubsystem* Satisfaction = GetSatisfaction(World, Ar);
+	if (!Satisfaction)
+	{
+		return;
+	}
+
+	Ar.Logf(TEXT("만족도 %d  (환경 %d = 대기 %d + 밀도 %d / 개인 부합도 %d = 취향 %d + Need %d)"),
+		Satisfaction->GetSimSatisfaction(), Satisfaction->GetEnvironmentScore(),
+		Satisfaction->GetWaitScore(), Satisfaction->GetDensityScore(),
+		Satisfaction->GetPersonalFitScore(), Satisfaction->GetPreferenceScore(),
+		Satisfaction->GetNeedFulfillmentScore());
+	Ar.Logf(TEXT("평균 감점 %d점, 이번 주기 최소 표본 %d  (50 고정이면 아직 표본이 안 들어온 것)"),
+		Satisfaction->GetPenaltyPoints(), Satisfaction->GetSampleCount());
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GSatShowCommand(
+	TEXT("FF.Sat.Show"),
+	TEXT("현재 만족도와 하위 점수, 평균 감점을 출력한다. 취향 점수가 50에서 움직이는지 볼 때 쓴다"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&SatShowCommand));
+
+// 만족도 영역 감점 임시 검증용. 사건 시스템이 붙기 전까지 API 동작을 눈으로 확인한다
+static void SatPenaltyCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	const UFF_SatisfactionMetricsSubsystem* Satisfaction = GetSatisfaction(World, Ar);
+	if (!CrowdSim || !Satisfaction)
+	{
+		return;
+	}
+
+	const float DropPoints = FFCrowdConsole::ParseFloatArg(Args, 0, 30.f);
+	const float RadiusCm = FFCrowdConsole::ParseFloatArg(Args, 1, 1500.f);
+	const FVector Center = Args.Num() >= 5
+		? FVector(FFCrowdConsole::ParseFloatArg(Args, 2, 0.f), FFCrowdConsole::ParseFloatArg(Args, 3, 0.f),
+			FFCrowdConsole::ParseFloatArg(Args, 4, 0.f))
+		: FFCrowdConsole::GetViewerLocation(World);
+
+	const int32 Before = Satisfaction->GetSimSatisfaction();
+	const int32 Affected = CrowdSim->ApplySatisfactionPenaltyInArea(Center, RadiusCm, DropPoints);
+
+	Ar.Logf(TEXT("감점 적용: 중심 %s 반경 %.0fcm, %d명에게 사람당 %.1f점"),
+		*Center.ToCompactString(), RadiusCm, Affected, DropPoints);
+	Ar.Logf(TEXT("호출 직전 만족도 %d. 반영은 다음 집계 창(약 1초 뒤)이라 FF.Sat.Show 로 다시 볼 것"), Before);
+	Ar.Logf(TEXT("회복 속도는 축제 시간 1분당 %.1f점이라, 시간 배속이 낮으면 회복이 느려 보인다"),
+		CrowdSim->SatisfactionPenaltyRecoverPerMinute);
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GSatPenaltyCommand(
+	TEXT("FF.Sat.Penalty"),
+	TEXT("영역 안 방문객 만족도를 깎는다. FF.Sat.Penalty [점수=30] [반경cm=1500] [X Y Z]  중심을 생략하면 지금 시점 위치"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&SatPenaltyCommand));
 
 #endif // !UE_BUILD_SHIPPING

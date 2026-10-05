@@ -207,13 +207,16 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	if (Text_Zone) Text_Zone->SetToolTipText(ViewData.ZoneText);
 	SetText(Text_FacilityState, ViewData.FacilityStateText);
 	SetText(Text_FacilityRevenue, ViewData.FacilityRevenueText);
+	const bool bShowTeamRevenue = ViewData.FacilityInstanceId.IsValid() && !ViewData.FacilityRevenueText.IsEmpty();
 	if (Text_FacilityRevenue)
 	{
 		Text_FacilityRevenue->SetToolTipText(LOCTEXT("TeamRevenueSettlementHint",
 			"현재 수수료율·시설 강화·시너지를 반영한 팀별 예상 수익입니다.\n이용 완료 시 실제 적립된 수익이 오늘 매출에 누적됩니다.\n유료 프로그램 참가비는 별도로 정산됩니다."));
-		Text_FacilityRevenue->SetVisibility(ViewData.FacilityInstanceId.IsValid()
+		Text_FacilityRevenue->SetVisibility(bShowTeamRevenue
 			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
+	if (UWidget* RevenueCard = GetWidgetFromName(TEXT("TeamRevenue_OverviewCard")))
+		RevenueCard->SetVisibility(bShowTeamRevenue ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	const bool bShowRevenue = ViewData.bShowRevenueSection && ViewData.FacilityInstanceId.IsValid();
 	SetText(Text_FacilityTodayRevenue, ViewData.TodayRevenueText);
 	if (Text_FacilityTodayRevenue)
@@ -286,6 +289,9 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	SetText(Text_UpgradeNext, ViewData.UpgradeNextText);
 	SetText(Text_UpgradeCurrentRevenue, ViewData.UpgradeCurrentValues.Revenue);
 	SetText(Text_UpgradeNextRevenue, ViewData.UpgradeNextValues.Revenue);
+	if (UWidget* RevenueRow = GetWidgetFromName(TEXT("V2_UpgradeRowRevenue")))
+		RevenueRow->SetVisibility(!ViewData.UpgradeCurrentValues.Revenue.IsEmpty() || !ViewData.UpgradeNextValues.Revenue.IsEmpty()
+			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	SetText(Text_UpgradeCurrentTime, ViewData.UpgradeCurrentValues.ServiceTime);
 	SetText(Text_UpgradeNextTime, ViewData.UpgradeNextValues.ServiceTime);
 	SetText(Text_UpgradeCurrentThroughput, ViewData.UpgradeCurrentValues.Throughput);

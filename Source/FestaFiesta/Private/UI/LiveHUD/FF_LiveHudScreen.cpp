@@ -218,14 +218,13 @@ void UFF_LiveHudScreen::HandleIncidentMarkerClicked(FFF_IncidentHandle Handle)
 
 void UFF_LiveHudScreen::HandleIncidentDispatchRequested(FFF_IncidentHandle Handle, int32 OptionIndex, int32 StaffCount)
 {
-	UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 사건 H=%d/%d Option=%d Staff=%d 요청 — 배치 관리자 전이라 즉시 해결"),
-		*GetName(), Handle.Index, Handle.Serial, OptionIndex, StaffCount);
-
 	const UWorld* World = GetWorld();
-	if (UFF_IncidentSubsystem* Incident = World ? World->GetSubsystem<UFF_IncidentSubsystem>() : nullptr)
-	{
-		Incident->ResolveIncident(Handle, OptionIndex);
-	}
+	UFF_IncidentSubsystem* Incident = World ? World->GetSubsystem<UFF_IncidentSubsystem>() : nullptr;
+	const bool bAccepted = Incident && Incident->ResolveIncident(Handle, OptionIndex, StaffCount);
+
+	UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 사건 H=%d/%d Option=%d Staff=%d 요청 — %s"),
+		*GetName(), Handle.Index, Handle.Serial, OptionIndex, StaffCount,
+		bAccepted ? TEXT("접수") : TEXT("거부(가용 스태프 부족·경로 없음 등)"));
 }
 
 void UFF_LiveHudScreen::NativeConstruct()
@@ -1205,10 +1204,10 @@ void UFF_LiveHudScreen::HandleCtaClicked()
 		return;
 
 	case EFF_LiveCtaState::ReadyFinishFestival:
-		// 나라 지도 복귀는 `UFF_UIFlowSubsystem` 이 소유한다 — UI 가 레벨을 직접 열지 않는다.
+		// 축제 종료와 나라 지도 복귀는 `UFF_UIFlowSubsystem` 이 소유한다 — UI 가 레벨을 직접 열지 않는다.
 		if (UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this))
 		{
-			Flow->ReturnToAtlas();
+			Flow->RequestFinishFestival();
 		}
 		else
 		{

@@ -82,7 +82,10 @@ foreach ($filter in $TestFilter) {
         '-unattended',
         '-nop4',
         '-nosplash',
-        '-nullrhi',
+        # The full suite includes FWidgetRenderer/ReadPixels assertions. Use
+        # the real project RHI without a visible editor window; NullRHI can
+        # fail required previews or silently skip pixel validation.
+        '-RenderOffscreen',
         '-nosound',
         '-stdout',
         '-FullStdOutLogOutput',
@@ -91,7 +94,7 @@ foreach ($filter in $TestFilter) {
         "-ExecCmds=Automation RunTests $filter"
     )
 
-    Write-Host "Running Unreal automation tests: $filter"
+    Write-Host "Running Unreal automation tests with offscreen rendering: $filter"
     $exitCode = -1
     $savedErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'

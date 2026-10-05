@@ -4,7 +4,7 @@ namespace
 {
 	// 컴파일 타임 상수 - 배열 크기 확정
 	constexpr int32 SpendReasonCount = static_cast<int32>(EFF_SpendReason::FacilityUpgrade) + 1;
-	constexpr int32 EarnReasonCount = static_cast<int32>(EFF_EarnReason::MinigameReward) + 1;
+	constexpr int32 EarnReasonCount = static_cast<int32>(EFF_EarnReason::IncidentReward) + 1;
 }
 
 FFF_DayLedger::FFF_DayLedger()
@@ -58,6 +58,69 @@ void FFF_DayLedger::Reset()
 	for (int32& Value : EarnByReason) Value = 0;
 	TotalRefund = 0;
 	RevenueByFacility.Reset(); // 할당해둔 내부 메모리는 재사용할 수 있게 유지
+}
+
+namespace
+{
+	int32 SaturatingSum(const int32 A, const int32 B)
+	{
+		return A > MAX_int32 - B ? MAX_int32 : A + B;
+	}
+}
+
+void FFF_DayLedger::Accumulate(const FFF_DayLedger& Other)
+{
+	for (int32 Index = 0; Index < SpendByReason.Num(); ++Index)
+	{
+		SpendByReason[Index] = SaturatingSum(SpendByReason[Index], Other.SpendByReason[Index]);
+	}
+	for (int32 Index = 0; Index < EarnByReason.Num(); ++Index)
+	{
+		EarnByReason[Index] = SaturatingSum(EarnByReason[Index], Other.EarnByReason[Index]);
+	}
+	TotalRefund = SaturatingSum(TotalRefund, Other.TotalRefund);
+	for (const TPair<FName, int32>& Pair : Other.RevenueByFacility)
+	{
+		int32& Slot = RevenueByFacility.FindOrAdd(Pair.Key);
+		Slot = SaturatingSum(Slot, Pair.Value);
+	}
+}
+
+void FFF_DayLedger::Export(TArray<int32>& OutSpend, TArray<int32>& OutEarn, int32& OutRefund,
+	TArray<FName>& OutFacilityIds, TArray<int32>& OutFacilityRevenue) const
+{
+	OutSpend = SpendByReason;
+	OutEarn = EarnByReason;
+	OutRefund = TotalRefund;
+	OutFacilityIds.Reset();
+	OutFacilityRevenue.Reset();
+	for (const TPair<FName, int32>& Pair : RevenueByFacility)
+	{
+		OutFacilityIds.Add(Pair.Key);
+		OutFacilityRevenue.Add(Pair.Value);
+	}
+}
+
+void FFF_DayLedger::Import(const TArray<int32>& InSpend, const TArray<int32>& InEarn, const int32 InRefund,
+	const TArray<FName>& InFacilityIds, const TArray<int32>& InFacilityRevenue)
+{
+	Reset();
+	for (int32 Index = 0; Index < FMath::Min(InSpend.Num(), SpendByReason.Num()); ++Index)
+	{
+		SpendByReason[Index] = FMath::Max(InSpend[Index], 0);
+	}
+	for (int32 Index = 0; Index < FMath::Min(InEarn.Num(), EarnByReason.Num()); ++Index)
+	{
+		EarnByReason[Index] = FMath::Max(InEarn[Index], 0);
+	}
+	TotalRefund = FMath::Max(InRefund, 0);
+	for (int32 Index = 0; Index < FMath::Min(InFacilityIds.Num(), InFacilityRevenue.Num()); ++Index)
+	{
+		if (!InFacilityIds[Index].IsNone() && InFacilityRevenue[Index] > 0)
+		{
+			RevenueByFacility.Add(InFacilityIds[Index], InFacilityRevenue[Index]);
+		}
+	}
 }
 
 bool FFF_DayLedger::CanAdjustConstruction(const int64 InstallSpendDelta, const int64 RefundDelta) const

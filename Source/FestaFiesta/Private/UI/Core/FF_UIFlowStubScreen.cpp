@@ -135,9 +135,11 @@ void UFF_UIFlowStubScreen::SyncFromFlow()
 		   못 가고 갇힌다. 그래서 켜두고 로비로 보낸다.
 		   실제 결산 화면이 붙으면 이 갈래는 지운다.
 		*/
-		const bool bFinalReport = Stage->IsReportStage() && Stage->IsFinalDay();
+		// 마지막 날은 마감에서 축제가 끝나기도 한다(Report 행이 없다) - 끝났다는 사실로 판정한다.
+		const bool bFinalReport = Stage->IsFinalDay()
+			&& (Stage->IsReportStage() || Stage->HasFestivalEnded());
 
-		const bool bCanAdvance = Stage->IsReportStage()
+		const bool bCanAdvance = Stage->IsReportStage() || bFinalReport
 			|| Stage->IsCurrentStageSkippable();
 
 		Button_Advance->SetIsEnabled(bCanAdvance);

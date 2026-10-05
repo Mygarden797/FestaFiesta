@@ -39,6 +39,8 @@ public:
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Staff") int32 GetUnassignedStaffCount() const;
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Staff") TArray<FFF_StaffMember> GetFacilityStaff(FGuid FacilityId) const;
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Staff") int32 GetBusyStaffCount() const { return BusyStaff.Num(); }
+	// TryReserveStaff 가 지금 한 번에 예약할 수 있는 최대 인원. 출동 중이 아니고 배정 시설에 출발 지점이 있는 사람만 센다.
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Staff") int32 GetDispatchableStaffCount() const;
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Staff") bool IsStaffBusy(int32 StaffId) const { return BusyStaff.Contains(StaffId); }
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Staff") bool CanAssignAvailableStaff(FGuid FacilityId) const;
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Staff") bool CanUnassignAvailableStaff(FGuid FacilityId) const;

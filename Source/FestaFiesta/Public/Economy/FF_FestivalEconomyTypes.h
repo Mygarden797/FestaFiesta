@@ -253,6 +253,10 @@ struct FFF_VisitorForecast
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
 	float BuzzMultiplier = 1.f;
+
+	// 어제 만족도가 만든 배수. 만족도 50 이거나 첫날이면 1.0.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	float ReputationMultiplier = 1.f;
 };
 
 // 홍보 구매 결과. 화면이 실패 사유를 그대로 쓴다.
@@ -309,7 +313,8 @@ enum class EFF_EarnReason : uint8
 	FacilityCommission  = 1		UMETA(DisplayName = "부스 수수료"),
 	ProgramFee          = 2		UMETA(DisplayName = "유료 프로그램 체험비"),
 	DailyGoalBonus      = 3		UMETA(DisplayName = "일일 목표 보너스"),
-	MinigameReward      = 4		UMETA(DisplayName = "미니게임 보상")
+	MinigameReward      = 4		UMETA(DisplayName = "미니게임 보상"),
+	IncidentReward		= 5		UMETA(DisplayName = "사건 보상")
 };
 
 // 원인별 결산 표의 한 줄. UI 가 받아서 그대로 그린다.

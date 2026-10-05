@@ -108,6 +108,15 @@ public:
 	void RequestAdvanceStage();
 
 	/**
+	 * 마지막 날의 "축제 마치기". 축제 종료를 알려(`UFF_FestivalStageSubsystem::FinishFestival`)
+	 * 최종 결산 화면을 띄우고 기록을 남긴다. 이미 최종 결산이 떠 있거나 띄울 화면이 배선되지
+	 * 않았으면 나라 지도로 돌아가 한 사이클을 닫는다 — 어느 쪽이든 갇히지 않는다.
+	 * 최종 결산 화면의 `로비로` 도 이 함수를 부르면 된다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Flow")
+	void RequestFinishFestival();
+
+	/**
 	 * "지금 화면에서 다음으로" 를 한 곳에서 판정한다. 스텁 화면의 버튼이 이걸 부른다.
 	 *
 	 * 축제 중이면 `RequestAdvanceStage()`, 프론트엔드면 다음 화면으로 간다.
@@ -349,6 +358,9 @@ private:
 	 * 그래서 레벨이 열린 뒤(`HandlePostLogin`)에 Stage 를 세운다.
 	 */
 	bool bPendingFestivalStart = false;
+
+	/** 최종 결산 화면을 실제로 올렸는지. 안 올렸으면 "축제 마치기" 가 곧장 나라 지도로 보낸다. */
+	bool bFinalReportShown = false;
 
 	/** StartFestival이 미리 로드한 로딩 화면 클래스와 표시 문맥. PreLoadMap에서 한 번 소비한다. */
 	UPROPERTY(Transient)

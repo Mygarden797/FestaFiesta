@@ -3,6 +3,10 @@
 #include "Incident/Rules/FF_IncidentRules.h"
 
 #include "VectorUtil.h"
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
+#include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSZoneActor.h"
 #include "Incident/FF_IncidentDefinition.h"
 #include "Incident/FF_IncidentOption.h"
 #include "Incident/Effects/FF_IncidentEffect.h"
@@ -83,6 +87,46 @@ float FFF_IncidentRules::MergeIntensity(float ExistingPeak, float IncomingIntens
 	return FMath::Max(ExistingPeak, IncomingIntensity);
 }
 
+bool FFF_IncidentRules::TryGetAnchorLocation(const UWorld* World, const FFF_IncidentAnchor& Anchor, FVector& OutLocation)
+{
+	switch (Anchor.Kind)
+	{
+	case EFF_IncidentAnchorKind::Actor:
+		{
+			const AActor* Actor = Anchor.Actor.Get();
+			if (!IsValid(Actor) || Actor->IsHidden())
+			{
+				return false;
+			}
+			OutLocation = Actor->GetActorLocation();
+			return !OutLocation.ContainsNaN();
+		}
+
+	case EFF_IncidentAnchorKind::WorldPoint:
+	case EFF_IncidentAnchorKind::DensityCell:
+		OutLocation = Anchor.WorldPoint;
+		return !OutLocation.ContainsNaN();
+
+	case EFF_IncidentAnchorKind::Zone:
+		{
+			const UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+			const AFFZSGameplayZone* Zone = Zones ? Zones->FindZone(Anchor.ZoneId) : nullptr;
+			if (!Zone)
+			{
+				return false;
+			}
+			OutLocation = Zone->EntryExitAnchors.IsEmpty() ? Zone->GetActorLocation()
+				: Zone->GetActorTransform().TransformPosition(Zone->EntryExitAnchors[0].GetLocation());
+			return !OutLocation.ContainsNaN();
+		}
+
+	case EFF_IncidentAnchorKind::Screenspace:
+		return false;
+	}
+
+	return false;
+}
+
 void FFF_IncidentRules::BuildOptionViews(const UFF_IncidentDefinition& Definition, TArray<FFF_IncidentOptionView>& OutViews)
 {
 	OutViews.Reset(Definition.Options.Num());
@@ -102,11 +146,20 @@ void FFF_IncidentRules::BuildOptionViews(const UFF_IncidentDefinition& Definitio
 		View.Label = Option->Label;
 		View.CostGold = FMath::Max(0, Option->CostGold);
 		View.MinStaff = FMath::Max(1, Option->MinStaff);
-		View.MaxStaff = FMath::Max(View.MinStaff, Option->MaxStaff);
 		View.WorkAmount = FMath::Max(0.f, Option->WorkAmount);
-		if (Option->Effect)
+		TArray<FText> Descriptions;
+		for (const UFF_IncidentEffect* Effect : Option->OnResolvedEffect)
 		{
-			View.RewardText = Option->Effect->GetDescription();
+			if (!Effect)
+			{
+				continue;
+			}
+			const FText Description = Effect->GetDescription();
+			if (!Description.IsEmpty())
+			{
+				Descriptions.Add(Description);
+			}
 		}
+		View.RewardText = FText::Join(FText::FromString(TEXT(", ")), Descriptions);
 	}
 }

@@ -17,7 +17,7 @@
 #include "Incident/FF_IncidentDefinition.h"
 #include "Incident/FF_IncidentSubsystem.h"
 #include "Incident/FF_IncidentTags.h"
-#include "Incident/FF_StaffDispatchSubsystem.h"
+#include "Staff/FF_StaffDispatchSubsystem.h"
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"

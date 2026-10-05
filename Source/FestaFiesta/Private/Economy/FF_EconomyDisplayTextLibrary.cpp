@@ -34,6 +34,7 @@ FText UFF_EconomyDisplayTextLibrary::GetEarnReasonText(EFF_EarnReason Reason)
 	case EFF_EarnReason::ProgramFee:         return LOCTEXT("Earn_ProgramFee",         "유료 프로그램 체험비");
 	case EFF_EarnReason::DailyGoalBonus:     return LOCTEXT("Earn_DailyGoalBonus",     "일일 목표 보너스");
 	case EFF_EarnReason::MinigameReward:     return LOCTEXT("Earn_MinigameReward",     "미니게임 보상");
+	case EFF_EarnReason::IncidentReward:     return LOCTEXT("Earn_IncidentReward",     "사건 보상");
 	}
 
 	return FText::GetEmpty();

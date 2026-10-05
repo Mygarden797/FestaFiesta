@@ -72,6 +72,9 @@ public:
 	void CaptureAndShowPhoto();
 	// 지금 화면을 캡처해서 결과 사진 UI를 띄우는 함수
 
+	UFUNCTION(BlueprintImplementableEvent, Category = "Trigger")
+	void OnExperienceCompleted(const FText& Message);
+	// 체험 끝났을 때 완료 문구 UI를 띄우는 이벤트 (BP에서 구현)
 
 	UFUNCTION()
 	void OnRangeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);

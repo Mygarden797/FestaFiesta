@@ -230,12 +230,19 @@ bool UFF_FestivalStageSubsystem::IsMainProgramLocked()
 bool UFF_FestivalStageSubsystem::TryGetMainProgramQueueBreakWindow(
 	float& OutStartSeconds, float& OutEndSeconds) const
 {
+	// 1 Stage 초 = 1 축제분이라 환산이 항등이다. StageSecondsToFestivalMinutes 의 역.
+	return TryGetMainProgramShowWindow(MainProgramQueueBreakLeadMinutes, OutStartSeconds, OutEndSeconds);
+}
+
+bool UFF_FestivalStageSubsystem::TryGetMainProgramShowWindow(
+	const float LeadStageSeconds, float& OutStartSeconds, float& OutEndSeconds) const
+{
 	if (CurrentStage != EFF_FestivalStage::Live || !ProgramScheduleTable)
 	{
 		return false;
 	}
 	TArray<FFF_LiveTriggerEvent*> Rows;
-	ProgramScheduleTable->GetAllRows<FFF_LiveTriggerEvent>(TEXT("MainProgramQueueBreak"), Rows);
+	ProgramScheduleTable->GetAllRows<FFF_LiveTriggerEvent>(TEXT("MainProgramShowWindow"), Rows);
 	Rows.RemoveAll([this](const FFF_LiveTriggerEvent* Row) { return !Row || Row->Day != CurrentDay; });
 	Rows.Sort([](const FFF_LiveTriggerEvent& A, const FFF_LiveTriggerEvent& B)
 	{
@@ -246,8 +253,7 @@ bool UFF_FestivalStageSubsystem::TryGetMainProgramQueueBreakWindow(
 		if (!Rows[Index]->bIsMainProgramLockStart) continue;
 		const float StartSeconds = Rows[Index]->TriggerSeconds;
 		const float EndSeconds = Rows[Index + 1]->TriggerSeconds;
-		const float MinutesUntilStart = StageSecondsToFestivalMinutes(StartSeconds - ElapsedLiveSeconds);
-		if (EndSeconds > StartSeconds && MinutesUntilStart <= MainProgramQueueBreakLeadMinutes
+		if (EndSeconds > StartSeconds && StartSeconds - ElapsedLiveSeconds <= LeadStageSeconds
 			&& ElapsedLiveSeconds < EndSeconds)
 		{
 			OutStartSeconds = StartSeconds;
@@ -491,13 +497,8 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		else if (CurrentStage == EFF_FestivalStage::Report)
 			// 시간이 다 돼도 자동 전환 안 함
 		{
-			if (CurrentDay == 3 && !bFestivalEndedBroadcasted)
-				// 한 번만 알림 가도록 설정
-			{
-				bFestivalEndedBroadcasted = true;
-				UE_LOG(LogTemp, Log, TEXT("축제 종료!"));
-				OnFestivalEnded.Broadcast();
-			}
+			FinishFestival();
+			// 한 번만 알림 가도록 안에서 막는다
 			// Day1/2 Report는 여기서 아무것도 안 함 - 대기
 		}
 		else
@@ -562,6 +563,14 @@ void UFF_FestivalStageSubsystem::StartNewFestival()
 
 	bFestivalStarted = true;
 	// 이 줄이 있어야 Tick()이 다시 돌기 시작함
+
+	// 이 서브시스템은 레벨을 건너 살아남는다. 이전 판의 배속·날씨·미니게임 상태를 들고 시작하지 않는다.
+	TimeScale = 1.f;
+	bMinigameInProgress = false;
+	RemainingTime = 0.f;
+	SelectedWeather = EFF_WeatherType::Clear;
+	OnTimeScaleChange.Broadcast(GetEffectiveTimeScale());
+	OnEnvironmentStateChanged.Broadcast(SelectedWeather, bNightLightingActivated);
 
 	UE_LOG(LogTemp, Log, TEXT("[Festival] 새 축제 시작! Day=1, Stage=Setup"));
 
@@ -785,6 +794,19 @@ bool UFF_FestivalStageSubsystem::IsReportStage() const
 bool UFF_FestivalStageSubsystem::IsFinalDay() const
 {
 	return CurrentDay == 3;
+}
+
+bool UFF_FestivalStageSubsystem::FinishFestival()
+{
+	if (bFestivalEndedBroadcasted || !IsFinalDay()
+		|| (CurrentStage != EFF_FestivalStage::Closing && CurrentStage != EFF_FestivalStage::Report))
+	{
+		return false;
+	}
+	bFestivalEndedBroadcasted = true;
+	UE_LOG(LogTemp, Log, TEXT("축제 종료!"));
+	OnFestivalEnded.Broadcast();
+	return true;
 }
 
 bool UFF_FestivalStageSubsystem::TryGetLiveElapsedMinutes(float& OutMinutes) const

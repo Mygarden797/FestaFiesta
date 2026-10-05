@@ -214,6 +214,13 @@ bool FFF_BuildPlacementAssistanceIntegrationTest::RunTest(const FString& Paramet
     if (!TestTrue(TEXT("The actual authority rejects the seeded position outside its zone"),
         Build->LastValidation.Reasons.Contains(EFFZSPlacementFailure::OutsideZone)) ||
         !TestTrue(TEXT("The actual spatial result offers nearby assistance"), Build->GetPlacementGuidance().bCanFindNearby)) return false;
+    TestTrue(TEXT("A spatial placement failure teaches N where the player needs it"),
+        Build->GetPlacementGuidance().Advice.ToString().Contains(TEXT("N으로 가까운 빈자리")));
+    for (const auto State : {EFF_BuildModeState::Closed, EFF_BuildModeState::BuildMode, EFF_BuildModeState::CatalogOpen})
+    {
+        TGuardValue<EFF_BuildModeState> InactivePreview(Build->State, State);
+        TestFalse(TEXT("N cannot start nearby placement outside a facility preview"), Build->HandleNearbyPlacementShortcut(EKeys::N));
+    }
     Build->ToggleDirectPlacementAdjustment();
     TestTrue(TEXT("Direct adjustment pins the preview"), Build->IsDirectPlacementAdjustment());
     Build->ToggleDirectPlacementAdjustment();
@@ -229,15 +236,21 @@ bool FFF_BuildPlacementAssistanceIntegrationTest::RunTest(const FString& Paramet
         Build->ToggleDirectPlacementAdjustment();
         TestFalse(TEXT("Pause blocks direct adjustment changes"), Build->IsDirectPlacementAdjustment());
         TestFalse(TEXT("Pause blocks starting a suggestion search"), Build->FindNearbyPlacement());
+        TestFalse(TEXT("Pause also blocks the N shortcut"), Build->HandleNearbyPlacementShortcut(EKeys::N));
     }
-    if (!TestTrue(TEXT("Spatial preview starts a bounded nearby search"), Build->FindNearbyPlacement())) return false;
+    TestFalse(TEXT("A different key cannot start nearby assistance"), Build->HandleNearbyPlacementShortcut(EKeys::M));
+    TestFalse(TEXT("Modified N does not steal another shortcut"), Build->HandleNearbyPlacementShortcut(EKeys::N, true));
+    TestFalse(TEXT("Holding N does not start repeated searches"), Build->HandleNearbyPlacementShortcut(EKeys::N, false, true));
+    if (!TestTrue(TEXT("N starts the real bounded nearby search"), Build->HandleNearbyPlacementShortcut(EKeys::N))) return false;
     TestTrue(TEXT("Searching pins the destination for later confirmation"), Build->IsDirectPlacementAdjustment());
     for (int32 Pass = 0; Pass < 128 && Build->IsFindingNearbyPlacement(); ++Pass) Build->TickPlacementAssistance();
     TestFalse(TEXT("A finite candidate search completes"), Build->IsFindingNearbyPlacement());
     TestTrue(TEXT("A found suggestion passes real validation and remains a preview"),
         Build->IsCurrentPlacementValid() && Zones->ValidatePlacement(Build->PlacementPreview->PreviewCommand).bIsValid);
-    TestFalse(TEXT("A found suggestion explains the separate confirmation step"), Build->GetPlacementAssistanceMessage().IsEmpty());
+    TestTrue(TEXT("A found suggestion explains the separate Enter confirmation step"),
+        Build->GetPlacementAssistanceMessage().ToString().Contains(TEXT("Enter")));
     ExpectPreviewOnly(TEXT("Find nearby"));
+    TestFalse(TEXT("N cannot search again at an already valid destination"), Build->HandleNearbyPlacementShortcut(EKeys::N));
     SelectOutside();
     Build->FindNearbyPlacement();
     Build->ToggleDirectPlacementAdjustment();

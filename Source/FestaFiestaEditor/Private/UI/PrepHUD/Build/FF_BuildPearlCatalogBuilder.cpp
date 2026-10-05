@@ -3,6 +3,7 @@
 #if WITH_EDITOR
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/Border.h"
+#include "Components/BorderSlot.h"
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
@@ -70,7 +71,7 @@ bool Panel(UWidgetBlueprint& BP)
 	}
 	for (const TCHAR* N : {TEXT("Size_CatalogHeader"),TEXT("Size_HeaderDivider"),TEXT("Border_CatalogFooter"),
 		TEXT("Border_AuroraSelection"),TEXT("HorizontalBox_Tools"),TEXT("Size_CategoryDivider")}) Hide(T,N);
-	Height(T,TEXT("Size_ClarityCatalogDock"),326.f);
+	Height(T,TEXT("Size_ClarityCatalogDock"),324.f);
 	Height(T,TEXT("Size_CategoryRow"),44.f);
 	Height(T,TEXT("Size_SubcategoryHeader"),38.f);
 	Height(T,TEXT("Size_SubcategoryViewport"),36.f);
@@ -116,7 +117,7 @@ bool Panel(UWidgetBlueprint& BP)
 	if (!SaveNewBlueprint(Prefix,BP)) return false;
 	auto* CDO=BP.GeneratedClass->GetDefaultObject();
 	FindFProperty<FBoolProperty>(BP.GeneratedClass,TEXT("bUsePagination"))->SetPropertyValue_InContainer(CDO,false);
-	FindFProperty<FFloatProperty>(BP.GeneratedClass,TEXT("CatalogHeight"))->SetPropertyValue_InContainer(CDO,326.f);
+	FindFProperty<FFloatProperty>(BP.GeneratedClass,TEXT("CatalogHeight"))->SetPropertyValue_InContainer(CDO,324.f);
 	return SaveAssetPackage(Prefix,BP);
 }
 
@@ -127,7 +128,7 @@ bool Tile(UWidgetBlueprint& BP)
 	auto* Thumb=Cast<UBorder>(T.FindWidget(TEXT("Border_ThumbnailBackdrop")));
 	if(!Card||!Thumb) return false;
 	BP.Modify(); T.Modify();
-	Height(T,TEXT("SizeBox_Card"),218);
+	Height(T,TEXT("SizeBox_Card"),210);
 	Height(T,TEXT("SizeBox_Thumbnail"),104);
 	if (auto* ThumbnailSize = Cast<USizeBox>(T.FindWidget(TEXT("SizeBox_Thumbnail"))))
 		ThumbnailSize->SetWidthOverride(162.f);
@@ -136,7 +137,23 @@ bool Tile(UWidgetBlueprint& BP)
 	Card->SetBrushColor(FLinearColor::White);
 	Thumb->SetBrush(MaterialBrush(TEXT("Card"))); Thumb->SetBrushColor(FLinearColor::White);
 	Hide(T,TEXT("Text_CategoryPath")); Hide(T,TEXT("Text_BuildLimit"));
-	Text(T,TEXT("Text_Name"),13); Text(T,TEXT("Text_Cost"),14);
+	Text(T,TEXT("Text_Name"),15); Text(T,TEXT("Text_Cost"),15);
+	if (auto* Cost = Cast<UTextBlock>(T.FindWidget(TEXT("Text_Cost"))))
+	{
+		Cost->SetLineHeightPercentage(1.f);
+		Cost->SetJustification(ETextJustify::Left);
+		if (auto* Slot = Cast<UBorderSlot>(Cost->Slot)) Slot->SetPadding(FMargin(0));
+	}
+	if (auto* Price = Cast<UBorder>(T.FindWidget(TEXT("Border_AuroraCardGold"))))
+	{
+		Price->SetPadding(FMargin(0));
+		Price->SetHorizontalAlignment(HAlign_Left);
+		if (auto* Slot = Cast<UHorizontalBoxSlot>(Price->Slot))
+		{
+			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot->SetPadding(FMargin(0));
+		}
+	}
 	Text(T,TEXT("Text_State"),10,Muted); Text(T,TEXT("Text_Favorite"),17,Muted);
 	for (const TPair<const TCHAR*, const TCHAR*>& Badge : {
 		TPair<const TCHAR*, const TCHAR*>(TEXT("Text_RequiredMissing"), TEXT("필수")),
@@ -159,6 +176,7 @@ bool Tile(UWidgetBlueprint& BP)
 	{
 		W->SetJustification(ETextJustify::Center);
 		W->SetAutoWrapText(true);
+		W->SetLineHeightPercentage(1.f);
 		W->SetWrapTextAt(158.f);
 		W->SetWrappingPolicy(ETextWrappingPolicy::AllowPerCharacterWrapping);
 		W->SetTextOverflowPolicy(ETextOverflowPolicy::Clip);
@@ -172,7 +190,8 @@ bool Tile(UWidgetBlueprint& BP)
 			NameBounds=MakeWidget<USizeBox>(BP,T,TEXT("Size_PearlFacilityName"));
 			NameBounds->AddChild(W);Column->InsertChildAt(Index,NameBounds);
 		}
-		NameBounds->SetHeightOverride(62.f);
+		NameBounds->ClearHeightOverride();
+		NameBounds->SetMinDesiredHeight(56.f);
 		if(auto* S=Cast<USizeBoxSlot>(W->Slot))
 		{S->SetHorizontalAlignment(HAlign_Fill);S->SetVerticalAlignment(VAlign_Center);}
 	}

@@ -7,6 +7,8 @@
 #include "CrowdSystem/Lane/FF_CrowdLane.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/GameInstance.h"
+#include "Engine/SkeletalMesh.h"
 #include "EngineUtils.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
@@ -1647,26 +1649,64 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 	const double EndZ = FMath::Min(SimOrigin.Z, TopZ) - TraceBelowCm;
 
 	int32 TraceCount = 0;
+	int32 SkippedNonWalkableHits = 0;
+
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+	const ANavigationData* NavData = (bHeightFieldRequireNavMesh && NavSys) ? NavSys->GetDefaultNavDataInstance() : nullptr;
+	if (bHeightFieldRequireNavMesh && !NavData)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("높이 격자: NavMesh가 없어 걸을 수 있는 면 검사를 생략한다 — 아치·지붕 같은 물체도 지면으로 잡힌다"));
+	}
+
+	const FVector NavSnapExtentCm(100.0, 100.0, 60.0);
+	constexpr int32 MaxSkippedLayers = 4;
+
+	auto IsWalkableHit = [&](const FHitResult& Hit) -> bool
+	{
+		FNavLocation OnNav;
+		return NavSys->ProjectPointToNavigation(Hit.ImpactPoint, OnNav, NavSnapExtentCm, NavData);
+	};
 
 	auto Sampler = [&](const FVector2D& QueryCm, double& OutHeightCm) -> bool
 	{
+		const FVector TraceStart(QueryCm.X, QueryCm.Y, StartZ);
+		const FVector TraceEnd(QueryCm.X, QueryCm.Y, EndZ);
+
 		++TraceCount;
-
 		FHitResult Hit;
-		const bool bHit = World->LineTraceSingleByChannel(
-			Hit,
-			FVector(QueryCm.X, QueryCm.Y, StartZ),
-			FVector(QueryCm.X, QueryCm.Y, EndZ),
-			ECC_WorldStatic,
-			Params);
-
-		if (!bHit)
+		if (!World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, Params))
 		{
 			return false;
 		}
+		if (!NavData || IsWalkableHit(Hit))
+		{
+			OutHeightCm = Hit.ImpactPoint.Z;
+			return true;
+		}
 
-		OutHeightCm = Hit.ImpactPoint.Z;
-		return true;
+		FCollisionQueryParams LayerParams = Params;
+		for (int32 Layer = 0; Layer < MaxSkippedLayers; ++Layer)
+		{
+			++SkippedNonWalkableHits;
+			if (!Hit.GetComponent())
+			{
+				return false;
+			}
+			LayerParams.AddIgnoredComponent(Hit.GetComponent());
+
+			++TraceCount;
+			if (!World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, LayerParams))
+			{
+				return false;
+			}
+			if (IsWalkableHit(Hit))
+			{
+				OutHeightCm = Hit.ImpactPoint.Z;
+				return true;
+			}
+		}
+		return false;
 	};
 
 	const double SpacingCm = FMath::Max(static_cast<double>(HeightFieldSpacingUU), 10.0);
@@ -1692,6 +1732,13 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		Stats.HitCount, Stats.SampleCount,
 		Stats.MinHeightCm, Stats.MaxHeightCm, Stats.HeightSpanCm(),
 		IgnoredFacilities);
+
+	if (NavData)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("높이 격자: NavMesh가 없는 면 %d개를 건너뛰었다 (아치·가로등·지붕 등, 트레이스 %d회)"),
+			SkippedNonWalkableHits, TraceCount);
+	}
 
 	UE_LOG(LogTemp, Log,
 		TEXT("높이 격자: 중심 (%.0f, %.0f) 반폭 %.0f (%s), 간격 %.0f, 트레이스 시작 Z=%.0f"),
@@ -2861,7 +2908,7 @@ bool UFF_CrowdSimulationSubsystem::BeginAudienceVisit(
 		return false;
 	}
 
-	// Utility로 무대에 먼저 도착해도 공연 3축제분 전보다 일찍 관람 잠금을 걸지 않는다.
+	// Utility로 무대에 먼저 도착해도 집결 창(AudienceGatherLeadSeconds)보다 일찍 관람 잠금을 걸지 않는다.
 	const UWorld* World = GetWorld();
 	const UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
 	const AFFZSFacilityActor* Facility = Zones ? Zones->FindFacility(FacilityId) : nullptr;
@@ -2870,7 +2917,10 @@ bool UFF_CrowdSimulationSubsystem::BeginAudienceVisit(
 	if (Facility && FFF_ZoneSystemBridge::IsMainStageFacility(
 		Facility->GetFacilitySpec().Category, Facility->GetFacilitySpec().FacilityDefinitionId))
 	{
-		if (!Stage || !Stage->IsMainProgramQueueBreakActive())
+		float WindowStart = 0.f;
+		float WindowEnd = 0.f;
+		if (!Stage || !Stage->TryGetMainProgramShowWindow(
+			FMath::Max(AudienceGatherLeadSeconds, 0.f), WindowStart, WindowEnd))
 		{
 			return false;
 		}
@@ -3210,14 +3260,20 @@ int32 UFF_CrowdSimulationSubsystem::GatherPartiesToMainStageAudience()
 	const UWorld* World = GetWorld();
 	const UFF_FestivalStageSubsystem* Stage = World && World->GetGameInstance()
 		? World->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
-	if (!Stage || !Stage->IsMainProgramQueueBreakActive())
+	float WindowStart = 0.f;
+	float WindowEnd = 0.f;
+	if (!Stage || !Stage->TryGetMainProgramShowWindow(
+		FMath::Max(AudienceGatherLeadSeconds, 0.f), WindowStart, WindowEnd))
 	{
 		return 0;
 	}
+	const UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge = World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>();
 	if (UFF_ZoneSystemQueueBridgeSubsystem* Bridge = World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>())
 	{
+		// 대기열 중단 창(공연 3축제분 전) 안일 때만 실제로 닫힌다. 그 전에는 아무 일도 안 한다.
 		Bridge->SynchronizeMainProgramQueueBreak();
 	}
+	const UFF_QueueSubsystem* QueueSystem = World->GetSubsystem<UFF_QueueSubsystem>();
 
 	++AudienceGatherAttempts;
 	FGuid FacilityId;
@@ -3246,6 +3302,15 @@ int32 UFF_CrowdSimulationSubsystem::GatherPartiesToMainStageAudience()
 			&& State.AudiencePhase == EFF_PartyAudiencePhase::None
 			&& !AudiencePartiesExcludedThisShow.Contains(Unit.PartyID))
 		{
+			// 모두가 무대로 가지 않는다. 파티ID 와 공연 시각으로 정한 몫만 관람하러 간다.
+			// 매번 훑을 때마다 같은 답이 나와야 하므로 난수를 쓰지 않는다.
+			const uint32 AttendanceHash = GetTypeHash(
+				FIntPoint(Unit.PartyID, FMath::RoundToInt(MainProgramStartLiveSeconds)));
+			const float AttendanceRoll = static_cast<float>(AttendanceHash % 10000u) / 10000.f;
+			if (AttendanceRoll >= FMath::Clamp(AudienceAttendanceRatio, 0.f, 1.f))
+			{
+				continue;
+			}
 			Leaders.Add(LeaderIndex);
 		}
 	}
@@ -3278,6 +3343,14 @@ int32 UFF_CrowdSimulationSubsystem::GatherPartiesToMainStageAudience()
 		if (RemainingSeconds > DueSeconds)
 		{
 			++NotDueYet;
+			continue;
+		}
+		// 이용 중인 팀을 줄에서 빼면 서비스가 끊긴다. 대기열이 닫히기 전에는 다음 훑기로 미룬다.
+		const FPartyDecisionState& LeaderState = PartyDecisionStates[LeaderIndex];
+		if (QueueSystem && QueueBridge && LeaderState.QueuedFacilityId.IsValid()
+			&& QueueSystem->HasPartyStartedService(
+				QueueBridge->FindQueueFacilityId(LeaderState.QueuedFacilityId), UnitDatas[LeaderIndex].PartyID))
+		{
 			continue;
 		}
 		if (BeginAudienceVisit(LeaderIndex, FacilityId, Snapshot))
@@ -3318,6 +3391,75 @@ int32 UFF_CrowdSimulationSubsystem::GetAudiencePartyCount() const
 		}
 	}
 	return Count;
+}
+
+void UFF_CrowdSimulationSubsystem::GetAudienceWalkDiagnostics(
+	int32& OutWalkingLeaders, float& OutMeanRemainingMeters, float& OutMaxRemainingMeters,
+	float& OutMeanSpeedMetersPerSecond, float& OutMeanCruiseMetersPerSecond, int32& OutStalledLeaders,
+	int32& OutNoPathLeaders, int32& OutQueryFailedLeaders, float& OutStalledMeanRemainingMeters,
+	int32& OutStalledBlockedLine) const
+{
+	OutStalledBlockedLine = 0;
+	OutNoPathLeaders = 0;
+	OutQueryFailedLeaders = 0;
+	OutStalledMeanRemainingMeters = 0.f;
+	double StalledRemainingSum = 0.0;
+	OutWalkingLeaders = 0;
+	OutMeanRemainingMeters = 0.f;
+	OutMaxRemainingMeters = 0.f;
+	OutMeanSpeedMetersPerSecond = 0.f;
+	OutMeanCruiseMetersPerSecond = 0.f;
+	OutStalledLeaders = 0;
+
+	double RemainingSum = 0.0;
+	double SpeedSum = 0.0;
+	double CruiseSum = 0.0;
+	for (int32 LeaderIndex = 0; LeaderIndex < PartyDecisionStates.Num(); ++LeaderIndex)
+	{
+		if (!UnitDatas.IsValidIndex(LeaderIndex) || !UnitDatas[LeaderIndex].bIsActive
+			|| UnitDatas[LeaderIndex].LeaderAgentIndex != LeaderIndex
+			|| PartyDecisionStates[LeaderIndex].AudiencePhase != EFF_PartyAudiencePhase::GoingToSlot)
+		{
+			continue;
+		}
+		const FUnitData& Leader = UnitDatas[LeaderIndex];
+		const float RemainingMeters = static_cast<float>(
+			FVector::Dist2D(Leader.Position, Leader.TargetLocation)) * FFF_CrowdUnits::MetersPerUU;
+		const float SpeedMps = static_cast<float>(Leader.Velocity.Size2D()) * FFF_CrowdUnits::MetersPerUU;
+		++OutWalkingLeaders;
+		RemainingSum += RemainingMeters;
+		SpeedSum += SpeedMps;
+		CruiseSum += Leader.CruiseSpeed * FFF_CrowdUnits::MetersPerUU;
+		OutMaxRemainingMeters = FMath::Max(OutMaxRemainingMeters, RemainingMeters);
+		if (PathFollowers.IsValidIndex(LeaderIndex))
+		{
+			OutNoPathLeaders += PathFollowers[LeaderIndex].bHasPath ? 0 : 1;
+			OutQueryFailedLeaders += PathFollowers[LeaderIndex].bQueryFailed ? 1 : 0;
+		}
+		if (SpeedMps < 0.2f)
+		{
+			++OutStalledLeaders;
+			StalledRemainingSum += RemainingMeters;
+			// 정지한 파티의 목표까지 직선이 시설 벽에 막혀 있으면 경로 추종이 아니라 벽 쪽 문제다.
+			if (!FFF_CrowdWalls::IsSegmentClear(AvoidanceWalls,
+					FVector2f(Leader.Position.X, Leader.Position.Y) * FFF_CrowdUnits::MetersPerUU,
+					FVector2f(Leader.TargetLocation.X, Leader.TargetLocation.Y) * FFF_CrowdUnits::MetersPerUU,
+					Leader.Radius * FFF_CrowdUnits::MetersPerUU))
+			{
+				++OutStalledBlockedLine;
+			}
+		}
+	}
+	if (OutStalledLeaders > 0)
+	{
+		OutStalledMeanRemainingMeters = static_cast<float>(StalledRemainingSum / OutStalledLeaders);
+	}
+	if (OutWalkingLeaders > 0)
+	{
+		OutMeanRemainingMeters = static_cast<float>(RemainingSum / OutWalkingLeaders);
+		OutMeanSpeedMetersPerSecond = static_cast<float>(SpeedSum / OutWalkingLeaders);
+		OutMeanCruiseMetersPerSecond = static_cast<float>(CruiseSum / OutWalkingLeaders);
+	}
 }
 
 void UFF_CrowdSimulationSubsystem::GetScheduledPhaseCounts(
@@ -4519,7 +4661,10 @@ void UFF_CrowdSimulationSubsystem::BeginMainStageGathering(const float ShowStart
 	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
 	const UFF_FestivalStageSubsystem* Stage = GameInstance
 		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
-	if (!Stage || !Stage->IsMainProgramQueueBreakActive())
+	float WindowStart = 0.f;
+	float WindowEnd = 0.f;
+	if (!Stage || !Stage->TryGetMainProgramShowWindow(
+		FMath::Max(AudienceGatherLeadSeconds, 0.f), WindowStart, WindowEnd))
 	{
 		return;
 	}
@@ -4562,10 +4707,11 @@ void UFF_CrowdSimulationSubsystem::UpdateAudienceShowState()
 		return;
 	}
 
-	// Queue와 같은 창구를 사용한다. 20:00 공연이면 19:57부터이며 배속 잠금과는 별개다.
+	// 집결은 대기열 중단(공연 3축제분 전 = 3초)보다 훨씬 일찍 시작한다. 걸어올 시간이 필요하다.
 	float ShowStartSeconds = 0.f;
 	float ShowEndSeconds = 0.f;
-	if (!Stage->TryGetMainProgramQueueBreakWindow(ShowStartSeconds, ShowEndSeconds))
+	if (!Stage->TryGetMainProgramShowWindow(
+		FMath::Max(AudienceGatherLeadSeconds, 0.f), ShowStartSeconds, ShowEndSeconds))
 	{
 		if (bMainProgramAudienceActive)
 		{

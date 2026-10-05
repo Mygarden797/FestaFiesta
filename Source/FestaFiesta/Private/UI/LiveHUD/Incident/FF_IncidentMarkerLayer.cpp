@@ -13,6 +13,7 @@
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "Incident/FF_IncidentSubsystem.h"
+#include "Incident/Rules/FF_IncidentRules.h"
 #include "UI/LiveHUD/Incident/FF_IncidentMarkerButton.h"
 #include "Kismet/GameplayStatics.h"
 #include "UI/FF_UILog.h"
@@ -281,23 +282,15 @@ UTexture2D* UFF_IncidentMarkerLayer::ResolveIcon(const FFF_IncidentView& View)
 
 bool UFF_IncidentMarkerLayer::TryGetAnchorWorldLocation(const FFF_IncidentAnchor& Anchor, FVector& OutLocation) const
 {
-	switch (Anchor.Kind)
+	if (!FFF_IncidentRules::TryGetAnchorLocation(GetWorld(), Anchor, OutLocation))
 	{
-	case EFF_IncidentAnchorKind::Actor:
-		if (const AActor* Actor = Anchor.Actor.Get())
-		{
-			OutLocation = Actor->GetActorLocation() + FVector(0.f, 0.f, ActorHeightOffset);
-			return true;
-		}
-		return false;
-
-	case EFF_IncidentAnchorKind::WorldPoint:
-		OutLocation = Anchor.WorldPoint;
-		return true;
-
-	default:
 		return false;
 	}
+	if (Anchor.Kind == EFF_IncidentAnchorKind::Actor)
+	{
+		OutLocation.Z += ActorHeightOffset;
+	}
+	return true;
 }
 
 void UFF_IncidentMarkerLayer::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)

@@ -155,6 +155,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float BuzzVisitorSwing = 0.15f;
 
+	// 평판 배수: 어제 만족도(0~100)가 다음날 방문객을 움직인다. 50(중립)에서 ×1.00, 0 에서 Min, 100 에서 Max.
+	// Day1 은 어제가 없어 ×1.00 이다. 폭은 홍보 등급 폭을 넘기지 않는다(staff_event_design.md 5절). [밸런스]
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Reputation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ReputationMinVisitorMultiplier = 0.88f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Reputation", meta = (ClampMin = "1.0"))
+	float ReputationMaxVisitorMultiplier = 1.08f;
+
 	// 하루가 바뀔 때 중립(50)과의 거리를 이 비율만큼 줄인다. 화제는 식는다. [밸런스]
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float BuzzDailyDecayToNeutral = 0.25f;

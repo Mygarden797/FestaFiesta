@@ -133,6 +133,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|NPC|Need")
 	void CommitAggregation();
 
+	/** 새 축제를 시작할 때 이전 판의 집계를 비운다. 이 서브시스템은 레벨을 건너 살아남는다. */
+	void ResetForNewFestival();
+
 private:
+	UFUNCTION()
+	void HandleFestivalStarted() { ResetForNewFestival(); }
+
 	FFF_NeedMetricsAggregator Aggregator;
 };

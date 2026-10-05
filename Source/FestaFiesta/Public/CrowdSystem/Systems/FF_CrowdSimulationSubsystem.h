@@ -413,6 +413,27 @@ public:
 	float AudienceGatherSafetySeconds = 10.f;
 
 	/**
+	 * 집결 판정을 시작하는 바깥 창(Live 경과 초). 대기열 중단(3축제분 = 3초)과 다른 값이다 -
+	 * 집결을 거기에 묶으면 전원이 공연 3초 전에 출발해 공연 후반에야 도착한다.
+	 * 실제 출발 시각은 파티마다 자기 이동시간으로 정해지므로 이 값은 상한일 뿐이다.
+	 *
+	 * 3이면 대기열 중단과 같아 한광훈의 9/29 규칙 그대로(대부분 공연 중반 이후 도착).
+	 * 창을 줄이면 먼 파티가 공연 시작 뒤에 도착한다 - 실측(Test_Main, 10/3) 도보가 100초를 넘는 파티가
+	 * 많아 90초로 줄이면 시작 시점 착석이 0 이 된다. 쏠려 보이는 문제는 창이 아니라
+	 * AudienceAttendanceRatio 로 푼다. 이용 중인 팀은 이 창과 무관하게 줄에서 빼지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0"))
+	float AudienceGatherLeadSeconds = 180.f;
+
+	/**
+	 * 공연마다 관람하러 가는 파티의 비율(0~1). 나머지는 평소처럼 부스를 돈다.
+	 * 파티ID 와 공연 시각으로 결정론적으로 고르므로 같은 판에서는 같은 파티가 간다.
+	 * 1 이면 전원이 간다(예전 동작). 모두가 무대로 달려가 보이지 않게 하려는 값이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AudienceAttendanceRatio = 0.6f;
+
+	/**
 	 * 집결 구간 동안 이 주기로 다시 훑는다. 한 번만 부르면 그 뒤에 입장한 손님과
 	 * 그때 줄에 있어서 빠진 손님이 영영 안 온다 — 입장은 Live 내내 이어진다.
 	 */
@@ -490,6 +511,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
 	void GetScheduledPhaseCounts(int32& OutAudienceSeated, int32& OutAudienceWalking,
 		int32& OutProgramAtVenue, int32& OutProgramWalking) const;
+
+	/**
+	 * 좌석으로 걷는 관람 파티(리더)의 이동 진단. 도착이 늦는 원인이 거리인지 속도인지 막힘인지 가른다.
+	 * 계측용이라 시나리오 테스트만 부른다.
+	 */
+	void GetAudienceWalkDiagnostics(int32& OutWalkingLeaders, float& OutMeanRemainingMeters,
+		float& OutMaxRemainingMeters, float& OutMeanSpeedMetersPerSecond,
+		float& OutMeanCruiseMetersPerSecond, int32& OutStalledLeaders,
+		int32& OutNoPathLeaders, int32& OutQueryFailedLeaders, float& OutStalledMeanRemainingMeters,
+		int32& OutStalledBlockedLine) const;
 
 	// 집결 시도 / 집결 파티 / 정원 부족 거절 / 스냅샷 실패 / 예약 우선 제외.
 	void GetAudienceStats(int32& OutAttempts, int32& OutGatheredParties, int32& OutGatheredMembers,
@@ -755,6 +786,11 @@ public:
 	// 트레이스 시작 높이(UU). 지형 최고점보다 낮으면 그 위 지형을 못 잡아 개체가 파묻힌다
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
 	float HeightFieldTraceAboveUU = 5000.f;
+
+	// 트레이스가 맞은 면 근처에 NavMesh가 있을 때만 지면으로 인정한다. 아치·가로등·지붕처럼
+	// 걸을 수 없는 물체는 건너뛰고 그 아래 면을 다시 찾는다. NavMesh가 없으면 이 검사는 생략된다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	bool bHeightFieldRequireNavMesh = true;
 
 	// SimOrigin.Z 기준 상대 통행 상한(UU). 지면이 이보다 높은 곳으로는 들어가지 않는다.
 	// 0 이하면 제한이 없다.

@@ -176,6 +176,36 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
 	bool CanSkipTutorial() const;
 
+	/* 준비 화면 패널이 지금 "보기 전용" 인지. 튜토리얼 오버레이가 매 프레임 묻는다.
+
+	   조작을 기다리지 않는 줄(대사·선택지)에서 패널이 열려 있으면 참이다. 그동안 오버레이가
+	   화면 전체의 클릭을 받아 패널을 누를 수 없게 하고, 어디든 누르면 패널을 닫는다(피드백:
+	   "탭은 보는 용도로만, 아무 데나 누르면 꺼지게"). 조작 대기 줄에서는 거짓이라 탭을
+	   열고 시설을 놓는 등의 조작은 그대로 된다.
+	*/
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
+	bool IsPrepPanelViewOnly() const { return bPrepPanelViewOnly; }
+
+	// 보기 전용 패널을 닫는다. 닫았으면 true. 오버레이가 클릭을 받았을 때 부른다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
+	bool DismissViewOnlyPrepPanel();
+
+	/* 튜토리얼 레벨을 끝내고 레벨 선택으로 돌아간다. 대사를 다 본 뒤 뜨는 "나가기" 버튼이 부른다.
+
+	   대사가 끝날 때의 자동 이동(LeaveIfTutorialLevel)과 달리 흐름 여부를 따지지 않는다.
+	   플레이어가 직접 누른 것이라, 에디터에서 맵을 바로 연 경우에도 나갈 수 있어야 한다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
+	void ExitTutorialLevel();
+
+	/* 지금 레벨이 튜토리얼 레벨인지.
+
+	   축제 식별자가 튜토리얼 축제와 같으면 참이다. 흐름 없이 맵을 바로 열면 식별자가 레벨 이름이라
+	   설정의 축제 이름과 다를 수 있어, 레벨 GameMode 에 튜토리얼 대사 표가 걸려 있어도 참으로 본다.
+	   지금 대사 표를 거는 레벨은 튜토리얼 레벨뿐이다 — 다른 축제에 대사를 걸게 되면 이 판단을 다시 볼 것.
+	*/
+	bool IsTutorialLevel() const;
+
 	// ── 조회 ────────────────────────────────────────────────────────────────
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
@@ -284,6 +314,14 @@ private:
 	   열어야 넘어가는데, 무엇을 해야 하는지 알 수 없어 멈춘 것처럼 보인다.
 	*/
 	void CheckPrepTabAlreadyOpen();
+
+	/* 열려 있는 준비 화면 패널을 닫는다. 닫았으면 true.
+
+	   대사를 넘기려 할 때(Advance) 부른다. 배경은 Advance 의 주석 참고.
+	   배치 탭을 닫으면 패널이 건축 세션도 끝낸다(UFF_PrepPanelBuild::EndPanelSession).
+	   연속 설치 상태로 남은 배치 화면도 같이 정리된다.
+	*/
+	bool ClosePrepPanelForDialogue();
 
 	void BindGameSignals();
 	void UnbindGameSignals();
@@ -419,6 +457,12 @@ private:
 	// 건너뛰었으면 다시 시작하지 않는다.
 	bool bTutorialSkipped = false;
 
+	// 지금 준비 화면 패널이 보기 전용인지. Tick 이 갱신한다. IsPrepPanelViewOnly 참고.
+	bool bPrepPanelViewOnly = false;
+
+	// 보기 전용 판정을 위해 탭 바를 다시 찾을 때까지 남은 시간.
+	float PrepPanelScanCountdown = 0.f;
+
 	// 건너뛸지 물어보는 중. 이때는 원래 대사 대신 확인 줄을 보여준다.
 	bool bAwaitingSkipConfirm = false;
 
@@ -464,6 +508,13 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> OverlayWidget;
+
+	// 대사를 다 본 뒤 남는 "나가기" 버튼. FF_TutorialExitWidget 참고.
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> ExitWidget;
+
+	// 나가기 버튼을 띄운다. 이미 떠 있으면 그대로 둔다.
+	void ShowExitButton();
 
 	// 개발용 콘솔 명령. 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
 	FFF_DebugConsoleCommands DebugCommands;

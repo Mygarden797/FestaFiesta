@@ -194,7 +194,7 @@ bool FFF_FinalePurchase_BonusIsNotRevenue::RunTest(const FString& Parameters)
 		Harness.Progression->GetDayLedger().GetTotalRefund(), 0);
 
 	int32 EarnTotal = 0;
-	for (int32 Index = 0; Index <= static_cast<int32>(EFF_EarnReason::MinigameReward); ++Index)
+	for (int32 Index = 0; Index <= static_cast<int32>(EFF_EarnReason::IncidentReward); ++Index)
 	{
 		EarnTotal += Harness.Progression->GetDayLedger().GetEarnByReason(
 			static_cast<EFF_EarnReason>(Index));

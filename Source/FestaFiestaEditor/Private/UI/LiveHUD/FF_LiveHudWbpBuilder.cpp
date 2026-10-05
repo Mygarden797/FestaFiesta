@@ -1474,7 +1474,7 @@ namespace FFLiveHudWbpBuilder
 		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_MissingNote"),
 			Palette->InGame.InkFaint, 12,
 			LOCTEXT("LiveDensityPv_Missing",
-				"히트맵은 지금 디버그 표시라 에디터에서만 보입니다."), 0.f);
+				"밀도 격자가 준비되면 히트맵을 켤 수 있습니다."), 0.f);
 
 		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
 		{

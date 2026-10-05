@@ -38,6 +38,31 @@ void FFF_FacilityRevenueBook::Reset()
 	Entries.Reset();
 }
 
+void FFF_FacilityRevenueBook::Export(
+	TArray<FGuid>& OutIds, TArray<FFF_FacilityInstanceRevenue>& OutRevenues) const
+{
+	OutIds.Reset();
+	OutRevenues.Reset();
+	for (const TPair<FGuid, FFF_FacilityInstanceRevenue>& Pair : Entries)
+	{
+		OutIds.Add(Pair.Key);
+		OutRevenues.Add(Pair.Value);
+	}
+}
+
+void FFF_FacilityRevenueBook::Import(
+	const TArray<FGuid>& InIds, const TArray<FFF_FacilityInstanceRevenue>& InRevenues)
+{
+	Entries.Reset();
+	for (int32 Index = 0; Index < FMath::Min(InIds.Num(), InRevenues.Num()); ++Index)
+	{
+		if (InIds[Index].IsValid())
+		{
+			Entries.Add(InIds[Index], InRevenues[Index]);
+		}
+	}
+}
+
 bool FFF_FacilityRevenueBook::Find(
 	const FGuid& FacilityInstanceId, FFF_FacilityInstanceRevenue& OutRevenue) const
 {
