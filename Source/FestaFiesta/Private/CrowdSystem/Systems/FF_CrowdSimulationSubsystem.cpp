@@ -1201,6 +1201,13 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 			UpdateFormationBlockState(AgentIndex, Unit);
 		}
 
+		// MoveFailed가 못 거두는 개체(파티원, 큐·관람·퇴장 중 리더)도 같은 임계에서 막힘 카운터를 비운다
+		if (DecisionStuckSteps > 0 && Unit.StuckSteps >= DecisionStuckSteps)
+		{
+			Unit.StuckSteps = 0;
+			++StuckCounterBackoffs;
+		}
+
 		// 공연 보러 갈 때는 걸음을 재촉한다. 리더·멤버 두 경로가 방금 Speed 를 세웠으므로
 		// 여기서 한 번만 곱한다 — 상태 전환 시점에 걸면 멤버 추종이 매 스텝 되돌린다.
 		//
@@ -1314,8 +1321,7 @@ FFF_CrowdFlowBreakdown UFF_CrowdSimulationSubsystem::GetFlowBreakdown() const
 			continue;
 		}
 
-		if (bUnstuckEnabled
-			&& (Unit.StuckSteps >= AvoidanceConfig.StuckDetectSteps || Unit.UnstuckHoldSteps > 0))
+		if (bUnstuckEnabled && Unit.UnstuckHoldSteps > 0)
 		{
 			++Out.UnstuckActive;
 		}
@@ -1422,6 +1428,7 @@ CrowdSteering::FStepParams UFF_CrowdSimulationSubsystem::MakeStepParams() const
 	Params.StuckSpeedThresholdUU = AvoidanceConfig.StuckSpeedThresholdUU;
 	Params.StuckDetectSteps = AvoidanceConfig.StuckDetectSteps;
 	Params.UnstuckHoldSteps = AvoidanceConfig.UnstuckHoldSteps;
+	Params.UnstuckCooldownSteps = AvoidanceConfig.UnstuckCooldownSteps;
 	Params.FacingSmoothSeconds = FacingSmoothTime;
 	Params.FacingEnterSpeedUU = FacingEnterSpeedUU;
 	Params.FacingExitSpeedUU = FacingExitSpeedUU;
@@ -1553,6 +1560,7 @@ void UFF_CrowdSimulationSubsystem::ClearAvoidanceForces()
 		Unit.Force = FVector::ZeroVector;
 		Unit.StuckSteps = 0;
 		Unit.UnstuckHoldSteps = 0;
+		Unit.UnstuckCooldownSteps = 0;
 	}
 	AvoidanceNeighbourCounts.Reset();
 
@@ -3032,6 +3040,7 @@ bool UFF_CrowdSimulationSubsystem::AssignAudienceSeats(
 		Member.FormationClearStreak = 0;
 		Member.StuckSteps = 0;
 		Member.UnstuckHoldSteps = 0;
+		Member.UnstuckCooldownSteps = 0;
 		if (PathFollowers.IsValidIndex(Members[MemberOffset]))
 		{
 			PathFollowers[Members[MemberOffset]].Reset();
@@ -5508,6 +5517,7 @@ bool UFF_CrowdSimulationSubsystem::SetPartyQueueColumn(int32 PartyID, const TArr
 			Unit.FormationClearStreak = 0;
 			Unit.StuckSteps = 0;
 			Unit.UnstuckHoldSteps = 0;
+			Unit.UnstuckCooldownSteps = 0;
 		}
 		Unit.QueueSlotLocation = NewLocation;
 		Unit.TargetLocation = NewLocation;
