@@ -40,10 +40,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnTitleIntroFinished);
  * 그래야 화음이 영상 끝을 넘어 지구 공개까지 이어진다. 음량은 설정 창의 배경음 슬라이더를 따른다.
  *
  * === 🔴 배경음은 메뉴가 나올 때부터 ===
- * `UFF_AudioEventLink`(장원재)가 레벨 BeginPlay 에 축제 단계(기본 Setup)를 읽어 「준비」 곡을 튼다.
- * 프론트엔드에서도 그래서 인트로 첫 화면부터 노래가 나왔다(2026-10-05 사용자 지적).
- * 남의 코드를 고치지 않고 **공개 API 만 써서** 인트로가 떠 있는 동안 그 곡을 멈춰 두고(`HoldStageAmbience`),
- * 끝나는 순간 멈춰 둔 곡을 다시 튼다(`ReleaseStageAmbience`). 곡은 2초 페이드인이라 첫 틱에 멈추면 들리지 않는다.
+ * 프론트엔드 곡은 `UFF_AudioEventLink`(장원재)가 화면을 0.2초마다 보고 고른다 — 타이틀이면 「타이틀」, 나머지는 「로비」.
+ * 그 코드는 `TitleIntro` 를 몰라 인트로 동안 로비 곡을 튼다(2026-10-05 Dev 병합 기준). 남의 코드를 고치지 않고
+ * **공개 API 만 써서** 인트로가 떠 있는 동안 그 곡을 멈춰 둔다(`HoldStageAmbience`). 곡은 2초 페이드인이라 첫 틱에 멈추면 들리지 않는다.
+ * 끝날 때 곡을 다시 틀지 않는다 — 화면이 타이틀로 바뀌면 오디오 연동이 타이틀 곡을 튼다.
+ * 직접 다시 틀면 로비 곡이 잠깐 겹친 뒤 타이틀 곡으로 바뀐다(병합 전 구현이 그랬다).
  *
  * === 넘기기 ===
  * 시작 화면은 `SplashMinSecondsBeforeSkip` 뒤부터, 영상과 지구 공개는 바로 아무 키로 넘긴다.
@@ -167,7 +168,7 @@ private:
 	/** 단계 배경음이 돌고 있으면 기억하고 멈춘다. 인트로가 떠 있는 동안 매 틱 확인한다(레벨 BeginPlay 가 화면보다 늦다). */
 	void HoldStageAmbience();
 
-	/** 멈춰 둔 단계 배경음을 다시 튼다. 메뉴가 나오는 순간(`Finish`)과 인트로가 중간에 내려갈 때. */
+	/** 멈춤을 푼다. 곡은 직접 틀지 않고 오디오 연동이 다음 화면에 맞는 곡을 고르게 둔다. */
 	void ReleaseStageAmbience();
 	void FadeOutIntroSound(float Seconds);
 

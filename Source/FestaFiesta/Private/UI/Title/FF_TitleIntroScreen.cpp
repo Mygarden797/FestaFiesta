@@ -382,17 +382,11 @@ void UFF_TitleIntroScreen::ReleaseStageAmbience()
 	{
 		return;
 	}
-	const EFF_AudioAmbience Resume = HeldAmbience;
+	// 곡을 직접 틀지 않는다. 바로 뒤 화면이 타이틀로 바뀌면 `UFF_AudioEventLink` 가 0.2초 안에 타이틀 곡을 튼다.
+	// 여기서 멈춰 둔 곡(로비)을 다시 틀면 그 곡이 잠깐 겹친 뒤 타이틀 곡으로 바뀐다.
+	UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 배경음 멈춤 해제 (인트로 동안 막은 곡: %s). 다음 화면 곡은 오디오 연동이 고른다."),
+		*GetName(), *UEnum::GetValueAsString(HeldAmbience));
 	HeldAmbience = EFF_AudioAmbience::None;
-	if (UFF_AudioSubsystem* Audio = UFF_AudioSubsystem::Get(this))
-	{
-		// 그 사이 다른 곡이 걸렸으면(단계가 바뀌었으면) 그쪽을 존중한다.
-		if (Audio->GetCurrentAmbience() == EFF_AudioAmbience::None)
-		{
-			Audio->SetAmbience(Resume);
-		}
-	}
-	UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 배경음 다시 시작 (%s)."), *GetName(), *UEnum::GetValueAsString(Resume));
 }
 
 void UFF_TitleIntroScreen::FadeOutIntroSound(const float Seconds)
