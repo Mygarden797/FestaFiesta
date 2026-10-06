@@ -230,7 +230,6 @@ bool UFF_IncidentSubsystem::GetIncidentView(FFF_IncidentHandle Handle, FFF_Incid
 	OutView.OccurredAtMinutes = Slot->OccurredAtMinutes;
 	OutView.Title = Def->Title;
 	OutView.Body = Def->Body;
-	OutView.MarkerIcon = Def->MarkerIcon;
 	OutView.Anchor = Slot->Anchor;
 	FFF_IncidentRules::BuildOptionViews(*Def, OutView.Options);
 

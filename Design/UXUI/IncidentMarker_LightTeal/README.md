@@ -52,5 +52,5 @@ Unreal 반영: `Tools/ui/incident_marker/apply_and_verify.py` (텍스처 임포�
 
 ## 사건 정의 쪽
 
-- `MarkerIcon`은 월드 마커에서 쓰지 않는다 (상세 패널 머리 그림 용도로 남기거나 정리).
+- 사건별 `MarkerIcon` 필드는 2026-10-06에 Definition·View에서 삭제했다. 기호는 Tone으로 정하고 텍스처는 마커 레이어가 갖는다.
 - 현재 4개 정의 모두 `Tone`/`Urgency`가 기본값(문제·보통)이라 전부 노랑 `!`로 보인다. 기획이 값을 채워야 한다.
