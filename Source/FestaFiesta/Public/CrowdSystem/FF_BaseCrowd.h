@@ -37,6 +37,7 @@ public:
 	virtual void ReleaseFromAgent();
 	// --- 후 보정이 끝난 이동 값을 그대로 적용하기 위한 함수 ---/
 	virtual void PushPresentation(FVector NewPosition, FRotator NewRotator, float NewSpeed);
+	void SetAnimPlayRate(float PlayRate);
 	// --- 알맞는 외형을 선택하기 위한 장치 --- /
 	virtual void ApplyAppearance(USkeletalMesh* Mesh,UClass* AnimClass, float YawOffset, float UniformScale);
 	

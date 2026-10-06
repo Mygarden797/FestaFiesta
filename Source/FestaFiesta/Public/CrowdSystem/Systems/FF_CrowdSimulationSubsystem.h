@@ -636,6 +636,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
 	int32 GetStuckDecisionRequests() const { return StuckDecisionRequests; }
 
+	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
+	int32 GetStuckCounterBackoffs() const { return StuckCounterBackoffs; }
+
 	// 통행 상한에 막혀 되돌린 스텝 수. 0이면 상한이 한 번도 안 걸린 것이다
 	UFUNCTION(BlueprintPure, Category = "Crowd|Terrain")
 	int32 GetHeightBlockedSteps() const { return HeightBlockedSteps; }
@@ -1108,6 +1111,7 @@ public:
 
 	
 	float SimulationTimeScale = 1.0f;
+	float AppliedCrowdAnimPlayRate = 1.0f;
 	
 	UFUNCTION(BlueprintPure, Category = "Crowd|Need")
 	float GetLiveMinutes() const { return (SimTimeSeconds - LiveStartSimTime) * Temp_FestivalMinutesPerRealSecond; }
@@ -1192,6 +1196,7 @@ private:
 	void StepSimulation(float FixedDt);
 
 	void PushPresentationToActors(float DeltaTime, float InterpAlpha);
+	void ApplyCrowdAnimPlayRate(float PlayRate);
 
 	void PublishCrowdReadModel();
 
@@ -1635,6 +1640,8 @@ private:
 	// 막힘으로 목적지를 포기한 횟수. 위 둘과 같이 봐야 한다 — 이 값만 크면 잼이 안 풀리는 것이고,
 	// 쿨다운 스킵만 크면 임계가 짧아서 같은 파티가 계속 재시도하는 것이다
 	int32 StuckDecisionRequests = 0;
+
+	int32 StuckCounterBackoffs = 0;
 
 	// 개인 주기가 차서 걷던 중 재평가한 횟수. DecisionsProcessed 와 같이 봐야 한다 —
 	// 이 값이 처리량의 대부분을 차지하면 reevaluate_interval_seconds 가 너무 짧다

@@ -186,6 +186,9 @@ bool FFF_StaffDispatchWarpTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A target that walks away pulls the worker back to moving"), Bodies->GetStaffState(StaffId), EFF_StaffState::Moving);
 	TestFalse(TEXT("Work pauses while a member follows the target"), Dispatch->GetRemainingWorkMinutes(Handle, Remaining));
 	TestTrue(TEXT("Following is still a response"), Dispatch->IsResponding(Handle));
+	float StageRemaining = -1.f;
+	TestEqual(TEXT("A member walking to the site is shown as travelling"),
+		Dispatch->GetResponseStage(Handle, StageRemaining), EFF_IncidentResponseStage::Travelling);
 
 	Step(0.1f);
 	TestEqual(TEXT("One failed path search keeps the member trying"), Bodies->GetStaffState(StaffId), EFF_StaffState::Moving);
@@ -197,10 +200,15 @@ bool FFF_StaffDispatchWarpTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Warping keeps the response alive"), Dispatch->IsResponding(Handle));
 	Step(0.1f);
 	TestTrue(TEXT("Work resumes after the warp"), Dispatch->GetRemainingWorkMinutes(Handle, Remaining));
+	TestEqual(TEXT("Everyone at the site is shown as working"),
+		Dispatch->GetResponseStage(Handle, StageRemaining), EFF_IncidentResponseStage::Working);
+	TestTrue(TEXT("The working stage carries the remaining work time"), StageRemaining > 0.f);
 	TestTrue(TEXT("Warping does not resolve the incident by itself"), Incident->IsHandleValid(Handle));
 
 	Bodies->RecallStaff(StaffId);
 	Step(0.1f);
+	TestEqual(TEXT("A cancelled response is no longer shown as a dispatch"),
+		Dispatch->GetResponseStage(Handle, StageRemaining), EFF_IncidentResponseStage::None);
 	TestTrue(TEXT("A warped member has no route to retrace and leaves on the spot"), Bodies->IsIdle(StaffId));
 	Step(0.1f);
 	TestTrue(TEXT("The recalled response is cleared once everyone is home"), Dispatch->Dispatches.IsEmpty());
@@ -277,6 +285,105 @@ bool FFF_StaffPathProjectionTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StaffSpreadTest,
+	"FestaFiesta.Incident.StaffDispatch.TeamSpreadsAtExitAndSite",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_StaffSpreadTest::RunTest(const FString& Parameters)
+{
+	TArray<FVector> Offsets;
+	UFF_StaffSubsystem::MakeSpreadOffsets(1, Offsets);
+	TestTrue(TEXT("A lone member leaves exactly from the exit"), Offsets.Num() == 1 && Offsets[0].IsZero());
+	UFF_StaffSubsystem::MakeSpreadOffsets(0, Offsets);
+	TestTrue(TEXT("Nobody sent means no offsets"), Offsets.IsEmpty());
+
+	for (int32 Count = 2; Count <= 8; ++Count)
+	{
+		for (int32 Trial = 0; Trial < 20; ++Trial)
+		{
+			UFF_StaffSubsystem::MakeSpreadOffsets(Count, Offsets);
+			if (!TestEqual(TEXT("Every member gets an offset"), Offsets.Num(), Count)) return false;
+			const float MaxRadius = UFF_StaffSubsystem::SpreadSpacingCm * 0.5f / FMath::Sin(PI / Count)
+				+ UFF_StaffSubsystem::SpreadJitterCm;
+			for (int32 A = 0; A < Count; ++A)
+			{
+				TestEqual(TEXT("Spreading stays on the floor"), Offsets[A].Z, 0.0);
+				TestTrue(TEXT("Spreading stays close to the anchor"), Offsets[A].Size2D() <= MaxRadius + 0.1f);
+				for (int32 B = A + 1; B < Count; ++B)
+				{
+					if (!TestTrue(TEXT("No two members overlap"),
+						FVector::Dist2D(Offsets[A], Offsets[B]) >= UFF_StaffSubsystem::SpreadSpacingCm - 0.1f)) return false;
+				}
+			}
+		}
+	}
+
+	UFF_StaffSubsystem::MakeSpreadOffsets(3, Offsets);
+	const TArray<FVector> BasePath = {FVector::ZeroVector, FVector(800.f, 0.f, 0.f), FVector(800.f, 1200.f, 0.f)};
+	TArray<UFF_StaffSubsystem::FStaffRuntime> Team;
+	for (const FVector& TeamOffset : Offsets)
+	{
+		UFF_StaffSubsystem::FStaffRuntime& Member = Team.AddDefaulted_GetRef();
+		Member.Path = BasePath;
+		UFF_StaffSubsystem::ShiftPath(Member.Path, TeamOffset);
+		Member.Position = Member.Path[0];
+	}
+	for (int32 Step = 0; Step < 30; ++Step)
+	{
+		for (UFF_StaffSubsystem::FStaffRuntime& Member : Team)
+		{
+			UFF_StaffSubsystem::AdvanceAlongPath(Member, 73.f);
+		}
+		for (int32 A = 0; A < Team.Num(); ++A)
+		{
+			for (int32 B = A + 1; B < Team.Num(); ++B)
+			{
+				if (!TestTrue(TEXT("Members on shifted copies of one route keep their spacing the whole walk"),
+					FVector::Dist2D(Team[A].Position, Team[B].Position) >= UFF_StaffSubsystem::SpreadSpacingCm - 0.1f)) return false;
+			}
+		}
+	}
+
+	UFF_StaffSubsystem* Bodies = NewObject<UFF_StaffSubsystem>();
+	constexpr int32 StaffId = 11;
+	const FVector Home(0.f, 0.f, 0.f);
+	const FVector Offset(0.f, 100.f, 0.f);
+	const FVector Spawn = Home + Offset;
+	const FVector Target(500.f, 0.f, 0.f);
+	const FVector Goal = Target + Offset;
+	UFF_StaffSubsystem::FStaffRuntime Journey;
+	Journey.State = EFF_StaffState::Moving;
+	Journey.Target.Kind = EFF_IncidentAnchorKind::WorldPoint;
+	Journey.Target.WorldPoint = Target;
+	Journey.SpreadOffset = Offset;
+	Journey.PathGoal = Goal;
+	Journey.Position = Spawn;
+	Journey.HomeLocation = Home;
+	Journey.Path = {Spawn, Goal};
+	Journey.Travelled = {Home, Spawn};
+	UFF_StaffSubsystem::ResetProgress(Journey, Goal);
+	Bodies->Staff.Add(StaffId, Journey);
+
+	FVector Resolved;
+	TestTrue(TEXT("The site is resolvable"), Bodies->ResolveTargetLocation(Bodies->Staff[StaffId], Resolved));
+	TestEqual(TEXT("Each member aims at its own spot around the site"), Resolved, Goal);
+	Bodies->Tick(1.f);
+	Bodies->Tick(1.f);
+	TestEqual(TEXT("A spread member works at its own spot"), Bodies->GetStaffState(StaffId), EFF_StaffState::Working);
+	TestEqual(TEXT("The working spot is the site plus the offset"), Bodies->Staff[StaffId].Position, Goal);
+	Bodies->Tick(1.f);
+	TestEqual(TEXT("Standing on the offset spot is not mistaken for the target leaving"),
+		Bodies->GetStaffState(StaffId), EFF_StaffState::Working);
+
+	Bodies->RecallStaff(StaffId);
+	Bodies->Tick(1.7f);
+	TestTrue(TEXT("The way home passes the spawn spot and heads into the exit"),
+		Bodies->Staff[StaffId].Position.Equals(FVector(0.f, 90.f, 0.f), 0.1f));
+	Bodies->Tick(1.f);
+	TestTrue(TEXT("The member disappears once it reaches the real exit"), Bodies->IsIdle(StaffId));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StaffTimeScaleTest,
 	"FestaFiesta.Incident.StaffDispatch.WalkFollowsFestivalTimeScale",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -310,10 +417,12 @@ bool FFF_StaffTimeScaleTest::RunTest(const FString& Parameters)
 	Stage->SetTimeScale(4.f);
 	Bodies->Tick(1.f);
 	TestEqual(TEXT("At x4 one real second walks four seconds of travel"), Bodies->Staff[StaffId].Position.X, Speed * 5.f);
+	TestEqual(TEXT("At x4 the walk animation plays four times faster"), Bodies->AppliedAnimPlayRate, 4.f);
 
 	Stage->SetTimeScale(0.f);
 	Bodies->Tick(1.f);
 	TestEqual(TEXT("A paused festival holds the staff in place"), Bodies->Staff[StaffId].Position.X, Speed * 5.f);
+	TestEqual(TEXT("A paused festival freezes the staff animation"), Bodies->AppliedAnimPlayRate, 0.f);
 
 	Stage->SetMinigameInProgress(true);
 	Stage->SetTimeScale(4.f);

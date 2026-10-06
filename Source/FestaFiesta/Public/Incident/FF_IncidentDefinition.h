@@ -31,9 +31,7 @@ public:
 	FText Title;
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
 	FText Body;
-	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
-	TSoftObjectPtr<UTexture2D> MarkerIcon;
-	
+
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Identity")
 	float MinuteUntileLapse = 60.f;
 	

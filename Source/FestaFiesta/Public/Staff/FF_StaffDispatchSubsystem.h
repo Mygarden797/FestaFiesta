@@ -35,6 +35,16 @@ public:
 	// 현장 작업 중이면 남은 축제 분을 돌려준다. 이동 중이거나 출동이 없으면 false.
 	bool GetRemainingWorkMinutes(FFF_IncidentHandle Handle, float& OutMinutes) const;
 
+	bool GetTotalWorkMinutes(FFF_IncidentHandle Handle, float& OutMinutes) const;
+
+	// 화면용 출동 단계. 복귀 중(사건 취소 뒤)은 None 이다. Working 이면 OutRemainingMinutes 를 채운다.
+	// 단계가 바뀔 때(작업 시작·작업 멈춤)와 남은 시간이 화면 표시 단위(올림한 분)로 바뀔 때 OnIncidentUpdated 를 방송한다.
+	// UI 는 이 방송만 받아 다시 읽으면 되고, 매 틱 들여다보지 않는다 (UI_API.md 원칙 3).
+	EFF_IncidentResponseStage GetResponseStage(FFF_IncidentHandle Handle, float& OutRemainingMinutes) const;
+
+	// 남은 작업 시간이 올림한 분 단위로 바뀌었고 아직 남아 있으면 true. 끝나는 순간은 사건이 닫히므로 알리지 않는다.
+	static bool ShouldAnnounceWorkMinute(float PreviousMinutes, float CurrentMinutes);
+
 private:
 	struct FDispatch
 	{
@@ -45,9 +55,11 @@ private:
 		bool bReturning = false;
 		bool bWorking = false;
 		float RemainingWorkMinutes = 0.f;
+		float TotalWorkMinutes = 0.f;
 	};
 
 	bool TryGetFestivalMinutes(float& OutMinutes) const;
+	void ResetDispatches(bool bAnnounce);
 
 	bool TryGetLocation(const FFF_IncidentAnchor& Anchor, FVector& OutLocation) const;
 	void BeginReturn(FDispatch& Dispatch);

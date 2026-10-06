@@ -275,6 +275,11 @@ bool FFF_StaffFacilityDispatchTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("A world without navigation still starts a staff journey"),
         Dispatch->TryDispatch(Handle, INDEX_NONE, 2, Slot.Anchor, 0.f, &Result));
     TestEqual(TEXT("An accepted dispatch is reported as dispatched"), Result, EFF_IncidentResolveResult::Dispatched);
+    FFF_IncidentView View;
+    if (TestTrue(TEXT("The dispatched incident still has a view"), Incident->GetIncidentView(Handle, View)))
+    {
+        TestEqual(TEXT("The incident view shows staff on the way"), View.ResponseStage, EFF_IncidentResponseStage::Travelling);
+    }
     TestFalse(TEXT("The same incident cannot be dispatched twice"),
         Incident->ResolveIncident(Handle, INDEX_NONE, INDEX_NONE, &Result));
     TestEqual(TEXT("A second request is reported as already responding"), Result, EFF_IncidentResolveResult::AlreadyResponding);
@@ -285,15 +290,26 @@ bool FFF_StaffFacilityDispatchTest::RunTest(const FString& Parameters)
     if (TestNotNull(TEXT("A dispatched member can be looked up by its staff ID"), Body))
     {
         TestEqual(TEXT("The body knows which member it is"), Body->GetStaffId(), 2);
-        TestTrue(TEXT("The body starts at its facility exit"), Body->GetActorLocation().Equals(Target, 1.f));
+        const float FromExit = FVector::Dist2D(Body->GetActorLocation(), Target);
+        TestTrue(TEXT("A team member starts beside its facility exit, not on it"), FromExit > 1.f && FromExit <= 200.f);
+        TestEqual(TEXT("Spreading keeps the body on the exit's floor height"), Body->GetActorLocation().Z, Target.Z, 1.0);
+        if (const AFF_StaffActor* Partner = Bodies->FindStaffActor(3))
+        {
+            TestTrue(TEXT("Two members leaving the same exit do not overlap"),
+                FVector::Dist2D(Body->GetActorLocation(), Partner->GetActorLocation()) >= UFF_StaffSubsystem::SpreadSpacingCm - 1.f);
+        }
         TestFalse(TEXT("The body never collides with the crowd"), Body->GetActorEnableCollision());
+        TestEqual(TEXT("A freshly sent body is told it is walking out"), Body->GetStaffState(), EFF_StaffState::Moving);
     }
     TestNull(TEXT("An undispatched member has no body"), Bodies->FindStaffActor(1));
 
     Incident->WithdrawIncident(Slot.DedupeKey);
     Bodies->Tick(0.1f);
     Dispatch->Tick(0.1f);
-    TestEqual(TEXT("A recalled pathless member is home at once and releases its reservation"), H.Staffing->GetBusyStaffCount(), 0);
+    TestEqual(TEXT("A recalled member first steps back from its spread spot into the exit"), H.Staffing->GetBusyStaffCount(), 2);
+    Bodies->Tick(0.5f);
+    Dispatch->Tick(0.5f);
+    TestEqual(TEXT("A recalled pathless member is home after that short step and releases its reservation"), H.Staffing->GetBusyStaffCount(), 0);
     TestFalse(TEXT("The withdrawn response is cleared"), Dispatch->IsResponding(Handle));
     TestEqual(TEXT("Returning home removes every staff actor"), CountResponders(), 0);
     TestFalse(TEXT("A withdrawn incident cannot be resolved"), Incident->ResolveIncident(Handle, INDEX_NONE, INDEX_NONE, &Result));

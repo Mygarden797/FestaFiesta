@@ -3,12 +3,45 @@
 #include "Finale/FF_FinaleShapeData.h"
 #include "Finale/FF_FinaleShowTypes.h"
 
-void UFF_FinaleShapeData::SamplePoints(const int32 Count, TArray<FVector2D>& OutPoints) const
+void UFF_FinaleShapeData::SamplePoints(
+	const int32 Count, TArray<FVector2D>& OutPoints, TArray<FLinearColor>* OutColors) const
 {
 	OutPoints.Reset();
+	if (OutColors)
+	{
+		OutColors->Reset();
+	}
 
 	if (!IsValidShape() || Count <= 0)
 	{
+		return;
+	}
+
+	if (bFixedPoints)
+	{
+		/* 점 그림은 다시 찍지 않는다. 발이 모자라면 i * 점 수 / 발수 번째를 골라 순서를 지키며 솎는다.
+
+		   앞에서부터 잘라내면 뒤에 담긴 조각(태극기의 괘)이 통째로 빠진다.
+		*/
+		const int32 PointCount = Points.Num();
+		const int32 Take = FMath::Min(Count, PointCount);
+		const bool bColors = OutColors && HasPointColors();
+
+		OutPoints.Reserve(Take);
+		if (bColors)
+		{
+			OutColors->Reserve(Take);
+		}
+
+		for (int32 Index = 0; Index < Take; ++Index)
+		{
+			const int32 Source = static_cast<int32>(static_cast<int64>(Index) * PointCount / Take);
+			OutPoints.Add(Points[Source]);
+			if (bColors)
+			{
+				OutColors->Add(PointColors[Source]);
+			}
+		}
 		return;
 	}
 
@@ -79,6 +112,10 @@ void UFF_FinaleShapeData::SetFromRawPoints(const TArray<FVector2D>& RawPoints, c
 {
 	Points.Reset();
 	bClosed = bInClosed;
+
+	// 선 모양으로 굽는다. 점 그림 설정이 남으면 구운 선을 점 그대로 쓰고, 지난 색이 엉뚱한 점에 붙는다.
+	bFixedPoints = false;
+	PointColors.Reset();
 
 	if (RawPoints.Num() < 2)
 	{
