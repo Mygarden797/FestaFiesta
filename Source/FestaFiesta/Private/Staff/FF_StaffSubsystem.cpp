@@ -78,7 +78,9 @@ void UFF_StaffSubsystem::Deinitialize()
 
 void UFF_StaffSubsystem::Tick(float DeltaTime)
 {
-	const float SimDeltaTime = DeltaTime * GetEffectiveTimeScale();
+	const float TimeScale = GetEffectiveTimeScale();
+	ApplyAnimPlayRate(TimeScale);
+	const float SimDeltaTime = DeltaTime * TimeScale;
 	if (SimDeltaTime <= 0.f || Staff.IsEmpty())
 	{
 		return;
@@ -137,6 +139,7 @@ bool UFF_StaffSubsystem::SendStaff(const FFF_StaffDispatchOrigin& Origin, const 
 	}
 	Actor->SetActorEnableCollision(false);
 	Actor->SetStaffId(Origin.StaffId);
+	Actor->SetAnimPlayRate(AppliedAnimPlayRate);
 	Runtime.Actor = Actor;
 	SetState(Runtime, EFF_StaffState::Moving);
 	Staff.Add(Origin.StaffId, MoveTemp(Runtime));
@@ -545,6 +548,10 @@ void UFF_StaffSubsystem::WarpToTarget(int32 StaffId, FStaffRuntime& Runtime, con
 void UFF_StaffSubsystem::SetState(FStaffRuntime& Runtime, EFF_StaffState NewState)
 {
 	Runtime.State = NewState;
+	if (AFF_StaffActor* Actor = Runtime.Actor.Get())
+	{
+		Actor->PushStaffState(NewState);
+	}
 }
 
 void UFF_StaffSubsystem::HandleArrived(int32 StaffId)
@@ -568,4 +575,20 @@ bool UFF_StaffSubsystem::TryGetNowMinutes(float& OutMinutes) const
 float UFF_StaffSubsystem::GetEffectiveTimeScale() const
 {
 	return Stage ? FMath::Max(0.f, Stage->GetEffectiveTimeScale()) : 1.f;
+}
+
+void UFF_StaffSubsystem::ApplyAnimPlayRate(float PlayRate)
+{
+	if (FMath::IsNearlyEqual(PlayRate, AppliedAnimPlayRate))
+	{
+		return;
+	}
+	AppliedAnimPlayRate = PlayRate;
+	for (const TPair<int32, FStaffRuntime>& Pair : Staff)
+	{
+		if (AFF_StaffActor* Actor = Pair.Value.Actor.Get())
+		{
+			Actor->SetAnimPlayRate(PlayRate);
+		}
+	}
 }
