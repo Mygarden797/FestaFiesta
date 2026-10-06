@@ -96,7 +96,7 @@ enum class EFF_FinaleTourAct : uint8
 	// 하늘을 보는 자리. 기본값이라 예전에 놓은 시점은 전부 여기에 든다.
 	Fireworks    UMETA(DisplayName = "불꽃 관람"),
 
-	// 축제장을 보는 자리. 이 막 동안은 발사를 멈추고 엔딩곡을 튼다.
+	// 축제장을 보는 자리. 이 막 동안에도 발사는 이어진다(2026-10-06 부터).
 	SiteTour     UMETA(DisplayName = "축제장 순회"),
 
 	// 마무리를 보는 자리. 하나도 없으면 첫 불꽃 관람 자리로 돌아온다.
@@ -295,9 +295,9 @@ struct FFF_FinaleGradeSpec
 	   레벨에 불꽃 관람 시점과 축제장 순회 시점이 하나 이상씩 있어야 막이 선다.
 	   하나라도 없으면 예전처럼 하늘 시점만 돈다. 3막일 때는 TourViewpointLimit 를 보지 않는다.
 
-	   최고 등급에만 켠다. 순회 동안 발사를 멈추므로 발수가 적은 등급에서 켜면
-	   하늘이 비어 보인다. 기본값을 false 로 둔 이유도 같다. 데이터 애셋은 기본값과
-	   다른 값만 저장하므로, 기본값이 true 면 이미 만든 애셋의 모든 등급이 켜진다.
+	   최고 등급에만 켠다. 순회 동안에도 발사는 이어지지만(2026-10-06 피드백) 카메라가 축제장을
+	   비추는 동안 하늘이 화면에 덜 나오므로 발수가 많은 등급이어야 산다. 기본값을 false 로 둔 이유는
+	   데이터 애셋이 기본값과 다른 값만 저장해서다. 기본값이 true 면 이미 만든 애셋의 모든 등급이 켜진다.
 	*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막")
 	bool bSiteTour = false;

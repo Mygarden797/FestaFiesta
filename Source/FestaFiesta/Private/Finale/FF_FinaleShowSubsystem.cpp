@@ -531,11 +531,12 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 
 	/* 카메라 순회. 자리마다 정한 시간만큼 머물고 다음으로 넘어간다.
 
-	   스킵했으면 더 움직이지 않는다. 플레이어가 끊은 뒤에 다시 끌고 가면
-	   끊은 의미가 없다. 카메라를 넘겨받지 않는 연출이면 처음부터 돌지 않는다 —
-	   안 그러면 플레이어가 보던 시점을 순회가 빼앗아 간다.
+	   카메라를 놓아 줬어도(SkipCinematicCamera · Tab) 막은 시간대로 넘어간다. 화면에 다시 걸지만 않는다.
+	   플레이어가 끊은 뒤에 다시 끌고 가면 끊은 의미가 없고, 막이 멈추면 곡에 맞춘 마무리가 안 온다.
+	   카메라를 넘겨받지 않는 연출이면 처음부터 돌지 않는다 — 안 그러면 플레이어가 보던 시점을
+	   순회가 빼앗아 간다.
 	*/
-	if (bTakeOverCamera && !bTourSkipped && TourViewpoints.Num() > 1)
+	if (bTakeOverCamera && TourViewpoints.Num() > 1)
 	{
 		TourHeldSeconds += DeltaTime;
 
@@ -543,8 +544,8 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 			? TourViewpoints[TourIndex].Get()
 			: nullptr;
 
-		// 축제장 순회 카메라는 머무는 동안 경로를 따라 날아간다.
-		if (Current && Current == SiteTourCamera)
+		// 축제장 순회 카메라는 머무는 동안 경로를 따라 날아간다. 카메라를 놓아 줬으면 움직일 까닭이 없다.
+		if (!bTourSkipped && Current && Current == SiteTourCamera)
 		{
 			UpdateSiteTourCamera(TourHeldSeconds, false);
 		}
@@ -593,7 +594,7 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 
 	if (!bPastDeadline && GetRemainingShells() > 0)
 	{
-		// 막이 발사를 막고 있다(축제장 순회 중이거나 1막 몫을 다 쐈다). 남은 발이 있으니 끝내지 않는다.
+		// 막이 발사를 막고 있다(마무리 막 전에 1막 몫을 다 쐈다). 남은 발이 있으니 끝내지 않는다.
 		if (!bGateOpen)
 		{
 			return;
@@ -846,7 +847,7 @@ void UFF_FinaleShowSubsystem::BuildTour()
 	/* 3막은 카메라를 넘겨받을 때만 선다.
 
 	   막을 넘기는 건 카메라가 머문 시간이다. 카메라를 안 넘겨받으면 축제장 순회가
-	   화면에 안 나오는데 발사만 멈춰서, 플레이어는 이유 없이 빈 하늘을 보게 된다.
+	   화면에 안 나오므로 막을 나눌 까닭이 없다. 처음부터 하늘 시점으로만 돈다.
 	*/
 	const bool bWantActs = ActiveSpec.bSiteTour && bTakeOverCamera;
 
@@ -977,10 +978,13 @@ void UFF_FinaleShowSubsystem::AdvanceTour()
 	TourHeldSeconds = 0.f;
 
 	// 다음 자리가 정한 전환 시간을 쓴다. 자리마다 컷으로 자를지 흐르게 할지 다르다.
-	const AFF_FinaleViewpoint* Next = TourViewpoints[TourIndex].Get();
-	const float Blend = Next ? Next->TourBlendSeconds : CameraBlendSeconds;
-
-	ApplyTourViewpoint(Blend);
+	// 카메라를 놓아 줬으면 막만 넘기고 화면은 다시 잡지 않는다.
+	if (!bTourSkipped)
+	{
+		const AFF_FinaleViewpoint* Next = TourViewpoints[TourIndex].Get();
+		const float Blend = Next ? Next->TourBlendSeconds : CameraBlendSeconds;
+		ApplyTourViewpoint(Blend);
+	}
 
 	if (bActMode && TourActs.IsValidIndex(TourIndex))
 	{
@@ -1016,10 +1020,13 @@ bool UFF_FinaleShowSubsystem::IsFiringGateOpen() const
 
 	switch (CurrentAct)
 	{
-	case EFF_FinaleTourAct::SiteTour:
-		// 축제장을 보는 동안 하늘에서 터져봐야 화면에 없다. 그 발은 마무리에 쓴다.
-		return false;
+	/* 축제장을 순회하는 동안에도 쏜다(2026-10-06 피드백).
 
+	   예전에는 순회 동안 발사를 멈추고 그 발을 마무리에 몰았다. 카메라가 축제장을 비추는 동안 하늘이
+	   조용해지고, 카메라를 놓아 1인칭으로 하늘을 보는 사람에게는 불꽃놀이가 끊긴 것처럼 보였다.
+	   순회 막도 1막 몫에서 쏜다. 나머지는 그대로 마무리 몫이다.
+	*/
+	case EFF_FinaleTourAct::SiteTour:
 	case EFF_FinaleTourAct::Fireworks:
 		// 예약된 발과 오르는 발까지 센다. 빼먹으면 날아가는 동안 몫을 넘겨 또 쏜다.
 		return FiredBursts + PendingShells.Num() + InFlightBurstCount < ActOneQuota;
@@ -1079,30 +1086,19 @@ void UFF_FinaleShowSubsystem::FireFinalSalvo()
 
 void UFF_FinaleShowSubsystem::SkipCinematicCamera()
 {
-	if (bTourSkipped || TourViewpoints.Num() <= 1)
+	if (bTourSkipped || !bShowInProgress)
 	{
 		return;
 	}
 
 	bTourSkipped = true;
 
-	/* 3막이면 곧장 마무리 막으로 넘긴다.
+	/* 카메라만 놓아준다. 연출은 그대로 둔다. 시점이 한 자리뿐인 연출도 카메라를 쥐고 있으므로 같이 놓아준다.
 
-	   막을 넘기는 건 카메라가 머문 시간인데, 끊으면 카메라가 더 움직이지 않는다.
-	   축제장 순회 중에 끊으면 발사가 닫힌 채로 남아 연출이 끝나지 않는다.
+	   막은 시간대로 계속 넘어간다(Tick). 예전에는 끊으면 곧장 마무리 막으로 넘겼다 — 순회 동안 발사를
+	   멈췄기 때문에 막이 안 넘어가면 연출이 끝나지 않았다. 지금은 순회 중에도 쏘므로 넘길 까닭이 없고,
+	   넘기면 곡에 맞춘 연출이 몇십 초 일찍 몰아쳐 끝난다(2026-10-06 Tab 1인칭 피드백).
 	*/
-	if (bActMode)
-	{
-		TourIndex = TourViewpoints.Num() - 1;
-		SetCurrentAct(EFF_FinaleTourAct::GrandFinale);
-
-		if (!bShowInProgress)
-		{
-			return;
-		}
-	}
-
-	// 카메라만 놓아준다. 연출은 그대로 둔다.
 	if (AFF_FestivalPlayerController* Controller = GetFestivalController())
 	{
 		if (Controller->IsInScriptedView())
@@ -1134,8 +1130,8 @@ const FFF_FinaleVolley& UFF_FinaleShowSubsystem::PickVolley(const int32 Remainin
 	*/
 	/* 진행률이 안 된 패턴도 거른다(ShowProgressFrom). 처음엔 기본 불꽃, 끝으로 갈수록 큰 모양이다.
 
-	   진행률은 쏜 발수(오르는 발 포함)로 잰다. 시간으로 재면 3막의 축제장 순회 동안 시간만 흘러
-	   마무리 막에 들어서자마자 큰 모양이 몰린다.
+	   진행률은 쏜 발수(오르는 발 포함)로 잰다. 발수는 막마다 몫이 정해져 있어(1막 · 마무리) 큰 모양이
+	   마무리 막 몫에 들어서야 나온다. 시간으로 재면 막 길이를 바꿀 때마다 큰 모양이 나오는 자리가 흔들린다.
 	*/
 	const float Progress = ActiveSpec.BurstCount > 0
 		? 1.f - static_cast<float>(RemainingShells) / static_cast<float>(ActiveSpec.BurstCount)
