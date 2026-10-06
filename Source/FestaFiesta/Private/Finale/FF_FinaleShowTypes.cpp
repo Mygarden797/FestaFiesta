@@ -263,9 +263,13 @@ namespace
 }
 
 void FFF_FinaleVolley::BuildShellLayout(
-	const FFF_FinaleLayoutContext& Context, TArray<FVector>& OutLocations) const
+	const FFF_FinaleLayoutContext& Context, TArray<FVector>& OutLocations, TArray<FLinearColor>* OutColors) const
 {
 	OutLocations.Reset();
+	if (OutColors)
+	{
+		OutColors->Reset();
+	}
 
 	if (!HasFixedLayout())
 	{
@@ -298,7 +302,7 @@ void FFF_FinaleVolley::BuildShellLayout(
 			return;
 		}
 
-		ShapeData->SamplePoints(Count, LocalPoints);
+		ShapeData->SamplePoints(Count, LocalPoints, OutColors);
 
 		if (LocalPoints.Num() == 0)
 		{
@@ -306,9 +310,11 @@ void FFF_FinaleVolley::BuildShellLayout(
 		}
 	}
 
-	OutLocations.Reserve(Count);
+	// 점 그림은 점 수가 발수보다 적을 수 있다. 모자란 발을 가운데에 몰아 찍지 않는다.
+	const int32 LayoutCount = (Pattern == EFF_FinaleVolleyPattern::Shape) ? LocalPoints.Num() : Count;
+	OutLocations.Reserve(LayoutCount);
 
-	for (int32 Index = 0; Index < Count; ++Index)
+	for (int32 Index = 0; Index < LayoutCount; ++Index)
 	{
 		/* 모양은 애셋 순서대로 찍는다.
 
@@ -406,6 +412,7 @@ FFF_FinaleSongPlan FFF_FinaleSongPlan::Make(
 	Plan.SongSeconds = SongSeconds;
 	Plan.SalvoAt = FMath::Max(0.f,
 		SongSeconds - FMath::Max(0.f, TailSeconds) - FMath::Max(0.f, MaxRiseSeconds) - EndMarginSeconds);
+	Plan.VolleysEndAt = Plan.SalvoAt;
 
 	if (SiteActSeconds <= 0.f)
 	{
@@ -417,6 +424,20 @@ FFF_FinaleSongPlan FFF_FinaleSongPlan::Make(
 	Plan.SiteTourAt = FMath::Clamp(SongSeconds * FMath::Clamp(SiteTourAtFraction, 0.f, 1.f), 0.f, FMath::Max(0.f, LatestTourStart));
 	Plan.GrandFinaleAt = Plan.SiteTourAt + SiteActSeconds;
 	return Plan;
+}
+
+void FFF_FinaleSongPlan::PlaceFinalShape(const float ShapeRiseSeconds, const float BloomSeconds,
+	const float SalvoFirstRiseSeconds, const float MaxRiseSeconds, const float LeadSeconds)
+{
+	if (!HasActs())
+	{
+		return;
+	}
+
+	const float BloomStart = SalvoAt + FMath::Max(0.f, SalvoFirstRiseSeconds)
+		- FMath::Max(0.f, LeadSeconds) - FMath::Max(0.f, BloomSeconds);
+	FinalShapeAt = FMath::Clamp(BloomStart - FMath::Max(0.f, ShapeRiseSeconds), GrandFinaleAt, SalvoAt);
+	VolleysEndAt = FMath::Clamp(BloomStart - FMath::Max(0.f, MaxRiseSeconds), GrandFinaleAt, FinalShapeAt);
 }
 
 float FFF_FinaleSongPlan::ResolveIntervalToFinish(

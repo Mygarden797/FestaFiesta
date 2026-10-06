@@ -79,6 +79,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
 	float GetElapsedSeconds() const { return ElapsedSeconds; }
 
+	// 이번 연출에서 마지막 모양(FFF_FinaleGradeSpec::FinalShape)을 올렸는지.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
+	bool HasFiredFinalShape() const { return bFinalShapeFired; }
+
 	/* 카메라 순회를 끊고 원래 시점으로 돌아간다. 불꽃은 계속 터진다.
 
 	   두 번째 플레이부터는 영상을 다시 보고 싶지 않다. 그렇다고 연출을 통째로
@@ -224,6 +228,26 @@ private:
 
 	// 남은 발을 모든 발사대에서 한꺼번에 올린다. 3막 마무리의 마지막 한 방이다.
 	void FireFinalSalvo();
+
+	/* 마지막 모양(태극기)을 올린다. 일제 발사 바로 앞의 한 차례다(FFF_FinaleGradeSpec::FinalShape 주석).
+
+	   발마다 가장 가까운 발사 위치에서 올린다. 한 배에서 다 올리면 수백 m 짜리 모양이 부채꼴로 쏠리고,
+	   실제 해상 불꽃도 큰 그림은 여러 배가 나눠 그린다.
+	*/
+	void FireFinalShape();
+
+	// 마지막 모양 몫으로 남겨 둘 발수. 마지막 모양이 없거나 이미 올렸으면 0.
+	int32 GetFinalShapeReserve() const;
+
+	// 마무리 막에서 일반 차례가 쓰면 안 되는 발수(일제 발사 몫 + 마지막 모양 몫). 다른 막에서는 0.
+	int32 GetClosingReserve() const;
+
+	// 마지막 모양이 오르는 시간(초). 바지선에서 쏘지 않으면 0.
+	float ResolveFinalShapeRiseSeconds() const;
+
+	// 이번 연출에서 마지막 모양을 올렸는지 · 다 피는 시각(경과 초). 곡에 맞추지 않을 때 일제 발사를 이것으로 늦춘다.
+	bool bFinalShapeFired = false;
+	float FinalShapeBloomEndAt = -1.f;
 
 	// 지금 시점으로 카메라를 옮긴다.
 	void ApplyTourViewpoint(float BlendSeconds);

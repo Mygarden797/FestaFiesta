@@ -245,9 +245,14 @@ struct FFF_FinaleVolley
 
 	   자리를 정하지 않는 패턴(단발·동시)은 아무것도 채우지 않는다. 호출부가
 	   흩뿌리는 규칙을 그대로 쓰면 된다 — HasFixedLayout() 으로 미리 가른다.
+
+	   점마다 색을 가진 모양(UFF_FinaleShapeData::PointColors)이면 OutColors 에 자리와 같은 순서로
+	   색을 담는다. 그 밖에는 비워 둔다 — 호출부는 비었으면 볼리의 색 규칙을 쓴다.
+	   점 그림은 점 수가 발수보다 적으면 자리도 그만큼만 나온다. 남는 발은 다음 차례 몫이다.
 	*/
 	FESTAFIESTA_API void BuildShellLayout(
-		const FFF_FinaleLayoutContext& Context, TArray<FVector>& OutLocations) const;
+		const FFF_FinaleLayoutContext& Context, TArray<FVector>& OutLocations,
+		TArray<FLinearColor>* OutColors = nullptr) const;
 
 	// 자리를 패턴이 정하는가. 아니면 호출부가 흩뿌린다.
 	bool HasFixedLayout() const
@@ -323,6 +328,47 @@ struct FFF_FinaleGradeSpec
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막",
 		meta = (ClampMin = "0", EditCondition = "bSiteTour"))
 	int32 FinalSalvoShells = 0;
+
+	/* 마지막 일제 발사 바로 앞에 올릴 큰 모양 한 차례. 모양 패턴에 모양 애셋이 있을 때만 쏜다.
+
+	   최고 등급의 마지막 장면(2026-10-06 태극기 요청). 큰 하트 · 별처럼 여러 발이 함께 올라가 점 순서대로
+	   터지되(bStaggerByFuse), 무작위로 뽑히지 않고 정해진 때 한 번만 나온다. 마무리 막 몫에서 ShellCount 만큼
+	   떼어 둔다. 자리는 흩뿌리지 않고 발사 위치들의 가운데, 높이 범위의 가운데에 세워 관객을 마주본다.
+
+	   일제 발사와 겹치지 않게, 다 핀 뒤 FinalShapeLeadSeconds 가 지나서 일제 발사의 첫 발이 터진다.
+	   그 앞 일반 차례는 모양이 피기 전에 다 터지도록 일찍 끝낸다 — 하늘이 비어야 모양이 읽힌다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막", meta = (EditCondition = "bSiteTour"))
+	FFF_FinaleVolley FinalShape;
+
+	// 마지막 모양이 다 핀 뒤 일제 발사의 첫 발이 터지기까지(초). 모양을 혼자 보여 주는 시간이다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막",
+		meta = (ClampMin = "0.0", EditCondition = "bSiteTour"))
+	float FinalShapeLeadSeconds = 1.f;
+
+	// 마지막 모양을 쏘는 등급인가. 3막이어야 하고, 모양 패턴에 모양 애셋이 있어야 한다.
+	bool HasFinalShape() const
+	{
+		return bSiteTour
+			&& FinalShape.Pattern == EFF_FinaleVolleyPattern::Shape
+			&& FinalShape.ShellCount > 0
+			&& !FinalShape.Shape.IsNull();
+	}
+
+	// 마지막 모양의 높이(발사 위치 위, cm). 높이 범위의 가운데다. 위아래로 펼쳐지는 모양이 범위 안에 든다.
+	float GetFinalShapeHeight() const
+	{
+		return (BurstHeightMin + BurstHeightMax) * 0.5f;
+	}
+
+	/* 마지막 모양이 첫 발부터 마지막 발까지 피는 데 걸리는 시간(초). 간격이 0 이면 한꺼번에 핀다.
+
+	   도화선 차례든 연발통이든 발 사이 간격이 그대로 터지는 간격이 된다(UFF_FinaleShowSubsystem::FireFinalShape).
+	*/
+	float GetFinalShapeBloomSeconds() const
+	{
+		return FinalShape.GetSpanSeconds();
+	}
 
 	/* 연출 길이를 이 등급이 트는 곡 길이에 맞춘다(FFF_FinaleSongPlan).
 
@@ -559,8 +605,25 @@ struct FESTAFIESTA_API FFF_FinaleSongPlan
 	// 마지막 일제 발사를 올리는 시각. 3막이 아니면 남은 발을 여기까지 나눠 쏜다.
 	float SalvoAt = 0.f;
 
+	// 마지막 모양(FFF_FinaleGradeSpec::FinalShape)을 올리는 시각. 없으면 음수다.
+	float FinalShapeAt = -1.f;
+
+	// 마무리 막의 일반 차례를 이 시각까지 다 쏜다. 마지막 모양이 없으면 SalvoAt 과 같다.
+	float VolleysEndAt = 0.f;
+
 	bool IsValid() const { return SongSeconds > 0.f; }
 	bool HasActs() const { return IsValid() && SiteTourAt >= 0.f && GrandFinaleAt >= SiteTourAt; }
+	bool HasFinalShape() const { return HasActs() && FinalShapeAt >= 0.f; }
+
+	/* 마지막 모양의 자리를 잡는다. Make 다음에 부른다. 3막이 아니면 아무것도 하지 않는다.
+
+	   거꾸로 센다. 일제 발사의 첫 발(가장 낮은 발)이 SalvoAt + SalvoFirstRiseSeconds 에 터진다. 그보다
+	   LeadSeconds 앞에 모양이 다 피고, BloomSeconds 앞에 피기 시작하고, ShapeRiseSeconds 앞에 올린다.
+	   일반 차례는 가장 높은 발(MaxRiseSeconds)도 모양이 피기 전에 터지도록 그만큼 일찍 끝낸다.
+	   마무리 막보다 앞으로 당겨지면 마무리 막 시작에 묶는다.
+	*/
+	void PlaceFinalShape(float ShapeRiseSeconds, float BloomSeconds, float SalvoFirstRiseSeconds,
+		float MaxRiseSeconds, float LeadSeconds);
 
 	/* 시간표를 만든다.
 
