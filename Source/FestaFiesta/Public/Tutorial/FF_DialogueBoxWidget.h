@@ -11,6 +11,7 @@ class UButton;
 class UImage;
 class UPanelWidget;
 class UTextBlock;
+class UWidget;
 class UFF_DialogueChoiceButton;
 
 // 화면 아래에 붙는 대사창.
@@ -20,9 +21,13 @@ class UFF_DialogueChoiceButton;
 //
 // BP 에서 위젯을 붙이려면 이름을 맞춰야 한다.
 //   SpeakerText     화자 이름
+//   SpeakerPlate    화자 이름을 감싼 이름표. 화자가 없는 줄에서 이름표째 숨긴다
 //   BodyText        대사
 //   AdvanceButton   클릭 영역. 대사창 전체를 덮는 투명 버튼으로 두면 편하다
+//   AdvanceHint     "다음" 표시. 클릭으로 넘길 수 있는 줄에서만 보인다
 //   ChoiceContainer 선택지 버튼이 들어갈 자리
+//
+// 지금 WBP 는 에디터 콘솔의 `FF.TutorialDialogueUMG.Rebuild` 가 게임 UI(LightTeal) 모양으로 만든다.
 UCLASS(Abstract, meta = (DisplayName = "FF Dialogue Box"))
 class FESTAFIESTA_API UFF_DialogueBoxWidget : public UUserWidget
 {
@@ -66,6 +71,20 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
 	TObjectPtr<UTextBlock> SpeakerText;
+
+	/* 화자 이름표. SpeakerText 를 감싼 배경이다.
+
+	   글자만 숨기면 이름표의 빈 배경이 남는다. 내레이션 · 선택지 줄에서 이름표째 숨긴다.
+	*/
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
+	TObjectPtr<UWidget> SpeakerPlate;
+
+	/* "다음" 표시. 클릭으로 다음 줄로 넘길 수 있을 때만 보인다(ApplyClickArea).
+
+	   선택지 줄이나 조작을 기다리는 줄에서 보이면 눌러도 안 넘어가 고장으로 보인다.
+	*/
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
+	TObjectPtr<UWidget> AdvanceHint;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
 	TObjectPtr<UTextBlock> BodyText;
