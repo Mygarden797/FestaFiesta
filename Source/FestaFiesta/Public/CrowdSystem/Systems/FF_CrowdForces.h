@@ -179,7 +179,7 @@ struct FESTAFIESTA_API FFF_CrowdForceSolver
 
 	static FVector2f ClampAcceleration(const FVector2f& Accel, float MaxAccelMps2);
 
-	static FVector2f ComputeUnstuckImpulse(int32 StableAgentId, const FVector2f& SuggestedDir);
+	static FVector2f ComputeUnstuckImpulse(int32 StableAgentId, const FVector2f& SuggestedDir, int32 AttemptIndex = 0);
 
 	static FVector2f ComposeAcceleration(const FFF_CrowdForceTerms& AgentTerms,
 	                                     const FFF_CrowdForceTerms& WallTerms,

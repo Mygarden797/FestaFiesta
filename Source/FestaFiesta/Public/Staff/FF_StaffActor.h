@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
 #include "GameFramework/Actor.h"
+#include "Staff/FF_StaffTypes.h"
 #include "FF_StaffActor.generated.h"
 
 class UAbilitySystemComponent;
@@ -17,6 +18,7 @@ class UStaticMeshComponent;
 // 스태프 한 명의 몸. 출동 때만 UFF_StaffSubsystem 이 스폰하고 복귀하면 지운다. 충돌은 끄고, 위치는 PushPresentation 으로만 받는다.
 // SkeletalMesh 가 없으면 Crowd 와 같은 크기의 원기둥을 ProxyColor 로 칠해 군중과 구별되게 보여 준다.
 // AnimInstance 가 UFF_CrowdAnimInstance 면 걷는 속도를 넘겨 Crowd 와 같은 이동 애니메이션을 쓴다.
+// UFF_StaffAnimInstance 면 상태(Moving/Working/Returning)도 넘긴다. 상태는 몸이 기억해 두었다가 AnimInstance 를 잡는 순간에도 다시 넣는다.
 UCLASS()
 class FESTAFIESTA_API AFF_StaffActor : public AActor, public IAbilitySystemInterface
 {
@@ -31,6 +33,9 @@ public:
 	int32 GetStaffId() const { return StaffId; }
 
 	void PushPresentation(const FVector& NewPosition, FRotator NewRotation, float NewSpeed);
+	void SetAnimPlayRate(float PlayRate);
+	void PushStaffState(EFF_StaffState NewState);
+	EFF_StaffState GetStaffState() const { return StaffState; }
 
 	void InitFromLevel(int32 TrainingLevel);
 	float GetMoveSpeed() const;
@@ -70,4 +75,5 @@ private:
 	TSubclassOf<UGameplayEffect> InitEffect;
 
 	int32 StaffId = INDEX_NONE;
+	EFF_StaffState StaffState = EFF_StaffState::Idle;
 };

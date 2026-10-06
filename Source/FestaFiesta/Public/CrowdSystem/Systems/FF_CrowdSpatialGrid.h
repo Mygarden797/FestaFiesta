@@ -67,7 +67,7 @@ struct FESTAFIESTA_API FFF_CrowdSpatialGrid
 	 * 막힌 개체의 탈출용 — 인접 셀 중 가장 덜 붐비는 곳을 고른다.
 	 * 처음부터 넣는다. 나중에 붙이면 "가끔 안 움직이는 NPC"를 재현하느라 하루를 쓴다.
 	 */
-	bool FindLeastCrowdedNeighbourCell(const FVector2f& P, FVector2f& OutCellCenter) const;
+	bool FindLeastCrowdedNeighbourCell(const FVector2f& P, FVector2f& OutCellCenter, int32* OutTieCount = nullptr) const;
 
 	// 격자가 유효한지. 무효 상태로 진행하면 음수 인덱스 접근이 난다 — 진입점에서 차단한다.
 	bool IsValid() const { return CellSizeMeters > 0.f && GridDimX > 0 && GridDimY > 0; }

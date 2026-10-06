@@ -417,10 +417,12 @@ bool FFF_StaffTimeScaleTest::RunTest(const FString& Parameters)
 	Stage->SetTimeScale(4.f);
 	Bodies->Tick(1.f);
 	TestEqual(TEXT("At x4 one real second walks four seconds of travel"), Bodies->Staff[StaffId].Position.X, Speed * 5.f);
+	TestEqual(TEXT("At x4 the walk animation plays four times faster"), Bodies->AppliedAnimPlayRate, 4.f);
 
 	Stage->SetTimeScale(0.f);
 	Bodies->Tick(1.f);
 	TestEqual(TEXT("A paused festival holds the staff in place"), Bodies->Staff[StaffId].Position.X, Speed * 5.f);
+	TestEqual(TEXT("A paused festival freezes the staff animation"), Bodies->AppliedAnimPlayRate, 0.f);
 
 	Stage->SetMinigameInProgress(true);
 	Stage->SetTimeScale(4.f);

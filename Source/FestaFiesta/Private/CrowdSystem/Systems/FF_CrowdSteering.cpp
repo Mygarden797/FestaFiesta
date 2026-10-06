@@ -150,13 +150,22 @@ namespace CrowdSteering
 			Unit.StuckSteps = 0;
 		}
 
-		if (Params.StuckDetectSteps > 0 && Unit.StuckSteps >= Params.StuckDetectSteps)
+		// 탈출 가속은 한 번에 UnstuckHoldSteps만 밀고 쉰다. 계속 밀면 밀려난 거리가 다시 막힘으로 세어져 끝없이 떠밀린다
+		if (Unit.UnstuckHoldSteps > 0)
+		{
+			if (--Unit.UnstuckHoldSteps == 0)
+			{
+				Unit.UnstuckCooldownSteps = FMath::Max(0, Params.UnstuckCooldownSteps);
+			}
+		}
+		else if (Unit.UnstuckCooldownSteps > 0)
+		{
+			--Unit.UnstuckCooldownSteps;
+		}
+		else if (Params.StuckDetectSteps > 0 && Unit.StuckSteps >= Params.StuckDetectSteps)
 		{
 			Unit.UnstuckHoldSteps = FMath::Max(0, Params.UnstuckHoldSteps);
-		}
-		else if (Unit.UnstuckHoldSteps > 0)
-		{
-			--Unit.UnstuckHoldSteps;
+			++Unit.UnstuckAttemptCount;
 		}
 
 		const float FacingAlpha = ComputeVelocityAlpha(Params.FacingSmoothSeconds, FixedDt);
