@@ -233,6 +233,15 @@ struct FESTAFIESTA_API FFF_IncidentView
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
 	float MinuteUntileLapse = 60.f;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Identity")
+	EFF_IncidentTone Tone = EFF_IncidentTone::Problem;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Identity")
+	EFF_IncidentUrgency Urgency = EFF_IncidentUrgency::Medium;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Display")
+	float OccurredAtMinutes = 0.f;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Incident|Options")
 	TArray<FFF_IncidentOptionView> Options;
 
@@ -243,5 +252,8 @@ struct FESTAFIESTA_API FFF_IncidentView
 	// Working 일 때만 의미가 있다. 축제 분 단위.
 	UPROPERTY(BlueprintReadOnly, Category = "Incident|Response")
 	float RemainingWorkMinutes = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Response")
+	float TotalWorkMinutes = 0.f;
 };
 

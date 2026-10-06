@@ -142,6 +142,17 @@ struct FESTAFIESTA_API FFF_UIPaletteInGame
 	/** `--down`. 전일 대비 감소. */
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Trend")
 	FLinearColor Down = FLinearColor::FromSRGBColor(FColor(0xD7, 0x4E, 0x43));
+
+	// --- 사건 월드 마커 ---
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Incident Marker")
+	FLinearColor IncidentUrgencyLow = FLinearColor::FromSRGBColor(FColor(0xF1, 0xF4, 0xF2));
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Incident Marker")
+	FLinearColor IncidentUrgencyMedium = FLinearColor::FromSRGBColor(FColor(0xF2, 0xC2, 0x30));
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Incident Marker")
+	FLinearColor IncidentDispatch = FLinearColor::FromSRGBColor(FColor(0x6F, 0xB5, 0x9A));
 };
 
 /**

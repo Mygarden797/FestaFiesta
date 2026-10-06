@@ -39,7 +39,7 @@ void UFF_StaffDispatchSubsystem::Deinitialize()
 	{
 		Staffing->OnStaffReservationsReset.RemoveDynamic(this, &ThisClass::HandleReservationsReset);
 	}
-	HandleReservationsReset();
+	ResetDispatches(false);
 	Incident = nullptr;
 	Staffing = nullptr;
 	StaffBodies = nullptr;
@@ -81,6 +81,20 @@ bool UFF_StaffDispatchSubsystem::GetRemainingWorkMinutes(FFF_IncidentHandle Hand
 		return false;
 	}
 	OutMinutes = Found->RemainingWorkMinutes;
+	return true;
+}
+
+bool UFF_StaffDispatchSubsystem::GetTotalWorkMinutes(FFF_IncidentHandle Handle, float& OutMinutes) const
+{
+	const FDispatch* Found = Dispatches.FindByPredicate([Handle](const FDispatch& Dispatch)
+	{
+		return Dispatch.Handle == Handle && !Dispatch.bReturning;
+	});
+	if (!Found)
+	{
+		return false;
+	}
+	OutMinutes = Found->TotalWorkMinutes;
 	return true;
 }
 
@@ -160,6 +174,7 @@ bool UFF_StaffDispatchSubsystem::TryDispatch(FFF_IncidentHandle Handle, int32 Op
 		}
 	}
 	Pending.RemainingWorkMinutes = WorkAmount > 0.f ? WorkAmount / static_cast<float>(Pending.StaffIds.Num()) : 0.f;
+	Pending.TotalWorkMinutes = Pending.RemainingWorkMinutes;
 	if (Dispatches.IsEmpty())
 	{
 		LastWorkClockMinutes = -1.f;
@@ -201,16 +216,34 @@ void UFF_StaffDispatchSubsystem::HandleIncidentClosed(FFF_IncidentHandle Handle)
 
 void UFF_StaffDispatchSubsystem::HandleReservationsReset()
 {
+	ResetDispatches(true);
+}
+
+void UFF_StaffDispatchSubsystem::ResetDispatches(bool bAnnounce)
+{
 	// Detach the old batch before publishing releases; save/restart observers may start fresh work.
 	TArray<FDispatch> Previous = MoveTemp(Dispatches);
 	Dispatches.Reset();
+	TArray<FFF_IncidentHandle> Cancelled;
 	for (FDispatch& Dispatch : Previous)
 	{
 		if (!Dispatch.bReturning && Incident && Incident->IsHandleValid(Dispatch.Handle))
 		{
 			Incident->SetResponding(Dispatch.Handle, false);
+			Cancelled.Add(Dispatch.Handle);
 		}
 		ReleaseDispatch(Dispatch);
+	}
+	if (!bAnnounce || !Incident)
+	{
+		return;
+	}
+	for (const FFF_IncidentHandle Handle : Cancelled)
+	{
+		if (Incident->IsHandleValid(Handle))
+		{
+			Incident->OnIncidentUpdated.Broadcast(Handle);
+		}
 	}
 }
 

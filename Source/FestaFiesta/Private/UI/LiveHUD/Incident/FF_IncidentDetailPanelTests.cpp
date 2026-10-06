@@ -11,6 +11,7 @@
 #include "Engine/Font.h"
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
+#include "UI/Data/FF_UIPalette.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/LiveHUD/Incident/FF_IncidentMarkerButton.h"
 #include "UI/LiveHUD/Incident/FF_IncidentUiStyle.h"
@@ -103,13 +104,19 @@ bool FFF_IncidentDetailPanelStatusTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	Marker->TakeWidget();
-	TestFalse(TEXT("An idle marker has no ring"), Marker->IsResponseRingVisible());
-	Marker->SetResponseStage(EStage::Working);
-	TestTrue(TEXT("A marker with staff out shows a ring"), Marker->IsResponseRingVisible());
-	TestEqual(TEXT("The ring comes with words in the tooltip"),
+	const FFF_UIPaletteInGame Colors;
+	FFF_IncidentView View;
+	View.MinuteUntileLapse = 0.f;
+	Marker->ApplyLook(FFIncidentMarkerRules::Resolve(View, false, 0.f, Colors), nullptr);
+	TestTrue(TEXT("An idle marker shows the incident glyph"), Marker->GetLook().Glyph == EFF_IncidentMarkerGlyph::Quest);
+	View.ResponseStage = EStage::Working;
+	Marker->ApplyLook(FFIncidentMarkerRules::Resolve(View, false, 0.f, Colors), nullptr);
+	TestTrue(TEXT("A marker with staff out swaps to the dispatched glyph"), Marker->GetLook().Glyph == EFF_IncidentMarkerGlyph::Dispatched);
+	TestEqual(TEXT("The dispatched look comes with words in the tooltip"),
 		Marker->GetToolTipText().ToString(), FString(TEXT("스태프 출동 중 · 현장 작업 중")));
-	Marker->SetResponseStage(EStage::None);
-	TestFalse(TEXT("The ring leaves when the response ends"), Marker->IsResponseRingVisible());
+	View.ResponseStage = EStage::None;
+	Marker->ApplyLook(FFIncidentMarkerRules::Resolve(View, false, 0.f, Colors), nullptr);
+	TestTrue(TEXT("The incident glyph returns when the response ends"), Marker->GetLook().Glyph == EFF_IncidentMarkerGlyph::Quest);
 	return true;
 }
 

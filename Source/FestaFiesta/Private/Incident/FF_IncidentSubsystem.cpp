@@ -225,6 +225,9 @@ bool UFF_IncidentSubsystem::GetIncidentView(FFF_IncidentHandle Handle, FFF_Incid
 	
 	OutView.IncidentTag = Slot->IncidentTag;
 	OutView.MinuteUntileLapse = Slot->MinutesUntilLapse;
+	OutView.Tone = Slot->Tone;
+	OutView.Urgency = Slot->Urgency;
+	OutView.OccurredAtMinutes = Slot->OccurredAtMinutes;
 	OutView.Title = Def->Title;
 	OutView.Body = Def->Body;
 	OutView.MarkerIcon = Def->MarkerIcon;
@@ -233,9 +236,11 @@ bool UFF_IncidentSubsystem::GetIncidentView(FFF_IncidentHandle Handle, FFF_Incid
 
 	OutView.ResponseStage = EFF_IncidentResponseStage::None;
 	OutView.RemainingWorkMinutes = 0.f;
+	OutView.TotalWorkMinutes = 0.f;
 	if (const UFF_StaffDispatchSubsystem* Dispatch = GetWorld() ? GetWorld()->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr)
 	{
 		OutView.ResponseStage = Dispatch->GetResponseStage(Handle, OutView.RemainingWorkMinutes);
+		Dispatch->GetTotalWorkMinutes(Handle, OutView.TotalWorkMinutes);
 	}
 
 	return true;
