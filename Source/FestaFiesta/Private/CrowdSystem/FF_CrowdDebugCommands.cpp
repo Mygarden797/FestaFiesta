@@ -349,13 +349,16 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	Ar.Logf(TEXT("  막혀서 포기   : %d회 (임계 %d스텝 = %.1fs)  <-- 0이면 이 경로가 안 걸린다"),
 		CrowdSim->GetStuckDecisionRequests(), CrowdSim->DecisionStuckSteps,
 		CrowdSim->DecisionStuckSteps / 30.f);
+	Ar.Logf(TEXT("  막힘 백오프   : %d회  <-- 파티원·큐·관람·퇴장 중 리더의 막힘 카운터를 비운 횟수"),
+		CrowdSim->GetStuckCounterBackoffs());
 	Ar.Logf(TEXT("  주기 재평가   : %d회 (%s)  <-- 켰는데 0이면 개인 주기가 안 차고 있다"),
 		CrowdSim->GetReevaluateRequests(),
 		CrowdSim->bEnablePeriodicReevaluation ? TEXT("켬") : TEXT("끔"));
 	Ar.Logf(TEXT("막힘          : %d (%.1f%%)  <-- 가려는데 못 가는 사람"),
 		Flow.Blocked, BlockedPercent);
-	Ar.Logf(TEXT("  탈출 가속 중: %d  (임계 %d스텝, 최장 %d스텝 = %.1f초)"),
+	Ar.Logf(TEXT("  탈출 가속 중: %d  (임계 %d스텝, 밀기 %d / 쉼 %d스텝, 최장 %d스텝 = %.1f초)"),
 		Flow.UnstuckActive, CrowdSim->AvoidanceConfig.StuckDetectSteps,
+		CrowdSim->AvoidanceConfig.UnstuckHoldSteps, CrowdSim->AvoidanceConfig.UnstuckCooldownSteps,
 		Flow.MaxStuckSteps, Flow.MaxStuckSteps / 30.f);
 
 	const int32 FacilityWalls = CrowdSim->GetFacilityWallCount();

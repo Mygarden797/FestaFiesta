@@ -3180,6 +3180,93 @@ bool FFF_CrowdSteering_UnstuckHoldSurvivesCounterReset::RunTest(const FString& P
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdSteering_UnstuckBurstRestsWhileStillStuck, "FestaFiesta.Crowd.Steering.UnstuckBurstRestsWhileStillStuck", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdSteering_UnstuckBurstRestsWhileStillStuck::RunTest(const FString& Parameters)
+{
+	constexpr float FixedStep = 1.f / 30.f;
+	const float Alpha = CrowdSteering::ComputeVelocityAlpha(0.35f, FixedStep);
+
+	CrowdSteering::FStepParams Params;
+
+	FUnitData Unit = FFF_CrowdTestHelpers::MakeUnitAt(FVector::ZeroVector);
+	Unit.TargetLocation = FVector(5000.f, 0.f, 0.f);
+	Unit.Speed = 0.f;
+
+	for (int32 i = 0; i < Params.StuckDetectSteps; ++i)
+	{
+		CrowdSteering::StepAgent(Unit, Params, Alpha, FixedStep);
+	}
+	TestEqual(TEXT("첫 밀기가 시작됐다"), Unit.UnstuckHoldSteps, Params.UnstuckHoldSteps);
+	TestEqual(TEXT("시도 번호가 1이다"), Unit.UnstuckAttemptCount, 1);
+
+	for (int32 i = 0; i < Params.UnstuckHoldSteps; ++i)
+	{
+		CrowdSteering::StepAgent(Unit, Params, Alpha, FixedStep);
+	}
+	TestEqual(TEXT("계속 막혀 있어도 밀기는 정해진 길이에서 끝난다"), Unit.UnstuckHoldSteps, 0);
+	TestEqual(TEXT("밀기가 끝나면 쉼이 시작된다"), Unit.UnstuckCooldownSteps, Params.UnstuckCooldownSteps);
+	TestTrue(TEXT("[전제] 여전히 막힘으로 세어지고 있다"), Unit.StuckSteps >= Params.StuckDetectSteps);
+
+	for (int32 i = 0; i < Params.UnstuckCooldownSteps; ++i)
+	{
+		CrowdSteering::StepAgent(Unit, Params, Alpha, FixedStep);
+	}
+	TestEqual(TEXT("쉬는 동안에는 다시 밀지 않는다"), Unit.UnstuckHoldSteps, 0);
+	TestEqual(TEXT("쉬는 동안 시도 번호가 오르지 않는다"), Unit.UnstuckAttemptCount, 1);
+
+	CrowdSteering::StepAgent(Unit, Params, Alpha, FixedStep);
+	TestEqual(TEXT("쉼이 끝나고도 막혀 있으면 다시 민다"), Unit.UnstuckHoldSteps, Params.UnstuckHoldSteps);
+	TestEqual(TEXT("다음 시도는 새 번호를 받는다"), Unit.UnstuckAttemptCount, 2);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_UnstuckDirectionChangesPerAttempt, "FestaFiesta.Crowd.Avoidance.UnstuckDirectionChangesPerAttempt", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_UnstuckDirectionChangesPerAttempt::RunTest(const FString& Parameters)
+{
+	const FVector2f Suggested(1.f, 0.f);
+
+	const FVector2f Legacy = FFF_CrowdForceSolver::ComputeUnstuckImpulse(1234, Suggested);
+	const FVector2f Attempt0 = FFF_CrowdForceSolver::ComputeUnstuckImpulse(1234, Suggested, 0);
+	const FVector2f Attempt1 = FFF_CrowdForceSolver::ComputeUnstuckImpulse(1234, Suggested, 1);
+	const FVector2f Attempt1Again = FFF_CrowdForceSolver::ComputeUnstuckImpulse(1234, Suggested, 1);
+
+	TestEqual(TEXT("시도 0은 예전 방향과 같다"), Attempt0.Y, Legacy.Y, 0.f);
+	TestEqual(TEXT("같은 시도는 같은 방향이다"), Attempt1.Y, Attempt1Again.Y, 0.f);
+	TestTrue(TEXT("시도가 바뀌면 방향이 바뀐다"), !FMath::IsNearlyEqual(Attempt0.Y, Attempt1.Y, 1.e-4f));
+	TestTrue(TEXT("바뀌어도 제안 방향에서 60도 이내다"),
+		FVector2f::DotProduct(Attempt1, Suggested) >= FMath::Cos(PI / 3.f) - 1.e-3f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdGrid_IsolatedAgentSeesAllNeighbourCellsTied, "FestaFiesta.Crowd.Grid.IsolatedAgentSeesAllNeighbourCellsTied", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdGrid_IsolatedAgentSeesAllNeighbourCellsTied::RunTest(const FString& Parameters)
+{
+	TArray<FVector2f> Pos = { FVector2f(0.f, 0.f), FVector2f(20.f, 20.f), FVector2f(-20.f, -20.f) };
+	TArray<uint8> Active = { 1, 1, 1 };
+	TArray<int32> ActiveIds = { 0, 1, 2 };
+
+	FFF_CrowdSpatialGrid Grid;
+	Grid.Build(Pos, Active, ActiveIds, 2.f);
+
+	FVector2f Cell;
+	int32 TieCount = 0;
+	TestTrue(TEXT("인접 셀을 찾았다"), Grid.FindLeastCrowdedNeighbourCell(Pos[0], Cell, &TieCount));
+	TestEqual(TEXT("혼자 선 개체는 8칸이 모두 동률이다"), TieCount, 8);
+
+	Pos.Add(FVector2f(2.5f, 0.5f));
+	Pos.Add(FVector2f(2.5f, 0.5f));
+	Pos.Add(FVector2f(-1.5f, 0.5f));
+	Active.Append({ 1, 1, 1 });
+	ActiveIds.Append({ 3, 4, 5 });
+	Grid.Build(Pos, Active, ActiveIds, 2.f);
+	Grid.FindLeastCrowdedNeighbourCell(Pos[0], Cell, &TieCount);
+	TestEqual(TEXT("빈 칸이 여럿이면 여전히 동률로 보고한다"), TieCount, 6);
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdMetrics_CellSizeHasSingleSource, "FestaFiesta.Crowd.Metrics.CellSizeHasSingleSource", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdMetrics_CellSizeHasSingleSource::RunTest(const FString& Parameters)
 {

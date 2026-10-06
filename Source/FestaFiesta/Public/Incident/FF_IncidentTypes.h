@@ -7,7 +7,6 @@
 #include "FF_IncidentTypes.generated.h"
 
 class AActor;
-class UTexture2D;
 class UWorld;
 
 // 값이 저장·집계 키가 된다. 중간에 끼워 넣지 않고 뒤에만 추가한다.
@@ -40,6 +39,29 @@ enum class EFF_IncidentState : uint8
 	Expired      = 4	UMETA(DisplayName = "자연 소멸"),
 	Ignored      = 5	UMETA(DisplayName = "방치"),
 	Missed       = 6	UMETA(DisplayName = "놓침")
+};
+
+// 플레이어가 [보내기]/[확인]을 눌렀을 때의 결과. 화면 문구는 UFF_UIDisplayTextLibrary 가 낸다.
+UENUM(BlueprintType)
+enum class EFF_IncidentResolveResult : uint8
+{
+	Dispatched        = 0	UMETA(DisplayName = "출동"),
+	Resolved          = 1	UMETA(DisplayName = "즉시 해결"),
+	InvalidIncident   = 2	UMETA(DisplayName = "사건 없음"),
+	InvalidOption     = 3	UMETA(DisplayName = "선택지 없음"),
+	AlreadyResponding = 4	UMETA(DisplayName = "이미 출동 중"),
+	NotEnoughStaff    = 5	UMETA(DisplayName = "스태프 부족"),
+	NoSite            = 6	UMETA(DisplayName = "현장 위치 없음"),
+	DispatchFailed    = 7	UMETA(DisplayName = "출동 실패")
+};
+
+// 사건에 보낸 스태프가 지금 어디까지 왔는지. 화면 문구는 UFF_UIDisplayTextLibrary 가 낸다.
+UENUM(BlueprintType)
+enum class EFF_IncidentResponseStage : uint8
+{
+	None       = 0	UMETA(DisplayName = "출동 없음"),
+	Travelling = 1	UMETA(DisplayName = "이동 중"),
+	Working    = 2	UMETA(DisplayName = "작업 중")
 };
 
 // Crowd 발 사건은 개별 NPC 가 아니라 DensityCell 로만 올린다.
@@ -203,14 +225,31 @@ struct FESTAFIESTA_API FFF_IncidentView
 	
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
 	FText Body;
-	
-	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
-	TSoftObjectPtr<UTexture2D> MarkerIcon;
-	
+
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
 	float MinuteUntileLapse = 60.f;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Identity")
+	EFF_IncidentTone Tone = EFF_IncidentTone::Problem;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Identity")
+	EFF_IncidentUrgency Urgency = EFF_IncidentUrgency::Medium;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Display")
+	float OccurredAtMinutes = 0.f;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Incident|Options")
 	TArray<FFF_IncidentOptionView> Options;
+
+	// 출동 단계. None 이면 아직 아무도 보내지 않았거나 출동이 취소된 것이다.
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Response")
+	EFF_IncidentResponseStage ResponseStage = EFF_IncidentResponseStage::None;
+
+	// Working 일 때만 의미가 있다. 축제 분 단위.
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Response")
+	float RemainingWorkMinutes = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Response")
+	float TotalWorkMinutes = 0.f;
 };
 

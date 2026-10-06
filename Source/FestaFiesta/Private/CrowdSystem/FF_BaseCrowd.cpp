@@ -134,7 +134,15 @@ void AFF_BaseCrowd::PushPresentation(FVector NewPosition, FRotator NewRotator, f
 	}
 }
 
-// AnimClass는 '클래스'를 받는다. 
+void AFF_BaseCrowd::SetAnimPlayRate(float PlayRate)
+{
+	if (IsValid(SkeletalMeshComponent))
+	{
+		SkeletalMeshComponent->GlobalAnimRateScale = PlayRate;
+	}
+}
+
+// AnimClass는 '클래스'를 받는다.
 void AFF_BaseCrowd::ApplyAppearance(USkeletalMesh* Mesh, UClass* AnimClass, float YawOffset, float UniformScale)
 {
 	if (!IsValid(SkeletalMeshComponent))

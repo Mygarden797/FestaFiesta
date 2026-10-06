@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Incident/FF_IncidentTypes.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Time/FF_FestivalStage.h"
 #include "UI/Frontend/FF_OptionsScreen.h"
@@ -77,4 +78,20 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
 	static FText GetNeedRemedyText(EFF_NeedType NeedType);
+
+	/** 사건 [보내기]/[확인]의 결과. 거부면 플레이어가 무엇을 하면 되는지까지 적는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetIncidentResolveResultText(EFF_IncidentResolveResult Result);
+
+	/** 알림 앞머리의 짧은 표시(출동·처리·불가). 색만으로 결과를 가르지 않으려고 둔다 (AT-011). */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetIncidentResolveResultLabel(EFF_IncidentResolveResult Result);
+
+	/** 사건에 보낸 스태프의 진행 단계. 상세 패널의 상태 줄과 마커 툴팁에 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetIncidentResponseStageText(EFF_IncidentResponseStage Stage);
+
+	/** 결과가 접수(출동 또는 즉시 해결)인지. 알림 색을 고를 때 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static bool IsIncidentResolveAccepted(EFF_IncidentResolveResult Result);
 };

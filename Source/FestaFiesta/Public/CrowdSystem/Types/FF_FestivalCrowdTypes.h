@@ -113,6 +113,10 @@ struct FUnitData
 
 	int32 UnstuckHoldSteps = 0;
 
+	int32 UnstuckCooldownSteps = 0;
+
+	int32 UnstuckAttemptCount = 0;
+
 	FVector FacingVelocity = FVector::ZeroVector;
 
 	bool bFacingFollowsVelocity = false;
