@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/LiveHUD/Panels/FF_LivePanelFacilities.h"
+#include "UI/LiveHUD/Panels/FF_LiveFacilityRowWidget.h"
 
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -140,8 +141,7 @@ void UFF_LivePanelFacilities::NativeOnPanelOpened()
 	Super::NativeOnPanelOpened();
 
 	// ★ 여기서 무엇을 할 수 없는지 적는다. 목록만 두면 눌러 볼 수 있다고 오해한다.
-	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveFac_MissingNote",
-		"시설을 열고 닫거나 옮기는 것은 건축 화면에서 합니다. 여기서는 상태만 봅니다."));
+	SetTextOrHide(Text_MissingNote, FooterNoteText);
 
 	// 열자마자 한 번 읽는다. 첫 갱신을 주기까지 기다리면 빈 목록이 한 번 보인다.
 	TimeSinceRefresh = 0.f;
@@ -183,8 +183,13 @@ void UFF_LivePanelFacilities::RefreshAll()
 
 	if (!ViewModel)
 	{
-		UE_LOG(LogFestaFiestaUI, Error,
-			TEXT("[%s] ViewModel 을 찾지 못했다. 시설 목록이 비어 보인다."), *GetName());
+		Rows.Reset();
+		SetTextOrHide(Text_FacilityCount, MissingValueText);
+		SetTextOrHide(Text_ActiveCount, MissingValueText);
+		SetTextOrHide(Text_AttentionCount, MissingValueText);
+		SetTextOrHide(Text_Summary, CheckingText);
+		RefreshRowWidgets();
+		SetTextOrHide(Text_Empty, CheckingText);
 		return;
 	}
 
@@ -193,12 +198,15 @@ void UFF_LivePanelFacilities::RefreshAll()
 	Rows.Reset(Views.Num());
 	int32 BlockedCount = 0;
 	int32 WatchCount = 0;
+	int32 UnknownCount = 0;
+	int32 ActiveCount = 0;
 
 	for (const FFF_LiveFacilityView& View : Views)
 	{
 		FFF_LiveFacilityRow& Row = Rows.AddDefaulted_GetRef();
 		Row.View = View;
 		Row.Alert = FFF_LiveFacilityRules::ResolveAlert(View, WaitingThreshold);
+		ActiveCount += View.State == EFF_LiveFacilityState::Active ? 1 : 0;
 
 		if (Row.Alert == EFF_LiveFacilityAlert::Blocked)
 		{
@@ -208,99 +216,135 @@ void UFF_LivePanelFacilities::RefreshAll()
 		{
 			++WatchCount;
 		}
+		else if (Row.Alert == EFF_LiveFacilityAlert::Unknown)
+		{
+			++UnknownCount;
+		}
 	}
 
 	FFF_LiveFacilityRules::SortByUrgency(Rows);
 
-	SetTextOrHide(Text_FacilityCount, FText::Format(
-		LOCTEXT("LiveFac_Count", "{0}개"), FText::AsNumber(Rows.Num())));
+	SetTextOrHide(Text_FacilityCount, FText::Format(CountTextFormat,
+		FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Rows.Num())}}));
+	SetTextOrHide(Text_ActiveCount, FText::Format(CountTextFormat,
+		FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(ActiveCount)}}));
+	SetTextOrHide(Text_AttentionCount, FText::Format(CountTextFormat,
+		FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(BlockedCount + WatchCount + UnknownCount)}}));
 
 	// 숫자만 두면 "많은 건가" 를 사람이 판단해야 한다. 급한 것이 몇 개인지 함께 적는다.
 	SetTextOrHide(Text_Summary, (Rows.Num() == 0)
 		? FText::GetEmpty()
-		: ((BlockedCount == 0 && WatchCount == 0)
-			? LOCTEXT("LiveFac_AllOk", "모두 정상 운영 중입니다.")
-			: FText::Format(
-				LOCTEXT("LiveFac_Summary", "막힘 {0}개 · 주의 {1}개"),
-				FText::AsNumber(BlockedCount), FText::AsNumber(WatchCount))));
+		: ((BlockedCount == 0 && WatchCount == 0 && UnknownCount == 0)
+			? AllOkText
+			: FText::Format(SummaryTextFormat, FFormatNamedArguments{
+				{TEXT("Blocked"), FText::AsNumber(BlockedCount)},
+				{TEXT("Watch"), FText::AsNumber(WatchCount)},
+				{TEXT("Unknown"), FText::AsNumber(UnknownCount)}})));
 
+	RefreshRowWidgets();
+	SetTextOrHide(Text_Empty, Rows.IsEmpty() ? EmptyText : FText::GetEmpty());
+}
+
+void UFF_LivePanelFacilities::RefreshRowWidgets()
+{
 	if (!Box_Facilities)
 	{
 		return;
 	}
 
-	Box_Facilities->ClearChildren();
-
-	const int32 ShownCount = FMath::Min(Rows.Num(), FMath::Max(1, MaxRows));
+	const int32 ShownCount = MaxRows <= 0 ? Rows.Num() : FMath::Min(Rows.Num(), MaxRows);
+	bool bAddedChild = false;
 	for (int32 Index = 0; Index < ShownCount; ++Index)
 	{
 		const FFF_LiveFacilityRow& Row = Rows[Index];
-
-		UTextBlock* Line = NewObject<UTextBlock>(this);
-		if (!Line)
+		if (RowWidgetClass)
 		{
+			if (!CachedRowWidgets.IsValidIndex(Index))
+			{
+				UFF_LiveFacilityRowWidget* RowWidget = CreateWidget<UFF_LiveFacilityRowWidget>(this, RowWidgetClass);
+				if (!RowWidget)
+				{
+					break;
+				}
+				CachedRowWidgets.Add(RowWidget);
+				if (UVerticalBoxSlot* RowSlot = Box_Facilities->AddChildToVerticalBox(RowWidget))
+				{
+					RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+				}
+				bAddedChild = true;
+			}
+			CachedRowWidgets[Index]->SetRowData(Row);
+			CachedRowWidgets[Index]->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 			continue;
 		}
 
-		// 대기·이용은 항상 있고, 평균 대기는 아직 아무도 못 끝냈으면 없다.
-		const FText Wait = (Row.View.AverageWaitSeconds != INDEX_NONE)
-			? FText::Format(
-				LOCTEXT("LiveFac_AvgWait", " · 평균 {0}초"),
-				FText::AsNumber(Row.View.AverageWaitSeconds))
-			: FText::GetEmpty();
-
-		// 🔴 평균과 **다른 값**이다 (2026-09-03 추가) —
-		//   평균   이미 끝낸 사람이 실제로 기다린 시간 (과거)
-		//   예상   지금 서면 얼마나 (미래)
-		// 지금 고칠지 말지는 예상 쪽으로 정한다. 못 읽었으면 아예 안 적는다 —
-		// `0초` 로 적으면 "바로 이용 가능" 이라는 틀린 사실이 된다.
-		const FText Expected = (Row.View.ExpectedWaitSeconds != INDEX_NONE)
-			? FText::Format(
-				LOCTEXT("LiveFac_ExpectedWait", " · 지금 서면 {0}초"),
-				FText::AsNumber(Row.View.ExpectedWaitSeconds))
-			: FText::GetEmpty();
-
-		const FText Reason = FFF_LiveFacilityRules::DescribeAlert(Row);
-		const FText ReasonSuffix = Reason.IsEmpty()
-			? FText::GetEmpty()
-			: FText::Format(LOCTEXT("LiveFac_ReasonSuffix", "  —  {0}"), Reason);
-
-		Line->SetText(FText::Format(
-			LOCTEXT("LiveFac_Row", "{0}  대기 {1}팀 · 이용 {2}팀{3}{4}{5}"),
-			Row.View.DisplayName,
-			FText::AsNumber(Row.View.WaitingCount),
-			FText::AsNumber(Row.View.ActiveServiceCount),
-			Wait,
-			Expected,
-			ReasonSuffix));
-		Line->SetAutoWrapText(true);
-
-		if (UVerticalBoxSlot* LineSlot = Box_Facilities->AddChildToVerticalBox(Line))
+		// 기존 행 WBP가 없는 프로젝트/에셋도 작동하며, 이 경로 역시 같은 TextBlock을 재사용한다.
+		if (!CachedFallbackLines.IsValidIndex(Index))
 		{
-			LineSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+			UTextBlock* Line = NewObject<UTextBlock>(this);
+			CachedFallbackLines.Add(Line);
+			if (UVerticalBoxSlot* LineSlot = Box_Facilities->AddChildToVerticalBox(Line))
+			{
+				LineSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+			}
+			bAddedChild = true;
 		}
+		UpdateFallbackLine(*CachedFallbackLines[Index], Row);
+		CachedFallbackLines[Index]->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	}
 
-	// 🔴 잘린 줄이 있으면 반드시 적는다. 안 적으면 목록이 전부인 줄 알고
-	//    아래에 막힌 시설이 있어도 못 본다.
-	if (Rows.Num() > ShownCount)
+	for (int32 Index = 0; Index < CachedRowWidgets.Num(); ++Index)
 	{
-		if (UTextBlock* More = NewObject<UTextBlock>(this))
+		if (!RowWidgetClass || Index >= ShownCount)
 		{
-			More->SetText(FText::Format(
-				LOCTEXT("LiveFac_More", "…외 {0}개는 목록에 없습니다"),
-				FText::AsNumber(Rows.Num() - ShownCount)));
-			Box_Facilities->AddChildToVerticalBox(More);
+			CachedRowWidgets[Index]->SetVisibility(ESlateVisibility::Collapsed);
 		}
 	}
+	for (int32 Index = 0; Index < CachedFallbackLines.Num(); ++Index)
+	{
+		if (RowWidgetClass || Index >= ShownCount)
+		{
+			CachedFallbackLines[Index]->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+
+	// 행이 추가된 때만 마지막 안내를 뒤로 옮긴다. 매초 Remove/Add나 ClearChildren을 하지 않는다.
+	if (Rows.Num() > ShownCount && !MoreRowsText)
+	{
+		MoreRowsText = NewObject<UTextBlock>(this);
+		ApplyDynamicRowStyle(*MoreRowsText, true);
+		Box_Facilities->AddChildToVerticalBox(MoreRowsText);
+	}
+	else if (MoreRowsText && bAddedChild)
+	{
+		MoreRowsText->RemoveFromParent();
+		Box_Facilities->AddChildToVerticalBox(MoreRowsText);
+	}
+	SetTextOrHide(MoreRowsText, Rows.Num() > ShownCount
+		? FText::Format(MoreRowsTextFormat, FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Rows.Num() - ShownCount)}})
+		: FText::GetEmpty());
 
 	Box_Facilities->SetVisibility((Rows.Num() > 0)
 		? ESlateVisibility::SelfHitTestInvisible
 		: ESlateVisibility::Collapsed);
+}
 
-	SetTextOrHide(Text_Empty, (Rows.Num() > 0)
+void UFF_LivePanelFacilities::UpdateFallbackLine(UTextBlock& Line, const FFF_LiveFacilityRow& Row) const
+{
+	const FText Wait = Row.View.AverageWaitSeconds >= 0
+		? FText::Format(LOCTEXT("LiveFac_AvgWait", " · 평균 {0}초"), FText::AsNumber(Row.View.AverageWaitSeconds))
+		: FText::GetEmpty();
+	const FText Expected = Row.View.ExpectedWaitSeconds >= 0
+		? FText::Format(LOCTEXT("LiveFac_ExpectedWait", " · 지금 서면 {0}초"), FText::AsNumber(Row.View.ExpectedWaitSeconds))
+		: FText::GetEmpty();
+	const FText Reason = FFF_LiveFacilityRules::DescribeAlert(Row);
+	const FText ReasonSuffix = Reason.IsEmpty()
 		? FText::GetEmpty()
-		: LOCTEXT("LiveFac_Empty", "놓인 시설이 없습니다."));
+		: FText::Format(LOCTEXT("LiveFac_ReasonSuffix", "  —  {0}"), Reason);
+	Line.SetText(FText::Format(LOCTEXT("LiveFac_Row", "{0}  대기 {1}팀 · 이용 {2}팀{3}{4}{5}"),
+		Row.View.DisplayName, FText::AsNumber(Row.View.WaitingCount), FText::AsNumber(Row.View.ActiveServiceCount),
+		Wait, Expected, ReasonSuffix));
+	ApplyDynamicRowStyle(Line);
 }
 
 void UFF_LivePanelFacilities::SetTextOrHide(UTextBlock* TextBlock, const FText& Value)

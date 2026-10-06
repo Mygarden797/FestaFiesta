@@ -3,7 +3,10 @@
 #include "UI/Atlas/FF_AtlasCameraRig.h"
 
 #include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
@@ -69,10 +72,23 @@ void AFF_AtlasCameraRig::BeginPlay()
 	// 카메라의 `Auto Activate for Player` 에 의존하지 않는다 — 그건 리그가 없을 때의 폴백이다.
 	CurrentScreen = EFF_UIFlowScreen::Title;
 	ApplyViewTarget(TitleCamera, 0.f);
+
+	// 인트로 구도 카메라는 미리 만들어 둔다. 렌즈를 타이틀 카메라에서 물려받아야 블렌드가 매끄럽다.
+	EnsureDerivedIntroCamera();
 }
 
 void AFF_AtlasCameraRig::ViewForScreen(EFF_UIFlowScreen Screen, bool bInstant)
 {
+	// 당기는 도중에 떠나면 끝 위치에 붙인 뒤 블렌드한다. 출발점이 움직이면 블렌드가 출렁인다.
+	if (Screen != EFF_UIFlowScreen::TitleIntro)
+	{
+		FinishIntroReveal();
+	}
+	else
+	{
+		EnsureDerivedIntroCamera();
+		FrameDerivedIntroCamera();
+	}
 	if (Screen != EFF_UIFlowScreen::AtlasGlobe)
 	{
 		ResetCountryInspection();
@@ -141,13 +157,15 @@ FString AFF_AtlasCameraRig::DescribeState() const
 	}
 
 	return FString::Printf(
-		TEXT("Screen=%s ViewTarget=%s Moving=%s | Title=%s Globe=%s CountryMap=%s"),
+		TEXT("Screen=%s ViewTarget=%s Moving=%s | Title=%s Globe=%s CountryMap=%s Intro=%s%s"),
 		*UEnum::GetValueAsString(CurrentScreen),
 		ViewTarget ? *ViewTarget->GetName() : TEXT("(없음)"),
 		IsMoving() ? TEXT("이동 중") : TEXT("정지"),
 		TitleCamera ? *TitleCamera->GetName() : TEXT("(미지정)"),
 		GlobeCamera ? *GlobeCamera->GetName() : TEXT("(미지정)"),
-		CountryMapCamera ? *CountryMapCamera->GetName() : TEXT("(미지정)"));
+		CountryMapCamera ? *CountryMapCamera->GetName() : TEXT("(미지정)"),
+		IntroCamera ? *IntroCamera->GetName() : (DerivedIntroCamera ? TEXT("(계산 구도)") : TEXT("(미지정)")),
+		bIntroRevealing ? TEXT(" 인트로 당기는 중") : TEXT(""));
 }
 
 // --- 내부 ---
@@ -163,6 +181,10 @@ ACameraActor* AFF_AtlasCameraRig::ResolveCameraForScreen(EFF_UIFlowScreen Screen
 	// U3-b 를 만들기 전에는 국가 지도 카메라를 비워 둘 수 있다.
 	switch (Screen)
 	{
+	case EFF_UIFlowScreen::TitleIntro:
+		if (IntroCamera) { return IntroCamera; }
+		if (DerivedIntroCamera) { return DerivedIntroCamera; }
+		return TitleCamera;
 	case EFF_UIFlowScreen::AtlasCountry:
 		if (CountryMapCamera) { return CountryMapCamera; }
 		// fall through
@@ -196,6 +218,12 @@ float AFF_AtlasCameraRig::GetBlendSeconds(EFF_UIFlowScreen FromScreen, EFF_UIFlo
 	}
 
 	const UFF_AtlasSettings& Settings = GetAtlasSettings();
+
+	// 인트로 「아무 키」 구도 ↔ 메뉴 구도. 메뉴끼리는 0초지만 이것은 지구가 비켜 가는 연출이다.
+	if ((FromScreen == EFF_UIFlowScreen::TitleIntro) != (ToScreen == EFF_UIFlowScreen::TitleIntro))
+	{
+		return Settings.IntroToTitleSeconds;
+	}
 
 	// **더 깊은 쪽**이 시간을 정한다. 그래서 들어갈 때와 나올 때가 같은 길이가 된다 —
 	// 한쪽만 빠르면 뒤로 가기가 잘려 나가는 것처럼 보인다.
@@ -290,6 +318,8 @@ void AFF_AtlasCameraRig::PauseCountryInspection()
 void AFF_AtlasCameraRig::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	TickIntroReveal(DeltaSeconds);
+
 	ACameraActor* Camera = InspectionCamera.Get();
 	if (!Camera || CurrentScreen != EFF_UIFlowScreen::AtlasGlobe || !bInspectionTransitioning) { return; }
 	const UFF_AtlasSettings& Settings = GetAtlasSettings();
@@ -316,9 +346,204 @@ void AFF_AtlasCameraRig::ResetCountryInspection()
 	bInspectionPaused = false;
 }
 
+// --- 타이틀 인트로 ---
+
+void AFF_AtlasCameraRig::PlayIntroReveal()
+{
+	EnsureDerivedIntroCamera();
+	FinishIntroReveal();
+	FrameDerivedIntroCamera();
+
+	ACameraActor* Camera = ResolveCameraForScreen(EFF_UIFlowScreen::TitleIntro);
+	if (!Camera)
+	{
+		return;
+	}
+
+	// 뷰 타깃을 여기서 다시 잡는다. 첫 화면을 올릴 때 정한 구도는 이 리그의 BeginPlay 가 타이틀로 덮었다.
+	ResetCountryInspection();
+	CurrentScreen = EFF_UIFlowScreen::TitleIntro;
+	ApplyViewTarget(Camera, 0.f);
+
+	// 타이틀 카메라를 대신 쓰는 경우에는 당기지 않는다 — 레벨에 놓은 타이틀 구도를 옮기면 안 된다.
+	const AFF_AtlasGlobeActor* Globe = AFF_AtlasGlobeActor::Find(this);
+	const UFF_UIAccessibilitySubsystem* Access = UFF_UIAccessibilitySubsystem::Get(this);
+	const UFF_AtlasSettings& Settings = GetAtlasSettings();
+	if (!Globe || Camera == TitleCamera || (Access && Access->IsReduceMotionEnabled())
+		|| Settings.IntroRevealSeconds <= 0.f)
+	{
+		return;
+	}
+
+	IntroRevealCamera = Camera;
+	IntroRevealCenter = Globe->GetActorLocation();
+	IntroRevealFinalLocation = Camera->GetActorLocation();
+	IntroRevealAlpha = 0.f;
+	bIntroRevealing = true;
+	TickIntroReveal(0.f);
+}
+
+void AFF_AtlasCameraRig::TickIntroReveal(float DeltaSeconds)
+{
+	if (!bIntroRevealing)
+	{
+		return;
+	}
+	ACameraActor* Camera = IntroRevealCamera.Get();
+	if (!Camera)
+	{
+		bIntroRevealing = false;
+		return;
+	}
+
+	const UFF_AtlasSettings& Settings = GetAtlasSettings();
+	IntroRevealAlpha = FMath::Min(1.f, IntroRevealAlpha + DeltaSeconds / FMath::Max(Settings.IntroRevealSeconds, KINDA_SMALL_NUMBER));
+
+	// ease-out-back: 빠르게 다가와 살짝 지나쳤다가 제자리에 선다. 그 지나침이 「펑」 이다.
+	const float X = IntroRevealAlpha - 1.f;
+	const float C1 = Settings.IntroRevealOvershoot;
+	const float Eased = 1.f + (C1 + 1.f) * X * X * X + C1 * X * X;
+	const float DistanceScale = FMath::Lerp(Settings.IntroRevealStartDistanceScale, 1.f, Eased);
+	Camera->SetActorLocation(IntroRevealCenter + (IntroRevealFinalLocation - IntroRevealCenter) * DistanceScale);
+
+	if (IntroRevealAlpha >= 1.f)
+	{
+		FinishIntroReveal();
+	}
+}
+
+void AFF_AtlasCameraRig::FinishIntroReveal()
+{
+	if (!bIntroRevealing)
+	{
+		return;
+	}
+	if (ACameraActor* Camera = IntroRevealCamera.Get())
+	{
+		Camera->SetActorLocation(IntroRevealFinalLocation);
+	}
+	bIntroRevealing = false;
+	IntroRevealCamera.Reset();
+}
+
+void AFF_AtlasCameraRig::EnsureDerivedIntroCamera()
+{
+	if (IntroCamera || DerivedIntroCamera || !TitleCamera)
+	{
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	Params.ObjectFlags |= RF_Transient;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ACameraActor* Camera = World->SpawnActor<ACameraActor>(
+		TitleCamera->GetActorLocation(), TitleCamera->GetActorRotation(), Params);
+	if (!Camera)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("AFF_AtlasCameraRig: 인트로 구도 카메라를 만들지 못했다. 인트로가 타이틀 구도로 보인다."));
+		return;
+	}
+
+	// 렌즈를 같게 둔다. 화각·후처리가 다르면 타이틀로 블렌드할 때 화면이 한 번 튄다.
+	const UCameraComponent* From = TitleCamera->GetCameraComponent();
+	UCameraComponent* To = Camera->GetCameraComponent();
+	if (From && To)
+	{
+		To->SetFieldOfView(From->FieldOfView);
+		To->SetConstraintAspectRatio(From->bConstrainAspectRatio);
+		To->SetAspectRatio(From->AspectRatio);
+		To->bOverrideAspectRatioAxisConstraint = From->bOverrideAspectRatioAxisConstraint;
+		To->SetAspectRatioAxisConstraint(From->AspectRatioAxisConstraint);
+		To->PostProcessSettings = From->PostProcessSettings;
+		To->SetPostProcessBlendWeight(From->PostProcessBlendWeight);
+	}
+	DerivedIntroCamera = Camera;
+}
+
+void AFF_AtlasCameraRig::FrameDerivedIntroCamera()
+{
+	ACameraActor* Camera = DerivedIntroCamera.Get();
+	const AFF_AtlasGlobeActor* Globe = AFF_AtlasGlobeActor::Find(this);
+	if (IntroCamera || !Camera || !Globe || !TitleCamera || bIntroRevealing)
+	{
+		return;
+	}
+
+	const UFF_AtlasSettings& Settings = GetAtlasSettings();
+	const FVector Center = Globe->GetActorLocation();
+	const double Radius = Globe->GetGlobeRadius() * Globe->GetActorScale3D().GetAbsMax();
+
+	// 타이틀 카메라가 있는 쪽에서 본다. 지구의 정면 축 규약을 타이틀과 같게 유지하고,
+	// 타이틀로 블렌드할 때 지구가 옆으로 비켜 가기만 하게 한다.
+	FVector Direction = TitleCamera->GetActorLocation() - Center;
+	if (!Direction.Normalize())
+	{
+		Direction = Globe->GetActorForwardVector();
+	}
+
+	// 화각은 가로 기준이다. 세로 화각은 화면비 규칙에 따라 정해진다.
+	const UCameraComponent* Lens = Camera->GetCameraComponent();
+	double Aspect = 16.0 / 9.0;
+	EAspectRatioAxisConstraint Constraint = AspectRatio_MaintainXFOV;
+	if (const APlayerController* Controller = GetOwningController())
+	{
+		if (const ULocalPlayer* Player = Controller->GetLocalPlayer())
+		{
+			Constraint = Player->AspectRatioAxisConstraint;
+			if (Player->ViewportClient)
+			{
+				FVector2D Size;
+				Player->ViewportClient->GetViewportSize(Size);
+				if (Size.X > 1.0 && Size.Y > 1.0)
+				{
+					Aspect = Size.X / Size.Y;
+				}
+			}
+		}
+	}
+	if (Lens && Lens->bOverrideAspectRatioAxisConstraint)
+	{
+		Constraint = Lens->AspectRatioAxisConstraint;
+	}
+	if (Lens && (Lens->bConstrainAspectRatio || Constraint == AspectRatio_MaintainYFOV))
+	{
+		Aspect = Lens->AspectRatio;
+	}
+
+	const double HalfHorizontal = FMath::DegreesToRadians(Lens ? Lens->FieldOfView : 90.f) * 0.5;
+	const double HalfVertical = FMath::Atan(FMath::Tan(HalfHorizontal) / FMath::Max(Aspect, 0.1));
+	const double Fraction = FMath::Clamp(static_cast<double>(Settings.IntroGlobeScreenHeightFraction), 0.2, 1.0);
+	const double Angular = FMath::Atan(Fraction * FMath::Tan(HalfVertical));
+	const double Distance = Radius / FMath::Max(FMath::Sin(Angular), 1e-3);
+
+	const FVector Location = Center + Direction * Distance;
+	const FVector Aim = Center + FVector::UpVector * (Settings.IntroGlobeAimOffset * Radius);
+	Camera->SetActorLocationAndRotation(Location, (Aim - Location).Rotation());
+
+	// 타이틀 카메라의 초점 거리를 그대로 두면 거리가 달라 지구가 흐려진다.
+	if (UCameraComponent* Mutable = Camera->GetCameraComponent();
+		Mutable && Mutable->PostProcessSettings.bOverride_DepthOfFieldFocalDistance)
+	{
+		Mutable->PostProcessSettings.DepthOfFieldFocalDistance = static_cast<float>(Distance - Radius);
+	}
+}
+
 void AFF_AtlasCameraRig::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ResetCountryInspection();
+	FinishIntroReveal();
+	if (DerivedIntroCamera)
+	{
+		DerivedIntroCamera->Destroy();
+		DerivedIntroCamera = nullptr;
+	}
 	Super::EndPlay(EndPlayReason);
 }
 

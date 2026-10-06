@@ -110,6 +110,35 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Transitions", meta = (ClampMin = "0.0", ClampMax = "5.0", ForceUnits = "s"))
 	float CountryMapTransitionSeconds = 0.6f;
 
+	// --- 타이틀 인트로 ---
+
+	/**
+	 * 인트로 「아무 키」 구도에서 지구 지름이 화면 높이의 몇 배인가. 위 로고와 아래 안내 자리를 남긴다.
+	 * 카메라 리그의 `IntroCamera` 를 비워 둘 때만 쓴다.
+	 */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Title Intro", meta = (ClampMin = "0.2", ClampMax = "1.0"))
+	float IntroGlobeScreenHeightFraction = 0.56f;
+
+	/** 카메라가 지구 중심보다 반지름의 몇 배만큼 위를 본다. 양수면 지구가 화면에서 조금 내려간다. 글자가 없으니 0(정가운데). */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Title Intro", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	float IntroGlobeAimOffset = 0.f;
+
+	/** 영상의 흰 빛이 걷히며 지구가 살짝 다가와 자리 잡는 시간(초). 변신은 영상이 했으니 크게 당기지 않는다. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Title Intro", meta = (ClampMin = "0.0", ClampMax = "3.0", ForceUnits = "s"))
+	float IntroRevealSeconds = 0.9f;
+
+	/** 당기기 시작할 때 카메라 거리 배율. 1 이면 당기지 않는다. 영상 마지막 구도와 크게 다르지 않게 작게 둔다. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Title Intro", meta = (ClampMin = "1.0", ClampMax = "6.0"))
+	float IntroRevealStartDistanceScale = 1.08f;
+
+	/** 끝에서 살짝 지나쳤다 돌아오는 정도(ease-out-back 계수). 0 이면 넘치지 않는다. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Title Intro", meta = (ClampMin = "0.0", ClampMax = "3.0"))
+	float IntroRevealOvershoot = 0.f;
+
+	/** 「아무 키」 뒤 가운데 구도에서 타이틀 구도로 옮겨 가는 시간(초). 지구가 오른쪽으로 비켜 가는 움직임이다. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Title Intro", meta = (ClampMin = "0.0", ClampMax = "5.0", ForceUnits = "s"))
+	float IntroToTitleSeconds = 1.4f;
+
 	// --- 표시 ---
 
 	/**

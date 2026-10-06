@@ -83,7 +83,7 @@ bool FFF_PrepPanelLayout::TryResolveCenteredPosition(const FGeometry& ViewportGe
 UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	GoldTextFormat = LOCTEXT("PrepStatus_GoldFormat", "{Amount} Gold");
+	GoldTextFormat = LOCTEXT("PrepStatus_GoldFormat", "{Amount}");
 	StaffTextFormat = LOCTEXT("PrepStatus_StaffFormat", "{Count}명");
 	DayStageTextFormat = LOCTEXT("PrepStatus_DayStageFormat", "{Day}일차 · {Stage}");
 

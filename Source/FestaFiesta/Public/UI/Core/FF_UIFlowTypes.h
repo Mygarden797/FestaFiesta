@@ -25,7 +25,14 @@ enum class EFF_UIFlowScreen : uint8
 	SaveList		UMETA(DisplayName = "저장 기록"),
 	Options			UMETA(DisplayName = "옵션"),
 	AtlasGlobe		UMETA(DisplayName = "지구본"),
-	AtlasCountry	UMETA(DisplayName = "국가 지도")
+	AtlasCountry	UMETA(DisplayName = "국가 지도"),
+
+	/**
+	 * 게임을 켜고 한 번만 보는 시작 화면·인트로 영상·「아무 키」 (`UFF_TitleIntroScreen`).
+	 * 끝나면 타이틀이 올라가고 이 화면은 스택과 히스토리에서 빠진다 — `뒤로` 로 돌아오지 않는다.
+	 * 맨 뒤에 붙인다. 앞에 끼우면 저장된 enum 값이 밀린다.
+	 */
+	TitleIntro		UMETA(DisplayName = "타이틀 인트로")
 };
 
 /**

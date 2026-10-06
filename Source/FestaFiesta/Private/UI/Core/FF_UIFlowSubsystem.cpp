@@ -28,8 +28,18 @@
 #include "UI/Frontend/FF_OptionsScreen.h"
 #include "UI/Frontend/FF_PlayHubScreen.h"
 #include "UI/Frontend/FF_SaveListScreen.h"
+#include "UI/Title/FF_TitleIntroScreen.h"
 #include "UI/Title/FF_TitleScreen.h"
 #include "UObject/UObjectGlobals.h"
+
+namespace FFUIFlowIntro
+{
+	/** 팀원이 PIE 를 켤 때마다 인트로를 보지 않게 끌 수 있는 스위치. 0 이면 바로 타이틀이다. */
+	TAutoConsoleVariable<int32> CVarIntroEnable(
+		TEXT("FF.Intro.Enable"), 1,
+		TEXT("1 이면 게임을 켜고 처음 프론트엔드에 들어올 때 시작 화면·인트로 영상·「아무 키」를 보여 준다. 0 이면 바로 타이틀."),
+		ECVF_Default);
+}
 
 void UFF_UIFlowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -111,6 +121,18 @@ void UFF_UIFlowSubsystem::Deinitialize()
 		}
 	}
 
+	if (TitleIntroRemovalTicker.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(TitleIntroRemovalTicker);
+	}
+	TitleIntroRemovalTicker.Reset();
+
+	if (UFF_TitleIntroScreen* Intro = TitleIntroScreen.Get())
+	{
+		Intro->OnIntroFinished.RemoveDynamic(this, &UFF_UIFlowSubsystem::HandleTitleIntroFinished);
+	}
+	TitleIntroScreen.Reset();
+
 	if (UFF_TitleScreen* Title = TitleScreen.Get())
 	{
 		Title->OnPlayRequested.RemoveDynamic(this, &UFF_UIFlowSubsystem::HandleTitlePlayRequested);
@@ -156,6 +178,20 @@ bool UFF_UIFlowSubsystem::IsVerbose() const
 {
 	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();
 	return Settings && Settings->bVerboseFlowLogging;
+}
+
+bool UFF_UIFlowSubsystem::ShouldPlayTitleIntro() const
+{
+	if (bTitleIntroPlayed || FFUIFlowIntro::CVarIntroEnable.GetValueOnGameThread() <= 0)
+	{
+		return false;
+	}
+
+	// 배선이 없으면 조용히 타이틀로 간다. 인트로 WBP 를 아직 받지 않은 팀원 PC 에서도 게임이 열려야 한다.
+	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();
+	const TSoftClassPtr<UFF_ActivatableScreenBase>* Found =
+		Settings ? Settings->FrontendScreens.Find(EFF_UIFlowScreen::TitleIntro) : nullptr;
+	return Found && !Found->IsNull();
 }
 
 UFF_UIRootLayout* UFF_UIFlowSubsystem::GetRootLayout() const
@@ -231,13 +267,14 @@ FText UFF_UIFlowSubsystem::GetActiveFestivalDisplayName() const
 FString UFF_UIFlowSubsystem::DescribeState() const
 {
 	return FString::Printf(
-		TEXT("Mode=%s Frontend=%s Country=%s Festival=%s RootLayout=%s PendingStart=%s"),
+		TEXT("Mode=%s Frontend=%s Country=%s Festival=%s RootLayout=%s PendingStart=%s IntroPlayed=%s"),
 		*UEnum::GetValueAsString(Mode),
 		*UEnum::GetValueAsString(CurrentFrontendScreen),
 		ActiveCountryId.IsNone() ? TEXT("(없음)") : *ActiveCountryId.ToString(),
 		ActiveFestivalId.IsNone() ? TEXT("(없음)") : *ActiveFestivalId.ToString(),
 		RootLayout.IsValid() ? TEXT("있음") : TEXT("없음"),
-		bPendingFestivalStart ? TEXT("true") : TEXT("false"));
+		bPendingFestivalStart ? TEXT("true") : TEXT("false"),
+		bTitleIntroPlayed ? TEXT("true") : TEXT("false"));
 }
 
 void UFF_UIFlowSubsystem::SetActiveCountry(FName CountryId)
@@ -355,6 +392,18 @@ void UFF_UIFlowSubsystem::HandlePostLogin(AGameModeBase* GameMode, APlayerContro
 			//   레벨에 막 들어온 참이라 블렌드할 `이전 모습`도 없다 — 바로 국가로 간다.
 			bInstantCameraForNextScreen = true;
 			GoToScreen(EFF_UIFlowScreen::AtlasCountry);
+		}
+		else if (PendingFrontendScreen == EFF_UIFlowScreen::Title && ShouldPlayTitleIntro())
+		{
+			// 게임을 켜고 처음 들어올 때만이다. 축제를 끝내고 돌아오거나 레벨을 다시 열면 바로 타이틀이다.
+			bTitleIntroPlayed = true;
+			GoToScreen(EFF_UIFlowScreen::TitleIntro);
+
+			// 인트로를 못 올렸으면 빈 화면으로 두지 않는다.
+			if (CurrentFrontendScreen != EFF_UIFlowScreen::TitleIntro)
+			{
+				GoToScreen(EFF_UIFlowScreen::Title);
+			}
 		}
 		else
 		{
@@ -608,6 +657,11 @@ void UFF_UIFlowSubsystem::GoToScreenImmediate(EFF_UIFlowScreen Screen)
 		Title->OnPlayRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleTitlePlayRequested);
 		Title->OnOptionsRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleTitleOptionsRequested);
 	}
+	else if (UFF_TitleIntroScreen* Intro = Cast<UFF_TitleIntroScreen>(Pushed))
+	{
+		TitleIntroScreen = Intro;
+		Intro->OnIntroFinished.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleTitleIntroFinished);
+	}
 	else if (UFF_PlayHubScreen* PlayHub = Cast<UFF_PlayHubScreen>(Pushed))
 	{
 		PlayHub->OnContinueRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandlePlayHubContinueRequested);
@@ -709,6 +763,63 @@ bool UFF_UIFlowSubsystem::GoBackImmediate()
 void UFF_UIFlowSubsystem::HandleTitlePlayRequested()
 {
 	GoToScreen(EFF_UIFlowScreen::PlayHub);
+}
+
+void UFF_UIFlowSubsystem::HandleTitleIntroFinished()
+{
+	UFF_TitleIntroScreen* Intro = TitleIntroScreen.Get();
+	if (CurrentFrontendScreen != EFF_UIFlowScreen::TitleIntro)
+	{
+		// 이미 넘어갔다. 키를 두 번 눌러 두 번 울린 경우다.
+		return;
+	}
+
+	GoToScreen(EFF_UIFlowScreen::Title);
+	if (CurrentFrontendScreen != EFF_UIFlowScreen::Title)
+	{
+		UE_LOG(LogFestaFiestaUI, Error,
+			TEXT("UFF_UIFlowSubsystem: 인트로 뒤에 타이틀을 올리지 못했다. 인트로 화면에 남는다."));
+		return;
+	}
+
+	// 인트로는 지나간 연출이다. 히스토리에 남기면 타이틀의 `뒤로` 가 인트로로 돌아간다.
+	FrontendHistory.RemoveAll([](const EFF_UIFlowScreen Screen) { return Screen == EFF_UIFlowScreen::TitleIntro; });
+
+	if (Intro)
+	{
+		Intro->OnIntroFinished.RemoveDynamic(this, &UFF_UIFlowSubsystem::HandleTitleIntroFinished);
+		ScheduleTitleIntroRemoval(Intro);
+	}
+	TitleIntroScreen.Reset();
+}
+
+void UFF_UIFlowSubsystem::ScheduleTitleIntroRemoval(UFF_TitleIntroScreen* Intro)
+{
+	if (TitleIntroRemovalTicker.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(TitleIntroRemovalTicker);
+	}
+
+	const TWeakObjectPtr<UFF_TitleIntroScreen> WeakIntro(Intro);
+	TitleIntroRemovalTicker = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateWeakLambda(this, [this, WeakIntro](float)
+		{
+			UFF_UIRootLayout* Layout = RootLayout.Get();
+			UFF_TitleIntroScreen* PendingIntro = WeakIntro.Get();
+			if (!Layout || !PendingIntro)
+			{
+				TitleIntroRemovalTicker.Reset();
+				return false;
+			}
+			if (Layout->IsScreenStackTransitioning())
+			{
+				return true;	// 크로스페이드가 끝날 때까지 기다린다.
+			}
+			Layout->RemoveScreen(PendingIntro);
+			TitleIntroRemovalTicker.Reset();
+			return false;
+		}),
+		0.1f);
 }
 
 void UFF_UIFlowSubsystem::HandleTitleOptionsRequested()
