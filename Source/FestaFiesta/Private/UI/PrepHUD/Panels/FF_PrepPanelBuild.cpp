@@ -58,6 +58,9 @@ UFF_PrepPanelBuild::UFF_PrepPanelBuild(const FObjectInitializer& ObjectInitializ
 {
 	// Dragging a virtualized list must scroll the list, not move the whole docked panel.
 	bAllowDragToMove = false;
+	// 2026-10-06 공용 패널 스크롤바·휠 소비는 배치 패널(한광훈 님 담당)의 기존 동작을 바꾸지 않도록 끈다.
+	ScrollStyle.bApply = false;
+	bConsumeMouseWheel = false;
 }
 
 void UFF_PrepPanelBuild::NativeOnInitialized()

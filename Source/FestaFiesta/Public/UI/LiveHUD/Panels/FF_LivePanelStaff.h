@@ -13,6 +13,8 @@ class UWidget;
 class UProgressBar;
 class UImage;
 class UTexture2D;
+class UWidgetSwitcher;
+class UFF_StaffTrainingWidget;
 
 /**
  * 인력이 남아도는 정도.
@@ -187,6 +189,7 @@ public:
 	TObjectPtr<UTexture2D> ResponseUnknownIcon;
 
 protected:
+	virtual void NativeOnInitialized() override;
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
 	virtual void NativeDestruct() override;
@@ -196,6 +199,30 @@ protected:
 
 	UFUNCTION()
 	void HandleStaffAssignmentChanged();
+
+	UFUNCTION()
+	void HandleStaffOverviewClicked();
+
+	UFUNCTION()
+	void HandleStaffTrainingClicked();
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UButton> Button_StaffOverview;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UButton> Button_StaffTraining;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UWidgetSwitcher> Switcher_StaffContent;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UFF_StaffTrainingWidget> Widget_StaffTraining;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UWidget> Indicator_StaffOverview;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UWidget> Indicator_StaffTraining;
 
 protected:
 	// --- 요약 3칸 ---
@@ -273,6 +300,10 @@ protected:
 	TSubclassOf<UUserWidget> AssignmentRowClass;
 
 private:
+	void SelectStaffTab(bool bTraining);
+	bool bStaffPanelOpen = false;
+	bool bTrainingSelected = false;
+
 	UFF_FestivalViewModelSubsystem* GetViewModel() const;
 
 	void BindViewModel();

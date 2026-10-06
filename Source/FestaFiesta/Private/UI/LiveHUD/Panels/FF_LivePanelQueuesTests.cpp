@@ -147,6 +147,44 @@ bool FFF_LiveQueueRules_Summary::RunTest(const FString& Parameters)
 		TestEqual(TEXT("모름은 따로 센다"), S.UnknownCount, 1);
 	}
 
+	{
+		// ④ 공연 중 잠시 안 받는 것은 정원 참·안 받음과 따로 센다. 공연이 끝나면 저절로 풀린다.
+		const FFF_LiveQueueSummary S = FFF_LiveQueueRules::BuildSummary({
+			MakeView(TEXT("A"), 0, 0, INDEX_NONE, EFF_LiveFacilityQueueState::Paused),
+			MakeView(TEXT("B"), 0, 0, INDEX_NONE, EFF_LiveFacilityQueueState::Paused) });
+		TestEqual(TEXT("공연 중 중단 2"), S.PausedCount, 2);
+		TestEqual(TEXT("정원 참에 섞지 않는다"), S.FullCount, 0);
+		TestEqual(TEXT("안 받음에 섞지 않는다"), S.NotAcceptingCount, 0);
+		TestEqual(TEXT("모름에 섞지 않는다"), S.UnknownCount, 0);
+	}
+
+	{
+		// ⑤ 관람석(메인 무대)은 줄이 없다. 대기열 집계·상태 개수에 넣지 않고 따로 센다.
+		FFF_LiveFacilityView Stage = MakeView(TEXT("무대"), 0, 0, 30, EFF_LiveFacilityQueueState::Full);
+		Stage.bSeatedVenue = true;
+		const FFF_LiveQueueSummary S = FFF_LiveQueueRules::BuildSummary({ Stage, MakeView(TEXT("부스"), 3, 1, 60) });
+		TestEqual(TEXT("관람석 1"), S.SeatedVenueCount, 1);
+		TestEqual(TEXT("줄 서는 시설 1"), S.QueueFacilityCount, 1);
+		TestEqual(TEXT("정원 참으로 세지 않는다"), S.FullCount, 0);
+		TestEqual(TEXT("평균은 부스만"), S.AverageWaitSeconds, 60);
+		TestEqual(TEXT("평균 표본 1"), S.AverageSampleCount, 1);
+
+		const FFF_LiveQueueSummary OnlyStage = FFF_LiveQueueRules::BuildSummary({ Stage });
+		TestFalse(TEXT("관람석만 있으면 줄 서는 시설이 없다"), OnlyStage.HasQueueFacility());
+		TestFalse(TEXT("줄도 없다"), OnlyStage.HasAnyQueue());
+	}
+
+	{
+		// ⑥ 길·타일·조명은 대기열이 없다. 늘 `미접수` 로 떠서 개수를 부풀리므로 화면과 집계에서 뺀다.
+		FFF_LiveFacilityView Path = MakeView(TEXT("길"), 0, 0, INDEX_NONE, EFF_LiveFacilityQueueState::Closed);
+		Path.bUsesQueue = false;
+		TestFalse(TEXT("길은 대기열 화면에 없다"), FFF_LiveQueueRules::IsShownInQueuePanel(Path));
+		const FFF_LiveQueueSummary S = FFF_LiveQueueRules::BuildSummary({ Path, Path, MakeView(TEXT("부스"), 2) });
+		TestEqual(TEXT("미접수로 세지 않는다"), S.NotAcceptingCount, 0);
+		TestEqual(TEXT("줄 서는 시설은 부스 하나"), S.QueueFacilityCount, 1);
+		TestEqual(TEXT("접수 중 1"), S.OpenCount, 1);
+	}
+
 	return true;
 }
 
@@ -172,6 +210,16 @@ bool FFF_LiveQueueRules_Sort::RunTest(const FString& Parameters)
 		TArray<FFF_LiveFacilityView> Same = { MakeView(TEXT("나나"), 5), MakeView(TEXT("가가"), 5) };
 		FFF_LiveQueueRules::SortByWaiting(Same);
 		TestEqual(TEXT("같으면 이름순"), Same[0].DisplayName.ToString(), FString(TEXT("가가")));
+	}
+
+	{
+		// 관람석은 줄 비교 대상이 아니라 표 맨 아래에 따로 둔다. 이름이 앞서도 마찬가지다.
+		FFF_LiveFacilityView Stage = MakeView(TEXT("가무대"), 0);
+		Stage.bSeatedVenue = true;
+		TArray<FFF_LiveFacilityView> Mixed = { Stage, MakeView(TEXT("하부스"), 0), MakeView(TEXT("나부스"), 4) };
+		FFF_LiveQueueRules::SortByWaiting(Mixed);
+		TestEqual(TEXT("줄이 긴 부스가 위"), Mixed[0].DisplayName.ToString(), FString(TEXT("나부스")));
+		TestEqual(TEXT("관람석은 맨 아래"), Mixed[2].DisplayName.ToString(), FString(TEXT("가무대")));
 	}
 
 	return true;

@@ -28,6 +28,21 @@ void UFF_PrepPanelBase::NativeOnInitialized()
 		// 다시 만드는 것보다 이쪽이 싸고, 디자이너가 실수로 다시 넣어도 같이 막힌다.
 		Button_Close->SetToolTipText(FText::GetEmpty());
 	}
+	ScrollStyle.ApplyTo(WidgetTree);
+}
+
+void UFF_PrepPanelBase::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+	// Designer 미리보기에도 같은 스크롤바를 보여 준다. 실행 중에는 NativeOnInitialized 가 이미 칠했다.
+	if (IsDesignTime()) { ScrollStyle.ApplyTo(WidgetTree); }
+}
+
+FReply UFF_PrepPanelBase::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	const FReply Reply = Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
+	// 목록이 끝까지 가서 안 받은 휠도 패널이 가진다. 놓아 주면 뒤의 카메라가 확대·축소된다.
+	return Reply.IsEventHandled() || !bConsumeMouseWheel ? Reply : FReply::Handled();
 }
 
 void UFF_PrepPanelBase::HandleCloseClicked()

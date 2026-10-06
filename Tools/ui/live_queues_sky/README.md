@@ -18,6 +18,10 @@
   `Queue_Waiting/InService/ExpectedWait/StatusColumn`을 함께 수정한다.
   기본100/100/145/180, 시설명은 남은 폭을 채운다.
 - 상태별 배경·문구·아이콘은 행 WBP Class Defaults의 `State Background Colors`, `State Labels`, `State Icons`.
+  2026-10-06에 `공연 중 중단`(Paused, 메인 공연 직전~공연 중 일반 시설 접수 휴지)이 추가됐다. 표에 없으면 공용 문구와 `미접수` 아이콘을 쓴다.
+- 메인 무대는 줄이 아니라 관람석으로 받아 대기열 집계에서 빠지고 표 맨 아래 `관람석` 행으로 나온다.
+  문구·툴팁·배경·아이콘은 행 WBP Class Defaults의 `Seated` 묶음, 줄 서는 시설이 없을 때 안내는 패널의 `No Queue Facility Text`.
+- 접수 중이 아닌 시설(정원 참·공연 중 중단·미접수)의 `지금 서면`은 `—`로 표시한다(원본이 0을 줄 수 있어 0초로 그리지 않는다).
   아이콘 크기는 `SizeBox_StatusIcon`20, 색은 `Image_Status`.
 - `Scroll_Queues`만 스크롤하고 제목·카드·머리글·하단 안내는 고정한다.
 - 대기열 WBP Class Defaults의 `Max Rows`0은 전체, 양수는 표시 개수 제한.

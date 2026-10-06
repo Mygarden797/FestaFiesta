@@ -1,6 +1,8 @@
 #include "UI/LiveHUD/Panels/FF_LiveSnsPostEntry.h"
 #include "Components/Border.h"
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
+#include "Engine/Texture2D.h"
 #define LOCTEXT_NAMESPACE "FestaFiestaLiveSnsEntry"
 
 UFF_LiveSnsPostEntry::UFF_LiveSnsPostEntry(const FObjectInitializer& ObjectInitializer)
@@ -21,6 +23,24 @@ UFF_LiveSnsPostEntry::UFF_LiveSnsPostEntry(const FObjectInitializer& ObjectIniti
 		{EFF_LiveSnsSentiment::Negative, FLinearColor::FromSRGBColor(FColor(255, 243, 218))},
 		{EFF_LiveSnsSentiment::Neutral, FLinearColor::FromSRGBColor(FColor(231, 244, 250))},
 		{EFF_LiveSnsSentiment::Unknown, FLinearColor::FromSRGBColor(FColor(238, 242, 243))}};
+}
+
+void UFF_LiveSnsPostEntry::ConfigureIconRowDefaults(const TMap<EFF_LiveSnsSentiment, UTexture2D*>& Icons,
+	const FLinearColor& Positive, const FLinearColor& Negative, const FLinearColor& Other)
+{
+	SentimentIcons.Reset();
+	for (const TPair<EFF_LiveSnsSentiment, UTexture2D*>& Pair : Icons) { SentimentIcons.Add(Pair.Key, Pair.Value); }
+	PositiveColor = Positive;
+	NegativeColor = Negative;
+	NeutralColor = UnknownColor = Other;
+	bTintSentimentIcon = true;
+}
+
+void UFF_LiveSnsPostEntry::SetNewMark(bool bNew)
+{
+	bNewMark = bNew;
+	// 점은 이름 바로 뒤에 붙는다. 없을 때는 자리도 없앤다(뒤 칸이 남은 폭을 채운다).
+	if (Image_NewDot) { Image_NewDot->SetVisibility(bNew ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed); }
 }
 
 void UFF_LiveSnsPostEntry::ConfigurePost(const FFF_LiveSocialPost& Post)
@@ -61,6 +81,17 @@ void UFF_LiveSnsPostEntry::RefreshPost()
 		const FText* Symbol = SentimentSymbols.Find(Sentiment);
 		Text_SentimentSymbol->SetText(Symbol ? *Symbol : LOCTEXT("UnknownSymbol", "·"));
 		Text_SentimentSymbol->SetColorAndOpacity(FSlateColor(Color));
+	}
+	if (Image_Sentiment)
+	{
+		// 브러시를 복사해 그림만 바꾼다. Designer 의 크기·여백은 그대로다.
+		const TObjectPtr<UTexture2D>* Icon = SentimentIcons.Find(Sentiment);
+		UTexture2D* Texture = Icon ? Icon->Get() : nullptr;
+		FSlateBrush IconBrush = Image_Sentiment->GetBrush();
+		IconBrush.SetResourceObject(Texture);
+		Image_Sentiment->SetBrush(IconBrush);
+		if (bTintSentimentIcon) { Image_Sentiment->SetColorAndOpacity(Color); }
+		Image_Sentiment->SetVisibility(Texture ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 	// 색과 기호·라벨을 동시에 사용한다.
 	if (Border_Sentiment)
