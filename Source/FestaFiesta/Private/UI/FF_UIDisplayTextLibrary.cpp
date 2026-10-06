@@ -116,6 +116,7 @@ FText UFF_UIDisplayTextLibrary::GetFacilityQueueStateText(EFF_LiveFacilityQueueS
 	case EFF_LiveFacilityQueueState::Closed:	return LOCTEXT("FacQueue_Closed", "닫힘");
 	case EFF_LiveFacilityQueueState::Blocked:	return LOCTEXT("FacQueue_Blocked", "막힘");
 	case EFF_LiveFacilityQueueState::Unknown:	return LOCTEXT("FacQueue_Unknown", "모름");
+	case EFF_LiveFacilityQueueState::Paused:	return LOCTEXT("FacQueue_Paused", "공연 중 중단");
 	}
 
 	return FText::GetEmpty();

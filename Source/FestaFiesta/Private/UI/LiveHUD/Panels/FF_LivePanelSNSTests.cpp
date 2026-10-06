@@ -79,4 +79,61 @@ bool FFF_SnsFilterLimitTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("빈 소스 동기화도 배지 해제"), State.PendingCount, 0);
 	return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsAutoInsertTest, "FestaFiesta.UI.SNS.AutoInsertNewMarks",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SnsAutoInsertTest::RunTest(const FString& Parameters)
+{
+	using namespace FFSnsTests;
+	FFF_LiveSnsFeedState State;
+	TArray<FFF_LiveSocialPost> Source = {Post(TEXT("기존1"), 10), Post(TEXT("기존2"), -10)};
+	State.Sync(Source, 30);
+	TestFalse(TEXT("구독 전부터 있던 글은 새 글 아님"), State.IsNew(0));
+
+	// 열려 있을 때 도착: 버튼 없이 맨 위에 들어가고 점이 붙는다.
+	Source.Insert(Post(TEXT("새1"), 20), 0);
+	State.NoteArrival();
+	TestTrue(TEXT("열린 목록에 바로 추가"), State.InsertArrival(Source[0], 30));
+	TestEqual(TEXT("새 글이 맨 위"), State.DisplayedPosts[0].Body.ToString(), FString(TEXT("새1")));
+	TestTrue(TEXT("새 글 점"), State.IsNew(0));
+	TestFalse(TEXT("기존 글은 점 없음"), State.IsNew(1));
+	TestEqual(TEXT("열려 있을 때는 배지 없음"), State.PendingCount, 0);
+
+	// 패널을 닫으면 읽음.
+	State.MarkAllSeen();
+	TestFalse(TEXT("닫은 뒤 점 해제"), State.IsNew(0));
+
+	// 닫혀 있는 동안 두 글 도착 → 배지, 열 때 다시 읽으면 두 글에만 점.
+	Source.Insert(Post(TEXT("새2"), -5, EFF_LiveSnsSentiment::Negative), 0);
+	State.NoteArrival(); State.RecordArrival(Source[0]);
+	Source.Insert(Post(TEXT("새3"), 5, EFF_LiveSnsSentiment::Positive), 0);
+	State.NoteArrival(); State.RecordArrival(Source[0]);
+	TestEqual(TEXT("닫힌 동안 배지 2"), State.PendingCount, 2);
+	State.Sync(Source, 30);
+	TestTrue(TEXT("새3 점"), State.IsNew(0));
+	TestTrue(TEXT("새2 점"), State.IsNew(1));
+	TestFalse(TEXT("이미 본 새1 점 없음"), State.IsNew(2));
+	TestEqual(TEXT("열면 배지 해제"), State.PendingCount, 0);
+
+	// 필터를 바꿔 다시 읽어도 같은 글에만 점.
+	State.Filter = EFF_LiveSnsFilter::Positive;
+	State.Sync(Source, 30);
+	TestEqual(TEXT("긍정 필터 첫 글"), State.DisplayedPosts[0].Body.ToString(), FString(TEXT("새3")));
+	TestTrue(TEXT("필터 바꿔도 새 글 점 유지"), State.IsNew(0));
+	TestFalse(TEXT("필터 바꿔도 읽은 글은 점 없음"), State.IsNew(1));
+	TestFalse(TEXT("필터 밖 글은 열린 목록에 안 들어감"), State.InsertArrival(Post(TEXT("아쉬움"), -3, EFF_LiveSnsSentiment::Negative), 30));
+
+	// 시간으로 지우기: 이 번호까지 읽음.
+	State.MarkSeenUpTo(State.DisplayedSerials[0]);
+	TestFalse(TEXT("시간이 지난 글 점 해제"), State.IsNew(0));
+
+	// 한도: 맨 위에 넣고 아래를 뺀다.
+	State.Filter = EFF_LiveSnsFilter::All;
+	State.Sync(Source, 2);
+	State.NoteArrival();
+	State.InsertArrival(Post(TEXT("새4"), 1), 2);
+	TestEqual(TEXT("한도 유지"), State.DisplayedPosts.Num(), 2);
+	TestEqual(TEXT("번호도 같은 수"), State.DisplayedSerials.Num(), 2);
+	TestEqual(TEXT("한도에서도 새 글이 위"), State.DisplayedPosts[0].Body.ToString(), FString(TEXT("새4")));
+	return true;
+}
 #endif

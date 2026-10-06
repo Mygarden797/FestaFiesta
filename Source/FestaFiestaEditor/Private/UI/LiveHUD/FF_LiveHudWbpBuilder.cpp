@@ -1552,7 +1552,7 @@ namespace FFLiveHudWbpBuilder
 		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_SatisfactionNote"),
 			Palette->InGame.InkMuted, 12,
 			LOCTEXT("LiveReportPv_SatNote",
-				"평가 점수는 관객 만족도에 피날레·연출 보정을 더한 값입니다 (8 차이)."), 18.f);
+				"평가 만족도는 관객 만족도에 피날레 보너스를 반영한 값입니다."), 18.f);
 
 		// --- 운영 ---
 		const bool bOpsOk =
@@ -1574,7 +1574,7 @@ namespace FFLiveHudWbpBuilder
 		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_MissingNote"),
 			Palette->InGame.InkFaint, 12,
 			LOCTEXT("LiveReportPv_Missing",
-				"어느 시설이 만족도를 깎았는지는 아직 볼 수 없습니다. 원인 집계가 붙으면 여기에 들어갑니다."), 18.f);
+				"오늘의 정산을 마무리하고 있습니다."), 18.f);
 
 		// --- 다음 날로. 결과를 읽는 자리 **바로 아래**에 둔다 ---
 		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_AdvanceReason"),
@@ -1680,7 +1680,7 @@ namespace FFLiveHudWbpBuilder
 		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_MissingNote"),
 			Palette->InGame.InkFaint, 12,
 			LOCTEXT("LiveFinalePv_Missing",
-				"피날레는 셋업에서만 고를 수 있고 축제당 한 번입니다. 여기서는 결과만 봅니다."), 0.f);
+				"피날레는 마지막 날 아침 점검에서 한 번만 구매할 수 있습니다. 여기서는 결과만 봅니다."), 0.f);
 
 		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
 		{

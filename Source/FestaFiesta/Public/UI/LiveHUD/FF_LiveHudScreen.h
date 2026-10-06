@@ -451,6 +451,9 @@ public:
 	bool IsPanelDragAllowed() const;
 
 private:
+	UFUNCTION()
+	void HandleDailyReportReady(int32 Day);
+	void TryShowDailyReport();
 
 	/** 없으면 만들어 호스트에 넣는다. 만든 것은 캐시한다. */
 	UFF_LivePanelBase* EnsurePanel(EFF_LiveTab Tab);

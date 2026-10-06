@@ -2,7 +2,7 @@
 
 전체 인원/정원 · 사건 대응 중 · 대응 중이 아닌 인원 카드와 인원 구성, 대응 현황을 표시한다.
 미배정 인원은 별도로 표시한다. 남은 인원을 실제 출동 가능 인원으로 단정하지 않는다.
-라이브 중 고용·승급·배정 명령은 추가하지 않는다.
+라이브 중 고용·배정 명령은 이 현황 화면에서 추가하지 않는다. 스태프 숙련도·승급은 후속 [P7 공통 숙련도 탭](../staff_training/README.md)으로 연결한다.
 
 ## 에디터에서 수정
 
@@ -19,6 +19,9 @@
   위에 겹친 `Progress_BaseCapacity`의 Fill Image는 기본 인원 진초록, Background Image는 투명으로 유지한다.
   실제 비율은 전체÷정원과 기본÷정원을 사용한다. 예: 7/24면 총 막대29.17%, 기본6이면 기본25%다.
   두 막대의 색·브러시·크기는 Designer, 비율과 미확인 표시만 코드에서 갱신한다.
+  두 막대의 Overlay 슬롯은 가로·세로 **Fill**이어야 칸을 채운다. 기본값(왼쪽 위)이면 약 20px로 줄어든다.
+  2026-10-06 이전에 만든 WBP는 `FF.FixLiveStaffCapacityBar`(`fix_capacity_bar.py`)로 두 슬롯만 고쳤다.
+  막대 길이는 `Staff_SizeBox_CapacityBar`가 들어 있는 행 폭, 두께는 그 SizeBox 높이로 조절한다.
 - 기본/고용/미배정: `Text_BaseStaff`, `Text_HiredStaff`, `Text_UnassignedStaff`.
   `Staff_UnassignedBorder`에서 미배정 영역 색·패딩을 수정한다.
 - 대응 아이콘: `Staff_SizeBox_ResponseIcon`60×60, `Image_ResponseStatus` Tint.

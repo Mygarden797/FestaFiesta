@@ -10,6 +10,7 @@
 // TODO: Atlas 작업이 정리되면 `UI/Widgets/` 로 옮긴다 (지금 옮기면 진행 중인 작업과 충돌한다).
 #include "UI/Atlas/FF_AtlasScreenGeo.h"
 #include "UI/PrepHUD/FF_PrepHudTypes.h"
+#include "UI/Widgets/FF_PanelScrollStyle.h"
 
 #include "FF_PrepPanelBase.generated.h"
 
@@ -59,8 +60,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep")
 	void RequestClose();
 
+	/** 패널 안 스크롤바 모양. 끄면 각 ScrollBox 의 Designer 스타일을 그대로 쓴다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Scroll")
+	FFF_PanelScrollStyle ScrollStyle;
+
+	/**
+	 * 패널 위에서 굴린 휠을 패널이 가진다. 끝까지 스크롤해 목록이 안 받은 휠이 뒤의 게임
+	 * 화면까지 내려가 카메라가 확대·축소되던 것을 막는다 (2026-10-06 사용자 보고).
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Scroll")
+	bool bConsumeMouseWheel = true;
+
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativePreConstruct() override;
+	virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 	/** 오른쪽 위 닫기 버튼. 없으면 하단 바의 탭을 다시 눌러 닫는다. */
 	UFUNCTION()

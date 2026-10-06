@@ -98,7 +98,7 @@ bool FFF_LivePanelCenterScopeTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("라이브 7패널은 viewport 중앙을 쓴다"), Layout.UsesViewportCenter(Tab));
 	}
-	TestFalse(TEXT("리포트의 기존 도킹을 보존한다"), Layout.UsesViewportCenter(EFF_LiveTab::Report));
+	TestTrue(TEXT("일일 결산도 viewport 중앙을 쓴다"), Layout.UsesViewportCenter(EFF_LiveTab::Report));
 	TestFalse(TEXT("피날레의 기존 도킹을 보존한다"), Layout.UsesViewportCenter(EFF_LiveTab::Finale));
 	for (EFF_LivePanelDock Dock : { EFF_LivePanelDock::Designer, EFF_LivePanelDock::Left, EFF_LivePanelDock::Right })
 	{

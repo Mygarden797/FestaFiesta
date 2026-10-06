@@ -281,6 +281,8 @@ struct FESTAFIESTA_API FFF_LiveHudRules
 	 * 홍보 프리뷰·노을에서도 열 수 있게 두는 이유는 전부 **읽기 전용 정보**라서다.
 	 * 미리 열어 둔다고 잘못될 것이 없고, 단계가 넘어갈 때 패널이 닫혔다 다시 열리면
 	 * 오히려 눈이 매번 다시 찾는다.
+	 *
+	 * `피날레` 탭은 2026-10-06부터 어느 단계에서도 띄우지 않는다. 인자는 호환을 위해 남겼다.
 	 */
 	static bool IsTabVisible(EFF_LiveTab Tab, EFF_FestivalStage Stage, bool bHasPurchasedFinale);
 

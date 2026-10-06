@@ -131,7 +131,7 @@ UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 	PanelLayouts.Add(EFF_PrepHudTab::Promotion,
 		{ EFF_PrepPanelDock::Center, FVector2D(1080.0, 600.0), FVector2D::ZeroVector });
 
-	// 피날레 — 등급 카드를 가로로 5장 놓아야 해서 가장 넓다.
+	// 피날레 — C/B/A/S 등급 카드 4장과 구매 견적을 나란히 비교한다.
 	PanelLayouts.Add(EFF_PrepHudTab::Finale,
 		{ EFF_PrepPanelDock::Center, FVector2D(1360.0, 700.0), CenterNudge });
 

@@ -3,6 +3,7 @@
 #include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
 
 #include "Components/Button.h"
+#include "Components/Slider.h"
 #include "Components/TextBlock.h"
 #include "Economy/FF_EconomyDisplayTextLibrary.h"
 #include "Engine/GameInstance.h"
@@ -49,7 +50,7 @@ EFF_PrepCapacityRisk FFF_PrepCheckRules::ClassifyCapacityRisk(
 FFF_PrepDayEstimate FFF_PrepCheckRules::BuildDayEstimate(
 	int32 TodayStaffHireCost,
 	int32 ExpectedVisitors,
-	int32 AdmissionFee,
+	int32 ExpectedAdmissionRevenue,
 	int32 DailyVisitorGoal,
 	int32 DailyGoalBonus)
 {
@@ -61,9 +62,9 @@ FFF_PrepDayEstimate FFF_PrepCheckRules::BuildDayEstimate(
 		Result.StaffHireCost = TodayStaffHireCost;
 	}
 
-	if (ExpectedVisitors != INDEX_NONE && AdmissionFee != INDEX_NONE)
+	if (ExpectedVisitors >= 0 && ExpectedAdmissionRevenue >= 0)
 	{
-		Result.ExpectedAdmissionRevenue = ExpectedVisitors * AdmissionFee;
+		Result.ExpectedAdmissionRevenue = ExpectedAdmissionRevenue;
 	}
 
 	// 목표 보너스의 0 은 `모름` 이 아니라 **못 받는다**는 확정 정보다.
@@ -126,9 +127,20 @@ UFF_PrepPanelCheck::UFF_PrepPanelCheck(const FObjectInitializer& ObjectInitializ
 	DailyGoalValueFormat = LOCTEXT("PrepCheck_DailyGoalValueFormat", "{Count}명");
 	DailyGoalBonusFormat = LOCTEXT("PrepCheck_DailyGoalBonusFormat", "달성 시 +{Amount} Gold");
 	GoldValueFormat = LOCTEXT("PrepCheck_GoldValueFormat", "{Amount} Gold");
+	HeldGoldValueFormat = LOCTEXT("PrepCheck_HeldGoldValueFormat", "{Amount}");
 	RequiredFacilityFormat = LOCTEXT("PrepCheck_RequiredFacilityFormat", "{Name} · {Installed}/{Required} · {State}");
 	NoRequiredFacilitiesText = LOCTEXT("PrepCheck_NoRequiredFacilities", "필수 시설 조건 없음");
 	OpenGateReadyText = LOCTEXT("PrepCheck_OpenGateReady", "✓ 준비가 완료되었습니다.");
+	AdmissionValueFormat = LOCTEXT("AdmissionValue", "{Amount}");
+	AppliedAdmissionFormat = LOCTEXT("AdmissionAppliedValue", "현재 적용: {Amount}");
+	AdmissionRangeFormat = LOCTEXT("AdmissionRange", "{Min} ~ {Max} · 기준 입장료 {Reference}");
+	AdmissionAppliedText = LOCTEXT("AdmissionApplied", "현재 적용된 입장료입니다.");
+	AdmissionDraftText = LOCTEXT("AdmissionDraft", "미리보기 · 적용을 눌러 변경하세요.");
+	AdmissionLockedText = LOCTEXT("AdmissionLocked", "운영 중에는 입장료를 바꿀 수 없습니다.");
+	AdmissionUnavailableText = LOCTEXT("AdmissionUnavailable", "입장료 정보를 확인할 수 없습니다.");
+	AdmissionGateDraftText = LOCTEXT("AdmissionGateDraft", "입장료 변경을 적용하거나 되돌린 뒤 시작하세요.");
+	AdmissionDeltaFormat = LOCTEXT("AdmissionDelta", "현재 적용값 대비 {Sign}{Count}명");
+	AdmissionNoChangeText = LOCTEXT("AdmissionNoChange", "현재 적용값 대비 변동 없음");
 }
 
 void UFF_PrepPanelCheck::NativePreConstruct()
@@ -152,6 +164,11 @@ void UFF_PrepPanelCheck::NativeOnInitialized()
 	Super::NativeOnInitialized();
 
 	CollectWeatherChoices();
+	if (Slider_AdmissionFee) Slider_AdmissionFee->OnValueChanged.AddUniqueDynamic(this, &ThisClass::HandleAdmissionValueChanged);
+	if (Button_AdmissionDecrease) Button_AdmissionDecrease->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAdmissionDecrease);
+	if (Button_AdmissionIncrease) Button_AdmissionIncrease->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAdmissionIncrease);
+	if (Button_AdmissionApply) Button_AdmissionApply->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAdmissionApply);
+	if (Button_AdmissionReset) Button_AdmissionReset->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAdmissionReset);
 
 	if (Button_ContinueBuild)
 	{
@@ -180,6 +197,8 @@ void UFF_PrepPanelCheck::NativeOnPanelOpened()
 	}
 
 	BindViewModel();
+	DraftAdmissionFee = AppliedAdmissionFee = INDEX_NONE;
+	AdmissionResultText = FText::GetEmpty();
 	RefreshAll();
 }
 
@@ -192,7 +211,16 @@ void UFF_PrepPanelCheck::NativeOnPanelClosed()
 	}
 
 	UnbindViewModel();
+	DraftAdmissionFee = AppliedAdmissionFee = INDEX_NONE;
+	AdmissionResultText = FText::GetEmpty();
 	Super::NativeOnPanelClosed();
+}
+
+void UFF_PrepPanelCheck::NativeDestruct()
+{
+	if (UFF_PrepHudBar* Bar = GetOwningBar()) Bar->OnCtaStateChanged.RemoveDynamic(this, &ThisClass::HandleCtaStateChanged);
+	UnbindViewModel();
+	Super::NativeDestruct();
 }
 
 void UFF_PrepPanelCheck::HandleCtaStateChanged()
@@ -242,7 +270,7 @@ void UFF_PrepPanelCheck::BindViewModel()
 	// 홍보를 사면 예상 방문객이 오른다. 그 값이 수입·목표 보너스·혼잡 판정까지 바꾼다.
 	CachedViewModel->OnExpectedVisitorsChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
 	// 입장료를 바꾸면 예상 입장 수입이 바뀐다. 예상 방문객이 그대로여도(배수 하한) 다시 그려야 한다.
-	CachedViewModel->OnAdmissionFeeChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
+	CachedViewModel->OnAdmissionFeeChanged.AddUniqueDynamic(this, &ThisClass::HandleAdmissionFeeChanged);
 	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
 	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleStageViewChanged);
 	CachedViewModel->OnScheduledProgramsChanged.AddUniqueDynamic(this, &ThisClass::HandleScheduledProgramsChanged);
@@ -259,7 +287,7 @@ void UFF_PrepPanelCheck::UnbindViewModel()
 		CachedViewModel->OnWeatherChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleWeatherChanged);
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
 		CachedViewModel->OnExpectedVisitorsChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
-		CachedViewModel->OnAdmissionFeeChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
+		CachedViewModel->OnAdmissionFeeChanged.RemoveDynamic(this, &ThisClass::HandleAdmissionFeeChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleStageViewChanged);
 		CachedViewModel->OnScheduledProgramsChanged.RemoveDynamic(this, &ThisClass::HandleScheduledProgramsChanged);
@@ -387,18 +415,134 @@ void UFF_PrepPanelCheck::RefreshWeather()
 // 갱신
 // =============================================================================
 
+bool UFF_PrepPanelCheck::HasAdmissionDraft() const
+{
+	return bAdmissionRangeValid && DraftAdmissionFee != AppliedAdmissionFee;
+}
+
+void UFF_PrepPanelCheck::RefreshAdmission()
+{
+	TGuardValue<bool> RefreshGuard(bRefreshingAdmission, true);
+	const UFF_FestivalViewModelSubsystem* VM = GetViewModel();
+	int32 Reference = INDEX_NONE;
+	AdmissionMin = AdmissionMax = INDEX_NONE;
+	if (VM) VM->GetAdmissionFeeRange(AdmissionMin, AdmissionMax, Reference);
+	const int32 ActualFee = VM ? VM->GetAdmissionFeeGold() : INDEX_NONE;
+	bAdmissionRangeValid = ActualFee >= 0 && AdmissionMin >= 0 && AdmissionMax >= AdmissionMin && Reference >= 0;
+	const bool bCanEdit = bAdmissionRangeValid && VM && VM->CanSetAdmissionFeeNow() && !bAdmissionRequestInFlight;
+	if (!bAdmissionRangeValid)
+	{
+		AppliedAdmissionFee = DraftAdmissionFee = INDEX_NONE;
+		ExpectedAdmissionRevenue = INDEX_NONE;
+		if (VM) ExpectedVisitorsMin = ExpectedVisitorsMax = INDEX_NONE;
+	}
+	else
+	{
+		// 외부 변경·로드는 원본을 따른다. 금화/예측 이벤트만으로 작성 중인 초안을 덮지 않는다.
+		if (DraftAdmissionFee == INDEX_NONE || (!bAdmissionRequestInFlight && ActualFee != AppliedAdmissionFee)
+			|| !VM->CanSetAdmissionFeeNow())
+		{
+			DraftAdmissionFee = ActualFee;
+		}
+		AppliedAdmissionFee = ActualFee;
+		DraftAdmissionFee = FMath::Clamp(DraftAdmissionFee, AdmissionMin, AdmissionMax);
+	}
+	if (Slider_AdmissionFee)
+	{
+		Slider_AdmissionFee->SetMinValue(0.f); Slider_AdmissionFee->SetMaxValue(1.f);
+		const int32 Span = bAdmissionRangeValid ? AdmissionMax - AdmissionMin : 0;
+		Slider_AdmissionFee->SetStepSize(Span > 0 ? 1.f / Span : 1.f);
+		Slider_AdmissionFee->SetValue(Span > 0 ? static_cast<float>(DraftAdmissionFee - AdmissionMin) / Span : 0.f);
+		Slider_AdmissionFee->SetIsEnabled(bCanEdit && Span > 0);
+	}
+	if (Button_AdmissionDecrease) Button_AdmissionDecrease->SetIsEnabled(bCanEdit && DraftAdmissionFee > AdmissionMin);
+	if (Button_AdmissionIncrease) Button_AdmissionIncrease->SetIsEnabled(bCanEdit && DraftAdmissionFee < AdmissionMax);
+	if (Button_AdmissionApply) Button_AdmissionApply->SetIsEnabled(bCanEdit && HasAdmissionDraft());
+	if (Button_AdmissionReset) Button_AdmissionReset->SetIsEnabled(bCanEdit && HasAdmissionDraft());
+	const FText Unknown = LOCTEXT("PrepCheck_Unknown", "아직 알 수 없습니다");
+	SetTextOrHide(Text_AdmissionFeeValue, bAdmissionRangeValid
+		? FText::Format(AdmissionValueFormat, FFormatNamedArguments{{TEXT("Amount"), FText::AsNumber(DraftAdmissionFee)}}) : Unknown);
+	SetTextOrHide(Text_AppliedAdmissionFee, bAdmissionRangeValid
+		? FText::Format(AppliedAdmissionFormat, FFormatNamedArguments{{TEXT("Amount"), FText::AsNumber(AppliedAdmissionFee)}}) : Unknown);
+	SetTextOrHide(Text_AdmissionFeeRange, bAdmissionRangeValid
+		? FText::Format(AdmissionRangeFormat, FFormatNamedArguments{
+			{TEXT("Min"), FText::AsNumber(AdmissionMin)}, {TEXT("Max"), FText::AsNumber(AdmissionMax)},
+			{TEXT("Reference"), FText::AsNumber(Reference)}}) : FText::GetEmpty());
+	SetTextOrHide(Text_AdmissionFeeState, !bAdmissionRangeValid ? AdmissionUnavailableText
+		: (!AdmissionResultText.IsEmpty() ? AdmissionResultText
+			: (!VM->CanSetAdmissionFeeNow() ? AdmissionLockedText : (HasAdmissionDraft() ? AdmissionDraftText : AdmissionAppliedText))));
+	if (bAdmissionRangeValid)
+	{
+		// 입장료 이벤트 직후의 VM 방문객 캐시는 아직 이전 값일 수 있어 원본 예보를 읽는다.
+		const FFF_VisitorForecast Applied = VM->GetVisitorForecast();
+		const FFF_VisitorForecast Preview = HasAdmissionDraft()
+			? VM->PreviewVisitorForecast(VM->GetPurchasedPromotion(), DraftAdmissionFee) : Applied;
+		ExpectedVisitorsMin = ExpectedVisitorsMax = Preview.ExpectedVisitors;
+		ExpectedAdmissionRevenue = Preview.ExpectedAdmissionRevenue;
+		const int32 Delta = Preview.ExpectedVisitors - Applied.ExpectedVisitors;
+		SetTextOrHide(Text_AdmissionPreviewDelta, Delta == 0 ? AdmissionNoChangeText
+			: FText::Format(AdmissionDeltaFormat, FFormatNamedArguments{
+				{TEXT("Sign"), FText::FromString(Delta > 0 ? TEXT("+") : TEXT("−"))},
+				{TEXT("Count"), FText::AsNumber(FMath::Abs(Delta))}}));
+	}
+	else SetTextOrHide(Text_AdmissionPreviewDelta, Unknown);
+	SetTextOrHide(Text_AdmissionPreviewRevenue, ExpectedAdmissionRevenue >= 0
+		? FText::AsNumber(ExpectedAdmissionRevenue) : Unknown);
+}
+
+void UFF_PrepPanelCheck::SetAdmissionDraft(int32 NewFee)
+{
+	const UFF_FestivalViewModelSubsystem* VM = GetViewModel();
+	if (bRefreshingAdmission || bAdmissionRequestInFlight) return;
+	if (!bAdmissionRangeValid || !VM || !VM->CanSetAdmissionFeeNow()) { RefreshAll(); return; }
+	DraftAdmissionFee = FMath::Clamp(NewFee, AdmissionMin, AdmissionMax);
+	AdmissionResultText = FText::GetEmpty();
+	RefreshAll();
+}
+
+void UFF_PrepPanelCheck::HandleAdmissionValueChanged(float NewValue)
+{
+	if (!bAdmissionRangeValid || !FMath::IsFinite(NewValue)) return;
+	SetAdmissionDraft(AdmissionMin + FMath::RoundToInt(FMath::Clamp(NewValue, 0.f, 1.f) * (AdmissionMax - AdmissionMin)));
+}
+
+void UFF_PrepPanelCheck::HandleAdmissionDecrease() { SetAdmissionDraft(DraftAdmissionFee - 1); }
+void UFF_PrepPanelCheck::HandleAdmissionIncrease() { SetAdmissionDraft(DraftAdmissionFee + 1); }
+
+void UFF_PrepPanelCheck::HandleAdmissionReset()
+{
+	if (bAdmissionRequestInFlight) return;
+	DraftAdmissionFee = INDEX_NONE;
+	AdmissionResultText = FText::GetEmpty();
+	RefreshAll();
+}
+
+void UFF_PrepPanelCheck::HandleAdmissionApply()
+{
+	UFF_FestivalViewModelSubsystem* VM = GetViewModel();
+	if (!VM || bAdmissionRequestInFlight || !HasAdmissionDraft()) return;
+	const int32 RequestedFee = DraftAdmissionFee;
+	bAdmissionRequestInFlight = true;
+	RefreshAdmission();
+	RefreshOpenGate();
+	const EFF_AdmissionFeeResult Result = VM->RequestSetAdmissionFee(RequestedFee);
+	bAdmissionRequestInFlight = false;
+	// 동일 값은 성공해도 이벤트가 없으므로 반환 뒤 확정 값을 다시 읽는다.
+	AppliedAdmissionFee = DraftAdmissionFee = VM->GetAdmissionFeeGold();
+	AdmissionResultText = UFF_EconomyDisplayTextLibrary::GetAdmissionFeeResultText(Result);
+	RefreshAll();
+}
+
+void UFF_PrepPanelCheck::HandleAdmissionFeeChanged(int32 NewValue)
+{
+	if (!bAdmissionRequestInFlight) AdmissionResultText = FText::GetEmpty();
+	RefreshAll();
+}
+
 void UFF_PrepPanelCheck::RefreshAll()
 {
-	// 🔴 소유자 값을 **먼저** 읽는다. 아래 갱신들이 전부 이 값을 본다 (수입·보너스·혼잡).
-	//
-	// 경제는 하루 단일 예상치만 준다. 범위 API 가 없어 Min·Max 에 같은 값을 넣고,
-	// 표시 쪽이 둘이 같으면 `500명`으로 그린다. 실제 데이터가 미확인이 되면 이전 수치를 남기지 않는다.
-	if (const UFF_FestivalViewModelSubsystem* SourceViewModel = GetViewModel())
-	{
-		const int32 Expected = SourceViewModel->GetExpectedVisitors();
-		ExpectedVisitorsMin = Expected;
-		ExpectedVisitorsMax = Expected;
-	}
+	// 미리보기/적용 예보를 먼저 읽고 수용 판정과 견적도 같은 원본 예측값을 표시한다.
+	RefreshAdmission();
 
 	RefreshWeather();
 	RefreshCapacity();
@@ -412,7 +556,7 @@ void UFF_PrepPanelCheck::RefreshAll()
 	DayArgs.Add(TEXT("Day"), FText::AsNumber(ViewModel ? ViewModel->GetCurrentDay() : 1));
 	SetTextOrHide(Text_DayLabel, FText::Format(DayLabelFormat, DayArgs));
 	const int32 Gold = ViewModel ? ViewModel->GetGold() : INDEX_NONE;
-	SetTextOrHide(Text_Gold, FormatGoldOrUnknown(Gold));
+	SetTextOrHide(Text_Gold, FormatGoldOrUnknown(Gold, HeldGoldValueFormat));
 
 	const int32 Goal = ViewModel ? ViewModel->GetDailyVisitorGoal() : INDEX_NONE;
 	const int32 Bonus = ViewModel ? ViewModel->GetDailyGoalBonusGold() : INDEX_NONE;
@@ -488,7 +632,7 @@ void UFF_PrepPanelCheck::RefreshCapacity()
 	else
 	{
 		Detail = FText::Format(
-			LOCTEXT("PrepCheck_CapacityDetail", "정원 {0}명 대비 최대 예상 {1}명"),
+			LOCTEXT("PrepCheck_CapacityDetail", "정원 {0}명 대비 예상 {1}명"),
 			FText::AsNumber(SoftCapacity), FText::AsNumber(WorstCaseVisitors));
 	}
 	SetTextOrHide(Text_CapacityDetail, Detail);
@@ -562,8 +706,9 @@ void UFF_PrepPanelCheck::RefreshOpenGate()
 	}
 
 	const EFF_PrepCtaState State = Bar->GetCtaState();
-	SetTextOrHide(Text_OpenGateReason, State == EFF_PrepCtaState::Ready
-		? OpenGateReadyText : Bar->GetCtaReason());
+	const bool bDraftBlocks = HasAdmissionDraft() || bAdmissionRequestInFlight;
+	SetTextOrHide(Text_OpenGateReason, bDraftBlocks ? AdmissionGateDraftText : (State == EFF_PrepCtaState::Ready
+		? OpenGateReadyText : Bar->GetCtaReason()));
 
 	// 문구는 단계마다 다르다. 셋업에서 `개장하기` 를 띄우면 하루를 건너뛰는 것처럼 읽힌다.
 	const FText Label = Bar->GetCtaLabelText();
@@ -575,7 +720,7 @@ void UFF_PrepPanelCheck::RefreshOpenGate()
 	if (Button_OpenGate)
 	{
 		// 버튼과 사유가 하단 바의 동일한 판정을 사용한다.
-		Button_OpenGate->SetIsEnabled(State == EFF_PrepCtaState::Ready);
+		Button_OpenGate->SetIsEnabled(State == EFF_PrepCtaState::Ready && !bDraftBlocks);
 		Button_OpenGate->SetVisibility(State == EFF_PrepCtaState::Hidden
 			? ESlateVisibility::Collapsed
 			: ESlateVisibility::Visible);
@@ -588,9 +733,8 @@ void UFF_PrepPanelCheck::RefreshEstimate()
 
 	const FFF_PrepDayEstimate Estimate = FFF_PrepCheckRules::BuildDayEstimate(
 		ViewModel ? ViewModel->GetTodayStaffHireCostGold() : INDEX_NONE,
-		// 수입은 **범위의 아래쪽**으로 잡는다. 위쪽으로 잡으면 개장 판단이 낙관적으로 기운다.
 		ExpectedVisitorsMin,
-		ViewModel ? ViewModel->GetAdmissionFeeGold() : INDEX_NONE,
+		ExpectedAdmissionRevenue,
 		ViewModel ? ViewModel->GetDailyVisitorGoal() : INDEX_NONE,
 		ViewModel ? ViewModel->GetDailyGoalBonusGold() : INDEX_NONE);
 
@@ -660,6 +804,7 @@ void UFF_PrepPanelCheck::HandleContinueBuildClicked()
 
 void UFF_PrepPanelCheck::HandleOpenGateClicked()
 {
+	if (HasAdmissionDraft() || bAdmissionRequestInFlight) { RefreshOpenGate(); return; }
 	// 개장은 하단 바의 CTA 와 **같은 요청**이다. 여기서 Stage 를 직접 바꾸지 않는다 —
 	// 두 곳이 각자 판정하면 한쪽이 막힌 상태에서 다른 쪽이 통과하는 화면이 된다.
 	if (UFF_PrepHudBar* Bar = GetOwningBar())
@@ -674,7 +819,7 @@ void UFF_PrepPanelCheck::HandleOpenGateClicked()
 
 void UFF_PrepPanelCheck::HandleWeatherChanged(EFF_WeatherType NewWeather)
 {
-	RefreshWeather();
+	RefreshAll();
 }
 
 void UFF_PrepPanelCheck::HandleGoldChanged(int32 NewValue)
@@ -709,6 +854,8 @@ void UFF_PrepPanelCheck::HandlePurchasedFinaleGradeChanged(EFF_FinaleGrade NewGr
 void UFF_PrepPanelCheck::HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay)
 {
 	// 단계가 바뀌면 날씨 잠금과 피날레 요약이 함께 바뀐다.
+	DraftAdmissionFee = AppliedAdmissionFee = INDEX_NONE;
+	AdmissionResultText = FText::GetEmpty();
 	RefreshAll();
 }
 
@@ -752,12 +899,17 @@ void UFF_PrepPanelCheck::SetGroupTextOrHide(UWidget* Group, UTextBlock* TextBloc
 
 FText UFF_PrepPanelCheck::FormatGoldOrUnknown(int32 Amount) const
 {
+	return FormatGoldOrUnknown(Amount, GoldValueFormat);
+}
+
+FText UFF_PrepPanelCheck::FormatGoldOrUnknown(int32 Amount, const FText& Format) const
+{
 	// 개장 판단의 근거가 되는 화면이라 빈칸으로 두지 않는다.
 	// 빈칸은 "문제 없음"으로 읽히고, 0 은 "공짜"로 읽힌다. 둘 다 사실이 아니다.
 	if (Amount == INDEX_NONE) { return LOCTEXT("PrepCheck_Unknown", "아직 알 수 없습니다"); }
 	FFormatNamedArguments Args;
 	Args.Add(TEXT("Amount"), FText::AsNumber(Amount));
-	return FText::Format(GoldValueFormat, Args);
+	return FText::Format(Format, Args);
 }
 
 #undef LOCTEXT_NAMESPACE
