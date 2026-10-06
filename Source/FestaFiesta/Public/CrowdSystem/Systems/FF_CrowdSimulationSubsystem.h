@@ -1111,6 +1111,7 @@ public:
 
 	
 	float SimulationTimeScale = 1.0f;
+	float AppliedCrowdAnimPlayRate = 1.0f;
 	
 	UFUNCTION(BlueprintPure, Category = "Crowd|Need")
 	float GetLiveMinutes() const { return (SimTimeSeconds - LiveStartSimTime) * Temp_FestivalMinutesPerRealSecond; }
@@ -1195,6 +1196,7 @@ private:
 	void StepSimulation(float FixedDt);
 
 	void PushPresentationToActors(float DeltaTime, float InterpAlpha);
+	void ApplyCrowdAnimPlayRate(float PlayRate);
 
 	void PublishCrowdReadModel();
 

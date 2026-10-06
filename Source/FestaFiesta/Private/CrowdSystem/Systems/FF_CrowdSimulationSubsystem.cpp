@@ -360,6 +360,7 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 			EffectiveSimulationTimeScale = Stage->GetEffectiveTimeScale();
 		}
 	}
+	ApplyCrowdAnimPlayRate(FMath::Max(0.f, EffectiveSimulationTimeScale));
 	const float Time = DeltaTime * EffectiveSimulationTimeScale;
 
 	float DiscardedSimSeconds = 0.f;
@@ -2626,6 +2627,22 @@ void UFF_CrowdSimulationSubsystem::PushPresentationToActors(float DeltaTime, flo
 
 		const FVector RenderPosition = FMath::Lerp(Unit.PrevPosition, Unit.Position, InterpAlpha);
 		Actor->PushPresentation(RenderPosition, Unit.Rotation, Unit.Velocity.Size());
+	}
+}
+
+void UFF_CrowdSimulationSubsystem::ApplyCrowdAnimPlayRate(float PlayRate)
+{
+	if (FMath::IsNearlyEqual(PlayRate, AppliedCrowdAnimPlayRate))
+	{
+		return;
+	}
+	AppliedCrowdAnimPlayRate = PlayRate;
+	for (AFF_BaseCrowd* Actor : CrowdPool)
+	{
+		if (IsValid(Actor))
+		{
+			Actor->SetAnimPlayRate(PlayRate);
+		}
 	}
 }
 
@@ -6022,6 +6039,7 @@ void UFF_CrowdSimulationSubsystem::InitializeCrowdActorPool(UWorld& InWorld, FVe
 
 		NewCrowd->SetActorHiddenInGame(true);
 		NewCrowd->SetActorEnableCollision(false);
+		NewCrowd->SetAnimPlayRate(AppliedCrowdAnimPlayRate);
 		CrowdPool.Add(NewCrowd);
 	}
 }
