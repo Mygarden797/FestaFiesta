@@ -377,6 +377,21 @@ private:
 	// 끊어도 막은 시간대로 넘어간다(SkipCinematicCamera). 화면에 걸지만 않는다.
 	bool bTourSkipped = false;
 
+	// 곡에 맞춘 시간표. 곡에 맞추지 않는 등급이면 비어 있다(FFF_FinaleGradeSpec::bMatchSongLength).
+	FFF_FinaleSongPlan SongPlan;
+
+	// 곡에 맞출 때 자리마다 머무는 시간(TourViewpoints 와 같은 순서). 비어 있으면 자리의 TourHoldSeconds 를 쓴다.
+	TArray<float> TourHoldOverrides;
+
+	// 곡에 맞춘 시간표를 세운다. BuildTour 다음에 불러야 막과 순회 시간을 안다.
+	void PrepareSongPlan();
+
+	// 이 등급이 트는 피날레 곡 길이(초). 못 읽으면 0.
+	float ResolveShowSongSeconds() const;
+
+	// 곡에 맞출 때 다음 차례까지의 간격. 이번 막이 끝날 시각까지 이번 막 몫을 고르게 나눈다.
+	float ResolveSongVolleyInterval() const;
+
 	// TourViewpoints 와 같은 순서로 각 자리의 막을 든다.
 	// 마무리 시점이 없으면 첫 불꽃 관람 자리를 마무리로 한 번 더 쓰므로, 자리의 설정값과 다를 수 있다.
 	TArray<EFF_FinaleTourAct> TourActs;

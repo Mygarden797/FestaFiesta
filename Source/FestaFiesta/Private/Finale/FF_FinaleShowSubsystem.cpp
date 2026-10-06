@@ -2,6 +2,8 @@
 
 #include "Finale/FF_FinaleShowSubsystem.h"
 
+#include "Audio/FF_AudioEventLink.h"
+#include "Audio/FF_AudioSubsystem.h"
 #include "Camera/CameraComponent.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
@@ -274,6 +276,13 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 				bActMode ? TEXT("예") : TEXT("아니오"),
 				*UEnum::GetDisplayValueAsText(CurrentAct).ToString(),
 				ActOneQuota, FiringClock);
+
+			if (SongPlan.IsValid())
+			{
+				UE_LOG(LogFestaFiestaFinale, Display,
+					TEXT("  곡 맞춤: 곡 %.1fs / 지금 %.1fs / 순회 %.1fs / 마무리 %.1fs / 일제 발사 %.1fs"),
+					SongPlan.SongSeconds, ElapsedSeconds, SongPlan.SiteTourAt, SongPlan.GrandFinaleAt, SongPlan.SalvoAt);
+			}
 		}));
 }
 
@@ -405,6 +414,9 @@ bool UFF_FinaleShowSubsystem::StartShowWithGrade(const EFF_FinaleGrade Grade)
 
 	BuildTour();
 
+	// 곡에 맞추는 등급이면 막과 순회 시간을 안 뒤에 시간표를 세운다. 지속 시간도 곡 길이로 바뀐다.
+	PrepareSongPlan();
+
 	// 1막 몫. 3막이 아니면 마무리 몫이 0 이라 전부가 된다.
 	ActOneQuota = ActiveSpec.BurstCount - (bActMode ? ActiveSpec.GetGrandFinaleReserve() : 0);
 	CurrentAct = (bActMode && TourActs.Num() > 0) ? TourActs[0] : EFF_FinaleTourAct::Fireworks;
@@ -459,6 +471,8 @@ void UFF_FinaleShowSubsystem::StopShow()
 	*/
 	TourViewpoints.Reset();
 	TourActs.Reset();
+	TourHoldOverrides.Reset();
+	SongPlan = FFF_FinaleSongPlan();
 	TourIndex = 0;
 	TourHeldSeconds = 0.f;
 	bActMode = false;
@@ -549,7 +563,11 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 		{
 			UpdateSiteTourCamera(TourHeldSeconds, false);
 		}
-		const float Hold = Current ? FMath::Max(0.5f, Current->TourHoldSeconds) : 6.f;
+
+		// 곡에 맞출 때는 시간표가 정한 만큼 머문다(PrepareSongPlan).
+		const float Hold = TourHoldOverrides.IsValidIndex(TourIndex)
+			? TourHoldOverrides[TourIndex]
+			: (Current ? FMath::Max(0.5f, Current->TourHoldSeconds) : 6.f);
 
 		// 3막의 마지막 자리(마무리)에서는 넘어가지 않고 끝까지 머문다.
 		const bool bAtFinalSeat = bActMode && TourIndex >= TourViewpoints.Num() - 1;
@@ -607,12 +625,19 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 		   오르는 중인 발은 기다리지 않는다. 일제 발사도 오르는 데 몇 초 걸리므로, 앞서 오른 발이
 		   다 터지기를 기다리면 하늘이 비었다가 터진다. 실제 마무리도 앞 발이 터지는 사이에 올린다.
 		*/
-		const bool bFinalSalvoDue = bActMode
+		const bool bSalvoInPlay = bActMode
 			&& CurrentAct == EFF_FinaleTourAct::GrandFinale
-			&& ActiveSpec.FinalSalvoShells > 0
-			&& GetRemainingShells() <= ActiveSpec.FinalSalvoShells
+			&& ActiveSpec.FinalSalvoShells > 0;
+
+		/* 곡에 맞출 때는 시간표의 시각에 쏜다(FFF_FinaleSongPlan 주석). 그때 남은 발을 전부 올린다 —
+		   곡이 끝나 가는데 발이 덜 나갔다고 기다리면 마지막이 곡보다 늦게 터진다.
+		*/
+		const bool bSongTimedSalvo = SongPlan.HasActs();
+		const bool bFinalSalvoDue = bSalvoInPlay
 			&& PendingShells.Num() == 0
-			&& FiringClock >= NextVolleyAt;
+			&& (bSongTimedSalvo
+				? ElapsedSeconds >= SongPlan.SalvoAt
+				: GetRemainingShells() <= ActiveSpec.FinalSalvoShells && FiringClock >= NextVolleyAt);
 
 		if (bFinalSalvoDue)
 		{
@@ -620,7 +645,15 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 			return;
 		}
 
-		const float Interval = ActiveSpec.GetIntervalSeconds() * GetActIntervalScale();
+		// 곡에 맞출 때는 일제 발사 몫을 남긴 채 그 시각을 기다린다.
+		if (bSongTimedSalvo && bSalvoInPlay && GetRemainingShells() <= ActiveSpec.FinalSalvoShells)
+		{
+			return;
+		}
+
+		const float Interval = SongPlan.IsValid()
+			? ResolveSongVolleyInterval()
+			: ActiveSpec.GetIntervalSeconds() * GetActIntervalScale();
 
 		// 프레임이 크게 밀렸을 때 밀린 만큼 한꺼번에 쏘면 하늘이 갑자기 꽉 찬다.
 		// 한 프레임에 최대 두 차례까지만 따라잡는다.
@@ -1108,6 +1141,117 @@ void UFF_FinaleShowSubsystem::SkipCinematicCamera()
 	}
 
 	UE_LOG(LogFestaFiestaFinale, Log, TEXT("[피날레] 카메라 순회를 끊었다. 불꽃은 계속된다."));
+}
+
+float UFF_FinaleShowSubsystem::ResolveShowSongSeconds() const
+{
+	const UWorld* World = GetWorld();
+	const UFF_AudioSubsystem* Audio = World ? World->GetSubsystem<UFF_AudioSubsystem>() : nullptr;
+	if (!Audio)
+	{
+		return 0.f;
+	}
+
+	// 어느 곡을 틀지는 오디오 결선이 정한다. 같은 규칙으로 골라야 트는 곡과 길이가 어긋나지 않는다.
+	const EFF_AudioAmbience Song = UFF_AudioEventLink::ResolveShowAmbience(
+		ActiveGrade, Audio->HasAmbienceTrack(EFF_AudioAmbience::FinaleEnding));
+	return Audio->GetAmbienceTrackLength(Song);
+}
+
+void UFF_FinaleShowSubsystem::PrepareSongPlan()
+{
+	SongPlan = FFF_FinaleSongPlan();
+	TourHoldOverrides.Reset();
+
+	if (!ActiveSpec.bMatchSongLength)
+	{
+		return;
+	}
+
+	const float SongSeconds = ResolveShowSongSeconds();
+	if (SongSeconds <= 0.f)
+	{
+		UE_LOG(LogFestaFiestaFinale, Warning,
+			TEXT("[피날레] 곡 길이에 맞추도록 했지만 이 등급의 피날레 곡을 못 읽었다. 지속 시간 %.1f초로 돈다. ")
+			TEXT("오디오 뱅크의 피날레 곡 칸을 볼 것."),
+			ActiveSpec.DurationSeconds);
+		return;
+	}
+
+	// 막마다 자리 수와 순회 막 시간. 순회 막은 그 자리들이 머무는 시간의 합이다(따라 나는 카메라면 날아 들어옴 + 순회).
+	int32 SkySeats = 0;
+	int32 FinaleSeats = 0;
+	float SiteActSeconds = 0.f;
+	auto ActOf = [this](const int32 Index)
+	{
+		return TourActs.IsValidIndex(Index) ? TourActs[Index] : EFF_FinaleTourAct::Fireworks;
+	};
+	auto HoldOf = [this](const int32 Index)
+	{
+		const AFF_FinaleViewpoint* Seat = TourViewpoints.IsValidIndex(Index) ? TourViewpoints[Index].Get() : nullptr;
+		return Seat ? FMath::Max(0.5f, Seat->TourHoldSeconds) : 0.5f;
+	};
+	if (bActMode)
+	{
+		for (int32 Index = 0; Index < TourViewpoints.Num(); ++Index)
+		{
+			switch (ActOf(Index))
+			{
+			case EFF_FinaleTourAct::SiteTour:    SiteActSeconds += HoldOf(Index); break;
+			case EFF_FinaleTourAct::GrandFinale: ++FinaleSeats;                   break;
+			default:                             ++SkySeats;                      break;
+			}
+		}
+	}
+
+	// 가장 높은 발이 오르는 시간. 바지선에서 쏘지 않으면 제자리에서 터져 0 이다.
+	const float MaxRise = ActiveLaunch.IsEnabled()
+		? ActiveLaunch.ResolveRiseSeconds(FMath::Max(ActiveSpec.BurstHeightMin, ActiveSpec.BurstHeightMax))
+		: 0.f;
+
+	SongPlan = FFF_FinaleSongPlan::Make(SongSeconds, ActiveSpec.SongSiteTourAt, SiteActSeconds, MaxRise, TailSeconds);
+	ActiveSpec.DurationSeconds = SongSeconds;
+
+	// 자리마다 머무는 시간을 시간표에 맞춘다. 불꽃 관람 자리는 순회 전까지를 나눠 갖고, 마무리 자리는 곡 끝까지다.
+	if (SongPlan.HasActs() && SkySeats > 0)
+	{
+		TourHoldOverrides.Reserve(TourViewpoints.Num());
+		for (int32 Index = 0; Index < TourViewpoints.Num(); ++Index)
+		{
+			switch (ActOf(Index))
+			{
+			case EFF_FinaleTourAct::SiteTour:
+				TourHoldOverrides.Add(HoldOf(Index));
+				break;
+			case EFF_FinaleTourAct::GrandFinale:
+				TourHoldOverrides.Add(FMath::Max(0.5f, (SongSeconds - SongPlan.GrandFinaleAt) / FMath::Max(1, FinaleSeats)));
+				break;
+			default:
+				TourHoldOverrides.Add(FMath::Max(0.5f, SongPlan.SiteTourAt / SkySeats));
+				break;
+			}
+		}
+	}
+
+	UE_LOG(LogFestaFiestaFinale, Log,
+		TEXT("[피날레] 곡에 맞춘다. 곡 %.1f초 / 순회 %.1f초부터 / 마무리 %.1f초부터 / 일제 발사 %.1f초 (가장 높은 발 상승 %.1f초)"),
+		SongPlan.SongSeconds, SongPlan.SiteTourAt, SongPlan.GrandFinaleAt, SongPlan.SalvoAt, MaxRise);
+}
+
+float UFF_FinaleShowSubsystem::ResolveSongVolleyInterval() const
+{
+	// 한 프레임에 두 차례까지만 따라잡으므로(Tick) 이보다 촘촘히 잡아도 소용없다.
+	constexpr float MinInterval = 0.05f;
+
+	// 3막이 아니면 연출 전체가 한 구간이다. 일제 발사도 없다.
+	const bool bFinalStretch = !SongPlan.HasActs() || !bActMode || CurrentAct == EFF_FinaleTourAct::GrandFinale;
+	const int32 Salvo = SongPlan.HasActs() && bActMode ? FMath::Max(0, ActiveSpec.FinalSalvoShells) : 0;
+	const int32 Committed = FiredBursts + PendingShells.Num() + InFlightBurstCount;
+
+	const int32 Shells = bFinalStretch ? GetRemainingShells() - Salvo : ActOneQuota - Committed;
+	const float EndAt = bFinalStretch ? SongPlan.SalvoAt : SongPlan.GrandFinaleAt;
+	return FFF_FinaleSongPlan::ResolveIntervalToFinish(
+		ElapsedSeconds, EndAt, Shells, ActiveSpec.GetExpectedShellsPerVolley(), MinInterval);
 }
 
 const FFF_FinaleVolley& UFF_FinaleShowSubsystem::PickVolley(const int32 RemainingShells) const
