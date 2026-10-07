@@ -739,6 +739,8 @@ void AFF_FestivalPlayerController::HandleToggleView(const FInputActionValue& Val
 		return;
 	}
 
+	UFF_FinaleShowSubsystem* Finale = GetWorld() ? GetWorld()->GetSubsystem<UFF_FinaleShowSubsystem>() : nullptr;
+
 	/* 연출이 카메라를 쥐고 있을 때.
 
 	   피날레면 연출 카메라만 놓아 주고(SkipCinematicCamera) 그대로 전환한다. 불꽃은 곡 끝까지 이어진다
@@ -747,7 +749,6 @@ void AFF_FestivalPlayerController::HandleToggleView(const FInputActionValue& Val
 	*/
 	if (bScriptedViewActive)
 	{
-		UFF_FinaleShowSubsystem* Finale = GetWorld() ? GetWorld()->GetSubsystem<UFF_FinaleShowSubsystem>() : nullptr;
 		if (!Finale || !Finale->IsShowInProgress())
 		{
 			return;
@@ -761,6 +762,20 @@ void AFF_FestivalPlayerController::HandleToggleView(const FInputActionValue& Val
 
 		// 연출 전에 캐릭터 시점이었으면 방금 거기로 돌아왔다. 그게 1인칭이라 한 번 더 바꾸지 않는다.
 		if (ViewMode != EFF_CameraViewMode::Overview)
+		{
+			return;
+		}
+	}
+	/* 피날레 중 연출 카메라를 놓아 둔 상태(위에서 Tab 으로 캐릭터 시점에 왔다).
+
+	   기본 카메라로 가지 않고 연출 카메라를 다시 잡는다. 불꽃이 끝날 때까지 Tab 은 연출 카메라와 캐릭터
+	   시점만 오간다(2026-10-07 피드백: 두 번째 Tab 이 기본 카메라로 가 불꽃이 화면에서 사라졌다).
+	   캐릭터 빙의는 그대로 두므로 다음 Tab 은 위 분기에서 캐릭터 시점으로 돌아온다.
+	*/
+	else if (Finale && Finale->CanResumeCinematicCamera())
+	{
+		Finale->ResumeCinematicCamera();
+		if (bScriptedViewActive)
 		{
 			return;
 		}

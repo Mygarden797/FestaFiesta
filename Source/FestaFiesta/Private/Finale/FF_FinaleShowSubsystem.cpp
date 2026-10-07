@@ -193,6 +193,14 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 			SkipCinematicCamera();
 		}));
 
+	DebugCommands.Add(
+		TEXT("FF.Finale.ResumeCamera"),
+		TEXT("끊었던 카메라 순회를 지금 막의 지금 자리에서 다시 잡는다."),
+		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+		{
+			ResumeCinematicCamera();
+		}));
+
 	/* 마지막 모양(태극기)만 지금 올린다. 마무리 막까지 70초 가까이 기다리지 않고 크기 · 색을 맞춰 보려고 둔다.
 
 	   이번 연출의 남은 발에서 가져가므로 그 연출은 발수가 줄어 일찍 끝난다. 다듬는 용도로만 쓴다.
@@ -1347,6 +1355,39 @@ void UFF_FinaleShowSubsystem::SkipCinematicCamera()
 	}
 
 	UE_LOG(LogFestaFiestaFinale, Log, TEXT("[피날레] 카메라 순회를 끊었다. 불꽃은 계속된다."));
+}
+
+void UFF_FinaleShowSubsystem::ResumeCinematicCamera()
+{
+	if (!CanResumeCinematicCamera())
+	{
+		return;
+	}
+
+	bTourSkipped = false;
+
+	/* 놓아 둔 동안 순회 카메라는 경로를 따라 날지 않았다(Tick). 지금 시각의 자리로 먼저 옮겨 놓고 잡는다.
+	   안 옮기면 놓았던 자리에서 시작해 다음 틱에 한 번에 튄다.
+	*/
+	const AFF_FinaleViewpoint* Current = TourViewpoints.IsValidIndex(TourIndex) ? TourViewpoints[TourIndex].Get() : nullptr;
+	if (Current && Current == SiteTourCamera)
+	{
+		UpdateSiteTourCamera(TourHeldSeconds, true);
+	}
+
+	ApplyTourViewpoint(CameraBlendSeconds);
+
+	// 잡을 자리가 없으면(시점이 사라진 레벨) 놓아 둔 상태로 되돌린다. 안 그러면 다음 Tab 이 기본 카메라로 간다.
+	const AFF_FestivalPlayerController* Controller = GetFestivalController();
+	if (!Controller || !Controller->IsInScriptedView())
+	{
+		bTourSkipped = true;
+		UE_LOG(LogFestaFiestaFinale, Warning, TEXT("[피날레] 다시 잡을 연출 시점이 없어 카메라를 놓아 둔 채로 둔다."));
+		return;
+	}
+
+	UE_LOG(LogFestaFiestaFinale, Log, TEXT("[피날레] 카메라 순회를 다시 잡았다. 지금 막=%s"),
+		*UEnum::GetDisplayValueAsText(CurrentAct).ToString());
 }
 
 float UFF_FinaleShowSubsystem::ResolveShowSongSeconds() const
