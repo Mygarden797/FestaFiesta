@@ -36,8 +36,8 @@ UFFZSFacilityQueueComponent::UFFZSFacilityQueueComponent()
 
 void UFFZSFacilityQueueComponent::Configure(const FFFZSQueueRules& NewRules)
 {
-    // 조명 시설의 0/0 정원은 서비스 없는 시설을 나타낸다. 서비스 시설은 기존처럼
-    // 양수 정원으로 정규화하며, 조명의 빈 대기열을 1인 서비스로 바꾸지 않는다.
+    // 길·타일·조명의 0/0 정원은 서비스 없는 시설을 나타낸다. 서비스 시설은 기존처럼
+    // 양수 정원으로 정규화하며, 비서비스 시설의 빈 대기열을 1인 서비스로 바꾸지 않는다.
     Rules = NewRules;
     const int32 MinimumCapacity = NewRules.MaxWaitingAgents == 0 && NewRules.ServiceCapacity == 0 ? 0 : 1;
     Rules.MaxWaitingAgents = FMath::Max(MinimumCapacity, Rules.MaxWaitingAgents);
@@ -51,7 +51,15 @@ void UFFZSFacilityQueueComponent::Configure(const FFFZSQueueRules& NewRules)
         Rules.MaxRepathAttempts,
         0,
         UFFZSDeveloperSettings::MaxQueueRepathAttempts);
-    if (QueueState == EFFZSQueueState::Open || QueueState == EFFZSQueueState::Full)
+    if (MinimumCapacity == 0 && !IsOccupied())
+    {
+        bDrainRequested = false;
+        BlockedElapsedSeconds = 0.0f;
+        RepathAttemptCount = 0;
+        StateBeforeBlocked = EFFZSQueueState::Closed;
+        SetQueueState(EFFZSQueueState::Closed);
+    }
+    else if (QueueState == EFFZSQueueState::Open || QueueState == EFFZSQueueState::Full)
     {
         RefreshOpenOrFullState();
     }
@@ -61,7 +69,7 @@ void UFFZSFacilityQueueComponent::OpenQueue()
 {
     if (Rules.MaxWaitingAgents == 0 && Rules.ServiceCapacity == 0)
     {
-        // 시설 자체의 점등/운영 상태와 무관하게 조명은 방문객 대기열을 열지 않는다.
+        // 시설 자체의 운영 상태와 무관하게 비서비스 시설은 방문객 대기열을 열지 않는다.
         SetQueueState(EFFZSQueueState::Closed);
         return;
     }

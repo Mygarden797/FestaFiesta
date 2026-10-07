@@ -110,6 +110,18 @@ bool FFF_BuildQueueLayoutDraftTest::RunTest(const FString& Parameters)
     Build->CurrentPlacement.OriginCell = FIntPoint(1000, 1000);
     Build->SpawnPlacementPreview();
     if (!TestNotNull(TEXT("Placement preview"), Build->PlacementPreview.Get())) return false;
+    // Old assets can still carry service defaults before their next normalization.
+    // Category capability must keep these objects out of queue editing regardless.
+    for (const EFFZSFacilityCategory Category : {EFFZSFacilityCategory::Lighting,
+        EFFZSFacilityCategory::Road, EFFZSFacilityCategory::Tile})
+    {
+        Build->SelectedSpec.Category = Category;
+        TestFalse(TEXT("Non-service placement never exposes queue layout controls"), Build->CanChooseQueueLayout());
+        TestFalse(TEXT("Non-service placement rejects queue shape shortcuts"),
+            Build->SetSelectedFacilityQueueLayout(EFFZSQueueLayout::Left));
+        TestTrue(TEXT("Non-service placement has no queue shortcut hint"), Build->GetQueueLayoutKeyHint().IsEmpty());
+    }
+    Build->SelectedSpec = Definition->Spec;
     TestTrue(TEXT("Placing supports queue layout shortcuts"), Build->CanChooseQueueLayout());
     TestTrue(TEXT("A placing choice updates the draft"), Build->SetSelectedFacilityQueueLayout(EFFZSQueueLayout::Left));
     Build->RebuildPreviewCommand();

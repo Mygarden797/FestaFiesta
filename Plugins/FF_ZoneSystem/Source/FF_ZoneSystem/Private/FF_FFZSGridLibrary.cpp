@@ -112,6 +112,11 @@ namespace
         const FFFZSFacilitySpec& Spec,
         TArray<FFFZSCellRect>& OutRects)
     {
+        if (!Spec.UsesServiceQueue())
+        {
+            OutRects.Reset();
+            return true;
+        }
         OutRects = Spec.QueueReservedRects;
         OutRects.Reserve(OutRects.Num() + Spec.QueueReservedCells.Num());
         for (const FIntPoint& Cell : Spec.QueueReservedCells)
@@ -149,6 +154,11 @@ namespace
         }
 
         Regions.Footprint.Add(FFFZSCellRect(FIntPoint::ZeroValue, Spec.FootprintSizeCells));
+        if (!Spec.UsesServiceQueue())
+        {
+            Regions.Reserved = Regions.Footprint;
+            return Regions;
+        }
         if (!TryBuildLocalQueueRects(Spec, Regions.Queue))
         {
             return {};
@@ -254,6 +264,10 @@ bool UFFZSGridLibrary::CanEnumerateFacilityCells(const FFFZSFacilitySpec& Spec)
     }
 
     const int64 Limit = GetMaxEnumeratedCellsPerFacility();
+    if (!Spec.UsesServiceQueue())
+    {
+        return IsPositiveCellProductWithinLimit(Spec.FootprintSizeCells.X, Spec.FootprintSizeCells.Y, Limit);
+    }
     const int64 ExpandedWidth = static_cast<int64>(Spec.FootprintSizeCells.X) + 2LL * Spec.ClearanceCells;
     const int64 ExpandedHeight = static_cast<int64>(Spec.FootprintSizeCells.Y) + 2LL * Spec.ClearanceCells;
     if (!IsPositiveCellProductWithinLimit(ExpandedWidth, ExpandedHeight, Limit))

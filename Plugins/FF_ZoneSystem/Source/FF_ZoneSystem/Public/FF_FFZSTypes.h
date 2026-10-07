@@ -697,6 +697,15 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
         return Category == EFFZSFacilityCategory::Road || Category == EFFZSFacilityCategory::Tile;
     }
 
+    /** Passive infrastructure reserves only its physical footprint. */
+    bool UsesServiceQueue() const
+    {
+        return Category != EFFZSFacilityCategory::Lighting && !IsGroundSurface();
+    }
+
+    /** Remove obsolete service geometry from passive definitions and saved instances. */
+    void NormalizeNonServiceGeometry();
+
     bool AllowsFacilityPlacementOnTop() const
     {
         return Category == EFFZSFacilityCategory::Tile;

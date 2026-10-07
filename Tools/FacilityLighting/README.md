@@ -56,16 +56,33 @@ PNG 원본은 조명 `Thumbnails` 폴더에 함께 보관하므로 재수입에�
 
 `BP_MainStage_Grand`는 원본 미리보기용 스포트라이트 10개를 유지한다.
 시설 설치에 사용하는 `BP_MainStage_Grand_Lighting`은 아티스트의
-`67483cfb` 변경(2026-09-10, 공연장 조명 변경) 이후 **9개**다.
+`67483cfb` 변경(2026-09-10, 공연장 조명 변경)의 무대 조명 **9개**에
+관객용 워시 조명 **2개**를 추가해 총 **11개**다.
 해당 변경에서 `Overhead_08_Spot`이 제거되었으므로 원본 개수에 맞추기 위해
 다시 추가하지 않는다. 현재 설치용 광원은 다음과 같다.
 
 - 천장 5개: `Overhead_00_Spot`, `Overhead_02_Spot`, `Overhead_04_Spot`, `Overhead_06_Spot`, `Overhead_10_Spot`
 - 데크 2개: `DeckSpot_Spot`, `DeckSpot_Spot_001`
 - 런웨이 2개: `RunwaySpot_Spot`, `RunwaySpot_Spot_001`
+- 관객용 2개: `AudienceWash_Left_Spot`, `AudienceWash_Right_Spot`
 
 `create_assets.py`는 기존 리그와 디자이너 배치를 보존하며, 리그가 없을 때도
-위 9개만 복사한다. `verify_assets.py`와 `ProductionMainStageInstallation`은
+무대 조명 9개만 복사한 뒤 `mainstage_audience_lights.py`로 누락된 관객 조명을 추가한다.
+기존 관객 조명의 디자이너 수정값도 보존한다. `verify_assets.py`와 `ProductionMainStageInstallation`은
 개수뿐 아니라 정확한 광원 이름을 검증한다. 설치·밝기·전원·색상·저장 복원·철거
 검증도 계속 수행한다. 아티스트가 구성 자체를 바꾸면 변경 근거와 함께 세 곳의
 기대 이름을 갱신한다. 조명 설정값은 기존 리그 에셋이 기준이다.
+
+관객 조명은 현재 PDA의 500자리(25열 × 20줄), 시설 로컬 Y=1212.5~3492.5cm를
+비춘다. 무대 앞 상단에서 양쪽 관객 영역을 향하며 내부/외부 반각은 45°/55°,
+원본 감쇠 반경은 10000cm다. 설치 시 메시 배율을 적용한 반경은 약 52m다.
+각 120000lm의 옅은 청색 광원이며 군중 그림자 패스 비용을 줄이기 위해 그림자는 끈다.
+시설의 전원·밝기·색상·복원 제어가 기존 조명과 함께 적용된다.
+
+기존 리그에 관객 조명만 추가하려면 UE 5.7에서 `mainstage_audience_lights.py`를 실행한다.
+반복 실행은 기존 조명을 변경하지 않는다. `ProductionMainStageInstallation`은 실제 설치된
+리그가 모든 관객 자리의 몸통과 머리를 비추는지 및 이동·회전 후 제어를 검증한다.
+`capture_mainstage_audience.py`는 Entry 임시 월드에서 실제 관객 메시 63개를 좌석에
+샘플 배치하고, EV100=4의 동일 노출로 관객 조명 전후를 촬영한다. 결과는
+`Saved/MainStageAudienceLighting/before.png`, `after.png`이며 실제 게임 군중 시뮬레이션은 아니다.
+GPU와 `-RenderOffscreen`이 필요하고 에셋이나 맵을 저장하지 않는다.

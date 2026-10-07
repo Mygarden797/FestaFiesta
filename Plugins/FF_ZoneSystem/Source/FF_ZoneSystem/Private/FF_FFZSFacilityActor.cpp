@@ -63,6 +63,10 @@ namespace
     // 계산하면 그 시설의 레인 비용이 영원히 켜지지 않는다.
     bool TryMakeQueueLaneLocalBox(const FFFZSFacilitySpec& Spec, FVector& OutCenterCm, FVector& OutExtentCm)
     {
+        if (!Spec.UsesServiceQueue())
+        {
+            return false;
+        }
         const TArray<FFFZSCellRect> QueueRects = UFFZSGridLibrary::GetQueueRects(Spec, FFFZSGridPlacement{});
         if (QueueRects.IsEmpty())
         {
@@ -221,6 +225,14 @@ void AFFZSFacilityActor::BeginPlay()
         // 이전에 레벨에 배치·저장된 Actor는 원본을 기존 FacilitySpec에만 가지고 있다.
         BaseFacilitySpec = FacilitySpec;
     }
+    BaseFacilitySpec.NormalizeNonServiceGeometry();
+    FacilitySpec.NormalizeNonServiceGeometry();
+    if (!FacilitySpec.UsesServiceQueue())
+    {
+        // 레벨에 저장된 옛 spline/anchor/queue box도 현재 비서비스 정책으로 복구한다.
+        RebuildRuntimePresentation();
+        QueueComponent->Configure(GetEffectiveQueueRules());
+    }
     RequestFacilityAudio();
     RequestFacilityLighting();
     if (FacilityInstanceId.IsValid())
@@ -271,15 +283,17 @@ void AFFZSFacilityActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 // 스냅샷 복원용으로 스테이징된 Actor를 완성하는 단계이며, 월드 레지스트리 등록은 별도 단계다.
 bool AFFZSFacilityActor::InitializeFacility(const FGuid NewInstanceId, const FFFZSFacilitySpec& NewSpec, const FName NewZoneId, FFFZSGridPlacement NewPlacement, const FTransform& WorldTransform, const EFFZSFacilityState InitialState, const int32 InitialUpgradeLevel, const float InitialServiceDurationMultiplier, const float InitialSizeMultiplier, const float InitialRevenueMultiplier)
 {
+    FFFZSFacilitySpec NormalizedSpec = NewSpec;
+    NormalizedSpec.NormalizeNonServiceGeometry();
     TArray<FText> Errors;
-    if (!NewInstanceId.IsValid() || NewZoneId.IsNone() || !NewSpec.IsValid(Errors) ||
+    if (!NewInstanceId.IsValid() || NewZoneId.IsNone() || !NormalizedSpec.IsValid(Errors) ||
         !IsValidUpgradeState(InitialUpgradeLevel, InitialServiceDurationMultiplier, InitialSizeMultiplier, InitialRevenueMultiplier))
     {
         return false;
     }
 
     FFFZSFacilitySpec EffectiveSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
-        NewSpec, InitialUpgradeLevel, InitialSizeMultiplier);
+        NormalizedSpec, InitialUpgradeLevel, InitialSizeMultiplier);
     if (!EffectiveSpec.IsValid(Errors))
     {
         return false;
@@ -288,7 +302,7 @@ bool AFFZSFacilityActor::InitializeFacility(const FGuid NewInstanceId, const FFF
     SetPlayerCollisionEnabled(false);
     SetNavigationObstacleEnabled(false);
     FacilityInstanceId = NewInstanceId;
-    BaseFacilitySpec = NewSpec;
+    BaseFacilitySpec = MoveTemp(NormalizedSpec);
     FacilitySpec = MoveTemp(EffectiveSpec);
     bHasLightingOverride = false;
     LightingState = NewSpec.LightingSettings.GetDefaultState();
@@ -361,7 +375,7 @@ bool AFFZSFacilityActor::ApplyUpgradeState(const int32 NewLevel, const float New
 
 bool AFFZSFacilityActor::ApplyQueueLayout(const EFFZSQueueLayout Layout)
 {
-    if (!CanMoveOrRemove() || !QueueComponent || QueueComponent->IsOccupied())
+    if (!FacilitySpec.UsesServiceQueue() || !CanMoveOrRemove() || !QueueComponent || QueueComponent->IsOccupied())
     {
         return false;
     }
@@ -397,7 +411,13 @@ FFFZSQueueRules AFFZSFacilityActor::BuildEffectiveQueueRules(
 
 FFFZSQueueRules AFFZSFacilityActor::GetEffectiveQueueRules() const
 {
-    return BuildEffectiveQueueRules(FacilitySpec.QueueRules, UpgradeServiceDurationMultiplier);
+    FFFZSQueueRules Rules = BuildEffectiveQueueRules(FacilitySpec.QueueRules, UpgradeServiceDurationMultiplier);
+    if (!FacilitySpec.UsesServiceQueue())
+    {
+        Rules.MaxWaitingAgents = 0;
+        Rules.ServiceCapacity = 0;
+    }
+    return Rules;
 }
 
 // 이 함수만 호출하면 Subsystem의 OccupiedFacilityRegions는 갱신되지 않는다. 정상 흐름에서는 ExecuteMove가
@@ -431,7 +451,10 @@ bool AFFZSFacilityActor::OpenFacility()
     }
     bSetMovePendingWhenDrained = false;
     FacilityState = EFFZSFacilityState::Active;
-    QueueComponent->OpenQueue();
+    if (FacilitySpec.UsesServiceQueue())
+    {
+        QueueComponent->OpenQueue();
+    }
     UpdateFacilityAudioPlayback();
     return true;
 }
@@ -687,7 +710,7 @@ void AFFZSFacilityActor::RebuildRuntimePresentation()
     RequestFacilityLighting();
 
     QueueSpline->ClearSplinePoints(false);
-    for (int32 Index = 0; Index < FacilitySpec.QueueSplinePointsCm.Num(); ++Index)
+    for (int32 Index = 0; FacilitySpec.UsesServiceQueue() && Index < FacilitySpec.QueueSplinePointsCm.Num(); ++Index)
     {
         QueueSpline->AddSplinePoint(FacilitySpec.QueueSplinePointsCm[Index], ESplineCoordinateSpace::Local, false);
         QueueSpline->SetSplinePointType(Index, ESplinePointType::Linear, false);
@@ -1345,6 +1368,10 @@ void AFFZSFacilityActor::RebuildAnchors()
     }
     RuntimeAnchors.Reset();
 
+    if (!FacilitySpec.UsesServiceQueue())
+    {
+        return;
+    }
     for (const FFFZSAnchorDefinition& Definition : FacilitySpec.Anchors)
     {
         const FString TypeName = StaticEnum<EFFZSAnchorType>()->GetNameStringByValue(static_cast<int64>(Definition.Type));

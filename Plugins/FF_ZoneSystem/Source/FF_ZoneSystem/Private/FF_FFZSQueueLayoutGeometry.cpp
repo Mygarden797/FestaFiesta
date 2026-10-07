@@ -23,7 +23,7 @@ bool FFFZSQueueGeometry::ApplySelectedLayout(FFFZSFacilitySpec& InOutSpec, FText
     const int32 Count = InOutSpec.QueueRules.MaxWaitingAgents;
     const double Spacing = InOutSpec.QueueRules.SlotSpacingCm;
     const double Tolerance = InOutSpec.QueueRules.SlotArrivalToleranceCm;
-    if (InOutSpec.IsGroundSurface() || InOutSpec.Category == EFFZSFacilityCategory::Lighting ||
+    if (!InOutSpec.UsesServiceQueue() ||
         Count <= 0 || Count > UFFZSDeveloperSettings::MaxQueueWaitingAgents ||
         !FMath::IsFinite(Spacing) || Spacing <= 0.0 || !FMath::IsFinite(Tolerance) || Tolerance < 0.0 ||
         InOutSpec.FootprintSizeCells.X <= 0 || InOutSpec.FootprintSizeCells.Y <= 0)

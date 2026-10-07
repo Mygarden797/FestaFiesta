@@ -9,8 +9,12 @@ and designer WBP layouts are preserved on subsequent runs.
 import json
 import shutil
 import traceback
+import sys
 from pathlib import Path
 import unreal
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from mainstage_audience_lights import ensure_audience_lights
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'Saved/FacilityLighting_20260910'
@@ -20,7 +24,7 @@ PDA = '/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performa
 PANEL = '/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel'
 CONTROLS = '/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls'
 RIG = STAGE + '/BP_MainStage_Grand_Lighting'
-EXPECTED_RUNTIME_LIGHTS = {
+EXPECTED_STAGE_LIGHTS = {
     'Overhead_00_Spot', 'Overhead_02_Spot', 'Overhead_04_Spot',
     'Overhead_06_Spot', 'Overhead_10_Spot',
     'DeckSpot_Spot', 'DeckSpot_Spot_001',
@@ -92,10 +96,16 @@ def main():
                 lamp.set_editor_property(key, original.get_editor_property(key))
             lamp.set_mobility(unreal.ComponentMobility.MOVABLE)
             copied.append(name)
-        assert set(copied) == EXPECTED_RUNTIME_LIGHTS, copied
+        assert set(copied) == EXPECTED_STAGE_LIGHTS, copied
         unreal.BlueprintEditorLibrary.compile_blueprint(bp)
         assert unreal.EditorAssetLibrary.save_loaded_asset(bp, only_if_is_dirty=False)
         report['copied_lights'] = copied
+
+    audience_lights = ensure_audience_lights(bp)
+    if audience_lights:
+        unreal.BlueprintEditorLibrary.compile_blueprint(bp)
+        assert unreal.EditorAssetLibrary.save_loaded_asset(bp, only_if_is_dirty=False)
+    report['added_audience_lights'] = audience_lights
 
     assert bp.generated_class(), 'Rig Blueprint must compile'
     spec = pda.get_editor_property('spec')
