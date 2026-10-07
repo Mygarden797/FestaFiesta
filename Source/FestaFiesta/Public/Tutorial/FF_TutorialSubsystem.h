@@ -15,6 +15,7 @@
 class AFF_OverviewCameraPawn;
 class UDataTable;
 class UFF_DialogueScriptData;
+class UFF_UIFlowSubsystem;
 class UUserWidget;
 class UWidget;
 
@@ -369,8 +370,30 @@ private:
 	// 튜토리얼 레벨이면 레벨을 끝내고 레벨 선택으로 돌아간다. 돌아갔으면 true.
 	bool LeaveIfTutorialLevel(FName FestivalId);
 
+	/* 튜토리얼 레벨에서 레벨 선택으로 돌아간다. 흐름을 타고 들어왔으면 로비 세이브를 먼저 남긴다.
+
+	   튜토리얼 레벨은 마치면 지도에서 잠긴다(SyncTutorialLevelLock). 로비 세이브 없이 나오면 이 판의
+	   마지막 저장이 튜토리얼 레벨 안이라, 이어하기가 잠긴 레벨을 열려다 막힌다.
+	*/
+	void ReturnToAtlasFromTutorialLevel(UFF_UIFlowSubsystem& Flow);
+
 	// 이 축제가 튜토리얼 레벨인지. 튜토리얼 설정의 TutorialFestivalId 와 비교한다.
 	static bool IsTutorialFestival(FName FestivalId);
+
+	/* 튜토리얼 레벨을 레벨 선택(국가 지도)에서 잠그거나 연다. 바뀔 때만 적는다.
+
+	   끝까지 봤거나 어디서든 건너뛰었으면 잠근다(2026-10-07 결정). 새 게임을 누르면 기록이 비워져
+	   다시 열린다. 지도 화면 · 지구본 · 축제 시작은 모두 아틀라스 카탈로그의 잠금 값(bUnlocked ·
+	   LockReason)만 읽으므로 그 값을 바꾼다. 실행 중에만 바꾸고 애셋 파일은 그대로다.
+
+	   레벨이 뜰 때와 매 틱 본다. 기록이 바뀌었다는 신호가 없어서다. 계산은 기록 두 개를 읽는 것뿐이다.
+	   지도가 떠 있는 동안 잠기면(로비 인트로에서 건너뛰기) 핀은 다음에 지도가 열릴 때 자물쇠로 바뀌고,
+	   그 사이에도 카드와 시작 버튼은 바로 잠긴다.
+	*/
+	void SyncTutorialLevelLock();
+
+	// 카탈로그의 튜토리얼 칸을 원래 값으로 되돌린다. 월드가 내려갈 때 — 편집기에서 PIE 가 끝나도 애셋이 잠긴 채 남지 않게.
+	void RestoreTutorialLevelLock();
 
 	// 카메라 조작을 감시한다.
 	//
