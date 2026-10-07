@@ -65,6 +65,72 @@ void UFF_CrowdIncidentBridgeSubsystem::Deinitialize()
 
 void UFF_CrowdIncidentBridgeSubsystem::HandleCongestionSampled(const FFF_CrowdCongestionSnapshot& Snapshot)
 {
+	
+	
+	
+	if (Incident == nullptr)
+		return;
+	
+	TSet<FIntPoint> CurrentCells;
+	for (const FFF_CrowdCongestedCell& Cell: Snapshot.Cells)
+	{
+		CurrentCells.Add(Cell.Cell);
+	}
+	
+	
+	
+	for (const FFF_CrowdCongestedCell& Cell : Snapshot.Cells)
+	{
+		
+		const int32 Streak = ++CongestionStreakByCell.FindOrAdd(Cell.Cell);
+		
+		if (Streak < CongestionSustainSnapShots || OpenCongestionCells.Contains(Cell.Cell))
+		{
+			continue;
+		}
+		
+		
+		FFF_IncidentReport Report;
+		Report.IncidentTag = FFIncidentTags::Crowd::Congestion;
+		Report.Anchor.Kind = EFF_IncidentAnchorKind::DensityCell;
+		Report.Anchor.DensityCell = Cell.Cell;
+		Report.Anchor.WorldPoint = Cell.CenterWorldUU;
+		Report.Intensity = 1.f;
+		
+		
+		if (Incident->ReportIncident(Report).IsSet())
+		{
+			OpenCongestionCells.Add(Cell.Cell);
+			FF_CI_BRIDGE_LOG("CONGESTION reported cell (%d,%d) density %.2f occupancy %d streak %d",
+				Cell.Cell.X, Cell.Cell.Y, Cell.DensityPerSqm, Cell.Occupancy, Streak);
+		}
+		
+
+		
+	}
+	
+	for (auto It = CongestionStreakByCell.CreateIterator(); It; ++It)
+	{
+		if (CurrentCells.Contains(It.Key()))
+		{
+			continue;
+		}
+			
+		if (OpenCongestionCells.Remove(It.Key()) > 0)
+		{
+			FFF_IncidentAnchor Anchor;
+			Anchor.Kind = EFF_IncidentAnchorKind::DensityCell;
+			Anchor.DensityCell = It.Key();
+			Incident->WithdrawIncident(FFF_IncidentRules::MakeDedupeKey(FFIncidentTags::Crowd::Congestion,Anchor));
+			FF_CI_BRIDGE_LOG("CONGESTION withdrawn cell (%d,%d)", It.Key().X, It.Key().Y);
+		}
+			
+		It.RemoveCurrent();
+			
+			
+		
+	}
+	
 }
 
 void UFF_CrowdIncidentBridgeSubsystem::HandleMemberMissingChanged(const TArray<FFF_CrowdMemberMissingEvent>& Events)

@@ -199,6 +199,9 @@ struct FESTAFIESTA_API FFF_IncidentOptionView
 	int32 CostGold = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
+	int32 CostStaff = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
 	int32 MinStaff = 1;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")

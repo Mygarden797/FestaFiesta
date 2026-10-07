@@ -49,4 +49,7 @@ private:
 	TSet<FIntPoint> OpenCongestionCells;
 
 	TMap<int32, FName> MissingKeyByAgent;
+	
+	
+	int32 CongestionSustainSnapShots = 10;
 };
