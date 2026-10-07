@@ -187,8 +187,8 @@ bool FFF_CrowdHeightField_BuildIsDeterministic::RunTest(const FString& Parameter
 	return true;
 }
 
-// 통행 상한. 경사면(0.1 * x)이므로 상한 Z에 대응하는 x는 상한 / 0.1 이고, 판정이 네 꼭짓점의
-// 최댓값 기준이라 통행 경계는 그 x보다 한 칸(SpacingCm) 앞에 선다 — 그 보수성까지 같이 못박는다.
+// 통행 상한. 경사면(0.1 * x)이므로 상한 Z에 대응하는 x는 상한 / 0.1 이고, 판정이 칸의 가장 낮은
+// 꼭짓점 기준이라 통행 경계는 그 x보다 한 칸(SpacingCm) 뒤에 선다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdHeightField_WalkableCeilingBlocksHighGround, "FestaFiesta.Crowd.HeightField.WalkableCeilingBlocksHighGround", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdHeightField_WalkableCeilingBlocksHighGround::RunTest(const FString& Parameters)
 {
@@ -205,14 +205,36 @@ bool FFF_CrowdHeightField_WalkableCeilingBlocksHighGround::RunTest(const FString
 
 	TestTrue(TEXT("낮은 쪽은 통행 가능하다"), Field.IsWalkable(FVector2D(-9999.0, 0.0)));
 	TestTrue(TEXT("상한보다 한 칸 이상 낮으면 통행 가능하다"), Field.IsWalkable(FVector2D(4000.0, 0.0)));
-	TestTrue(TEXT("상한을 넘는 꼭짓점이 없는 마지막 칸까지는 통행 가능하다"),
-		Field.IsWalkable(FVector2D(4900.0, 0.0)));
-	TestFalse(TEXT("상한을 넘는 지형은 통행 불가다"), Field.IsWalkable(FVector2D(9999.0, 0.0)));
-	TestFalse(TEXT("상한 등고선이 든 칸은 지면이 상한 아래여도 통째로 막힌다"),
+	TestTrue(TEXT("상한 아래 꼭짓점이 하나라도 있는 칸은 통행 가능하다"),
 		Field.IsWalkable(FVector2D(5000.0, 0.0)));
+	TestFalse(TEXT("네 꼭짓점이 전부 상한 위인 칸은 통행 불가다"),
+		Field.IsWalkable(FVector2D(5200.0, 0.0)));
+	TestFalse(TEXT("상한을 넘는 지형은 통행 불가다"), Field.IsWalkable(FVector2D(9999.0, 0.0)));
 
 	Field.ClearWalkableCeiling();
 	TestTrue(TEXT("상한을 치우면 다시 통행 가능하다"), Field.IsWalkable(FVector2D(9999.0, 0.0)));
+
+	return true;
+}
+
+// 꼭짓점 하나만 상한을 넘는 칸(나무·화분 같은 물체)은 그 꼭짓점 바로 위여도 막지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdHeightField_SingleHighCornerDoesNotBlockCell, "FestaFiesta.Crowd.HeightField.SingleHighCornerDoesNotBlockCell", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdHeightField_SingleHighCornerDoesNotBlockCell::RunTest(const FString& Parameters)
+{
+	using namespace FFF_HeightFieldTestHelpers;
+
+	auto OneSpike = [](const FVector2D& QueryCm, double& OutHeightCm) -> bool
+	{
+		OutHeightCm = (FMath::Abs(QueryCm.X) < 1.0 && FMath::Abs(QueryCm.Y) < 1.0) ? 804.0 : 498.0;
+		return true;
+	};
+
+	FFF_CrowdHeightField Field;
+	Field.Build(FVector2D::ZeroVector, HalfSizeCm, SpacingCm, OneSpike);
+	Field.SetWalkableCeilingCm(800.0);
+
+	TestTrue(TEXT("높은 꼭짓점 바로 위도 통행 가능하다"), Field.IsWalkable(FVector2D(0.0, 0.0)));
+	TestTrue(TEXT("높은 꼭짓점 곁도 통행 가능하다"), Field.IsWalkable(FVector2D(-50.0, 50.0)));
 
 	return true;
 }

@@ -229,6 +229,11 @@ public:
 		return UnitDatas.IsValidIndex(AgentIndex) ? UnitDatas[AgentIndex].TargetLocation : FVector::ZeroVector;
 	}
 
+	int32 GetAgentStuckSteps(int32 AgentIndex) const
+	{
+		return UnitDatas.IsValidIndex(AgentIndex) ? UnitDatas[AgentIndex].StuckSteps : 0;
+	}
+
 	UFUNCTION(BlueprintPure, Category = "Crowd")
 	bool IsAgentActive(int32 AgentIndex) const
 	{

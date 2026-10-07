@@ -113,24 +113,54 @@ bool FFF_CrowdHeightField::IsWalkable(const FVector2D& WorldXYCm) const
 
 	const int32 I00 = Iy * NumX + Ix;
 
+	if (bBlockUnknownGround)
+	{
+		for (const int32 Index : { I00, I00 + 1, I00 + NumX, I00 + NumX + 1 })
+		{
+			if (!Valid.IsValidIndex(Index) || Valid[Index] == 0)
+			{
+				return false;
+			}
+		}
+	}
+
+	bool bAnyValid = false;
+	double LowestCm = 0.0;
 	for (const int32 Index : { I00, I00 + 1, I00 + NumX, I00 + NumX + 1 })
 	{
 		if (!Valid.IsValidIndex(Index) || Valid[Index] == 0)
 		{
-			if (bBlockUnknownGround)
-			{
-				return false;
-			}
-
 			continue;
 		}
-
-		if (Heights[Index] > WalkableCeilingCm)
-		{
-			return false;
-		}
+		LowestCm = bAnyValid ? FMath::Min(LowestCm, Heights[Index]) : Heights[Index];
+		bAnyValid = true;
 	}
 
+	return !(bAnyValid && LowestCm > WalkableCeilingCm);
+}
+
+bool FFF_CrowdHeightField::ProbeCell(const FVector2D& WorldXYCm, FCellProbe& OutProbe) const
+{
+	int32 Ix = 0;
+	int32 Iy = 0;
+	double Tx = 0.0;
+	double Ty = 0.0;
+	if (!TryLocateCell(WorldXYCm, Ix, Iy, Tx, Ty))
+	{
+		return false;
+	}
+
+	const int32 Offsets[4][2] = { { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 } };
+	for (int32 Corner = 0; Corner < 4; ++Corner)
+	{
+		const int32 Cx = Ix + Offsets[Corner][0];
+		const int32 Cy = Iy + Offsets[Corner][1];
+		const int32 Index = Cy * NumX + Cx;
+
+		OutProbe.CornerXYCm[Corner] = MinCornerCm + FVector2D(Cx * SpacingCm, Cy * SpacingCm);
+		OutProbe.bCornerValid[Corner] = Valid.IsValidIndex(Index) && Valid[Index] != 0;
+		OutProbe.CornerHeightCm[Corner] = OutProbe.bCornerValid[Corner] ? Heights[Index] : 0.0;
+	}
 	return true;
 }
 
