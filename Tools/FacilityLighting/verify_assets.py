@@ -9,6 +9,7 @@ import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT/'Saved/FacilityLighting_20260910'
+OUT.mkdir(parents=True, exist_ok=True)
 PDA = '/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage'
 RIG = '/Game/Asset/FacilitiesAsset_HKH/Performance/MainStage_Grand_20260909/BP_MainStage_Grand_Lighting'
 EXPECTED_RUNTIME_LIGHTS = {
@@ -16,6 +17,7 @@ EXPECTED_RUNTIME_LIGHTS = {
     'Overhead_06_Spot', 'Overhead_10_Spot',
     'DeckSpot_Spot', 'DeckSpot_Spot_001',
     'RunwaySpot_Spot', 'RunwaySpot_Spot_001',
+    'AudienceWash_Left_Spot', 'AudienceWash_Right_Spot',
 }
 pda = unreal.load_asset(PDA)
 bp = unreal.load_asset(RIG)
@@ -39,7 +41,8 @@ for handle in subsystem.k2_gather_subobject_data_for_blueprint(bp):
     elif isinstance(obj, unreal.StaticMeshComponent):
         preview = obj
 # The source preview has ten lights, but the artist-authored runtime rig has
-# exactly these nine since revision 67483cfb. Reject both missing and extra lamps.
+# nine stage lamps since revision 67483cfb, plus two audience washes.
+# Reject both missing and extra lamps.
 actual_light_names = {name.removesuffix('_GEN_VARIABLE') for name in lights}
 assert actual_light_names == EXPECTED_RUNTIME_LIGHTS, {
     'missing': sorted(EXPECTED_RUNTIME_LIGHTS - actual_light_names),

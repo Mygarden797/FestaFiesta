@@ -65,7 +65,7 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(
 	// 어느 실패 경로에서도 이전 호출의 부분 geometry가 노출되지 않게 출력부터 초기화한다.
 	OutLane = FFF_QueueLaneGeometry();
 	const FFFZSQueueRules& Rules = Spec.QueueRules;
-	if (FacilityTransform.ContainsNaN()
+	if (!Spec.UsesServiceQueue() || FacilityTransform.ContainsNaN()
 		|| Spec.QueueSplinePointsCm.Num() < 2
 		|| Rules.MaxWaitingAgents <= 0
 		|| Rules.MaxWaitingAgents > UFFZSDeveloperSettings::MaxQueueWaitingAgents

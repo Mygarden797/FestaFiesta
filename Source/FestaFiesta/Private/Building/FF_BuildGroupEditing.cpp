@@ -321,6 +321,8 @@ bool UFF_BuildModeSubsystem::BeginGroupPreset(const FString& Name)
 		if (Entry.RelativeCenter.ContainsNaN() || !FMath::IsFinite(Entry.WorldYawDegrees) || !UFFZSGridLibrary::HasSafeFacilitySpecCardinality(Entry.Spec)) return false;
 	CancelGroupPlacement();
 	GroupEntries = Preset->Entries;
+	// Migrate the placement copy before definition fingerprint checks; keep the saved preset intact.
+	for (FFF_BuildLayoutEntry& Entry : GroupEntries) Entry.Spec.NormalizeNonServiceGeometry();
 	bGroupDuplicate = true;
 	GroupSourceRevision = GetZoneSystem()->GetWorldRevision();
 	for (int32 Index = 0; Index < GroupEntries.Num(); ++Index) GroupSourceIds.Add(FGuid::NewGuid());

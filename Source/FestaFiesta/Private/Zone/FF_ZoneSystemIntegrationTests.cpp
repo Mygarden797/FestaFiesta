@@ -713,6 +713,94 @@ bool FFFZoneSystemQueueExplicitGeometryProjectionTest::RunTest(const FString& Pa
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFFZoneSystemNonServiceQueueLifecycleTest,
+	"FestaFiesta.ZoneIntegration.Queue.NonServiceFacilitiesHaveNoRegistration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZoneSystemNonServiceQueueLifecycleTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FScopedQueueMoveTestSettings SettingsGuard;
+	FTestWorldWrapper TestWorld;
+	if (!TestWorld.CreateTestWorld(EWorldType::Game))
+	{
+		TestWorld.ForwardErrorMessages(this);
+		return false;
+	}
+	UWorld* World = TestWorld.GetTestWorld();
+	UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
+	UFF_ZoneSystemQueueBridgeSubsystem* Bridge = World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>();
+	UFF_ZoneSystemStageBridgeSubsystem* StageBridge = World->GetSubsystem<UFF_ZoneSystemStageBridgeSubsystem>();
+	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
+	if (!TestNotNull(TEXT("Zone subsystem"), Zones) || !TestNotNull(TEXT("Queue bridge"), Bridge) ||
+		!TestNotNull(TEXT("Stage bridge"), StageBridge) || !TestNotNull(TEXT("Gameplay zone"), Zone)) return false;
+	const FName ZoneId(TEXT("GZ_DadaPocha"));
+	if (!Zone->ApplyAcceptedZonePreset(ZoneId) || !Zones->RegisterZone(Zone)) return false;
+
+	TArray<FGuid> FacilityIds;
+	int32 Index = 0;
+	for (const EFFZSFacilityCategory Category : { EFFZSFacilityCategory::Lighting,
+		EFFZSFacilityCategory::Road, EFFZSFacilityCategory::Tile })
+	{
+		FFFZSFacilitySpec Spec = MakeZoneIntegrationFoodTruckSpec();
+		Spec.Category = Category;
+		Spec.NormalizeNonServiceGeometry();
+		FFFZSGridPlacement Placement;
+		Placement.OriginCell = FIntPoint(1000 + Index++ * 2000, 1000);
+		const FFFZSCommand Install = UFFZSGridLibrary::MakeInstallCommand(
+			Spec, ZoneId, Placement, Zones->GetWorldRevision());
+		const FFFZSCommandResult Result = Zones->ExecuteCommand(Install);
+		if (!TestTrue(*FString::Printf(TEXT("Non-service install succeeds: %s"), *Result.Message.ToString()), Result.bSucceeded))
+			return false;
+		FacilityIds.Add(Install.FacilityInstanceId);
+		TestEqual(TEXT("Installing never allocates a Party queue ID"), Bridge->FindQueueFacilityId(Install.FacilityInstanceId), INDEX_NONE);
+
+		Placement.OriginCell.Y += 1000;
+		TestTrue(TEXT("Non-service facilities move without queue registration"), Zones->ExecuteCommand(
+			MakeQueueMoveCommand(Install.FacilityInstanceId, Spec, ZoneId, Placement, Zones->GetWorldRevision())).bSucceeded);
+	}
+	TestEqual(TEXT("Rebuilding registrations creates no non-service queues"), Bridge->RefreshQueueRegistrations(), 0);
+	TestEqual(TEXT("All non-service facilities can open"), StageBridge->OpenEligibleFacilities(false).SucceededCount, 3);
+	for (const FGuid FacilityId : FacilityIds)
+	{
+		TestEqual(TEXT("Opening never creates a Party queue ID"), Bridge->FindQueueFacilityId(FacilityId), INDEX_NONE);
+		FFF_JoinRequest Request;
+		Request.PartyId = 8300;
+		Request.MemberCount = 1;
+		TestFalse(TEXT("A non-service facility cannot accept a queued party"), Bridge->TryJoinZoneFacility(FacilityId, Request).bAccepted);
+		FTransform WaitingTransform;
+		TestFalse(TEXT("A non-service facility has no reservation waiting slot"), Bridge->TryGetProgramWaitingTransform(FacilityId, 0, WaitingTransform));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFFZoneSystemNonServiceQueueProjectionTest,
+	"FestaFiesta.ZoneIntegration.Queue.NonServiceFacilitiesRejectProjection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZoneSystemNonServiceQueueProjectionTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FFFZSFacilitySpec Spec = MakeZoneIntegrationFoodTruckSpec();
+	FFF_QueueLaneGeometry Lane;
+	TestTrue(TEXT("The service control projects its authored lane"),
+		UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(Spec, FTransform::Identity, Lane));
+	for (const EFFZSFacilityCategory Category : { EFFZSFacilityCategory::Lighting,
+		EFFZSFacilityCategory::Road, EFFZSFacilityCategory::Tile })
+	{
+		// Deliberately retain a valid old service spline/rules: callers must not recreate
+		// a queue for these categories even when given an unnormalized legacy spec.
+		Spec.Category = Category;
+		TestFalse(TEXT("Non-service geometry cannot become a Party queue"),
+			UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(Spec, FTransform::Identity, Lane));
+		TestTrue(TEXT("Rejected projection clears the previous lane and waiting slots"),
+			Lane.PolylinePoints.IsEmpty() && Lane.ExplicitSlotTransforms.IsEmpty() && Lane.PlacementObstacles.IsEmpty());
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFFZoneSystemQueueShortGeometryFailsClosedTest,
 	"FestaFiesta.ZoneIntegration.Queue.ShortGeometryFailsClosed",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

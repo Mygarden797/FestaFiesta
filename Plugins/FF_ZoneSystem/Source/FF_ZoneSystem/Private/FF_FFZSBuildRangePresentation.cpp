@@ -129,7 +129,7 @@ void FFZSBuildRangePresentation::AppendQueueSlots(TArray<FBatchedLine>& Lines,
     const FFFZSFacilitySpec& Spec, const FTransform& FacilityTransform,
     const FLinearColor& Color, const UFFZSBuildPresentationSettings& Style)
 {
-    if (!Style.bShowQueueSlots || Spec.QueueRules.MaxWaitingAgents <= 0) return;
+    if (!Style.bShowQueueSlots || !Spec.UsesServiceQueue() || Spec.QueueRules.MaxWaitingAgents <= 0) return;
     // This is a drawing budget, not a queue capacity or a substitute reservation.
     constexpr int32 MaxDisplayedSlots = 128;
     TArray<FVector> Slots;

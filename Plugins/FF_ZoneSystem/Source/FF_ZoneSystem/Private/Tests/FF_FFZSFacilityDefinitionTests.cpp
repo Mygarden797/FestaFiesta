@@ -256,6 +256,7 @@ bool FFFZSPassiveLightingDefinitionTest::RunTest(const FString& Parameters)
     (void)Parameters;
     FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::Info);
     Spec.Category = EFFZSFacilityCategory::Lighting;
+    Spec.ClearanceCells = 0;
     Spec.FacilityDefinitionId = TEXT("Lighting_Streetlamp_FestivalStreetlamp");
     Spec.QueueRules.MaxWaitingAgents = 0;
     Spec.QueueRules.ServiceCapacity = 0;
@@ -267,6 +268,9 @@ bool FFFZSPassiveLightingDefinitionTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("조명은 방문객 대기열과 서비스 앵커 없이 유효하다"), Spec.IsValid(Errors));
 
     FFFZSFacilitySpec Invalid = Spec;
+    Invalid.ClearanceCells = 25;
+    TestFalse(TEXT("조명에는 바닥 크기 밖의 여유 공간을 둘 수 없다"), Invalid.IsValid(Errors));
+    Invalid = Spec;
     Invalid.QueueRules.ServiceCapacity = 1;
     TestFalse(TEXT("조명에는 서비스 정원을 만들 수 없다"), Invalid.IsValid(Errors));
     // Lighting and roads share this non-service contract. Assert its stable
