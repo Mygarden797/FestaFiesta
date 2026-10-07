@@ -263,9 +263,13 @@ namespace
 }
 
 void FFF_FinaleVolley::BuildShellLayout(
-	const FFF_FinaleLayoutContext& Context, TArray<FVector>& OutLocations) const
+	const FFF_FinaleLayoutContext& Context, TArray<FVector>& OutLocations, TArray<FLinearColor>* OutColors) const
 {
 	OutLocations.Reset();
+	if (OutColors)
+	{
+		OutColors->Reset();
+	}
 
 	if (!HasFixedLayout())
 	{
@@ -298,7 +302,7 @@ void FFF_FinaleVolley::BuildShellLayout(
 			return;
 		}
 
-		ShapeData->SamplePoints(Count, LocalPoints);
+		ShapeData->SamplePoints(Count, LocalPoints, OutColors);
 
 		if (LocalPoints.Num() == 0)
 		{
@@ -306,9 +310,11 @@ void FFF_FinaleVolley::BuildShellLayout(
 		}
 	}
 
-	OutLocations.Reserve(Count);
+	// 점 그림은 점 수가 발수보다 적을 수 있다. 모자란 발을 가운데에 몰아 찍지 않는다.
+	const int32 LayoutCount = (Pattern == EFF_FinaleVolleyPattern::Shape) ? LocalPoints.Num() : Count;
+	OutLocations.Reserve(LayoutCount);
 
-	for (int32 Index = 0; Index < Count; ++Index)
+	for (int32 Index = 0; Index < LayoutCount; ++Index)
 	{
 		/* 모양은 애셋 순서대로 찍는다.
 
@@ -391,4 +397,65 @@ FVector FFF_FinaleLaunchSpec::EvaluateRise(
 	}
 
 	return Location;
+}
+
+FFF_FinaleSongPlan FFF_FinaleSongPlan::Make(
+	const float SongSeconds, const float SiteTourAtFraction, const float SiteActSeconds,
+	const float MaxRiseSeconds, const float TailSeconds)
+{
+	FFF_FinaleSongPlan Plan;
+	if (SongSeconds <= 0.f)
+	{
+		return Plan;
+	}
+
+	Plan.SongSeconds = SongSeconds;
+	Plan.SalvoAt = FMath::Max(0.f,
+		SongSeconds - FMath::Max(0.f, TailSeconds) - FMath::Max(0.f, MaxRiseSeconds) - EndMarginSeconds);
+	Plan.VolleysEndAt = Plan.SalvoAt;
+
+	if (SiteActSeconds <= 0.f)
+	{
+		return Plan;
+	}
+
+	// 순회가 곡 끝에 너무 붙으면 앞당긴다. 마무리 막이 몰아칠 시간이 없으면 끝이 밋밋하다.
+	const float LatestTourStart = Plan.SalvoAt - MinGrandFinaleSeconds - SiteActSeconds;
+	Plan.SiteTourAt = FMath::Clamp(SongSeconds * FMath::Clamp(SiteTourAtFraction, 0.f, 1.f), 0.f, FMath::Max(0.f, LatestTourStart));
+	Plan.GrandFinaleAt = Plan.SiteTourAt + SiteActSeconds;
+	return Plan;
+}
+
+void FFF_FinaleSongPlan::PlaceFinalShape(const float ShapeRiseSeconds, const float BloomSeconds,
+	const float SalvoFirstRiseSeconds, const float MaxRiseSeconds, const float LeadSeconds)
+{
+	if (!HasActs())
+	{
+		return;
+	}
+
+	const float BloomStart = SalvoAt + FMath::Max(0.f, SalvoFirstRiseSeconds)
+		- FMath::Max(0.f, LeadSeconds) - FMath::Max(0.f, BloomSeconds);
+	FinalShapeAt = FMath::Clamp(BloomStart - FMath::Max(0.f, ShapeRiseSeconds), GrandFinaleAt, SalvoAt);
+	VolleysEndAt = FMath::Clamp(BloomStart - FMath::Max(0.f, MaxRiseSeconds), GrandFinaleAt, FinalShapeAt);
+}
+
+float FFF_FinaleSongPlan::ResolveIntervalToFinish(
+	const float Now, const float EndAt, const int32 Shells, const float PerVolley, const float MinInterval)
+{
+	const float Floor = FMath::Max(0.01f, MinInterval);
+	const float TimeLeft = EndAt - Now;
+	if (TimeLeft <= Floor)
+	{
+		return Floor;
+	}
+
+	// 남은 발이 없으면 구간 끝까지 기다린다. 다음 구간에서 다시 계산한다.
+	if (Shells <= 0)
+	{
+		return TimeLeft;
+	}
+
+	const float VolleysLeft = FMath::Max(1.f, static_cast<float>(Shells) / FMath::Max(1.f, PerVolley));
+	return FMath::Max(Floor, TimeLeft / VolleysLeft);
 }

@@ -112,7 +112,19 @@ FPrimaryAssetId UFFZSFacilityDefinition::GetPrimaryAssetId() const
     return Super::GetPrimaryAssetId();
 }
 
+void UFFZSFacilityDefinition::PostLoad()
+{
+    Super::PostLoad();
+    Spec.NormalizeNonServiceGeometry();
+}
+
 #if WITH_EDITOR
+void UFFZSFacilityDefinition::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+    Spec.NormalizeNonServiceGeometry();
+    Super::PostEditChangeProperty(PropertyChangedEvent);
+}
+
 // 에디터 저장·검증 메뉴가 부모 오류와 Spec 오류를 모두 보게 한다.
 // 런타임 빌드에는 이 경로가 없으므로 설치 명령도 같은 Spec 검증을 다시 수행한다.
 void UFFZSFacilityDefinition::PostInitProperties()

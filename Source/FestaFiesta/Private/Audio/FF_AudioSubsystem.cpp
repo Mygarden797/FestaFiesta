@@ -905,14 +905,40 @@ void UFF_AudioSubsystem::HandleAmbienceFinished(UAudioComponent* Component)
 		return;
 	}
 
-	// 최고 등급 전용곡도 연출이 끝날 때까지 되풀이한다. 곡이 연출보다 짧아도 끝까지 조용해지지 않는다.
-	// 연출이 끝나면 오디오 결선이 다음 곡으로 갈아탄다(UFF_AudioEventLink::HandleFinaleShowStateChanged).
+	/* 피날레 곡은 되풀이하지 않는다.
+
+	   최고 등급 연출은 곡 길이에 맞춰 곡과 함께 끝난다(FFF_FinaleGradeSpec::bMatchSongLength). 곡이 몇 프레임
+	   먼저 끝났을 때 처음부터 다시 틀면 마지막 장면에서 전주가 툭 튀어나온다. 연출이 곡보다 길면 남은 동안은
+	   불꽃 소리만 난다. 연출이 끝나면 오디오 결선이 다음 곡으로 갈아탄다(UFF_AudioEventLink::HandleFinaleShowStateChanged).
+	*/
+	if (CurrentAmbience == EFF_AudioAmbience::Finale || CurrentAmbience == EFF_AudioAmbience::FinaleEnding)
+	{
+		UE_LOG(LogFestaFiestaAudio, Log, TEXT("[사운드] 피날레 곡 %s 이 끝났다. 되풀이하지 않는다."),
+			Component->Sound ? *Component->Sound->GetName() : TEXT("?"));
+		return;
+	}
+
 	Component->Play(0.f);
 	if (const UWorld* World = GetWorld())
 	{
 		AmbienceStartAudioTime = World->GetAudioTimeSeconds();
 	}
 	AmbienceStartOffset = 0.f;
+}
+
+float UFF_AudioSubsystem::GetAmbienceTrackLength(const EFF_AudioAmbience Ambience) const
+{
+	const UFF_AudioBankData* Bank = ResolveBank();
+	const FFF_AudioAmbienceTrack* Track = Bank ? Bank->FindAmbience(Ambience) : nullptr;
+	USoundBase* Sound = Track && Track->IsValid() ? Track->Sound.LoadSynchronous() : nullptr;
+	if (!Sound)
+	{
+		return 0.f;
+	}
+
+	// 반복 곡은 GetDuration 이 "무한" 을 돌려준다. 파형이면 실제 길이를 읽는다.
+	const USoundWave* Wave = Cast<USoundWave>(Sound);
+	return Wave ? Wave->Duration : (Sound->IsLooping() ? 0.f : Sound->GetDuration());
 }
 
 bool UFF_AudioSubsystem::HasAmbienceTrack(const EFF_AudioAmbience Ambience) const

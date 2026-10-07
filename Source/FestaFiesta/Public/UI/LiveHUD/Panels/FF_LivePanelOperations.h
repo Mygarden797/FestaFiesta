@@ -136,10 +136,33 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Text")
 	FText FooterNoteText = NSLOCTEXT("FestaFiestaLiveOperations", "FooterNote", "관객 현황과 대기열은 각 탭에서 확인할 수 있습니다.");
 
+	/** 숫자는 즉시 갱신하고 막대만 이 속도로 따라간다. 0이면 보간 없이 갱신한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Buzz", meta = (ClampMin = "0", UIMin = "0", UIMax = "20"))
+	float BuzzInterpSpeed = 6.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Buzz|Text", meta = (ToolTip = "{Value}: 현재 화제성(0~100)"))
+	FText BuzzValueTextFormat = NSLOCTEXT("FestaFiestaLiveOperations", "BuzzValue", "{Value} / 100");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Buzz|Text", meta = (ToolTip = "{Change}: 오늘 아침 대비 증가량"))
+	FText BuzzIncreaseTextFormat = NSLOCTEXT("FestaFiestaLiveOperations", "BuzzIncrease", "오늘 +{Change}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Buzz|Text", meta = (ToolTip = "{Change}: 오늘 아침 대비 감소량의 절댓값"))
+	FText BuzzDecreaseTextFormat = NSLOCTEXT("FestaFiestaLiveOperations", "BuzzDecrease", "오늘 −{Change}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Buzz|Text")
+	FText BuzzUnchangedText = NSLOCTEXT("FestaFiestaLiveOperations", "BuzzUnchanged", "오늘 변화 없음");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Buzz|Text")
+	FText BuzzNoteText = NSLOCTEXT("FestaFiestaLiveOperations", "BuzzNote", "축제를 향한 관심도");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Operations|Buzz|Text")
+	FText BuzzUnavailableText = NSLOCTEXT("FestaFiestaLiveOperations", "BuzzUnavailable", "아직 집계하지 않음");
+
 protected:
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	UFUNCTION()
 	void HandleSimSatisfactionChanged(int32 NewValue);
@@ -155,6 +178,9 @@ protected:
 
 	UFUNCTION()
 	void HandleGoldChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleBuzzChanged(float NewValue, float PreviousValue);
 
 protected:
 	// --- 지표 4종 ---
@@ -195,6 +221,19 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
 	TObjectPtr<UProgressBar> Bar_GoalProgress;
 
+	// --- 화제성: 글꼴·색·크기는 Designer 값을 그대로 사용한다. ---
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
+	TObjectPtr<UTextBlock> Text_BuzzValue;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
+	TObjectPtr<UTextBlock> Text_BuzzChange;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
+	TObjectPtr<UTextBlock> Text_BuzzNote;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Operations")
+	TObjectPtr<UProgressBar> Bar_Buzz;
+
 	// --- 주의 항목 ---
 
 	/** 지금 손볼 것. 없으면 줄째 숨긴다. */
@@ -215,6 +254,7 @@ private:
 	void UnbindViewModel();
 
 	void RefreshAll();
+	void RefreshBuzz();
 
 	static void SetTextOrHide(UTextBlock* TextBlock, const FText& Value);
 	static void SetGroupTextOrHide(UWidget* Group, UTextBlock* TextBlock, const FText& Value);
@@ -223,4 +263,7 @@ private:
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
 
 	FFF_LiveGoalProgress GoalProgress;
+	bool bHasBuzzValue = false;
+	float DisplayedBuzzRatio = 0.f;
+	float TargetBuzzRatio = 0.f;
 };

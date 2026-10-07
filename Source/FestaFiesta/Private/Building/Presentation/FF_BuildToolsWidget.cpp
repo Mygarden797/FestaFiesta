@@ -778,13 +778,21 @@ void UFF_BuildToolsWidget::RefreshTools()
     if (System && bPreview)
     {
         const FFFZSFacilitySpec& Spec = System->GetSelectedFacilitySpec();
-        const FFFZSQueueRules Queue = System->GetSelectedFacilityQueueRules();
-        ViewData.FootprintText = FText::Format(LOCTEXT("FootprintInfo", "시설 크기  {0} × {1} m\n안전 여유  {2} m"),
-            FText::AsNumber(Spec.FootprintSizeCells.X / 100.0), FText::AsNumber(Spec.FootprintSizeCells.Y / 100.0),
-            FText::AsNumber(Spec.ClearanceCells / 100.0));
-        ViewData.QueueText = FText::Format(LOCTEXT("QueueInfo", "대기·이용 정원  {0}팀\n동시 이용  {1}팀  ·  팀당 이용  {2}초"),
-            FText::AsNumber(Queue.MaxWaitingAgents), FText::AsNumber(Queue.ServiceCapacity),
-            FText::AsNumber(Queue.ServiceDurationSeconds));
+        if (Spec.UsesServiceQueue())
+        {
+            const FFFZSQueueRules Queue = System->GetSelectedFacilityQueueRules();
+            ViewData.FootprintText = FText::Format(LOCTEXT("FootprintInfo", "시설 크기  {0} × {1} m\n안전 여유  {2} m"),
+                FText::AsNumber(Spec.FootprintSizeCells.X / 100.0), FText::AsNumber(Spec.FootprintSizeCells.Y / 100.0),
+                FText::AsNumber(Spec.ClearanceCells / 100.0));
+            ViewData.QueueText = FText::Format(LOCTEXT("QueueInfo", "대기·이용 정원  {0}팀\n동시 이용  {1}팀  ·  팀당 이용  {2}초"),
+                FText::AsNumber(Queue.MaxWaitingAgents), FText::AsNumber(Queue.ServiceCapacity),
+                FText::AsNumber(Queue.ServiceDurationSeconds));
+        }
+        else
+        {
+            ViewData.FootprintText = FText::Format(LOCTEXT("FootprintOnlyInfo", "시설 크기  {0} × {1} m"),
+                FText::AsNumber(Spec.FootprintSizeCells.X / 100.0), FText::AsNumber(Spec.FootprintSizeCells.Y / 100.0));
+        }
     }
     UFF_BuildCatalogSubsystem* Catalog = CatalogModel.Get();
     FFF_BuildCatalogEntry Entry;
@@ -808,7 +816,11 @@ void UFF_BuildToolsWidget::RefreshTools()
     if (Text_Cost) { Text_Cost->SetText(ViewData.CostText); }
     if (Text_Balance) Text_Balance->SetText(ViewData.BalanceText);
     if (Text_Footprint) Text_Footprint->SetText(ViewData.FootprintText);
-    if (Text_Queue) Text_Queue->SetText(ViewData.QueueText);
+    if (Text_Queue)
+    {
+        Text_Queue->SetText(ViewData.QueueText);
+        Text_Queue->SetVisibility(ViewData.QueueText.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+    }
     // The saved WBP keeps this named legacy binding collapsed for older
     // Blueprint references. The visible guide pairs physical keycaps with actions.
     if (Text_ControlHelp) Text_ControlHelp->SetText(FText::GetEmpty());

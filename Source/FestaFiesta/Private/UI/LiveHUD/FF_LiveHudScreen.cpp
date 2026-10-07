@@ -27,6 +27,8 @@
 #include "UI/LiveHUD/Incident/FF_IncidentToast.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
+#include "UI/LiveHUD/FF_LiveUtilityDock.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelReport.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaLiveHud"
@@ -65,6 +67,7 @@ bool FFF_LivePanelLayout::UsesViewportCenter(EFF_LiveTab Tab) const
 	case EFF_LiveTab::SNS:
 	case EFF_LiveTab::Staff:
 	case EFF_LiveTab::Density:
+	case EFF_LiveTab::Report:
 		return true;
 	default:
 		return false;
@@ -274,6 +277,7 @@ void UFF_LiveHudScreen::NativeConstruct()
 	RefreshAll();
 	EnsureIncidentMarkerLayer();
 	EnsureIncidentDetailPanel();
+	TryShowDailyReport();
 }
 
 void UFF_LiveHudScreen::NativeDestruct()
@@ -357,6 +361,7 @@ void UFF_LiveHudScreen::BindViewModel()
 	}
 
 	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleStageViewChanged);
+	CachedViewModel->OnDailyReportReady.AddUniqueDynamic(this, &ThisClass::HandleDailyReportReady);
 	CachedViewModel->OnTimeScaleLockChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleTimeScaleLockChanged);
 
 	// 피날레 등급이 바뀌면 **탭이 생기거나 사라진다.** 값만 바뀌는 것이 아니다.
@@ -374,6 +379,7 @@ void UFF_LiveHudScreen::UnbindViewModel()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleStageViewChanged);
+		CachedViewModel->OnDailyReportReady.RemoveDynamic(this, &ThisClass::HandleDailyReportReady);
 		CachedViewModel->OnTimeScaleLockChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleTimeScaleLockChanged);
 		CachedViewModel->OnPurchasedFinaleGradeChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleFinaleGradeChanged);
 		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleRemainingSecondsChanged);
@@ -419,6 +425,12 @@ void UFF_LiveHudScreen::HandleTabButtonClicked(int32 TabId)
 
 void UFF_LiveHudScreen::ToggleTab(EFF_LiveTab Tab)
 {
+	// SNS의 실제 진입점은 위쪽 도크다. 외부의 기존 탭 호출도 같은 패널로 보낸다.
+	if (Tab == EFF_LiveTab::SNS && UFF_LiveUtilityDock::IsConfigured())
+	{
+		if (UFF_LiveUtilityDock* Dock = UFF_LiveUtilityDock::FindForPlayer(GetOwningPlayer())) Dock->ToggleSNS();
+		return;
+	}
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	const EFF_FestivalStage Stage = ViewModel ? ViewModel->GetCurrentStage() : EFF_FestivalStage::Live;
 
@@ -891,11 +903,12 @@ void UFF_LiveHudScreen::RefreshTabs()
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	const EFF_FestivalStage Stage = ViewModel ? ViewModel->GetCurrentStage() : EFF_FestivalStage::Live;
 	const bool bPurchasedFinale = HasPurchasedFinale();
+	const bool bSnsInDock = UFF_LiveUtilityDock::IsConfigured();
 
 	int32 VisibleTabCount = 0;
-	ForEachTabButton([this, Stage, bPurchasedFinale, &VisibleTabCount](EFF_LiveTab Tab, UFF_LiveTabButton& Button)
+	ForEachTabButton([this, Stage, bPurchasedFinale, bSnsInDock, &VisibleTabCount](EFF_LiveTab Tab, UFF_LiveTabButton& Button)
 	{
-		const bool bVisible = FFF_LiveHudRules::IsTabVisible(Tab, Stage, bPurchasedFinale);
+		const bool bVisible = !(bSnsInDock && Tab == EFF_LiveTab::SNS) && FFF_LiveHudRules::IsTabVisible(Tab, Stage, bPurchasedFinale);
 		Button.SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		Button.SetSelected(Selection.IsSelected(Tab));
 		VisibleTabCount += bVisible ? 1 : 0;
@@ -1121,6 +1134,29 @@ void UFF_LiveHudScreen::HandleStageViewChanged(EFF_FestivalStage NewStage, int32
 	LogBarGeometryNextTick(NewStage);
 }
 
+void UFF_LiveHudScreen::HandleDailyReportReady(int32 Day)
+{
+	TryShowDailyReport();
+}
+
+void UFF_LiveHudScreen::TryShowDailyReport()
+{
+	UFF_FestivalViewModelSubsystem* VM = GetViewModel();
+	const FFF_DailyReportView* Report = VM ? VM->GetDailyReport() : nullptr;
+	if (!Report || VM->WasDailyReportAutoShown(Report->Day)) return;
+	// ToggleTab이면 먼저 수동으로 열어 둔 결산이 닫힌다. 같은 선택은 그대로 유지한다.
+	FFF_LiveTabSelection ReportSelection;
+	ReportSelection.bHasSelection = true;
+	ReportSelection.Tab = EFF_LiveTab::Report;
+	ApplySelection(ReportSelection);
+	if (Selection.bHasSelection && Selection.Tab == EFF_LiveTab::Report
+		&& Cast<UFF_LivePanelReport>(PanelWidgets.FindRef(EFF_LiveTab::Report)))
+	{
+		// 기록은 GameInstance VM에 있어 HUD 재생성/재구독으로 자동 팝업을 반복하지 않는다.
+		VM->MarkDailyReportAutoShown(Report->Day);
+	}
+}
+
 void UFF_LiveHudScreen::HandleRemainingSecondsChanged(int32 NewValue)
 {
 	// 초마다 온다. 상태 행만 다시 쓴다 — 탭까지 돌리면 초당 갱신이 된다.
@@ -1187,7 +1223,7 @@ FText UFF_LiveHudScreen::GetCtaReasonText() const
 
 	case EFF_LiveCtaState::ReadyFinishFestival:
 		// 되돌릴 수 없는 마지막 버튼이라 무엇이 일어나는지 미리 적는다.
-		return LOCTEXT("LiveCta_FinishNote", "누르면 축제가 끝나고 나라 지도로 돌아갑니다.");
+		return LOCTEXT("LiveCta_FinishNote", "축제를 마치고 최종 결산을 확인합니다.");
 
 	default:
 		return FText::GetEmpty();

@@ -21,6 +21,10 @@
 
    가로세로를 각각 늘려 맞추지 않고 긴 쪽 기준으로 한 번에 나눈다. 축마다 따로
    맞추면 세로로 긴 하트가 납작해진다 — 모양을 담는 애셋이 모양을 바꾸면 안 된다.
+
+   ─── 점 그림 (bFixedPoints) ─────────────────────────────────────────────────
+   태극기처럼 선 하나로 못 그리고 자리마다 색이 다른 모양은 점을 그대로 담는다.
+   점 하나가 불꽃 하나이고, 점 순서가 터지는 순서다. 발수가 점보다 적으면 고르게 솎는다.
 */
 UCLASS(BlueprintType)
 class FESTAFIESTA_API UFF_FinaleShapeData : public UDataAsset
@@ -50,8 +54,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale|Shape")
 	bool bClosed = true;
 
-	// 그릴 수 있는 모양인가. 점이 둘은 있어야 선이 된다.
-	bool IsValidShape() const { return Points.Num() >= 2; }
+	/* 켜면 Points 를 선으로 잇지 않고 점 그대로 쓴다. 점 하나에 한 발이고, 점 순서대로 터진다.
+
+	   채운 면이나 여러 조각으로 된 그림(태극기)은 한 붓 그리기로 다시 찍으면 조각 사이를 선이 잇는다.
+	   켜면 bClosed 는 보지 않는다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale|Shape")
+	bool bFixedPoints = false;
+
+	/* 점마다 색. Points 와 수가 같고 bFixedPoints 일 때만 쓴다. 아니면 볼리의 색을 따른다.
+
+	   태극의 빨강 · 파랑과 흰 괘처럼 색이 곧 모양인 그림에 쓴다. 볼리의 색 돌림을 받으면 무늬가 사라진다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale|Shape")
+	TArray<FLinearColor> PointColors;
+
+	// 그릴 수 있는 모양인가. 선은 점이 둘은 있어야 하고, 점 그림은 하나면 된다.
+	bool IsValidShape() const { return Points.Num() >= (bFixedPoints ? 1 : 2); }
+
+	// 점마다 색을 갖는가.
+	bool HasPointColors() const { return bFixedPoints && Points.Num() > 0 && PointColors.Num() == Points.Num(); }
 
 	/* 윤곽선을 따라 Count 개의 점을 고르게 찍는다.
 
@@ -61,13 +83,19 @@ public:
 
 	   그릴 수 없는 모양이면 아무것도 채우지 않는다. 호출부가 빈 결과를 보고
 	   물러설 수 있게 하려는 것이다 — 원점에 몰아서 찍으면 한 점에서 전부 터진다.
+
+	   점 그림은 점을 그대로 낸다. Count 가 점보다 많아도 점 수만큼만 내고(남는 발은 호출부 몫),
+	   적으면 순서를 지키며 고르게 솎는다. OutColors 를 주면 점마다 색을 같은 순서로 담는다 —
+	   색이 없는 모양이면 비워 둔다.
 	*/
-	void SamplePoints(int32 Count, TArray<FVector2D>& OutPoints) const;
+	void SamplePoints(int32 Count, TArray<FVector2D>& OutPoints, TArray<FLinearColor>* OutColors = nullptr) const;
 
 	/* 원본 점들을 정규화해 Points 에 담는다. 베이크 도구가 부른다.
 
 	   정규화를 애셋 쪽에 두는 이유는, 저작 도구가 여럿이 되어도(스플라인, CSV,
 	   직접 입력) 담기는 형식이 한 곳에서만 정해지게 하려는 것이다.
+
+	   선 모양으로 굽는다. 점 그림이던 애셋에 구우면 점 그림 설정(bFixedPoints · PointColors)은 지운다.
 	*/
 	void SetFromRawPoints(const TArray<FVector2D>& RawPoints, bool bInClosed);
 };

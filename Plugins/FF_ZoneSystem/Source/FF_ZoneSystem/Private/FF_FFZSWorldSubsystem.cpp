@@ -34,6 +34,41 @@
 
 #define LOCTEXT_NAMESPACE "FFZSWorldSubsystem"
 
+// Per-validation evidence only: never persisted or reused after the world changes.
+struct FFFZSPlacementGroundSupport
+{
+    TMap<TPair<const UPrimitiveComponent*, int32>, int32> SampleCounts;
+    int32 NumSamples = 0;
+    double MaxHeight = -DBL_MAX;
+    double UnsampledRiseCm = 0.0;
+    bool bValidated = false;
+
+    bool Contains(const UPrimitiveComponent* Component, const int32 InstanceIndex) const
+    {
+        if (!Component) { return false; }
+        if (Component->IsA<ULandscapeHeightfieldCollisionComponent>())
+        {
+            // A footprint corner can overlap a neighboring heightfield section between samples.
+            // Only landscape collision sections share this terrain identity; props never do.
+            for (const auto& Pair : SampleCounts)
+            {
+                if (Pair.Key.Key && Pair.Key.Key->IsA<ULandscapeHeightfieldCollisionComponent>() &&
+                    Pair.Key.Key->GetOwner() == Component->GetOwner())
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+        // An unresolved instance must not exempt an entire foliage/instanced mesh component.
+        if (Component->IsA<UInstancedStaticMeshComponent>() && InstanceIndex == INDEX_NONE) { return false; }
+        const int32* Count = SampleCounts.Find(TPair<const UPrimitiveComponent*, int32>(Component, InstanceIndex));
+        // A low prop base reached by a minority of ground rays is still an obstacle. A mesh
+        // must support the entire footprint before its sloping surface can receive an exemption.
+        return Count && *Count == NumSamples;
+    }
+};
+
 namespace
 {
     FFFZSOrientedRect TransformRegion(const FFFZSOrientedRect& Rect, const FTransform& Transform)
@@ -1877,7 +1912,9 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
             LOCTEXT("QueueOccupied", "최대 Queue 영역이 점유되어 있습니다."));
     }
     ValidateProtectedAreas(Command.ZoneId, *Zone, Command.FacilitySpec, Result);
-    ValidateGround(*Zone, Command.FacilitySpec, IgnoreFacility, Result);
+    FFFZSPlacementGroundSupport GroundSupport;
+    ValidateGround(*Zone, Command.FacilitySpec, IgnoreFacility, Result,
+        Command.FacilitySpec.IsGroundSurface() ? &GroundSupport : nullptr);
     if (!Command.FacilitySpec.IsGroundSurface())
     {
         // Ground can contain both uncovered soil and paving, and visual meshes load asynchronously.
@@ -1897,7 +1934,7 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
         }
         Result.PlacementTransform.SetLocation(Location);
     }
-    ValidateWorldCollision(*Zone, Command.FacilitySpec, IgnoreFacility, Result);
+    ValidateWorldCollision(*Zone, Command.FacilitySpec, IgnoreFacility, Result, &GroundSupport);
     ValidateNavigation(Command.FacilitySpec, Result);
 
     Result.bIsValid = Result.Reasons.IsEmpty();
@@ -1925,7 +1962,8 @@ void UFFZSWorldSubsystem::ValidateGround(
     const AFFZSGameplayZone& Zone,
     const FFFZSFacilitySpec& Spec,
     const AFFZSFacilityActor* IgnoreFacility,
-    FFFZSPlacementValidation& InOutValidation) const
+    FFFZSPlacementValidation& InOutValidation,
+    FFFZSPlacementGroundSupport* OutGroundSupport) const
 {
     const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
     UWorld* World = GetWorld();
@@ -1995,6 +2033,7 @@ void UFFZSWorldSubsystem::ValidateGround(
     float MinHeight = MAX_flt;
     float MaxHeight = -MAX_flt;
     float MinimumUpDot = 1.0f;
+    bool bMissingGroundSample = false;
 
     // 물리 샘플 밀도는 1cm 점유 해상도와 분리한다.
     for (const FFFZSOrientedRect& Rect : InOutValidation.FootprintOrientedRects)
@@ -2031,6 +2070,7 @@ void UFFZSWorldSubsystem::ValidateGround(
                 FHitResult Hit;
                 if (!TraceGround(Start, End, Hit))
                 {
+                    bMissingGroundSample = true;
                     if (Settings->bRequireEveryGroundSample)
                     {
                         InOutValidation.AddFailure(EFFZSPlacementFailure::InvalidGround,
@@ -2044,8 +2084,24 @@ void UFFZSWorldSubsystem::ValidateGround(
                 HeightSum += Height;
                 MinHeight = FMath::Min(MinHeight, Height);
                 MaxHeight = FMath::Max(MaxHeight, Height);
-                MinimumUpDot = FMath::Min(MinimumUpDot, FMath::Clamp(FVector::DotProduct(
-                    Hit.ImpactNormal.GetSafeNormal(), FVector::UpVector), -1.0f, 1.0f));
+                const float UpDot = FMath::Clamp(FVector::DotProduct(
+                    Hit.ImpactNormal.GetSafeNormal(), FVector::UpVector), -1.0, 1.0);
+                MinimumUpDot = FMath::Min(MinimumUpDot, UpDot);
+                if (OutGroundSupport)
+                {
+                    ++OutGroundSupport->SampleCounts.FindOrAdd(
+                        TPair<const UPrimitiveComponent*, int32>(Hit.GetComponent(), Hit.Item));
+                    ++OutGroundSupport->NumSamples;
+                    OutGroundSupport->MaxHeight = FMath::Max(OutGroundSupport->MaxHeight, Hit.ImpactPoint.Z);
+                    // Samples sit at cell centers. Extend their height envelope to the cell corners
+                    // using the observed slope, not the height of the whole terrain mesh's bounds.
+                    if (UpDot > UE_SMALL_NUMBER)
+                    {
+                        const double Slope = FMath::Sqrt(FMath::Max(0.0, 1.0 - UpDot * UpDot)) / UpDot;
+                        OutGroundSupport->UnsampledRiseCm = FMath::Max(OutGroundSupport->UnsampledRiseCm,
+                            Slope * FMath::Sqrt(StepX * StepX + StepY * StepY) * CellSizeCm * 0.5);
+                    }
+                }
             }
         }
     }
@@ -2067,6 +2123,11 @@ void UFFZSWorldSubsystem::ValidateGround(
         InOutValidation.AddFailure(EFFZSPlacementFailure::HeightVarianceExceeded,
             LOCTEXT("HeightVar", "지면 높이 편차가 설정된 프로토타입 제한을 초과했습니다."));
     }
+    if (OutGroundSupport)
+    {
+        OutGroundSupport->bValidated = !bMissingGroundSample && MaximumSlope <= Ground.MaxSlopeDegrees
+            && MaxHeight - MinHeight <= Ground.MaxHeightVarianceCm;
+    }
     FVector Location = InOutValidation.PlacementTransform.GetLocation();
     Location.Z = HeightSum / SuccessfulSampleCount;
     InOutValidation.PlacementTransform.SetLocation(Location);
@@ -2075,7 +2136,8 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
     const AFFZSGameplayZone& Zone,
     const FFFZSFacilitySpec& Spec,
     const AFFZSFacilityActor* IgnoreFacility,
-    FFFZSPlacementValidation& InOutValidation) const
+    FFFZSPlacementValidation& InOutValidation,
+    const FFFZSPlacementGroundSupport* GroundSupport) const
 {
     const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
     UWorld* World = GetWorld();
@@ -2095,7 +2157,7 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
     // Rect마다 새로 할당하지 않고 Overlap 결과 버퍼를 재사용한다.
     TArray<FOverlapResult> Overlaps;
     Overlaps.Reserve(16);
-    const auto HasBlockingOverlap = [World, &Params, &Overlaps, &InOutValidation](
+    const auto HasBlockingOverlap = [World, &Params, &Overlaps, &InOutValidation, &Spec, GroundSupport](
         const FVector& Center, const FQuat& Rotation, const FVector& HalfExtent,
         const EFFZSPlacementFailure Failure, const FFFZSOrientedRect& Affected) -> bool
     {
@@ -2105,6 +2167,8 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
         {
             return false;
         }
+        TArray<FOverlapResult> AboveGroundOverlaps;
+        bool bCheckedAboveGround = false;
         for (const FOverlapResult& Overlap : Overlaps)
         {
             const AActor* Actor = Overlap.GetActor();
@@ -2116,6 +2180,28 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
             }
             if (!Component || Component->GetCollisionResponseToChannel(ECC_Visibility) != ECR_Ignore)
             {
+                if (Spec.IsGroundSurface() && Failure == EFFZSPlacementFailure::PlacementCollision &&
+                    GroundSupport && GroundSupport->bValidated && GroundSupport->Contains(Component, Overlap.ItemIndex))
+                {
+                    // The mean-height paving box can intersect its own gently sloping support.
+                    // Recheck that body above the verified local terrain envelope. Keep the full
+                    // probe height even for thin roads, so a wall merged into the floor still blocks.
+                    // Every unrelated component/instance retains the original low obstacle query.
+                    if (!bCheckedAboveGround)
+                    {
+                        FVector AboveGroundCenter = Center;
+                        AboveGroundCenter.Z = FMath::Max(Center.Z,
+                            GroundSupport->MaxHeight + GroundSupport->UnsampledRiseCm + 3.0 + HalfExtent.Z);
+                        World->OverlapMultiByChannel(AboveGroundOverlaps, AboveGroundCenter, Rotation,
+                            ECC_Visibility, FCollisionShape::MakeBox(HalfExtent), Params);
+                        bCheckedAboveGround = true;
+                    }
+                    if (!AboveGroundOverlaps.ContainsByPredicate([&](const FOverlapResult& Above)
+                        { return Above.GetComponent() == Component && Above.ItemIndex == Overlap.ItemIndex; }))
+                    {
+                        continue;
+                    }
+                }
                 // Reuse this exact overlap; never issue a second scene query for presentation.
                 FBox Bounds = Component ? Component->Bounds.GetBox() : Actor->GetComponentsBoundingBox();
                 if (const UInstancedStaticMeshComponent* Instances = Cast<UInstancedStaticMeshComponent>(Component))
@@ -2203,7 +2289,7 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
 }
 void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZSPlacementValidation& InOutValidation) const
 {
-    if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface())
+    if (!Spec.UsesServiceQueue())
     {
         // 조명에는 고객 Entry/Service/Queue 목적지가 없다. 본체 충돌과 보호 동선은
         // 다른 배치 검증 단계에서 검사하고, 존재하지 않는 서비스 경로만 생략한다.
@@ -3670,7 +3756,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
                 bStateCompatible = Saved.Queue.State == EFFZSQueueState::Closed;
                 break;
             case EFFZSFacilityState::Active:
-                if (EffectiveSpec.Category == EFFZSFacilityCategory::Lighting || EffectiveSpec.IsGroundSurface())
+                if (!EffectiveSpec.UsesServiceQueue())
                 {
                     bStateCompatible = Saved.Queue.State == EFFZSQueueState::Closed &&
                         Saved.Queue.Entries.IsEmpty();
@@ -3813,6 +3899,18 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapsho
         MigrateLegacyRoadSurfaces(MigratedSnapshot);
         EffectiveSnapshot = &MigratedSnapshot;
     }
+
+    // Older saves can retain a passive facility's former clearance or queue.
+    // Migrate a copy so restore never changes the caller's snapshot.
+    if (EffectiveSnapshot == &Snapshot)
+    {
+        MigratedSnapshot = Snapshot;
+    }
+    for (FFFZSFacilityInstanceSnapshot& Saved : MigratedSnapshot.Facilities)
+    {
+        Saved.FacilitySpec.NormalizeNonServiceGeometry();
+    }
+    EffectiveSnapshot = &MigratedSnapshot;
 
     if (!ValidateSnapshotBeforeRestore(*EffectiveSnapshot, OutErrors))
     {

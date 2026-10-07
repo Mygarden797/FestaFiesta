@@ -75,6 +75,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Audio")
 	bool HasAmbienceTrack(EFF_AudioAmbience Ambience) const;
 
+	// 이 상황에 붙은 곡의 길이(초). 곡이 없거나 반복 곡이라 길이를 모르면 0. 플레이리스트는 곡이 여럿이라 0.
+	// 피날레가 연출 길이를 곡에 맞출 때 읽는다(FFF_FinaleGradeSpec::bMatchSongLength).
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Audio")
+	float GetAmbienceTrackLength(EFF_AudioAmbience Ambience) const;
+
 	// ── 플레이리스트 ────────────────────────────────────────────────────────
 	//
 	// SetAmbience(Playlist) 로 켠다. 다른 배경음으로 갈아타면 듣던 곡과 위치를 기억해 두고,

@@ -108,6 +108,7 @@ FFFZSFacilitySpec FFZSFacilityUpgradeRules::BuildEffectiveSpec(
     const FFFZSFacilitySpec& BaseSpec, const int32 Level, const float SizeMultiplier)
 {
     FFFZSFacilitySpec Result = BaseSpec;
+    Result.NormalizeNonServiceGeometry();
     if (!FMath::IsFinite(SizeMultiplier) || SizeMultiplier <= 0.0f)
     {
         Result.FootprintSizeCells = FIntPoint::ZeroValue;
@@ -157,7 +158,7 @@ FFFZSFacilitySpec FFZSFacilityUpgradeRules::BuildEffectiveSpec(
         Result.FootprintSizeCells = FIntPoint::ZeroValue;
         return Result;
     }
-    if (!BaseSpec.QueueReservedCells.IsEmpty())
+    if (!Result.QueueReservedCells.IsEmpty())
     {
         // Merge old individual cells into their exact half-open region before scaling;
         // expanding a cell by rounding its centre would otherwise lose occupied space.
@@ -312,10 +313,27 @@ bool FFFZSFacilityAudioSettings::HasNonDefaultValues() const
     // 오류를 가능한 한 모아 저작자에게 한 번에 보여 주되, 위험한 반복문은 선행 조건이 모두
     // 유효할 때만 실행한다. 따라서 잘못된 대형 입력도 실제 Cell/Slot 열거 전에 실패한다.
  
+void FFFZSFacilitySpec::NormalizeNonServiceGeometry()
+{
+    if (UsesServiceQueue())
+    {
+        return;
+    }
+    ClearanceCells = 0;
+    QueueReservedRects.Reset();
+    QueueReservedCells.Reset();
+    QueueSplinePointsCm.Reset();
+    Anchors.Reset();
+    QueueRules.MaxWaitingAgents = 0;
+    QueueRules.ServiceCapacity = 0;
+    QueueLayout = EFFZSQueueLayout::Authored;
+    Audience.bEnabled = false;
+}
+
 bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
-    const bool bHasNoService = Category == EFFZSFacilityCategory::Lighting || IsGroundSurface();
+    const bool bHasNoService = !UsesServiceQueue();
     if (!StaticEnum<EFFZSQueueLayout>()->IsValidEnumValue(static_cast<int64>(QueueLayout)) ||
         (bHasNoService && QueueLayout != EFFZSQueueLayout::Authored))
     {
@@ -357,6 +375,10 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     if (ClearanceCells < 0)
     {
         OutErrors.Add(LOCTEXT("InvalidClearance", "ClearanceCells는 음수일 수 없습니다."));
+    }
+    if (bHasNoService && ClearanceCells != 0)
+    {
+        OutErrors.Add(LOCTEXT("NonServiceFacilityHasClearance", "조명, 길, 타일은 여유 공간 없이 실제 바닥 크기만 차지해야 합니다."));
     }
     if (MaxInstancesPerWorld < 0)
     {

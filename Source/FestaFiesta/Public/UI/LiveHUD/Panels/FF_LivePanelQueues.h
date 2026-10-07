@@ -86,6 +86,20 @@ struct FESTAFIESTA_API FFF_LiveQueueSummary
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	int32 UnknownCount = 0;
 
+	/** 메인 공연 직전·공연 중이라 잠시 안 받는 시설 수. `정원 참` 과 다르다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
+	int32 PausedCount = 0;
+
+	/** 줄 대신 관람석으로 받는 시설 수. 위의 대기열 집계에는 넣지 않는다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
+	int32 SeatedVenueCount = 0;
+
+	/** 집계에 들어간 줄 서는 시설 수. 관람석만 있으면 0이다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
+	int32 QueueFacilityCount = 0;
+
+	bool HasQueueFacility() const { return QueueFacilityCount > 0; }
+
 	bool HasAnyQueue() const { return LongestQueueWaiting != INDEX_NONE; }
 };
 
@@ -104,6 +118,15 @@ struct FESTAFIESTA_API FFF_LiveQueueRules
 
 	/** 줄이 긴 순으로 세운다. 같으면 이름으로 고정해 갱신할 때 순서가 흔들리지 않게 한다. */
 	static void SortByWaiting(TArray<FFF_LiveFacilityView>& Facilities);
+
+	/**
+	 * 대기열 화면에 올릴 시설인가. 줄을 받는 시설과 관람석만 올린다.
+	 * 길·타일·조명은 대기열이 없어 늘 `미접수` 로 떠서 목록과 집계를 가린다.
+	 */
+	static bool IsShownInQueuePanel(const FFF_LiveFacilityView& Facility)
+	{
+		return Facility.bUsesQueue || Facility.bSeatedVenue;
+	}
 };
 
 /**
@@ -158,8 +181,16 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text")
 	FText ExpectedWaitUnknownText = NSLOCTEXT("FestaFiestaLiveQueues", "ExpectedWaitUnknown", "지금 서면 예상 대기 · —");
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text", meta = (ToolTip = "{Open}, {Full}, {NotAccepting}, {Blocked}, {Unknown}: 상태별 시설 수"))
-	FText StateCountsTextFormat = NSLOCTEXT("FestaFiestaLiveQueues", "StateCountsFormat", "접수 중 {Open} · 정원 참 {Full} · 미접수/마감 {NotAccepting} · 막힘 {Blocked} · 미확인 {Unknown}");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text", meta = (ToolTip = "{Open}, {Full}, {Paused}, {NotAccepting}, {Blocked}, {Unknown}: 상태별 시설 수. 관람석은 세지 않는다."))
+	FText StateCountsTextFormat = NSLOCTEXT("FestaFiestaLiveQueues", "StateCountsFormatV2", "접수 중 {Open} · 정원 참 {Full} · 공연 중 중단 {Paused} · 미접수/마감 {NotAccepting} · 막힘 {Blocked} · 미확인 {Unknown}");
+
+	/** 관람석(메인 무대)만 있고 줄을 서는 시설이 없을 때. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text")
+	FText NoQueueFacilityText = NSLOCTEXT("FestaFiestaLiveQueues", "NoQueueFacility", "줄을 서는 시설이 아직 없습니다. 부스나 체험 시설을 지으면 대기 흐름이 보입니다.");
+
+	/** 행 WBP가 없을 때 관람석 한 줄. {Name}: 시설 이름 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text")
+	FText SeatedFallbackLineFormat = NSLOCTEXT("FestaFiestaLiveQueues", "SeatedFallbackLine", "{Name}  —  관람석 · 공연 시간에 좌석으로 입장합니다");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text")
 	FText CheckingText = NSLOCTEXT("FestaFiestaLiveQueues", "Checking", "대기열 정보를 확인하고 있습니다.");

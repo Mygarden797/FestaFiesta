@@ -291,6 +291,13 @@ bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 	FFF_BuildLayoutPreset& Preset = Saved->Presets.AddDefaulted_GetRef();
 	Preset.Name = TEXT("먹거리 거리");
 	Preset.Entries = Entries;
+	FFF_BuildLayoutPreset& LegacyPreset = Saved->Presets.AddDefaulted_GetRef();
+	LegacyPreset.Name = TEXT("기존 조명 배치");
+	FFF_BuildLayoutEntry& LegacyEntry = LegacyPreset.Entries.AddDefaulted_GetRef();
+	LegacyEntry.Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	LegacyEntry.Spec.Category = EFFZSFacilityCategory::Lighting;
+	LegacyEntry.Spec.ClearanceCells = 150;
+	LegacyEntry.Spec.QueueLayout = EFFZSQueueLayout::Left;
 	TArray<uint8> Bytes;
 	TestTrue(TEXT("Layout serializes to save data"), UGameplayStatics::SaveGameToMemory(Saved, Bytes));
 	UFF_BuildLayoutPresetSave* Loaded = Cast<UFF_BuildLayoutPresetSave>(UGameplayStatics::LoadGameFromMemory(Bytes));
@@ -302,6 +309,24 @@ bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 	Build->LayoutPresets = Loaded;
 	TestTrue(TEXT("Saved layout starts an install preview"), Build->BeginGroupPreset(TEXT("먹거리 거리")));
 	TestTrue(TEXT("Preset uses fresh facility IDs"), !Build->GroupSourceIds.Contains(FirstId) && !Build->GroupSourceIds.Contains(SecondId));
+	Build->CancelGroupPlacement();
+	TestTrue(TEXT("Legacy lighting preset starts a normalized placement copy"), Build->BeginGroupPreset(TEXT("기존 조명 배치")));
+	if (TestEqual(TEXT("Legacy preset retains its single placement entry"), Build->GroupEntries.Num(), 1))
+	{
+		const FFFZSFacilitySpec& PlacementSpec = Build->GroupEntries[0].Spec;
+		TestEqual(TEXT("Legacy lighting placement no longer reserves clearance"), PlacementSpec.ClearanceCells, 0);
+		TestEqual(TEXT("Legacy lighting placement has no waiting capacity"), PlacementSpec.QueueRules.MaxWaitingAgents, 0);
+		TestEqual(TEXT("Legacy lighting placement has no service capacity"), PlacementSpec.QueueRules.ServiceCapacity, 0);
+		TestEqual(TEXT("Legacy lighting placement clears the saved queue layout"), PlacementSpec.QueueLayout, EFFZSQueueLayout::Authored);
+		TestTrue(TEXT("Legacy lighting placement clears queue geometry and anchors"),
+			PlacementSpec.QueueReservedRects.IsEmpty() && PlacementSpec.QueueReservedCells.IsEmpty() &&
+			PlacementSpec.QueueSplinePointsCm.IsEmpty() && PlacementSpec.Anchors.IsEmpty());
+	}
+	const FFFZSFacilitySpec& SavedLegacySpec = Loaded->Presets[1].Entries[0].Spec;
+	TestEqual(TEXT("Beginning placement preserves the original saved clearance"), SavedLegacySpec.ClearanceCells, 150);
+	TestEqual(TEXT("Beginning placement preserves the original saved queue layout"), SavedLegacySpec.QueueLayout, EFFZSQueueLayout::Left);
+	TestTrue(TEXT("Beginning placement preserves the original saved queue data"),
+		SavedLegacySpec.QueueRules.MaxWaitingAgents > 0 && !SavedLegacySpec.QueueSplinePointsCm.IsEmpty() && !SavedLegacySpec.Anchors.IsEmpty());
 	Build->CancelGroupPlacement();
 	Build->ExitBuildMode();
 	return true;

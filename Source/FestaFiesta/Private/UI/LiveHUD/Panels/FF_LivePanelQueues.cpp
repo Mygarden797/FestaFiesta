@@ -24,6 +24,18 @@ FFF_LiveQueueSummary FFF_LiveQueueRules::BuildSummary(const TArray<FFF_LiveFacil
 
 	for (const FFF_LiveFacilityView& Facility : Facilities)
 	{
+		// 길·타일·조명은 대기열 자체가 없다. `미접수` 개수를 부풀리지 않게 아예 세지 않는다.
+		if (!IsShownInQueuePanel(Facility))
+		{
+			continue;
+		}
+		// 관람석은 줄이 없어 대기·이용이 늘 0이다. 섞으면 평균·상태 개수가 "한산함" 쪽으로 기운다.
+		if (Facility.bSeatedVenue)
+		{
+			++Result.SeatedVenueCount;
+			continue;
+		}
+		++Result.QueueFacilityCount;
 		Result.TotalWaiting += Facility.WaitingCount;
 		Result.TotalInService += Facility.ActiveServiceCount;
 
@@ -40,6 +52,8 @@ FFF_LiveQueueSummary FFF_LiveQueueRules::BuildSummary(const TArray<FFF_LiveFacil
 		case EFF_LiveFacilityQueueState::Open:		++Result.OpenCount; break;
 		case EFF_LiveFacilityQueueState::Full:		++Result.FullCount; break;
 		case EFF_LiveFacilityQueueState::Blocked:	++Result.BlockedCount; break;
+		// 공연이 끝나면 저절로 다시 받는다. 정원 참·닫힘과 할 일이 달라 따로 센다.
+		case EFF_LiveFacilityQueueState::Paused:	++Result.PausedCount; break;
 
 		// 닫힘과 비우는 중은 둘 다 "지금 새 손님을 안 받는다" 다. 화면에서 구분해도
 		// 사람이 할 일이 같아서 한 칸으로 묶는다.
@@ -104,6 +118,11 @@ void FFF_LiveQueueRules::SortByWaiting(TArray<FFF_LiveFacilityView>& Facilities)
 {
 	Facilities.Sort([](const FFF_LiveFacilityView& A, const FFF_LiveFacilityView& B)
 	{
+		// 관람석은 줄 비교 대상이 아니라 표 맨 아래에 따로 둔다.
+		if (A.bSeatedVenue != B.bSeatedVenue)
+		{
+			return B.bSeatedVenue;
+		}
 		if (A.WaitingCount != B.WaitingCount)
 		{
 			return A.WaitingCount > B.WaitingCount;
@@ -174,6 +193,8 @@ void UFF_LivePanelQueues::RefreshAll()
 	}
 
 	Rows = ViewModel->GetLiveFacilities();
+	// 시설 화면과 같은 원본이지만 여기서는 줄을 받는 시설과 관람석만 보인다.
+	Rows.RemoveAll([](const FFF_LiveFacilityView& Row) { return !FFF_LiveQueueRules::IsShownInQueuePanel(Row); });
 	Summary = FFF_LiveQueueRules::BuildSummary(Rows);
 	FFF_LiveQueueRules::SortByWaiting(Rows);
 
@@ -192,20 +213,25 @@ void UFF_LivePanelQueues::RefreshAll()
 			FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Summary.AverageSampleCount)}})
 		: AverageNoSampleText);
 
-	SetTextOrHide(Text_Longest, Rows.IsEmpty() ? EmptyText : (Summary.HasAnyQueue()
-		? FText::Format(LongestTextFormat, FFormatNamedArguments{
-			{TEXT("Name"), Summary.LongestQueueName},
-			{TEXT("Count"), FText::AsNumber(Summary.LongestQueueWaiting)}})
-		: NoQueueText));
-	// 가장 많은 팀과 가장 긴 예상 시간은 서로 다른 시설일 수 있다.
-	SetTextOrHide(Text_WorstWait, Summary.WorstExpectedWaitSeconds >= 0
-		? FText::Format(WorstWaitTextFormat, FFormatNamedArguments{
-			{TEXT("Name"), Summary.WorstExpectedWaitName},
-			{TEXT("Seconds"), FText::AsNumber(Summary.WorstExpectedWaitSeconds)}})
-		: ExpectedWaitUnknownText);
+	// 관람석만 있으면 "대기 중인 팀이 없다" 가 아니라 "줄 서는 시설이 없다" 다.
+	SetTextOrHide(Text_Longest, Rows.IsEmpty() ? EmptyText
+		: !Summary.HasQueueFacility() ? NoQueueFacilityText
+		: Summary.HasAnyQueue()
+			? FText::Format(LongestTextFormat, FFormatNamedArguments{
+				{TEXT("Name"), Summary.LongestQueueName},
+				{TEXT("Count"), FText::AsNumber(Summary.LongestQueueWaiting)}})
+			: NoQueueText);
+	// 가장 많은 팀과 가장 긴 예상 시간은 서로 다른 시설일 수 있다. 줄 서는 시설이 없으면 줄 자체를 숨긴다.
+	SetTextOrHide(Text_WorstWait, !Summary.HasQueueFacility() ? FText::GetEmpty()
+		: Summary.WorstExpectedWaitSeconds >= 0
+			? FText::Format(WorstWaitTextFormat, FFormatNamedArguments{
+				{TEXT("Name"), Summary.WorstExpectedWaitName},
+				{TEXT("Seconds"), FText::AsNumber(Summary.WorstExpectedWaitSeconds)}})
+			: ExpectedWaitUnknownText);
 	SetTextOrHide(Text_StateCounts, FText::Format(StateCountsTextFormat, FFormatNamedArguments{
 		{TEXT("Open"), FText::AsNumber(Summary.OpenCount)},
 		{TEXT("Full"), FText::AsNumber(Summary.FullCount)},
+		{TEXT("Paused"), FText::AsNumber(Summary.PausedCount)},
 		{TEXT("NotAccepting"), FText::AsNumber(Summary.NotAcceptingCount)},
 		{TEXT("Blocked"), FText::AsNumber(Summary.BlockedCount)},
 		{TEXT("Unknown"), FText::AsNumber(Summary.UnknownCount)}}));
@@ -298,6 +324,13 @@ void UFF_LivePanelQueues::RefreshRowWidgets()
 
 void UFF_LivePanelQueues::UpdateFallbackLine(UTextBlock& Line, const FFF_LiveFacilityView& Row) const
 {
+	if (Row.bSeatedVenue)
+	{
+		Line.SetText(FText::Format(SeatedFallbackLineFormat, FFormatNamedArguments{{TEXT("Name"), Row.DisplayName}}));
+		Line.SetToolTipText(FText::GetEmpty());
+		ApplyDynamicRowStyle(Line);
+		return;
+	}
 	const FText Expected = Row.ExpectedWaitSeconds >= 0
 		? FText::Format(WaitSecondsTextFormat,
 			FFormatNamedArguments{{TEXT("Seconds"), FText::AsNumber(Row.ExpectedWaitSeconds)}})

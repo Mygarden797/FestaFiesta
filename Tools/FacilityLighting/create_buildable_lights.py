@@ -186,7 +186,7 @@ def main():
             spec.set_editor_property('category', unreal.FFZSFacilityCategory.LIGHTING)
             spec.set_editor_property('footprint_size_cells', unreal.IntPoint(math.ceil(size.y - .001), math.ceil(size.x - .001)))
             spec.set_editor_property('placement_obstacle_height_cm', size.z)
-            spec.set_editor_property('clearance_cells', 25)
+            spec.set_editor_property('clearance_cells', 0)
             spec.set_editor_property('visual_mesh', mesh)
             spec.set_editor_property('visual_sizing_mode', unreal.FFZSVisualSizingMode.MATCH_PLACEMENT_BOUNDS)
             spec.set_editor_property('visual_rotation', unreal.Rotator(pitch=0, yaw=90, roll=0))

@@ -16,7 +16,7 @@ void UFF_LivePanelFinale::NativeOnPanelOpened()
 
 	// ★ 여기서 못 사는 이유를 적는다. 등급만 보여 주면 "바꿀 수 있나" 를 시도하게 된다.
 	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveFinale_MissingNote",
-		"피날레는 셋업에서만 고를 수 있고 축제당 한 번입니다. 여기서는 결과만 봅니다."));
+		"피날레는 마지막 날 아침 점검에서 한 번만 구매할 수 있습니다. 여기서는 결과만 봅니다."));
 
 	BindViewModel();
 	RefreshAll();

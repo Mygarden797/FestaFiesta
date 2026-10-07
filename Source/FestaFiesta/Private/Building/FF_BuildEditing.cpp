@@ -107,12 +107,12 @@ bool UFF_BuildModeSubsystem::CanChooseQueueLayout() const
 	if (bInputSuspendedForPauseMenu || bIsExitingBuildMode || bMultiSelectionActive ||
 		IsGroupPlacementActive() || !CanReconfigure()) return false;
 	if (FFBuildModeModel::IsPreviewActive(State))
-		return SelectedSpec.QueueRules.MaxWaitingAgents > 0 &&
+		return SelectedSpec.UsesServiceQueue() && SelectedSpec.QueueRules.MaxWaitingAgents > 0 &&
 			(State != EFF_BuildModeState::Moving || (MovingFacility.IsValid() && MovingFacility->CanMoveOrRemove()));
 	const UFF_FacilityInfoSubsystem* Info = GetFacilityInfoSubsystem();
 	const AFFZSFacilityActor* Facility = Info ? Info->GetSelectedFacility() : nullptr;
 	return State == EFF_BuildModeState::BuildMode && Facility && Facility->CanMoveOrRemove() &&
-		Facility->GetFacilitySpec().QueueRules.MaxWaitingAgents > 0;
+		Facility->GetFacilitySpec().UsesServiceQueue() && Facility->GetFacilitySpec().QueueRules.MaxWaitingAgents > 0;
 }
 
 EFFZSQueueLayout UFF_BuildModeSubsystem::GetEditingQueueLayout() const

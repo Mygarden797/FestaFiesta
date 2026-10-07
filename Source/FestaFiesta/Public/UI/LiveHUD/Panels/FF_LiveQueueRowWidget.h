@@ -48,6 +48,21 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Text")
 	FText AverageWaitUnknownText = NSLOCTEXT("FestaFiestaLiveQueueRow", "AverageWaitUnknown", "완료 고객의 실제 평균 대기: 집계 준비 중");
 
+	// --- 관람석(메인 무대) 행 — 줄이 아니라 좌석으로 받아 대기·이용 칸은 — 로 둔다 ---
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Seated")
+	FText SeatedStatusText = NSLOCTEXT("FestaFiestaLiveQueueRow", "Seated", "관람석");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Seated")
+	FText SeatedTooltipText = NSLOCTEXT("FestaFiestaLiveQueueRow", "SeatedTooltip", "줄을 서지 않고 공연 시간에 관람석으로 입장합니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Seated")
+	FLinearColor SeatedBackgroundColor = FLinearColor::FromSRGBColor(FColor(232, 240, 252));
+
+	/** 비우면 아이콘 없이 문구만 표시한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Queues|Seated")
+	TObjectPtr<UTexture2D> SeatedIcon;
+
 protected:
 	virtual void SynchronizeProperties() override;
 
@@ -68,6 +83,8 @@ protected:
 
 private:
 	void RefreshRow();
+	void RefreshSeatedRow();
+	void ApplyStatus(const FText& Label, const FLinearColor& Background, UTexture2D* Icon);
 	FFF_LiveFacilityView RowData;
 	bool bHasRowData = false;
 };

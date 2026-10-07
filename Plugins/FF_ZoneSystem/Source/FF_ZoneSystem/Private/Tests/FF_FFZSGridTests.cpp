@@ -352,6 +352,44 @@ bool FFFZSCompressedRegionContractTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSPassiveFootprintRegionsTest,
+    "FF_ZoneSystem.Unit.Grid.PassiveInfrastructureReservesOnlyFootprint",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSPassiveFootprintRegionsTest::RunTest(const FString& Parameters)
+{
+    TGuardValue<int32> Budget(GetMutableDefault<UFFZSDeveloperSettings>()->MaxEnumeratedCellsPerFacility, 6);
+    for (const EFFZSFacilityCategory Category : {
+        EFFZSFacilityCategory::Road, EFFZSFacilityCategory::Tile, EFFZSFacilityCategory::Lighting })
+    {
+        FFFZSFacilitySpec Legacy = MakeSmallRegionSpec();
+        Legacy.Category = Category;
+        Legacy.ClearanceCells = 100;
+        Legacy.QueueReservedCells.Add(FIntPoint(100, 100));
+        TestTrue(TEXT("Only the 3x2 footprint consumes the region budget"),
+            UFFZSGridLibrary::CanEnumerateFacilityCells(Legacy));
+        const FFFZSGridPlacement Identity;
+        TestTrue(TEXT("Direct queue query ignores obsolete reservations"),
+            UFFZSGridLibrary::GetQueueRects(Legacy, Identity).IsEmpty());
+        TestEqual(TEXT("Reserved area equals the exact footprint"),
+            UFFZSGridLibrary::GetCellRectArea(UFFZSGridLibrary::GetReservedRects(Legacy, Identity)), int64(6));
+        for (const int32 Yaw : { 0, 3700, 9000, 22500 })
+        {
+            FFFZSGridPlacement Placement;
+            Placement.OriginCell = FIntPoint(123, 456);
+            Placement.YawCentidegrees = Yaw;
+            TArray<FFFZSOrientedRect> Footprint, Clearance, Queue, Reserved;
+            UFFZSGridLibrary::BuildPlacementOrientedRegions(Legacy, Placement, Footprint, Clearance, Queue, Reserved);
+            TestEqual(TEXT("A rotated passive footprint remains one rectangle"), Footprint.Num(), 1);
+            TestTrue(TEXT("Rotation never adds clearance or a queue"), Clearance.IsEmpty() && Queue.IsEmpty());
+            TestTrue(TEXT("Reserved geometry exactly matches the rotated footprint"),
+                AreOrientedRectArraysEquivalent(Footprint, Reserved));
+        }
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FFFZSNativeStageAreaBudgetTest,
     "FF_ZoneSystem.Unit.Grid.NativeStageFitsCompressedAreaBudget",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

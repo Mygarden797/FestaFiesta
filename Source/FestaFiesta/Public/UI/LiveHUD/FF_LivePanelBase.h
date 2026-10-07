@@ -7,6 +7,7 @@
 #include "Fonts/SlateFontInfo.h"
 #include "UI/LiveHUD/FF_LiveHudTypes.h"
 #include "UI/Atlas/FF_AtlasScreenGeo.h"
+#include "UI/Widgets/FF_PanelScrollStyle.h"
 #include "FF_LivePanelBase.generated.h"
 
 class UButton;
@@ -37,6 +38,9 @@ class FESTAFIESTA_API UFF_LivePanelBase : public UUserWidget
 public:
 	UFF_LivePanelBase(const FObjectInitializer& ObjectInitializer);
 
+	/** 별도 도크에서 사용하는 패널의 닫기 요청. 연결되어 있으면 기존 하단 바보다 우선한다. */
+	FSimpleDelegate OnCloseRequested;
+
 	/** 시설·관객·대기열의 동적 목록 글꼴. 각 패널 WBP Class Defaults에서 수정한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Rows")
 	FSlateFontInfo DynamicRowFont;
@@ -47,6 +51,17 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Rows")
 	FLinearColor DynamicRowNoteColor = FLinearColor::FromSRGBColor(FColor(101, 127, 117));
+
+	/** 패널 안 스크롤바 모양. 끄면 각 ScrollBox 의 Designer 스타일을 그대로 쓴다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Scroll")
+	FFF_PanelScrollStyle ScrollStyle;
+
+	/**
+	 * 패널 위에서 굴린 휠을 패널이 가진다. 끝까지 스크롤해 목록이 안 받은 휠이 뒤의 게임
+	 * 화면까지 내려가 카메라가 확대·축소되던 것을 막는다 (2026-10-06 사용자 보고).
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Scroll")
+	bool bConsumeMouseWheel = true;
 
 	/**
 	 * 바가 패널을 만든 직후 한 번 부른다. 어느 탭의 패널인지와 제목을 함께 넣는다.
@@ -77,6 +92,8 @@ protected:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativePreConstruct() override;
+	virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 	/** 오른쪽 위 닫기 버튼. 없으면 하단 바의 탭을 다시 눌러 닫는다. */
 	UFUNCTION()

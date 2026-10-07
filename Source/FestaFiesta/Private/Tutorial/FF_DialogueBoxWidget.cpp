@@ -87,18 +87,27 @@ void UFF_DialogueBoxWidget::NativeDestruct()
 
 void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
 {
+	// 화자가 없으면 이름칸을 숨긴다. 내레이션이나 독백일 때 빈 칸이 남으면 어색하다.
+	// 이름표가 있으면 이름표째 숨긴다. 글자만 숨기면 이름표 배경이 빈 채로 남는다.
+	const ESlateVisibility SpeakerVisibility =
+		Line.Speaker.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible;
 	if (SpeakerText)
 	{
 		SpeakerText->SetText(Line.Speaker);
-
-		// 화자가 없으면 이름칸을 숨긴다. 내레이션이나 독백일 때 빈 칸이 남으면 어색하다.
-		SpeakerText->SetVisibility(
-			Line.Speaker.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+		SpeakerText->SetVisibility(SpeakerVisibility);
+	}
+	if (SpeakerPlate)
+	{
+		SpeakerPlate->SetVisibility(SpeakerVisibility);
 	}
 
 	if (BodyText)
 	{
 		BodyText->SetText(Line.Text);
+
+		// 선택지 줄은 대사가 비어 있다. 빈 글줄이 한 줄 높이를 차지해 선택지 위가 비지 않게 접는다.
+		BodyText->SetVisibility(
+			Line.Text.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
 	}
 
 	RebuildChoices(Line);
@@ -362,6 +371,12 @@ void UFF_DialogueBoxWidget::ApplyClickArea(const FFF_DialogueLine& Line)
 
 	Apply(AdvanceButton, bFullScreen);
 	Apply(BoxAdvanceButton, bBoxOnly);
+
+	// 넘길 수 있을 때만 "다음" 을 보여 준다. 클릭은 받지 않는다 — 클릭은 위의 두 버튼이 받는다.
+	if (AdvanceHint)
+	{
+		AdvanceHint->SetVisibility(bCanAdvance ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 }
 
 // ── 선택지 버튼 ─────────────────────────────────────────────────────────────
