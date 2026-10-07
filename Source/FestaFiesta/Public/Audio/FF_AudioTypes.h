@@ -100,7 +100,14 @@ enum class EFF_AudioAmbience : uint8
 	   예전에는 단계·밤낮마다 곡이 갈렸는데, 낮밤이 빠르게 바뀌어 곡이 자주 끊겼다(피드백).
 	   플레이리스트가 비어 있으면 예전처럼 준비·낮·밤 곡을 쓴다.
 	*/
-	Playlist        UMETA(DisplayName = "축제 플레이리스트 (뱅크 키 아님)")
+	Playlist        UMETA(DisplayName = "축제 플레이리스트 (뱅크 키 아님)"),
+
+	/* 그날 메인 공연곡. 일정표의 메인 공연 동안 플레이리스트 대신 튼다(UFF_AudioEventLink).
+
+	   뱅크의 배경음 표(Ambiences)에 넣는 키가 아니다. 곡은 뱅크의 Main Show Songs 에 일차 순서로 넣는다.
+	   공연이 끝나면 플레이리스트를 듣던 자리부터 잇는다. 그날 곡이 없으면 플레이리스트가 그대로 흐른다.
+	*/
+	MainShow        UMETA(DisplayName = "메인 공연곡 (뱅크 키 아님)")
 };
 
 // 소리 갈래. 설정 창의 음량 슬라이더와 짝을 이룬다(FFF_AudioVolumes).
