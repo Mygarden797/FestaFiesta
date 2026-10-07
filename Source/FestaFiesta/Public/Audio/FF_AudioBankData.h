@@ -45,6 +45,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio|Playlist")
 	bool bShufflePlaylist = false;
 
+	/* 메인 공연곡. 0번이 1일차, 1번이 2일차, 2번이 3일차다.
+
+	   공연 시각은 일정표(DT_ProgramSchedule)의 "공연 시작" 줄부터 다음 줄까지다. 지금 1일차 30초, 2·3일차 60초.
+	   곡이 공연보다 길면 끝을 공연 끝에 맞춰 조금 일찍(최대 15초) 시작한다. 그래도 남으면 공연이 끝날 때 줄이며 끊는다.
+	   짧으면 공연 시작에 틀고 곡이 끝난 뒤 공연 끝까지는 조용하다. 칸이 비어 있는 날은 플레이리스트가 그대로 흐른다.
+	   반복하지 않는다. Display Name 은 플레이리스트와 같이 보일 이름(한글 그대로)이다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio|MainShow", meta = (TitleProperty = "DisplayName"))
+	TArray<FFF_AudioAmbienceTrack> MainShowSongs;
+
+	// 그날(1부터) 메인 공연곡. 없거나 비었으면 nullptr.
+	const FFF_AudioAmbienceTrack* FindMainShowSong(const int32 Day) const
+	{
+		const int32 Index = Day - 1;
+		return MainShowSongs.IsValidIndex(Index) && MainShowSongs[Index].IsValid() ? &MainShowSongs[Index] : nullptr;
+	}
+
 	// 없으면 nullptr. 호출부가 조용히 넘어간다.
 	const FFF_AudioCue* FindCue(EFF_AudioEvent Event) const
 	{
