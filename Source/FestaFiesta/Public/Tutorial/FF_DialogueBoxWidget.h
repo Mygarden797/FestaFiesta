@@ -36,6 +36,7 @@ class FESTAFIESTA_API UFF_DialogueBoxWidget : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	// 선택지를 눌렀을 때 자식 버튼이 부른다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Dialogue")
@@ -131,7 +132,25 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
 	TObjectPtr<UButton> BoxAdvanceButton;
 
+	// 배치 패널 위로 카드를 올릴 때 패널 윗변과 띄우는 거리. UpdatePanelLift 참고.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Dialogue", meta = (ClampMin = "0.0"))
+	float PanelLiftMargin = 16.f;
+
 private:
+	/* 배치 패널이 열린 채 조작을 기다리면 카드를 패널 위로 올린다(2026-10-08 결정).
+
+	   튜토리얼 레벨의 대사창은 준비 HUD 아래에 깔린다(DialogueBoxZOrder). 카테고리 · 시설을 고르는 동안
+	   할 일을 적은 글이 패널에 가려 노란 박스만 보였다.
+
+	   화면 순서를 올리지 않는 이유: 그러면 대사창이 패널을 덮어 패널이 안 눌린다. 다시 붙이면 줄이 처음부터
+	   다시 그려진다. 그래서 순서는 두고 자리만 옮긴다(그리기 이동). 건너뛰기 단추는 화면 위에 있어 두고,
+	   카드와 함께 놓인 초상화 · 상자 클릭 영역만 같이 옮긴다.
+	*/
+	void UpdatePanelLift(const FGeometry& MyGeometry);
+
+	// 지금 올려 둔 거리(화면 단위). 같은 값이면 다시 걸지 않는다.
+	float AppliedPanelLift = 0.f;
+
 	UFUNCTION()
 	void HandleLineChanged(const FFF_DialogueLine& Line);
 

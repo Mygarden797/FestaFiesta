@@ -85,6 +85,68 @@ void UFF_DialogueBoxWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+void UFF_DialogueBoxWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	UpdatePanelLift(MyGeometry);
+}
+
+void UFF_DialogueBoxWidget::UpdatePanelLift(const FGeometry& MyGeometry)
+{
+	// 카드 묶음은 WBP 빌더(FF.TutorialDialogueUMG.Rebuild)가 붙인 이름이다. 없는 옛 WBP 면 옮기지 않는다.
+	UWidget* Card = GetWidgetFromName(TEXT("Panel_Dialogue"));
+	if (!Card)
+	{
+		return;
+	}
+
+	float Lift = 0.f;
+	const UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
+	const UWidget* Panel = Tutorial ? Tutorial->GetDialogueLiftPanel() : nullptr;
+	if (Panel && Card->IsVisible())
+	{
+		/* 배치(layout) 변환으로 잰다. 그리기 변환에는 여기서 준 이동이 섞여 있어, 그것으로 재면
+		   올린 만큼 덜 겹친다고 보고 다시 내려와 매 프레임 흔들린다. */
+		const FGeometry& PanelGeometry = Panel->GetCachedGeometry();
+		const FGeometry& CardGeometry = Card->GetCachedGeometry();
+		const FSlateLayoutTransform CardLayout = CardGeometry.GetAccumulatedLayoutTransform();
+		const float Scale = CardLayout.GetScale();
+
+		if (Scale > KINDA_SMALL_NUMBER && PanelGeometry.GetLocalSize().Y > 0.f)
+		{
+			const float PanelTop = PanelGeometry.GetAccumulatedLayoutTransform().GetTranslation().Y;
+			const float CardTop = CardLayout.GetTranslation().Y;
+			const float CardBottom = CardTop + CardGeometry.GetLocalSize().Y * Scale;
+			const float ScreenTop = MyGeometry.GetAccumulatedLayoutTransform().GetTranslation().Y;
+
+			if (CardBottom > PanelTop)
+			{
+				// 패널 윗변 위로 올리되 화면 위로 넘기지는 않는다.
+				const float Wanted = (CardBottom - PanelTop) / Scale + PanelLiftMargin;
+				const float Room = FMath::Max(0.f, (CardTop - ScreenTop) / Scale - PanelLiftMargin);
+				Lift = FMath::Min(Wanted, Room);
+			}
+		}
+	}
+
+	if (FMath::IsNearlyEqual(Lift, AppliedPanelLift, 0.5f))
+	{
+		return;
+	}
+	AppliedPanelLift = Lift;
+
+	const FVector2D Offset(0.f, -Lift);
+	Card->SetRenderTranslation(Offset);
+	if (PortraitImage)
+	{
+		PortraitImage->SetRenderTranslation(Offset);
+	}
+	if (BoxAdvanceButton)
+	{
+		BoxAdvanceButton->SetRenderTranslation(Offset);
+	}
+}
+
 void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
 {
 	// 화자가 없으면 이름칸을 숨긴다. 내레이션이나 독백일 때 빈 칸이 남으면 어색하다.

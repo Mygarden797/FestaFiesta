@@ -225,6 +225,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
 	bool IsHighlightOutlineOnly() const { return bHighlightOutlineOnly; }
 
+	/* 대사창이 비켜 서야 할 배치 패널. 조작을 기다리는 동안 배치 패널이 화면에 있으면 그 패널, 아니면 nullptr.
+
+	   튜토리얼 레벨의 대사창은 준비 HUD 아래에 깔린다(DialogueBoxZOrder). 카테고리 · 시설을 고르는 동안
+	   할 일을 적은 글이 패널에 가려 노란 박스만 보였다(2026-10-08). 대사창이 이 패널 위로 카드를 올린다.
+	*/
+	const UWidget* GetDialogueLiftPanel() const { return DialogueLiftPanel.Get(); }
+
 	// ── 조작 완료 통지 ──────────────────────────────────────────────────────
 
 	// 플레이어가 무언가 했다고 알린다. 기다리던 조건과 맞으면 다음 줄로 간다.
@@ -406,6 +413,57 @@ private:
 
 	AFF_OverviewCameraPawn* FindOverviewPawn() const;
 
+	/* 2026-10-07 에 더한 조작 대기 조건(카메라 회전 · 시점 전환 · 건축 카테고리 · 설치 미리보기 시작 ·
+	   미리보기 회전 · 조합 성립 · 스태프 배정)을 판정한다. FF_TutorialSubsystem_Watch.cpp.
+
+	   카메라 감시와 같은 방식이다. 상대 시스템(건축 · 도감 · 스태프 · 카메라)의 공개 값을 읽기만 하고,
+	   상대가 튜토리얼을 알게 하지 않는다. 그쪽 코드는 팀원 것이라 고치지 않는다.
+	*/
+	void TickActionWatch();
+
+	// 조작 대기 줄에 들어갈 때 기준값을 잡고, 기다릴 카드가 목록 다른 쪽에 있으면 앞으로 꺼낸다.
+	void PrepareActionWatch(const FFF_DialogueLine& Line);
+
+	// 설치된 시설의 정의 이름. 찾지 못하면 NAME_None.
+	FName ResolveFacilityDefinitionId(const FGuid& FacilityInstanceId) const;
+
+	/* 지금 가리키는 대상이 목록 카드 · 카테고리 버튼처럼 자주 다시 만들어지는 위젯이면 다시 찾는다.
+
+	   건축 목록의 카드는 쪽을 넘기거나 거르면 다른 위젯에 다시 담기고, 카테고리 버튼과 시설 정보창은
+	   열 때 만들어진다. 한 번 찾아 둔 위젯을 계속 가리키면 엉뚱한 자리에 박스가 남는다.
+	   그래서 이런 대상(BuildCategory_ · BuildCard_ · FacilityInfo_ · BuildTools_)만 짧은 주기로 다시 찾는다.
+	*/
+	void RefreshDynamicAnchor();
+
+	// 이름으로 그 위젯을 찾는다. 화면에 보이는 것만. 없으면 nullptr.
+	UWidget* FindDynamicAnchorWidget(FName AnchorId) const;
+
+	// 다시 찾아야 하는 이름인가(BuildCategory_ · BuildCard_ · FacilityInfo_ · BuildTools_).
+	static bool IsDynamicAnchor(FName AnchorId);
+
+	// 위젯이 지금 화면에 보이는가. 접힌 부모 아래에 있거나 화면에서 내려갔으면 아니다.
+	static bool IsWidgetOnScreen(const UWidget* Widget);
+
+	// 배치 탭의 카테고리 버튼 중 CategoryName(Booth · Info · Rest · Performance …)이 골라져 있는가.
+	bool IsBuildCategorySelected(FName CategoryName) const;
+
+	// 배치 탭에서 CategoryName 카테고리 버튼. 화면에 보이는 것만.
+	class UFF_PrepBuildCategoryChoice* FindBuildCategoryChoice(FName CategoryName) const;
+
+	float DynamicAnchorScanCountdown = 0.f;
+
+	// 대사창이 비켜 설 배치 패널을 다시 찾는다. GetDialogueLiftPanel 참고. 로비 인트로는 대사창이 위에 있어 찾지 않는다.
+	void RefreshDialogueLiftPanel();
+
+	TWeakObjectPtr<UWidget> DialogueLiftPanel;
+	float DialogueLiftScanCountdown = 0.f;
+
+	// 조작 대기 줄에 들어간 시점의 시점 종류와 미리보기 방향. 바뀌었는지로 판정한다.
+	uint8 ViewModeBaseline = 0;
+	bool bViewModeBaselineValid = false;
+	float PlacementYawBaseline = 0.f;
+	bool bPlacementYawBaselineValid = false;
+
 	// 설정에 지정된 위젯을 화면에 띄운다. 이미 있으면 아무것도 하지 않는다.
 	//
 	// 대사만 자동으로 시작되고 위젯은 직접 띄워야 하면, 레벨마다 그 코드를 넣어야 한다.
@@ -475,6 +533,7 @@ private:
 	// 여기서 얼마나 벗어났는지로 조작 여부를 판단한다.
 	FVector CameraBaselineFocus = FVector::ZeroVector;
 	float CameraBaselineArmLength = 0.f;
+	float CameraBaselineYaw = 0.f;
 	bool bCameraBaselineValid = false;
 
 	// 건너뛰었으면 다시 시작하지 않는다.

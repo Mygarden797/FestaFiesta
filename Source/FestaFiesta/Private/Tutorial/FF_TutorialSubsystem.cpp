@@ -305,9 +305,29 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 		}
 	}
 
+	// 카드 · 카테고리 버튼처럼 다시 만들어지는 위젯을 가리키는 중이면 짧은 주기로 다시 찾는다.
+	if (!CurrentAnchor.IsNone())
+	{
+		DynamicAnchorScanCountdown -= DeltaTime;
+		if (DynamicAnchorScanCountdown <= 0.f)
+		{
+			DynamicAnchorScanCountdown = 0.1f;
+			RefreshDynamicAnchor();
+		}
+	}
+
+	// 대사창이 비켜 설 배치 패널도 같은 주기로 다시 본다. 대사창은 매 프레임 이 값만 읽는다.
+	DialogueLiftScanCountdown -= DeltaTime;
+	if (DialogueLiftScanCountdown <= 0.f)
+	{
+		DialogueLiftScanCountdown = 0.1f;
+		RefreshDialogueLiftPanel();
+	}
+
 	if (IsWaitingForAction())
 	{
 		TickCameraWatch();
+		TickActionWatch();
 
 		// 탭 대기 줄이면 탭 바를 주기적으로 다시 확인한다. TryBindPrepHudBar 주석 참고.
 		if (GetCurrentLine().WaitCondition == EFF_TutorialWaitCondition::PrepTabOpened)
@@ -447,10 +467,24 @@ void UFF_TutorialSubsystem::UnbindGameSignals()
 void UFF_TutorialSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
 {
 	// 설치만 본다. 철거나 개폐는 튜토리얼에서 기다릴 일이 없다.
-	if (Event.Type == EFFZSCommandType::Install)
+	if (Event.Type != EFFZSCommandType::Install)
 	{
-		NotifyAction(EFF_TutorialWaitCondition::FacilityPlaced);
+		return;
 	}
+
+	/* 줄에 시설을 적어 두었으면 그 시설만 센다(2026-10-07).
+
+	   메인공연장 · 햄버거 가게처럼 시설을 하나씩 짚어 가며 설치시키는데, 다른 시설을 놓아도 넘어가면
+	   안내한 것과 다른 것을 놓은 채 다음 단계로 간다.
+	*/
+	const FFF_DialogueLine& Line = GetCurrentLine();
+	if (Line.WaitCondition == EFF_TutorialWaitCondition::FacilityPlaced && !Line.WaitTarget.IsNone()
+		&& ResolveFacilityDefinitionId(Event.FacilityInstanceId) != Line.WaitTarget)
+	{
+		return;
+	}
+
+	NotifyAction(EFF_TutorialWaitCondition::FacilityPlaced);
 }
 
 bool UFF_TutorialSubsystem::TryBindPrepHudBar()
@@ -927,6 +961,7 @@ void UFF_TutorialSubsystem::ResetCameraBaseline()
 	const FFF_OverviewCameraState State = Pawn->GetCameraState();
 	CameraBaselineFocus = State.FocusLocation;
 	CameraBaselineArmLength = State.ArmLength;
+	CameraBaselineYaw = State.Yaw;
 	bCameraBaselineValid = true;
 }
 
@@ -1016,6 +1051,7 @@ void UFF_TutorialSubsystem::GoToLine(const int32 LineIndex)
 	if (Line.RequiresPlayerAction())
 	{
 		ResetCameraBaseline();
+		PrepareActionWatch(Line);
 
 		// 탭을 기다리는 줄이면 지금 구독한다. 늦게 뜨는 화면은 Tick 이 다시 잡는다.
 		if (bWaitsForTab)

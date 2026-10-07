@@ -45,9 +45,15 @@ struct FFF_DialogueRow : public FTableRowBase
 	FString Text;
 
 	// None / CameraMoved / CameraZoomed / PrepTabOpened / FacilityPlaced
-	// / StageAdvanced / ExternalSignal
+	// / StageAdvanced / ExternalSignal / CameraRotated / ViewToggled / BuildCategorySelected
+	// / PlacementStarted / PlacementRotated / SynergyActive / StaffAssigned / BuildCatalogOpened
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
 	FString WaitCondition;
+
+	// 조작 대기 조건의 대상. 카테고리(Performance) · 시설 정의 이름(Booth_FoodStall_Burger) · 조합(BurgerPicnic).
+	// 표의 맨 뒤 칸이다. 예전 표에는 없어서 비어 있으면 대상 없이 판정한다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
+	FString WaitTarget;
 
 	// FullScreen / BoxOnly. 비어 있으면 화면 전체.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
