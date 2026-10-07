@@ -61,6 +61,16 @@ void UFF_LivePanelOperations::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+void UFF_LivePanelOperations::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (!CachedViewModel || !bHasBuzzValue || !Bar_Buzz || DisplayedBuzzRatio == TargetBuzzRatio) return;
+
+	DisplayedBuzzRatio = FMath::FInterpTo(DisplayedBuzzRatio, TargetBuzzRatio, InDeltaTime, BuzzInterpSpeed);
+	if (FMath::IsNearlyEqual(DisplayedBuzzRatio, TargetBuzzRatio, 0.0001f)) DisplayedBuzzRatio = TargetBuzzRatio;
+	Bar_Buzz->SetPercent(DisplayedBuzzRatio);
+}
+
 UFF_FestivalViewModelSubsystem* UFF_LivePanelOperations::GetViewModel() const
 {
 	if (CachedViewModel)
@@ -90,6 +100,7 @@ void UFF_LivePanelOperations::BindViewModel()
 	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_LivePanelOperations::HandleStageViewChanged);
 	CachedViewModel->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_LivePanelOperations::HandleTodayRevenueChanged);
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_LivePanelOperations::HandleGoldChanged);
+	CachedViewModel->OnBuzzChanged.AddUniqueDynamic(this, &UFF_LivePanelOperations::HandleBuzzChanged);
 }
 
 void UFF_LivePanelOperations::UnbindViewModel()
@@ -102,8 +113,10 @@ void UFF_LivePanelOperations::UnbindViewModel()
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_LivePanelOperations::HandleStageViewChanged);
 		CachedViewModel->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_LivePanelOperations::HandleTodayRevenueChanged);
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_LivePanelOperations::HandleGoldChanged);
+		CachedViewModel->OnBuzzChanged.RemoveDynamic(this, &UFF_LivePanelOperations::HandleBuzzChanged);
 	}
 	CachedViewModel = nullptr;
+	bHasBuzzValue = false;
 }
 
 void UFF_LivePanelOperations::RefreshAll()
@@ -181,6 +194,50 @@ void UFF_LivePanelOperations::RefreshAll()
 	// 지금은 띄울 것이 없어 칸째 숨긴다.
 	// 사건·대기열 원인은 소유자 API 가 오면 여기에 붙인다.
 	SetGroupTextOrHide(Box_Warning, Text_Warning, FText::GetEmpty());
+	RefreshBuzz();
+}
+
+void UFF_LivePanelOperations::RefreshBuzz()
+{
+	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+	float Value = 0.f;
+	float ChangeToday = 0.f;
+	const bool bWasKnown = bHasBuzzValue;
+	bHasBuzzValue = ViewModel && ViewModel->TryGetBuzzValues(Value, ChangeToday);
+	if (!bHasBuzzValue)
+	{
+		SetTextOrHide(Text_BuzzValue, MissingValueText);
+		SetTextOrHide(Text_BuzzChange, FText::GetEmpty());
+		SetTextOrHide(Text_BuzzNote, BuzzUnavailableText);
+		if (Bar_Buzz) Bar_Buzz->SetVisibility(ESlateVisibility::Hidden);
+		return;
+	}
+
+	FNumberFormattingOptions NumberOptions;
+	NumberOptions.SetMaximumFractionalDigits(1);
+	SetTextOrHide(Text_BuzzValue, FText::Format(BuzzValueTextFormat,
+		FFormatNamedArguments{{TEXT("Value"), FText::AsNumber(Value, &NumberOptions)}}));
+	// 직전 이벤트와의 차이가 아니라 원본이 저장한 오늘 아침 기준을 사용한다.
+	// 소수 첫째 자리로 보이는 변화만 부호를 붙여 +0 / −0 표시를 피한다.
+	const float VisibleChange = static_cast<float>(FMath::RoundToInt(ChangeToday * 10.f)) / 10.f;
+	SetTextOrHide(Text_BuzzChange, VisibleChange == 0.f ? BuzzUnchangedText
+		: FText::Format(VisibleChange > 0.f ? BuzzIncreaseTextFormat : BuzzDecreaseTextFormat,
+			FFormatNamedArguments{{TEXT("Change"), FText::AsNumber(FMath::Abs(VisibleChange), &NumberOptions)}}));
+	SetTextOrHide(Text_BuzzNote, BuzzNoteText);
+
+	// 원본 계약 0~100을 막대의 0~1로만 변환한다. 화제성이나 방문객을 새로 계산하지 않는다.
+	TargetBuzzRatio = FMath::Clamp(Value / 100.f, 0.f, 1.f);
+	if (!bWasKnown || BuzzInterpSpeed <= 0.f) DisplayedBuzzRatio = TargetBuzzRatio;
+	if (Bar_Buzz)
+	{
+		Bar_Buzz->SetPercent(DisplayedBuzzRatio);
+		Bar_Buzz->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+}
+
+void UFF_LivePanelOperations::HandleBuzzChanged(float NewValue, float PreviousValue)
+{
+	RefreshBuzz();
 }
 
 void UFF_LivePanelOperations::HandleSimSatisfactionChanged(int32 NewValue)

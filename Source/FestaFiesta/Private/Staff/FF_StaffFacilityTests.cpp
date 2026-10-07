@@ -299,6 +299,7 @@ bool FFF_StaffFacilityDispatchTest::RunTest(const FString& Parameters)
                 FVector::Dist2D(Body->GetActorLocation(), Partner->GetActorLocation()) >= UFF_StaffSubsystem::SpreadSpacingCm - 1.f);
         }
         TestFalse(TEXT("The body never collides with the crowd"), Body->GetActorEnableCollision());
+        TestEqual(TEXT("A freshly sent body is told it is walking out"), Body->GetStaffState(), EFF_StaffState::Moving);
     }
     TestNull(TEXT("An undispatched member has no body"), Bodies->FindStaffActor(1));
 

@@ -28,6 +28,9 @@ for name, minor, display in FIXTURES:
     assert spec.get_editor_property('category') == unreal.FFZSFacilityCategory.LIGHTING
     assert definition.get_editor_property('show_in_build_catalog')
     assert not spec.get_editor_property('anchors') and not spec.get_editor_property('queue_reserved_rects')
+    assert not spec.get_editor_property('queue_reserved_cells') and not spec.get_editor_property('queue_spline_points_cm')
+    assert spec.get_editor_property('clearance_cells') == 0
+    assert not spec.get_editor_property('audience').get_editor_property('enabled')
     rules = spec.get_editor_property('queue_rules')
     assert rules.get_editor_property('service_capacity') == rules.get_editor_property('max_waiting_agents') == 0
     thumbnail = definition.get_editor_property('catalog_thumbnail')

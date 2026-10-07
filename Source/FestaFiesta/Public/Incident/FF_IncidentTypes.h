@@ -7,7 +7,6 @@
 #include "FF_IncidentTypes.generated.h"
 
 class AActor;
-class UTexture2D;
 class UWorld;
 
 // 값이 저장·집계 키가 된다. 중간에 끼워 넣지 않고 뒤에만 추가한다.
@@ -200,6 +199,9 @@ struct FESTAFIESTA_API FFF_IncidentOptionView
 	int32 CostGold = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
+	int32 CostStaff = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
 	int32 MinStaff = 1;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Incident|Option")
@@ -226,12 +228,18 @@ struct FESTAFIESTA_API FFF_IncidentView
 	
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
 	FText Body;
-	
-	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
-	TSoftObjectPtr<UTexture2D> MarkerIcon;
-	
+
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
 	float MinuteUntileLapse = 60.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Identity")
+	EFF_IncidentTone Tone = EFF_IncidentTone::Problem;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Identity")
+	EFF_IncidentUrgency Urgency = EFF_IncidentUrgency::Medium;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Display")
+	float OccurredAtMinutes = 0.f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Incident|Options")
 	TArray<FFF_IncidentOptionView> Options;
@@ -243,5 +251,8 @@ struct FESTAFIESTA_API FFF_IncidentView
 	// Working 일 때만 의미가 있다. 축제 분 단위.
 	UPROPERTY(BlueprintReadOnly, Category = "Incident|Response")
 	float RemainingWorkMinutes = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Incident|Response")
+	float TotalWorkMinutes = 0.f;
 };
 

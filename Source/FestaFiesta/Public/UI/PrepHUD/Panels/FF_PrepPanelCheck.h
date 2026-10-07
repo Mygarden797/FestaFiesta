@@ -9,6 +9,7 @@
 #include "FF_PrepPanelCheck.generated.h"
 
 class UButton;
+class USlider;
 class UTextBlock;
 class UWidget;
 class UFF_FestivalViewModelSubsystem;
@@ -48,7 +49,7 @@ struct FESTAFIESTA_API FFF_PrepDayEstimate
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
 	int32 StaffHireCost = INDEX_NONE;
 
-	/** 예상 방문객 × 입장료. 예상 방문객을 모르면 `INDEX_NONE`. */
+	/** 경제 원본 예보의 예상 입장 수입. UI에서 곱셈으로 다시 계산하지 않는다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
 	int32 ExpectedAdmissionRevenue = INDEX_NONE;
 
@@ -97,7 +98,7 @@ struct FESTAFIESTA_API FFF_PrepCheckRules
 	static FFF_PrepDayEstimate BuildDayEstimate(
 		int32 TodayStaffHireCost,
 		int32 ExpectedVisitors,
-		int32 AdmissionFee,
+		int32 ExpectedAdmissionRevenue,
 		int32 DailyVisitorGoal,
 		int32 DailyGoalBonus);
 
@@ -146,6 +147,14 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
+	virtual void NativeDestruct() override;
+
+	UFUNCTION() void HandleAdmissionValueChanged(float NewValue);
+	UFUNCTION() void HandleAdmissionDecrease();
+	UFUNCTION() void HandleAdmissionIncrease();
+	UFUNCTION() void HandleAdmissionApply();
+	UFUNCTION() void HandleAdmissionReset();
+	UFUNCTION() void HandleAdmissionFeeChanged(int32 NewValue);
 
 	// --- 버튼 ---
 
@@ -187,6 +196,41 @@ protected:
 	void HandleScheduledProgramsChanged();
 
 protected:
+	// 입장료 초안과 적용값은 구분한다. 슬라이더 변경만으로 경제 명령을 호출하지 않는다.
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<USlider> Slider_AdmissionFee;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UButton> Button_AdmissionDecrease;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UButton> Button_AdmissionIncrease;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UButton> Button_AdmissionApply;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UButton> Button_AdmissionReset;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionFeeValue;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AppliedAdmissionFee;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionFeeRange;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionFeeState;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionPreviewDelta;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionPreviewRevenue;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionValueFormat;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AppliedAdmissionFormat;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionRangeFormat;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionAppliedText;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionDraftText;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionLockedText;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionUnavailableText;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionGateDraftText;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionDeltaFormat;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionNoChangeText;
+
 	// --- 카드 4장 ---
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
@@ -303,6 +347,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
 	FText GoldValueFormat;
 
+	/** 보유 금화 카드. 옆에 금화 아이콘이 있어 단위 글자를 붙이지 않는다 (2026-10-06). {Amount}: 금액 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
+	FText HeldGoldValueFormat;
+
 	/** {Name}, {Installed}, {Required}, {State}. 각 시설은 한 줄씩 표시한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
 	FText RequiredFacilityFormat;
@@ -352,6 +400,9 @@ private:
 	void RefreshAll();
 
 	void RefreshWeather();
+	void RefreshAdmission();
+	void SetAdmissionDraft(int32 NewFee);
+	bool HasAdmissionDraft() const;
 	void RefreshCapacity();
 	void RefreshSummary();
 	void RefreshEstimate();
@@ -379,6 +430,7 @@ private:
 
 	/** 금액 칸 하나. `INDEX_NONE` 이면 `아직 알 수 없습니다`. */
 	FText FormatGoldOrUnknown(int32 Amount) const;
+	FText FormatGoldOrUnknown(int32 Amount, const FText& Format) const;
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
@@ -396,6 +448,15 @@ private:
 	 */
 	int32 ExpectedVisitorsMin = INDEX_NONE;
 	int32 ExpectedVisitorsMax = INDEX_NONE;
+	int32 ExpectedAdmissionRevenue = INDEX_NONE;
+	int32 AppliedAdmissionFee = INDEX_NONE;
+	int32 DraftAdmissionFee = INDEX_NONE;
+	int32 AdmissionMin = INDEX_NONE;
+	int32 AdmissionMax = INDEX_NONE;
+	bool bAdmissionRangeValid = false;
+	bool bRefreshingAdmission = false;
+	bool bAdmissionRequestInFlight = false;
+	FText AdmissionResultText;
 
 	friend class FFF_PrepCheckRules_CtaReasonRefresh;
 };

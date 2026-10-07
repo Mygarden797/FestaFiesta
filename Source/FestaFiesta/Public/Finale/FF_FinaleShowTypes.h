@@ -96,7 +96,7 @@ enum class EFF_FinaleTourAct : uint8
 	// 하늘을 보는 자리. 기본값이라 예전에 놓은 시점은 전부 여기에 든다.
 	Fireworks    UMETA(DisplayName = "불꽃 관람"),
 
-	// 축제장을 보는 자리. 이 막 동안은 발사를 멈추고 엔딩곡을 튼다.
+	// 축제장을 보는 자리. 이 막 동안에도 발사는 이어진다(2026-10-06 부터).
 	SiteTour     UMETA(DisplayName = "축제장 순회"),
 
 	// 마무리를 보는 자리. 하나도 없으면 첫 불꽃 관람 자리로 돌아온다.
@@ -245,9 +245,14 @@ struct FFF_FinaleVolley
 
 	   자리를 정하지 않는 패턴(단발·동시)은 아무것도 채우지 않는다. 호출부가
 	   흩뿌리는 규칙을 그대로 쓰면 된다 — HasFixedLayout() 으로 미리 가른다.
+
+	   점마다 색을 가진 모양(UFF_FinaleShapeData::PointColors)이면 OutColors 에 자리와 같은 순서로
+	   색을 담는다. 그 밖에는 비워 둔다 — 호출부는 비었으면 볼리의 색 규칙을 쓴다.
+	   점 그림은 점 수가 발수보다 적으면 자리도 그만큼만 나온다. 남는 발은 다음 차례 몫이다.
 	*/
 	FESTAFIESTA_API void BuildShellLayout(
-		const FFF_FinaleLayoutContext& Context, TArray<FVector>& OutLocations) const;
+		const FFF_FinaleLayoutContext& Context, TArray<FVector>& OutLocations,
+		TArray<FLinearColor>* OutColors = nullptr) const;
 
 	// 자리를 패턴이 정하는가. 아니면 호출부가 흩뿌린다.
 	bool HasFixedLayout() const
@@ -295,9 +300,9 @@ struct FFF_FinaleGradeSpec
 	   레벨에 불꽃 관람 시점과 축제장 순회 시점이 하나 이상씩 있어야 막이 선다.
 	   하나라도 없으면 예전처럼 하늘 시점만 돈다. 3막일 때는 TourViewpointLimit 를 보지 않는다.
 
-	   최고 등급에만 켠다. 순회 동안 발사를 멈추므로 발수가 적은 등급에서 켜면
-	   하늘이 비어 보인다. 기본값을 false 로 둔 이유도 같다. 데이터 애셋은 기본값과
-	   다른 값만 저장하므로, 기본값이 true 면 이미 만든 애셋의 모든 등급이 켜진다.
+	   최고 등급에만 켠다. 순회 동안에도 발사는 이어지지만(2026-10-06 피드백) 카메라가 축제장을
+	   비추는 동안 하늘이 화면에 덜 나오므로 발수가 많은 등급이어야 산다. 기본값을 false 로 둔 이유는
+	   데이터 애셋이 기본값과 다른 값만 저장해서다. 기본값이 true 면 이미 만든 애셋의 모든 등급이 켜진다.
 	*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막")
 	bool bSiteTour = false;
@@ -323,6 +328,69 @@ struct FFF_FinaleGradeSpec
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막",
 		meta = (ClampMin = "0", EditCondition = "bSiteTour"))
 	int32 FinalSalvoShells = 0;
+
+	/* 마지막 일제 발사 바로 앞에 올릴 큰 모양 한 차례. 모양 패턴에 모양 애셋이 있을 때만 쏜다.
+
+	   최고 등급의 마지막 장면(2026-10-06 태극기 요청). 큰 하트 · 별처럼 여러 발이 함께 올라가 점 순서대로
+	   터지되(bStaggerByFuse), 무작위로 뽑히지 않고 정해진 때 한 번만 나온다. 마무리 막 몫에서 ShellCount 만큼
+	   떼어 둔다. 자리는 흩뿌리지 않고 발사 위치들의 가운데, 높이 범위의 가운데에 세워 관객을 마주본다.
+
+	   일제 발사와 겹치지 않게, 다 핀 뒤 FinalShapeLeadSeconds 가 지나서 일제 발사의 첫 발이 터진다.
+	   그 앞 일반 차례는 모양이 피기 전에 다 터지도록 일찍 끝낸다 — 하늘이 비어야 모양이 읽힌다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막", meta = (EditCondition = "bSiteTour"))
+	FFF_FinaleVolley FinalShape;
+
+	// 마지막 모양이 다 핀 뒤 일제 발사의 첫 발이 터지기까지(초). 모양을 혼자 보여 주는 시간이다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막",
+		meta = (ClampMin = "0.0", EditCondition = "bSiteTour"))
+	float FinalShapeLeadSeconds = 1.f;
+
+	// 마지막 모양을 쏘는 등급인가. 3막이어야 하고, 모양 패턴에 모양 애셋이 있어야 한다.
+	bool HasFinalShape() const
+	{
+		return bSiteTour
+			&& FinalShape.Pattern == EFF_FinaleVolleyPattern::Shape
+			&& FinalShape.ShellCount > 0
+			&& !FinalShape.Shape.IsNull();
+	}
+
+	// 마지막 모양의 높이(발사 위치 위, cm). 높이 범위의 가운데다. 위아래로 펼쳐지는 모양이 범위 안에 든다.
+	float GetFinalShapeHeight() const
+	{
+		return (BurstHeightMin + BurstHeightMax) * 0.5f;
+	}
+
+	/* 마지막 모양이 첫 발부터 마지막 발까지 피는 데 걸리는 시간(초). 간격이 0 이면 한꺼번에 핀다.
+
+	   도화선 차례든 연발통이든 발 사이 간격이 그대로 터지는 간격이 된다(UFF_FinaleShowSubsystem::FireFinalShape).
+	*/
+	float GetFinalShapeBloomSeconds() const
+	{
+		return FinalShape.GetSpanSeconds();
+	}
+
+	/* 연출 길이를 이 등급이 트는 곡 길이에 맞춘다(FFF_FinaleSongPlan).
+
+	   켜면 연출을 시작할 때 오디오 뱅크에서 이 등급의 피날레 곡 길이를 읽는다. 마지막 일제 발사가 곡 끝
+	   직전에 터지고 연출은 곡과 함께 끝난다. 곡을 바꾸면 길이도 따라간다. 그때 DurationSeconds 는 곡 길이로
+	   바뀐다. 뱅크에 곡이 없어 길이를 못 읽으면 DurationSeconds 그대로 돈다.
+
+	   최고 등급 전용곡에 맞추려고 만들었다(2026-10-06 "불꽃 피는 밤" 확정). 길게 잡는 대신 건너뛸 수 있다 —
+	   라이브 HUD 의 "다음으로" 는 연출을 끝내고, Tab 은 카메라만 놓아 준다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|곡 맞춤")
+	bool bMatchSongLength = false;
+
+	/* 곡의 어디쯤(0~1)에서 축제장 순회를 시작할지. 3막일 때만 쓴다.
+
+	   1막(불꽃 관람)은 처음부터 여기까지, 순회는 순회에 걸리는 시간만큼, 그 뒤 곡 끝까지가 마무리 막이다.
+	   "불꽃 피는 밤"(77초)은 30초에 첫 후렴이 끝나고 잠시 가라앉았다가 끝까지 올라간다. 그 가라앉는
+	   자리에서 순회를 시작하려고 0.39 로 둔다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|곡 맞춤",
+		meta = (ClampMin = "0.05", ClampMax = "0.9", EditCondition = "bMatchSongLength"))
+	float SongSiteTourAt = 0.39f;
 
 	/* 이 등급에서 쓸 발사 패턴.
 
@@ -510,6 +578,72 @@ struct FFF_FinaleGradeSpec
 		const float Share = FMath::Clamp(GrandFinaleShare, 0.f, 1.f);
 		return FMath::Clamp(FMath::CeilToInt(static_cast<float>(BurstCount) * Share), 0, BurstCount);
 	}
+};
+
+/* 곡에 맞춘 연출 시간표(초, 연출 시작 기준). FFF_FinaleGradeSpec::bMatchSongLength 가 켜졌을 때 쓴다.
+
+   월드를 모른다. 곡 길이와 순회 시간 같은 값만 받아 시각을 낸다. 그래서 월드 없이 시험할 수 있다.
+
+   ─── 끝을 곡 끝에 맞추는 법 ─────────────────────────────────────────────────
+   연출은 마지막 발이 터지고 여운(Tail)이 지나야 끝난다. 그래서 마지막 일제 발사는
+   "곡 끝 - 여운 - 가장 높은 발이 오르는 시간" 에 올린다. 그러면 마지막 발이 곡 끝 몇 초 전에 터지고
+   여운과 함께 곡이 끝난다.
+
+   ─── 안 하는 것 ─────────────────────────────────────────────────────────────
+   곡의 박자나 세기를 읽어 발사를 맞추지는 않는다. 막 경계(순회 시작)만 곡의 비율로 정하고, 그 안에서는
+   남은 시간에 남은 발을 고르게 나눈다. 곡은 실행 중에 분석할 수 없다(패키지에는 압축된 소리만 남는다).
+*/
+struct FESTAFIESTA_API FFF_FinaleSongPlan
+{
+	// 곡 길이. 0 이면 시간표가 없다(곡에 맞추지 않는다).
+	float SongSeconds = 0.f;
+
+	// 축제장 순회와 마무리 막이 시작하는 시각. 3막이 아니면 음수다.
+	float SiteTourAt = -1.f;
+	float GrandFinaleAt = -1.f;
+
+	// 마지막 일제 발사를 올리는 시각. 3막이 아니면 남은 발을 여기까지 나눠 쏜다.
+	float SalvoAt = 0.f;
+
+	// 마지막 모양(FFF_FinaleGradeSpec::FinalShape)을 올리는 시각. 없으면 음수다.
+	float FinalShapeAt = -1.f;
+
+	// 마무리 막의 일반 차례를 이 시각까지 다 쏜다. 마지막 모양이 없으면 SalvoAt 과 같다.
+	float VolleysEndAt = 0.f;
+
+	bool IsValid() const { return SongSeconds > 0.f; }
+	bool HasActs() const { return IsValid() && SiteTourAt >= 0.f && GrandFinaleAt >= SiteTourAt; }
+	bool HasFinalShape() const { return HasActs() && FinalShapeAt >= 0.f; }
+
+	/* 마지막 모양의 자리를 잡는다. Make 다음에 부른다. 3막이 아니면 아무것도 하지 않는다.
+
+	   거꾸로 센다. 일제 발사의 첫 발(가장 낮은 발)이 SalvoAt + SalvoFirstRiseSeconds 에 터진다. 그보다
+	   LeadSeconds 앞에 모양이 다 피고, BloomSeconds 앞에 피기 시작하고, ShapeRiseSeconds 앞에 올린다.
+	   일반 차례는 가장 높은 발(MaxRiseSeconds)도 모양이 피기 전에 터지도록 그만큼 일찍 끝낸다.
+	   마무리 막보다 앞으로 당겨지면 마무리 막 시작에 묶는다.
+	*/
+	void PlaceFinalShape(float ShapeRiseSeconds, float BloomSeconds, float SalvoFirstRiseSeconds,
+		float MaxRiseSeconds, float LeadSeconds);
+
+	/* 시간표를 만든다.
+
+	   SiteActSeconds 는 축제장 순회 막이 차지하는 시간(날아 들어옴 포함). 0 이면 3막이 아니다.
+	   순회가 곡 끝에 너무 붙으면 마무리 막이 MinGrandFinaleSeconds 는 되도록 순회를 앞당긴다.
+	*/
+	static FFF_FinaleSongPlan Make(float SongSeconds, float SiteTourAtFraction, float SiteActSeconds,
+		float MaxRiseSeconds, float TailSeconds);
+
+	/* Now 부터 EndAt 까지 Shells 발을 고르게 쏠 간격. 차례마다 평균 PerVolley 발이 나간다.
+
+	   차례마다 다시 계산해서 앞에서 밀리거나 당겨진 만큼을 뒤에서 메운다. 남은 시간이 없으면 MinInterval 이다.
+	*/
+	static float ResolveIntervalToFinish(float Now, float EndAt, int32 Shells, float PerVolley, float MinInterval);
+
+	// 마무리 막이 이보다 짧아지지 않게 한다(초).
+	static constexpr float MinGrandFinaleSeconds = 8.f;
+
+	// 마지막 발이 곡 끝보다 이만큼 먼저 터지게 한다(초). 곡이 먼저 끝나면 마지막 장면이 조용해진다.
+	static constexpr float EndMarginSeconds = 0.3f;
 };
 
 // Niagara 이펙트에 넘기는 User 파라미터 이름.

@@ -203,7 +203,7 @@ void FFF_CrowdSpatialGrid::GatherNearest(const TArray<FVector2f>& Pos, const FVe
 	OutIndices.Sort();
 }
 
-bool FFF_CrowdSpatialGrid::FindLeastCrowdedNeighbourCell(const FVector2f& P, FVector2f& OutCellCenter) const
+bool FFF_CrowdSpatialGrid::FindLeastCrowdedNeighbourCell(const FVector2f& P, FVector2f& OutCellCenter, int32* OutTieCount) const
 {
 	if (!IsValid())
 	{
@@ -216,6 +216,7 @@ bool FFF_CrowdSpatialGrid::FindLeastCrowdedNeighbourCell(const FVector2f& P, FVe
 	int32 BestCount = TNumericLimits<int32>::Max();
 	int32 BestX = INDEX_NONE;
 	int32 BestY = INDEX_NONE;
+	int32 TieCount = 0;
 
 	// 순회 순서를 고정하고 동률에서 먼저 만난 쪽을 유지한다(엄격한 <).
 	// 그래야 같은 상황에서 항상 같은 방향으로 빠져나간다.
@@ -240,8 +241,18 @@ bool FFF_CrowdSpatialGrid::FindLeastCrowdedNeighbourCell(const FVector2f& P, FVe
 				BestCount = Count;
 				BestX = X;
 				BestY = Y;
+				TieCount = 1;
+			}
+			else if (Count == BestCount)
+			{
+				++TieCount;
 			}
 		}
+	}
+
+	if (OutTieCount)
+	{
+		*OutTieCount = TieCount;
 	}
 
 	if (BestX == INDEX_NONE)

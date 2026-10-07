@@ -9,6 +9,7 @@
 #include "Engine/StaticMesh.h"
 #include "GameplayEffect.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Staff/FF_StaffAnimInstance.h"
 #include "Staff/FF_StaffAttributeSet.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -71,6 +72,23 @@ void AFF_StaffActor::PushPresentation(const FVector& NewPosition, FRotator NewRo
 	}
 }
 
+void AFF_StaffActor::SetAnimPlayRate(float PlayRate)
+{
+	if (SkeletalMeshComponent)
+	{
+		SkeletalMeshComponent->GlobalAnimRateScale = PlayRate;
+	}
+}
+
+void AFF_StaffActor::PushStaffState(EFF_StaffState NewState)
+{
+	StaffState = NewState;
+	if (UFF_StaffAnimInstance* StaffAnimInstance = Cast<UFF_StaffAnimInstance>(AnimInstance))
+	{
+		StaffAnimInstance->SetStaffState(NewState);
+	}
+}
+
 void AFF_StaffActor::InitFromLevel(int32 TrainingLevel)
 {
 }
@@ -97,6 +115,7 @@ void AFF_StaffActor::BeginPlay()
 	if (bHasSkeletalMesh)
 	{
 		AnimInstance = Cast<UFF_CrowdAnimInstance>(SkeletalMeshComponent->GetAnimInstance());
+		PushStaffState(StaffState);
 	}
 	if (!ProxyMeshComponent)
 	{

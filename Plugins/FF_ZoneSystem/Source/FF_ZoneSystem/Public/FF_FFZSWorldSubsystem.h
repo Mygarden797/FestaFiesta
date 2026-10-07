@@ -19,6 +19,7 @@ class AFFZSBuildArea;
 class FFFZSSpatialHash2D;
 class AFFZSProtectedArea;
 struct FFFZSBuildableGridMask;
+struct FFFZSPlacementGroundSupport;
 
 // 시설 한 개의 ZoneId와 서로 겹치지 않는 회전 예약 사각형을 묶은 권위 점유 레코드.
 // GUID별 한 레코드이므로 메모리는 물리 셀 수가 아니라 시설 수와 사각형 수에 비례.
@@ -410,8 +411,8 @@ private:
 
     FFFZSPlacementValidation ValidatePlacementLocal(const FFFZSCommand& Command, const AFFZSFacilityActor* IgnoreFacility, bool bRevalidateExisting = false) const;
     // 외부 정책 없이 플러그인 소유 데이터·기하·점유·월드 검사만 수행한다. Move는 기존 시설 점유를 IgnoreFacility로 제외한다. 
-    void ValidateGround(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const AFFZSFacilityActor* IgnoreFacility, FFFZSPlacementValidation& InOutValidation) const;
-    void ValidateWorldCollision(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const AFFZSFacilityActor* IgnoreFacility, FFFZSPlacementValidation& InOutValidation) const;
+    void ValidateGround(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const AFFZSFacilityActor* IgnoreFacility, FFFZSPlacementValidation& InOutValidation, FFFZSPlacementGroundSupport* OutGroundSupport = nullptr) const;
+    void ValidateWorldCollision(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const AFFZSFacilityActor* IgnoreFacility, FFFZSPlacementValidation& InOutValidation, const FFFZSPlacementGroundSupport* GroundSupport = nullptr) const;
     void ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZSPlacementValidation& InOutValidation) const;
     void ValidateProtectedAreas(FName ZoneId, const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, FFFZSPlacementValidation& InOutValidation) const;
     

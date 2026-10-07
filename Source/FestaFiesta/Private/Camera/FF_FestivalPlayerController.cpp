@@ -11,6 +11,7 @@
 #include "Camera/FF_FinaleViewpoint.h"
 #include "Camera/FF_OverviewCameraPawn.h"
 #include "Camera/FF_OverviewCameraRig.h"
+#include "Finale/FF_FinaleShowSubsystem.h"
 #include "CollisionQueryParams.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
@@ -738,15 +739,31 @@ void AFF_FestivalPlayerController::HandleToggleView(const FInputActionValue& Val
 		return;
 	}
 
-	/* 연출이 카메라를 쥐고 있으면 전환하지 않는다.
+	/* 연출이 카메라를 쥐고 있을 때.
 
-	   여기서 바꾸면 화면은 캐릭터로 가지만 연출 중이라는 표시는 그대로 남아서,
-	   다음 순회 시점이 다시 카메라를 끌고 간다. 연출에서 빠지고 싶으면
-	   피날레의 카메라 건너뛰기(SkipCinematicCamera)가 그 길이다.
+	   피날레면 연출 카메라만 놓아 주고(SkipCinematicCamera) 그대로 전환한다. 불꽃은 곡 끝까지 이어진다
+	   (2026-10-06 피드백: Tab 으로 1인칭이 돼도 불꽃놀이가 끝나지 않게). 연출 표시를 먼저 풀어야
+	   다음 순회 시점이 카메라를 다시 끌고 가지 않는다. 피날레가 아닌 연출이면 전처럼 막는다.
 	*/
 	if (bScriptedViewActive)
 	{
-		return;
+		UFF_FinaleShowSubsystem* Finale = GetWorld() ? GetWorld()->GetSubsystem<UFF_FinaleShowSubsystem>() : nullptr;
+		if (!Finale || !Finale->IsShowInProgress())
+		{
+			return;
+		}
+
+		Finale->SkipCinematicCamera();
+		if (bScriptedViewActive)
+		{
+			return;
+		}
+
+		// 연출 전에 캐릭터 시점이었으면 방금 거기로 돌아왔다. 그게 1인칭이라 한 번 더 바꾸지 않는다.
+		if (ViewMode != EFF_CameraViewMode::Overview)
+		{
+			return;
+		}
 	}
 
 	ToggleView(ViewSwitchBlendTime);

@@ -11,6 +11,8 @@ class UProgressBar;
 class UTextBlock;
 class UWidget;
 class UFF_FestivalViewModelSubsystem;
+class UWidgetSwitcher;
+class UFF_StaffTrainingWidget;
 
 /**
  * 인원을 더 고용할 수 없는 이유.
@@ -142,6 +144,31 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
+	virtual void NativeDestruct() override;
+
+	UFUNCTION()
+	void HandleStaffOverviewClicked();
+
+	UFUNCTION()
+	void HandleStaffTrainingClicked();
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UButton> Button_StaffOverview;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UButton> Button_StaffTraining;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UWidgetSwitcher> Switcher_StaffContent;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UFF_StaffTrainingWidget> Widget_StaffTraining;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UWidget> Indicator_StaffOverview;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UWidget> Indicator_StaffTraining;
 
 	// --- 버튼 ---
 
@@ -279,6 +306,10 @@ protected:
 	FText HireActionTextFormat;
 
 private:
+	void SelectStaffTab(bool bTraining);
+	bool bStaffPanelOpen = false;
+	bool bTrainingSelected = false;
+
 	UFF_FestivalViewModelSubsystem* GetViewModel() const;
 
 	void BindViewModel();

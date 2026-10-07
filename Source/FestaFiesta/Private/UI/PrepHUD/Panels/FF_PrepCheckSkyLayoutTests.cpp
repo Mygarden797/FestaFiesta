@@ -68,7 +68,7 @@ namespace FFPrepCheckSkyLayoutTest
 			{ TEXT("Text_DailyGoalValue"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("500명") },
 			{ TEXT("Text_DailyGoalBonus"), bUnknown ? TEXT("달성 보너스 미확인") : TEXT("달성 시 +300 Gold") },
 			{ TEXT("Text_ExpectedVisitors"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("425명") },
-			{ TEXT("Text_Gold"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("9,700 Gold") },
+			{ TEXT("Text_Gold"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("9,700") },
 			{ TEXT("Text_CapacityRisk"), bUnknown ? TEXT("? 판정 불가 — 예상 방문객이나 정원을 아직 읽지 못했습니다") : TEXT("○ 여유") },
 			{ TEXT("Text_CapacityDetail"), bUnknown ? TEXT("Zone 정원을 읽지 못했습니다. 시설을 놓으면 계산됩니다.") : TEXT("정원 62,887명 대비 최대 예상 425명") },
 			{ TEXT("Text_StaffSummary"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("6명 (기본 6 · 고용 0)") },
@@ -148,6 +148,7 @@ namespace FFPrepCheckSkyLayoutTest
 		UWidget* Header = Panel.GetWidgetFromName(TEXT("HorizontalBox_Header"));
 		UWidget* Footer = Panel.GetWidgetFromName(TEXT("Border_Footer"));
 		auto* Metrics = Cast<UWrapBox>(Panel.GetWidgetFromName(TEXT("WrapBox_Metrics")));
+		const bool bHasAdmissionSection = Panel.GetWidgetFromName(TEXT("Border_AdmissionSection")) != nullptr;
 		if (!Test.TestNotNull(Context + TEXT(" 스크롤 본문"), Scroll) || !Test.TestNotNull(Context + TEXT(" 전체 본문"), Body) ||
 			!Test.TestNotNull(Context + TEXT(" 헤더"), Header) || !Test.TestNotNull(Context + TEXT(" 푸터"), Footer) ||
 			!Test.TestNotNull(Context + TEXT(" 요약 카드 묶음"), Metrics)) { return false; }
@@ -173,10 +174,10 @@ namespace FFPrepCheckSkyLayoutTest
 		Test.TestTrue(Context + TEXT(" 헤더와 실행 영역이 패널 안에 유지된다"), Contains(PanelRect, HeaderRect) && Contains(PanelRect, FooterRect));
 		Test.TestTrue(Context + TEXT(" 본문이 고정 영역을 침범하지 않는다"), Contains(PanelRect, ScrollRect) &&
 			ScrollRect.Top >= HeaderRect.Bottom - Tolerance && ScrollRect.Bottom <= FooterRect.Top + Tolerance && ScrollRect.GetSize().Y > 0.f);
-		if (Size == FIntPoint(1140, 700) && (Kind == EFixture::Blocked || Kind == EFixture::Ready))
+		if (!bHasAdmissionSection && Size == FIntPoint(1140, 700) && (Kind == EFixture::Blocked || Kind == EFixture::Ready))
 		{
-			// 기본 화면은 최초 표시만으로 준비 현황과 견적을 모두 읽을 수 있어야 한다.
-			// 축소·추가 피날레·긴 목록은 아래 스크롤 검사로 따로 확인한다.
+			// 입장료 영역이 없는 기존 화면만 무스크롤을 요구한다.
+			// 입장료 추가·축소·피날레·긴 목록은 아래의 스크롤 도달 검사로 확인한다.
 			Test.TestTrue(Context + TEXT(" 기본 크기에서는 본문을 스크롤할 필요가 없다"),
 				Scroll->GetScrollOffsetOfEnd() <= Tolerance);
 			for (const TCHAR* Name : { TEXT("Text_RequiredFacilities"), TEXT("Text_ExpectedGoalBonus"), TEXT("Text_EstimateNotice") })
@@ -204,15 +205,24 @@ namespace FFPrepCheckSkyLayoutTest
 		if (UWidget* Close = Panel.GetWidgetFromName(TEXT("Button_Close")))
 		{ Test.TestTrue(Context + TEXT(" 닫기는 고정 헤더 안에 남는다"), Contains(HeaderRect, Close->GetCachedGeometry().GetLayoutBoundingRect())); }
 		else { Test.AddError(Context + TEXT(" 닫기 버튼이 없다")); }
-		Test.TestEqual(Context + TEXT(" 요약 카드 네 장"), Metrics->GetChildrenCount(), 4);
+		Test.TestEqual(Context + TEXT(" 입장료 영역 유무에 맞는 요약 카드 수"),
+			Metrics->GetChildrenCount(), bHasAdmissionSection ? 3 : 4);
+		if (bHasAdmissionSection)
+		{
+			UWidget* ForecastCard = Panel.GetWidgetFromName(TEXT("SizeBox_ExpectedVisitorsCard"));
+			if (Test.TestNotNull(Context + TEXT(" 예상 방문객 카드"), ForecastCard))
+			{
+				Test.TestTrue(Context + TEXT(" 예상 방문객은 입장료 미리보기로 분리된다"), ForecastCard->GetParent() != Metrics);
+			}
+		}
 		if (Size.X >= 1080)
 		{
 			FSlateRect Previous;
 			for (int32 Index = 0; Index < Metrics->GetChildrenCount(); ++Index)
 			{
 				const FSlateRect Rect = Metrics->GetChildAt(Index)->GetCachedGeometry().GetLayoutBoundingRect();
-				Test.TestTrue(Context + TEXT(" 네 카드가 좌우 폭 안에 들어온다"), Rect.Left >= ScrollRect.Left - Tolerance && Rect.Right <= ScrollRect.Right + Tolerance);
-				if (Index > 0) { Test.TestTrue(Context + TEXT(" 넓은 패널에서는 네 카드가 한 줄이다"),
+				Test.TestTrue(Context + TEXT(" 요약 카드가 좌우 폭 안에 들어온다"), Rect.Left >= ScrollRect.Left - Tolerance && Rect.Right <= ScrollRect.Right + Tolerance);
+				if (Index > 0) { Test.TestTrue(Context + TEXT(" 넓은 패널에서는 요약 카드가 한 줄이다"),
 					FMath::IsNearlyEqual(Rect.Top, Previous.Top, Tolerance) && Rect.Left >= Previous.Right - Tolerance); }
 				Previous = Rect;
 			}

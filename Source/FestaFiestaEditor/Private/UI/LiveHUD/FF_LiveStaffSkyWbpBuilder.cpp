@@ -5,6 +5,7 @@
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
 #include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Components/ProgressBar.h"
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
@@ -147,8 +148,13 @@ namespace FFLiveStaffSkyBuilder
 		UHorizontalBox* CapacityRow = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("Staff_CapacityRow"));
 		USizeBox* BarSize = MakeWidget<USizeBox>(BP, Tree, TEXT("Staff_SizeBox_CapacityBar")); BarSize->SetHeightOverride(20.f);
 		UOverlay* Bars = MakeWidget<UOverlay>(BP, Tree, TEXT("Staff_CapacityBars")); BarSize->AddChild(Bars);
-		Bars->AddChildToOverlay(CapacityBar(BP, Tree, TEXT("Progress_StaffCapacity"), Color(136, 218, 174), true));
-		Bars->AddChildToOverlay(CapacityBar(BP, Tree, TEXT("Progress_BaseCapacity"), Green, false));
+		// Overlay 슬롯 기본값은 왼쪽 위라 막대가 최소 크기로 그려진다. 칸 전체를 채운다.
+		for (UProgressBar* Bar : { CapacityBar(BP, Tree, TEXT("Progress_StaffCapacity"), Color(136, 218, 174), true),
+			CapacityBar(BP, Tree, TEXT("Progress_BaseCapacity"), Green, false) })
+		{
+			UOverlaySlot* BarSlot = Bars->AddChildToOverlay(Bar);
+			BarSlot->SetHorizontalAlignment(HAlign_Fill); BarSlot->SetVerticalAlignment(VAlign_Fill);
+		}
 		CenterColumn(*CapacityRow, *BarSize, FMargin(0.f, 0.f, 12.f, 0.f), true);
 		CenterColumn(*CapacityRow, *Label(BP, Tree, TEXT("Text_Capacity"), LOCTEXT("CapacityPreview", "—"), 20, Ink, true));
 		Row(*Composition, *CapacityRow, FMargin(0.f, 0.f, 0.f, 8.f));
@@ -197,6 +203,42 @@ namespace FFLiveStaffSkyBuilder
 		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_APPLIED: 스태프 요약·정원 구성·대응 현황 저장 완료"), LogPrefix);
 	}
 	FAutoConsoleCommand Command(TEXT("FF.ApplyLiveStaffSkyDesign"), TEXT("P7 스태프 화면을 최초 한 번 제작한다."), FConsoleCommandDelegate::CreateStatic(&Apply));
+
+	/** 이미 만든 WBP의 정원 막대 두 칸만 Fill 로 바꾼다. 크기·색·위치 등 다른 Designer 편집은 그대로 둔다. */
+	void FixCapacityBars()
+	{
+		if (GEditor && GEditor->PlayWorld) { UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_BAR_FAIL: PIE 종료 후 실행하세요."), LogPrefix); return; }
+		UWidgetBlueprint* BP = LoadExistingBlueprint(PanelPackage);
+		if (!BP || !BP->WidgetTree) { UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_BAR_FAIL: 스태프 WBP가 없습니다."), LogPrefix); return; }
+		if (BP->GetOutermost()->IsDirty()) { UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_BAR_FAIL: 미저장 스태프 WBP를 보존합니다."), LogPrefix); return; }
+		TArray<UOverlaySlot*> Slots;
+		for (const TCHAR* Name : { TEXT("Progress_StaffCapacity"), TEXT("Progress_BaseCapacity") })
+		{
+			const UWidget* Bar = BP->WidgetTree->FindWidget(Name);
+			UOverlaySlot* BarSlot = Bar ? Cast<UOverlaySlot>(Bar->Slot) : nullptr;
+			if (!BarSlot) { UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_BAR_FAIL: Overlay 안의 막대를 찾지 못했습니다: %s"), LogPrefix, Name); return; }
+			Slots.Add(BarSlot);
+		}
+		if (!Slots.ContainsByPredicate([](const UOverlaySlot* BarSlot)
+			{ return BarSlot->GetHorizontalAlignment() != HAlign_Fill || BarSlot->GetVerticalAlignment() != VAlign_Fill; }))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_BAR_REUSE: 막대가 이미 칸을 채웁니다."), LogPrefix); return;
+		}
+		const FString File = FPackageName::LongPackageNameToFilename(PanelPackage, TEXT(".uasset"));
+		const FString Backup = FPaths::ProjectSavedDir() / TEXT("UIBackups/LiveStaffBar") / FGuid::NewGuid().ToString(EGuidFormats::Digits);
+		if (!IFileManager::Get().MakeDirectory(*Backup, true) || IFileManager::Get().Copy(*(Backup / FPaths::GetCleanFilename(File)), *File) != COPY_OK)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_BAR_FAIL: 백업 실패"), LogPrefix); return;
+		}
+		BP->Modify();
+		for (UOverlaySlot* BarSlot : Slots)
+		{
+			BarSlot->Modify(); BarSlot->SetHorizontalAlignment(HAlign_Fill); BarSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+		if (!SaveNewBlueprint(LogPrefix, *BP)) { UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_BAR_FAIL: 저장 실패. 백업=%s"), LogPrefix, *Backup); return; }
+		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_BAR_APPLIED: 정원 막대 2개를 칸 전체로 늘렸습니다. 백업=%s"), LogPrefix, *Backup);
+	}
+	FAutoConsoleCommand FixBarCommand(TEXT("FF.FixLiveStaffCapacityBar"), TEXT("라이브 스태프 정원 막대가 칸을 채우게 한다."), FConsoleCommandDelegate::CreateStatic(&FixCapacityBars));
 }
 
 #undef LOCTEXT_NAMESPACE

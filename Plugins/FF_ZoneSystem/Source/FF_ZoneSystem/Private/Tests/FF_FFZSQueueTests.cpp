@@ -135,6 +135,15 @@ bool FFFZSQueuePassiveLightingTest::RunTest(const FString& Parameters)
         FFFZSQueueTestAccess::RestoreSnapshot(*Queue, Snapshot, Errors));
     TestEqual(TEXT("잘못된 복원 뒤에도 닫힌 상태를 보존한다"),
         Queue->GetQueueState(), EFFZSQueueState::Closed);
+
+    UFFZSFacilityQueueComponent* LegacyQueue = MakeQueue(FFFZSQueueRules{});
+    TestEqual(TEXT("이전 사양의 빈 대기열이 열려 있다"), LegacyQueue->GetQueueState(), EFFZSQueueState::Open);
+    FFFZSQueueTestAccess::Configure(*LegacyQueue, Rules);
+    TestEqual(TEXT("비서비스 사양으로 변경하면 이전 빈 대기열도 닫힌다"),
+        LegacyQueue->GetQueueState(), EFFZSQueueState::Closed);
+    TestFalse(TEXT("비서비스 사양으로 변경하면 대기열 Tick이 멈춘다"), LegacyQueue->IsComponentTickEnabled());
+    TestTrue(TEXT("정규화한 대기열 스냅샷은 바로 복원할 수 있다"),
+        FFFZSQueueTestAccess::RestoreSnapshot(*Queue, LegacyQueue->CaptureSnapshot(), Errors));
     return true;
 }
 

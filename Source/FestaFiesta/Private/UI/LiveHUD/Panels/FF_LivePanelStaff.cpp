@@ -3,11 +3,14 @@
 #include "UI/LiveHUD/Panels/FF_LivePanelStaff.h"
 
 #include "Components/Image.h"
+#include "Components/Button.h"
+#include "Components/WidgetSwitcher.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Engine/GameInstance.h"
 #include "UI/FF_UILog.h"
+#include "UI/Staff/FF_StaffTrainingWidget.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaLiveStaff"
@@ -55,22 +58,52 @@ FFF_LiveStaffSummary FFF_LiveStaffRules::BuildSummary(
 // UFF_LivePanelStaff
 // =============================================================================
 
+void UFF_LivePanelStaff::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	if (Button_StaffOverview) Button_StaffOverview->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffOverviewClicked);
+	if (Button_StaffTraining) Button_StaffTraining->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffTrainingClicked);
+	SelectStaffTab(false);
+}
+
+void UFF_LivePanelStaff::SelectStaffTab(bool bTraining)
+{
+	bTrainingSelected = bTraining && Widget_StaffTraining && Switcher_StaffContent;
+	if (Switcher_StaffContent) Switcher_StaffContent->SetActiveWidgetIndex(bTrainingSelected ? 1 : 0);
+	if (Indicator_StaffOverview) Indicator_StaffOverview->SetVisibility(bTrainingSelected ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
+	if (Indicator_StaffTraining) Indicator_StaffTraining->SetVisibility(bTrainingSelected ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+	if (Widget_StaffTraining)
+	{
+		if (bStaffPanelOpen && bTrainingSelected) Widget_StaffTraining->ActivateRoster();
+		else Widget_StaffTraining->DeactivateRoster();
+	}
+}
+
+void UFF_LivePanelStaff::HandleStaffOverviewClicked() { SelectStaffTab(false); }
+void UFF_LivePanelStaff::HandleStaffTrainingClicked() { SelectStaffTab(true); }
+
 void UFF_LivePanelStaff::NativeOnPanelOpened()
 {
 	Super::NativeOnPanelOpened();
+	bStaffPanelOpen = true;
 
 	BindViewModel();
 	RefreshAll();
+	SelectStaffTab(bTrainingSelected);
 }
 
 void UFF_LivePanelStaff::NativeOnPanelClosed()
 {
+	bStaffPanelOpen = false;
+	if (Widget_StaffTraining) Widget_StaffTraining->DeactivateRoster();
 	UnbindViewModel();
 	Super::NativeOnPanelClosed();
 }
 
 void UFF_LivePanelStaff::NativeDestruct()
 {
+	bStaffPanelOpen = false;
+	if (Widget_StaffTraining) Widget_StaffTraining->DeactivateRoster();
 	UnbindViewModel();
 	Super::NativeDestruct();
 }

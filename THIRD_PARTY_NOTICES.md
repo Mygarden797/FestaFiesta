@@ -424,3 +424,17 @@ CC BY 4.0은 **수정 사실 표시가 의무**이므로 여기 기록한다 (U3
 - Unreal 임포트 대상: `/Game/FestaFiesta/UI/Atlas/CountryRegions/`의 7개 `T_FF_AtlasRegion_<국가>` 마스크와 공통 `DA_AtlasCountryRegions`.
 - 권장 크레딧: **Made with Natural Earth. Modified for FestaFiesta.**
 - 배포본 조건 원문 동봉: 의무 없음. 위 원장·원본 URL을 크레딧 자료로 유지한다.
+
+### 피날레 등급 선택 이미지 C·B·A·S — 사용자 제공 (2026-10-06)
+
+- 제공 및 사용 요청: 프로젝트 UI 담당 사용자가 2026-10-06 대화에서 4장의 PNG를 첨부하고 피날레 이미지로 사용하도록 요청했다 (`confirmed`).
+- 제작자·권리자·별도 라이선스·외부 원본 URL: 제공되지 않았다 (`to_verify`). 공개 라이선스나 제작자를 추정하지 않는다.
+- 원본 보관: `SourceArt/UI/Finale/finale-C.png`, `finale-B.png`, `finale-A.png`, `finale-S.png`.
+- 수정 내역: 없음. 제공된 PNG를 그대로 복사하며, UI에서 비율을 유지해 표시한다.
+- Unreal 에셋: `/Game/FestaFiesta/UI/PrepHUD/Finale/Textures/T_FF_Finale_C`, `_B`, `_A`, `_S`.
+- 임포트 도구: `Tools/ui/prep_finale_sky/apply.py`. 신규 에셋만 UI/sRGB/NoMipmaps로 임포트한다.
+- 원본 SHA-256:
+  - C: `b01c08633e3bff190e45082802625275f98b58379fc63e8044387eeabe718746`
+  - B: `2b36657a878043c010030aa6d365711ecdeaea8f2dd348625d2be109658a0886`
+  - A: `8260d4357720ea4cec0cef795cc6f319db4a709b184b9bffa4be00ac15b77430`
+  - S: `5af447850db5aa45866cb66fdd27d6907ed0c8e8f689d0435688855e07e6dc87`

@@ -45,6 +45,8 @@ namespace CrowdSteering
 
 		int32 UnstuckHoldSteps = 30;
 
+		int32 UnstuckCooldownSteps = 60;
+
 		/**
 		 * 목적지 방향 진척이 이 속도(UU/s) 미만이면 막힌 것으로 보고 Unit.StuckSteps를 올린다.
 		 *

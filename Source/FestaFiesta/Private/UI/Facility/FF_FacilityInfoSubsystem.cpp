@@ -829,7 +829,7 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 			LOCTEXT("ServiceDurationFormat", "팀당 {0}초"),
 			FText::AsNumber(UpgradePreview.CurrentServiceDurationSeconds));
 	}
-	if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface())
+	if (!Spec.UsesServiceQueue())
 	{
 		OutViewData.QueueCapacityText = LOCTEXT("LightingNoQueue", "대기열 없음");
 		OutViewData.QueueCapacityValueText=FText::FromString(TEXT("—"));
@@ -951,7 +951,7 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.ThroughputText = bQueueAvailable
 		? FFFacilityInfoModel::FormatServiceDuration(true, Facility.GetEffectiveQueueRules().ServiceDurationSeconds)
 		: MissingQueueMetric;
-	if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface())
+	if (!Spec.UsesServiceQueue())
 	{
 		OutViewData.OperationStateText = Spec.IsGroundSurface()
 			? (Spec.AllowsFacilityPlacementOnTop()

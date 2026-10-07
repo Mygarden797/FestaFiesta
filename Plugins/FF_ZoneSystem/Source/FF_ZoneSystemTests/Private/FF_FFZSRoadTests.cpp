@@ -108,6 +108,68 @@ namespace
     }
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSPassiveFootprintTest, "FF_ZoneSystem.Road.PassiveFootprintPlacementAndRestore",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSPassiveFootprintTest::RunTest(const FString& Parameters)
+{
+    FScopedRoadSettings Settings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
+    if (!TestNotNull(TEXT("Passive placement world"), System)) return false;
+    int32 Row = 0;
+    for (const EFFZSFacilityCategory Category : {
+        EFFZSFacilityCategory::Road, EFFZSFacilityCategory::Tile, EFFZSFacilityCategory::Lighting })
+    {
+        FFFZSFacilitySpec Legacy = MakeRoadSpec();
+        Legacy.Category = Category;
+        Legacy.PlacementObstacleHeightCm = 100.f;
+        Legacy.ClearanceCells = 100;
+        Legacy.QueueRules.MaxWaitingAgents = 3;
+        Legacy.QueueRules.ServiceCapacity = 1;
+        Legacy.QueueReservedRects.Emplace(FIntPoint(0, 400), FIntPoint(400, 800));
+        Legacy.QueueReservedCells.Add(FIntPoint(400, 0));
+        Legacy.QueueSplinePointsCm = { FVector(0, 300, 0), FVector(0, 600, 0) };
+        Legacy.Anchors.AddDefaulted();
+        Legacy.QueueLayout = EFFZSQueueLayout::Right;
+        const FIntPoint Origin(1000, 1000 + Row++ * 2000);
+        const FFFZSCommand First = InstallAt(Legacy, Origin);
+        if (!TestTrue(TEXT("Legacy passive geometry is normalized on install"),
+            System->ExecuteCommand(First).bSucceeded)) return false;
+        AFFZSFacilityActor* Actor = System->FindFacility(First.FacilityInstanceId);
+        if (!TestNotNull(TEXT("Installed passive facility"), Actor)) return false;
+        TestEqual(TEXT("Base spec has no clearance"), Actor->GetBaseFacilitySpec().ClearanceCells, 0);
+        TestTrue(TEXT("Base spec has no reserved queue"), Actor->GetBaseFacilitySpec().QueueReservedRects.IsEmpty());
+        TestEqual(TEXT("No waiting capacity"), Actor->GetFacilitySpec().QueueRules.MaxWaitingAgents, 0);
+
+        const FFFZSCommand Neighbor = InstallAt(Legacy, Origin + FIntPoint(400, 0));
+        TestTrue(TEXT("A shared footprint edge is placeable without a gap"),
+            System->ExecuteCommand(Neighbor).bSucceeded);
+        TestFalse(TEXT("A one-centimeter footprint overlap still fails"),
+            System->ValidatePlacement(InstallAt(Legacy, Origin + FIntPoint(399, 0))).bIsValid);
+        TestTrue(TEXT("Former queue area is available"),
+            System->ValidatePlacement(InstallAt(Legacy, Origin + FIntPoint(0, 400))).bIsValid);
+
+        FFFZSWorldSnapshot Snapshot = System->CaptureWorldSnapshot();
+        for (FFFZSFacilityInstanceSnapshot& Saved : Snapshot.Facilities)
+        {
+            if (Saved.FacilityInstanceId == First.FacilityInstanceId) Saved.FacilitySpec = Legacy;
+        }
+        TArray<FText> Errors;
+        if (!TestTrue(TEXT("Old saved passive reservations are removed before restoring occupancy"),
+            System->RestoreWorldSnapshot(Snapshot, Errors))) return false;
+        Actor = System->FindFacility(First.FacilityInstanceId);
+        if (!TestNotNull(TEXT("Restored passive facility"), Actor)) return false;
+        TestEqual(TEXT("Restored base spec has no clearance"), Actor->GetBaseFacilitySpec().ClearanceCells, 0);
+        TestTrue(TEXT("Restored base spec has no queue path"), Actor->GetBaseFacilitySpec().QueueSplinePointsCm.IsEmpty());
+        TestEqual(TEXT("Passive queue remains closed"), Actor->CaptureInstanceSnapshot().Queue.State, EFFZSQueueState::Closed);
+        TestTrue(TEXT("Restore leaves the caller's original snapshot unchanged"), Snapshot.Facilities.ContainsByPredicate(
+            [&First](const FFFZSFacilityInstanceSnapshot& Saved)
+            { return Saved.FacilityInstanceId == First.FacilityInstanceId && Saved.FacilitySpec.ClearanceCells == 100; }));
+    }
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSRoadSpecTest, "FF_ZoneSystem.Road.SpecAndSaveCompatibility",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 

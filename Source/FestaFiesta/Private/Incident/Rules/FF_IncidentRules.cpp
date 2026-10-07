@@ -145,6 +145,7 @@ void FFF_IncidentRules::BuildOptionViews(const UFF_IncidentDefinition& Definitio
 		View.bValid = true;
 		View.Label = Option->Label;
 		View.CostGold = FMath::Max(0, Option->CostGold);
+		View.CostStaff = FMath::Max(0, Option->CostStaff);
 		View.MinStaff = FMath::Max(1, Option->MinStaff);
 		View.WorkAmount = FMath::Max(0.f, Option->WorkAmount);
 		TArray<FText> Descriptions;

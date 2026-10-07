@@ -20,6 +20,7 @@ struct FFF_StaffDispatchOrigin;
 // 스태프 몸(AFF_StaffActor, 클래스는 IncidentSettings::StaffActorClass)의 스폰·이동·도착을 맡는다. 사건을 모르고, 도착은 델리게이트로만 알린다
 // 걸음에 관한 판단은 전부 여기서 한다. 바깥은 SendStaff(보내라) / RecallStaff(돌아와라)만 말하고 GetStaffState 로 결과를 읽는다.
 // 모든 시간(걸음·재경로 간격·막힘 판정)은 실시간 DeltaTime × 축제 실효 배속으로 흐른다. 일시정지(배속 0)면 그 자리에 선다.
+//  몸의 애니메이션 재생 속도도 같은 배속을 따른다(ApplyAnimPlayRate). 애님에 넘기는 Speed 는 배속과 무관한 걷는 속도라 걷기/뛰기 판정은 바뀌지 않는다.
 //  Moving    : 배속이 적용된 DeltaTime × TravelSpeed 로 걷는다. 목표가 50cm 넘게 움직였거나 경로 끝에 닿았는데 목표 200cm 밖이면
 //              0.5초마다 길을 다시 찾는다. 경로 끝에서 목표 200cm 안이면 Working.
 //  도착 보험 : 재경로 실패, 또는 5초 동안 목표 거리가 50cm 도 줄지 않으면 실패 1회. 거리가 줄면 실패 횟수는 0 으로 돌아간다.
@@ -118,6 +119,7 @@ private:
 	// --- 시간 ---
 	bool TryGetNowMinutes(float& OutMinutes) const;
 	float GetEffectiveTimeScale() const;
+	void ApplyAnimPlayRate(float PlayRate);
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalStageSubsystem> Stage;
@@ -135,6 +137,7 @@ private:
 
 	TMap<int32, FStaffRuntime> Staff;
 	float TravelSpeed = 300.f;
+	float AppliedAnimPlayRate = 1.f;
 
 	static constexpr float ArrivalRadiusCm = 200.f;
 	static constexpr float WorkLeaveRadiusCm = 200.f;

@@ -84,8 +84,11 @@ namespace FFPrepProgramSkyBuilder
 		USizeBox* Size = MakeWidget<USizeBox>(BP, Tree, TEXT("SizeBox_Choice"));
 		Size->SetMinDesiredHeight(38.f);
 		Tree.RootWidget = Size;
-		Size->AddChild(Button(BP, Tree, TEXT("Button_Root"),
-			*Wrapped(BP, Tree, TEXT("Text_Label"), LOCTEXT("CatalogPreview", "운영 시설 · 건축목록에서 보기"))));
+		UTextBlock* Label = Wrapped(BP, Tree, TEXT("Text_Label"), LOCTEXT("CatalogPreview", "운영 시설 · 건축목록에서 보기"));
+		Size->AddChild(Button(BP, Tree, TEXT("Button_Root"), *Label));
+		// 가운데 칸에 자동 줄바꿈 글자를 두면 직전 폭에서 줄이 바뀐다. 버튼 폭을 쓰고 글자로 가운데 맞춘다.
+		CastChecked<UButtonSlot>(Label->Slot)->SetHorizontalAlignment(HAlign_Fill);
+		Label->SetJustification(ETextJustify::Center);
 		return true;
 	}
 
