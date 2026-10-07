@@ -88,9 +88,23 @@ public:
 	   두 번째 플레이부터는 영상을 다시 보고 싶지 않다. 그렇다고 연출을 통째로
 	   끝내면 마지막을 못 보므로, 카메라만 놓아준다. 막은 시간대로 계속 넘어가서
 	   마무리와 일제 발사도 제때 온다. 피날레 중에 Tab(시점 전환)을 누르면 이걸 부르고 1인칭으로 간다.
+	   놓은 카메라는 ResumeCinematicCamera 로 다시 잡는다.
 	*/
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Finale")
 	void SkipCinematicCamera();
+
+	/* 놓아 준 연출 카메라를 다시 잡는다. 연출이 진행 중이고 카메라를 놓아 둔 상태일 때만 한다.
+
+	   피날레 중 Tab 은 연출 카메라와 캐릭터 시점을 오간다(2026-10-07 피드백). 예전에는 한 번 놓으면
+	   끝까지 다시 잡지 않아서, 두 번째 Tab 이 기본 카메라로 가 불꽃이 화면에서 사라졌다.
+	   놓아 둔 동안에도 막은 시간대로 넘어갔으므로 지금 막의 지금 자리로 돌아간다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Finale")
+	void ResumeCinematicCamera();
+
+	// 연출 카메라를 놓아 둔 채 연출이 진행 중인지. 이때 Tab 은 기본 카메라 대신 연출 카메라로 돌아간다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
+	bool CanResumeCinematicCamera() const { return bShowInProgress && bTakeOverCamera && bTourSkipped; }
 
 	// 지금 카메라 순회 중인지. 스킵 안내를 띄울지 정하는 데 쓴다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
@@ -397,8 +411,8 @@ private:
 	// 지금 자리에 머문 시간. 체류 시간을 채우면 다음으로 넘어간다.
 	float TourHeldSeconds = 0.f;
 
-	// 이번 연출에서 카메라 순회를 끊었는지. 끊은 뒤에는 다시 잡지 않는다.
-	// 끊어도 막은 시간대로 넘어간다(SkipCinematicCamera). 화면에 걸지만 않는다.
+	// 지금 카메라 순회를 놓아 두었는지. 놓아도 막은 시간대로 넘어간다(SkipCinematicCamera). 화면에 걸지만 않는다.
+	// ResumeCinematicCamera 가 다시 잡으면 풀린다.
 	bool bTourSkipped = false;
 
 	// 곡에 맞춘 시간표. 곡에 맞추지 않는 등급이면 비어 있다(FFF_FinaleGradeSpec::bMatchSongLength).
