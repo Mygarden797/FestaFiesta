@@ -148,6 +148,8 @@ void UFF_PrepBuildTileWidget::NativePreConstruct()
 		if (Border_Card) { AuthoredCardBrush = Border_Card->Background; }
 		if (Border_ThumbnailBackdrop) { AuthoredThumbnailBrush = Border_ThumbnailBackdrop->Background; }
 		if (Text_Cost) { AuthoredCostColor = Text_Cost->GetColorAndOpacity(); }
+		if (Text_Name) { AuthoredNameColor = Text_Name->GetColorAndOpacity(); }
+		if (Image_Thumbnail) { bAuthoredThumbnailEnabled = Image_Thumbnail->GetIsEnabled(); }
 		if (Text_State) { AuthoredStateColor = Text_State->GetColorAndOpacity(); }
 		if (Text_Favorite) { AuthoredFavoriteColor = Text_Favorite->GetColorAndOpacity(); }
 		bCapturedAppearance = true;
@@ -264,7 +266,11 @@ void UFF_PrepBuildTileWidget::ApplyProgramAvailability()
 	if (Border_ThumbnailBackdrop && bCapturedAppearance)
 	{
 		FSlateBrush Brush = AuthoredThumbnailBrush;
-		if (bRequiredFacility && !bRequiredFacilitySatisfied)
+		if (Item && Item->GetTileState() == EFF_PrepBuildTileState::BuildLimitReached)
+		{
+			Brush = FSlateRoundedBoxBrush(LockedCardTint, 8.f);
+		}
+		else if (bRequiredFacility && !bRequiredFacilitySatisfied)
 		{
 			if (RequiredThumbnailBrush.GetResourceObject()) Brush = RequiredThumbnailBrush;
 			else Brush.TintColor = RequiredCardTint;
@@ -473,6 +479,7 @@ FVector2D UFF_PrepBuildTileWidget::GetAuthoredThumbnailBounds() const
 void UFF_PrepBuildTileWidget::RefreshVisualState()
 {
 	const bool bAvailable = Item && Item->IsAffordable();
+	const bool bLocked = Item && Item->GetTileState() == EFF_PrepBuildTileState::BuildLimitReached;
 	if (Border_Card && bCapturedAppearance)
 	{
 		FSlateBrush Brush = AuthoredCardBrush;
@@ -487,8 +494,18 @@ void UFF_PrepBuildTileWidget::RefreshVisualState()
 		}
 		if (bCardSelected) { Brush.TintColor = bAccented ? FMath::Lerp(AccentTint, SelectedTint, 0.25f) : SelectedTint; }
 		else if (bCardHovered) { Brush.TintColor = bAccented ? FMath::Lerp(AccentTint, HoverTint, 0.2f) : HoverTint; }
+		if (bLocked)
+		{
+			Brush.TintColor = LockedCardTint;
+			Brush.OutlineSettings.Color = LockedContentColor;
+			Brush.OutlineSettings.Width = 1.f;
+		}
 		Border_Card->SetBrush(Brush);
 	}
-	if (Text_Cost) { Text_Cost->SetColorAndOpacity(Item && !bAvailable ? FSlateColor(UnavailableColor) : AuthoredCostColor); }
-	if (Text_State) { Text_State->SetColorAndOpacity(Item && !bAvailable ? FSlateColor(UnavailableColor) : AuthoredStateColor); }
+	if (Text_Name) { Text_Name->SetColorAndOpacity(bLocked ? FSlateColor(LockedContentColor) : AuthoredNameColor); }
+	if (Text_Cost) { Text_Cost->SetColorAndOpacity(bLocked ? FSlateColor(LockedContentColor) : Item && !bAvailable ? FSlateColor(UnavailableColor) : AuthoredCostColor); }
+	if (Text_State) { Text_State->SetColorAndOpacity(bLocked ? FSlateColor(LockedContentColor) : Item && !bAvailable ? FSlateColor(UnavailableColor) : AuthoredStateColor); }
+	// Disable only decorative artwork for Slate's desaturated effect. The row and
+	// favorite button retain input, and pooled rows restore the authored state.
+	if (Image_Thumbnail) { Image_Thumbnail->SetIsEnabled(!bLocked && bAuthoredThumbnailEnabled); }
 }

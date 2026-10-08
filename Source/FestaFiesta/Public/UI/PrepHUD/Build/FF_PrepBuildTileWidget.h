@@ -227,6 +227,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States")
 	FLinearColor UnavailableColor = FLinearColor::FromSRGBColor(FColor(0xD7, 0x4E, 0x43));
 
+	/** Capacity locks override required/program and selection colors without disabling input. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States")
+	FLinearColor LockedCardTint = FLinearColor::FromSRGBColor(FColor(0xDE, 0xE0, 0xE4));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States")
+	FLinearColor LockedContentColor = FLinearColor::FromSRGBColor(FColor(0x64, 0x68, 0x70));
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States")
 	FLinearColor FavoriteColor = FLinearColor::FromSRGBColor(FColor(0x99, 0x73, 0x21));
 
@@ -266,7 +273,9 @@ private:
 	FSlateBrush AuthoredCardBrush;
 	FSlateBrush AuthoredThumbnailBrush;
 	FSlateColor AuthoredCostColor;
+	FSlateColor AuthoredNameColor;
 	FSlateColor AuthoredStateColor;
 	FSlateColor AuthoredFavoriteColor;
 	bool bCapturedAppearance = false;
+	bool bAuthoredThumbnailEnabled = true;
 };
