@@ -24,6 +24,14 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage")));
 	RequiredSetupFacilities.Add(MainStage);
 
+	// 스태프가 배정되는 안내 시설(Info) 1곳. 설치만으로는 아무도 배정되지 않으므로(InfoFacility_Staff_Guide_KO.md)
+	// 1명 이상 배정해야 진행되게 해서, 플레이어가 `+ 배정` 을 반드시 한 번은 거치게 한다.
+	FFF_RequiredFacility MainInfo;
+	MainInfo.FacilityDefinition = TSoftObjectPtr<UFFZSFacilityDefinition>(FSoftObjectPath(
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Info/PDA_FFZS_Info_GeneralInfo_General.PDA_FFZS_Info_GeneralInfo_General")));
+	MainInfo.MinimumAssignedStaff = 1;
+	RequiredSetupFacilities.Add(MainInfo);
+
 	// 등급이 올라갈수록 비용과 보너스가 함께 커진다.
 	FinaleTiers = {
 		{ EFF_FinaleGrade::C, 2000,  5 },
@@ -113,6 +121,23 @@ bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 		if (Facility->Spec.MaxInstancesPerWorld > 0 && Requirement.MinimumCount > Facility->Spec.MaxInstancesPerWorld)
 		{
 			OutErrors.Add(LOCTEXT("RequiredFacilityExceedsLimit", "필수 설치 개수가 시설의 월드 설치 상한을 초과합니다."));
+		}
+		// 판정 규칙은 UFF_RequiredFacilitiesSubsystem::EvaluateRequirements 와 같다. 여기는 저작 단계 안내다.
+		if (Requirement.MinimumAssignedStaff > 0)
+		{
+			const int32 StaffCapacity = Facility->Spec.GetStaffCapacity();
+			if (StaffCapacity <= 0)
+			{
+				OutErrors.Add(LOCTEXT("RequiredStaffWithoutCapacity",
+					"스태프 배정을 요구하는 필수 시설은 Staff Capacity가 1 이상인 Info 시설이어야 합니다."));
+			}
+			else if (Facility->Spec.MaxInstancesPerWorld > 0
+				&& static_cast<int64>(Requirement.MinimumAssignedStaff)
+					> static_cast<int64>(StaffCapacity) * Facility->Spec.MaxInstancesPerWorld)
+			{
+				OutErrors.Add(LOCTEXT("RequiredStaffExceedsCapacity",
+					"필수 배정 인원이 설치할 수 있는 시설의 Staff Capacity 합을 초과합니다."));
+			}
 		}
 	}
 

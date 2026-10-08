@@ -7,6 +7,7 @@
 #include "Building/FF_BuildModeSubsystem.h"
 #include "FF_FFZSTypes.h"
 #include "Finale/FF_FinaleShowTypes.h"
+#include "Incident/FF_IncidentTypes.h"
 #include "Queue/FF_QueueTypes.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -122,6 +123,10 @@ private:
 	UFUNCTION()
 	void HandleQueuePartyExited(int32 FacilityId, int32 PartyId, EFF_QueueExit ExitType, float WaitedSeconds);
 
+	// 사건이 접수됐을 때. 긴급도가 높음 이상이면 긴급 소리, 아니면 일반 소리를 화면 전체로 낸다.
+	UFUNCTION()
+	void HandleIncidentRaised(FFF_IncidentHandle Handle);
+
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
 
@@ -181,6 +186,7 @@ private:
 	bool bBoundStage = false;
 	bool bBoundBuild = false;
 	bool bBoundZoneWorld = false;
+	bool bBoundIncident = false;
 
 	// 이 월드가 로비(프론트엔드 레벨)인지. 로비면 축제 단계와 상관없이 로비 곡을 튼다.
 	bool bIsLobbyWorld = false;

@@ -15,8 +15,12 @@
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/PlayerInput.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/PackageName.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 #include "TimerManager.h"
+#include "Tutorial/FF_TutorialSubsystem.h"
 #include "UI/FF_UILog.h"
+#include "UI/Atlas/FF_FestivalAtlasCatalog.h"
 #include "UI/Core/FF_UIFlowSettings.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/Core/FF_UIRootLayout.h"
@@ -274,13 +278,7 @@ void UFF_FestivalSettingsSubsystem::RestoreSuppressedFacilityPresentation()
 
 void UFF_FestivalSettingsSubsystem::HandleOpenCloseInput(FKey PressedKey)
 {
-	// The construction toolbar has no function-key shortcuts, including the
-	// legacy global F5 pause binding. Escape and explicit UI buttons still work.
-	if (PressedKey == EKeys::F5)
-	{
-		const auto* Build = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
-		if (Build && Build->GetBuildModeState() != EFF_BuildModeState::Closed) return;
-	}
+	// Both option keys use the same pause session, which suspends and restores active construction.
 	if (bTransitionInProgress || LastStateTransitionFrame == GFrameCounter)
 	{
 		return;
@@ -681,6 +679,90 @@ bool UFF_FestivalSettingsSubsystem::CloseFestivalSettings()
 	return ClosePauseMenu();
 }
 
+bool UFF_FestivalSettingsSubsystem::ReturnToFestivalSelection()
+{
+	if (!ActiveHub.IsValid() || ActiveScreen.IsValid() || bTransitionInProgress)
+	{
+		return false;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UFF_UIFlowSubsystem* Flow = GameInstance ? GameInstance->GetSubsystem<UFF_UIFlowSubsystem>() : nullptr;
+	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();
+	const FString Destination = Settings ? Settings->FrontendLevel.ToSoftObjectPath().GetLongPackageName() : FString();
+	if (!Flow || Destination.IsEmpty() || !FPackageName::DoesPackageExist(Destination))
+	{
+		UE_LOG(LogFestaFiestaUI, Error, TEXT("축제 선택 레벨을 찾을 수 없어 일시정지 상태를 유지합니다: %s"), *Destination);
+		return false;
+	}
+
+	const UFF_FestivalAtlasCatalog* Catalog = Settings->AtlasCatalog.LoadSynchronous();
+	FName CountryId = Flow->GetActiveCountryId();
+	const auto IsKnownCountry = [Catalog](const FName Id)
+	{
+		return Catalog && Catalog->FindCountry(Id);
+	};
+	// 레벨을 직접 실행한 튜토리얼/축제에도 국가가 있어야 선택 가능한 지도가 열린다.
+	if (!IsKnownCountry(CountryId) && Catalog)
+	{
+		if (const FFF_FestivalAtlasEntry* ActiveFestival = Catalog->FindEntry(Flow->GetActiveFestivalId()))
+		{
+			CountryId = ActiveFestival->CountryId;
+		}
+		if (!IsKnownCountry(CountryId) && GetWorld())
+		{
+			const FString CurrentMap = UWorld::RemovePIEPrefix(GetWorld()->GetOutermost()->GetName());
+			for (const FFF_FestivalAtlasEntry& Entry : Catalog->Entries)
+			{
+				if (Entry.Level.ToSoftObjectPath().GetLongPackageName() == CurrentMap && IsKnownCountry(Entry.CountryId))
+				{
+					CountryId = Entry.CountryId;
+					break;
+				}
+			}
+		}
+		if (!IsKnownCountry(CountryId))
+		{
+			for (const FFF_FestivalAtlasEntry& Entry : Catalog->Entries)
+			{
+				const FFF_AtlasCountryEntry* Country = Catalog->FindCountry(Entry.CountryId);
+				if (Entry.bUnlocked && Country && Country->bUnlocked)
+				{
+					CountryId = Entry.CountryId;
+					break;
+				}
+			}
+		}
+	}
+	if (!IsKnownCountry(CountryId))
+	{
+		UE_LOG(LogFestaFiestaUI, Error, TEXT("축제 선택 국가를 찾을 수 없어 일시정지 상태를 유지합니다."));
+		return false;
+	}
+
+	// 완료/건너뛰기 이벤트나 저장 기록을 만들지 않고 이번 플레이만 중단한다.
+	if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
+	{
+		Tutorial->StopScript();
+	}
+	if (UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+	{
+		// Stage는 GameInstance 수명이다. 로비에서 이전 축제 시계가 계속 흐르면 안 된다.
+		// 다음 축제는 기존 StartNewFestival 경로에서 다시 초기화한다.
+		Stage->bFestivalStarted = false;
+	}
+	if (UFF_BuildModeSubsystem* Build = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr)
+	{
+		Build->ExitBuildMode();
+	}
+	// 떠나는 월드의 건축 UI를 다음 틱에 다시 열 필요는 없다.
+	SuspendedBuildMode.Reset();
+	ForceClosePauseSession();
+	Flow->SetActiveCountry(CountryId);
+	Flow->ReturnToAtlas();
+	return true;
+}
+
 void UFF_FestivalSettingsSubsystem::HandlePauseHubAction(const EFF_PauseHubAction Action)
 {
 	if (bTransitionInProgress || LastStateTransitionFrame == GFrameCounter)
@@ -701,6 +783,9 @@ void UFF_FestivalSettingsSubsystem::HandlePauseHubAction(const EFF_PauseHubActio
 		break;
 	case EFF_PauseHubAction::ExitGame:
 		OpenSettingsLayer(EFF_FestivalSettingsCategory::ExitGame);
+		break;
+	case EFF_PauseHubAction::ReturnToAtlas:
+		ReturnToFestivalSelection();
 		break;
 	case EFF_PauseHubAction::Resume:
 	default:

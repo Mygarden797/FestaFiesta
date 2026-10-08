@@ -412,7 +412,7 @@ bool FFFZSBuildableGridOverviewMoveContextTest::RunTest(const FString& Parameter
     const FVector2D OtherPoint(2600.0, 650.0);
     Overview->UpdateGrid(*System, Focus, FVector::UpVector, 100);
     TestFalse(TEXT("Idle overview hides the original footprint"), HasOverviewLineAt(*Overview, SourcePoint));
-    TestFalse(TEXT("Idle overview hides the original safety clearance"), HasOverviewLineAt(*Overview, ClearancePoint));
+    TestTrue(TEXT("Idle overview keeps the former safety clearance buildable"), HasOverviewLineAt(*Overview, ClearancePoint));
     TestFalse(TEXT("Idle overview hides the original queue reservation"), HasOverviewLineAt(*Overview, QueuePoint));
     TestFalse(TEXT("Idle overview hides the other facility"), HasOverviewLineAt(*Overview, OtherPoint));
 
@@ -423,7 +423,7 @@ bool FFFZSBuildableGridOverviewMoveContextTest::RunTest(const FString& Parameter
     Moving.ZoneId = TEXT("DifferentCursorZone");
     Overview->UpdateGrid(*System, Focus, FVector::UpVector, 100, &Moving);
     TestTrue(TEXT("Moving overview reveals the source footprint only for that move"), HasOverviewLineAt(*Overview, SourcePoint));
-    TestTrue(TEXT("Moving overview releases the source's safety clearance visually"), HasOverviewLineAt(*Overview, ClearancePoint));
+    TestTrue(TEXT("Moving overview keeps the former safety clearance buildable"), HasOverviewLineAt(*Overview, ClearancePoint));
     TestTrue(TEXT("Moving overview releases the source's queue reservation visually"), HasOverviewLineAt(*Overview, QueuePoint));
     TestFalse(TEXT("Moving overview still hides unrelated occupancy"), HasOverviewLineAt(*Overview, OtherPoint));
 

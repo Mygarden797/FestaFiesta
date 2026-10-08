@@ -197,7 +197,7 @@ bool BuildTools(UWidgetBlueprint& BP, UWidgetTree& Tree)
     V(*Info, *Text(BP, Tree, TEXT("Text_Footprint"), FText::GetEmpty(), 18), 15);
     V(*Info, *Text(BP, Tree, TEXT("Label_Queue"), LOCTEXT("Queue", "대기열 정보"), 20), 8);
     V(*Info, *Panel(BP, Tree, TEXT("Border_Queue"), *Text(BP, Tree, TEXT("Text_Queue"), FText::GetEmpty(), 18)), 10);
-    V(*Info, *Text(BP, Tree, TEXT("Text_RangeLegend"), LOCTEXT("Legend", "실선 시설  ·  점선 안전 여유  ·  사선 대기열"), 14), 0);
+    V(*Info, *Text(BP, Tree, TEXT("Text_RangeLegend"), LOCTEXT("Legend", "실선 시설 · 청록 대기열"), 14), 0);
     CanvasPanel(BP, Tree, *Canvas, TEXT("Size_PlacementInfo"), *Panel(BP, Tree, TEXT("Border_PlacementInfo"), *Info),
         454, FVector2D::ZeroVector, FVector2D(36, 70));
 

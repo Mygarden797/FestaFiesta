@@ -22,9 +22,11 @@
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
 #include "Incident/FF_IncidentSubsystem.h"
+#include "Incident/Rules/FF_IncidentRules.h"
 #include "UI/LiveHUD/Incident/FF_IncidentDetailPanel.h"
 #include "UI/LiveHUD/Incident/FF_IncidentMarkerLayer.h"
 #include "UI/LiveHUD/Incident/FF_IncidentToast.h"
+#include "UI/LiveHUD/FF_FinaleSnsOverlay.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 #include "UI/LiveHUD/FF_LiveUtilityDock.h"
@@ -183,6 +185,7 @@ void UFF_LiveHudScreen::EnsureIncidentMarkerLayer()
 	if (IncidentMarkerLayer)
 	{
 		IncidentMarkerLayer->OnIncidentMarkerClicked.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleIncidentMarkerClicked);
+		IncidentMarkerLayer->SetBottomReserve(GetBottomBarHeight());
 	}
 }
 
@@ -225,7 +228,9 @@ void UFF_LiveHudScreen::HandleIncidentDispatchRequested(FFF_IncidentHandle Handl
 	const UWorld* World = GetWorld();
 	UFF_IncidentSubsystem* Incident = World ? World->GetSubsystem<UFF_IncidentSubsystem>() : nullptr;
 	EFF_IncidentResolveResult Result = EFF_IncidentResolveResult::DispatchFailed;
+	bSuppressClosedToast = true;
 	const bool bAccepted = Incident && Incident->ResolveIncident(Handle, OptionIndex, StaffCount, &Result);
+	bSuppressClosedToast = false;
 
 	FString ResultName;
 	if (const UEnum* ResultEnum = StaticEnum<EFF_IncidentResolveResult>())
@@ -262,6 +267,46 @@ void UFF_LiveHudScreen::EnsureIncidentToast()
 	if (IncidentToast && !IncidentToast->IsInViewport())
 	{
 		IncidentToast->AddToViewport(20);
+		UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 사건 토스트를 뷰포트에 올렸다 (Z=20) — 뷰포트=%d"),
+			*GetName(), IncidentToast->IsInViewport());
+	}
+	else if (!IncidentToast)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning, TEXT("[%s] 사건 토스트를 만들지 못했다 — 소유 플레이어도 월드도 없다"), *GetName());
+	}
+}
+
+void UFF_LiveHudScreen::BindIncidentFinished()
+{
+	const UWorld* World = GetWorld();
+	if (UFF_IncidentSubsystem* Incident = World ? World->GetSubsystem<UFF_IncidentSubsystem>() : nullptr)
+	{
+		Incident->OnIncidentFinished.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleIncidentFinished);
+	}
+}
+
+void UFF_LiveHudScreen::UnbindIncidentFinished()
+{
+	const UWorld* World = GetWorld();
+	if (UFF_IncidentSubsystem* Incident = World ? World->GetSubsystem<UFF_IncidentSubsystem>() : nullptr)
+	{
+		Incident->OnIncidentFinished.RemoveDynamic(this, &UFF_LiveHudScreen::HandleIncidentFinished);
+	}
+}
+
+void UFF_LiveHudScreen::HandleIncidentFinished(const FFF_IncidentClosedInfo& Info)
+{
+	if (bSuppressClosedToast || !FFF_IncidentRules::ShouldToastClosed(Info))
+	{
+		return;
+	}
+
+	EnsureIncidentToast();
+	if (IncidentToast)
+	{
+		IncidentToast->Show(UFF_UIDisplayTextLibrary::GetIncidentClosedLabel(Info.FinalState),
+			UFF_UIDisplayTextLibrary::GetIncidentClosedText(Info.FinalState, Info.Title),
+			UFF_UIDisplayTextLibrary::GetIncidentClosedKind(Info.FinalState));
 	}
 }
 
@@ -277,12 +322,30 @@ void UFF_LiveHudScreen::NativeConstruct()
 	RefreshAll();
 	EnsureIncidentMarkerLayer();
 	EnsureIncidentDetailPanel();
+	BindIncidentFinished();
+	EnsureFinaleSnsOverlay();
 	TryShowDailyReport();
+}
+
+void UFF_LiveHudScreen::EnsureFinaleSnsOverlay()
+{
+	if (!FinaleSnsOverlay)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			FinaleSnsOverlay = CreateWidget<UFF_FinaleSnsOverlay>(PC, UFF_FinaleSnsOverlay::StaticClass());
+		}
+	}
+	if (FinaleSnsOverlay && !FinaleSnsOverlay->IsInViewport())
+	{
+		FinaleSnsOverlay->AddToViewport(15);
+	}
 }
 
 void UFF_LiveHudScreen::NativeDestruct()
 {
 	UnbindViewModel();
+	UnbindIncidentFinished();
 	if (IncidentMarkerLayer)
 	{
 		IncidentMarkerLayer->OnIncidentMarkerClicked.RemoveDynamic(this, &UFF_LiveHudScreen::HandleIncidentMarkerClicked);
@@ -297,6 +360,10 @@ void UFF_LiveHudScreen::NativeDestruct()
 	if (IncidentToast)
 	{
 		IncidentToast->RemoveFromParent();
+	}
+	if (FinaleSnsOverlay)
+	{
+		FinaleSnsOverlay->RemoveFromParent();
 	}
 	Super::NativeDestruct();
 }
@@ -949,6 +1016,10 @@ void UFF_LiveHudScreen::RefreshTabs()
 			FMargin Offsets = BarSlot->GetOffsets();
 			Offsets.Bottom = TargetHeight;
 			BarSlot->SetOffsets(Offsets);
+		}
+		if (IncidentMarkerLayer)
+		{
+			IncidentMarkerLayer->SetBottomReserve(TargetHeight);
 		}
 	}
 	if (Text_SpeedReason)

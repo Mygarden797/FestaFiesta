@@ -633,7 +633,8 @@ bool FFF_ZoneSystemBridge_NeedReliefMatchesMappingTable::RunTest(const FString& 
 	{
 		const FName Id = FName(*FString::Printf(TEXT("Booth_%s_Test"), Minor));
 		const FFF_NeedReliefFlags Flags = FFF_ZoneSystemBridge::GetNeedReliefFlags(EFFZSFacilityCategory::Booth, Id);
-		TestFalse(*FString::Printf(TEXT("Booth_%s 는 아무 Need 도 해소하지 않는다"), Minor), Flags.RelievesAnything());
+		TestTrue(*FString::Printf(TEXT("Booth_%s 는 자극을 해소한다"), Minor), Flags.bRelievesStimulation);
+		TestFalse(*FString::Printf(TEXT("Booth_%s 는 배고픔을 해소하지 않는다"), Minor), Flags.bRelievesHunger);
 	}
 
 	// Performance·PhotoSpot — Stimulation 만

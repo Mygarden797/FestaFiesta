@@ -5,11 +5,11 @@
 
 namespace FFBuildToolbarInput
 {
-// F1~F7은 의도적으로 비활성화한 옛 단축키다. 현재 도구 버튼은 명령을 직접 호출하며,
-// 이 키가 들어왔다고 버튼을 누른 것으로 바꾸어 처리하면 안 된다.
+// F1~F4, F6~F7은 비활성화한 옛 건축 단축키다. F5는 전역 일시정지 입력으로 전달한다.
+// 현재 도구 버튼은 명령을 직접 호출하며, 함수 키로 옛 도구 동작을 실행하지 않는다.
 inline bool IsRetiredShortcut(const FKey& Key)
 {
 	return Key == EKeys::F1 || Key == EKeys::F2 || Key == EKeys::F3 ||
-		Key == EKeys::F4 || Key == EKeys::F5 || Key == EKeys::F6 || Key == EKeys::F7;
+		Key == EKeys::F4 || Key == EKeys::F6 || Key == EKeys::F7;
 }
 }

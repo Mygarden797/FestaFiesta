@@ -185,6 +185,16 @@ bool FFF_CrowdHeightField::TryGetHeightCm(const FVector2D& WorldXYCm, double& Ou
 	const double W01 = (1.0 - Tx) * Ty;
 	const double W11 = Tx * Ty;
 
+	// IsWalkable deliberately admits a cell with any corner below the ceiling:
+	// a tree or roof at one sample must not block the surrounding ground. Height
+	// selection must use that same admitted ground, including the cliff and
+	// zero-weight fallbacks, rather than snapping feet onto the excluded roof.
+	const auto IsGroundCandidate = [this](int32 Index)
+	{
+		return Valid.IsValidIndex(Index) && Valid[Index] != 0
+			&& (!bHasWalkableCeiling || Heights[Index] <= WalkableCeilingCm);
+	};
+
 	// 절벽 판정을 먼저 한다. 네 꼭짓점 높이 차가 임계를 넘으면 보간이 아니라 계단으로 다룬다 —
 	// 보간하면 개체가 한 칸을 걷는 동안 비스듬히 떠올라 공중을 걷는 것처럼 보인다.
 	if (CliffStepCm > 0.0)
@@ -195,7 +205,7 @@ bool FFF_CrowdHeightField::TryGetHeightCm(const FVector2D& WorldXYCm, double& Ou
 
 		for (const int32 Index : { I00, I10, I01, I11 })
 		{
-			if (!Valid.IsValidIndex(Index) || Valid[Index] == 0)
+			if (!IsGroundCandidate(Index))
 			{
 				continue;
 			}
@@ -220,7 +230,7 @@ bool FFF_CrowdHeightField::TryGetHeightCm(const FVector2D& WorldXYCm, double& Ou
 			const int32 NearIy = (Ty < 0.5) ? Iy : Iy + 1;
 			const int32 NearIndex = NearIy * NumX + NearIx;
 
-			if (Valid.IsValidIndex(NearIndex) && Valid[NearIndex] != 0)
+			if (IsGroundCandidate(NearIndex))
 			{
 				OutHeightCm = Heights[NearIndex];
 				return true;
@@ -236,7 +246,7 @@ bool FFF_CrowdHeightField::TryGetHeightCm(const FVector2D& WorldXYCm, double& Ou
 
 	auto Accumulate = [&](int32 Index, double Weight)
 	{
-		if (Weight > 0.0 && Valid.IsValidIndex(Index) && Valid[Index] != 0)
+		if (Weight > 0.0 && IsGroundCandidate(Index))
 		{
 			HeightSum += Heights[Index] * Weight;
 			WeightSum += Weight;
@@ -254,7 +264,7 @@ bool FFF_CrowdHeightField::TryGetHeightCm(const FVector2D& WorldXYCm, double& Ou
 		double Sum = 0.0;
 		for (const int32 Index : { I00, I10, I01, I11 })
 		{
-			if (Valid.IsValidIndex(Index) && Valid[Index] != 0)
+			if (IsGroundCandidate(Index))
 			{
 				Sum += Heights[Index];
 				++ValidCount;

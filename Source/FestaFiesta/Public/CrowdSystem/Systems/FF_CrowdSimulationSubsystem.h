@@ -388,6 +388,12 @@ public:
 
 	void RequestDecision(int32 LeaderAgentIndex, EFF_DecisionReason Reason);
 
+	// 외부가 정한 애니메이션 상태를 풀의 모든 Actor 에게 전달만 한다(저장·판단·읽기 없음)
+	void SetCrowdState(EFF_CrowdRunState NewState);
+
+	// 개체 하나(UnitDatas 인덱스)의 Actor 에게만 전달한다. 바인딩된 Actor 가 없으면 false
+	bool SetCrowdStateForAgent(int32 AgentIndex, EFF_CrowdRunState NewState);
+
 	/**
 	 * 새 목적지가 열렸을 때 유휴 파티에게만 재결정을 요청하고 요청한 파티 수를 돌려준다.
 	 *
@@ -468,7 +474,7 @@ public:
 	 *   진짜로 낀 개체도 못 빠져나온다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float AudienceSocialForceScale = 0.25f;
+	float AudienceSocialForceScale = 0.1f;
 
 	/**
 	 * 약속된 장소(관람 좌석·유료 프로그램 대기 슬롯)로 가는 동안의 보행 속도 배수.
@@ -766,14 +772,6 @@ public:
 	// 시설(부스·무대·화장실 등) footprint를 벽 반발의 대상으로 넣는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
 	bool bAvoidanceUseFacilityWalls = true;
-
-	// 시설 벽에 여유(Clearance) 링까지 포함시킨다. 기본값은 **끔**(바닥면만).
-	//
-	// ★ 켜면 반발 벽이 ZoneSystem의 nav 구멍보다 커진다. 그쪽은 고형 footprint만 도려내므로
-	//   경로는 clearance를 통과 가능한 것으로 계획하는데 힘은 밀어내 서로 싸운다.
-	//   좁은 통로에서 웨이포인트와 반발이 평형을 이뤄 사람이 멈춰 선다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
-	bool bAvoidanceFacilityWallsIncludeClearance = false;
 
 	// 개체의 Z를 지형 높이에 맞춘다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
@@ -1117,7 +1115,7 @@ public:
 	
 	float SimulationTimeScale = 1.0f;
 	float AppliedCrowdAnimPlayRate = 1.0f;
-	
+
 	UFUNCTION(BlueprintPure, Category = "Crowd|Need")
 	float GetLiveMinutes() const { return (SimTimeSeconds - LiveStartSimTime) * Temp_FestivalMinutesPerRealSecond; }
 
@@ -1234,6 +1232,11 @@ public:
 	bool DidFacilityWallsSeeZoneSystem() const { return bFacilityWallsSawZoneSystem; }
 
 	const FFF_CrowdHeightField& GetHeightField() const { return HeightField; }
+	const FFF_CrowdHeightField& GetHeightFieldAt(const FVector2D& WorldXYCm) const;
+	int32 GetGroundRefinementCount() const { return GroundRefinements.Num(); }
+	int32 GetGroundRefinementSampleCount() const;
+	double GetGroundRefinementBuildSeconds() const { return GroundRefinementBuildSeconds; }
+	bool IsGroundWalkable(const FVector& WorldLocation) const;
 
 	bool TryGetGroundZ(const FVector& WorldLocation, double& OutZ) const;
 
@@ -1483,6 +1486,8 @@ private:
 	TArray<FVector2f> ScratchDesiredVel2DMeters;
 	// 개체별 사회력 배수. 관람 단계에 따라 매 스텝 채운다.
 	TArray<float> ScratchSocialScale;
+	// 개체별 자세(EFF_CrowdPosture). 관람 단계에서 매 스텝 채우며, 멈춰 선 사람에게서 받는 Social 을 끄는 데 쓴다.
+	TArray<uint8> ScratchPosture;
 
 	// 활성 개체의 조밀 인덱스. 오름차순으로 채운다 — 힘 합산 순서가 결정성의 전제다
 	TArray<int32> ScratchActiveIds;
@@ -1512,7 +1517,6 @@ private:
 
 	// 마지막 재구축이 어떤 손잡이 값으로 지어졌는지.
 	bool bBuiltWithFacilityWalls = false;
-	bool bBuiltWithClearance = false;
 
 	// --- 경로추종 상태 -----------------------------------------------------------------------
 
@@ -1567,6 +1571,18 @@ private:
 	// --- 지형 ------------------------------------------------------------------------------
 
 	FFF_CrowdHeightField HeightField;
+	// Only explicitly tagged, static cube walkways receive a local physics bake.
+	// The apron also samples overlapping landings; a cube plane alone would put
+	// feet through a higher deck where the two surfaces overlap.
+	struct FGroundRefinement
+	{
+		FBox2D BoundsCm = FBox2D(ForceInit);
+		FFF_CrowdHeightField Field;
+		FBox2D CoreBoundsCm = FBox2D(ForceInit);
+		FFF_CrowdHeightField CoreField;
+	};
+	TArray<FGroundRefinement> GroundRefinements;
+	double GroundRefinementBuildSeconds = 0.0;
 
 	// Roads overlay the coarse terrain height without rebuilding its physics samples.
 	// Buckets refresh once per layout revision; each NPC only inspects its local bucket.

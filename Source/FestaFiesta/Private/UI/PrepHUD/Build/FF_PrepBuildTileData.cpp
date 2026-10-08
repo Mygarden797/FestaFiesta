@@ -35,9 +35,14 @@ void UFF_PrepBuildTileData::RefreshDerivedValues()
 	BuildLimitText = FFF_PrepBuildPresentationRules::ResolveBuildLimitText(Entry);
 	TileState = FFF_PrepBuildPresentationRules::ResolveTileState(
 		Entry, Gold, bHasAuthoritativeGold);
-	// Limited facilities always show installation progress in the card's existing status slot.
-	// Availability still controls interaction/color and remains explained in the tooltip.
-	StateLabelText = Entry.MaxInstancesPerWorld > 0
+	// Required facilities explain the next step without repeating an installation ratio.
+	// Generic finite facilities retain their capacity indicator.
+	StateLabelText = Entry.bRequiredForSetup
+		? (Entry.bRequiredSetupSatisfied
+			? NSLOCTEXT("FestaFiestaPrepBuild", "RequiredInstalledLabel", "설치 완료")
+			: FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "RequiredInstallLabel", "{0}개 설치"),
+				FText::AsNumber(FMath::Max(1, Entry.RequiredMinimumCount))))
+		: Entry.MaxInstancesPerWorld > 0
 		? FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "InstalledCountLabel", "{0}/{1}"),
 			FText::AsNumber(FMath::Max(0, Entry.CurrentInstanceCount)), FText::AsNumber(Entry.MaxInstancesPerWorld))
 		: FFF_PrepBuildPresentationRules::ResolveTileStateLabel(TileState);

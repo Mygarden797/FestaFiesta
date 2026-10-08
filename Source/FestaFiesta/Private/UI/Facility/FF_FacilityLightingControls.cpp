@@ -9,6 +9,7 @@
 
 #include "CommonTextBlock.h"
 #include "Components/Button.h"
+#include "Components/Border.h"
 #include "Components/EditableTextBox.h"
 #include "Components/Slider.h"
 #include "InputCoreTypes.h"
@@ -287,6 +288,9 @@ void UFF_FacilityLightingControls::RefreshColorFields()
 	UEditableTextBox* Fields[]={Input_LightingH,Input_LightingS,Input_LightingV,Input_LightingR,Input_LightingG,Input_LightingB};
 	for(int32 I=0;I<6;++I) if(Fields[I] && !IsLightingFieldFocused(Fields[I])) Fields[I]->SetText(FText::AsNumber(Values[I]));
 	if(ColorPicker_Lighting) ColorPicker_Lighting->SetColor(CurrentViewData.LightingState.Color);
+	if(Border_LightingCurrentColor) Border_LightingCurrentColor->SetBrushColor(
+		bEditing && EditingFacilityId == CurrentViewData.FacilityInstanceId ? OriginalState.Color : CurrentViewData.LightingState.Color);
+	if(Border_LightingNewColor) Border_LightingNewColor->SetBrushColor(CurrentViewData.LightingState.Color);
 }
 
 void UFF_FacilityLightingControls::HandleChannelTextChanged(const FText&)

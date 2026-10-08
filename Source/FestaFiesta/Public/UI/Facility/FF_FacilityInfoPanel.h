@@ -60,6 +60,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
 	void SetInfoPage(EFF_FacilityInfoPage Page);
+	EFF_FacilityInfoPage GetInfoPage() const { return ActivePage; }
 
 	/** Optional authored animation or presentation. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Facility Info")
@@ -74,6 +75,7 @@ public:
 	bool IsPointerOverInteractivePanel() const;
 	bool IsLightingTextInputFocused() const;
 	void CancelLightingEdit();
+	bool IsLightingIntroductionVisible() const { return bLightingIntroductionVisible; }
 
 	const FFF_FacilityInfoViewData& GetCurrentViewData() const { return CurrentViewData; }
 
@@ -109,7 +111,8 @@ private:
 	UFUNCTION() void HandleUnassignStaffClicked();
 	void EnsureStaffControls();
 	void RefreshStaffControls();
-	/** Optional authored controls; older assets receive one additive staff section. */
+	/** Optional authored controls; older assets receive an additive staff tab and section. */
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_TabStaff;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_StaffSection;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_StaffSummary;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_AssignStaff;
@@ -118,8 +121,20 @@ private:
 	UFUNCTION() void HandleOverviewClicked();
 	UFUNCTION() void HandleSynergyClicked();
 	UFUNCTION() void HandleOperationClicked();
+	UFUNCTION() void HandleStaffClicked();
 	UFUNCTION() void HandleUpgradeTabClicked();
 	UFUNCTION() void HandleLightingTabClicked();
+	UFUNCTION() void HandleDismissLightingIntroduction();
+	void RefreshLightingIntroduction();
+	bool HasSeenLightingIntroduction();
+	bool bHasSeenLightingIntroduction = false;
+	bool bLightingIntroductionVisible = false;
+	/** Authored first-use guide; older panels retain their existing lighting editor. */
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_LightingColorHelp;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_LightingColorHelp;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_LightingIntroductionHint;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_LightingIntroduction;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_DismissLightingIntroduction;
 	UFUNCTION() void HandleRevenueTabClicked();
 	UFUNCTION() void HandleProgramsTabClicked();
 	UFUNCTION() void HandleSynergyPreviousClicked();
@@ -135,6 +150,7 @@ private:
 	UFUNCTION() void HandleRemoveCancelClicked();
 	UFUNCTION() void HandleRevenueRankingClicked();
 	void RefreshPageVisibility();
+	void HideLegacyClearanceWidgets();
 	void RefreshSynergyEntries();
 	void HandleSynergyPartnerCatalogRequested(FName FacilityDefinitionId);
 	EFF_FacilityInfoPage ActivePage = EFF_FacilityInfoPage::Overview;
@@ -400,7 +416,8 @@ private:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_Footprint;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
+	/** Optional compatibility binding for older authored panels; never displayed. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_Clearance;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))

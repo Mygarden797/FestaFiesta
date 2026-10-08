@@ -21,6 +21,8 @@ namespace
         bool bEvery = Settings->bRequireEveryGroundSample;
         float Slope = Settings->MaxGroundSlopeDegrees;
         float Variance = Settings->MaxGroundHeightVarianceCm;
+        float TileSlope = Settings->MaxTileGroundSlopeDegrees;
+        float TileVariance = Settings->MaxTileGroundHeightVarianceCm;
 
         FScopedBuildGridGroundSettings()
         {
@@ -28,6 +30,8 @@ namespace
             Settings->bRequireEveryGroundSample = true;
             Settings->MaxGroundSlopeDegrees = 5.0f;
             Settings->MaxGroundHeightVarianceCm = 20.0f;
+            Settings->MaxTileGroundSlopeDegrees = 89.0f;
+            Settings->MaxTileGroundHeightVarianceCm = 2000.0f;
         }
         ~FScopedBuildGridGroundSettings()
         {
@@ -35,6 +39,8 @@ namespace
             Settings->bRequireEveryGroundSample = bEvery;
             Settings->MaxGroundSlopeDegrees = Slope;
             Settings->MaxGroundHeightVarianceCm = Variance;
+            Settings->MaxTileGroundSlopeDegrees = TileSlope;
+            Settings->MaxTileGroundHeightVarianceCm = TileVariance;
         }
     };
 
@@ -131,6 +137,89 @@ bool FFFZSBuildGridSurfaceBudgetTest::RunTest(const FString& Parameters)
     Mask = MakeGroundMask();
     Cache.Update(*World, FTransform::Identity, 100.0, Mask, 0);
     TestEqual(TEXT("Reset prevents old floor samples from showing"), Mask.GetBuildableCellCount(), 0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSBuildGridSurfaceTilePolicyTest,
+    "FF_ZoneSystem.Integration.BuildableGrid.Surface.TilePolicyAndCategoryInvalidation",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSBuildGridSurfaceTilePolicyTest::RunTest(const FString& Parameters)
+{
+    FScopedBuildGridGroundSettings Settings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("World"), World)) { return false; }
+    AActor* Floor = SpawnFloor(*World, FVector(50.0, 50.0, 90.0), FVector(500.0, 500.0, 10.0));
+    if (!TestNotNull(TEXT("Floor"), Floor)) { return false; }
+    Floor->SetActorRotation(FRotator(20.0, 0.0, 0.0));
+
+    FFFZSBuildGridSurfaceCache Cache;
+    FFFZSBuildableGridMask Mask = MakeGroundMask();
+    Mask.FacilityCategory = EFFZSFacilityCategory::Tile;
+    Cache.Update(*World, FTransform::Identity, 100.0, Mask, 4);
+    TestEqual(TEXT("Tile guidance accepts the independently permitted slope"), Mask.GetBuildableCellCount(), 1);
+    TestFalse(TEXT("Terrain guidance remains on the ground instead of claiming a flat whole-tile surface"),
+        FMath::IsNearlyEqual(Cache.GetWorldPoint(FVector2D::ZeroVector).Z,
+            Cache.GetWorldPoint(FVector2D(100.0, 0.0)).Z, 0.01));
+
+    Mask = MakeGroundMask();
+    Mask.FacilityCategory = EFFZSFacilityCategory::Road;
+    Cache.Update(*World, FTransform::Identity, 100.0, Mask, 0);
+    TestEqual(TEXT("Switching to road cannot reuse tile acceptance without verification"), Mask.GetBuildableCellCount(), 0);
+    TestTrue(TEXT("Category switch schedules fresh bounded verification"), Cache.HasPendingSamples());
+    Mask = MakeGroundMask();
+    Mask.FacilityCategory = EFFZSFacilityCategory::Road;
+    Cache.Update(*World, FTransform::Identity, 100.0, Mask, 4);
+    TestEqual(TEXT("Road continues to reject terrain beyond the ordinary slope limit"), Mask.GetBuildableCellCount(), 0);
+
+    Mask = MakeGroundMask();
+    Mask.FacilityCategory = EFFZSFacilityCategory::Tile;
+    Cache.Update(*World, FTransform::Identity, 100.0, Mask, 4);
+    TestEqual(TEXT("Returning to tile restores its own terrain policy"), Mask.GetBuildableCellCount(), 1);
+    Settings.Settings->MaxTileGroundHeightVarianceCm = 1.0f;
+    Mask = MakeGroundMask();
+    Mask.FacilityCategory = EFFZSFacilityCategory::Tile;
+    Cache.Update(*World, FTransform::Identity, 100.0, Mask, 4);
+    TestEqual(TEXT("Edited tile height limits invalidate the cached acceptance"), Mask.GetBuildableCellCount(), 0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSBuildGridSurfaceTileObstacleHeightTest,
+    "FF_ZoneSystem.Integration.BuildableGrid.Surface.TileObstaclesUseHighestSupport",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSBuildGridSurfaceTileObstacleHeightTest::RunTest(const FString& Parameters)
+{
+    FScopedBuildGridGroundSettings Settings;
+    Settings.Settings->MaxGroundHeightVarianceCm = 200.0f;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("World"), World) ||
+        !TestNotNull(TEXT("Low floor"), SpawnFloor(*World, FVector(50.0, 50.0, -10.0), FVector(200.0, 200.0, 10.0))) ||
+        !TestNotNull(TEXT("High floor"), SpawnFloor(*World, FVector(100.0, 50.0, 90.0), FVector(20.0, 200.0, 10.0))))
+    {
+        return false;
+    }
+    const auto MakeObstacleMask = [](const EFFZSFacilityCategory Category, const double ObstacleBottom)
+    {
+        FFFZSBuildableGridMask Mask = MakeGroundMask();
+        Mask.FacilityCategory = Category;
+        FFFZSBuildGridObstacle& Obstacle = Mask.DeferredWorldObstacles.AddDefaulted_GetRef();
+        Obstacle.FirstCell = FIntPoint::ZeroValue;
+        Obstacle.EndCell = FIntPoint(1, 1);
+        // Deliberately supplied broad-phase bounds; this test isolates deferred height clipping.
+        Obstacle.WorldBounds = FBox(FVector(0.0, 0.0, ObstacleBottom), FVector(100.0, 100.0, ObstacleBottom + 20.0));
+        return Mask;
+    };
+    FFFZSBuildGridSurfaceCache Cache;
+    FFFZSBuildableGridMask Mask = MakeObstacleMask(EFFZSFacilityCategory::Tile, 60.0);
+    Cache.Update(*World, FTransform::Identity, 0.0, Mask, 4);
+    TestEqual(TEXT("An obstacle below the tile's highest support plane does not erase guidance"), Mask.GetBuildableCellCount(), 1);
+    Mask = MakeObstacleMask(EFFZSFacilityCategory::Road, 60.0);
+    Cache.Update(*World, FTransform::Identity, 0.0, Mask, 4);
+    TestEqual(TEXT("Road retains ordinary average-height obstacle clipping"), Mask.GetBuildableCellCount(), 0);
+    Mask = MakeObstacleMask(EFFZSFacilityCategory::Tile, 110.0);
+    Cache.Update(*World, FTransform::Identity, 0.0, Mask, 4);
+    TestEqual(TEXT("An obstacle above the tile support plane still blocks guidance"), Mask.GetBuildableCellCount(), 0);
     return true;
 }
 

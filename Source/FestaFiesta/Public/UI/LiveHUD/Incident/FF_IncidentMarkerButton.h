@@ -29,6 +29,9 @@ public:
 	void SetRingMaterial(UMaterialInterface* Material);
 	void ApplyLook(const FFF_IncidentMarkerLook& InLook, UTexture2D* GlyphTexture);
 
+	// 화면 밖 사건이면 원판 바깥에 방향 화살표를 띄운다. Direction은 화면 좌표(Y 아래)의 단위 벡터.
+	void SetEdgeIndicator(bool bOffscreen, const FVector2D& Direction);
+
 	const FFF_IncidentMarkerLook& GetLook() const { return Look; }
 	bool HasRingMaterial() const { return RingMID != nullptr; }
 	float GetRingOuterRadius() const;
@@ -36,6 +39,8 @@ public:
 	static constexpr float DiscRadiusUV = 0.45f;
 	static constexpr float RingOuterRadiusUV = 0.425f;
 	static constexpr float BlinkRingBoostUV = 0.025f;
+	static constexpr float ArrowSizePx = 14.f;
+	static constexpr float ArrowGapPx = 3.f;
 
 	FFF_OnIncidentMarkerButtonClicked OnMarkerClicked;
 
@@ -62,6 +67,12 @@ private:
 	TObjectPtr<UImage> Ring;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UImage> Arrow;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> ArrowTexture;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> RingMID;
 
 	UPROPERTY(Transient)
@@ -69,6 +80,7 @@ private:
 
 	FFF_IncidentHandle Handle;
 	FFF_IncidentMarkerLook Look;
+	FVector2D MarkerSize = FVector2D(40.f, 40.f);
 	float MotionTime = 0.f;
 	bool bHovered = false;
 };

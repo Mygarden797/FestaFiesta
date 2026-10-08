@@ -371,6 +371,7 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 	friend class FFF_BuildDragPlacementTest;
 	friend class FFF_BuildSynergyCatalogContextTest;
 	friend class FFF_BuildMultiSelectionSessionTest;
+	friend class FFFBuildFeatureGuideInputTest;
 	friend class FFF_BuildGroupEditingTest;
 	friend class FFF_BuildQueueLayoutDraftTest;
 #endif
@@ -608,6 +609,8 @@ public:
 	FText GetPlacementStatusText() const;
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	FFF_BuildPlacementGuidance GetPlacementGuidance(int32 ProblemIndex = 0) const;
+	// Keep the active explanation and world highlights in sync; no placement validation or commit.
+	void SetPlacementDiagnosticIndex(int32 ProblemIndex);
 	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
 	void ToggleDirectPlacementAdjustment();
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")

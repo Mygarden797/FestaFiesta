@@ -141,6 +141,21 @@ bool AFFZSBuildArea::ContainsWorldOrientedRect(
     return Geometry && Geometry->ContainsWorldOrientedRect(WorldRectCm, WorldZCm);
 }
 
+void AFFZSBuildArea::GetBoundarySegments(const double WorldZCm, const FBox2D& ViewBounds,
+    TArray<FFFZSBuildAreaLineSegment>& OutSegments) const
+{
+    OutSegments.Reset();
+    if (Geometry) Geometry->GetBoundarySegments(WorldZCm, ViewBounds, OutSegments);
+}
+
+void AFFZSBuildArea::GetOutsideSegments(const FFFZSOrientedRect& WorldRectCm, const double WorldZCm,
+    const TArray<FFFZSBuildAreaLineSegment>& InputSegments,
+    TArray<FFFZSBuildAreaLineSegment>& OutSegments) const
+{
+    OutSegments.Reset();
+    if (Geometry) Geometry->GetOutsideSegments(WorldRectCm, WorldZCm, InputSegments, OutSegments);
+}
+
 FBox AFFZSBuildArea::GetBuildBounds() const
 {
     return Geometry ? Geometry->GetBounds() : FBox(ForceInit);

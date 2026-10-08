@@ -77,11 +77,21 @@ void UFF_GA_SimpleExp::HandleExpComplete()
 
 void UFF_GA_SimpleExp::PlayCompletionEffect_Implementation(const FText& Message)
 {
+	UE_LOG(LogTemp, Log, TEXT("[SimpleExp] 완료 연출 호출, 문구: %s"), *Message.ToString());
+	// ⭐ NEW 확인용 로그: 문구가 제대로 왔는지
+
 	if (CachedActorInfo && CachedActorInfo->AvatarActor.IsValid())
 	{
 		if (AFF_TriggerInteractionActor* TriggerActor = Cast<AFF_TriggerInteractionActor>(CachedActorInfo->AvatarActor.Get()))
 		{
+			UE_LOG(LogTemp, Log, TEXT("[SimpleExp] BP로 완료 신호 보냄: %s"), *TriggerActor->GetName());
+			// ⭐ NEW 확인용 로그: 어느 액터에게 보냈는지
+
 			TriggerActor->OnExperienceCompleted(Message);
+			return;
 		}
 	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[SimpleExp] 액터를 못 찾아서 완료 신호를 못 보냄"));
+	// ⭐ NEW 확인용 로그: 실패한 경우
 }

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "metadata": {
+    "title": "FF_WBP_Building 건축 모드 승인용 디자인 토큰",
+    "version": "2026-10-07.v1",
+    "status": "검토용 제안 — 게임 파일 적용 전 사용자 승인 필요",
+    "scope": "FF_WBP_Building 폴더의 건축 모드 UI만 대상. 이 폴더 안이라도 Shared/** 및 Catalog/Legacy/**는 제외한다. 외부에서 참조하는 공유 아이콘·폰트·스타일과 다른 팀원 파일은 수정하지 않는다.",
+    "basis": "저장된 WBP의 Pearl 팔레트와 기존 가상화 카드 할당 크기를 기준으로 정리",
+    "units": "1920×1080 기준 논리 픽셀, DPI 1.0",
+    "authority": "layout-spec.svg와 layout-spec.json은 제안 치수의 기준이다. 생성형 이미지 시안의 치수는 근사치다."
+  },
+  "color": {
+    "surface": { "$type": "color", "$value": "#F9F9FF", "$description": "Pearl 본문 배경. 글자 뒤 불투명 사용." },
+    "ink": { "$type": "color", "$value": "#3D3C4F", "$description": "기본 텍스트" },
+    "secondary": { "$type": "color", "$value": "#626577", "$description": "본문 보조 텍스트" },
+    "legacyMuted": { "$type": "color", "$value": "#7B7D92", "$description": "기존 WBP 참고색. 작은 본문에는 더 진한 secondary 사용." },
+    "action": { "$type": "color", "$value": "#286A79", "$description": "주요 조작과 선택 경계" },
+    "selected": { "$type": "color", "$value": "#E5F6FC", "$description": "선택 카드 및 탭 바탕" },
+    "highlight": { "$type": "color", "$value": "#91DFFF", "$description": "기존 WBP의 cyan 강조색. 밝은 바탕 위 본문색으로 사용하지 않음." },
+    "border": { "$type": "color", "$value": "#DBDEED", "$description": "구획선" },
+    "helper": { "$type": "color", "$value": "#3C3B4F", "$description": "조작 안내 배경" },
+    "onAction": { "$type": "color", "$value": "#FFFFFF", "$description": "진한 버튼 위 글자" },
+    "gold": { "$type": "color", "$value": "#A66D10", "$description": "골드 아이콘과 가격 보조 강조" },
+    "danger": { "$type": "color", "$value": "#AD3F48", "$description": "배치 불가·오류 경계" }
+  },
+  "spacing": {
+    "base": { "$type": "dimension", "$value": { "value": 8, "unit": "px" } },
+    "safe": { "$type": "dimension", "$value": { "value": 24, "unit": "px" } },
+    "panelPadding": { "$type": "dimension", "$value": { "value": 16, "unit": "px" } },
+    "cardGapException": { "$type": "dimension", "$value": { "value": 10, "unit": "px" }, "$description": "기존 가상화 가로 리본의 고정 간격 유지" },
+    "cardThumbnailInsetXException": { "$type": "dimension", "$value": { "value": 11, "unit": "px" }, "$description": "184 너비 안에 162 너비 썸네일을 가운데 정렬" }
+  },
+  "typography": {
+    "fontFamily": { "$type": "fontFamily", "$value": ["프로젝트의 기존 한국어 폰트", "Malgun Gothic", "sans-serif"] },
+    "screenTitle": { "fontSize": 28, "lineHeight": 36, "fontWeight": 700 },
+    "panelTitle": { "fontSize": 24, "lineHeight": 32, "fontWeight": 700 },
+    "body": { "fontSize": 18, "lineHeight": 26, "fontWeight": 400 },
+    "secondary": { "fontSize": 16, "lineHeight": 24, "fontWeight": 400 },
+    "catalogCardTitle": { "fontSize": 16, "lineHeight": 24, "fontWeight": 600, "maxLines": 2, "allocatedHeight": 48 },
+    "price": { "fontSize": 20, "lineHeight": 28, "fontWeight": 700, "numeralStyle": "tabular-nums" },
+    "toolbarLabel": { "fontSize": 16, "lineHeight": 20, "fontWeight": 600 }
+  },
+  "radius": { "panel": 16, "card": 12, "button": 8, "chip": 8 },
+  "stroke": { "default": 1, "selected": 2, "focus": 3 },
+  "interaction": {
+    "minimumButtonHeight": 44,
+    "minimumButtonHeightMeaning": "조작 가능한 클릭 영역의 최소 높이. 컴팩트 카테고리 외형40H·검색 외형36H에도 높이44의 별도 클릭 영역을 둔다. 실제 런타임 적용 전 히트 테스트 필요.",
+    "compactControlHitAreas": {
+      "category": { "visualHeight": 40, "hitHeight": 44, "verticalExpansion": 2 },
+      "search": { "visualHeight": 36, "hitHeight": 44, "verticalExpansion": 4 },
+      "overlapRule": "인접 컨트롤의 클릭 영역과 겹치지 않게 배치한다. 제안 레이아웃에서 카테고리·검색·카드 사이에 각각 최소4 간격을 둔다."
+    },
+    "primaryButtonHeight": 48,
+    "states": {
+      "normal": { "fill": "#F9F9FF", "stroke": "#DBDEED", "text": "#3D3C4F" },
+      "hover": { "fill": "#E5F6FC", "stroke": "#286A79", "text": "#3D3C4F" },
+      "focus": { "fill": "#F9F9FF", "stroke": "#286A79", "strokeWidth": 3, "ringOffset": 3, "text": "#3D3C4F" },
+      "selected": { "fill": "#E5F6FC", "stroke": "#286A79", "strokeWidth": 2, "text": "#286A79", "indicator": "체크 또는 밑줄 + 선택 텍스트" },
+      "disabled": { "fill": "#ECEEF5", "stroke": "#DBDEED", "text": "#626577", "indicator": "비활성 사유 텍스트", "interactive": false },
+      "error": { "fill": "#FFF2F4", "stroke": "#AD3F48", "text": "#AD3F48", "indicator": "오류 아이콘 + 원인 문구" }
+    }
+  }
+}

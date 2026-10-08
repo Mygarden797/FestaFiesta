@@ -110,6 +110,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Settings")
 	bool ClosePauseMenu();
 
+	/** 현재 플레이를 끝내고, 일시정지 소유권을 정리한 뒤 축제 선택 화면으로 돌아간다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Settings")
+	bool ReturnToFestivalSelection();
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Settings")
 	bool IsPauseMenuOpen() const { return ActiveHub.IsValid() || ActiveScreen.IsValid(); }
 

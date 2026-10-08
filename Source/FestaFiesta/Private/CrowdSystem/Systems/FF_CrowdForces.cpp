@@ -420,6 +420,7 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 	const bool bCullWalls = (Config.WallCullRadiusMeters > 0.f);
 	const TArray<FVector2f>* DesiredVel = In.DesiredVelMeters;
 	const TArray<float>* SocialScale = In.SocialScale;
+	const TArray<uint8>* Posture = In.Posture;
 
 	const int32 N = ActiveIds.Num();
 	if (N == 0)
@@ -454,6 +455,11 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 
 			const float MassKg = FMath::Max(U.MassKg, KINDA_SMALL_NUMBER);
 
+			const bool bIMoving = Posture
+				&& (*Posture)[i] == static_cast<uint8>(EFF_CrowdPosture::Moving);
+			const bool bIHolding = Posture
+				&& (*Posture)[i] == static_cast<uint8>(EFF_CrowdPosture::Holding);
+
 			FFF_CrowdForceTerms Terms;
 
 			Grid.GatherNearest(Pos, Pos[i], SearchRadius, Config.MaxNeighbours + 1, Neighbours);
@@ -477,13 +483,20 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 					&& FVector::DistSquared2D(U.QueueSlotLocation, Units[j].QueueSlotLocation)
 						>= FMath::Square(U.Radius + Units[j].Radius
 							+ U.ArrivalRadiusUU + Units[j].ArrivalRadiusUU);
-				if (bCompatibleAssignedSlots)
+				const bool bMovingPastHolding = bIMoving && Units.IsValidIndex(j)
+					&& (*Posture)[j] == static_cast<uint8>(EFF_CrowdPosture::Holding);
+				const bool bGhostPair = bIHolding || bMovingPastHolding;
+				if (bGhostPair)
+				{
+					Interaction = FFF_CrowdForceTerms();
+				}
+				else if (bCompatibleAssignedSlots)
 				{
 					Interaction.Social = FVector2f::ZeroVector;
 				}
 				Terms += Interaction;
 
-				if (bUseLaneBias && !bCompatibleAssignedSlots)
+				if (bUseLaneBias && !bCompatibleAssignedSlots && !bGhostPair)
 				{
 					Terms.Social += ComputeLaneBias(
 						Pos[i], Radius[i], Pos[j], Radius[j],

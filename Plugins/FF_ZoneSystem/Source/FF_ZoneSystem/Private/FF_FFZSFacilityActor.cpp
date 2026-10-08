@@ -28,6 +28,7 @@
 #include "FF_FFZSFacilityLightingRig.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSBuildPresentationSettings.h"
+#include "FF_FFZSBuildRangeComponent.h"
 #include "FF_FFZSBuildRangePresentation.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSNavArea_QueueLane.h"
@@ -122,6 +123,10 @@ AFFZSFacilityActor::AFFZSFacilityActor()
 
     VisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VisualMesh"));
     VisualMesh->SetupAttachment(SceneRoot);
+    TileSupportSurface = CreateDefaultSubobject<UBoxComponent>(TEXT("TileSupportSurface"));
+    TileSupportSurface->SetupAttachment(SceneRoot);
+    TileSupportSurface->SetVisibility(false);
+    TileSupportSurface->SetHiddenInGame(true);
     RefreshPlayerCollision();
 
     FacilityLightingComponent = CreateDefaultSubobject<UChildActorComponent>(TEXT("FacilityLighting"));
@@ -197,7 +202,7 @@ AFFZSFacilityActor::AFFZSFacilityActor()
 
     // 범위 사각형마다 UBoxComponent를 만드는 대신 모든 선을 한 proxy에 배치한다. 선 수명은
     // 명시적으로 Flush할 때까지 유지하므로 이 컴포넌트 자체의 매 프레임 Tick도 필요 없다.
-    BuildModeRangeLines = CreateDefaultSubobject<ULineBatchComponent>(TEXT("BuildModeRangeLines"));
+    BuildModeRangeLines = CreateDefaultSubobject<UFFZSBuildRangeComponent>(TEXT("BuildModeRangeLines"));
     BuildModeRangeLines->SetupAttachment(SceneRoot);
     BuildModeRangeLines->SetAbsolute(true, true, true);
     BuildModeRangeLines->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -607,7 +612,8 @@ bool AFFZSFacilityActor::IsWorldPointInsideFootprint(const FVector& WorldPoint) 
     // Zone 필터와 함께 수직 거리를 제한해 같은 XY의 다른 층 시설을 잘못 고르지 않는다.
     constexpr double HorizontalSelectionToleranceCm = 2.0;
     const double VerticalSelectionToleranceCm = 2.0 +
-        (Settings ? FMath::Max(0.0f, Settings->MaxGroundHeightVarianceCm) : 20.0f);
+        (Settings ? FMath::Max(0.0f, Settings->MaxGroundHeightVarianceCm)
+            : UFFZSDeveloperSettings::DefaultMaxGroundHeightVarianceCm);
     return FMath::Abs(LocalPoint.X) <= Extent.X + HorizontalSelectionToleranceCm &&
         FMath::Abs(LocalPoint.Y) <= Extent.Y + HorizontalSelectionToleranceCm &&
         FMath::Abs(LocalPoint.Z) <= Extent.Z + VerticalSelectionToleranceCm;
@@ -683,6 +689,7 @@ void AFFZSFacilityActor::RebuildRuntimePresentation()
     const FVector FootprintExtent = MakeFacilityFootprintExtent(FacilitySpec);
     FootprintBounds->SetBoxExtent(FootprintExtent);
     FootprintBounds->SetRelativeLocation(FVector(0.0f, 0.0f, FootprintExtent.Z));
+    RefreshTileSupportSurface();
     // Clearance·Queue 영역은 의도적 보행 공간이므로 확장 없이 고형 footprint만 복제한다.
     NavigationObstacleBounds->SetBoxExtent(FootprintExtent);
     NavigationObstacleBounds->SetRelativeLocation(FVector(0.0f, 0.0f, FootprintExtent.Z));
@@ -771,13 +778,14 @@ void AFFZSFacilityActor::SetPlayerCollisionEnabled(const bool bEnabled)
 
 void AFFZSFacilityActor::RefreshPlayerCollision()
 {
+    RefreshTileSupportSurface();
     if (!VisualMesh)
     {
         return;
     }
 
-    // 공유 StaticMesh/BodySetup을 변경하거나 충돌 형상을 새로 만들지 않는다.
-    // CharacterMovement의 기존 capsule sweep가 에셋에 저장된 collision을 사용한다.
+    // 타일은 권위 크기의 평평한 지지면을 사용한다. 나머지 시설은 공유 StaticMesh/BodySetup을
+    // 변경하지 않고 CharacterMovement의 기존 capsule sweep가 에셋의 collision을 사용한다.
     // 업데이트는 등록/메시 교체/철거 시에만 실행되며 Tick·Overlap/Hit 이벤트는 필요 없다.
     VisualMesh->SetCanEverAffectNavigation(false);
     VisualMesh->SetSimulatePhysics(false);
@@ -786,15 +794,47 @@ void AFFZSFacilityActor::RefreshPlayerCollision()
     VisualMesh->SetNotifyRigidBodyCollision(false);
     VisualMesh->SetCollisionObjectType(FFZSCollision::FacilityPlayerObjectChannel);
     VisualMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-    VisualMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-    // Roads and tiles are walkable support. Other facility roofs stay invisible to ground traces.
+    const bool bUsesTileSupport = FacilitySpec.AllowsFacilityPlacementOnTop();
+    VisualMesh->SetCollisionResponseToChannel(ECC_Pawn, bUsesTileSupport ? ECR_Ignore : ECR_Block);
+    // Road keeps its authored support mesh. Tile uses the exact planar support box instead, so
+    // a delayed or offset visual cannot change the height of an installed building or player.
     VisualMesh->SetCollisionResponseToChannel(ECC_Visibility,
-        FacilitySpec.IsGroundSurface() ? ECR_Block : ECR_Ignore);
+        FacilitySpec.IsGroundSurface() && !bUsesTileSupport ? ECR_Block : ECR_Ignore);
 
     const bool bShouldEnable = bPlayerCollisionEnabled && FacilityInstanceId.IsValid()
         && FacilityState != EFFZSFacilityState::Removed && !IsActorBeingDestroyed()
-        && VisualMesh->GetStaticMesh() != nullptr;
+        && VisualMesh->GetStaticMesh() != nullptr && !bUsesTileSupport;
     VisualMesh->SetCollisionEnabled(bShouldEnable
+        ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+}
+
+void AFFZSFacilityActor::RefreshTileSupportSurface()
+{
+    if (!TileSupportSurface)
+    {
+        return;
+    }
+
+    // 등록·복원도 여기로 모아 Blueprint에 저장된 예전 형상과 응답을 같은 계약으로 복구한다.
+    // 등록 대기·철거된 Actor는 비주얼의 비동기 적재 상태와 무관하게 지면 역할을 하지 않는다.
+    const FVector Extent = MakeFacilityFootprintExtent(FacilitySpec);
+    const bool bHasValidExtent = !Extent.ContainsNaN() && Extent.GetMin() > UE_KINDA_SMALL_NUMBER;
+    TileSupportSurface->SetCanEverAffectNavigation(false);
+    TileSupportSurface->SetSimulatePhysics(false);
+    TileSupportSurface->SetEnableGravity(false);
+    TileSupportSurface->SetGenerateOverlapEvents(false);
+    TileSupportSurface->SetNotifyRigidBodyCollision(false);
+    TileSupportSurface->SetCollisionObjectType(FFZSCollision::FacilityPlayerObjectChannel);
+    TileSupportSurface->SetCollisionResponseToAllChannels(ECR_Ignore);
+    TileSupportSurface->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+    TileSupportSurface->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+    TileSupportSurface->SetRelativeTransform(FTransform(FQuat::Identity,
+        FVector(0.0, 0.0, bHasValidExtent ? Extent.Z : 0.0), FVector::OneVector));
+    TileSupportSurface->SetBoxExtent(bHasValidExtent ? Extent : FVector::ZeroVector);
+    const bool bShouldEnable = bPlayerCollisionEnabled && FacilityInstanceId.IsValid()
+        && FacilityState != EFFZSFacilityState::Removed && !IsActorBeingDestroyed()
+        && FacilitySpec.AllowsFacilityPlacementOnTop() && bHasValidExtent;
+    TileSupportSurface->SetCollisionEnabled(bShouldEnable
         ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
 }
 
@@ -972,8 +1012,9 @@ void AFFZSFacilityActor::RebuildBuildModeRangePresentation()
 
     const FFFZSGridPlacement LocalPlacement;
     AddRangeGroup(UFFZSGridLibrary::GetFootprintRects(FacilitySpec, LocalPlacement), Style.FootprintColor, false, true);
-    AddRangeGroup(UFFZSGridLibrary::GetClearanceRects(FacilitySpec, LocalPlacement), Style.ClearanceColor, true);
+    AddRangeGroup(UFFZSGridLibrary::GetClearanceRects(FacilitySpec, LocalPlacement), Style.AudienceColor, true);
     AddRangeGroup(UFFZSGridLibrary::GetQueueRects(FacilitySpec, LocalPlacement), Style.QueueColor, false);
+    FFZSBuildRangePresentation::AppendQueuePath(Lines, FacilitySpec, ActorTransform, Style.QueueColor, Style);
     BuildModeRangeLines->DrawLines(Lines);
 }
 

@@ -460,29 +460,36 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 			TestTrue(TEXT("Focused catalog requests BuildMode on B"), bBuildModeKeyRequested);
 			Screen->OnBuildModeKeyRequested.Remove(BuildModeKeyHandle);
 
-			bool bPauseMenuKeyRequested = false;
+			int32 PauseMenuRequestCount = 0;
 			const FDelegateHandle PauseMenuKeyHandle = Screen->OnPauseMenuKeyRequested.AddLambda(
-				[&bPauseMenuKeyRequested]() { bPauseMenuKeyRequested = true; });
-			const FKeyEvent PauseMenuKeyEvent(
-				EKeys::Escape, FModifierKeysState(), 0, false, 0, 0);
-			const FReply PauseMenuKeyReply = Screen->NativeOnPreviewKeyDown(
-				FGeometry(), PauseMenuKeyEvent);
-			TestTrue(TEXT("Focused catalog handles Escape"), PauseMenuKeyReply.IsEventHandled());
-			TestTrue(TEXT("Focused catalog requests Pause Hub without exiting build"), bPauseMenuKeyRequested);
-			bPauseMenuKeyRequested = false;
-			const FKeyEvent F5PauseMenuKeyEvent(
-				EKeys::F5, FModifierKeysState(), 0, false, 0, 0);
-			const FReply F5PauseMenuKeyReply = Screen->NativeOnPreviewKeyDown(
-				FGeometry(), F5PauseMenuKeyEvent);
-			TestTrue(TEXT("Focused catalog handles F5"), F5PauseMenuKeyReply.IsEventHandled());
-			TestFalse(TEXT("Focused catalog does not open Pause Hub from retired F5"), bPauseMenuKeyRequested);
+				[&PauseMenuRequestCount]() { ++PauseMenuRequestCount; });
+			for (const FKey& PauseKey : {EKeys::Escape, EKeys::F5})
+			{
+				const int32 RequestsBeforePress = PauseMenuRequestCount;
+				const FKeyEvent PauseMenuKeyEvent(
+					PauseKey, FModifierKeysState(), 0, false, 0, 0);
+				const FReply PauseMenuKeyReply = Screen->NativeOnPreviewKeyDown(
+					FGeometry(), PauseMenuKeyEvent);
+				TestTrue(*FString::Printf(TEXT("Focused catalog handles %s"), *PauseKey.ToString()),
+					PauseMenuKeyReply.IsEventHandled());
+				TestEqual(*FString::Printf(TEXT("Focused catalog requests Pause Hub exactly once on %s"),
+					*PauseKey.ToString()), PauseMenuRequestCount, RequestsBeforePress + 1);
+				const FKeyEvent RepeatedPauseMenuKeyEvent(
+					PauseKey, FModifierKeysState(), 0, true, 0, 0);
+				Screen->NativeOnPreviewKeyDown(FGeometry(), RepeatedPauseMenuKeyEvent);
+				Screen->NativeOnPreviewKeyDown(FGeometry(), RepeatedPauseMenuKeyEvent);
+				TestEqual(*FString::Printf(TEXT("Holding %s does not request Pause Hub again"),
+					*PauseKey.ToString()), PauseMenuRequestCount, RequestsBeforePress + 1);
+			}
+			const int32 RequestsBeforeRetiredKeys = PauseMenuRequestCount;
 			for (const FKey& RetiredKey : {EKeys::F1, EKeys::F2, EKeys::F3,
 				EKeys::F4, EKeys::F6, EKeys::F7})
 			{
 				const FKeyEvent RetiredEvent(RetiredKey, FModifierKeysState(), 0, false, 0, 0);
 				TestTrue(TEXT("Focused catalog consumes every retired toolbar key"),
 					Screen->NativeOnPreviewKeyDown(FGeometry(), RetiredEvent).IsEventHandled());
-				TestFalse(TEXT("Retired toolbar keys never request Pause Hub"), bPauseMenuKeyRequested);
+				TestEqual(TEXT("Retired toolbar keys never request Pause Hub"),
+					PauseMenuRequestCount, RequestsBeforeRetiredKeys);
 			}
 			Screen->OnPauseMenuKeyRequested.Remove(PauseMenuKeyHandle);
 

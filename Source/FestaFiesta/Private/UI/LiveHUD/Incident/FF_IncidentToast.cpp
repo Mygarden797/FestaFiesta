@@ -14,6 +14,7 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/Font.h"
 #include "UI/Data/FF_UIPalette.h"
+#include "UI/FF_UILog.h"
 #include "UI/LiveHUD/Incident/FF_IncidentUiStyle.h"
 
 TSharedRef<SWidget> UFF_IncidentToast::RebuildWidget()
@@ -61,9 +62,17 @@ void UFF_IncidentToast::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 
 void UFF_IncidentToast::Show(const FText& Label, const FText& Message, bool bPositive)
 {
+	Show(Label, Message, bPositive ? EFF_IncidentToastKind::Good : EFF_IncidentToastKind::Danger);
+}
+
+void UFF_IncidentToast::Show(const FText& Label, const FText& Message, EFF_IncidentToastKind Kind)
+{
 	BuildTree();
+	UE_LOG(LogFestaFiestaUI, Log, TEXT("[IncidentToast] Show 진입 — 문구=\"%s\" WidgetTree=%d List=%d 뷰포트=%d"),
+		*Message.ToString(), WidgetTree != nullptr, List != nullptr, IsInViewport());
 	if (!WidgetTree || !List)
 	{
+		UE_LOG(LogFestaFiestaUI, Warning, TEXT("[IncidentToast] Show 중단 — WidgetTree 또는 List 가 없다"));
 		return;
 	}
 
@@ -73,8 +82,9 @@ void UFF_IncidentToast::Show(const FText& Label, const FText& Message, bool bPos
 	}
 
 	FEntry Entry;
-	if (!MakeCard(Label, Message, bPositive, Entry))
+	if (!MakeCard(Label, Message, Kind, Entry))
 	{
+		UE_LOG(LogFestaFiestaUI, Warning, TEXT("[IncidentToast] Show 중단 — MakeCard 가 카드를 못 만들었다 (팔레트 없음)"));
 		return;
 	}
 	Entry.RemainingSeconds = FMath::Max(DisplaySeconds, KINDA_SMALL_NUMBER);
@@ -96,9 +106,12 @@ void UFF_IncidentToast::Show(const FText& Label, const FText& Message, bool bPos
 
 	ApplyEntryOpacity(Entries[0]);
 	ApplyVisibility();
+	UE_LOG(LogFestaFiestaUI, Log, TEXT("[IncidentToast] Show 완료 — 줄=%d 가시성=%d 불투명도=%.2f 뷰포트=%d 슬레이트=%d 크기=%s"),
+		Entries.Num(), static_cast<int32>(GetVisibility()), GetOpacityAt(0), IsInViewport(),
+		GetCachedWidget().IsValid(), *GetDesiredSize().ToString());
 }
 
-UBorder* UFF_IncidentToast::MakeCard(const FText& Label, const FText& Message, bool bPositive, FEntry& OutEntry)
+UBorder* UFF_IncidentToast::MakeCard(const FText& Label, const FText& Message, EFF_IncidentToastKind Kind, FEntry& OutEntry)
 {
 	using namespace FFIncidentUiStyle;
 	const UFF_UIPalette* Palette = UFF_UIPalette::Get();
@@ -107,7 +120,18 @@ UBorder* UFF_IncidentToast::MakeCard(const FText& Label, const FText& Message, b
 		return nullptr;
 	}
 	const FFPauseOptionsLightTeal::FTokens Tokens = FFPauseOptionsLightTeal::Get(*Palette);
-	const FLinearColor StateColor = bPositive ? Palette->InGame.BandGood : Palette->InGame.Danger;
+	FLinearColor StateColor = Palette->InGame.Danger;
+	switch (Kind)
+	{
+	case EFF_IncidentToastKind::Good:
+		StateColor = Palette->InGame.BandGood;
+		break;
+	case EFF_IncidentToastKind::Neutral:
+		StateColor = Tokens.InkMuted;
+		break;
+	case EFF_IncidentToastKind::Danger:
+		break;
+	}
 
 	// 카드: PaperStrong 바탕 · Line 테두리 · 카드 모서리 6px
 	UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());

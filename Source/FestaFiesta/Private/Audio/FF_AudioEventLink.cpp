@@ -12,6 +12,7 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Finale/FF_FinaleShowSubsystem.h"
+#include "Incident/FF_IncidentSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Core/FF_UIFlowSettings.h"
@@ -174,6 +175,15 @@ void UFF_AudioEventLink::BindAll()
 			bBoundQueue = true;
 		}
 	}
+
+	if (!bBoundIncident)
+	{
+		if (UFF_IncidentSubsystem* Incident = World->GetSubsystem<UFF_IncidentSubsystem>())
+		{
+			Incident->OnIncidentRaised.AddDynamic(this, &UFF_AudioEventLink::HandleIncidentRaised);
+			bBoundIncident = true;
+		}
+	}
 }
 
 void UFF_AudioEventLink::UnbindAll()
@@ -186,6 +196,7 @@ void UFF_AudioEventLink::UnbindAll()
 		bBoundStage = false;
 		bBoundBuild = false;
 		bBoundZoneWorld = false;
+		bBoundIncident = false;
 		return;
 	}
 
@@ -240,6 +251,15 @@ void UFF_AudioEventLink::UnbindAll()
 			Queue->OnPartyExited.RemoveDynamic(this, &UFF_AudioEventLink::HandleQueuePartyExited);
 		}
 		bBoundQueue = false;
+	}
+
+	if (bBoundIncident)
+	{
+		if (UFF_IncidentSubsystem* Incident = World->GetSubsystem<UFF_IncidentSubsystem>())
+		{
+			Incident->OnIncidentRaised.RemoveDynamic(this, &UFF_AudioEventLink::HandleIncidentRaised);
+		}
+		bBoundIncident = false;
 	}
 }
 
@@ -479,6 +499,28 @@ void UFF_AudioEventLink::HandleQueuePartyExited(
 		// 폐쇄로 인한 취소는 플레이어 잘못이 아니므로 별도 소리를 내지 않는다.
 		break;
 	}
+}
+
+void UFF_AudioEventLink::HandleIncidentRaised(const FFF_IncidentHandle Handle)
+{
+	if (!bLinkEnabled)
+	{
+		return;
+	}
+
+	UFF_AudioSubsystem* Audio = GetAudio();
+	const UWorld* World = GetWorld();
+	UFF_IncidentSubsystem* Incident = World ? World->GetSubsystem<UFF_IncidentSubsystem>() : nullptr;
+	if (!Audio || !Incident)
+	{
+		return;
+	}
+
+	FFF_IncidentView View;
+	const bool bUrgent = Incident->GetIncidentView(Handle, View)
+		&& (View.Urgency == EFF_IncidentUrgency::High || View.Urgency == EFF_IncidentUrgency::Immediate);
+
+	Audio->PlayEvent2D(bUrgent ? EFF_AudioEvent::IncidentRaisedUrgent : EFF_AudioEvent::IncidentRaised);
 }
 
 void UFF_AudioEventLink::HandleStageChanged(

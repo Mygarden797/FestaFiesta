@@ -103,6 +103,34 @@ struct FESTAFIESTA_API FFF_IncidentHandle
 	}
 };
 
+// 사건이 닫힌 순간의 값 복사본. 닫힌 뒤에는 Handle 로 조회할 수 없고 슬롯도 재사용되므로 방송 전에 채운다.
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_IncidentClosedInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	FFF_IncidentHandle Handle;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	FGameplayTag IncidentTag;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	FText Title;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	EFF_IncidentState FinalState = EFF_IncidentState::Resolved;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	EFF_IncidentTone Tone = EFF_IncidentTone::Problem;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	int32 ChosenOptionIndex = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	bool bWasResponding = false;
+};
+
 // Kind 에 따라 아래 필드 중 하나만 의미를 갖는다.
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_IncidentAnchor

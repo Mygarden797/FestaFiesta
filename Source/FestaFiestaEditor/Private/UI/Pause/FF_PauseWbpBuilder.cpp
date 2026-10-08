@@ -29,11 +29,12 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Engine/Texture2D.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/PackageName.h"
-#include "UI/Core/FF_PauseOptionsLightTealStyle.h"
+#include "UI/Settings/FF_FestivalOptionsStyle.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/Pause/FF_PauseHubScreen.h"
@@ -54,16 +55,9 @@ namespace FFPauseWbpBuilder
 	struct FPauseLayoutMetrics
 	{
 		static constexpr float HeaderHeight = 88.f;
-		static constexpr float FooterHeight = 84.f;
-		static constexpr float MenuWidthWeight = 0.34f;
-		static constexpr float MenuItemHeight = 76.f;
-		static constexpr float FestivalCardHeight = 168.f;
-		static constexpr float StatsHeight = 78.f;
-		static constexpr float GuideHeight = 126.f;
-		// Keeps the fixed context-card rhythm valid; shorter viewports scroll this authored area.
-		static constexpr float ContextMinContentHeight = 620.f;
-		static constexpr float PanelRadius = 8.f;
-		static constexpr float ControlRadius = 6.f;
+		static constexpr float FooterHeight = 72.f;
+		static constexpr float MenuWidth = 320.f;
+		static constexpr float MenuItemHeight = 80.f;
 	};
 
 	FSlateBrush MakeSolidBrush(const FLinearColor& Color, const float Radius = 0.f)
@@ -124,28 +118,19 @@ namespace FFPauseWbpBuilder
 	FButtonStyle MakeButtonStyle(
 		const UFF_UIPalette& Palette, const bool bPrimary = false, const bool bDanger = false)
 	{
-		const FFPauseOptionsLightTeal::FTokens Tokens = FFPauseOptionsLightTeal::Get(Palette);
+		const auto T = FFFestivalOptionsStyle::Get();
+		const FLinearColor Danger = FFFestivalOptionsStyle::Hex(TEXT("A7463E"));
 		FButtonStyle Style;
-		Style.Normal = FFPauseOptionsLightTeal::MakeRectButtonBrush(
-			bDanger ? FFPauseOptionsLightTeal::RectDangerPath
-				: (bPrimary ? FFPauseOptionsLightTeal::RectPrimaryPath
-					: FFPauseOptionsLightTeal::RectNavDefaultPath),
-			bDanger ? Tokens.Danger : (bPrimary ? Tokens.Teal : Tokens.PaperSunken),
-			bDanger ? Tokens.Danger : (bPrimary ? Tokens.TealDeep : Tokens.Line));
-		Style.Hovered = FFPauseOptionsLightTeal::MakeRectButtonBrush(
-			bDanger ? FFPauseOptionsLightTeal::RectDangerPath
-				: (bPrimary ? FFPauseOptionsLightTeal::RectPrimaryHoverPath
-					: FFPauseOptionsLightTeal::RectNavHoverPath),
-			bDanger ? Tokens.Danger : (bPrimary ? Tokens.TealDeep : Tokens.Hover),
-			Tokens.TealDeep);
-		Style.Pressed = FFPauseOptionsLightTeal::MakeRectButtonBrush(
-			bDanger ? FFPauseOptionsLightTeal::RectDangerPath
-				: FFPauseOptionsLightTeal::RectNavPressedPath,
-			bDanger ? Tokens.Danger : Tokens.TealDeep, Tokens.TealDeep);
-		Style.Disabled = FFPauseOptionsLightTeal::MakeRectButtonBrush(
-			FFPauseOptionsLightTeal::RectNavDisabledPath, Tokens.Disabled, Tokens.Line);
-		Style.NormalPadding = FMargin(20.f, 12.f);
-		Style.PressedPadding = FMargin(20.f, 13.f, 20.f, 11.f);
+		Style.Normal = FFFestivalOptionsStyle::Rounded(bPrimary ? T.Green : T.Paper,
+			bPrimary ? T.Green : T.LineStrong, 14.f);
+		Style.Hovered = FFFestivalOptionsStyle::Rounded(bPrimary ? T.GreenDeep :
+			(bDanger ? FFFestivalOptionsStyle::Hex(TEXT("FBEDEA")) : T.Hover),
+			bDanger ? Danger : T.Green, 14.f, 2.f);
+		Style.Pressed = FFFestivalOptionsStyle::Rounded(bPrimary ? T.GreenDeep : T.Selected,
+			bDanger ? Danger : T.GreenDeep, 14.f, 2.f);
+		Style.Disabled = FFFestivalOptionsStyle::Rounded(T.Disabled, T.Line, 14.f);
+		Style.NormalPadding = FMargin(18.f, 10.f);
+		Style.PressedPadding = FMargin(18.f, 11.f, 18.f, 9.f);
 		return Style;
 	}
 
@@ -171,9 +156,9 @@ namespace FFPauseWbpBuilder
 		{
 			return nullptr;
 		}
-		FSlateBrush Brush = MakeSolidBrush(FLinearColor::Transparent, 6.f);
+		FSlateBrush Brush = MakeSolidBrush(FLinearColor::Transparent, 14.f);
 		Brush.OutlineSettings.Color = FSlateColor(Color);
-		Brush.OutlineSettings.Width = 2.f;
+		Brush.OutlineSettings.Width = 3.f;
 		Ring->SetBrush(Brush);
 		Ring->SetVisibility(ESlateVisibility::Collapsed);
 		return Ring;
@@ -184,47 +169,44 @@ namespace FFPauseWbpBuilder
 		const FText& Label, const FText& Description, const UFF_UIPalette& Palette,
 		const bool bPrimary = false, const bool bDanger = false)
 	{
-		const FFPauseOptionsLightTeal::FTokens Tokens = FFPauseOptionsLightTeal::Get(Palette);
-		USizeBox* Root = MakeWidget<USizeBox>(Blueprint, Tree,
-			FName(*(ButtonName.ToString() + TEXT("_Size"))));
-		UOverlay* Overlay = MakeWidget<UOverlay>(Blueprint, Tree,
-			FName(*(ButtonName.ToString() + TEXT("_Overlay"))));
+		const auto T = FFFestivalOptionsStyle::Get();
+		const FLinearColor Ink = bPrimary ? T.White :
+			(bDanger ? FFFestivalOptionsStyle::Hex(TEXT("A7463E")) : T.Ink);
+		auto Name = [&](const TCHAR* Suffix) { return FName(*(ButtonName.ToString() + Suffix)); };
+		USizeBox* Root = MakeWidget<USizeBox>(Blueprint, Tree, Name(TEXT("_Size")));
+		UOverlay* Overlay = MakeWidget<UOverlay>(Blueprint, Tree, Name(TEXT("_Overlay")));
 		UButton* Button = MakeWidget<UButton>(Blueprint, Tree, ButtonName, true);
-		UVerticalBox* Copy = MakeWidget<UVerticalBox>(Blueprint, Tree,
-			FName(*(ButtonName.ToString() + TEXT("_Copy"))));
-		UTextBlock* Title = MakeText(Blueprint, Tree, LabelName, Label, 20,
-			(bPrimary || bDanger) ? Tokens.White : Tokens.Ink,
-			TEXT("SemiBold"), true);
+		UHorizontalBox* Content = MakeWidget<UHorizontalBox>(Blueprint, Tree, Name(TEXT("_Content")));
+		UVerticalBox* Copy = MakeWidget<UVerticalBox>(Blueprint, Tree, Name(TEXT("_Copy")));
+		UTextBlock* Title = MakeText(Blueprint, Tree, LabelName, Label, 19, Ink, TEXT("SemiBold"), true);
 		UTextBlock* Detail = MakeText(Blueprint, Tree,
-			FName(*(LabelName.ToString() + TEXT("_Description"))), Description, 13,
-			(bPrimary || bDanger) ? Tokens.White : Tokens.InkMuted, TEXT("Medium"));
-		UImage* Ring = MakeFocusRing(Blueprint, Tree, FocusName, Tokens.TealDeep);
-		if (!Root || !Overlay || !Button || !Copy || !Title || !Detail || !Ring)
-		{
-			return nullptr;
-		}
-
+			FName(*(LabelName.ToString() + TEXT("_Description"))), Description, 14,
+			bPrimary ? T.White : T.Muted, TEXT("Medium"));
+		UTextBlock* Chevron = MakeText(Blueprint, Tree, Name(TEXT("_Chevron")),
+			FText::FromString(TEXT("›")), 22, Ink, TEXT("Medium"));
+		UImage* Ring = MakeFocusRing(Blueprint, Tree, FocusName, bPrimary ? T.White : T.Green);
+		if (!Root || !Overlay || !Button || !Content || !Copy || !Title || !Detail || !Chevron || !Ring) return nullptr;
 		Root->SetMinDesiredHeight(FPauseLayoutMetrics::MenuItemHeight);
-		Root->SetClipping(EWidgetClipping::ClipToBounds);
 		Root->AddChild(Overlay);
-		Overlay->SetClipping(EWidgetClipping::ClipToBounds);
 		Button->SetStyle(MakeButtonStyle(Palette, bPrimary, bDanger));
-		Button->SetClipping(EWidgetClipping::ClipToBounds);
-		Copy->SetClipping(EWidgetClipping::ClipToBounds);
 		ConfigureWrappedText(*Title);
-		Title->SetToolTipText(Label);
 		ConfigureWrappedText(*Detail);
-		if (UVerticalBoxSlot* Slot = Copy->AddChildToVerticalBox(Title))
+		Button->SetToolTipText(Description);
+		Copy->AddChildToVerticalBox(Title);
+		Copy->AddChildToVerticalBox(Detail)->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
+		if (UHorizontalBoxSlot* Slot = Content->AddChildToHorizontalBox(Copy))
 		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot->SetVerticalAlignment(VAlign_Center);
 		}
-		if (UVerticalBoxSlot* Slot = Copy->AddChildToVerticalBox(Detail))
+		if (UHorizontalBoxSlot* Slot = Content->AddChildToHorizontalBox(Chevron))
 		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot->SetPadding(FMargin(0.f, 5.f, 0.f, 0.f));
+			Slot->SetPadding(FMargin(12.f, 0.f, 0.f, 0.f));
+			Slot->SetVerticalAlignment(VAlign_Center);
 		}
-		if (UButtonSlot* Slot = Cast<UButtonSlot>(Button->AddChild(Copy)))
+		if (UButtonSlot* Slot = Cast<UButtonSlot>(Button->AddChild(Content)))
 		{
+			Slot->SetPadding(FMargin(0.f));
 			Slot->SetHorizontalAlignment(HAlign_Fill);
 			Slot->SetVerticalAlignment(VAlign_Center);
 		}
@@ -237,6 +219,7 @@ namespace FFPauseWbpBuilder
 		{
 			Slot->SetHorizontalAlignment(HAlign_Fill);
 			Slot->SetVerticalAlignment(VAlign_Fill);
+			Slot->SetPadding(FMargin(3.f));
 		}
 		return Root;
 	}
@@ -245,35 +228,20 @@ namespace FFPauseWbpBuilder
 		const FName BorderName, const FName ValueName, const FText& Label,
 		const FText& PreviewValue, const UFF_UIPalette& Palette)
 	{
-		const FFPauseOptionsLightTeal::FTokens Tokens = FFPauseOptionsLightTeal::Get(Palette);
+		const auto T = FFFestivalOptionsStyle::Get();
 		UBorder* Card = MakeWidget<UBorder>(Blueprint, Tree, BorderName);
-		UHorizontalBox* Copy = MakeWidget<UHorizontalBox>(Blueprint, Tree,
+		UVerticalBox* Copy = MakeWidget<UVerticalBox>(Blueprint, Tree,
 			FName(*(BorderName.ToString() + TEXT("_Copy"))));
 		UTextBlock* Caption = MakeText(Blueprint, Tree,
-			FName(*(BorderName.ToString() + TEXT("_Label"))), Label, 14,
-			Tokens.InkMuted, TEXT("SemiBold"));
-		UTextBlock* Value = MakeText(Blueprint, Tree, ValueName, PreviewValue, 27,
-			Tokens.Ink, TEXT("SemiBold"), true);
-		if (!Card || !Copy || !Caption || !Value)
-		{
-			return nullptr;
-		}
-		Card->SetBrush(FFPauseOptionsLightTeal::MakeListRowBrush(Tokens));
-		Card->SetClipping(EWidgetClipping::ClipToBounds);
-		Card->SetPadding(FMargin(18.f, 0.f));
-		Copy->SetClipping(EWidgetClipping::ClipToBounds);
-		ConfigureSingleLineText(*Caption, Label);
-		ConfigureSingleLineText(*Value, PreviewValue, ETextJustify::Right);
-		if (UHorizontalBoxSlot* Slot = Copy->AddChildToHorizontalBox(Caption))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			Slot->SetVerticalAlignment(VAlign_Center);
-		}
-		if (UHorizontalBoxSlot* Slot = Copy->AddChildToHorizontalBox(Value))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			Slot->SetVerticalAlignment(VAlign_Center);
-		}
+			FName(*(BorderName.ToString() + TEXT("_Label"))), Label, 14, T.Muted, TEXT("Medium"));
+		UTextBlock* Value = MakeText(Blueprint, Tree, ValueName, PreviewValue, 20, T.Ink, TEXT("SemiBold"), true);
+		if (!Card || !Copy || !Caption || !Value) return nullptr;
+		Card->SetBrush(FFFestivalOptionsStyle::Rounded(T.White, T.Line, 14.f));
+		Card->SetPadding(FMargin(16.f, 14.f));
+		ConfigureWrappedText(*Caption);
+		ConfigureWrappedText(*Value);
+		Copy->AddChildToVerticalBox(Caption);
+		Copy->AddChildToVerticalBox(Value)->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
 		Card->AddChild(Copy);
 		return Card;
 	}
@@ -281,365 +249,238 @@ namespace FFPauseWbpBuilder
 	bool BuildPauseHub(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
 		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
-		if (!Palette)
-		{
-			return false;
-		}
-		const FFPauseOptionsLightTeal::FTokens Tokens = FFPauseOptionsLightTeal::Get(*Palette);
-
+		if (!Palette) return false;
+		const auto T = FFFestivalOptionsStyle::Get();
 		UCanvasPanel* Root = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("CanvasPanel_Root"));
-		UBorder* ViewportSurface = MakeWidget<UBorder>(
-			Blueprint, Tree, TEXT("Border_ViewportSurface"));
+		UBorder* Surface = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_ViewportSurface"));
 		USafeZone* SafeZone = MakeWidget<USafeZone>(Blueprint, Tree, TEXT("SafeZone_Viewport"));
-		UCanvasPanel* Design = MakeWidget<UCanvasPanel>(
-			Blueprint, Tree, TEXT("CanvasPanel_Responsive"));
-
+		UCanvasPanel* Canvas = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("CanvasPanel_Responsive"));
+		UVerticalBox* Shell = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_ResponsiveShell"));
+		USizeBox* HeaderBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_Header"));
 		UBorder* Header = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_Header"));
 		UHorizontalBox* HeaderContent = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Header"));
-		UTextBlock* Brand = MakeText(Blueprint, Tree, TEXT("Text_Brand"),
-			LOCTEXT("Brand", "FESTA FIESTA!"), 29, Tokens.White, TEXT("SemiBold"));
 		UTextBlock* HeaderTitle = MakeText(Blueprint, Tree, TEXT("Text_HeaderTitle"),
-			LOCTEXT("PauseTitle", "일시정지"), 20, Tokens.White, TEXT("SemiBold"));
-		UTextBlock* HeaderHint = MakeText(Blueprint, Tree, TEXT("Text_HeaderHint"),
-			LOCTEXT("HeaderHint", "ESC · F5  계속 플레이"), 15,
-			Tokens.TealSoft, TEXT("Medium"), true);
+			LOCTEXT("PauseTitle", "일시정지"), 32, T.Ink, TEXT("Bold"));
+		UTextBlock* Brand = MakeText(Blueprint, Tree, TEXT("Text_Brand"),
+			LOCTEXT("Brand", "FESTA FIESTA!"), 18, T.Muted, TEXT("SemiBold"));
+		USizeBox* BrandMarkBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_BrandMark"));
+		UImage* BrandMark = MakeWidget<UImage>(Blueprint, Tree, TEXT("Image_BrandMark"));
+		USizeBox* CloseBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_Close"));
 		UButton* Close = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Close"), true);
 		UTextBlock* CloseText = MakeText(Blueprint, Tree, TEXT("Text_Close"),
-			LOCTEXT("Close", "×"), 24, Tokens.Ink, TEXT("SemiBold"));
+			LOCTEXT("Close", "×"), 20, T.Ink, TEXT("SemiBold"));
 
+		UHorizontalBox* Main = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_MainContent"));
+		USizeBox* Rail = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_MenuRail"));
 		UBorder* MenuPanel = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_MenuPanel"));
 		UScrollBox* MenuScroll = MakeWidget<UScrollBox>(Blueprint, Tree, TEXT("ScrollBox_Menu"));
 		UVerticalBox* Menu = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Menu"));
-		UTextBlock* MenuEyebrow = MakeText(Blueprint, Tree, TEXT("Text_MenuEyebrow"),
-			LOCTEXT("MenuEyebrow", "PAUSE MENU"), 12, Tokens.Teal, TEXT("SemiBold"));
 		UTextBlock* MenuTitle = MakeText(Blueprint, Tree, TEXT("Text_MenuTitle"),
-			LOCTEXT("MenuTitle", "축제 운영 메뉴"), 28, Tokens.Ink, TEXT("SemiBold"));
-
-		USizeBox* Resume = MakeMenuItem(Blueprint, Tree,
-			TEXT("Button_Resume"), TEXT("Image_FocusResume"), TEXT("Text_Resume"),
-			LOCTEXT("Resume", "계속하기"),
-			LOCTEXT("ResumeDescription", "축제 운영 화면으로 돌아갑니다"), *Palette, true);
-		USizeBox* Settings = MakeMenuItem(Blueprint, Tree,
-			TEXT("Button_Settings"), TEXT("Image_FocusSettings"), TEXT("Text_Settings"),
-			LOCTEXT("SystemSettings", "시스템 설정"),
-			LOCTEXT("SystemSettingsDescription", "기본·오디오·접근성·그래픽 설정"), *Palette);
-		USizeBox* Keyboard = MakeMenuItem(Blueprint, Tree,
-			TEXT("Button_Keyboard"), TEXT("Image_FocusKeyboard"), TEXT("Text_Keyboard"),
-			LOCTEXT("Keyboard", "조작 가이드"),
-			LOCTEXT("KeyboardDescription", "문맥별 키보드 역할을 확인합니다"), *Palette);
-		USizeBox* Account = MakeMenuItem(Blueprint, Tree,
-			TEXT("Button_Account"), TEXT("Image_FocusAccount"), TEXT("Text_Account"),
-			LOCTEXT("Account", "계정 정보"),
-			LOCTEXT("AccountDescription", "로컬 프로필과 빌드 정보를 확인합니다"), *Palette);
-		UBorder* MenuDivider = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_MenuDivider"));
-		USizeBox* Exit = MakeMenuItem(Blueprint, Tree,
-			TEXT("Button_Exit"), TEXT("Image_FocusExit"), TEXT("Text_Exit"),
-			LOCTEXT("Exit", "게임 종료"),
-			LOCTEXT("ExitDescription", "확인 후 안전하게 게임을 종료합니다"), *Palette, false, true);
-		USpacer* MenuSpacer = MakeWidget<USpacer>(Blueprint, Tree, TEXT("Spacer_MenuFlex"));
+			LOCTEXT("MenuTitle", "축제 운영 메뉴"), 16, T.Muted, TEXT("SemiBold"));
+		USizeBox* Resume = MakeMenuItem(Blueprint, Tree, TEXT("Button_Resume"), TEXT("Image_FocusResume"), TEXT("Text_Resume"),
+			LOCTEXT("Resume", "계속하기"), LOCTEXT("ResumeDescription", "축제 운영으로 돌아가기"), *Palette, true);
+		USizeBox* Settings = MakeMenuItem(Blueprint, Tree, TEXT("Button_Settings"), TEXT("Image_FocusSettings"), TEXT("Text_Settings"),
+			LOCTEXT("SystemSettings", "시스템 설정"), LOCTEXT("SystemSettingsDescription", "소리 · 화면 · 편의 설정"), *Palette);
+		USizeBox* ReturnToAtlas = MakeMenuItem(Blueprint, Tree, TEXT("Button_ReturnToAtlas"), TEXT("Image_FocusReturnToAtlas"), TEXT("Text_ReturnToAtlas"),
+			LOCTEXT("ReturnToAtlas", "축제 선택으로"), LOCTEXT("ReturnToAtlasDescription", "현재 플레이를 마치고 축제 선택"), *Palette);
+		USizeBox* Exit = MakeMenuItem(Blueprint, Tree, TEXT("Button_Exit"), TEXT("Image_FocusExit"), TEXT("Text_Exit"),
+			LOCTEXT("Exit", "게임 종료"), LOCTEXT("ExitDescription", "종료 전 한 번 더 확인"), *Palette, false, true);
 
 		UBorder* ContextPanel = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_ContextPanel"));
-		UScrollBox* ContextScroll = MakeWidget<UScrollBox>(Blueprint, Tree, TEXT("ScrollBox_Context"));
-		USizeBox* ContextContentBox = MakeWidget<USizeBox>(
-			Blueprint, Tree, TEXT("SizeBox_ContextContent"));
-		UCanvasPanel* ContextCanvas = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("CanvasPanel_Context"));
+		UScrollBox* Scroll = MakeWidget<UScrollBox>(Blueprint, Tree, TEXT("ScrollBox_Context"));
+		UVerticalBox* Context = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Context"));
 		UBorder* FestivalCard = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_CurrentFestival"));
 		UVerticalBox* FestivalCopy = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_FestivalCopy"));
+		UHorizontalBox* Meta = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_FestivalMeta"));
 		UTextBlock* FestivalEyebrow = MakeText(Blueprint, Tree, TEXT("Text_FestivalEyebrow"),
-			LOCTEXT("FestivalEyebrow", "CURRENT FESTIVAL · PAUSED"), 12, Tokens.TealSoft, TEXT("SemiBold"));
+			LOCTEXT("FestivalEyebrow", "진행 중인 축제"), 14, T.Muted, TEXT("Medium"));
 		UTextBlock* FestivalName = MakeText(Blueprint, Tree, TEXT("Text_FestivalName"),
-			LOCTEXT("FestivalPreview", "진행 중인 축제"), 31, Tokens.White, TEXT("SemiBold"), true);
+			LOCTEXT("FestivalPreview", "진행 중인 축제"), 28, T.Ink, TEXT("Bold"), true);
 		UTextBlock* DayStage = MakeText(Blueprint, Tree, TEXT("Text_DayStage"),
-			LOCTEXT("DayStagePreview", "DAY 1  ·  개장 준비"), 17, Tokens.TealSoft, TEXT("Medium"), true);
+			LOCTEXT("DayStagePreview", "DAY 1 · 개장 준비"), 16, T.GreenDeep, TEXT("SemiBold"), true);
 		UTextBlock* Clock = MakeText(Blueprint, Tree, TEXT("Text_Clock"),
-			LOCTEXT("ClockPreview", "현재 단계가 일시정지되었습니다"), 15,
-			Tokens.TealSoft, TEXT("Medium"), true);
+			LOCTEXT("ClockPreview", "현재 단계가 일시정지되었습니다"), 14, T.Muted, TEXT("Medium"), true);
+		UHorizontalBox* Stats = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Stats"));
+		UBorder* Gold = MakeStatCard(Blueprint, Tree, TEXT("Border_GoldCard"), TEXT("Text_Gold"),
+			LOCTEXT("GoldLabel", "보유 자금"), FText::FromString(TEXT("—")), *Palette);
+		UBorder* Visitors = MakeStatCard(Blueprint, Tree, TEXT("Border_VisitorsCard"), TEXT("Text_Visitors"),
+			LOCTEXT("VisitorsLabel", "현재 방문객"), FText::FromString(TEXT("—")), *Palette);
+		UBorder* Congestion = MakeStatCard(Blueprint, Tree, TEXT("Border_CongestionCard"), TEXT("Text_Congestion"),
+			LOCTEXT("CongestionLabel", "현장 혼잡"), LOCTEXT("CongestionPreview", "정보 준비 중"), *Palette);
 
-		UBorder* GoldCard = MakeStatCard(Blueprint, Tree, TEXT("Border_GoldCard"), TEXT("Text_Gold"),
-			LOCTEXT("GoldLabel", "보유 자금"), LOCTEXT("GoldPreview", "7,600 Gold"), *Palette);
-		UBorder* VisitorsCard = MakeStatCard(Blueprint, Tree, TEXT("Border_VisitorsCard"), TEXT("Text_Visitors"),
-			LOCTEXT("VisitorsLabel", "현재 방문객"), LOCTEXT("VisitorsPreview", "1,248명"), *Palette);
-		UBorder* CongestionCard = MakeStatCard(Blueprint, Tree, TEXT("Border_CongestionCard"), TEXT("Text_Congestion"),
-			LOCTEXT("CongestionLabel", "현장 혼잡"), LOCTEXT("CongestionPreview", "혼잡 없음"), *Palette);
-
-		UBorder* SelectionCard = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_SelectionCard"));
+		UBorder* Selection = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_SelectionCard"));
 		UVerticalBox* SelectionCopy = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_SelectionCopy"));
 		UTextBlock* SelectionEyebrow = MakeText(Blueprint, Tree, TEXT("Text_SelectionEyebrow"),
-			LOCTEXT("SelectionEyebrow", "RESUME"), 12, Tokens.Teal, TEXT("SemiBold"), true);
+			LOCTEXT("SelectionEyebrow", "축제 운영"), 14, T.Green, TEXT("SemiBold"), true);
 		UTextBlock* SelectionTitle = MakeText(Blueprint, Tree, TEXT("Text_SelectionTitle"),
-			LOCTEXT("SelectionTitle", "계속하기"), 22, Tokens.Ink, TEXT("SemiBold"), true);
+			LOCTEXT("SelectionTitle", "계속하기"), 20, T.Ink, TEXT("SemiBold"), true);
 		UTextBlock* SelectionDescription = MakeText(Blueprint, Tree, TEXT("Text_SelectionDescription"),
-			LOCTEXT("SelectionDescription", "일시정지 메뉴를 닫고 축제 운영 화면으로 돌아갑니다."),
-			14, Tokens.InkMuted, TEXT("Medium"), true);
-
-		UBorder* GuideCard = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_GuideCard"));
+			LOCTEXT("SelectionDescription", "메뉴를 닫고 진행 중인 축제로 돌아갑니다."), 15, T.Muted, TEXT("Medium"), true);
+		UBorder* Guide = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_GuideCard"));
 		UVerticalBox* GuideCopy = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_GuideCopy"));
-		UTextBlock* GuideEyebrow = MakeText(Blueprint, Tree, TEXT("Text_GuideEyebrow"),
-			LOCTEXT("GuideEyebrow", "QUICK GUIDE"), 12, Tokens.Teal, TEXT("SemiBold"));
 		UTextBlock* GuideTitle = MakeText(Blueprint, Tree, TEXT("Text_GuideTitle"),
-			LOCTEXT("GuideTitle", "빠른 조작"), 20, Tokens.Ink, TEXT("SemiBold"));
+			LOCTEXT("GuideTitle", "빠른 조작"), 16, T.Ink, TEXT("SemiBold"));
 		UTextBlock* GuideBody = MakeText(Blueprint, Tree, TEXT("Text_GuideBody"),
-			LOCTEXT("GuideBody",
-				"↑ ↓  메뉴 이동    Enter  선택\nESC · F5  계속 플레이 / 이전으로"),
-			14, Tokens.InkMuted, TEXT("Medium"), true);
+			LOCTEXT("GuideBody", "↑ ↓  메뉴 이동    Enter  선택\nESC · F5  계속 플레이"), 14, T.Muted, TEXT("Medium"), true);
 
+		USizeBox* FooterBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_Footer"));
 		UBorder* Footer = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_Footer"));
 		UHorizontalBox* FooterContent = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Footer"));
 		UTextBlock* KeyHint = MakeText(Blueprint, Tree, TEXT("Text_KeyHint"),
-			LOCTEXT("KeyHint", "ESC · F5  계속 플레이 / 이전으로"), 16,
-			Tokens.Ink, TEXT("SemiBold"), true);
+			LOCTEXT("KeyHint", "ESC · F5  계속 플레이"), 15, T.Ink, TEXT("SemiBold"), true);
 		UTextBlock* PausedState = MakeText(Blueprint, Tree, TEXT("Text_PausedState"),
-			LOCTEXT("PausedState", "●  게임 일시정지"), 15, Tokens.TealDeep, TEXT("SemiBold"));
+			LOCTEXT("PausedState", "●  게임 일시정지"), 15, T.GreenDeep, TEXT("SemiBold"));
 		UTextBlock* SelectHint = MakeText(Blueprint, Tree, TEXT("Text_SelectHint"),
-			LOCTEXT("SelectHint", "Enter  선택"), 15, Tokens.InkMuted, TEXT("Medium"));
+			LOCTEXT("SelectHint", "Enter  선택"), 15, T.Muted, TEXT("Medium"));
 
-		if (!Root || !ViewportSurface || !SafeZone || !Design
-			|| !Header || !HeaderContent || !Brand || !HeaderTitle || !HeaderHint || !Close || !CloseText
-			|| !MenuPanel || !MenuScroll || !Menu || !MenuEyebrow || !MenuTitle || !Resume || !Settings || !Keyboard
-			|| !Account || !MenuDivider || !Exit || !MenuSpacer || !ContextPanel || !ContextScroll
-			|| !ContextContentBox || !ContextCanvas || !FestivalCard
-			|| !FestivalCopy || !FestivalEyebrow || !FestivalName || !DayStage || !Clock
-			|| !GoldCard || !VisitorsCard || !CongestionCard || !SelectionCard || !SelectionCopy
-			|| !SelectionEyebrow || !SelectionTitle || !SelectionDescription || !GuideCard || !GuideCopy
-			|| !GuideEyebrow || !GuideTitle || !GuideBody || !Footer || !FooterContent || !KeyHint
-			|| !PausedState || !SelectHint)
-		{
-			return false;
-		}
+		if (!Root || !Surface || !SafeZone || !Canvas || !Shell || !HeaderBox || !Header || !HeaderContent
+			|| !HeaderTitle || !Brand || !BrandMarkBox || !BrandMark || !CloseBox || !Close || !CloseText || !Main || !Rail
+			|| !MenuPanel || !MenuScroll || !Menu || !MenuTitle || !Resume || !Settings || !ReturnToAtlas
+			|| !Exit || !ContextPanel || !Scroll || !Context || !FestivalCard
+			|| !FestivalCopy || !Meta || !FestivalEyebrow || !FestivalName || !DayStage || !Clock || !Stats
+			|| !Gold || !Visitors || !Congestion || !Selection || !SelectionCopy || !SelectionEyebrow
+			|| !SelectionTitle || !SelectionDescription || !Guide || !GuideCopy || !GuideTitle || !GuideBody
+			|| !FooterBox || !Footer || !FooterContent || !KeyHint || !PausedState || !SelectHint) return false;
 
 		Tree.RootWidget = Root;
-		// This layer owns every viewport pixel, including the area outside platform SafeZone.
-		// Use the palette's opaque source color rather than translucent card tokens.
-		ViewportSurface->SetBrush(MakeSolidBrush(Palette->InGame.PaperSunken));
-		ViewportSurface->SetVisibility(ESlateVisibility::Visible);
-		StretchOnCanvas(*Root, *ViewportSurface);
-
-		SafeZone->AddChild(Design);
+		Surface->SetBrush(MakeSolidBrush(T.Background));
+		StretchOnCanvas(*Root, *Surface);
+		SafeZone->AddChild(Canvas);
 		StretchOnCanvas(*Root, *SafeZone);
-
-		Header->SetBrush(FFPauseOptionsLightTeal::MakeHeaderBrush(Tokens));
-		Header->SetClipping(EWidgetClipping::ClipToBounds);
-		Header->SetPadding(FMargin(30.f, 0.f));
-		HeaderContent->SetClipping(EWidgetClipping::ClipToBounds);
+		StretchOnCanvas(*Canvas, *Shell);
+		HeaderBox->SetHeightOverride(FPauseLayoutMetrics::HeaderHeight);
+		Header->SetBrush(MakeSolidBrush(T.Paper));
+		Header->SetPadding(FMargin(32.f, 0.f));
 		Header->AddChild(HeaderContent);
-		PlaceResponsiveOnCanvas(*Design, *Header,
-			FAnchors(0.f, 0.f, 1.f, 0.f),
-			FMargin(0.f, 0.f, 0.f, FPauseLayoutMetrics::HeaderHeight));
-		ConfigureSingleLineText(*Brand, Brand->GetText());
-		ConfigureSingleLineText(*HeaderTitle, HeaderTitle->GetText(), ETextJustify::Center);
-		ConfigureSingleLineText(*HeaderHint, HeaderHint->GetText(), ETextJustify::Right);
-		if (UHorizontalBoxSlot* Slot = HeaderContent->AddChildToHorizontalBox(Brand))
+		HeaderBox->AddChild(Header);
+		Shell->AddChildToVerticalBox(HeaderBox);
+		UTexture2D* BrandTexture = LoadObject<UTexture2D>(nullptr,
+			TEXT("/Game/FestaFiesta/UI/Title/CleanCasual/Brand/T_FF_Title_CasualBright_Logo_512.T_FF_Title_CasualBright_Logo_512"));
+		if (!BrandTexture) return false;
+		BrandMark->SetBrushFromTexture(BrandTexture);
+		BrandMark->SetOpacity(0.55f);
+		BrandMark->SetVisibility(ESlateVisibility::HitTestInvisible);
+		BrandMarkBox->SetWidthOverride(70.f);
+		BrandMarkBox->SetHeightOverride(70.f);
+		BrandMarkBox->AddChild(BrandMark);
+		for (UTextBlock* Text : { HeaderTitle, Brand })
 		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			ConfigureSingleLineText(*Text, Text->GetText());
+			UHorizontalBoxSlot* Slot = HeaderContent->AddChildToHorizontalBox(Text);
+			Slot->SetSize(FSlateChildSize(Text == HeaderTitle ? ESlateSizeRule::Fill : ESlateSizeRule::Automatic));
 			Slot->SetVerticalAlignment(VAlign_Center);
-			Slot->SetPadding(FMargin(0.f, 0.f, 30.f, 0.f));
+			Slot->SetPadding(FMargin(0.f, 0.f, Text == Brand ? 12.f : 24.f, 0.f));
+			if (Text == Brand)
+			{
+				UHorizontalBoxSlot* MarkSlot = HeaderContent->AddChildToHorizontalBox(BrandMarkBox);
+				MarkSlot->SetVerticalAlignment(VAlign_Center);
+				MarkSlot->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
+			}
 		}
-		if (UHorizontalBoxSlot* Slot = HeaderContent->AddChildToHorizontalBox(HeaderTitle))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot->SetVerticalAlignment(VAlign_Center);
-		}
-		if (UHorizontalBoxSlot* Slot = HeaderContent->AddChildToHorizontalBox(HeaderHint))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			Slot->SetVerticalAlignment(VAlign_Center);
-			Slot->SetPadding(FMargin(0.f, 0.f, 16.f, 0.f));
-		}
-		Close->SetStyle(MakeButtonStyle(*Palette));
-		Close->SetClipping(EWidgetClipping::ClipToBounds);
-		ConfigureSingleLineText(*CloseText, CloseText->GetText(), ETextJustify::Center);
+		CloseBox->SetWidthOverride(44.f);
+		CloseBox->SetHeightOverride(44.f);
+		FButtonStyle CloseStyle = MakeButtonStyle(*Palette);
+		CloseStyle.NormalPadding = FMargin(4.f);
+		CloseStyle.PressedPadding = FMargin(4.f);
+		Close->SetStyle(CloseStyle);
+		Close->SetToolTipText(LOCTEXT("CloseTooltip", "메뉴를 닫고 계속 플레이"));
 		if (UButtonSlot* Slot = Cast<UButtonSlot>(Close->AddChild(CloseText)))
 		{
+			Slot->SetPadding(FMargin(0.f));
 			Slot->SetHorizontalAlignment(HAlign_Center);
 			Slot->SetVerticalAlignment(VAlign_Center);
 		}
-		if (UHorizontalBoxSlot* Slot = HeaderContent->AddChildToHorizontalBox(Close))
-		{
-			Slot->SetVerticalAlignment(VAlign_Center);
-		}
+		CloseBox->AddChild(Close);
+		HeaderContent->AddChildToHorizontalBox(CloseBox)->SetVerticalAlignment(VAlign_Center);
 
-		MenuPanel->SetBrush(FFPauseOptionsLightTeal::MakeBodyBrush(Tokens));
-		MenuPanel->SetClipping(EWidgetClipping::ClipToBounds);
-		MenuPanel->SetPadding(FMargin(22.f, 22.f));
-		Menu->SetClipping(EWidgetClipping::ClipToBounds);
-		MenuScroll->SetAnimateWheelScrolling(true);
-		MenuScroll->SetWheelScrollMultiplier(56.f);
-		MenuScroll->SetScrollBarVisibility(ESlateVisibility::Visible);
-		MenuScroll->SetClipping(EWidgetClipping::ClipToBounds);
-		if (UScrollBoxSlot* Slot = Cast<UScrollBoxSlot>(MenuScroll->AddChild(Menu)))
-		{
-			// Fill tall viewports so the spacer still anchors Exit at the bottom; use desired
-			// height and scrolling when the menu no longer fits at 720p/600p.
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			Slot->SetHorizontalAlignment(HAlign_Fill);
-			Slot->SetVerticalAlignment(VAlign_Fill);
-		}
+		UVerticalBoxSlot* MainSlot = Shell->AddChildToVerticalBox(Main);
+		MainSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		MainSlot->SetPadding(FMargin(32.f, 24.f, 32.f, 0.f));
+		Rail->SetWidthOverride(FPauseLayoutMetrics::MenuWidth);
+		Rail->AddChild(MenuPanel);
+		MenuPanel->SetBrush(MakeSolidBrush(FLinearColor::Transparent));
+		MenuPanel->SetPadding(FMargin(0.f));
 		MenuPanel->AddChild(MenuScroll);
-		PlaceResponsiveOnCanvas(*Design, *MenuPanel,
-			FAnchors(0.f, 0.f, FPauseLayoutMetrics::MenuWidthWeight, 1.f),
-			FMargin(0.f, FPauseLayoutMetrics::HeaderHeight, 0.f,
-				FPauseLayoutMetrics::FooterHeight));
-		ConfigureSingleLineText(*MenuEyebrow, MenuEyebrow->GetText());
-		ConfigureWrappedText(*MenuTitle);
-		MenuTitle->SetToolTipText(MenuTitle->GetText());
-		Menu->AddChildToVerticalBox(MenuEyebrow);
-		if (UVerticalBoxSlot* Slot = Menu->AddChildToVerticalBox(MenuTitle))
+		MenuScroll->SetAllowOverscroll(false);
+		MenuScroll->SetAnimateWheelScrolling(false);
+		MenuScroll->SetScrollWhenFocusChanges(EScrollWhenFocusChanges::InstantScroll);
+		MenuScroll->SetScrollBarVisibility(ESlateVisibility::Collapsed);
+		MenuScroll->AddChild(Menu);
+		Main->AddChildToHorizontalBox(Rail)->SetPadding(FMargin(0.f, 0.f, 24.f, 0.f));
+		Menu->AddChildToVerticalBox(MenuTitle)->SetPadding(FMargin(4.f, 0.f, 0.f, 12.f));
+		const TArray<USizeBox*> MenuItems = { Resume, Settings, ReturnToAtlas, Exit };
+		for (int32 Index = 0; Index < MenuItems.Num(); ++Index)
 		{
-			Slot->SetPadding(FMargin(0.f, 5.f, 0.f, 18.f));
-		}
-		UWidget* MenuItems[] = { Resume, Settings, Keyboard, Account };
-		for (UWidget* Item : MenuItems)
-		{
-			if (UVerticalBoxSlot* Slot = Menu->AddChildToVerticalBox(Item))
-			{
-				Slot->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
-			}
-		}
-		if (UVerticalBoxSlot* Slot = Menu->AddChildToVerticalBox(MenuSpacer))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		}
-		MenuDivider->SetBrush(MakeSolidBrush(Tokens.Line));
-		MenuDivider->SetPadding(FMargin(0.f, 1.f));
-		if (UVerticalBoxSlot* Slot = Menu->AddChildToVerticalBox(MenuDivider))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot->SetPadding(FMargin(0.f, 6.f, 0.f, 16.f));
-		}
-		Menu->AddChildToVerticalBox(Exit);
+			Menu->AddChildToVerticalBox(MenuItems[Index])->SetPadding(FMargin(3.f, 0.f, 3.f, 0.f));
+			if (Index == MenuItems.Num() - 1) continue;
 
-		ContextPanel->SetBrush(FFPauseOptionsLightTeal::MakeBodyBrush(Tokens));
-		ContextPanel->SetClipping(EWidgetClipping::ClipToBounds);
-		ContextScroll->SetAnimateWheelScrolling(true);
-		ContextScroll->SetWheelScrollMultiplier(56.f);
-		ContextScroll->SetScrollBarVisibility(ESlateVisibility::Visible);
-		ContextScroll->SetClipping(EWidgetClipping::ClipToBounds);
-		ContextContentBox->SetMinDesiredHeight(FPauseLayoutMetrics::ContextMinContentHeight);
-		ContextContentBox->SetClipping(EWidgetClipping::ClipToBounds);
-		ContextCanvas->SetClipping(EWidgetClipping::ClipToBounds);
-		ContextContentBox->AddChild(ContextCanvas);
-		if (UScrollBoxSlot* Slot = Cast<UScrollBoxSlot>(ContextScroll->AddChild(ContextContentBox)))
-		{
-			// Grow to the live body at desktop sizes, but never collapse below the card layout's
-			// minimum. The ScrollBox exposes the full context on short windows.
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			Slot->SetHorizontalAlignment(HAlign_Fill);
-			Slot->SetVerticalAlignment(VAlign_Fill);
+			USizeBox* DividerBox = MakeWidget<USizeBox>(Blueprint, Tree,
+				FName(*FString::Printf(TEXT("SizeBox_MenuDivider_%d"), Index)));
+			UBorder* Divider = MakeWidget<UBorder>(Blueprint, Tree,
+				FName(*FString::Printf(TEXT("Border_MenuDivider_%d"), Index)));
+			if (!DividerBox || !Divider) return false;
+			Divider->SetBrush(MakeSolidBrush(T.Line));
+			DividerBox->SetHeightOverride(1.f);
+			DividerBox->AddChild(Divider);
+			Menu->AddChildToVerticalBox(DividerBox)->SetPadding(FMargin(4.f, 12.f, 4.f, 12.f));
 		}
-		ContextPanel->AddChild(ContextScroll);
-		PlaceResponsiveOnCanvas(*Design, *ContextPanel,
-			FAnchors(FPauseLayoutMetrics::MenuWidthWeight, 0.f, 1.f, 1.f),
-			FMargin(0.f, FPauseLayoutMetrics::HeaderHeight, 0.f,
-				FPauseLayoutMetrics::FooterHeight));
 
-		FestivalCard->SetBrush(MakePanelBrush(Tokens.Teal, Tokens.TealDeep,
-			FPauseLayoutMetrics::ControlRadius, 1.5f));
-		FestivalCard->SetClipping(EWidgetClipping::ClipToBounds);
-		FestivalCard->SetPadding(FMargin(24.f, 20.f));
-		FestivalCopy->SetClipping(EWidgetClipping::ClipToBounds);
-		ConfigureSingleLineText(*FestivalEyebrow, FestivalEyebrow->GetText());
-		ConfigureSingleLineText(*FestivalName, FestivalName->GetText());
-		ConfigureSingleLineText(*DayStage, DayStage->GetText());
-		ConfigureSingleLineText(*Clock, Clock->GetText());
-		FestivalCopy->AddChildToVerticalBox(FestivalEyebrow);
-		if (UVerticalBoxSlot* Slot = FestivalCopy->AddChildToVerticalBox(FestivalName))
-		{
-			Slot->SetPadding(FMargin(0.f, 12.f, 0.f, 0.f));
-		}
-		if (UVerticalBoxSlot* Slot = FestivalCopy->AddChildToVerticalBox(DayStage))
-		{
-			Slot->SetPadding(FMargin(0.f, 9.f, 0.f, 0.f));
-		}
-		if (UVerticalBoxSlot* Slot = FestivalCopy->AddChildToVerticalBox(Clock))
-		{
-			Slot->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
-		}
+		ContextPanel->SetBrush(FFFestivalOptionsStyle::Rounded(T.Paper, T.Line, 22.f));
+		ContextPanel->SetPadding(FMargin(24.f));
+		ContextPanel->AddChild(Scroll);
+		Main->AddChildToHorizontalBox(ContextPanel)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		Scroll->SetAllowOverscroll(false);
+		Scroll->SetAnimateWheelScrolling(false);
+		Scroll->SetWheelScrollMultiplier(64.f);
+		Scroll->SetScrollbarThickness(FVector2D(6.f));
+		Scroll->AddChild(Context);
+		FestivalCard->SetBrush(FFFestivalOptionsStyle::Rounded(T.White, T.Line, 16.f));
+		FestivalCard->SetPadding(FMargin(20.f, 16.f));
 		FestivalCard->AddChild(FestivalCopy);
-		PlaceResponsiveOnCanvas(*ContextCanvas, *FestivalCard,
-			FAnchors(0.f, 0.f, 1.f, 0.f),
-			FMargin(24.f, 24.f, 24.f, FPauseLayoutMetrics::FestivalCardHeight));
-		PlaceResponsiveOnCanvas(*ContextCanvas, *GoldCard,
-			FAnchors(0.f, 0.f, 1.f / 3.f, 0.f),
-			FMargin(24.f, 204.f, 6.f, FPauseLayoutMetrics::StatsHeight));
-		PlaceResponsiveOnCanvas(*ContextCanvas, *VisitorsCard,
-			FAnchors(1.f / 3.f, 0.f, 2.f / 3.f, 0.f),
-			FMargin(6.f, 204.f, 6.f, FPauseLayoutMetrics::StatsHeight));
-		PlaceResponsiveOnCanvas(*ContextCanvas, *CongestionCard,
-			FAnchors(2.f / 3.f, 0.f, 1.f, 0.f),
-			FMargin(6.f, 204.f, 24.f, FPauseLayoutMetrics::StatsHeight));
-
-		SelectionCard->SetBrush(FFPauseOptionsLightTeal::MakeInsetBrush(Tokens));
-		SelectionCard->SetClipping(EWidgetClipping::ClipToBounds);
-		SelectionCard->SetPadding(FMargin(20.f, 14.f));
-		SelectionCopy->SetClipping(EWidgetClipping::ClipToBounds);
-		ConfigureSingleLineText(*SelectionEyebrow, SelectionEyebrow->GetText());
-		ConfigureWrappedText(*SelectionTitle);
-		SelectionTitle->SetToolTipText(SelectionTitle->GetText());
+		for (UTextBlock* Text : { FestivalEyebrow, FestivalName, DayStage, Clock, SelectionEyebrow,
+			SelectionTitle, SelectionDescription, GuideTitle, GuideBody }) ConfigureWrappedText(*Text);
+		FestivalCopy->AddChildToVerticalBox(FestivalEyebrow);
+		FestivalCopy->AddChildToVerticalBox(FestivalName)->SetPadding(FMargin(0.f, 6.f, 0.f, 8.f));
+		FestivalCopy->AddChildToVerticalBox(Meta);
+		Meta->AddChildToHorizontalBox(DayStage)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		Clock->SetJustification(ETextJustify::Right);
+		Meta->AddChildToHorizontalBox(Clock)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		Context->AddChildToVerticalBox(FestivalCard)->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
+		for (UBorder* Card : { Gold, Visitors, Congestion })
+		{
+			UHorizontalBoxSlot* Slot = Stats->AddChildToHorizontalBox(Card);
+			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot->SetPadding(FMargin(0.f, 0.f, Card == Congestion ? 0.f : 12.f, 0.f));
+		}
+		Context->AddChildToVerticalBox(Stats)->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
+		Selection->SetBrush(FFFestivalOptionsStyle::Rounded(T.White, T.Line, 16.f));
+		Selection->SetPadding(FMargin(20.f, 16.f));
+		Selection->AddChild(SelectionCopy);
 		SelectionCopy->AddChildToVerticalBox(SelectionEyebrow);
-		if (UVerticalBoxSlot* Slot = SelectionCopy->AddChildToVerticalBox(SelectionTitle))
-		{
-			Slot->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
-		}
-		ConfigureWrappedText(*SelectionDescription);
-		if (UVerticalBoxSlot* Slot = SelectionCopy->AddChildToVerticalBox(SelectionDescription))
-		{
-			Slot->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
-		}
-		SelectionCard->AddChild(SelectionCopy);
-		PlaceResponsiveOnCanvas(*ContextCanvas, *SelectionCard,
-			FAnchors(0.f, 0.f, 1.f, 1.f),
-			FMargin(24.f, 296.f, 24.f, 158.f));
+		SelectionCopy->AddChildToVerticalBox(SelectionTitle)->SetPadding(FMargin(0.f, 5.f, 0.f, 6.f));
+		SelectionCopy->AddChildToVerticalBox(SelectionDescription);
+		Context->AddChildToVerticalBox(Selection)->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
+		Guide->SetBrush(FFFestivalOptionsStyle::Rounded(T.Background, T.Line, 14.f));
+		Guide->SetPadding(FMargin(20.f, 12.f));
+		Guide->AddChild(GuideCopy);
+		GuideCopy->AddChildToVerticalBox(GuideTitle);
+		GuideCopy->AddChildToVerticalBox(GuideBody)->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
+		Context->AddChildToVerticalBox(Guide);
 
-		GuideCard->SetBrush(FFPauseOptionsLightTeal::MakeInsetBrush(Tokens));
-		GuideCard->SetClipping(EWidgetClipping::ClipToBounds);
-		GuideCard->SetPadding(FMargin(20.f, 16.f));
-		GuideCopy->SetClipping(EWidgetClipping::ClipToBounds);
-		ConfigureSingleLineText(*GuideEyebrow, GuideEyebrow->GetText());
-		ConfigureSingleLineText(*GuideTitle, GuideTitle->GetText());
-		GuideCopy->AddChildToVerticalBox(GuideEyebrow);
-		if (UVerticalBoxSlot* Slot = GuideCopy->AddChildToVerticalBox(GuideTitle))
-		{
-			Slot->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
-		}
-		ConfigureWrappedText(*GuideBody);
-		if (UVerticalBoxSlot* Slot = GuideCopy->AddChildToVerticalBox(GuideBody))
-		{
-			Slot->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
-		}
-		GuideCard->AddChild(GuideCopy);
-		PlaceResponsiveOnCanvas(*ContextCanvas, *GuideCard,
-			FAnchors(0.f, 1.f, 1.f, 1.f),
-			FMargin(24.f, -142.f, 24.f, FPauseLayoutMetrics::GuideHeight));
-
-		Footer->SetBrush(FFPauseOptionsLightTeal::MakeFooterBrush(Tokens));
-		Footer->SetClipping(EWidgetClipping::ClipToBounds);
-		Footer->SetPadding(FMargin(26.f, 0.f));
-		FooterContent->SetClipping(EWidgetClipping::ClipToBounds);
+		FooterBox->SetHeightOverride(FPauseLayoutMetrics::FooterHeight);
+		Footer->SetBrush(MakeSolidBrush(T.Background));
+		Footer->SetPadding(FMargin(36.f, 0.f));
 		Footer->AddChild(FooterContent);
-		PlaceResponsiveOnCanvas(*Design, *Footer,
-			FAnchors(0.f, 1.f, 1.f, 1.f),
-			FMargin(0.f, -FPauseLayoutMetrics::FooterHeight, 0.f,
-				FPauseLayoutMetrics::FooterHeight));
-		ConfigureSingleLineText(*KeyHint, KeyHint->GetText());
-		ConfigureSingleLineText(*PausedState, PausedState->GetText(), ETextJustify::Center);
-		ConfigureSingleLineText(*SelectHint, SelectHint->GetText(), ETextJustify::Right);
-		if (UHorizontalBoxSlot* Slot = FooterContent->AddChildToHorizontalBox(KeyHint))
+		FooterBox->AddChild(Footer);
+		Shell->AddChildToVerticalBox(FooterBox);
+		for (UTextBlock* Text : { KeyHint, PausedState, SelectHint })
 		{
+			ConfigureSingleLineText(*Text, Text->GetText(), Text == KeyHint ? ETextJustify::Left :
+				(Text == SelectHint ? ETextJustify::Right : ETextJustify::Center));
+			UHorizontalBoxSlot* Slot = FooterContent->AddChildToHorizontalBox(Text);
 			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 			Slot->SetVerticalAlignment(VAlign_Center);
 		}
-		if (UHorizontalBoxSlot* Slot = FooterContent->AddChildToHorizontalBox(PausedState))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			Slot->SetVerticalAlignment(VAlign_Center);
-			Slot->SetPadding(FMargin(0.f, 0.f, 34.f, 0.f));
-		}
-		if (UHorizontalBoxSlot* Slot = FooterContent->AddChildToHorizontalBox(SelectHint))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			Slot->SetVerticalAlignment(VAlign_Center);
-		}
-
 		return true;
 	}
 
@@ -660,12 +501,17 @@ namespace FFPauseWbpBuilder
 			&& HasWidget(TEXT("CanvasPanel_Responsive"), *UCanvasPanel::StaticClass())
 			&& HasWidget(TEXT("ScrollBox_Menu"), *UScrollBox::StaticClass())
 			&& HasWidget(TEXT("ScrollBox_Context"), *UScrollBox::StaticClass())
-			&& HasWidget(TEXT("SizeBox_ContextContent"), *USizeBox::StaticClass())
+			&& HasWidget(TEXT("VerticalBox_ResponsiveShell"), *UVerticalBox::StaticClass())
+			&& HasWidget(TEXT("VerticalBox_Context"), *UVerticalBox::StaticClass())
 			&& HasWidget(TEXT("Button_Resume"), *UButton::StaticClass())
 			&& HasWidget(TEXT("Button_Close"), *UButton::StaticClass())
 			&& HasWidget(TEXT("Button_Settings"), *UButton::StaticClass())
-			&& HasWidget(TEXT("Button_Keyboard"), *UButton::StaticClass())
-			&& HasWidget(TEXT("Button_Account"), *UButton::StaticClass())
+			&& HasWidget(TEXT("Button_ReturnToAtlas"), *UButton::StaticClass())
+			&& HasWidget(TEXT("Image_FocusReturnToAtlas"), *UImage::StaticClass())
+			&& HasWidget(TEXT("Text_ReturnToAtlas"), *UTextBlock::StaticClass())
+			&& HasWidget(TEXT("Image_BrandMark"), *UImage::StaticClass())
+			&& !Blueprint.WidgetTree->FindWidget(TEXT("Button_Keyboard"))
+			&& !Blueprint.WidgetTree->FindWidget(TEXT("Button_Account"))
 			&& HasWidget(TEXT("Button_Exit"), *UButton::StaticClass())
 			&& HasWidget(TEXT("Text_FestivalName"), *UTextBlock::StaticClass())
 			&& HasWidget(TEXT("Text_Gold"), *UTextBlock::StaticClass())
