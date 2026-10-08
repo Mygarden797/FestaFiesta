@@ -33,6 +33,7 @@
 #include "InputCoreTypes.h"
 #include "Misc/DefaultValueHelper.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
+#include "UI/Settings/FF_FestivalSettingsSubsystem.h"
 #include "UI/Settings/FF_KeyBindingRuntimeSubsystem.h"
 #include "TimerManager.h"
 #include "UI/Settings/FF_RuntimeSettingsSubsystem.h"
@@ -932,6 +933,24 @@ bool UFF_BuildToolsWidget::IsEditingAngle() const
 
 FReply UFF_BuildToolsWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
 {
+    const UFF_FestivalSettingsDeveloperSettings* PauseSettings = UFF_FestivalSettingsDeveloperSettings::Get();
+    const UFF_BuildModeSubsystem* BuildSystem = BuildMode.Get();
+    ULocalPlayer* OwningLocalPlayer = GetOwningLocalPlayer();
+    const UFF_KeyBindingRuntimeSubsystem* KeyRuntime = OwningLocalPlayer
+        ? OwningLocalPlayer->GetSubsystem<UFF_KeyBindingRuntimeSubsystem>() : nullptr;
+    if (BuildSystem && FFBuildModeModel::IsBuildSessionActive(BuildSystem->GetBuildModeState()) &&
+        !BuildSystem->IsInputSuspendedForPauseMenu() &&
+        (!KeyRuntime || !KeyRuntime->IsCaptureInProgress()) &&
+        PauseSettings && PauseSettings->OpenCloseKeys.Contains(KeyEvent.GetKey()))
+    {
+        // Pause keeps the open guide and construction preview intact for resume.
+        if (!KeyEvent.IsRepeat())
+        {
+            if (UFF_FestivalSettingsSubsystem* PauseSubsystem = UFF_FestivalSettingsSubsystem::Get(this))
+                PauseSubsystem->OpenPauseMenu(GetOwningPlayer());
+        }
+        return FReply::Handled();
+    }
     if (IsFeatureGuideOpen())
     {
         if (KeyEvent.GetKey() == EKeys::Escape) { CloseFeatureGuide(); return FReply::Handled(); }

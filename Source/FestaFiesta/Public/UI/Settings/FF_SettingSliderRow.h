@@ -32,6 +32,7 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativePreConstruct() override;
 	virtual void NativeDestruct() override;
 
 	UFUNCTION()
