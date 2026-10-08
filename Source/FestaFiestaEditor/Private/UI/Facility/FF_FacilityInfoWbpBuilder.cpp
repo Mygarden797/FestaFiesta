@@ -777,7 +777,6 @@ namespace FFFacilityInfoWbpBuilder
 			Blueprint, Tree, TEXT("Panel_BuildSection"), true);
 		UCommonTextBlock* BuildTitle = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Build_Title"));
 		UCommonTextBlock* Footprint = nullptr;
-		UCommonTextBlock* Clearance = nullptr;
 		UCommonTextBlock* InstallCost = nullptr;
 		UCommonTextBlock* RecoveryCost = nullptr;
 		UCommonTextBlock* QueueCapacity = nullptr;
@@ -791,8 +790,6 @@ namespace FFFacilityInfoWbpBuilder
 		AddVertical(*BuildSection, *BuildTitle, FMargin(0.0f, 0.0f, 0.0f, 4.0f));
 		if (!AddInfoRow(Blueprint, Tree, *BuildSection, *Palette, TEXT("Footprint_Row"),
 			FText::FromString(TEXT("시설 크기")), TEXT("Text_Footprint"), Footprint) ||
-			!AddInfoRow(Blueprint, Tree, *BuildSection, *Palette, TEXT("Clearance_Row"),
-				FText::FromString(TEXT("안전 여유")), TEXT("Text_Clearance"), Clearance) ||
 			!AddInfoRow(Blueprint, Tree, *BuildSection, *Palette, TEXT("InstallCost_Row"),
 				FText::FromString(TEXT("설치 비용")), TEXT("Text_InstallCost"), InstallCost) ||
 			!AddInfoRow(Blueprint, Tree, *BuildSection, *Palette, TEXT("RecoveryCost_Row"),
@@ -1328,7 +1325,7 @@ namespace FFFacilityInfoWbpBuilder
 		else
 		{
 			if (!AddStatPair(Blueprint, Tree, *SectionContent, Palette,
-				TEXT("Text_Footprint"), TEXT("시설 크기"), TEXT("Text_Clearance"), TEXT("안전 여유")) ||
+				TEXT("Text_Footprint"), TEXT("시설 크기")) ||
 				!AddStatPair(Blueprint, Tree, *SectionContent, Palette,
 				TEXT("Text_InstallCost"), TEXT("설치 비용"), TEXT("Text_RecoveryCost"), TEXT("철거 회수액")) ||
 				!AddStatPair(Blueprint, Tree, *SectionContent, Palette,
@@ -1752,6 +1749,159 @@ namespace FFFacilityInfoWbpBuilder
 		return HasSynergyInspectorContract(Blueprint);
 	}
 
+	bool EnsureStaffNavigation(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bOutModified)
+	{
+		UWidget* Operation = Tree.FindWidget(TEXT("Button_TabOperation"));
+		auto* Tabs = Operation ? Cast<UHorizontalBox>(Operation->GetParent()) : nullptr;
+		if (!Tabs) return false;
+		TArray<UWidget*> Primary;
+		for (const TCHAR* Name : {TEXT("Button_TabOverview"), TEXT("Button_TabSynergy"),
+			TEXT("Button_TabOperation"), TEXT("Button_TabStaff")})
+		{
+			UWidget* Tab = Tree.FindWidget(Name);
+			if (!Tab || Tab->GetParent() != Tabs) return false;
+			Primary.Add(Tab);
+		}
+		TArray<UWidget*> Optional;
+		for (const TCHAR* Name : {TEXT("Button_TabUpgrade"), TEXT("Button_TabRevenue"),
+			TEXT("Button_TabPrograms"), TEXT("Button_TabLighting")})
+			if (UWidget* Tab = Tree.FindWidget(Name))
+				if (Tab->GetParent() == Tabs) Optional.Add(Tab);
+		if (!Optional.IsEmpty())
+		{
+			UWidget* ExistingTools = Tree.FindWidget(TEXT("Reference_AdditionalFacilityPages"));
+			if (!ExistingTools) ExistingTools = Tree.FindWidget(TEXT("Clarity_SecondaryTabs"));
+			if (!ExistingTools) ExistingTools = Tree.FindWidget(TEXT("Panel_InspectorTools"));
+			auto* Tools = Cast<UHorizontalBox>(ExistingTools);
+			if (ExistingTools && (!Tools || Tools == Tabs)) return false;
+			if (!Tools)
+				for (const TCHAR* Name : {TEXT("Button_TabRevenue"), TEXT("Button_TabPrograms")})
+					if (UWidget* Tab = Tree.FindWidget(Name))
+						if (auto* Row = Cast<UHorizontalBox>(Tab->GetParent()))
+							if (Row != Tabs) { Tools = Row; break; }
+			// The primary row can be wrapped in an authored SizeBox. Only a newly
+			// created tools row needs its nearest vertical ancestor and wrapper anchor.
+			UWidget* NavigationAnchor = Tabs;
+			UVerticalBox* NavigationColumn = nullptr;
+			if (!Tools)
+			{
+				while (NavigationAnchor->GetParent())
+				{
+					NavigationColumn = Cast<UVerticalBox>(NavigationAnchor->GetParent());
+					if (NavigationColumn) break;
+					NavigationAnchor = NavigationAnchor->GetParent();
+				}
+				if (!NavigationColumn) return false;
+			}
+			Blueprint.Modify();
+			Tree.Modify();
+			Tabs->Modify();
+			if (!Tools)
+			{
+				NavigationColumn->Modify();
+				Tools = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Panel_InspectorTools"));
+				if (!Tools) return false;
+				AddVertical(*NavigationColumn, *Tools, FMargin(8, 0, 8, 6));
+				NavigationColumn->ShiftChild(NavigationColumn->GetChildIndex(NavigationAnchor) + 1, Tools);
+			}
+			Tools->Modify();
+			for (UWidget* Tab : Optional)
+			{
+				Tab->Modify();
+				Tab->RemoveFromParent();
+				AddHorizontal(*Tools, *Tab, FMargin(2.f, 0.f), ESlateSizeRule::Fill);
+			}
+			bOutModified = true;
+		}
+		for (int32 Index = 0; Index < Primary.Num(); ++Index)
+			if (Tabs->GetChildIndex(Primary[Index]) != Index)
+			{
+				Blueprint.Modify();
+				Tabs->Modify();
+				Tabs->ShiftChild(Index, Primary[Index]);
+				bOutModified = true;
+			}
+		return Tabs->GetChildrenCount() == Primary.Num();
+	}
+
+	bool EnsureStaffWidgetContract(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bOutModified)
+	{
+		bOutModified = false;
+		const auto HasContract = [&Blueprint]()
+		{
+			return HasNamedVariable(Blueprint, TEXT("Button_TabStaff"), *UButton::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Panel_StaffSection"), *UVerticalBox::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Text_StaffSummary"), *UCommonTextBlock::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Button_AssignStaff"), *UButton::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Button_UnassignStaff"), *UButton::StaticClass());
+		};
+		// Repair a previously saved staff section whose older inspector had no secondary
+		// navigation row; retaining the binding contract must not skip layout migration.
+		if (HasContract()) return EnsureStaffNavigation(Blueprint, Tree, bOutModified);
+		// Runtime fallback controls are not saved to the WBP. Refuse conflicting authored
+		// names instead of replacing the designer's widgets or their event bindings.
+		for (const FName Name : {FName(TEXT("Button_TabStaff")), FName(TEXT("Text_TabStaff")),
+			FName(TEXT("Panel_StaffSection")), FName(TEXT("Text_StaffHeading")), FName(TEXT("Text_StaffSummary")),
+			FName(TEXT("Text_StaffHelp")), FName(TEXT("Panel_StaffActions")), FName(TEXT("Button_AssignStaff")),
+			FName(TEXT("Text_AssignStaff")), FName(TEXT("Button_UnassignStaff")), FName(TEXT("Text_UnassignStaff"))})
+			if (Tree.FindWidget(Name)) return false;
+		auto* Operation = Cast<UButton>(Tree.FindWidget(TEXT("Button_TabOperation")));
+		auto* Tabs = Operation ? Cast<UHorizontalBox>(Operation->GetParent()) : nullptr;
+		auto* Content = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Content")));
+		if (!Operation || !Tabs || !Content) return false;
+		const FFF_UIPaletteInGame& P = UFF_UIPalette::Get()->InGame;
+		Blueprint.Modify();
+		Tree.Modify();
+		Tabs->Modify();
+		Content->Modify();
+		auto MakeStaffButton = [&](const FName Name, const FName TextName, const TCHAR* Caption, UButton* Reference)
+		{
+			UButton* Button = MakeLightTextButton(Blueprint, Tree, Name, TextName, FText::FromString(Caption),
+				P.PaperSunken, P.TealSoft, P.TealSoft, P.Line, P.TealDeep, true);
+			if (Button && Reference)
+			{
+				Button->SetStyle(Reference->GetStyle());
+				if (auto* Label = Cast<UCommonTextBlock>(Button->GetContent()))
+					if (auto* ReferenceLabel = Cast<UCommonTextBlock>(Reference->GetContent()))
+					{
+						Label->SetFont(ReferenceLabel->GetFont());
+						Label->SetColorAndOpacity(ReferenceLabel->GetColorAndOpacity());
+					}
+			}
+			return Button;
+		};
+		UButton* Tab = MakeStaffButton(TEXT("Button_TabStaff"), TEXT("Text_TabStaff"), TEXT("스태프"), Operation);
+		auto* Section = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_StaffSection"), true);
+		auto* Heading = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_StaffHeading"));
+		auto* Summary = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_StaffSummary"), true);
+		auto* Help = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_StaffHelp"));
+		auto* Actions = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Panel_StaffActions"));
+		UButton* Assign = MakeStaffButton(TEXT("Button_AssignStaff"), TEXT("Text_AssignStaff"), TEXT("+ 배정"),
+			Cast<UButton>(Tree.FindWidget(TEXT("Button_Move"))));
+		UButton* Unassign = MakeStaffButton(TEXT("Button_UnassignStaff"), TEXT("Text_UnassignStaff"), TEXT("- 해제"), Operation);
+		if (!Tab || !Section || !Heading || !Summary || !Help || !Actions || !Assign || !Unassign) return false;
+		AddHorizontal(*Tabs, *Tab, FMargin(2.f, 0.f), ESlateSizeRule::Fill);
+		Tabs->ShiftChild(Tabs->GetChildIndex(Operation) + 1, Tab);
+		Heading->SetText(FText::FromString(TEXT("스태프 배정")));
+		StyleLightText(*Heading, 16, P.Ink, TEXT("SemiBold"));
+		Summary->SetText(FText::FromString(TEXT("스태프 배정 0 / 1명 · 출동 중 0명")));
+		Summary->SetAutoWrapText(true);
+		StyleLightText(*Summary, 14, P.Ink, TEXT("Regular"));
+		Help->SetText(FText::FromString(TEXT("미배정 스태프를 + 배정으로 이 시설에 배치하세요. 출동 중인 스태프는 복귀 후 해제할 수 있습니다.")));
+		Help->SetAutoWrapText(true);
+		StyleLightText(*Help, 12, P.InkMuted, TEXT("Regular"));
+		AddVertical(*Section, *Heading, FMargin(8, 12, 8, 12));
+		AddVertical(*Section, *Summary, FMargin(8, 0, 8, 10));
+		AddVertical(*Section, *Help, FMargin(8, 0, 8, 16));
+		AddHorizontal(*Actions, *Assign, FMargin(0, 0, 6, 0), ESlateSizeRule::Fill);
+		AddHorizontal(*Actions, *Unassign, FMargin(6, 0, 0, 0), ESlateSizeRule::Fill);
+		AddVertical(*Section, *Actions, FMargin(8, 0, 8, 12));
+		AddVertical(*Content, *Section, FMargin(0, 0, 0, 8));
+		Section->SetVisibility(ESlateVisibility::Collapsed);
+		bOutModified = true;
+		return HasContract() && EnsureStaffNavigation(Blueprint, Tree, bOutModified);
+	}
+
 	bool BuildLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
 		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
@@ -1910,7 +2060,7 @@ namespace FFFacilityInfoWbpBuilder
 			TEXT("Panel_UpgradeComparison"), TEXT("Text_UpgradeCurrent"), TEXT("Text_UpgradeNext"),
 			TEXT("Text_FacilityName"), TEXT("Text_Category"), TEXT("Text_Zone"),
 			TEXT("Text_FacilityState"), TEXT("Text_RelocationWarning"), TEXT("Text_Footprint"),
-			TEXT("Text_Clearance"), TEXT("Text_InstallCost"), TEXT("Text_RecoveryCost"),
+			TEXT("Text_InstallCost"), TEXT("Text_RecoveryCost"),
 			TEXT("Text_QueueCapacity"), TEXT("Text_ServiceDuration"), TEXT("Text_OperationState"),
 			TEXT("Text_WaitingParties"), TEXT("Text_Occupancy"), TEXT("Text_RemainingService"),
 			TEXT("Text_ExpectedWait"), TEXT("Text_Throughput"), TEXT("Text_Feedback")
@@ -1941,7 +2091,6 @@ namespace FFFacilityInfoWbpBuilder
 			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_FacilityState"))) &&
 			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_RelocationWarning"))) &&
 			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Footprint"))) &&
-			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Clearance"))) &&
 			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_InstallCost"))) &&
 			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_RecoveryCost"))) &&
 			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_QueueCapacity"))) &&
@@ -3025,6 +3174,27 @@ namespace FFFacilityInfoWbpBuilder
 		TEXT("FF.MigrateFacilitySynergyTab"),
 		TEXT("Adds the editable synergy tab immediately after facility info and creates its row WBP; reruns preserve Designer edits."),
 		FConsoleCommandDelegate::CreateStatic(&MigrateFacilitySynergyTab));
+
+	void MigrateFacilityStaffTab()
+	{
+		UWidgetBlueprint* Inspector = LoadExistingBlueprint();
+		bool bAdded = false;
+		if (!Inspector || !Inspector->WidgetTree || !Inspector->GeneratedClass ||
+			!Inspector->GeneratedClass->IsChildOf(UFF_FacilityInfoPanel::StaticClass()) ||
+			!EnsureStaffWidgetContract(*Inspector, *Inspector->WidgetTree, bAdded) ||
+			(bAdded && !SaveBlueprint(*Inspector)))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error, TEXT("FF_FACILITY_STAFF_TAB_FAIL: incompatible inspector or save failure; no tree reset performed."));
+			return;
+		}
+		UE_LOG(LogFFFacilityInfoWbpBuilder, Display, TEXT("FF_FACILITY_STAFF_TAB_%s: %s; existing Designer widgets preserved."),
+			bAdded ? TEXT("ADDED") : TEXT("REUSE"), *PanelPackage);
+	}
+
+	FAutoConsoleCommand MigrateFacilityStaffTabCommand(
+		TEXT("FF.MigrateFacilityStaffTab"),
+		TEXT("Adds the staff tab after Operation and an editable assignment page; reruns preserve Designer edits."),
+		FConsoleCommandDelegate::CreateStatic(&MigrateFacilityStaffTab));
 
 	void MigrateFacilitySynergyPartnerLink()
 	{

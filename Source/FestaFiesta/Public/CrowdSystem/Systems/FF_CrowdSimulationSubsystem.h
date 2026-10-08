@@ -767,14 +767,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
 	bool bAvoidanceUseFacilityWalls = true;
 
-	// 시설 벽에 여유(Clearance) 링까지 포함시킨다. 기본값은 **끔**(바닥면만).
-	//
-	// ★ 켜면 반발 벽이 ZoneSystem의 nav 구멍보다 커진다. 그쪽은 고형 footprint만 도려내므로
-	//   경로는 clearance를 통과 가능한 것으로 계획하는데 힘은 밀어내 서로 싸운다.
-	//   좁은 통로에서 웨이포인트와 반발이 평형을 이뤄 사람이 멈춰 선다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
-	bool bAvoidanceFacilityWallsIncludeClearance = false;
-
 	// 개체의 Z를 지형 높이에 맞춘다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
 	bool bEnableHeightField = true;
@@ -1512,7 +1504,6 @@ private:
 
 	// 마지막 재구축이 어떤 손잡이 값으로 지어졌는지.
 	bool bBuiltWithFacilityWalls = false;
-	bool bBuiltWithClearance = false;
 
 	// --- 경로추종 상태 -----------------------------------------------------------------------
 

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FestaFiesta · 건축 UI 디자인 검토 v1</title>
+<style>
+:root{--ink:#3d3c4f;--muted:#626577;--line:#dbdeed;--accent:#286a79;--cyan:#e5f6fc;--paper:#f9f9ff}
+*{box-sizing:border-box}body{margin:0;background:#edf1f4;color:var(--ink);font:16px/1.6 "Malgun Gothic","Segoe UI",sans-serif}button,a{touch-action:manipulation}a{color:var(--accent);text-underline-offset:4px}button{font:inherit;cursor:pointer}button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}header{background:var(--paper);border-bottom:1px solid var(--line);padding:28px max(24px,calc((100vw - 1560px)/2)) 24px}header .eyebrow{font-size:12px;letter-spacing:2px;color:var(--accent);font-weight:700}h1{font-size:30px;line-height:1.3;margin:10px 0}p{margin:8px 0}.status{display:inline-block;margin-left:12px;font-size:13px;font-weight:700;padding:5px 10px;background:#e4f0ea;border-radius:20px;vertical-align:middle}.intro{color:var(--muted);max-width:1100px}main{max-width:1608px;margin:auto;padding:24px}nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}nav button{border:1px solid var(--line);padding:10px 18px;border-radius:10px;background:var(--paper);font-weight:700;font-size:14px;min-height:44px}nav button[aria-pressed=true]{background:var(--accent);color:white;border-color:var(--accent)}.viewer{background:var(--paper);border:1px solid var(--line);border-radius:16px;overflow:hidden}.image-button{display:block;padding:0;border:0;width:100%;background:#dde6e9}.hero{display:block;width:100%;height:auto}.caption{padding:20px 24px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:start}.caption h2{font-size:21px;margin:0 0 5px}.caption p{font-size:14px;color:var(--muted);margin:4px 0;max-width:1100px}.download{display:inline-block;white-space:nowrap;padding:9px 16px;border:1px solid var(--line);border-radius:8px;text-decoration:none;font-size:14px}.notice{background:#fff9eb;border-left:3px solid #a66d10;padding:12px 16px;font-size:14px;margin:18px 0 24px;border-radius:6px}.grid{display:grid;grid-template-columns:1.1fr 1fr;gap:20px}.box{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:24px;min-width:0}.box h2{font-size:19px;margin:0 0 14px}.box h3{font-size:15px;margin:20px 0 6px}.box p,.box li{font-size:14px}ul{padding-left:20px;margin:8px 0}li{margin:6px 0}code{font-size:12px;overflow-wrap:anywhere;background:#edf0f6;padding:2px 4px;border-radius:4px}table{width:100%;border-collapse:collapse;font-size:14px}td,th{text-align:left;border-bottom:1px solid var(--line);padding:9px 5px}th{font-size:12px;color:var(--muted)}.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.spec{margin-top:20px}.spec img{width:100%;display:block;border:1px solid var(--line);border-radius:12px;background:white}.swatches{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}.swatch{display:flex;gap:6px;align-items:center;font-size:12px}.swatch i{width:20px;height:20px;border-radius:6px;border:1px solid #ccd4db;display:inline-block}footer{font-size:12px;color:var(--muted);margin:24px 0}.disclosure{font-size:12px!important;color:var(--muted)}dialog{max-width:98vw;max-height:96vh;padding:0;border:0;background:#131923;border-radius:10px}dialog::backdrop{background:#10151ddb}dialog img{max-width:96vw;max-height:88vh;display:block;object-fit:contain}dialog button{position:sticky;top:0;display:block;margin-left:auto;padding:8px 18px;min-height:44px;border:0;color:white;background:#286a79}.specwrap{scroll-margin-top:20px}@media(max-width:850px){h1{font-size:24px}.status{margin:8px 0;display:table}.grid{grid-template-columns:1fr}.caption{grid-template-columns:1fr}main{padding:16px}header{padding:24px}.box{padding:18px}nav button{padding:9px 12px}}
+</style></head>
+<body><header><div class="eyebrow">FESTAFIESTA / BUILDING UI / 2026.10.07</div><h1>축제를 만드는 순간에 집중하는 건축 UI <span class="status">승인 대기 · 게임 파일 미적용</span></h1><p class="intro">기존 펄 화이트와 청록·하늘색, 별 문양 금화를 유지했습니다. 시설을 찾을 때는 이미지와 가격을 빠르게 읽고, 배치할 때는 필요한 공간과 다음 행동이 먼저 보이도록 정리했습니다.</p></header>
+<main>
+<nav aria-label="시안 화면 선택">
+<button data-id="01-catalog" aria-pressed="true">01 시설 목록</button>
+<button data-id="05-placement-valid" aria-pressed="false">02 배치 가능</button>
+<button data-id="02-placement" aria-pressed="false">03 배치 불가</button>
+<button data-id="03-facility-lighting" aria-pressed="false">04 시설 정보 · 조명</button>
+<button data-id="04-codex" aria-pressed="false">05 조합 도감</button>
+</nav>
+<section class="viewer" aria-label="이미지 시안">
+<button class="image-button" id="zoom" aria-label="현재 시안 크게 보기"><img class="hero" id="hero" src="01-catalog.png" alt="펄 화이트와 청록색의 시설 목록 시안"></button>
+<div class="caption"><div><h2 id="title">01 · 시설 목록</h2><p id="description"></p><p class="disclosure" id="scope"></p></div><a id="download" class="download" href="01-catalog.png" download>이미지 원본 받기 ↗</a></div>
+</section>
+<div class="notice"><strong>이미지는 분위기·정보 위계 검토용입니다.</strong> 월드 장면과 시설 표현은 생성형 콘셉트이며 실제 게임 변경 화면이 아닙니다. 최종 배치 치수는 아래 SVG·JSON이 기준입니다. 시안의 가격·수량·조합명은 예시이며 게임의 실제 데이터를 변경하지 않습니다.</div>
+<div class="grid">
+<section class="box"><h2>디자이너용 치수 기준</h2><p>1920 × 1080 논리 해상도 · DPI 1.0 · 기본 8px 단위 · 화면 안전 여백 24px</p>
+<table><thead><tr><th>요소</th><th>정확한 크기</th><th>기준</th></tr></thead><tbody>
+<tr><td>시설 카드</td><td>184 × 210</td><td>현재 가상화 셀 유지</td></tr>
+<tr><td>카드 썸네일</td><td>162 × 104</td><td>기존 비율 유지</td></tr>
+<tr><td>가로 카드 간격</td><td>10</td><td>현재 셀 간격 유지</td></tr>
+<tr><td>카탈로그 도크</td><td>1872 × 336</td><td>높이 324 → 336 제안</td></tr>
+<tr><td>시설 정보 / 조명</td><td>456 × 620 / 480 × 620</td><td>현재 외곽 크기 유지</td></tr>
+<tr><td>배치 요약 패널</td><td>400 × 520</td><td>제안</td></tr>
+<tr><td>주요 버튼 / 클릭 영역</td><td>48H / 최소 44H</td><td>작은 외형에는 클릭 여백 확보</td></tr>
+<tr><td>도감 카드</td><td>232 × 280 · 간격 16</td><td>6열 제안</td></tr>
+</tbody></table>
+<p class="disclosure">현재 크기는 빌더·최근 저장 검증 기록을 확인한 값입니다. 이번 작업에서 Unreal 에디터 실측이나 런타임 검증은 수행하지 않았습니다. 작은 해상도는 기존 DPI 곡선에 맞춰 승인 후 검증합니다.</p>
+<div class="links"><a class="download" href="layout-spec.svg" download>편집 가능한 SVG</a><a class="download" href="layout-spec.json" download>좌표·크기 JSON</a><a class="download" href="design-tokens.json" download>색상·서체 토큰</a></div>
+<h3>유지할 시각 규칙</h3><div class="swatches"><span class="swatch"><i style="background:#F9F9FF"></i>Pearl</span><span class="swatch"><i style="background:#3D3C4F"></i>Ink</span><span class="swatch"><i style="background:#286A79"></i>Action</span><span class="swatch"><i style="background:#91DFFF"></i>Cyan</span><span class="swatch"><i style="background:#A66D10"></i>Gold</span></div>
+<ul><li>본문 뒤는 불투명한 표면, 시설명은 두 줄, 가격은 같은 높이에 정렬합니다.</li><li>선택·오류는 색상과 아이콘·문구를 함께 사용합니다.</li><li>카드·버튼·텍스트는 실제 UMG 위젯으로 분리합니다. 이미지 한 장을 UI로 넣지 않습니다.</li></ul>
+</section>
+<section class="box"><h2>이번 승인 대상과 보호 범위</h2><p>승인 대상은 <strong>이 다섯 화면에 보이는 건축 UI의 시각 방향과 치수 제안</strong>입니다.</p>
+<ul><li><code>FF_WBP_Building/Catalog</code> 시설 목록·타일</li><li><code>FF_WBP_Building/Controls</code> 건축 도구·배치 상태</li><li><code>FF_WBP_Building/Facility</code> 상세·조명 패널</li><li><code>FF_WBP_Building/FacilityCodex</code> 조합 도감 목록</li></ul>
+<p><strong>보호:</strong> <code>Shared/**</code>, <code>Catalog/Legacy/**</code>, 다른 팀원 UI, 폴더 밖 공통 폰트·아이콘·금화·머티리얼 원본. 하단 공용 HUD는 시안에서도 위치 참고용이며 재디자인 대상이 아닙니다.</p>
+<p>매출 순위·다중 선택·건축 설정의 별도 상세 화면, 일반 시설 정보의 모든 탭과 유료 프로그램 화면은 이번 5장만으로 변경 승인된 것으로 보지 않습니다. 필요한 경우 같은 규칙의 후속 시안을 먼저 제시합니다.</p>
+<h3>레퍼런스 → 적용한 원칙</h3>
+<ul><li><a href="https://mobbin.com/glossary/bottom-sheet" target="_blank" rel="noreferrer">Mobbin · Bottom Sheet</a> — 하단 탐색 패널과 넓은 작업 공간.</li><li><a href="https://mobbin.com/glossary/chip" target="_blank" rel="noreferrer">Mobbin · Chip</a> — 아이콘+이름, 명확한 선택 필터.</li><li><a href="https://mobbin.com/glossary/card" target="_blank" rel="noreferrer">Mobbin · Card</a> — 이미지·시설명·가격의 고정된 위계.</li><li><a href="https://www.paradoxinteractive.com/games/cities-skylines-ii/features/road-tools" target="_blank" rel="noreferrer">Cities: Skylines II · Road Tools</a> — 도구별 스냅·수치 안내·배치 미리보기.</li><li><a href="https://www.paradoxinteractive.com/games/cities-skylines-ii/features/zones-signature-buildings" target="_blank" rel="noreferrer">Cities: Skylines II · Zones & Signature Buildings</a> — 선택 대상에 관련된 조건을 우선 표시.</li></ul>
+<p class="disclosure">Mobbin은 공개 패턴 문서와 공개 예시를 확인했습니다. 로그인 제한 뒤의 전체 앱 흐름을 검토한 것은 아닙니다. 참고 원칙을 프로젝트의 기존 기능에 맞춰 재구성했습니다.</p>
+</section>
+</div>
+<section class="spec specwrap" id="spec"><h2>편집 가능한 레이아웃 · 컴포넌트 시트</h2><p>SVG를 Figma·Illustrator 등으로 가져오면 도형과 텍스트를 분리해 편집할 수 있습니다. 화면 배치도는 40% 축소이며 표기 수치는 1920 × 1080 기준입니다.</p><a href="layout-spec.svg" target="_blank" aria-label="치수표 SVG 원본 열기"><img src="layout-spec.svg" alt="4개 화면의 정확한 좌표와 카드 및 버튼 상태를 정리한 편집 가능한 치수표"></a></section>
+<footer>생성: 내장 image_gen · <a href="provenance.json">전체 프롬프트·출처·제약</a> · <a href="qa-report.json">검토 자료 검증 기록</a><br>이 검토 페이지는 게임 기능을 실행하지 않습니다. 실제 적용은 채팅에서 사용자가 승인한 뒤 진행합니다.</footer>
+</main>
+<dialog id="lightbox"><button id="close" aria-label="확대 보기 닫기">닫기 ×</button><img id="large" alt=""></dialog>
+<script>
+const screens={
+"01-catalog":{title:"01 · 시설 목록",description:"큰 썸네일 → 시설명 → 가격 순으로 읽습니다. 필수·연계 배지는 작게 유지하고, 검색·즐겨찾기·도감 진입은 한 줄로 묶었습니다.",scope:"대상: Catalog/WBP_FF_PrepPanelBuild · WBP_FF_PrepBuildTile"},
+"05-placement-valid":{title:"02 · 배치 가능",description:"같은 배치 패널에서 긍정 상태와 활성화된 확정 버튼을 보여줍니다. 비용은 확정할 때만 차감하며, 대기열 모양·회전·직접 조정은 기존 입력을 유지합니다.",scope:"대상: Controls/WBP_FF_BuildTools. 바닥 범위는 기존 기능의 의미를 설명한 콘셉트이며 월드 자산 변경 대상이 아닙니다."},
+"02-placement":{title:"03 · 배치 불가",description:"문제 영역만 붉은 사선으로 표시합니다. 오른쪽에서 원인 → 필요한 공간 → 해결 방법을 읽고 가까운 빈자리·다른 원인을 선택합니다. 확정은 비활성화합니다.",scope:"대상: Controls/WBP_FF_BuildTools. 7/8/9/0 대기열 키 유지, F1~F7 단축키 추가 없음."},
+"03-facility-lighting":{title:"04 · 시설 정보 · 조명",description:"색상과 밝기를 한 영역에서 조절하고, 미리보기와 적용·취소를 분리합니다. 외곽은 480×620을 유지하며 내용이 길면 내부만 스크롤합니다.",scope:"대상: Facility/WBP_FF_FacilityInfoPanel · WBP_FF_FacilityLightingControls. 이 이미지의 패널 비율은 근사치이며 실제 치수는 SVG/JSON 기준입니다."},
+"04-codex":{title:"05 · 시설 조합 도감",description:"6열 카드로 조합을 훑고 발견·미발견·수령 상태를 구분합니다. 수령할 수 있는 카드에만 골드 받기 동작을 강조합니다.",scope:"대상: FacilityCodex/WBP_FF_FacilityCodexScreen · WBP_FF_FacilityCodexCard. 조합명·수량·수익은 예시이며 실제 데이터를 유지합니다."}
+};
+let current="01-catalog";function select(id){current=id;const s=screens[id];document.querySelector("#hero").src=id+".png";document.querySelector("#hero").alt=s.title+" 이미지 시안";document.querySelector("#title").textContent=s.title;document.querySelector("#description").textContent=s.description;document.querySelector("#scope").textContent=s.scope;document.querySelector("#download").href=id+".png";document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.id===id)));}
+document.querySelectorAll("nav button").forEach(b=>b.addEventListener("click",()=>select(b.dataset.id)));select(current);
+const modal=document.querySelector("#lightbox");document.querySelector("#zoom").onclick=()=>{document.querySelector("#large").src=current+".png";document.querySelector("#large").alt=screens[current].title;modal.showModal()};document.querySelector("#close").onclick=()=>modal.close();modal.onclick=e=>{if(e.target===modal)modal.close()};
+</script></body></html>

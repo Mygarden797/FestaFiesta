@@ -19,7 +19,7 @@ FFF_BuildPlacementGuidance UFF_BuildModeSubsystem::GetPlacementGuidance(const in
     if (!bHasPlacementTarget)
     {
         Result.Title = LOCTEXT("ChooseGround", "건축할 바닥을 가리켜 주세요");
-        Result.Advice = LOCTEXT("GroundAdvice", "밝은 경계선 안으로 시설을 옮겨 주세요. G로 건축 구역을 확인할 수 있어요.");
+        Result.Advice = LOCTEXT("GroundAdvice", "흰색 건축 경계 안으로 시설을 옮겨 주세요. G로 건축 구역을 확인할 수 있어요.");
         return Result;
     }
     if (LastValidation.bIsValid)
@@ -35,14 +35,30 @@ FFF_BuildPlacementGuidance UFF_BuildModeSubsystem::GetPlacementGuidance(const in
     const EFFZSPlacementFailure Reason = LastValidation.Reasons.IsValidIndex(Result.ProblemIndex)
         ? LastValidation.Reasons[Result.ProblemIndex] : EFFZSPlacementFailure::InternalError;
     Result.Title = FFBuildPlacementAssistance::ReasonTitle(Reason);
-    Result.Advice = UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(Reason, FText::GetEmpty(), State == EFF_BuildModeState::Moving);
+    Result.Advice = UFF_BuildPlacementFailureFeedback::MakeValidationReason(Reason, LastValidation, State == EFF_BuildModeState::Moving);
+    if (const FFFZSPlacementObstruction* GroundIssue = LastValidation.Obstructions.FindByPredicate(
+        [Reason](const FFFZSPlacementObstruction& Issue)
+        { return Issue.Reason == Reason && Issue.Kind == EFFZSPlacementObstructionKind::GroundSupport; }))
+    {
+        if (!GroundIssue->DisplayName.IsEmpty()) Result.Title = GroundIssue->DisplayName;
+    }
+    if (Reason == EFFZSPlacementFailure::OutsideZone)
+    {
+        const FText BoundaryFailure = LastValidation.GetBoundaryFailureText();
+        if (!BoundaryFailure.IsEmpty())
+        {
+            Result.Title = BoundaryFailure;
+            Result.Advice = UFF_BuildPlacementFailureFeedback::MakeBoundaryAdvice();
+        }
+    }
     Result.bCanFindNearby = FFBuildPlacementAssistance::CanResolveByMoving(LastValidation.Reasons);
     if (Result.bCanFindNearby)
         Result.Advice = FText::Format(LOCTEXT("NearbyShortcutAdvice", "{0}\nN으로 가까운 빈자리로 이동할 수 있어요."), Result.Advice);
     // These are diagnostics from the original validation, not another collision query.
     for (const auto& Blocker : LastValidation.Obstructions)
     {
-        if (Blocker.Reason == Reason && !Blocker.DisplayName.IsEmpty())
+        if (Blocker.Reason == Reason && Blocker.Kind != EFFZSPlacementObstructionKind::GroundSupport &&
+            !Blocker.DisplayName.IsEmpty())
         {
             Result.Obstruction = FText::Format(LOCTEXT("Blocker", "겹치는 대상: {0}"), Blocker.DisplayName);
             break;

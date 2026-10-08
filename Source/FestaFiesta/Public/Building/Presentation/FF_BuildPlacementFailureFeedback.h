@@ -52,6 +52,11 @@ public:
 		const FText& AuthoritativeDetail,
 		bool bIsMoving);
 
+	/** 기존 권위 결과의 영역 진단을 사용하며 Summary나 실패 순서를 변경하지 않습니다. */
+	static FText MakeValidationReason(EFFZSPlacementFailure FailureReason,
+		const FFFZSPlacementValidation& Validation, bool bIsMoving);
+	static FText MakeBoundaryAdvice();
+
 	/** 같은 인스턴스를 재사용하고 자동 숨김 시간을 처음부터 다시 시작합니다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|UI")
 	void PresentFailure(

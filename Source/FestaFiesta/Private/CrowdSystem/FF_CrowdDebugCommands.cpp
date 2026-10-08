@@ -370,9 +370,8 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	Ar.Logf(TEXT("대형 직선 막힘: 지금 %d명, 누적 %d회, 우회 경로 쿼리 %d건  <-- 건물에 가려 슬롯으로 직진할 수 없는 멤버"),
 		CrowdSim->GetFormationBlockedMemberCount(), CrowdSim->GetFormationBlockEvents(),
 		CrowdSim->GetFormationPathQueries());
-	Ar.Logf(TEXT("시설 벽       : %s%s"),
-		CrowdSim->bAvoidanceUseFacilityWalls ? TEXT("on") : TEXT("off"),
-		CrowdSim->bAvoidanceFacilityWallsIncludeClearance ? TEXT(" + 여유 1m 링") : TEXT(""));
+	Ar.Logf(TEXT("시설 벽       : %s"),
+		CrowdSim->bAvoidanceUseFacilityWalls ? TEXT("on") : TEXT("off"));
 	Ar.Logf(TEXT("벽 역방향 상한: %.2f  %s"),
 		CrowdSim->AvoidanceConfig.MaxWallOpposingAccelMps2,
 		(CrowdSim->AvoidanceConfig.MaxWallOpposingAccelMps2 < 0.f)
@@ -1238,8 +1237,6 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 	const FSwitch Switches[] = {
 		{ TEXT("facilitywalls"), &CrowdSim->bAvoidanceUseFacilityWalls,
 		  TEXT("시설 footprint를 벽으로. 끄면 부스를 통과한다") },
-		{ TEXT("clearance"), &CrowdSim->bAvoidanceFacilityWallsIncludeClearance,
-		  TEXT("시설 벽에 여유 링 포함. 켜면 nav 구멍보다 벽이 커져 경로와 힘이 어긋난다") },
 		{ TEXT("pathfollow"), &CrowdSim->bEnablePathFollowing,
 		  TEXT("NavMesh 경로 우회. 끄면 최종 목적지로 직선 조향(벽에 붙어 미끄러진다)") },
 		{ TEXT("blockunknown"), &CrowdSim->bBlockUnknownGround,

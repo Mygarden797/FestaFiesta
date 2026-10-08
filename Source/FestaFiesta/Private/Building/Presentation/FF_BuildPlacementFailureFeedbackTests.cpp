@@ -100,6 +100,34 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	"FestaFiesta.Building.UI.BuildPlacementFailureFeedback.Presentation",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildBoundaryFeedbackTest,
+	"FestaFiesta.Building.UI.BuildPlacementFailureFeedback.BoundaryDiagnostics",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildBoundaryFeedbackTest::RunTest(const FString& Parameters)
+{
+	FFFZSPlacementValidation Validation;
+	Validation.AddFailure(EFFZSPlacementFailure::OutsideZone, FText::FromString(TEXT("Original authority summary")));
+	FFFZSPlacementBoundaryIssue AudienceIssue;
+	AudienceIssue.Region = EFFZSPlacementRegion::Audience;
+	Validation.BoundaryIssues.Add(AudienceIssue);
+	Validation.BoundaryIssues.Add(AudienceIssue);
+	const FString Message = UFF_BuildPlacementFailureFeedback::MakeValidationReason(
+		EFFZSPlacementFailure::OutsideZone, Validation, false).ToString();
+	TestTrue(TEXT("Boundary feedback names the actual failed audience space and its display"),
+		Message.Contains(TEXT("관객석")) && Message.Contains(TEXT("붉은 사선")) && Message.Contains(TEXT("흰색")));
+	TestTrue(TEXT("Internal gaps remain forbidden even when the outside edge contains the cursor"), Message.Contains(TEXT("빈틈")));
+	TestEqual(TEXT("Presentation never replaces the authoritative summary"), Validation.Summary.ToString(), FString(TEXT("Original authority summary")));
+	const FString CommandFailure = UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
+		EFFZSPlacementFailure::OutsideZone, Validation.GetBoundaryFailureText(), false).ToString();
+	TestTrue(TEXT("Confirmation failures retain the concrete authority boundary detail"), CommandFailure.Contains(TEXT("관객석")));
+	Validation.Reasons.Add(EFFZSPlacementFailure::InsufficientFunds);
+	TestFalse(TEXT("A selected secondary problem cannot borrow the primary boundary summary"),
+		UFF_BuildPlacementFailureFeedback::MakeValidationReason(EFFZSPlacementFailure::InsufficientFunds, Validation, false)
+		.ToString().Contains(TEXT("Original authority summary")));
+	return true;
+}
+
 bool FFF_BuildPlacementFailureFeedbackPresentationTest::RunTest(const FString& Parameters)
 {
 	// 각 권위 실패 코드의 UI 분류와 표시·해제 수명주기를 동일 위젯 인스턴스에서 확인한다.
@@ -123,7 +151,10 @@ bool FFF_BuildPlacementFailureFeedbackPresentationTest::RunTest(const FString& P
 			FText::FromString(TEXT("Placement collision in World Cell")),
 			false).ToString();
 	TestTrue(TEXT("Collision guidance explains the cause in everyday Korean"),
-		CollisionReason.Contains(TEXT("겹쳐요")));
+		CollisionReason.Contains(TEXT("겹친 부분")));
+	TestTrue(TEXT("Collision guidance distinguishes blocker bounds from overlapping hatching"),
+		CollisionReason.Contains(TEXT("주황 선")) && CollisionReason.Contains(TEXT("장애물 판정 범위")) &&
+		CollisionReason.Contains(TEXT("붉은 사선")));
 	TestTrue(TEXT("Collision guidance includes the next action"),
 		CollisionReason.Contains(TEXT("옮겨 주세요")));
 	TestFalse(TEXT("Technical validation terms are not exposed to players"),
@@ -194,6 +225,51 @@ bool FFF_BuildPlacementFailureFeedbackPresentationTest::RunTest(const FString& P
 		Feedback->GetVisibility(), ESlateVisibility::Collapsed);
 	TestEqual(TEXT("Runtime presentation preserves the designer WBP package dirty state"),
 		FeedbackClass->GetOutermost()->IsDirty(), bPackageWasDirty);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildPlacementTerrainGuidanceTest,
+	"FestaFiesta.Building.PlacementFailureFeedback.RegionTerrainGuidance",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildPlacementTerrainGuidanceTest::RunTest(const FString& Parameters)
+{
+	FFFZSPlacementValidation Validation;
+	Validation.Reasons = {EFFZSPlacementFailure::PlacementCollision, EFFZSPlacementFailure::InsufficientClearance};
+	Validation.Summary = FText::FromString(TEXT("Primary footprint collision"));
+	FFFZSPlacementObstruction Ground;
+	Ground.Kind = EFFZSPlacementObstructionKind::GroundSupport;
+	Ground.Reason = EFFZSPlacementFailure::InsufficientClearance;
+	Ground.DisplayName = FText::FromString(TEXT("관객석 바닥 높이 차가 너무 커요"));
+	Ground.Detail = FText::FromString(TEXT("관객석 바닥 높이 차 134 cm / 허용 80 cm"));
+	Validation.Obstructions.Add(Ground);
+	const FString Secondary = UFF_BuildPlacementFailureFeedback::MakeValidationReason(
+		EFFZSPlacementFailure::InsufficientClearance, Validation, false).ToString();
+	TestTrue(TEXT("Selected audience terrain advice preserves measured and allowed values"),
+		Secondary.Contains(TEXT("관객석")) && Secondary.Contains(TEXT("134 cm")) && Secondary.Contains(TEXT("80 cm")));
+	TestTrue(TEXT("Audience terrain advice identifies its red region and next action"),
+		Secondary.Contains(TEXT("붉은 사선")) && Secondary.Contains(TEXT("평평")) && Secondary.Contains(TEXT("옮겨 주세요")));
+	TestFalse(TEXT("A secondary terrain reason is not mislabeled as a Landscape obstacle or the primary collision"),
+		Secondary.Contains(TEXT("주황")) || Secondary.Contains(TEXT("겹쳐")) || Secondary.Contains(TEXT("Primary")));
+	const FString Primary = UFF_BuildPlacementFailureFeedback::MakeValidationReason(
+		EFFZSPlacementFailure::PlacementCollision, Validation, false).ToString();
+	TestTrue(TEXT("Unrelated footprint collision retains its obstacle guidance"), Primary.Contains(TEXT("주황")));
+	TestFalse(TEXT("Audience terrain metrics never leak into a selected footprint reason"), Primary.Contains(TEXT("134 cm")));
+	FFFZSPlacementObstruction Blocker;
+	Blocker.Reason = EFFZSPlacementFailure::InsufficientClearance;
+	Validation.Obstructions.Add(Blocker);
+	TestTrue(TEXT("A simultaneous true obstacle remains explained alongside terrain limits"),
+		UFF_BuildPlacementFailureFeedback::MakeValidationReason(EFFZSPlacementFailure::InsufficientClearance,
+			Validation, false).ToString().Contains(TEXT("장애물과도 겹쳐요")));
+	Validation.Obstructions.Reset();
+	Ground.Reason = EFFZSPlacementFailure::QueueFootprintBlocked;
+	Ground.DisplayName = FText::FromString(TEXT("대기열 바닥을 찾지 못했어요"));
+	Ground.Detail = FText::FromString(TEXT("대기열 바닥 샘플 2 / 3개"));
+	Validation.Obstructions.Add(Ground);
+	const FString Queue = UFF_BuildPlacementFailureFeedback::MakeValidationReason(
+		EFFZSPlacementFailure::QueueFootprintBlocked, Validation, false).ToString();
+	TestTrue(TEXT("Queue ground failures name their own region without audience details"),
+		Queue.Contains(TEXT("대기열")) && !Queue.Contains(TEXT("관객석")) && !Queue.Contains(TEXT("134 cm")));
 	return true;
 }
 

@@ -95,6 +95,7 @@ namespace FFBuildLightingCatalogTest
                 if (!Test->TestTrue(*FString::Printf(TEXT("%s survives production catalog validation"), Expected.Name),
                     Catalog->FindEntry(DefinitionId, Entry))) continue;
                 Test->TestEqual(TEXT("Catalog preserves the lighting category"), Entry.Category, EFFZSFacilityCategory::Lighting);
+				Test->TestTrue(TEXT("Lighting cards expose the controllable bulb badge"), Entry.bSupportsLighting);
                 Test->TestEqual(TEXT("Catalog preserves the expected minor group"), Entry.MinorToken, FName(Expected.Minor));
                 Test->TestEqual(TEXT("Catalog preserves the selected asset name"), Entry.UniqueNameToken, FString(Expected.Name));
                 Test->TestEqual(TEXT("Catalog preserves primary asset identity"), Entry.PrimaryAssetId, PrimaryId);

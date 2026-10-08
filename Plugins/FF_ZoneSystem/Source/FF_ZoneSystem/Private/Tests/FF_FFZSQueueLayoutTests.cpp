@@ -27,6 +27,15 @@ bool FFFZSQueueLayoutGeometryTest::RunTest(const FString& Parameters)
                 AddError(Error.ToString());
                 continue;
             }
+            FFFZSFacilitySpec WithoutClearance = Authored;
+            WithoutClearance.ClearanceCells = 0;
+            WithoutClearance.QueueLayout = Layout;
+            TestTrue(TEXT("The same queue layout is valid without legacy clearance"),
+                FFFZSQueueGeometry::ApplySelectedLayout(WithoutClearance, Error));
+            TestTrue(TEXT("Legacy clearance does not push generated queue paths away from the facility"),
+                Candidate.QueueSplinePointsCm == WithoutClearance.QueueSplinePointsCm);
+            TestTrue(TEXT("Legacy clearance does not enlarge generated queue reservations"),
+                Candidate.QueueReservedRects == WithoutClearance.QueueReservedRects);
             TArray<FText> Errors;
             TestTrue(TEXT("Generated slots, anchors, footprint and reservations satisfy facility invariants"), Candidate.IsValid(Errors));
             TestEqual(TEXT("Queue capacity is unchanged"), Candidate.QueueRules.MaxWaitingAgents, Authored.QueueRules.MaxWaitingAgents);
@@ -69,8 +78,10 @@ bool FFFZSQueueLayoutGeometryTest::RunTest(const FString& Parameters)
                     Candidate.FootprintSizeCells, Candidate.QueueReservedRects));
         }
         const FFFZSFacilitySpec Identity = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Authored, 1, 1.0f);
-        TestTrue(TEXT("Legacy authored identity geometry stays byte-equivalent"),
-            FFFZSFacilitySpec::StaticStruct()->CompareScriptStruct(&Authored, &Identity, 0));
+        FFFZSFacilitySpec NormalizedAuthored = Authored;
+        NormalizedAuthored.ClearanceCells = 0;
+        TestTrue(TEXT("Authored geometry is preserved while retired clearance is removed"),
+            FFFZSFacilitySpec::StaticStruct()->CompareScriptStruct(&NormalizedAuthored, &Identity, 0));
     }
     return true;
 }
@@ -91,8 +102,10 @@ bool FFFZSQueueLayoutPersistenceGeometryTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("The instance base retains the authored points"), Base.QueueSplinePointsCm == Original.QueueSplinePointsCm);
     Base.QueueLayout = EFFZSQueueLayout::Authored;
     const FFFZSFacilitySpec Reverted = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Base, 1, 1.0f);
-    TestTrue(TEXT("Choosing Authored restores the exact original data"),
-        FFFZSFacilitySpec::StaticStruct()->CompareScriptStruct(&Original, &Reverted, 0));
+    FFFZSFacilitySpec NormalizedOriginal = Original;
+    NormalizedOriginal.ClearanceCells = 0;
+    TestTrue(TEXT("Choosing Authored restores original geometry without legacy clearance"),
+        FFFZSFacilitySpec::StaticStruct()->CompareScriptStruct(&NormalizedOriginal, &Reverted, 0));
 
     FFFZSCommand Command;
     Command.FacilitySpec = Original;

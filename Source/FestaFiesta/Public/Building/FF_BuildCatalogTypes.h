@@ -96,6 +96,10 @@ struct FESTAFIESTA_API FFF_BuildCatalogEntry
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog")
 	TSoftObjectPtr<UTexture2D> Thumbnail;
 
+	/** Authored lighting rig support, independent of category (stages can also have lights). */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Lighting")
+	bool bSupportsLighting = false;
+
 	// Facility Definition Spec에서 투영한 월드 동시 설치 상한입니다. 0이면 제한 없음입니다.
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Limit")
 	int32 MaxInstancesPerWorld = 0;
@@ -122,6 +126,14 @@ struct FESTAFIESTA_API FFF_BuildCatalogEntry
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Required")
 	int32 RequiredMinimumCount = 0;
+
+	// 설치 뒤 스태프 배정까지 요구하는 필수 시설의 최소 배정 인원입니다. 0이면 설치만 요구합니다.
+	// bRequiredSetupSatisfied는 설치 기준이며, 배정 충족 여부는 아래 두 값으로 따로 표시합니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Required")
+	int32 RequiredStaffCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Required")
+	int32 RequiredAssignedStaffCount = 0;
 
 	// 현재 축제 프로그램 중 이 시설 종류에서 운영 가능한 유효한 프로그램 수입니다.
 	// 설치/구매 여부, 보유 골드와 독립적인 시설 기능 안내입니다.

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Containers/BitArray.h"
+#include "FF_FFZSTypes.h"
 
 class UPrimitiveComponent;
 
@@ -40,6 +41,8 @@ struct FF_ZONESYSTEM_API FFFZSBuildableGridMask
     TArray<FFFZSBuildGridObstacle> DeferredWorldObstacles;
     double ObstacleHeightCm = 250.0;
     bool bIncludeGroundSurfaceSupport = true;
+    // 표시 격자도 현재 설치 대상의 지면 정책을 따른다. 최종 설치 판정은 전체 footprint로 별도 수행한다.
+    EFFZSFacilityCategory FacilityCategory = EFFZSFacilityCategory::Booth;
 
 private:
     FVector2D MinLocalCm = FVector2D::ZeroVector;

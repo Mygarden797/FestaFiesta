@@ -19,6 +19,12 @@ class FESTAFIESTA_API UFF_FacilityCodexProgressSubsystem : public UGameInstanceS
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+	/** First-open guidance belongs to the local profile, not an individual festival save. */
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
+	bool HasSeenIntroduction() const { return bHasSeenIntroduction; }
+	/** Records a successfully shown introduction once and refreshes every launcher. */
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
+	bool MarkIntroductionSeen();
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
 	bool IsDiscovered(FName RuleId) const { return DiscoveredRuleIds.Contains(RuleId); }
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
@@ -39,6 +45,7 @@ public:
 	FFF_OnFacilityCodexProgressChanged OnProgressChanged;
 
 private:
+	UPROPERTY(Transient) bool bHasSeenIntroduction = false;
 	UPROPERTY(Transient) TSet<FName> DiscoveredRuleIds;
 	UPROPERTY(Transient) TSet<FName> ClaimedDiscoveryRewardRuleIds;
 	UPROPERTY(Transient) TSet<FName> ClaimedCollectionRewardIds;

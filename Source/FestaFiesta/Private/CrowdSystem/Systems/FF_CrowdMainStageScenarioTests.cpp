@@ -26,7 +26,9 @@
 #include "FileHelpers.h"
 #include "Festival/FF_FestivalBuzzSubsystem.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
+#include "Staff/FF_StaffFacilitySubsystem.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -42,6 +44,8 @@ namespace FFMainStageScenario
 
 	// 배치는 `FF.Zone.SaveLayout` 으로 사람이 한 번 만들어 둔 것을 쓴다. Test_Main 은 빈 땅으로
 	// 시작하고, 여기서 재는 값은 전부 시설 위치에 달렸다 — 코드로 심은 배치를 재면 의미가 없다.
+	// 배치에는 축제 필수 시설(선셋 메인공연장·메인안내소)이 들어 있어야 Live 로 넘어간다.
+	// 메인안내소 스태프 배정은 슬롯에 저장되지 않으므로 AssignRequiredStaff 가 대신 한다.
 	const TCHAR* LayoutSlot = TEXT("day1");
 
 	// Live 는 그날 마지막 이벤트 시각까지다. Day1 은 240초이고 공연은 180~210 이다.
@@ -198,6 +202,11 @@ public:
 			StageBridge->OpenEligibleFacilities(false);
 		}
 
+		// 배정까지 요구하는 필수 시설(메인안내소)은 플레이어가 시설 정보의 `+ 배정` 을 누른다.
+		// 배치 슬롯에는 시설만 있고 스태프 배정은 없으므로 여기서 대신 누른다. 시설 자체가 없으면
+		// 아래 Live 거부 사유가 무엇을 지어야 하는지 알려 준다.
+		AssignRequiredStaff(World);
+
 		// 거부 사유를 그대로 남긴다. 이게 없으면 "왜 Live 가 안 되는가"를 또 손으로 찾는다.
 		FText BlockingReason;
 		if (!Stage->CanTransitionTo(EFF_FestivalStage::Live, BlockingReason))
@@ -258,6 +267,38 @@ private:
 			*UEnum::GetValueAsString(Progression->GetPurchasedPromotionGrade()), Forecast.AdmissionFeeGold,
 			Buzz ? Buzz->GetBuzz() : 0.f, Forecast.ExpectedVisitors,
 			Forecast.PromotionMultiplier, Forecast.AdmissionFeeMultiplier, Forecast.BuzzMultiplier));
+	}
+
+	// 필수 시설의 배정 부족분을 대기 스태프로 채운다. 판정은 필수 시설 경계가 준 부족 인원을 그대로 쓴다.
+	void AssignRequiredStaff(UWorld* World)
+	{
+		const UFF_RequiredFacilitiesSubsystem* Required = World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>();
+		UFF_StaffFacilitySubsystem* Staffing = World->GetSubsystem<UFF_StaffFacilitySubsystem>();
+		const UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
+		if (!Required || !Staffing || !Zones)
+		{
+			return;
+		}
+		const FFFZSReadModel Installed = Zones->BuildReadModel();
+		int32 AssignedNow = 0;
+		for (const FFF_RequiredFacilityRow& Row : Required->GetRequiredFacilitiesStatus().Facilities)
+		{
+			int32 Missing = Row.MissingStaffCount;
+			for (const FFFZSFacilityReadModel& Facility : Installed.Facilities)
+			{
+				if (Missing <= 0) { break; }
+				if (Facility.FacilityDefinitionId != Row.FacilityDefinitionId || Facility.bNeedsRelocation) { continue; }
+				while (Missing > 0 && Staffing->TryAssignAvailableStaff(Facility.FacilityInstanceId))
+				{
+					--Missing;
+					++AssignedNow;
+				}
+			}
+		}
+		if (AssignedNow > 0)
+		{
+			Test->AddInfo(FString::Printf(TEXT("필수 시설에 스태프 %d명을 배정했다."), AssignedNow));
+		}
 	}
 
 	FAutomationTestBase* Test;
