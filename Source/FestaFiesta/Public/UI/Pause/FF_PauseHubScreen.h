@@ -21,7 +21,8 @@ enum class EFF_PauseHubAction : uint8
 	SystemSettings,
 	KeyboardGuide,
 	Account,
-	ExitGame
+	ExitGame,
+	ReturnToAtlas
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
@@ -69,6 +70,7 @@ protected:
 	UFUNCTION() void HandleSettingsClicked();
 	UFUNCTION() void HandleKeyboardClicked();
 	UFUNCTION() void HandleAccountClicked();
+	UFUNCTION() void HandleReturnToAtlasClicked();
 	UFUNCTION() void HandleExitClicked();
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Pause")
@@ -79,6 +81,8 @@ protected:
 	TObjectPtr<UButton> Button_Keyboard;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Pause")
 	TObjectPtr<UButton> Button_Account;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Pause")
+	TObjectPtr<UButton> Button_ReturnToAtlas;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Pause")
 	TObjectPtr<UButton> Button_Exit;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Pause")
@@ -91,6 +95,8 @@ protected:
 	TObjectPtr<UImage> Image_FocusKeyboard;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Pause")
 	TObjectPtr<UImage> Image_FocusAccount;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Pause")
+	TObjectPtr<UImage> Image_FocusReturnToAtlas;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Pause")
 	TObjectPtr<UImage> Image_FocusExit;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Pause")

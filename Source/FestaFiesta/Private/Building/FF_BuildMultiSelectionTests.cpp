@@ -1,6 +1,6 @@
 // FF_BuildMultiSelectionTests.cpp
 // 역할: 클릭·사각형 드래그·모드 종료가 시설 선택을 올바르게 갱신하는지 검사한다.
-// 선택만으로 실제 배치가 바뀌지 않고, 폐기한 F1~F7 단축키가 도구를 실행하지 않는지도 확인한다.
+// 선택만으로 실제 배치가 바뀌지 않고, 폐기한 기능 키와 전역 Pause 입력이 구분되는지도 확인한다.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
@@ -22,6 +22,7 @@
 #include "FF_FFZSZoneActor.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "GameFramework/PlayerInput.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
 #include "Kismet/GameplayStatics.h"
@@ -187,13 +188,43 @@ bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 	Build->bBuildSessionActive = true;
 	const bool bGridBeforeKeys = Build->IsPlacementGridVisible();
 	const int32 SnapBeforeKeys = Build->GetPreferredPositionSnapCm();
-	for(const FKey& Key : {EKeys::F1,EKeys::F2,EKeys::F3,EKeys::F4,EKeys::F5,EKeys::F6,EKeys::F7})
+	for(const FKey& Key : {EKeys::F1,EKeys::F2,EKeys::F3,EKeys::F4,EKeys::F6,EKeys::F7})
 	{
 		TestFalse(TEXT("Retired function-key dispatcher never activates a tool"), Build->HandleBuildToolbarKey(Key));
 		for(const EInputEvent Event : {IE_Pressed, IE_Repeat, IE_Released})
 			TestTrue(TEXT("Retired key is consumed before engine debug/input bindings"), Controller->InputKey(
 				FInputKeyEventArgs(&InputViewport, FInputDeviceId::CreateFromInternalId(0), Key, Event, 1.f, false, 0u)));
 	}
+	TestFalse(TEXT("Global Pause Hub F5 input never dispatches a build toolbar action"),
+		Build->HandleBuildToolbarKey(EKeys::F5));
+	// Exercise the real controller boundary with no gameplay bindings: both Pause keys
+	// must reach PlayerInput instead of being swallowed by the retired-toolbar guard.
+	Controller->PlayerInput = NewObject<UPlayerInput>(Controller);
+	// The isolated input fixture must not execute configured engine debug commands.
+	Controller->PlayerInput->DebugExecBindings.Reset();
+	TArray<UInputComponent*> EmptyInputStack;
+	constexpr float InputDeltaSeconds = 1.0f / 60.0f;
+	const int32 GoldBeforePauseKeys = Progression->GetGold();
+	for (const FKey& PauseKey : {EKeys::F5, EKeys::Escape})
+	{
+		Controller->InputKey(FInputKeyEventArgs(&InputViewport,
+			FInputDeviceId::CreateFromInternalId(0), PauseKey, IE_Pressed, 1.0f, false, 0u));
+		Controller->PlayerInput->ProcessInputStack(EmptyInputStack, InputDeltaSeconds, false);
+		TestTrue(*FString::Printf(TEXT("Active build forwards %s to PlayerInput"), *PauseKey.ToString()),
+			Controller->WasInputKeyJustPressed(PauseKey));
+		Controller->InputKey(FInputKeyEventArgs(&InputViewport,
+			FInputDeviceId::CreateFromInternalId(0), PauseKey, IE_Released, 0.0f, false, 0u));
+		Controller->PlayerInput->ProcessInputStack(EmptyInputStack, InputDeltaSeconds, false);
+		TestTrue(*FString::Printf(TEXT("Active build forwards %s release to PlayerInput"), *PauseKey.ToString()),
+			Controller->WasInputKeyJustReleased(PauseKey));
+		TestFalse(TEXT("Pause key is not left held after release"), Controller->IsInputKeyDown(PauseKey));
+	}
+	TestEqual(TEXT("Pause key routing preserves the build session state"),
+		Build->GetBuildModeState(), EFF_BuildModeState::BuildMode);
+	TestEqual(TEXT("Pause key routing does not submit construction commands"),
+		Zones->GetWorldRevision(), RevisionBefore);
+	TestEqual(TEXT("Pause key routing leaves festival gold unchanged"),
+		Progression->GetGold(), GoldBeforePauseKeys);
 	TestFalse(TEXT("Function keys cannot start multi-selection"), Build->IsMultiSelectionActive());
 	TestFalse(TEXT("Function keys cannot open settings"), Build->IsBuildSettingsOpen());
 	TestEqual(TEXT("Function keys preserve grid visibility"), Build->IsPlacementGridVisible(), bGridBeforeKeys);
