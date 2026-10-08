@@ -145,6 +145,9 @@ public:
 	// 시간 게이트와 전역 후보·진단이 동일한 SunsetMainStage 시설 ID 판정을 사용한다.
 	static bool IsMainStageFacility(EFFZSFacilityCategory Category, FName FacilityDefinitionId);
 
+	// 손님이 목적지로 고를 수 있는 카테고리인지. 안내·안전·조명·길·타일은 아니다.
+	static bool IsGuestDestinationCategory(EFFZSFacilityCategory Category);
+
 	/**
 	 * 시설 카테고리 → preference_vector 키.
 	 *

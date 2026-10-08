@@ -25,6 +25,7 @@
 #include "UI/LiveHUD/Incident/FF_IncidentDetailPanel.h"
 #include "UI/LiveHUD/Incident/FF_IncidentMarkerLayer.h"
 #include "UI/LiveHUD/Incident/FF_IncidentToast.h"
+#include "UI/LiveHUD/FF_FinaleSnsOverlay.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 #include "UI/LiveHUD/FF_LiveUtilityDock.h"
@@ -277,7 +278,23 @@ void UFF_LiveHudScreen::NativeConstruct()
 	RefreshAll();
 	EnsureIncidentMarkerLayer();
 	EnsureIncidentDetailPanel();
+	EnsureFinaleSnsOverlay();
 	TryShowDailyReport();
+}
+
+void UFF_LiveHudScreen::EnsureFinaleSnsOverlay()
+{
+	if (!FinaleSnsOverlay)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			FinaleSnsOverlay = CreateWidget<UFF_FinaleSnsOverlay>(PC, UFF_FinaleSnsOverlay::StaticClass());
+		}
+	}
+	if (FinaleSnsOverlay && !FinaleSnsOverlay->IsInViewport())
+	{
+		FinaleSnsOverlay->AddToViewport(15);
+	}
 }
 
 void UFF_LiveHudScreen::NativeDestruct()
@@ -297,6 +314,10 @@ void UFF_LiveHudScreen::NativeDestruct()
 	if (IncidentToast)
 	{
 		IncidentToast->RemoveFromParent();
+	}
+	if (FinaleSnsOverlay)
+	{
+		FinaleSnsOverlay->RemoveFromParent();
 	}
 	Super::NativeDestruct();
 }
