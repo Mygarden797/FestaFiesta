@@ -59,7 +59,9 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 	const float NoChoiceUtilityBase = GetCoefficient(UtilityCoefficientTable, TEXT("no_choice_utility"), 0.15f);
 	const float NoChoiceDecayPerRound = GetCoefficient(UtilityCoefficientTable, TEXT("no_choice_utility_decay_per_round"), 0.03f);
 	const float UtilityNoiseScale = FMath::Max(GetCoefficient(UtilityCoefficientTable, TEXT("utility_noise_scale"), 0.3f), 0.05f);
-	const float DistanceRefMeters = GetCoefficient(UtilityCoefficientTable, TEXT("distance_ref_meters"), 400.f);
+	const float DistanceRefMeters = GetCoefficient(UtilityCoefficientTable, TEXT("distance_ref_meters"), 150.f);
+	// 거리 비용 상한. 1 이면 기준 거리 밖은 다 같은 값이라 1km 밖 시설도 400m 시설과 똑같이 뽑혔다.
+	const float DistanceCostCap = FMath::Max(GetCoefficient(UtilityCoefficientTable, TEXT("distance_cost_cap"), 3.f), 1.f);
 	const float WaitRefMinutes = GetCoefficient(UtilityCoefficientTable, TEXT("wait_ref_minutes"), 30.f);
 	const float DensityRefRatio = GetCoefficient(UtilityCoefficientTable, TEXT("density_ref_ratio"), 1.f);
 	const float PreferenceVectorScaleRef = GetCoefficient(UtilityCoefficientTable, TEXT("preference_vector_scale_ref"), 17.f);
@@ -87,7 +89,8 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 		const float PreferenceRaw = PreferenceVectorByCategory.FindRef(Candidate.Category);
 		const float PreferenceNorm = FMath::Clamp(PreferenceRaw / PreferenceVectorScaleRef, -1.f, 1.f);
 
-		const float DistanceNorm = NormalizeUpper(Candidate.DistanceMeters, DistanceRefMeters);
+		const float DistanceNorm = DistanceRefMeters > 0.f
+			? FMath::Clamp(Candidate.DistanceMeters / DistanceRefMeters, 0.f, DistanceCostCap) : 0.f;
 		const float WaitNorm = NormalizeUpper(Candidate.EstimatedWaitMinutes, WaitRefMinutes);
 		const float OccupancyRatio = Candidate.Capacity > 0.f ? (Candidate.CurrentOccupancy / Candidate.Capacity) : 0.f;
 		const float DensityNorm = NormalizeUpper(OccupancyRatio, DensityRefRatio);

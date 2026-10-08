@@ -590,6 +590,28 @@ EFF_PartyFallbackAction UFF_CrowdDecisionSubsystem::ResolveFallbackAction(const 
 		return EFF_PartyFallbackAction::Wander;
 	}
 }
+FName UFF_CrowdDecisionSubsystem::FindNearestZoneId(
+	const UFFZSWorldSubsystem& ZoneSystem, const FFFZSReadModel& ReadModel, const FVector& WorldLocation)
+{
+	FName Nearest = NAME_None;
+	double BestDistSq = FMath::Square(static_cast<double>(MaxOutsideZoneFallbackMeters) * 100.0);
+	for (const FFFZSZoneReadModel& Zone : ReadModel.Zones)
+	{
+		const AFFZSGameplayZone* ZoneActor = ZoneSystem.FindZone(Zone.ZoneId);
+		if (!ZoneActor)
+		{
+			continue;
+		}
+		const double DistSq = FVector::DistSquared2D(ZoneActor->GetActorLocation(), WorldLocation);
+		if (DistSq < BestDistSq)
+		{
+			BestDistSq = DistSq;
+			Nearest = Zone.ZoneId;
+		}
+	}
+	return Nearest;
+}
+
 bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	const FFF_PartyDecisionContext& Context, FFF_PartyDecisionResult& OutResult)
 {
@@ -630,11 +652,19 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		return false;
 	}
 
-	const FName CurrentZoneId = ZoneSystem->ResolveZoneAtWorldLocation(Context.PartyWorldLocation);
+	FName CurrentZoneId = ZoneSystem->ResolveZoneAtWorldLocation(Context.PartyWorldLocation);
 	if (CurrentZoneId.IsNone())
 	{
-		++Stats.OutsideZone;
-		return false;
+		// 입구(3번 게이트 등)나 존 사이 길은 어느 존에도 속하지 않는다. 여기서 결정을 포기하면
+		// 그 파티는 배회만 하다가 존 안으로 우연히 들어설 때까지 시설을 못 본다 — 3일 시나리오에서
+		// 결정 요청의 45% 가 이 경우였다. 가까운 존을 현재 존으로 보고 후보를 찾는다.
+		CurrentZoneId = FindNearestZoneId(*ZoneSystem, ReadModel, Context.PartyWorldLocation);
+		if (CurrentZoneId.IsNone())
+		{
+			++Stats.OutsideZone;
+			return false;
+		}
+		++Stats.OutsideZoneUsedNearest;
 	}
 
 	EnsureWalkDistanceMatrix(*ZoneSystem, ReadModel);
@@ -977,7 +1007,8 @@ static void DecisionStatsCommand(const TArray<FString>& Args, UWorld* World, FOu
 	Ar.Logf(TEXT("시설 좌표 지급   : %d   <- 0이면 Utility가 한 번도 안 먹었다"), S.Chosen);
 	Ar.Logf(TEXT("[폴백] 시설 없음     : %d   (인게임에 짓기 전에는 정상)"), S.NoFacility);
 	Ar.Logf(TEXT("[폴백] 개장 안 됨    : %d   <- FF.Decision.OpenFacilities"), S.NoOpenFacility);
-	Ar.Logf(TEXT("[폴백] Zone 밖       : %d   (Zone 경계 밖에 스폰됐다)"), S.OutsideZone);
+	Ar.Logf(TEXT("[폴백] Zone 밖       : %d   (가까운 Zone 도 없다)"), S.OutsideZone);
+	Ar.Logf(TEXT("[보정] Zone 밖→근처 : %d   (입구·길에서 가까운 Zone 으로 결정)"), S.OutsideZoneUsedNearest);
 	Ar.Logf(TEXT("[폴백] 후보 0개      : %d   (인접 Zone에 열린 시설이 없다)"), S.NoCandidate);
 	Ar.Logf(TEXT("[폴백] no_choice     : %d   (Choose의 정상 판단)"), S.NoChoice);
 	Ar.Logf(TEXT("[문제] ZoneSystem 없음: %d"), S.NoZoneSystem);

@@ -30,6 +30,7 @@ namespace FFF_VisitorForecastTestHelpers
 			Definition->FestivalId = TEXT("ForecastAutomationFestival");
 			Definition->InitialGold = 10000;
 			Definition->BaseDailyVisitors = 500;
+	Definition->AdmissionFeeGold = 5; // 수요 곡선 산술을 기준값 5 로 검증한다
 
 			Progression->StartFestival(Definition);
 			return true;
@@ -77,6 +78,7 @@ bool FFF_Forecast_BuildForecast::RunTest(const FString& Parameters)
 {
 	UFF_FestivalDefinition* Definition = NewObject<UFF_FestivalDefinition>(GetTransientPackage());
 	Definition->BaseDailyVisitors = 500;
+	Definition->AdmissionFeeGold = 5; // 수요 곡선 산술을 기준값 5 로 검증한다
 
 	const FFF_VisitorForecast Expensive = FFF_VisitorForecastRules::BuildForecast(
 		*Definition, EFF_PromotionGrade::Basic, 10, 50.f);
@@ -155,9 +157,11 @@ bool FFF_Forecast_InfluencerTier::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_Evaluation_Rules, "FestaFiesta.Economy.Evaluation.Rules", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_Evaluation_Rules::RunTest(const FString& Parameters)
 {
-	TestEqual(TEXT("원금 그대로면 재무 50"), FFF_FestivalEvaluationRules::CalcFinanceScore(10000, 10000), 50);
-	TestEqual(TEXT("두 배면 100"), FFF_FestivalEvaluationRules::CalcFinanceScore(10000, 20000), 100);
-	TestEqual(TEXT("다 잃으면 0"), FFF_FestivalEvaluationRules::CalcFinanceScore(10000, 0), 0);
+	TestEqual(TEXT("본전이면 재무 0"), FFF_FestivalEvaluationRules::CalcFinanceScore(10000, 10000, 6000), 0);
+	TestEqual(TEXT("목표 이익의 절반이면 50"), FFF_FestivalEvaluationRules::CalcFinanceScore(10000, 13000, 6000), 50);
+	TestEqual(TEXT("목표 이익 이상이면 100"), FFF_FestivalEvaluationRules::CalcFinanceScore(10000, 30000, 6000), 100);
+	TestEqual(TEXT("목표가 없으면 시작 자금이 목표"), FFF_FestivalEvaluationRules::CalcFinanceScore(10000, 15000, 0), 50);
+	TestEqual(TEXT("손해면 0"), FFF_FestivalEvaluationRules::CalcFinanceScore(10000, 0, 6000), 0);
 
 	TestEqual(TEXT("85 는 S"), FFF_FestivalEvaluationRules::GradeForScore(85), EFF_FestivalEvaluationGrade::S);
 	TestEqual(TEXT("84 는 A"), FFF_FestivalEvaluationRules::GradeForScore(84), EFF_FestivalEvaluationGrade::A);
@@ -171,18 +175,19 @@ bool FFF_Evaluation_Rules::RunTest(const FString& Parameters)
 	Input.DaysPlayed = 3;
 	Input.InitialGold = 10000;
 	Input.FinalGold = 13000;
+	Input.TargetProfitGold = 6000;
 	Input.Buzz = 60.f;
 	const FFF_FestivalEvaluation Result = FFF_FestivalEvaluationRules::Evaluate(Input);
 
 	TestEqual(TEXT("만족도 = 평균 80 + 피날레 5"), Result.SatisfactionScore, 85);
 	TestEqual(TEXT("방문객 = 1200 / 1500"), Result.VisitorScore, 80);
-	TestEqual(TEXT("재무 = 50 + 50 × 0.3"), Result.FinanceScore, 65);
+	TestEqual(TEXT("재무 = 100 × 3000 / 6000"), Result.FinanceScore, 50);
 	TestEqual(TEXT("화제성 그대로"), Result.BuzzScore, 60);
-	// 0.4×85 + 0.25×80 + 0.2×65 + 0.15×60 = 34 + 20 + 13 + 9 = 76
-	TestEqual(TEXT("가중 평균"), Result.TotalScore, 76);
-	TestEqual(TEXT("76 은 A"), Result.Grade, EFF_FestivalEvaluationGrade::A);
+	// 0.4×85 + 0.25×80 + 0.2×50 + 0.15×60 = 34 + 20 + 10 + 9 = 73
+	TestEqual(TEXT("가중 평균"), Result.TotalScore, 73);
+	TestEqual(TEXT("73 은 A"), Result.Grade, EFF_FestivalEvaluationGrade::A);
 	TestEqual(TEXT("가장 잘한 것은 만족도"), Result.StrongestAxis, EFF_FestivalEvaluationAxis::Satisfaction);
-	TestEqual(TEXT("가장 못한 것은 화제성"), Result.WeakestAxis, EFF_FestivalEvaluationAxis::Buzz);
+	TestEqual(TEXT("가장 못한 것은 재무"), Result.WeakestAxis, EFF_FestivalEvaluationAxis::Finance);
 	TestFalse(TEXT("S 가 아니면 보완 한 줄이 있다"), Result.WeakestAxisComment.IsEmpty());
 	TestFalse(TEXT("한 줄 평이 있다"), Result.Headline.IsEmpty());
 

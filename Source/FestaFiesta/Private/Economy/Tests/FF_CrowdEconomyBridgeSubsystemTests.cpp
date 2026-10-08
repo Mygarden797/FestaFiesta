@@ -222,6 +222,7 @@ bool FFF_CrowdEconomyBridge_DailyGoalPaysOncePerDay::RunTest(const FString& Para
 	}
 
 	Harness.Definition->DailyVisitorGoal = 500;
+	Harness.Definition->DailyVisitorGoalGrowthPerDay = 0; // 하루 한 번 지급만 본다
 	Harness.Definition->DailyGoalBonusGold = 300;
 	Harness.CrowdSim->OnVisitorsAdmitted.Broadcast(498);
 	TestEqual(TEXT("목표 직전에는 보너스가 없다"),

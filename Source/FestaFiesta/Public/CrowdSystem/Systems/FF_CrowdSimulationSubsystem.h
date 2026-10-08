@@ -753,6 +753,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim")
 	bool bEnablePeriodicReevaluation = true;
 
+	// 시설로 걸어가는 중일 때 개인 재평가 주기에 곱하는 배수. 1 이면 배회 중과 같다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "1.0"))
+	float EnRouteReevaluateIntervalScale = 3.f;
+
+	// 손님 기본 보행 속도 배수(150cm/s 에 곱한다). 새로 스폰되는 파티부터 적용된다.
+	// 1.0 이면 Test_Main 의 입구~시설 거리(100~500m)를 걷는 데 체류 시간을 거의 다 써서 줄 서기가 하루 수십 건뿐이었다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "0.1"))
+	float GuestWalkSpeedScale = 1.6f;
+
 	// 줄에서 개인 인내심 한계를 넘기면 이탈한다(reneging).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Queue")
 	bool bEnableQueuePatienceAbandon = true;
@@ -1652,6 +1661,8 @@ private:
 	int32 QueueFacilityUnresolved = 0;
 	int32 QueueArrivalNotifies = 0;
 	int32 QueueHoldTimeouts = 0;
+	// 메인 공연 휴지 구간으로 흐른 시뮬 시간 누적. 줄 인내 판정에서 뺀다.
+	float QueueBreakSimSeconds = 0.f;
 	int32 QueueStalledSkips = 0;
 
 	// 결정 churn 계수기. 쿨다운이 실제로 무엇을 막았는지 보려면 둘을 같이 봐야 한다

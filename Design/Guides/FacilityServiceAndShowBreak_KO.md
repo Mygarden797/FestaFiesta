@@ -13,6 +13,12 @@
 - 공연 관람석은 리더와 동행 모두 개별 좌표·무대 방향을 사용한다. 전원이 자기 좌석에 도착해야 대기·관람 상태로 전환한다. 좌석에서 수 미터 떨어진 곳을 도착으로 처리하지 않는다.
 - 좌석 배정 시 이전 경로를 지우며, 해당 공연에 도착할 수 없어 좌석이 회수된 파티를 같은 공연에 반복 배정하지 않는다. 다음 공연에는 다시 참여할 수 있다.
 
+2026-10-09 추가 규칙
+
+- 메인 공연 휴지 구간(3분 전~종료) 동안 흐른 시간은 줄 인내 판정의 대기 시간에서 뺀다(`QueueBreakSimSeconds`/`QueueBreakSecondsAtEnter`). 공연 때문에 멈춘 줄에서 손님이 인내 초과로 이탈하지 않는다.
+- `UFF_QueueSubsystem::Tick`은 축제 실효 배속(`GetEffectiveTimeScale`)을 따른다. 위 `팀당 5초`는 배속과 관계없이 Stage 시간 기준이다. 전에는 실제 시간으로만 흘러 4배속에서 서비스가 손님 기준 4배 느렸다.
+- 손님 보행 속도 배수 `GuestWalkSpeedScale`은 1.6이다(150cm/s × 1.6 = 2.4m/s).
+
 시설 데이터 변경 도구: `Tools/facilities/migrate_facility_service_duration.py`.
 기본 실행은 감사이며 `-FFApplyFiveSecondFacilityServices` 지정 시 저장한다. 원본 백업, 이전·이후 이용시간, 그 밖의 시설 속성 보존 결과는 `Saved/FacilityServiceDuration5Seconds`에 기록한다.
 

@@ -363,7 +363,20 @@ void UFF_QueueSubsystem::Tick(float DeltaTime)
 	}
 
 	const float Step = FMath::Max(SimulationStepSeconds, KINDA_SMALL_NUMBER);
-	StepAccumulator += DeltaTime;
+	// 축제 시계·손님 이동·인내심은 모두 배속을 따른다. 대기열만 실제 시간으로 흐르면 4배속에서
+	// 서비스가 손님 기준 4배 느려져 줄 선 손님 대부분이 인내 초과로 떠났다. 같은 배속을 쓴다.
+	float TimeScale = 1.f;
+	if (const UWorld* World = GetWorld())
+	{
+		if (const UGameInstance* GameInstance = World->GetGameInstance())
+		{
+			if (const UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+			{
+				TimeScale = FMath::Max(Stage->GetEffectiveTimeScale(), 0.f);
+			}
+		}
+	}
+	StepAccumulator += DeltaTime * TimeScale;
 
 	int32 Steps = 0;
 	while (StepAccumulator >= Step && Steps < MaxCatchUpStepsPerFrame)

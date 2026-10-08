@@ -1,0 +1,23 @@
+{
+  "description": "경제 시나리오 보통 배치: 무대·입구 주변에 음식 6, 굿즈·공방·게임 각 1, 화장실 3, 쉼터 2, 포토스팟 1, 나이트라이프 1.",
+  "map": "/Game/FestaFiesta/Maps/Test_Main",
+  "slot": "econ_std",
+  "facilities": [
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage", "zones": ["GZ_DadaPocha"], "origin_cm": [2500, 4025], "yaw_centidegrees": 27000, "expected_audience_capacity": 500},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Info/PDA_FFZS_Info_GeneralInfo_General", "zones": ["GZ_TestMain_27", "GZ_TestMain_01"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_BusanFishCakeCart", "zones": ["GZ_TestMain_01"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_CharcoalChickenSkewerStall", "zones": ["GZ_TestMain_07"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger", "zones": ["GZ_TestMain_02"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_CafeTruck", "zones": ["GZ_TestMain_27", "GZ_TestMain_26"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_FruitAdeBar", "zones": ["GZ_TestMain_10"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Pizza", "zones": ["GZ_TestMain_05", "GZ_TestMain_02"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_MarketGoods_LocalSouvenirShop", "zones": ["GZ_TestMain_26"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_CraftExperience_SandArt", "zones": ["GZ_DadaPocha", "GZ_TestMain_01"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_ActivityGame_BalloonDartStall", "zones": ["GZ_TestMain_07"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_Nightlife_EdmBar", "zones": ["GZ_TestMain_10"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Standard_Standard", "count": 2, "zones": ["GZ_TestMain_01", "GZ_TestMain_07"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Temporary_PortableRestroomCabin", "zones": ["GZ_TestMain_05", "GZ_TestMain_02"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Seating_Seating", "count": 2, "zones": ["GZ_TestMain_26", "GZ_TestMain_01"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/PhotoSpot/PDA_FFZS_PhotoSpot_Landmark_WhaleTailSculpture", "zones": ["GZ_TestMain_06"]}
+  ]
+}
