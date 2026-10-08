@@ -373,7 +373,22 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	
 	Handle.Index = Index;
 	Handle.Serial = Slot.Serial;
-	
+
+	FFF_IncidentClosedInfo ClosedInfo;
+	ClosedInfo.Handle = Handle;
+	ClosedInfo.IncidentTag = Slot.IncidentTag;
+	ClosedInfo.FinalState = FinalState;
+	ClosedInfo.Tone = Slot.Tone;
+	ClosedInfo.ChosenOptionIndex = Slot.ChosenOptionIndex;
+	if (const UFF_IncidentDefinition* ClosedDefinition = CachedDef.FindRef(Slot.IncidentTag))
+	{
+		ClosedInfo.Title = ClosedDefinition->Title;
+	}
+	if (const UFF_StaffDispatchSubsystem* Dispatch = GetWorld() ? GetWorld()->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr)
+	{
+		ClosedInfo.bWasResponding = Dispatch->IsResponding(Handle);
+	}
+
 	Slot.Serial++;
 	Slot.bInUse = false;
 	Slot.State = FinalState;
@@ -389,7 +404,8 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	
 	
 	OnIncidentClosed.Broadcast(Handle);
-	
+	OnIncidentFinished.Broadcast(ClosedInfo);
+
 	if (bEscalateTo)
 	{
 		ReportIncident(EscalateToReport);

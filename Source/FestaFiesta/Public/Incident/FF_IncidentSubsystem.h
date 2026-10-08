@@ -17,6 +17,7 @@ class UFF_IncidentEffect;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIncidentRaised, FFF_IncidentHandle,IncidentHandle);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIncidentUpdated, FFF_IncidentHandle,IncidentHandle);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIncidentClosed, FFF_IncidentHandle,IncidentHandle);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIncidentFinished, const FFF_IncidentClosedInfo&, Info);
 
 
 
@@ -92,7 +93,10 @@ public:
 	//사건 발생, 종료 시에 전달되는 델리게이트
 	FFF_OnIncidentRaised OnIncidentRaised;
 	FFF_OnIncidentClosed OnIncidentClosed;
-	FFF_OnIncidentUpdated OnIncidentUpdated;
+
+	//닫힌 이유·제목·출동 여부를 값으로 실어 OnIncidentClosed 바로 뒤에 방송한다.
+	FFF_OnIncidentFinished OnIncidentFinished;
+FFF_OnIncidentUpdated OnIncidentUpdated;
 	
 	
 private:

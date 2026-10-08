@@ -201,4 +201,67 @@ bool UFF_UIDisplayTextLibrary::IsIncidentResolveAccepted(EFF_IncidentResolveResu
 	return Result == EFF_IncidentResolveResult::Dispatched || Result == EFF_IncidentResolveResult::Resolved;
 }
 
+FText UFF_UIDisplayTextLibrary::GetIncidentClosedLabel(EFF_IncidentState State)
+{
+	switch (State)
+	{
+	case EFF_IncidentState::Resolved:	return LOCTEXT("IncidentClosedLabel_Resolved", "완료");
+	case EFF_IncidentState::Expired:	return LOCTEXT("IncidentClosedLabel_Expired", "소멸");
+	case EFF_IncidentState::Ignored:	return LOCTEXT("IncidentClosedLabel_Ignored", "방치");
+	case EFF_IncidentState::Missed:		return LOCTEXT("IncidentClosedLabel_Missed", "놓침");
+	case EFF_IncidentState::Active:
+	case EFF_IncidentState::Acknowledged:
+	case EFF_IncidentState::Taken:		return FText::GetEmpty();
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_UIDisplayTextLibrary::GetIncidentClosedText(EFF_IncidentState State, const FText& Title)
+{
+	if (Title.IsEmpty())
+	{
+		switch (State)
+		{
+		case EFF_IncidentState::Resolved:	return LOCTEXT("IncidentClosedBare_Resolved", "사건 처리를 마쳤어요");
+		case EFF_IncidentState::Expired:	return LOCTEXT("IncidentClosedBare_Expired", "사건이 저절로 사라졌어요");
+		case EFF_IncidentState::Ignored:	return LOCTEXT("IncidentClosedBare_Ignored", "사건을 손쓰지 못한 채 끝났어요");
+		case EFF_IncidentState::Missed:		return LOCTEXT("IncidentClosedBare_Missed", "기회를 놓쳤어요");
+		case EFF_IncidentState::Active:
+		case EFF_IncidentState::Acknowledged:
+		case EFF_IncidentState::Taken:		return FText::GetEmpty();
+		}
+		return FText::GetEmpty();
+	}
+
+	switch (State)
+	{
+	case EFF_IncidentState::Resolved:	return FText::Format(LOCTEXT("IncidentClosedText_Resolved", "{0} — 처리를 마쳤어요"), Title);
+	case EFF_IncidentState::Expired:	return FText::Format(LOCTEXT("IncidentClosedText_Expired", "{0} — 저절로 사라졌어요"), Title);
+	case EFF_IncidentState::Ignored:	return FText::Format(LOCTEXT("IncidentClosedText_Ignored", "{0} — 손쓰지 못한 채 끝났어요"), Title);
+	case EFF_IncidentState::Missed:		return FText::Format(LOCTEXT("IncidentClosedText_Missed", "{0} — 기회를 놓쳤어요"), Title);
+	case EFF_IncidentState::Active:
+	case EFF_IncidentState::Acknowledged:
+	case EFF_IncidentState::Taken:		return FText::GetEmpty();
+	}
+
+	return FText::GetEmpty();
+}
+
+EFF_IncidentToastKind UFF_UIDisplayTextLibrary::GetIncidentClosedKind(EFF_IncidentState State)
+{
+	switch (State)
+	{
+	case EFF_IncidentState::Resolved:	return EFF_IncidentToastKind::Good;
+	case EFF_IncidentState::Ignored:	return EFF_IncidentToastKind::Danger;
+	case EFF_IncidentState::Expired:
+	case EFF_IncidentState::Missed:
+	case EFF_IncidentState::Active:
+	case EFF_IncidentState::Acknowledged:
+	case EFF_IncidentState::Taken:		return EFF_IncidentToastKind::Neutral;
+	}
+
+	return EFF_IncidentToastKind::Neutral;
+}
+
 #undef LOCTEXT_NAMESPACE
