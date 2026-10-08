@@ -39,4 +39,9 @@ namespace FFIncidentMarkerRules
 	FESTAFIESTA_API float GetWorkProgress(EFF_IncidentResponseStage Stage, float RemainingWorkMinutes, float TotalWorkMinutes);
 	FESTAFIESTA_API FLinearColor GetUrgencyColor(EFF_IncidentUrgency Urgency, const FFF_UIPaletteInGame& Palette);
 	FESTAFIESTA_API EFF_IncidentMarkerMotion GetUrgencyMotion(EFF_IncidentUrgency Urgency);
+
+	FESTAFIESTA_API bool IsInsideRect(const FVector2D& Point, const FVector2D& Min, const FVector2D& Max);
+	FESTAFIESTA_API FVector2D DirectionFromCameraLocal(float Right, float Up);
+	FESTAFIESTA_API FVector2D ClampToRectEdge(const FVector2D& Direction, const FVector2D& Min, const FVector2D& Max);
+	FESTAFIESTA_API float DirectionToAngleDegrees(const FVector2D& Direction);
 }

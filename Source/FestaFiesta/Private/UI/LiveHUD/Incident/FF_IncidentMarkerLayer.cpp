@@ -313,6 +313,17 @@ void UFF_IncidentMarkerLayer::NativeTick(const FGeometry& MyGeometry, float InDe
 	}
 
 	const FVector2D LocalSize = MyGeometry.GetLocalSize();
+	const FVector2D RectMin(EdgeSafeMargin.Left, EdgeSafeMargin.Top);
+	const FVector2D RectMax(LocalSize.X - EdgeSafeMargin.Right, LocalSize.Y - EdgeSafeMargin.Bottom);
+	if (RectMax.X <= RectMin.X || RectMax.Y <= RectMin.Y)
+	{
+		return;
+	}
+	const FVector2D RectCenter = (RectMin + RectMax) * 0.5f;
+
+	FVector CameraLocation;
+	FRotator CameraRotation;
+	PC->GetPlayerViewPoint(CameraLocation, CameraRotation);
 
 	for (TPair<FFF_IncidentHandle, FMarker>& Pair : Markers)
 	{
@@ -323,23 +334,41 @@ void UFF_IncidentMarkerLayer::NativeTick(const FGeometry& MyGeometry, float InDe
 		}
 
 		FVector WorldLocation;
-		FVector2D ScreenPosition = FVector2D::ZeroVector;
-		const bool bVisible =
-			TryGetAnchorWorldLocation(Pair.Value.View.Anchor, WorldLocation)
-			&& UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PC, WorldLocation, ScreenPosition, false)
-			&& ScreenPosition.X >= 0.f && ScreenPosition.Y >= 0.f
-			&& ScreenPosition.X <= LocalSize.X && ScreenPosition.Y <= LocalSize.Y;
-
-		if (!bVisible)
+		if (!TryGetAnchorWorldLocation(Pair.Value.View.Anchor, WorldLocation))
 		{
 			Button->SetVisibility(ESlateVisibility::Collapsed);
 			continue;
 		}
 
+		FVector2D ScreenPosition = FVector2D::ZeroVector;
+		const bool bProjected = UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PC, WorldLocation, ScreenPosition, false);
+
+		FVector2D Position = ScreenPosition;
+		FVector2D EdgeDirection = FVector2D::ZeroVector;
+		const bool bOffscreen = !bProjected || !FFIncidentMarkerRules::IsInsideRect(ScreenPosition, RectMin, RectMax);
+		if (bOffscreen)
+		{
+			if (bProjected)
+			{
+				EdgeDirection = (ScreenPosition - RectCenter).GetSafeNormal();
+			}
+			else
+			{
+				const FVector Local = CameraRotation.UnrotateVector(WorldLocation - CameraLocation);
+				EdgeDirection = FFIncidentMarkerRules::DirectionFromCameraLocal(Local.Y, Local.Z);
+			}
+			Position = FFIncidentMarkerRules::ClampToRectEdge(EdgeDirection, RectMin, RectMax);
+			if (EdgeDirection.IsNearlyZero())
+			{
+				EdgeDirection = (Position - RectCenter).GetSafeNormal();
+			}
+		}
+
 		if (UCanvasPanelSlot* MarkerSlot = Cast<UCanvasPanelSlot>(Button->Slot))
 		{
-			MarkerSlot->SetPosition(ScreenPosition);
+			MarkerSlot->SetPosition(Position);
 		}
+		Button->SetEdgeIndicator(bOffscreen, EdgeDirection);
 		Button->SetVisibility(ESlateVisibility::Visible);
 	}
 }
