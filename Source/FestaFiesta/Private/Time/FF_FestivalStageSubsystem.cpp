@@ -458,10 +458,16 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		// 오늘 총 길이 - 흐른 시간 = 남은 시간을 매번 다시 계산
 	}
 	else
-		//(Setup/Promotion/MorningCheck/Closing/Report) 처리
-	{
-		FFF_PhaseTimeRange Range = GetPhaseTimeRange(CurrentStage);
-		// 지금 단계에 맞는 시간 범위를 표에서 찾아옴
+			//(Setup/Promotion/MorningCheck/Closing/Report) 처리
+			{
+				if (CurrentStage == EFF_FestivalStage::MorningCheck)
+				{
+					return;
+					// 시간 누적/자동 전환 안 함 (스킵으로만 넘어감)
+				}
+
+				FFF_PhaseTimeRange Range = GetPhaseTimeRange(CurrentStage);
+				// 지금 단계에 맞는 시간 범위를 표에서 찾아옴
 
 		if (Range.MaxSeconds <= 0.f)
 		{
