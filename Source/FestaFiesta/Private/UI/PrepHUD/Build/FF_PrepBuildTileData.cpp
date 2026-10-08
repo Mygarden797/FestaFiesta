@@ -47,5 +47,14 @@ void UFF_PrepBuildTileData::RefreshDerivedValues()
 			FText::AsNumber(FMath::Max(0, Entry.CurrentInstanceCount)), FText::AsNumber(Entry.MaxInstancesPerWorld))
 		: FFF_PrepBuildPresentationRules::ResolveTileStateLabel(TileState);
 	StateText = FFF_PrepBuildPresentationRules::ResolveTileStateText(TileState);
+	if (TileState == EFF_PrepBuildTileState::BuildLimitReached)
+	{
+		// A compact lock belongs on the card; the full explanation is used by click feedback and tooltips.
+		StateLabelText = NSLOCTEXT("FestaFiestaPrepBuild", "BuildLimitLockedLabel", "잠김");
+		StateText = FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "BuildLimitLockedReason",
+			"{0}: 건축 한도에 도달했습니다. (설치 {1}/{2})\n기존 시설을 철거하면 다시 건축할 수 있습니다."),
+			DisplayName, FText::AsNumber(FMath::Max(0, Entry.CurrentInstanceCount)),
+			FText::AsNumber(Entry.MaxInstancesPerWorld));
+	}
 }
 

@@ -811,7 +811,7 @@ namespace FFPrepBuildVirtualizedSlateTest
             if (!Test.TestNotNull(TEXT("The existing status slot shows installation count"), State) ||
                 !Test.TestNotNull(TEXT("Required facility card frame"), Card)) { return false; }
             Test.TestEqual(TEXT("Required state explains installation without a fraction"),
-                State->GetText().ToString(), FString(bInstalled ? TEXT("설치 완료") : TEXT("1개 설치")));
+                State->GetText().ToString(), FString(bInstalled ? TEXT("잠김") : TEXT("1개 설치")));
             Test.TestTrue(TEXT("The real row receives required/satisfied state"),
                 RequiredRow->IsRequiredFacility() && RequiredRow->IsRequiredFacilitySatisfied() == bInstalled);
             const FSlateRect CardRect = Card->GetCachedGeometry().GetLayoutBoundingRect();
@@ -1232,8 +1232,22 @@ namespace FFPrepBuildVirtualizedSlateTest
                     }
                     else Test.AddError(Label + TEXT(": authored facility accent properties are missing"));
                 }
-                Test.TestTrue(*FString::Printf(TEXT("%s: recycled thumbnail surface matches the current facility and authored style"), *Label),
-                    ProgramBackdrop && AuthoredBackdrop && ProgramBackdrop->Background == ExpectedBackdrop);
+                const bool bLocked = Item->GetTileState() == EFF_PrepBuildTileState::BuildLimitReached;
+                if (bLocked)
+                {
+                    const auto* LockTintProperty = FindFProperty<FStructProperty>(Row->GetClass(), TEXT("LockedCardTint"));
+                    Test.TestTrue(*FString::Printf(TEXT("%s: a recycled capped row overrides required/program artwork with its authored lock color"), *Label),
+                        LockTintProperty && ProgramBackdrop && !ProgramBackdrop->Background.GetResourceObject() &&
+                        ProgramBackdrop->Background.TintColor == FSlateColor(*LockTintProperty->ContainerPtrToValuePtr<FLinearColor>(Row)) &&
+                        Card->Background.TintColor == ProgramBackdrop->Background.TintColor);
+                }
+                else
+                {
+                    Test.TestTrue(*FString::Printf(TEXT("%s: recycled unlocked thumbnail restores the current facility's authored style"), *Label),
+                        ProgramBackdrop && AuthoredBackdrop && ProgramBackdrop->Background == ExpectedBackdrop);
+                }
+                Test.TestTrue(*FString::Printf(TEXT("%s: only capped artwork is disabled and every card remains clickable"), *Label),
+                    Thumbnail->GetIsEnabled() == !bLocked && Tile->GetIsEnabled());
                 Test.TestTrue(*FString::Printf(TEXT("%s: pooled required and synergy flags belong to the current facility"), *Label),
                     Tile->IsRequiredFacility() == Item->IsRequiredFacility() &&
                     Tile->IsRequiredFacilitySatisfied() == Item->IsRequiredFacilitySatisfied() &&

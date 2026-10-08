@@ -4,6 +4,8 @@
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
+#include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
+#include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogModel.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
@@ -14,7 +16,9 @@
 #include "Engine/World.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityDefinition.h"
+#include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSZoneActor.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Misc/AutomationTest.h"
@@ -23,6 +27,7 @@
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"
+#include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AuroraCatalogSelectionTest,
     "FestaFiesta.UI.PrepBuild.ClarityDirectCardActivation",
@@ -74,6 +79,7 @@ bool FFF_AuroraCatalogSelectionTest::RunTest(const FString& Parameters)
     {
         Mode->DestroyPlacementPreview();
         Mode->ResetPlacementSelection();
+        Mode->DismissPlacementFailureFeedback(true);
         Mode->State = EFF_BuildModeState::Closed;
     };
     auto* Panel = NewObject<UFF_PrepPanelBuild>(World, PanelClass);
@@ -115,6 +121,57 @@ bool FFF_AuroraCatalogSelectionTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("The card is revalidated against the latest balance"), Tile->IsAffordable());
     TestEqual(TEXT("The actual affordability reason is visible"), Panel->Text_Status->GetText().ToString(), Tile->GetStateText().ToString());
     TestEqual(TEXT("Rejected activation never mutates the world"), Zones->GetWorldRevision(), RevisionBefore);
+
+    // Seed a pre-existing facility in this isolated world; count projection still
+    // reads the real authority registry instead of a stale catalog snapshot.
+    const FName FixtureZoneId(TEXT("GZ_DadaPocha"));
+    auto* FixtureZone = World->SpawnActor<AFFZSGameplayZone>();
+    if (!TestNotNull(TEXT("Existing facility's real zone"), FixtureZone) ||
+        !TestTrue(TEXT("Fixture zone uses a valid accepted preset"), FixtureZone->ApplyAcceptedZonePreset(FixtureZoneId)) ||
+        !TestTrue(TEXT("Fixture zone registers with authority"), Zones->RegisterZone(FixtureZone))) return false;
+    auto* Installed = World->SpawnActor<AFFZSFacilityActor>();
+    if (!TestNotNull(TEXT("Pre-existing facility fixture"), Installed)) return false;
+    *FindFProperty<FStructProperty>(Installed->GetClass(), TEXT("FacilitySpec"))
+        ->ContainerPtrToValuePtr<FFFZSFacilitySpec>(Installed) = Definition->Spec;
+    *FindFProperty<FStructProperty>(Installed->GetClass(), TEXT("FacilityInstanceId"))
+        ->ContainerPtrToValuePtr<FGuid>(Installed) = FGuid::NewGuid();
+    FindFProperty<FNameProperty>(Installed->GetClass(), TEXT("ZoneId"))
+        ->SetPropertyValue_InContainer(Installed, FixtureZoneId);
+    if (!TestTrue(TEXT("Existing fixture registers with the real count authority"), Zones->RegisterFacility(Installed))) return false;
+    Catalog->Entries[0].MaxInstancesPerWorld = 1;
+    auto* FeedbackClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_BuildPlacementFailureFeedback>(nullptr,
+        FFBuildUIAssetPaths::PlacementFailureFeedbackClass));
+    if (!TestNotNull(TEXT("Production failure toast class"), FeedbackClass)) return false;
+    {
+        const bool bPreviousPlayerless = FeedbackClass->bCanCallInitializedWithoutPlayerContext;
+        FeedbackClass->bCanCallInitializedWithoutPlayerContext = true;
+        Mode->PlacementFailureFeedback = CreateWidget<UFF_BuildPlacementFailureFeedback>(World, FeedbackClass);
+        FeedbackClass->bCanCallInitializedWithoutPlayerContext = bPreviousPlayerless;
+    }
+    if (!TestNotNull(TEXT("Production toast fixture"), Mode->PlacementFailureFeedback.Get())) return false;
+    const TSharedRef<SWidget> FeedbackSlate = Mode->PlacementFailureFeedback->TakeWidget();
+    Panel->Text_Status = nullptr; // Production web ribbon has no visible legacy status footer.
+    const int64 CappedRevision = Zones->GetWorldRevision();
+    const int32 CappedGold = Progression->GetGold();
+    Panel->HandleTileClicked(Tile);
+    TestEqual(TEXT("Capacity rejection keeps the catalog open"), Mode->GetBuildModeState(), EFF_BuildModeState::CatalogOpen);
+    TestNull(TEXT("Clicking a locked card never starts a placement preview"), Mode->PlacementPreview.Get());
+    TestEqual(TEXT("Capacity wins over the simultaneously insufficient balance"),
+        Tile->GetTileState(), EFF_PrepBuildTileState::BuildLimitReached);
+    TestEqual(TEXT("Clicking a locked card displays the non-blocking toast"),
+        Mode->PlacementFailureFeedback->GetVisibility(), ESlateVisibility::HitTestInvisible);
+    TestEqual(TEXT("The toast's actual text widget receives the complete current reason"),
+        Mode->PlacementFailureFeedback->GetDisplayedFailureReason().ToString(), Tile->GetStateText().ToString());
+    TestTrue(TEXT("The visible reason includes capacity and how to unlock"),
+        Mode->PlacementFailureFeedback->GetDisplayedFailureReason().ToString().Contains(TEXT("1/1")) &&
+        Mode->PlacementFailureFeedback->GetDisplayedFailureReason().ToString().Contains(TEXT("철거")));
+    TestEqual(TEXT("A locked click cannot spend gold"), Progression->GetGold(), CappedGold);
+    TestEqual(TEXT("A locked click cannot mutate the world"), Zones->GetWorldRevision(), CappedRevision);
+    Zones->UnregisterFacility(Installed);
+    Panel->RefreshPricedEntries();
+    Panel->ReconcilePresentation();
+    TestEqual(TEXT("Removing the installed facility clears the cap on the same pooled tile"),
+        Tile->GetTileState(), EFF_PrepBuildTileState::InsufficientFunds);
     Panel->PresentationModel->Reconcile(EFF_BuildCatalogLoadState::Ready, {}, {}, 7600, true, FText::GetEmpty());
     Panel->ApplyPresentation(false);
     TestTrue(TEXT("Filtering the candidate out clears its selection"), Panel->GetSelectedCatalogFacilityId().IsNone());

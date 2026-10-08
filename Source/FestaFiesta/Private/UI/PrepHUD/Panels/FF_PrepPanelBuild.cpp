@@ -1046,9 +1046,15 @@ bool UFF_PrepPanelBuild::ActivateCatalogFacility(const FName FacilityDefinitionI
 
 	if (!Tile->IsAffordable())
 	{
+		const FText Reason = Tile->GetStateText();
+		if (Tile->GetTileState() == EFF_PrepBuildTileState::BuildLimitReached)
+		{
+			// The ribbon has no visible status footer. Keep locked cards clickable and
+			// explain their current authoritative limit in the existing screen toast.
+			BuildModeSubsystem->PresentPlacementFailure(EFFZSPlacementFailure::BuildLimitReached, Reason);
+		}
 		if (Text_Status)
 		{
-			const FText Reason = Tile->GetStateText();
 			Text_Status->SetText(Reason.IsEmpty()
 				? LOCTEXT("UnavailableTile", "지금은 이 시설을 선택할 수 없습니다.")
 				: Reason);
