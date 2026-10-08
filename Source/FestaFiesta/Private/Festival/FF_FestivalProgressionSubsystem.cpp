@@ -433,7 +433,7 @@ void UFF_FestivalProgressionSubsystem::RecordAdmittedVisitorsForDailyGoal(int32 
 	TotalAdmittedVisitors = static_cast<int32>(FMath::Min<int64>(MAX_int32,
 		static_cast<int64>(TotalAdmittedVisitors) + AdmittedCount));
 
-	const int32 Goal = Definition->DailyVisitorGoal;
+	const int32 Goal = Definition->GetDailyVisitorGoalForDay(LastProcessedDay);
 	if (!bDailyGoalBonusPaid && Goal > 0 && AdmittedVisitorsToday >= Goal)
 	{
 		bDailyGoalBonusPaid = true;
@@ -456,7 +456,7 @@ int32 UFF_FestivalProgressionSubsystem::GetDailyVisitorGoal() const
 	{
 		return INDEX_NONE;
 	}
-	return Definition->DailyVisitorGoal;
+	return Definition->GetDailyVisitorGoalForDay(FMath::Max(LastProcessedDay, 1));
 }
 
 void UFF_FestivalProgressionSubsystem::AddFacilityRevenue(
@@ -1014,7 +1014,12 @@ FFF_FestivalEvaluation UFF_FestivalProgressionSubsystem::ComputeFestivalEvaluati
 	if (Definition != nullptr)
 	{
 		Input.DailyVisitorGoal = Definition->DailyVisitorGoal;
+		for (int32 Day = 1; Day <= Input.DaysPlayed; ++Day)
+		{
+			Input.VisitorGoalTotal += Definition->GetDailyVisitorGoalForDay(Day);
+		}
 		Input.InitialGold = Definition->InitialGold;
+		Input.TargetProfitGold = Definition->FinanceTargetProfitGold;
 		Input.WeightSatisfaction = Definition->EvaluationWeightSatisfaction;
 		Input.WeightVisitors = Definition->EvaluationWeightVisitors;
 		Input.WeightFinance = Definition->EvaluationWeightFinance;

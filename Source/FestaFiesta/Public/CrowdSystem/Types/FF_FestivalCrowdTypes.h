@@ -418,6 +418,8 @@ struct FPartyDecisionState
 	// 완료·폐쇄 취소)인데, 그 이벤트가 하나라도 유실되면 파티가 영원히 재평가되지 않는다.
 	// 그러면 화면에는 "이유 없이 굳은 NPC 무리"로만 보이고 로그에는 아무것도 안 남는다.
 	float QueueEnteredSimTime = 0.f;
+	// 줄에 들어갈 때의 공연 휴지 누적 시간. 인내 판정에서 휴지 구간을 빼는 기준이다.
+	float QueueBreakSecondsAtEnter = 0.f;
 
 	// --- 예약 프로그램 -----------------------------------------------------------------
 	EFF_PartyProgramPhase ProgramPhase = EFF_PartyProgramPhase::None;

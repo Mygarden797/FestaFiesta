@@ -42,14 +42,17 @@ EFF_FestivalEvaluationGrade FFF_FestivalEvaluationRules::GradeForScore(const int
 	return EFF_FestivalEvaluationGrade::D;
 }
 
-int32 FFF_FestivalEvaluationRules::CalcFinanceScore(const int32 InitialGold, const int32 FinalGold)
+int32 FFF_FestivalEvaluationRules::CalcFinanceScore(const int32 InitialGold, const int32 FinalGold, const int32 TargetProfitGold)
 {
-	if (InitialGold <= 0)
+	// 원금 대비 비율로 재면 입장료만으로 원금이 두 배가 돼 아무것도 안 해도 만점이었다.
+	// 목표 이익을 따로 두어 투자해서 번 플레이와 돈만 아낀 플레이가 갈리게 한다.
+	const int32 Target = TargetProfitGold > 0 ? TargetProfitGold : InitialGold;
+	if (Target <= 0)
 	{
-		return 50;
+		return 0;
 	}
-	const float Ratio = static_cast<float>(FinalGold - InitialGold) / static_cast<float>(InitialGold);
-	return Clamp100(50.f + 50.f * Ratio);
+	const float Ratio = static_cast<float>(FinalGold - InitialGold) / static_cast<float>(Target);
+	return Clamp100(100.f * Ratio);
 }
 
 FFF_FestivalEvaluation FFF_FestivalEvaluationRules::Evaluate(const FFF_FestivalEvaluationInput& Input)
@@ -68,12 +71,14 @@ FFF_FestivalEvaluation FFF_FestivalEvaluationRules::Evaluate(const FFF_FestivalE
 	}
 	Result.SatisfactionScore = Clamp100(SatisfactionAverage + Input.FinaleSatisfactionBonus);
 
-	const int64 GoalTotal = static_cast<int64>(FMath::Max(Input.DailyVisitorGoal, 0)) * FMath::Max(Input.DaysPlayed, 0);
+	const int64 GoalTotal = Input.VisitorGoalTotal > 0
+		? static_cast<int64>(Input.VisitorGoalTotal)
+		: static_cast<int64>(FMath::Max(Input.DailyVisitorGoal, 0)) * FMath::Max(Input.DaysPlayed, 0);
 	Result.VisitorScore = GoalTotal > 0
 		? Clamp100(100.f * static_cast<float>(FMath::Max(Input.TotalAdmittedVisitors, 0)) / static_cast<float>(GoalTotal))
 		: 50;
 
-	Result.FinanceScore = CalcFinanceScore(Input.InitialGold, Input.FinalGold);
+	Result.FinanceScore = CalcFinanceScore(Input.InitialGold, Input.FinalGold, Input.TargetProfitGold);
 	Result.BuzzScore = Clamp100(Input.Buzz);
 
 	const float Weights[4] = {

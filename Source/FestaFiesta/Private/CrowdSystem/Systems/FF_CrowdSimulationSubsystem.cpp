@@ -360,12 +360,14 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	// OnTimeScaleChange는 사용자가 고른 raw 배속만 알린다. 공연/미니게임 잠금은 매 프레임
 	// Effective 값을 읽어야 Stage 시계와 Crowd 이동이 같은 속도로 흐른다.
 	float EffectiveSimulationTimeScale = SimulationTimeScale;
+	bool bQueueBreakThisFrame = false;
 	if (const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
 	{
 		if (const UFF_FestivalStageSubsystem* Stage =
 			GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
 		{
 			EffectiveSimulationTimeScale = Stage->GetEffectiveTimeScale();
+			bQueueBreakThisFrame = Stage->IsMainProgramQueueBreakActive();
 		}
 	}
 	ApplyCrowdAnimPlayRate(FMath::Max(0.f, EffectiveSimulationTimeScale));
@@ -385,6 +387,10 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	{
 		StepSimulation(FixedStepSeconds);
 		SimTimeSeconds += FixedStepSeconds;
+		if (bQueueBreakThisFrame)
+		{
+			QueueBreakSimSeconds += FixedStepSeconds;
+		}
 	}
 
 	ProcessPendingDespawns();
@@ -770,7 +776,7 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 	int32 SpawnedCount = 0;
 	int32 PartiesFormed = 0;
 	int32 ChildrenSpawned = 0;
-	const float BaseSpeed = FUnitData().Speed;
+	const float BaseSpeed = FUnitData().Speed * FMath::Max(GuestWalkSpeedScale, 0.1f);
 	
 	while (VisitorCursor < CachedDistribution.Visitors.Num() && VisitorCursor < TargetCumulativeCount && !bAgentPoolExhausted)
 	{
@@ -1177,13 +1183,18 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 					? FMath::Max(SimTimeSeconds - State.LastDecisionSimTime, 0.f)
 					: 0.f;
 
+				// ★ 시설로 걸어가는 중이면 주기를 늘린다. 200~300m 를 걷는 데 Live 의 절반이 걸리는데
+				//   같은 주기로 다시 고르게 하면 도착 전에 다른 시설로 돌아서 버려, 시설을 고른 파티의
+				//   96% 가 하루 동안 아무 줄에도 서지 못했다. 완전히 끄지 않는 것은 끝내 못 가는 파티의 안전장치다.
+				const float IntervalScale = State.CurrentDestinationId.IsNone() ? 1.f : FMath::Max(1.f, EnRouteReevaluateIntervalScale);
+
 				// 대기·밀집 항은 끈다 — 각각 큐 이탈과 조정자의 Relocate 경로가 맡는다.
 				const bool bReevaluate = (State.LastDecisionSimTime > 0.f)
 					&& FFF_UtilityDestinationSelector::ShouldReevaluate(
 						/*CurrentWaitMinutes=*/0.f, /*PersonalWaitThresholdMinutes=*/TNumericLimits<float>::Max(),
 						/*CurrentDensityRatio=*/0.f, /*PersonalDensityThresholdRatio=*/1.f,
 						SecondsSinceLastDecision,
-						AgentPersonalThresholds[AgentIndex].ReevaluateIntervalSeconds,
+						AgentPersonalThresholds[AgentIndex].ReevaluateIntervalSeconds * IntervalScale,
 						/*bDestinationOpenStateChanged=*/false, /*bLiveEventStateChanged=*/false);
 
 				if (bReevaluate)
@@ -4066,7 +4077,10 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 		&& !bHasStartedService
 		&& AgentPersonalThresholds.IsValidIndex(LeaderAgentIndex))
 	{
-		const float WaitedMinutes = FMath::Max(SimTimeSeconds - State.QueueEnteredSimTime, 0.f)
+		// 공연 휴지 구간에는 시설이 서비스를 멈춘다. 그 시간까지 기다린 것으로 치면 공연이 끝나기 전에
+		// 줄 선 손님이 거의 다 이탈했다(인내 15분 = 실제 15초, 휴지 구간 약 33초). 휴지 구간 시간은 뺀다.
+		const float PausedSeconds = FMath::Max(QueueBreakSimSeconds - State.QueueBreakSecondsAtEnter, 0.f);
+		const float WaitedMinutes = FMath::Max(SimTimeSeconds - State.QueueEnteredSimTime - PausedSeconds, 0.f)
 			* Temp_FestivalMinutesPerRealSecond;
 
 		// 대기 항만 켜서 부른다. 밀집은 조정자의 Relocate 경로가 이미 판정하고 있고,
@@ -4152,6 +4166,7 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 		State.QueuePhase = EFF_PartyQueuePhase::Joined;
 		State.QueuedFacilityId = ZoneFacilityId;
 		State.QueueEnteredSimTime = SimTimeSeconds;
+		State.QueueBreakSecondsAtEnter = QueueBreakSimSeconds;
 		return true;
 	}
 
