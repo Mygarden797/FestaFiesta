@@ -458,6 +458,18 @@ bool FFF_PrepBuildPresentation_TileDataTest::RunTest(const FString& Parameters)
 	Tile->Initialize(Entry, 900, true);
 	TestEqual(TEXT("무제한 시설은 기존 배치 가능 라벨로 돌아온다"), Tile->GetStateLabelText(),
 		FFF_PrepBuildPresentationRules::ResolveTileStateLabel(EFF_PrepBuildTileState::Available));
+	Entry.bRequiredForSetup = true;
+	Entry.RequiredMinimumCount = 1;
+	Entry.MaxInstancesPerWorld = 1;
+	Tile->Initialize(Entry, 900, true);
+	TestEqual(TEXT("필수 시설에는 비율 대신 설치 수량을 안내한다"), Tile->GetStateLabelText().ToString(), FString(TEXT("1개 설치")));
+	TestEqual(TEXT("필수 시설 툴팁에도 설치 비율을 반복하지 않는다"), Tile->GetBuildLimitText().ToString(), FString(TEXT("필수 · 1개 설치")));
+	Entry.bRequiredSetupSatisfied = true;
+	Entry.CurrentInstanceCount = 1;
+	Entry.bBuildLimitReached = true;
+	Tile->Initialize(Entry, 900, true);
+	TestEqual(TEXT("필수 시설 설치 후에는 완료를 안내한다"), Tile->GetStateLabelText().ToString(), FString(TEXT("설치 완료")));
+	TestFalse(TEXT("비율을 숨겨도 실제 설치 한도는 유지한다"), Tile->IsAffordable());
 	return true;
 }
 

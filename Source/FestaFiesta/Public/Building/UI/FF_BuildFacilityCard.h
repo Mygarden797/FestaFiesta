@@ -57,6 +57,12 @@ public:
 	bool IsRequiredFacilitySatisfied() const { return bRequiredFacilitySatisfied; }
 
 	static FText MakeRequiredFacilityToolTip(bool bSatisfied, int32 CurrentCount, int32 MinimumCount);
+	static FText MakeRequiredFacilityLabel(int32 MinimumCount);
+	static FText MakeLightingToolTip();
+
+	/** 설치 뒤 스태프 배정까지 요구하는 필수 시설의 안내. RequiredCount 가 0 이하이면 빈 문구다. */
+	static FText MakeRequiredStaffToolTip(int32 AssignedCount, int32 RequiredCount);
+
 	static FText MakeProgramFacilityToolTip(const FFF_BuildCatalogEntry& CatalogEntry);
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI|Program")
@@ -83,6 +89,9 @@ protected:
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
+		const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId,
+		const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 
 	/** 테두리·배지 외에 디자이너가 추가할 상태 표현입니다. 상태가 바뀔 때만 호출됩니다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Building|UI|Synergy")

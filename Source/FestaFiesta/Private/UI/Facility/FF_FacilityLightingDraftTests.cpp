@@ -14,6 +14,10 @@
 #include "Editor.h"
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Misc/Paths.h"
+#include "Misc/ScopeExit.h"
+#include "HAL/FileManager.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFAuroraColorPickerLifetimeTest,
     "FestaFiesta.UI.FacilityInfo.AuroraColorPickerLifetime",
@@ -142,6 +146,20 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFAuroraLightingPanelTest,
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 bool FFFAuroraLightingPanelTest::RunTest(const FString&)
 {
+    // Navigation regression uses an experienced player; never consume the real user's guide.
+    const FString PreviousProfile = GGameUserSettingsIni;
+    const FString TestProfile = FPaths::ConvertRelativePathToFull(FPaths::CreateTempFilename(
+        *FPaths::ProjectSavedDir(), TEXT("LightingNavigation"), TEXT(".ini")));
+    if (!TestNotNull(TEXT("Profile config"), GConfig)) return false;
+    GConfig->Add(TestProfile, FConfigFile());
+    GConfig->SetBool(TEXT("FestaFiesta.FacilityLighting"), TEXT("bHasSeenColorIntroduction"), true, TestProfile);
+    GGameUserSettingsIni = TestProfile;
+    ON_SCOPE_EXIT
+    {
+        GGameUserSettingsIni = PreviousProfile;
+        GConfig->UnloadFile(TestProfile);
+        IFileManager::Get().Delete(*TestProfile, false, true);
+    };
     UWorld* World=GEditor?GEditor->GetEditorWorldContext().World():nullptr;
     auto* Class=Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr,
         FFBuildUIAssetPaths::FacilityInfoPanelClass));
@@ -151,7 +169,7 @@ bool FFFAuroraLightingPanelTest::RunTest(const FString&)
     auto* Panel=CreateWidget<UFF_FacilityInfoPanel>(World,Class);
     Class->bCanCallInitializedWithoutPlayerContext=Previous;
     if(!TestNotNull(TEXT("Inspector"),Panel))return false;
-    Panel->TakeWidget();
+    const TSharedRef<SWidget> PanelSlate = Panel->TakeWidget();
     auto* Tab=Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_TabLighting")));
     auto* Fold=Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_LightingMinimize")));
     UWidget* Compact=Panel->GetWidgetFromName(TEXT("Panel_LightingCompact"));

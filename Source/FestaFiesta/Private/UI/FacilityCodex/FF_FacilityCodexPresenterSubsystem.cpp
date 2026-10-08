@@ -6,6 +6,7 @@
 
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
+#include "Building/Codex/FF_FacilityCodexProgressSubsystem.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Components/PanelWidget.h"
@@ -123,6 +124,16 @@ bool UFF_FacilityCodexPresenterSubsystem::OpenCodex(
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	Controller->SetInputMode(InputMode);
 	Candidate->SetKeyboardFocus();
+	if (UGameInstance* Game = World->GetGameInstance())
+	{
+		UFF_FacilityCodexProgressSubsystem* Progress = Game->GetSubsystem<UFF_FacilityCodexProgressSubsystem>();
+		// A rejected open or a missing guide must leave the invitation available.
+		// All entry points share this confirmed presentation and the same local profile.
+		if (Progress && !Progress->HasSeenIntroduction() && Candidate->ShowIntroduction())
+		{
+			Progress->MarkIntroductionSeen();
+		}
+	}
 	return true;
 }
 

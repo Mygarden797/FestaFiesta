@@ -56,6 +56,9 @@ public:
 	void OpenCombinationDetail(FName RuleId);
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
 	bool IsCombinationDetailOpen() const { return bCollectionDetailOpen; }
+	/** Returns false if the authored guide is unavailable; callers must not consume first-use state. */
+	bool ShowIntroduction();
+	bool IsIntroductionVisible() const;
 #if WITH_EDITOR || WITH_DEV_AUTOMATION_TESTS
 	/** Deterministic editor/test presentation without changing gameplay or discovery saves. */
 	void SetPreviewEntries(const TArray<FFF_FacilityCodexEntry>& Entries);
@@ -72,6 +75,8 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UEditableTextBox> Search_Entries;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_Close;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_ExitCodex;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UBorder> Border_Introduction;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_DismissIntroduction;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_All;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_Discovered;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_Undiscovered;
@@ -186,6 +191,7 @@ private:
 	UFUNCTION() void RefreshFromSubsystem();
 	UFUNCTION() void HandleClose();
 	UFUNCTION() void HandleExitCodex();
+	UFUNCTION() void HandleDismissIntroduction();
 	UFUNCTION() void HandleAll();
 	UFUNCTION() void HandleDiscovered();
 	UFUNCTION() void HandleUndiscovered();

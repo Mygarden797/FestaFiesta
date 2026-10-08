@@ -43,10 +43,12 @@ bool FFF_FacilityStaffPanelTest::RunTest(const FString& Parameters)
 	auto* Summary = Cast<UCommonTextBlock>(Panel->GetWidgetFromName(TEXT("Text_StaffSummary")));
 	auto* Assign = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_AssignStaff")));
 	auto* Unassign = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_UnassignStaff")));
+	auto* StaffTab = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_TabStaff")));
 	auto* Scroll = Cast<UScrollBox>(Panel->GetWidgetFromName(TEXT("ScrollBox_Details")));
 	if (!TestNotNull(TEXT("Staff controls exist without migrating the WBP asset"), Section) ||
 		!TestNotNull(TEXT("Staff summary"), Summary) || !TestNotNull(TEXT("Assign button"), Assign) ||
-		!TestNotNull(TEXT("Unassign button"), Unassign) || !TestNotNull(TEXT("Authored scroll content remains available"), Scroll)) return false;
+		!TestNotNull(TEXT("Unassign button"), Unassign) || !TestNotNull(TEXT("Staff tab"), StaffTab) ||
+		!TestNotNull(TEXT("Authored scroll content remains available"), Scroll)) return false;
 
 	FFF_FacilityInfoViewData Data;
 	Data.FacilityInstanceId = FGuid::NewGuid();
@@ -62,7 +64,11 @@ bool FFF_FacilityStaffPanelTest::RunTest(const FString& Parameters)
 	Data.StaffAssignmentHint = FText::FromString(TEXT("시설 설치는 정원만 늘립니다. 고용 후 + 배정하세요."));
 	Panel->ApplyViewData(Data);
 	Panel->SetPanelOpen(true);
-	TestEqual(TEXT("Info overview exposes staff section"), Section->GetVisibility(), ESlateVisibility::Visible);
+	TestEqual(TEXT("Supported facility shows its staff tab"), StaffTab->GetVisibility(), ESlateVisibility::Visible);
+	TestEqual(TEXT("Info overview keeps staffing on its own page"), Section->GetVisibility(), ESlateVisibility::Collapsed);
+	StaffTab->OnClicked.Broadcast();
+	TestEqual(TEXT("Staff tab opens the assignment page"), Panel->GetInfoPage(), EFF_FacilityInfoPage::Staff);
+	TestEqual(TEXT("Staff page exposes staff section"), Section->GetVisibility(), ESlateVisibility::Visible);
 	TestEqual(TEXT("Staff snapshot reaches the actual WBP text"), Summary->GetText().ToString(), Data.StaffSummaryText.ToString());
 	TestTrue(TEXT("Buttons reflect authoritative eligibility"), Assign->GetIsEnabled() && Unassign->GetIsEnabled());
 
@@ -89,16 +95,28 @@ bool FFF_FacilityStaffPanelTest::RunTest(const FString& Parameters)
 	Data.bCanAssignStaff = Data.bCanUnassignStaff = true;
 	Panel->ApplyViewData(Data);
 	Panel->SetInfoPage(EFF_FacilityInfoPage::Operation);
-	TestEqual(TEXT("Live operation also permits facility staffing"), Section->GetVisibility(), ESlateVisibility::Visible);
+	TestEqual(TEXT("Operation keeps staffing on its own page"), Section->GetVisibility(), ESlateVisibility::Collapsed);
+	StaffTab->OnClicked.Broadcast();
+	TestEqual(TEXT("Live context permits staffing through the Staff tab"), Section->GetVisibility(), ESlateVisibility::Visible);
 	Data.bHasLightingRig = true;
 	Panel->ApplyViewData(Data);
 	Panel->SetInfoPage(EFF_FacilityInfoPage::Lighting);
 	TestEqual(TEXT("Lighting editor remains free of unrelated staff controls"), Section->GetVisibility(), ESlateVisibility::Collapsed);
+	Panel->SetInfoPage(EFF_FacilityInfoPage::Staff);
 	Data.bShowStaffSection = false;
 	Panel->ApplyViewData(Data);
-	Panel->SetInfoPage(EFF_FacilityInfoPage::Overview);
+	TestEqual(TEXT("Losing staff support returns the selected staff page to basic facts"), Panel->GetInfoPage(), EFF_FacilityInfoPage::Overview);
+	TestEqual(TEXT("Non-Info facility removes its staff tab from the row"), StaffTab->GetVisibility(), ESlateVisibility::Collapsed);
 	TestEqual(TEXT("Non-Info facility hides staffing controls"), Section->GetVisibility(), ESlateVisibility::Collapsed);
 	TestTrue(TEXT("Repeated refresh reuses the same controls"), Panel->GetWidgetFromName(TEXT("Panel_StaffSection")) == Section);
+	Data.FacilityInstanceId = FGuid::NewGuid();
+	Data.bShowStaffSection = true;
+	Data.AssignedStaffCount = 0;
+	Data.bCanUnassignStaff = false;
+	Panel->ApplyViewData(Data);
+	TestEqual(TEXT("An unstaffed supported facility restores the same visible tab"), StaffTab->GetVisibility(), ESlateVisibility::Visible);
+	StaffTab->OnClicked.Broadcast();
+	TestEqual(TEXT("Zero assigned staff can still open the assignment page"), Panel->GetInfoPage(), EFF_FacilityInfoPage::Staff);
 
 	if (FParse::Param(FCommandLine::Get(), TEXT("StaffFacilityCapture")) && !FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
 	{
@@ -106,6 +124,7 @@ bool FFF_FacilityStaffPanelTest::RunTest(const FString& Parameters)
 		Data.Context = EFF_FacilityInfoContext::Build;
 		Panel->ApplyViewData(Data);
 		Panel->SetPanelOpen(true);
+		Panel->SetInfoPage(EFF_FacilityInfoPage::Staff);
 		const FVector2D Size(1280, 720);
 		FWidgetRenderer Renderer(false, true);
 		TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(Size, TF_Bilinear, true));

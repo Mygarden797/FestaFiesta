@@ -105,7 +105,7 @@ bool Layout(UWidgetBlueprint& BP, UWidgetTree& T)
     Facts->SetVisibility(ESlateVisibility::Collapsed);
     V(Facts, Text(BP, T, TEXT("Text_Footprint"), TEXT(""), 16), 8);
     V(Facts, Text(BP, T, TEXT("Text_Queue"), TEXT(""), 16), 8);
-    V(Facts, Text(BP, T, TEXT("Text_RangeLegend"), TEXT("실선 시설 · 점선 안전 여유 · 사선 대기열"), 13, Muted), 0);
+    V(Facts, Text(BP, T, TEXT("Text_RangeLegend"), TEXT("실선 시설 · 청록 대기열"), 13, Muted), 0);
     V(Summary, Facts, 0);
     Dock(BP, T, Root, TEXT("Size_PlacementInfo"), Panel(BP, T, TEXT("Border_PlacementInfo"), Summary),
         400, FVector2D(0, 0), FVector2D(28, 56), FVector2D::ZeroVector);

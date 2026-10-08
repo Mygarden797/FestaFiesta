@@ -109,7 +109,7 @@ bool FFFZSBuildGridSurfaceCache::Update(UWorld& World, const FTransform& ZoneTra
 
     const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
     // 설치 판정과 같은 보정값을 사용해 잘못된 설정에서 격자만 다른 지면을 보지 않게 한다.
-    const FFFZSGroundValidationSettings Ground = Settings->ResolveGroundValidationSettings();
+    const FFFZSGroundValidationSettings Ground = Settings->ResolveGroundValidationSettings(InOutMask.FacilityCategory);
     const double TraceAboveCm = Ground.TraceAboveCm;
     const double TraceBelowCm = Ground.TraceBelowCm;
     const double MaxSlopeDegrees = Ground.MaxSlopeDegrees;
@@ -118,6 +118,8 @@ bool FFFZSBuildGridSurfaceCache::Update(UWorld& World, const FTransform& ZoneTra
     uint32 SettingsHash = HashCombine(GetTypeHash(TraceAboveCm), GetTypeHash(TraceBelowCm));
     SettingsHash = HashCombine(SettingsHash, GetTypeHash(MaxSlopeDegrees));
     SettingsHash = HashCombine(SettingsHash, GetTypeHash(MaxHeightVarianceCm));
+    SettingsHash = HashCombine(SettingsHash, GetTypeHash(static_cast<uint8>(InOutMask.FacilityCategory)));
+    SettingsHash = HashCombine(SettingsHash, GetTypeHash(Ground.bUseHighestSupport));
     SettingsHash = HashCombine(SettingsHash, GetTypeHash(Settings->bEnableGroundChecks));
     SettingsHash = HashCombine(SettingsHash, GetTypeHash(Settings->bRequireEveryGroundSample));
     SettingsHash = HashCombine(SettingsHash, GetTypeHash(InOutMask.bIncludeGroundSurfaceSupport));
@@ -349,11 +351,14 @@ bool FFFZSBuildGridSurfaceCache::Update(UWorld& World, const FTransform& ZoneTra
                 const FSample* Corners[] = { Samples.Find(Key), Samples.Find(Key + FIntPoint(1, 0)),
                     Samples.Find(Key + FIntPoint(0, 1)), Samples.Find(Key + FIntPoint(1, 1)) };
                 bool bIsSupport = Obstacle.Component.IsValid();
-                double GroundHeight = 0.0;
+                double GroundHeight = Ground.bUseHighestSupport ? -TNumericLimits<double>::Max() : 0.0;
                 for (const FSample* Corner : Corners)
                 {
                     check(Corner && Corner->bHit); // Only verified cells survive the pass above.
-                    GroundHeight += Corner->WorldPoint.Z * 0.25;
+                    // 타일의 수평 바닥은 최고 표본 위에 놓인다. 지면을 따르는 격자 선 자체는 유지한다.
+                    GroundHeight = Ground.bUseHighestSupport
+                        ? FMath::Max(GroundHeight, Corner->WorldPoint.Z)
+                        : GroundHeight + Corner->WorldPoint.Z * 0.25;
                     bIsSupport &= Corner->SupportComponent == Obstacle.Component &&
                         (Obstacle.InstanceIndex == INDEX_NONE || Corner->SupportInstance == Obstacle.InstanceIndex);
                 }

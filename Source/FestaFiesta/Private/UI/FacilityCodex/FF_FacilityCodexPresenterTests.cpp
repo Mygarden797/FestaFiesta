@@ -24,8 +24,11 @@
 #include "FF_FFZSZoneActor.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerInput.h"
+#include "HAL/FileManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Misc/Paths.h"
 #include "Misc/ScopeExit.h"
 #include "Slate/SceneViewport.h"
 #include "Tests/AutomationCommon.h"
@@ -49,6 +52,24 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityCodexPresenterLifecycleTest,
 bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
+	// Opening a codex now persists first-use guidance. Keep routing checks inside
+	// a disposable returning-player profile, without touching the developer's save.
+	FString ProfilePath = FPaths::ConvertRelativePathToFull(FPaths::CreateTempFilename(
+		*FPaths::ProjectSavedDir(), TEXT("CodexPresenterTest"), TEXT(".ini")));
+	FPaths::NormalizeFilename(ProfilePath);
+	const FString PreviousProfilePath = GGameUserSettingsIni;
+	if (GConfig)
+	{
+		GConfig->Add(ProfilePath, FConfigFile());
+		GConfig->SetBool(TEXT("FestaFiesta.FacilityCodex"), TEXT("bHasSeenIntroduction"), true, ProfilePath);
+	}
+	GGameUserSettingsIni = ProfilePath;
+	ON_SCOPE_EXIT
+	{
+		if (GConfig) GConfig->UnloadFile(ProfilePath);
+		GGameUserSettingsIni = PreviousProfilePath;
+		IFileManager::Get().Delete(*ProfilePath);
+	};
 	// Exercise the production WBP, controller and subsystem APIs in an isolated
 	// game world. The private viewport has no window and never touches the user's PIE.
 	FTestWorldWrapper Fixture;

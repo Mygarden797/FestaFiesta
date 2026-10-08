@@ -1,7 +1,7 @@
 // FF_FFZSGridLibrary.h
 
 // 고정 1 cm 격자의 압축 영역 회전·점유·명령 지문 계산을 제공하는 순수 함수 모음.
-// 흐름: 사양과 배치를 정규화한 뒤 footprint·clearance·queue 압축 사각형과 정확한 예약 합집합을 만든다.
+// 흐름: 사양과 배치를 정규화한 뒤 footprint·관람·queue 압축 사각형과 정확한 예약 합집합을 만든다.
 //불변식: 셀 좌표는 존 로컬 격자이며 명령 지문은 멱등성 판정을 위해 의미론적 전체 페이로드를 포함.
 //실패/성능: 면적 안전 예산을 초과하면 fail-closed하고 정상 비용은 개별 셀 수가 아니라 사각형 수에 비례.
 
@@ -27,7 +27,7 @@ public:
     // 모든 격자 열거기에 적용되는 조기 실패 안전장치다. 담당자에게 노출되는 유효 설정값은
     // 잘못된 데이터가 오버플로를 일으키거나 Game Thread를 멈추지 않도록 최대 100만 Cell로 강제 제한.
      
-    // footprint 확장 면적 + queue 압축 영역의 이론 셀 수가 안전 상한 이내인지 빠르게 확인.
+    // footprint 면적 + queue 및 관람 압축 영역의 이론 셀 수가 안전 상한 이내인지 빠르게 확인.
     // @return 안전 예산 이내일 때만 true. 최종 고유 예약 셀 수를 계산하는 함수가 아니다.
      
     static bool CanEnumerateFacilityCells(const FFFZSFacilitySpec& Spec);
@@ -88,7 +88,7 @@ public:
 	// 호환/디버그용 보수적 AABB다. 임의 Yaw 권위 판정에는 BuildPlacementOrientedRegions를 사용한다.
 	
     static TArray<FFFZSCellRect> GetClearanceRects(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// 호환/디버그용 clearance 보수적 AABB 합집합. 어느 하위 좌표라도 오버플로면 빈 배열.
+	// 호환 이름을 유지한 관람 공간 AABB 합집합. 자동 안전 여백은 없으며 관람 공간이 없으면 빈 배열.
 	
     static TArray<FFFZSCellRect> GetQueueRects(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
 	// 호환/디버그용 queue 보수적 AABB 합집합. 한 Rect라도 오버플로면 전체가 빈 배열.
@@ -135,7 +135,7 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static TArray<FIntPoint> GetClearanceCells(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// 호환/디버그용 개별 clearance 셀. 10,000셀을 넘으면 빈 배열.
+	// 호환 이름을 유지한 관람 공간 개별 셀. 자동 안전 여백은 없으며 10,000셀을 넘으면 빈 배열.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static TArray<FIntPoint> GetQueueCells(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);

@@ -32,7 +32,6 @@ from ffzs_definition_source import (
 
 
 CROWD_AGENT_RADIUS_CM = 34.0
-AUDITED_CLEARANCE_CM = 100.0
 
 
 def _profile(
@@ -351,17 +350,6 @@ def _is_local_disc_reserved(profile, location, radius_cm):
     return False
 
 
-def _is_local_disc_inside_footprint_clearance(profile, location, radius_cm):
-    half_width = profile["footprint"][0] * 0.5
-    half_height = profile["footprint"][1] * 0.5
-    return (
-        location[0] - radius_cm >= -half_width - AUDITED_CLEARANCE_CM
-        and location[0] + radius_cm <= half_width + AUDITED_CLEARANCE_CM
-        and location[1] - radius_cm >= -half_height - AUDITED_CLEARANCE_CM
-        and location[1] + radius_cm <= half_height + AUDITED_CLEARANCE_CM
-    )
-
-
 def _validate_profile_protection():
     """Reject constants that expose Entry[0] to another facility placement."""
     failures = []
@@ -370,16 +358,13 @@ def _validate_profile_protection():
     ):
         profile = PROFILES[profile_name]
         entry = profile["entry_after"]
-        inside_clearance = _is_local_disc_inside_footprint_clearance(
-            profile, entry, CROWD_AGENT_RADIUS_CM
-        )
         inside_reservation = _is_local_disc_reserved(
             profile, entry, CROWD_AGENT_RADIUS_CM
         )
-        if not inside_clearance and not inside_reservation:
+        if not inside_reservation:
             failures.append(
-                "{0}: Entry[0] plus the {1:g}cm Crowd radius is outside both "
-                "the footprint clearance and QueueReservedRects".format(
+                "{0}: Entry[0] plus the {1:g}cm Crowd radius is outside "
+                "QueueReservedRects".format(
                     definition_id, CROWD_AGENT_RADIUS_CM
                 )
             )
@@ -394,8 +379,8 @@ def _validate_record(record, profile, phase):
 
     if int(spec.get_editor_property("schema_version")) != 2:
         failures.append("SchemaVersion is not 2")
-    if int(spec.get_editor_property("clearance_cells")) != AUDITED_CLEARANCE_CM:
-        failures.append("ClearanceCells is not the audited 100cm")
+    if phase == "after" and int(spec.get_editor_property("clearance_cells")) != 0:
+        failures.append("Deprecated ClearanceCells was not cleared")
     footprint = spec.get_editor_property("footprint_size_cells")
     if _int_point_tuple(footprint) != profile["footprint"]:
         failures.append(
@@ -472,6 +457,7 @@ def _validate_record(record, profile, phase):
 
 def _apply_profile(definition, profile):
     spec = definition.get_editor_property("spec")
+    spec.set_editor_property("clearance_cells", 0)
     anchors, by_key = _find_anchors(spec)
     for key, new_location in (
         (("ENTRY", 0), profile["entry_after"]),

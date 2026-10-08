@@ -202,6 +202,11 @@ FText FFF_PrepBuildPresentationRules::ResolveCostText(const FFF_BuildCatalogEntr
 FText FFF_PrepBuildPresentationRules::ResolveBuildLimitText(
 	const FFF_BuildCatalogEntry& Entry)
 {
+	if (Entry.bRequiredForSetup)
+	{
+		return FText::Format(LOCTEXT("RequiredBuildCount", "필수 · {0}개 설치"),
+			FText::AsNumber(FMath::Max(1, Entry.RequiredMinimumCount)));
+	}
 	if (Entry.MaxInstancesPerWorld <= 0)
 	{
 		return LOCTEXT("UnlimitedBuildCount", "설치 제한 없음");

@@ -111,6 +111,8 @@ namespace FFBuildCatalogModel
 			Entry.bRequiredSetupSatisfied = Row && Row->bDefinitionValid && Row->MissingCount == 0;
 			Entry.RequiredInstalledCount = Row ? Row->InstalledCount : 0;
 			Entry.RequiredMinimumCount = Row ? Row->MinimumCount : 0;
+			Entry.RequiredStaffCount = Row && Row->bDefinitionValid ? Row->RequiredStaffCount : 0;
+			Entry.RequiredAssignedStaffCount = Row ? Row->AssignedStaffCount : 0;
 		}
 	}
 

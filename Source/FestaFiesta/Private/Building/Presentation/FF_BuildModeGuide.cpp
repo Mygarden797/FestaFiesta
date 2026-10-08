@@ -14,7 +14,8 @@
 FText UFF_BuildModeGuide::MakeBuildOverviewHelpText()
 {
 	return LOCTEXT("BuildOverviewHelp",
-		"격자는 주변의 빈 건축 공간을 보여 줍니다.\n"
+		"격자는 시설을 놓아 볼 후보 바닥, 흰색 선은 건축 경계입니다.\n"
+		"시설·대기열·관객석 전체의 배치 가능 여부는 배치 안내에서 확인하세요.\n"
 		"구역 밖, 다른 시설이 쓰는 공간, 보호된 길에는 격자가 나타나지 않습니다.\n"
 		"먼 곳은 커서나 카메라를 옮겨 확인하세요.\n"
 		"[G] 격자 표시/숨기기 · [WASD] 카메라 이동 · [Q/E] 카메라 회전\n"
@@ -32,18 +33,20 @@ FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving, const bool
 			"첫 시설의 위치와 각도를 기준으로 시설 크기만큼 간격을 맞추며, 빠르게 움직여도 중간 칸을 채웁니다.\n"
 			"[Ctrl] 정밀 맞춤 · [Alt] 자유 배치는 첫 시설의 시작 위치에 적용됩니다.\n"
 			"[Q/E] 회전 · [Shift+Q/E] 부드럽게 회전하면 드래그가 끝납니다. 다시 클릭해 시작하세요.\n"
-			"[Enter/배치 확정] 한 개 설치 · [우클릭] 목록 · [G] 격자 표시/숨기기\n"
+			"[Enter/배치 확정] 한 개 설치 · [G] 격자 표시/숨기기\n"
+			"[우클릭] 건축모드 UI 다시 표시 (시설 목록으로 돌아가기)\n"
 			"[Ctrl+Z] 실행 취소 · [Ctrl+Y] 다시 실행\n"
 			"[7] 기본 · [8] 좌측 · [9] 우측 · [0] U자 대기열\n"
 			"초록은 배치 가능, 빨강은 배치 불가입니다. 설치할 때마다 비용과 건축 한도를 확인합니다.");
 	}
 	const FText ConfirmText = bInMoving
 		? LOCTEXT("MovingHelpAction", "[좌클릭/Enter] 이동 확정 · [우클릭] 이동 취소")
-		: LOCTEXT("PlacingHelpAction", "[좌클릭/Enter] 설치 · 설치 후 같은 시설을 계속 배치 · [우클릭] 목록");
+		: LOCTEXT("PlacingHelpAction", "[좌클릭/Enter] 설치 · 설치 후 같은 시설을 계속 배치\n[우클릭] 건축모드 UI 다시 표시 (시설 목록으로 돌아가기)");
 	return FText::Format(
 		LOCTEXT("PlacementHelp",
-			"격자는 주변의 빈 건축 공간입니다. 막힌 곳과 이 시설을 허용하지 않는 구역에는 표시하지 않습니다.\n"
-			"시설 전체가 들어가는지 초록(배치 가능)·빨강(배치 불가) 표시로 확인하세요.\n"
+			"격자는 후보 바닥이며, 시설 전체의 배치 가능 여부를 뜻하지 않습니다.\n"
+			"시설·대기열·보라색 관객석 전체가 흰색 건축 경계 안에 들어가야 합니다. 구역 사이 빈틈도 피하세요.\n"
+			"붉은 사선은 문제가 있는 부분입니다. 배치 안내에서 정확한 원인을 확인하세요.\n"
 			"[G] 격자 표시/숨기기 · 먼 곳은 커서를 옮겨 확인\n"
 			"[Q/E] 일정 각도로 회전 · [Shift+Q/E] 누르는 동안 부드럽게 회전\n"
 			"[Ctrl] 누르는 동안 정밀 위치 맞춤 · [Alt] 누르는 동안 자유 배치\n"
@@ -115,8 +118,8 @@ void UFF_BuildModeGuide::ApplyGuideText()
 	SetNamedText(TEXT("TXT_GuideRow_0"), LOCTEXT("CameraAndPause", "카메라 이동 · 일시정지"));
 	SetNamedText(TEXT("TXT_GuideRow_1"), bPlacementGridVisible
 		? (bPlacementPreviewActive
-			? LOCTEXT("PlacementGridLegend", "격자: 빈 건축 공간 · 초록: 배치 가능 · 빨강: 배치 불가")
-			: LOCTEXT("BuildGridLegend", "격자: 주변의 빈 건축 공간 · 막힌 곳은 표시하지 않아요"))
+			? LOCTEXT("PlacementGridLegend", "격자: 후보 바닥 · 흰선: 건축 경계 · 붉은 사선: 문제 부분")
+			: LOCTEXT("BuildGridLegend", "격자: 후보 바닥 · 흰선: 건축 경계"))
 		: LOCTEXT("HiddenGridLegend", "격자를 숨겼어요 · [G] 다시 표시"));
 
 	if (!bPlacementPreviewActive)
@@ -157,8 +160,8 @@ void UFF_BuildModeGuide::ApplyGuideText()
 		bMoving
 			? LOCTEXT("MoveOrCancel", "[좌클릭/Enter]  이동 · [우클릭]  이동 취소")
 			: (bDragPlacement
-				? LOCTEXT("DragInstallOrCatalog", "[좌클릭 누른 채 이동] 연속 설치 · 놓으면 정지 · [우클릭] 목록")
-				: LOCTEXT("RepeatInstallOrCatalog", "[좌클릭/Enter] 한 개씩 설치 · [우클릭] 목록으로")));
+				? LOCTEXT("DragInstallOrCatalog", "[좌클릭 누른 채 이동] 연속 설치 · 놓으면 정지\n[우클릭] 건축모드 UI 다시 표시")
+				: LOCTEXT("RepeatInstallOrCatalog", "[좌클릭/Enter] 한 개씩 설치 · [우클릭] 건축모드 UI 다시 표시")));
 }
 
 #undef LOCTEXT_NAMESPACE

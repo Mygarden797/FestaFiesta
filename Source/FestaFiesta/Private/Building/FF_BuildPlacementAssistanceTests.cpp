@@ -77,6 +77,8 @@ bool FFF_BuildPlacementAssistanceReasonsTest::RunTest(const FString& Parameters)
         EReason::QueueFootprintBlocked, EReason::ProtectedRouteBlocked, EReason::AccessibilityRouteBlocked,
         EReason::RequiredRouteDisconnected };
     const FText Generic = FFBuildPlacementAssistance::ReasonTitle(EReason::InternalError);
+    TestEqual(TEXT("The legacy clearance failure now describes reserved audience space"),
+        FFBuildPlacementAssistance::ReasonTitle(EReason::InsufficientClearance).ToString(), FString(TEXT("관람 공간과 겹쳐요")));
     for (const auto Reason : Spatial)
     {
         const FString Context = StaticEnum<EReason>()->GetNameStringByValue(static_cast<int64>(Reason));
@@ -216,6 +218,38 @@ bool FFF_BuildPlacementAssistanceIntegrationTest::RunTest(const FString& Paramet
         !TestTrue(TEXT("The actual spatial result offers nearby assistance"), Build->GetPlacementGuidance().bCanFindNearby)) return false;
     TestTrue(TEXT("A spatial placement failure teaches N where the player needs it"),
         Build->GetPlacementGuidance().Advice.ToString().Contains(TEXT("N으로 가까운 빈자리")));
+    if (!Build->LastValidation.GetBoundaryFailureText().IsEmpty())
+    {
+        const FText AuthoritySummary = Build->LastValidation.Summary;
+        const auto Guidance = Build->GetPlacementGuidance();
+        TestEqual(TEXT("The actual preview names its failed region in the placement panel"),
+            Guidance.Title.ToString(), Build->LastValidation.GetBoundaryFailureText().ToString());
+        TestTrue(TEXT("Panel advice matches the clipped red hatching and internal-gap rule"),
+            Guidance.Advice.ToString().Contains(TEXT("붉은 사선")) && Guidance.Advice.ToString().Contains(TEXT("빈틈")));
+        TestTrue(TEXT("Reading panel guidance preserves the authority's first summary"),
+            Build->LastValidation.Summary.EqualTo(AuthoritySummary));
+    }
+    {
+        const FFFZSPlacementValidation Original = Build->LastValidation;
+        Build->LastValidation = FFFZSPlacementValidation();
+        Build->LastValidation.Reasons = {EFFZSPlacementFailure::PlacementCollision, EFFZSPlacementFailure::InsufficientClearance};
+        FFFZSPlacementObstruction Terrain;
+        Terrain.Kind = EFFZSPlacementObstructionKind::GroundSupport;
+        Terrain.Reason = EFFZSPlacementFailure::InsufficientClearance;
+        Terrain.DisplayName = FText::FromString(TEXT("관객석 바닥 높이 차가 너무 커요"));
+        Terrain.Detail = FText::FromString(TEXT("바닥 높이 차 134 cm / 허용 80 cm"));
+        Build->LastValidation.Obstructions.Add(Terrain);
+        const auto TerrainGuidance = Build->GetPlacementGuidance(1);
+        TestEqual(TEXT("Selected region terrain detail replaces the generic overlap title"),
+            TerrainGuidance.Title.ToString(), Terrain.DisplayName.ToString());
+        TestTrue(TEXT("Selected region terrain guidance retains numeric limits"),
+            TerrainGuidance.Advice.ToString().Contains(TEXT("134 cm")) &&
+            TerrainGuidance.Advice.ToString().Contains(TEXT("80 cm")));
+        TestTrue(TEXT("Terrain limits are never listed as a colliding world obstacle"), TerrainGuidance.Obstruction.IsEmpty());
+        TestFalse(TEXT("Selecting the independent footprint problem does not leak the terrain title"),
+            Build->GetPlacementGuidance(0).Title.EqualTo(Terrain.DisplayName));
+        Build->LastValidation = Original;
+    }
     for (const auto State : {EFF_BuildModeState::Closed, EFF_BuildModeState::BuildMode, EFF_BuildModeState::CatalogOpen})
     {
         TGuardValue<EFF_BuildModeState> InactivePreview(Build->State, State);

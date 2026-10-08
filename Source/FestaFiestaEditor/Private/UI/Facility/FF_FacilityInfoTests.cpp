@@ -20,6 +20,7 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/EditableTextBox.h"
+#include "Components/HorizontalBox.h"
 #include "Components/Slider.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
@@ -1222,7 +1223,7 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	const TArray<FName> RequiredTextNames = {
 		TEXT("Text_ThumbnailPlaceholder"), TEXT("Text_Context"), TEXT("Text_FacilityName"),
 		TEXT("Text_Category"), TEXT("Text_Zone"), TEXT("Text_FacilityState"),
-		TEXT("Text_RelocationWarning"), TEXT("Text_Footprint"), TEXT("Text_Clearance"),
+		TEXT("Text_RelocationWarning"), TEXT("Text_Footprint"),
 		TEXT("Text_InstallCost"), TEXT("Text_RecoveryCost"), TEXT("Text_QueueCapacity"),
 		TEXT("Text_ServiceDuration"), TEXT("Text_OperationState"), TEXT("Text_WaitingParties"),
 		TEXT("Text_Occupancy"), TEXT("Text_RemainingService"), TEXT("Text_ExpectedWait"),
@@ -1276,6 +1277,7 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		ViewData.FacilityInstanceId = FGuid::NewGuid();
 		ViewData.Context = EFF_FacilityInfoContext::Build;
 		ViewData.DisplayName = FText::FromString(TEXT("테스트 시설"));
+		ViewData.ClearanceText = FText::FromString(TEXT("75 m"));
 		ViewData.bCanMove = true;
 		ViewData.bCanRemove = true;
 		ViewData.bShowRevenueSection = true;
@@ -1290,6 +1292,15 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		ViewData.bCanUpgrade = true;
 		ViewData.FacilityLevelText = FText::FromString(TEXT("시설 강화 · Lv.1"));
 		Panel->ApplyViewData(ViewData);
+		for (const TCHAR* Name : {TEXT("Text_Clearance"), TEXT("Text_Clearance_Label"),
+			TEXT("Text_Clearance_Card"), TEXT("Clearance_Row"), TEXT("Clearance_Row_Label"),
+			TEXT("Clarity_Row_Text_Clearance"), TEXT("Clarity_Label_Text_Clearance"),
+			TEXT("Aurora_Row_Text_Clearance"), TEXT("Aurora_Label_Text_Clearance")})
+			if (UWidget* Legacy = Panel->GetWidgetFromName(Name))
+				TestEqual(TEXT("Legacy safety margin values, captions and rows stay collapsed"),
+					Legacy->GetVisibility(), ESlateVisibility::Collapsed);
+		if (auto* LegacyValue = Cast<UCommonTextBlock>(Panel->GetWidgetFromName(TEXT("Text_Clearance"))))
+			TestTrue(TEXT("Stale safety margin data cannot repopulate the compatibility binding"), LegacyValue->GetText().IsEmpty());
 		const TSharedRef<SWidget> SlateWidget = Panel->TakeWidget();
 		(void)SlateWidget;
 		if (UButton* Ranking = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_RevenueRanking"))))
@@ -2693,12 +2704,25 @@ bool FFF_FacilityInfoClarityNavigationTest::RunTest(const FString& Parameters)
 	auto* Next = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_SynergyNext")));
 	auto* Page = Cast<UCommonTextBlock>(Panel->GetWidgetFromName(TEXT("Text_SynergyPage")));
 	auto* Rows = Cast<UVerticalBox>(Panel->GetWidgetFromName(TEXT("VerticalBox_SynergyEntries")));
+	auto* Staff = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_TabStaff")));
+	auto* StaffSection = Panel->GetWidgetFromName(TEXT("Panel_StaffSection"));
+	auto* AssignStaff = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_AssignStaff")));
+	auto* UnassignStaff = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_UnassignStaff")));
 	if (!TestNotNull(TEXT("Revenue shortcut"), Revenue) || !TestNotNull(TEXT("Programs shortcut"), Programs) ||
 		!TestNotNull(TEXT("Previous combination"), Previous) || !TestNotNull(TEXT("Next combination"), Next) ||
-		!TestNotNull(TEXT("Combination page"), Page) || !TestNotNull(TEXT("Combination list"), Rows)) return false;
+		!TestNotNull(TEXT("Combination page"), Page) || !TestNotNull(TEXT("Combination list"), Rows) ||
+		!TestNotNull(TEXT("Staff tab"), Staff) || !TestNotNull(TEXT("Staff assignment page"), StaffSection) ||
+		!TestNotNull(TEXT("Assign staff"), AssignStaff) || !TestNotNull(TEXT("Unassign staff"), UnassignStaff)) return false;
+	if (auto* Tabs = Cast<UHorizontalBox>(Staff->GetParent()))
+	{
+		TestEqual(TEXT("Staff follows Operation in the main tab row"), Tabs->GetChildIndex(Staff),
+			Tabs->GetChildIndex(Panel->GetWidgetFromName(TEXT("Button_TabOperation"))) + 1);
+		TestEqual(TEXT("Primary navigation keeps four pages"), Tabs->GetChildrenCount(), 4);
+	}
 	FFF_FacilityInfoViewData Data;
 	Data.FacilityInstanceId = FGuid::NewGuid(); Data.Context = EFF_FacilityInfoContext::Build;
 	Data.bShowRevenueSection = Data.bShowProgramSection = true;
+	Data.bShowStaffSection = Data.bCanAssignStaff = Data.bCanUnassignStaff = true;
 	for (int32 Index=0; Index<3; ++Index)
 	{
 		FFF_FacilityInfoSynergyEntry Entry;
@@ -2709,6 +2733,29 @@ bool FFF_FacilityInfoClarityNavigationTest::RunTest(const FString& Parameters)
 	Panel->ApplyViewData(Data); Panel->SetPanelOpen(true);
 	const TSharedRef<SWidget> Slate = Panel->TakeWidget();
 	TestEqual(TEXT("Overview does not stack earnings below basic facts"), Panel->GetWidgetFromName(TEXT("Panel_RevenueSection"))->GetVisibility(), ESlateVisibility::Collapsed);
+	TestEqual(TEXT("Overview no longer stacks staff assignment below basic facts"), StaffSection->GetVisibility(), ESlateVisibility::Collapsed);
+	int32 AssignRequests = 0;
+	int32 UnassignRequests = 0;
+	Panel->OnAssignStaffRequested.AddLambda([&AssignRequests]() { ++AssignRequests; });
+	Panel->OnUnassignStaffRequested.AddLambda([&UnassignRequests]() { ++UnassignRequests; });
+	AssignStaff->OnClicked.Broadcast();
+	TestEqual(TEXT("A hidden assignment control cannot issue a request"), AssignRequests, 0);
+	Staff->OnClicked.Broadcast();
+	TestEqual(TEXT("Staff tab opens its own page"), Panel->GetInfoPage(), EFF_FacilityInfoPage::Staff);
+	TestEqual(TEXT("Staff assignment is visible on its own page"), StaffSection->GetVisibility(), ESlateVisibility::Visible);
+	TestEqual(TEXT("Staff page hides basic facts"), Panel->GetWidgetFromName(TEXT("Panel_BuildSection"))->GetVisibility(), ESlateVisibility::Collapsed);
+	TestEqual(TEXT("Staff page hides operation facts"), Panel->GetWidgetFromName(TEXT("Panel_LiveSection"))->GetVisibility(), ESlateVisibility::Collapsed);
+	AssignStaff->OnClicked.Broadcast();
+	UnassignStaff->OnClicked.Broadcast();
+	TestEqual(TEXT("Staff tab forwards one assignment request"), AssignRequests, 1);
+	TestEqual(TEXT("Staff tab forwards one unassignment request"), UnassignRequests, 1);
+	Panel->ApplyViewData(Data);
+	TestEqual(TEXT("Refreshing staff data keeps the assignment page open"), Panel->GetInfoPage(), EFF_FacilityInfoPage::Staff);
+	Panel->SetInfoPage(EFF_FacilityInfoPage::Operation);
+	TestEqual(TEXT("Operation no longer stacks staff assignment"), StaffSection->GetVisibility(), ESlateVisibility::Collapsed);
+	UnassignStaff->OnClicked.Broadcast();
+	TestEqual(TEXT("Hidden unassignment cannot issue a request"), UnassignRequests, 1);
+	Panel->SetInfoPage(EFF_FacilityInfoPage::Overview);
 	Revenue->OnClicked.Broadcast();
 	TestEqual(TEXT("Revenue opens directly"), Panel->GetWidgetFromName(TEXT("Panel_RevenueSection"))->GetVisibility(), ESlateVisibility::Visible);
 	TestEqual(TEXT("Revenue hides basic facts"), Panel->GetWidgetFromName(TEXT("Panel_BuildSection"))->GetVisibility(), ESlateVisibility::Collapsed);
@@ -2731,13 +2778,87 @@ bool FFF_FacilityInfoClarityNavigationTest::RunTest(const FString& Parameters)
 	Data.SynergyEntries.SetNum(1); Panel->ApplyViewData(Data);
 	TestEqual(TEXT("Updated combinations clamp the displayed page"), Page->GetText().ToString(), FString(TEXT("1 / 1")));
 	Data.bShowRevenueSection = Data.bShowProgramSection = false;
+	Data.bShowStaffSection = false;
 	Panel->ApplyViewData(Data); Revenue->OnClicked.Broadcast();
 	TestEqual(TEXT("Unsupported revenue falls back to basic facts"), Panel->GetWidgetFromName(TEXT("Panel_BuildSection"))->GetVisibility(), ESlateVisibility::Visible);
 	TestEqual(TEXT("Irrelevant revenue shortcut is hidden"), Revenue->GetVisibility(), ESlateVisibility::Collapsed);
 	TestEqual(TEXT("Irrelevant program shortcut is hidden"), Programs->GetVisibility(), ESlateVisibility::Collapsed);
+	Panel->SetInfoPage(EFF_FacilityInfoPage::Staff);
+	TestEqual(TEXT("Direct staff navigation rejects unsupported facilities"), Panel->GetInfoPage(), EFF_FacilityInfoPage::Overview);
+	TestEqual(TEXT("Unsupported staff tab is removed from navigation"), Staff->GetVisibility(), ESlateVisibility::Collapsed);
+	TestEqual(TEXT("Unsupported staff controls stay hidden"), StaffSection->GetVisibility(), ESlateVisibility::Collapsed);
 	if(auto* Upgrade=Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_TabUpgrade"))))
 		TestFalse(TEXT("Unsupported upgrade remains functionally disabled"),Upgrade->GetIsEnabled());
 	Panel->ReleaseSlateResources(true);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityInfoStaffMigrationTest,
+	"FestaFiesta.UI.FacilityInfo.StaffMigration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityInfoStaffMigrationTest::RunTest(const FString& Parameters)
+{
+	UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr, FacilityInfoObjectPath);
+	if (!TestNotNull(TEXT("Facility inspector asset"), Blueprint) || !Blueprint->WidgetTree) return false;
+	UWidgetBlueprint* Copy = DuplicateObject<UWidgetBlueprint>(Blueprint, GetTransientPackage(),
+		MakeUniqueObjectName(GetTransientPackage(), UWidgetBlueprint::StaticClass(), TEXT("FacilityStaffMigrationCopy")));
+	Copy->SetFlags(RF_Transient);
+	UWidgetTree& Tree = *Copy->WidgetTree;
+	UWidget* ExistingOverview = Tree.FindWidget(TEXT("Panel_BuildSection"));
+	UWidget* ExistingOperation = Tree.FindWidget(TEXT("Button_TabOperation"));
+	bool bAdded = false;
+	if (!TestTrue(TEXT("Staff migration adds or reuses the authored contract"),
+		FFFacilityInfoWbpBuilder::EnsureStaffWidgetContract(*Copy, Tree, bAdded))) return false;
+	TestTrue(TEXT("Basic facts preserve their widget identity"), ExistingOverview == Tree.FindWidget(TEXT("Panel_BuildSection")));
+	TestTrue(TEXT("Operation tab preserves its widget identity"), ExistingOperation == Tree.FindWidget(TEXT("Button_TabOperation")));
+	UWidget* StaffTab = Tree.FindWidget(TEXT("Button_TabStaff"));
+	auto* Tabs = StaffTab ? Cast<UHorizontalBox>(StaffTab->GetParent()) : nullptr;
+	if (!TestNotNull(TEXT("Staff tab's authored row"), Tabs)) return false;
+	TestEqual(TEXT("Staff is immediately after Operation"), Tabs->GetChildIndex(StaffTab), Tabs->GetChildIndex(ExistingOperation) + 1);
+	TestEqual(TEXT("Four primary inspector pages are preserved"), Tabs->GetChildrenCount(), 4);
+	UWidget* UpgradeTab = Tree.FindWidget(TEXT("Button_TabUpgrade"));
+	auto* Tools = Cast<UHorizontalBox>(Tree.FindWidget(TEXT("Reference_AdditionalFacilityPages")));
+	if (!Tools) Tools = Cast<UHorizontalBox>(Tree.FindWidget(TEXT("Clarity_SecondaryTabs")));
+	if (!Tools) Tools = Cast<UHorizontalBox>(Tree.FindWidget(TEXT("Panel_InspectorTools")));
+	if (!TestNotNull(TEXT("Secondary tools row is reused or created for older inspectors"), Tools)) return false;
+	TestTrue(TEXT("Upgrade remains available in the secondary tool row"), UpgradeTab &&
+		UpgradeTab->GetParent() == Tools);
+	if (UWidget* LightingTab = Tree.FindWidget(TEXT("Button_TabLighting")))
+		TestTrue(TEXT("Lighting remains available in the secondary tool row"), LightingTab->GetParent() == Tools);
+	for (const FName Name : {FName(TEXT("Button_TabStaff")), FName(TEXT("Panel_StaffSection")),
+		FName(TEXT("Text_StaffSummary")), FName(TEXT("Button_AssignStaff")), FName(TEXT("Button_UnassignStaff"))})
+	{
+		UWidget* Widget = Tree.FindWidget(Name);
+		TestTrue(*FString::Printf(TEXT("Staff binding %s is authored"), *Name.ToString()),
+			Widget && Widget->bIsVariable && Copy->WidgetVariableNameToGuidMap.Contains(Name));
+	}
+	UWidget* Section = Tree.FindWidget(TEXT("Panel_StaffSection"));
+	TestTrue(TEXT("Staff page sits beside other pages, outside the basic facts"),
+		Section && Section->GetParent() == Tree.FindWidget(TEXT("Panel_Content")));
+	bool bAddedAgain = true;
+	TestTrue(TEXT("Staff migration can be repeated"), FFFacilityInfoWbpBuilder::EnsureStaffWidgetContract(*Copy, Tree, bAddedAgain));
+	TestFalse(TEXT("Repeated staff migration leaves authored controls untouched"), bAddedAgain);
+	TestTrue(TEXT("Repeated migration preserves the staff tab"), StaffTab == Tree.FindWidget(TEXT("Button_TabStaff")));
+	// Reproduce the saved intermediate asset: staff bindings exist, while Upgrade
+	// and Lighting still share the primary row and there is no secondary row.
+	for (UWidget* Tool : Tools->GetAllChildren())
+	{
+		Tool->RemoveFromParent();
+		Tabs->AddChildToHorizontalBox(Tool);
+	}
+	Tools->RemoveFromParent();
+	Tools->Rename(*MakeUniqueObjectName(&Tree, UHorizontalBox::StaticClass(), TEXT("RetiredStaffTestTools")).ToString());
+	bool bRepaired = false;
+	TestTrue(TEXT("Existing staff bindings do not skip missing-row repair"),
+		FFFacilityInfoWbpBuilder::EnsureStaffWidgetContract(*Copy, Tree, bRepaired));
+	TestTrue(TEXT("Repair records the layout modification for saving"), bRepaired);
+	TestEqual(TEXT("Repair restores exactly four primary pages"), Tabs->GetChildrenCount(), 4);
+	TestTrue(TEXT("Repair retains the existing staff section"), Section == Tree.FindWidget(TEXT("Panel_StaffSection")));
+	bAddedAgain = true;
+	TestTrue(TEXT("Repaired staff navigation can be migrated again"),
+		FFFacilityInfoWbpBuilder::EnsureStaffWidgetContract(*Copy, Tree, bAddedAgain));
+	TestFalse(TEXT("Repaired navigation is idempotent"), bAddedAgain);
 	return true;
 }
 
@@ -2796,6 +2917,8 @@ bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Paramet
 	Data.ExpectedWaitText = FText::FromString(TEXT("계산 불가"));
 	Data.ThroughputText = FText::FromString(TEXT("팀당 5초"));
 	Data.SynergySummaryText = FText::FromString(TEXT("이 시설에 등록된 조합이 없습니다."));
+	Data.bShowStaffSection = Data.bCanAssignStaff = true;
+	Data.StaffSummaryText = FText::FromString(TEXT("스태프 배정 0 / 1명 · 출동 중 0명\n! 필수 배정: 스태프를 1명 이상 배정해야 개장할 수 있습니다. 아래 + 배정을 누르세요."));
 	FFF_FacilityInstanceRevenue Revenue;
 	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, true, true, 0, Data);
 	FFF_FacilityUpgradePreview Quote;
@@ -2828,7 +2951,8 @@ bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Paramet
 		const FSlateRect ScrollRect = Scroll->GetPaintSpaceGeometry().GetLayoutBoundingRect();
 		if (Panel->GetWidgetFromName(TEXT("Clarity_InfoV1")) &&
 			(Page == EFF_FacilityInfoPage::Overview || Page == EFF_FacilityInfoPage::Operation ||
-			 Page == EFF_FacilityInfoPage::Revenue || Page == EFF_FacilityInfoPage::Programs || Page == EFF_FacilityInfoPage::Upgrade))
+			 Page == EFF_FacilityInfoPage::Revenue || Page == EFF_FacilityInfoPage::Programs ||
+			 Page == EFF_FacilityInfoPage::Upgrade || Page == EFF_FacilityInfoPage::Staff))
 			TestTrue(*FString::Printf(TEXT("%s %dp facts fit without scrolling (overflow %.1fpx)"),
 				Suffix,Resolution.Y,Scroll->GetScrollOffsetOfEnd()),Scroll->GetScrollOffsetOfEnd() <= 1.f);
 		TestTrue(TEXT("Identity remains outside scrolling content"), HeaderRect.Bottom <= ScrollRect.Top + 1.f && HeaderRect.GetSize().Y > 0);
@@ -2842,6 +2966,16 @@ bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Paramet
 			TestTrue(TEXT("Upgrade stays visible between scroll body and existing actions"), UpgradeActions->IsVisible() &&
 				ActionsRect.Top >= ScrollRect.Bottom - 1.f && ActionsRect.Bottom <= FooterRect.Top + 1.f &&
 				ButtonRect.Top >= ActionsRect.Top && ButtonRect.Bottom <= ActionsRect.Bottom && ButtonRect.GetSize().Y >= 24.f);
+		}
+		if (Page == EFF_FacilityInfoPage::Staff)
+		{
+			for (const FName Name : {FName(TEXT("Button_AssignStaff")), FName(TEXT("Button_UnassignStaff"))})
+			{
+				UWidget* Button = Panel->GetWidgetFromName(Name);
+				const FSlateRect Rect = Button->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+				TestTrue(TEXT("Staff assignment actions fit in the visible page"), Button->IsVisible() &&
+					Rect.GetSize().Y >= 24.f && Rect.Top >= ScrollRect.Top && Rect.Bottom <= ScrollRect.Bottom + 1.f);
+			}
 		}
 		if (Page == EFF_FacilityInfoPage::RemoveConfirmation)
 		{
@@ -2864,9 +2998,9 @@ bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Paramet
 	};
 	const EFF_FacilityInfoPage Pages[] = {EFF_FacilityInfoPage::Operation, EFF_FacilityInfoPage::Synergy,
 		EFF_FacilityInfoPage::Upgrade, EFF_FacilityInfoPage::RemoveConfirmation, EFF_FacilityInfoPage::Overview,
-		EFF_FacilityInfoPage::Revenue, EFF_FacilityInfoPage::Programs};
+		EFF_FacilityInfoPage::Revenue, EFF_FacilityInfoPage::Programs, EFF_FacilityInfoPage::Staff};
 	const TCHAR* Names[] = {TEXT("Operation"), TEXT("SynergyEmpty"), TEXT("Upgrade"), TEXT("Demolition"),
-		TEXT("Overview"), TEXT("Revenue"), TEXT("Programs")};
+		TEXT("Overview"), TEXT("Revenue"), TEXT("Programs"), TEXT("Staff")};
 	for (const FIntPoint Resolution : {FIntPoint(1280, 720), FIntPoint(1920, 1080)})
 	{
 		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Pages); ++Index)

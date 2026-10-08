@@ -17,6 +17,7 @@ class UEditableTextBox;
 class USlider;
 class UFF_FacilityColorPicker;
 class UWidget;
+class UBorder;
 
 DECLARE_MULTICAST_DELEGATE_TwoParams(FFF_OnFacilityLightingRequested,
 	FGuid, const FFFZSFacilityLightingState&);
@@ -127,4 +128,6 @@ private:
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingBrightnessLow;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingBrightnessNormal;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingBrightnessHigh;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UBorder> Border_LightingCurrentColor;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UBorder> Border_LightingNewColor;
 };

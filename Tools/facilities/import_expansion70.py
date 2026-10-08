@@ -477,7 +477,7 @@ def configure_definition(entry, template, mesh, texture, rig=None, existing=None
                   category=category_enum(entry["category"]),
                   footprint_size_cells=unreal.IntPoint(*final_footprint),
                   placement_obstacle_height_cm=final_height,
-                  clearance_cells=0 if entry["category"] in NO_SERVICE else 100,
+                  clearance_cells=0,
                   visual_mesh=mesh, visual_sizing_mode=unreal.FFZSVisualSizingMode.MATCH_PLACEMENT_BOUNDS,
                   visual_rotation=unreal.Rotator(), visual_offset_cm=unreal.Vector(),
                   max_instances_per_world=0, allowed_zone_ids=[], uses_facility_levels=False, upgrade_tiers=[])

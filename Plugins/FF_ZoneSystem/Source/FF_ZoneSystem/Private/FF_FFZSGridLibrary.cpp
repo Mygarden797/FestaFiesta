@@ -164,26 +164,17 @@ namespace
             return {};
         }
 
-        const FFFZSCellRect Expanded(
-            FIntPoint(-Spec.ClearanceCells, -Spec.ClearanceCells),
-            FIntPoint(
-                Spec.FootprintSizeCells.X + Spec.ClearanceCells,
-                Spec.FootprintSizeCells.Y + Spec.ClearanceCells));
-        if (!Expanded.IsValid())
-        {
-            return {};
-        }
-
         TArray<FFFZSCellRect> Cuts = Regions.Footprint;
         Cuts.Append(Regions.Queue);
-        TArray<FFFZSCellRect> WalkableReservedInput{ Expanded };
+        TArray<FFFZSCellRect> WalkableReservedInput;
         if (Spec.Audience.bEnabled)
         {
             FFFZSCellRect AudienceRect;
             if (!UFFZSGridLibrary::TryGetAudienceReservedRect(Spec, AudienceRect)) return {};
             WalkableReservedInput.Add(AudienceRect);
         }
-        // Audience belongs to walkable clearance, never the building/NavMesh obstacle or FIFO queue.
+        // The legacy clearance output now contains only explicitly authored audience space.
+        // Ignore ClearanceCells from old assets/saves; no automatic building perimeter is reserved.
         Regions.Clearance = SubtractRectSets(WalkableReservedInput, Cuts);
 
         TArray<FFFZSCellRect> ReservedInput = Regions.Footprint;
@@ -258,7 +249,7 @@ bool UFFZSGridLibrary::HasSafeFacilitySpecCardinality(const FFFZSFacilitySpec& S
 bool UFFZSGridLibrary::CanEnumerateFacilityCells(const FFFZSFacilitySpec& Spec)
 {
     if (Spec.FootprintSizeCells.X <= 0 || Spec.FootprintSizeCells.Y <= 0 ||
-        Spec.ClearanceCells < 0 || !HasSafeFacilitySpecCardinality(Spec))
+        !HasSafeFacilitySpecCardinality(Spec))
     {
         return false;
     }
@@ -268,9 +259,9 @@ bool UFFZSGridLibrary::CanEnumerateFacilityCells(const FFFZSFacilitySpec& Spec)
     {
         return IsPositiveCellProductWithinLimit(Spec.FootprintSizeCells.X, Spec.FootprintSizeCells.Y, Limit);
     }
-    const int64 ExpandedWidth = static_cast<int64>(Spec.FootprintSizeCells.X) + 2LL * Spec.ClearanceCells;
-    const int64 ExpandedHeight = static_cast<int64>(Spec.FootprintSizeCells.Y) + 2LL * Spec.ClearanceCells;
-    if (!IsPositiveCellProductWithinLimit(ExpandedWidth, ExpandedHeight, Limit))
+    const int64 FootprintWidth = Spec.FootprintSizeCells.X;
+    const int64 FootprintHeight = Spec.FootprintSizeCells.Y;
+    if (!IsPositiveCellProductWithinLimit(FootprintWidth, FootprintHeight, Limit))
     {
         return false;
     }
@@ -292,7 +283,7 @@ bool UFFZSGridLibrary::CanEnumerateFacilityCells(const FFFZSFacilitySpec& Spec)
         }
     }
 
-    const int64 ExpandedArea = ExpandedWidth * ExpandedHeight;
+    const int64 FootprintArea = FootprintWidth * FootprintHeight;
     const int64 QueueArea = GetCellRectArea(LocalQueue);
     int64 AudienceArea = 0;
     if (Spec.Audience.bEnabled)
@@ -301,7 +292,7 @@ bool UFFZSGridLibrary::CanEnumerateFacilityCells(const FFFZSFacilitySpec& Spec)
         if (!TryGetAudienceReservedRect(Spec, AudienceRect)) return false;
         AudienceArea = AudienceRect.GetArea();
     }
-    if (QueueArea < 0 || AudienceArea < 0 || QueueArea > Limit - ExpandedArea) return false;
+    if (QueueArea < 0 || AudienceArea < 0 || QueueArea > Limit - FootprintArea) return false;
     if (Spec.Audience.bEnabled)
     {
         const float AreaLimitM2 = Spec.Audience.AreaLimitM2;
@@ -314,7 +305,7 @@ bool UFFZSGridLibrary::CanEnumerateFacilityCells(const FFFZSFacilitySpec& Spec)
             return AudienceArea <= FMath::FloorToInt64(static_cast<double>(AreaLimitM2) * 10000.);
         }
     }
-    return AudienceArea <= Limit - ExpandedArea - QueueArea;
+    return AudienceArea <= Limit - FootprintArea - QueueArea;
 }
 
 bool UFFZSGridLibrary::TryGetAudienceReservedRect(const FFFZSFacilitySpec& Spec, FFFZSCellRect& OutRect)
@@ -1162,12 +1153,12 @@ FText UFFZSGridLibrary::PlacementFailureToText(const EFFZSPlacementFailure Failu
     case EFFZSPlacementFailure::DuplicateZoneId: return LOCTEXT("DuplicateZoneId", "Zone ID가 중복되었습니다");
     case EFFZSPlacementFailure::DuplicateFacilityId: return LOCTEXT("DuplicateFacilityId", "Facility ID가 중복되었습니다");
     case EFFZSPlacementFailure::CategoryNotAllowed: return LOCTEXT("CategoryNotAllowed", "이 Zone에서는 해당 Facility 카테고리가 허용되지 않습니다");
-    case EFFZSPlacementFailure::OutsideZone: return LOCTEXT("OutsideZone", "Footprint, 여유 공간 또는 최대 Queue 영역이 Zone 밖에 있습니다");
+    case EFFZSPlacementFailure::OutsideZone: return LOCTEXT("OutsideZone", "시설, 관람 공간 또는 최대 대기열이 건설 영역 밖에 있습니다");
     case EFFZSPlacementFailure::InvalidGround: return LOCTEXT("InvalidGround", "필요한 지면을 찾을 수 없습니다");
     case EFFZSPlacementFailure::ExcessSlope: return LOCTEXT("ExcessSlope", "지면 경사가 설정된 제한을 초과했습니다");
     case EFFZSPlacementFailure::HeightVarianceExceeded: return LOCTEXT("HeightVariance", "지면 높이 편차가 설정된 제한을 초과했습니다");
     case EFFZSPlacementFailure::PlacementCollision: return LOCTEXT("PlacementCollision", "Facility Footprint가 점유된 Cell 또는 World 장애물과 충돌합니다");
-    case EFFZSPlacementFailure::InsufficientClearance: return LOCTEXT("InsufficientClearance", "필요한 여유 공간이 막혀 있습니다");
+    case EFFZSPlacementFailure::InsufficientClearance: return LOCTEXT("InsufficientClearance", "관람 공간이 막혀 있습니다");
     case EFFZSPlacementFailure::QueueFootprintBlocked: return LOCTEXT("QueueBlocked", "최대 Queue Footprint가 막혀 있습니다");
     case EFFZSPlacementFailure::ProtectedRouteBlocked: return LOCTEXT("ProtectedRoute", "배치 영역이 보호 경로 또는 보호 영역과 겹칩니다");
     case EFFZSPlacementFailure::RequiredRouteDisconnected: return LOCTEXT("RouteDisconnected", "필수 내비게이션 지점의 경로가 끊겨 있습니다");

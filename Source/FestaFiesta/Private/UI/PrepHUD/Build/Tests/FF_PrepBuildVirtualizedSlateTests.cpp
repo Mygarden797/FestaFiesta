@@ -804,8 +804,8 @@ namespace FFPrepBuildVirtualizedSlateTest
             auto* Card = Cast<UBorder>(RequiredRow->GetWidgetFromName(TEXT("Border_Card")));
             if (!Test.TestNotNull(TEXT("The existing status slot shows installation count"), State) ||
                 !Test.TestNotNull(TEXT("Required facility card frame"), Card)) { return false; }
-            Test.TestEqual(TEXT("The actual saved status slot changes from 0/1 to 1/1"),
-                State->GetText().ToString(), FString(bInstalled ? TEXT("1/1") : TEXT("0/1")));
+            Test.TestEqual(TEXT("Required state explains installation without a fraction"),
+                State->GetText().ToString(), FString(bInstalled ? TEXT("설치 완료") : TEXT("1개 설치")));
             Test.TestTrue(TEXT("The real row receives required/satisfied state"),
                 RequiredRow->IsRequiredFacility() && RequiredRow->IsRequiredFacilitySatisfied() == bInstalled);
             const FSlateRect CardRect = Card->GetCachedGeometry().GetLayoutBoundingRect();
@@ -823,7 +823,7 @@ namespace FFPrepBuildVirtualizedSlateTest
                     Border->GetVisibility() == Expected && Badge->GetVisibility() == Expected);
                 if (!bActive) { continue; }
                 Test.TestEqual(TEXT("Required badge retains the authored readable label"), Badge->GetText().ToString(),
-                    FString(bInstalled ? TEXT("필수 완료") : TEXT("필수 설치")));
+                    FString(TEXT("필수 · 1개 설치")));
                 for (const UWidget* Decoration : { static_cast<UWidget*>(Border), static_cast<UWidget*>(Badge) })
                 {
                     const FSlateRect Rect = Decoration->GetCachedGeometry().GetLayoutBoundingRect();
