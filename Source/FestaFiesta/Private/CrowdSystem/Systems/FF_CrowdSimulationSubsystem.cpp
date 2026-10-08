@@ -6128,7 +6128,7 @@ void UFF_CrowdSimulationSubsystem::DrawDebugAgents() const
 
 		if (bIsLeader)
 		{
-			DrawDebugLine(World, Unit.Position, Unit.TargetLocation, FColor(60, 60, 60), false, -1.f, 0, 0.5f);
+			DrawDebugLine(World, Unit.Position, Unit.TargetLocation, FColor::White, false, -1.f, 0, 3.f);
 
 			if (PathFollowers.IsValidIndex(AgentIndex) && PathFollowers[AgentIndex].HasRemainingWaypoint())
 			{
@@ -6267,6 +6267,7 @@ void UFF_CrowdSimulationSubsystem::DespawnAllAgent()
 		}
 	}
 	PendingDespawnParty.Reset();
+	DensityGrid.Update(UnitDatas);
 }
 
 void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
