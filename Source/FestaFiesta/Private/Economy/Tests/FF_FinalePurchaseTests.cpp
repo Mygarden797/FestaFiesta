@@ -23,7 +23,7 @@ namespace FFF_FinalePurchaseTestHelpers
 	// [기획서] §10. 여기 값이 바뀌면 아래 기대값도 같이 바꿔야 한다.
 	constexpr int32 CostC = 2000;
 	constexpr int32 CostA = 6000;
-	constexpr int32 BonusA = 20;
+	constexpr int32 BonusA = 10;
 	constexpr int32 CostS = 8000;
 
 	// §2.5 3일 수지의 순이익. Finale 를 사는 예산이 이 값이다.
@@ -184,10 +184,10 @@ bool FFF_FinalePurchase_BonusIsNotRevenue::RunTest(const FString& Parameters)
 		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::A),
 		EFF_FinalePurchaseResult::Success);
 
-	TestEqual(TEXT("보너스가 20 점이다"), Harness.Progression->GetFinaleSatisfactionBonus(),
+	TestEqual(TEXT("보너스가 A 등급 값이다"), Harness.Progression->GetFinaleSatisfactionBonus(),
 		FFF_FinalePurchaseTestHelpers::BonusA);
 
-	// 20 이 어디에도 Gold 로 새지 않았다.
+	// 보너스가 어디에도 Gold 로 새지 않았다.
 	TestEqual(TEXT("누적 매출이 0 이다"), Harness.Progression->GetTotalRevenue(), 0);
 	TestEqual(TEXT("오늘 매출이 0 이다"), Harness.Progression->GetTodayRevenue(), 0);
 	TestEqual(TEXT("환급 집계도 0 이다"),

@@ -49,11 +49,19 @@ struct FFF_FestivalEvaluationInput
 	UPROPERTY(BlueprintReadWrite, Category = "FestaFiesta|Evaluation")
 	int32 DaysPlayed = 0;
 
+	// 날마다 목표가 다를 때 쓰는 3일 목표 합. 0 이면 DailyVisitorGoal × DaysPlayed.
+	UPROPERTY(BlueprintReadWrite, Category = "FestaFiesta|Evaluation")
+	int32 VisitorGoalTotal = 0;
+
 	UPROPERTY(BlueprintReadWrite, Category = "FestaFiesta|Evaluation")
 	int32 InitialGold = 0;
 
 	UPROPERTY(BlueprintReadWrite, Category = "FestaFiesta|Evaluation")
 	int32 FinalGold = 0;
+
+	// 재무 만점 이익. 0 이하면 시작 자금.
+	UPROPERTY(BlueprintReadWrite, Category = "FestaFiesta|Evaluation")
+	int32 TargetProfitGold = 0;
 
 	UPROPERTY(BlueprintReadWrite, Category = "FestaFiesta|Evaluation")
 	float Buzz = 50.f;
@@ -119,8 +127,9 @@ struct FESTAFIESTA_API FFF_FestivalEvaluationRules
 	// 등급 경계: S >= 85, A >= 70, B >= 55, C >= 40, 그 밖은 D.
 	static EFF_FestivalEvaluationGrade GradeForScore(int32 TotalScore);
 
-	// 재무 점수: 원금 그대로면 50, 두 배면 100, 전부 잃으면 0. 초기 자금이 0 이하면 50.
-	static int32 CalcFinanceScore(int32 InitialGold, int32 FinalGold);
+	// 재무 점수: 이익(최종 - 시작)이 목표의 몇 % 인가(0~100). 본전이거나 손해면 0, 목표 이상이면 100.
+	// 목표가 0 이하면 시작 자금을 목표로 본다.
+	static int32 CalcFinanceScore(int32 InitialGold, int32 FinalGold, int32 TargetProfitGold);
 
 	static FFF_FestivalEvaluation Evaluate(const FFF_FestivalEvaluationInput& Input);
 };

@@ -478,6 +478,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	bool StartPlacement(FName FacilityDefinitionId);
 
+	/** Show a non-blocking reason when a catalog action or world placement is rejected. */
+	void PresentPlacementFailure(EFFZSPlacementFailure FailureReason, const FText& Detail);
+
 	// 현재 배치를 취소하고 선택 정보를 비운 뒤 동일 건축 세션의 카탈로그로 돌아간다. 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	void ReturnToCatalog();
@@ -943,8 +946,6 @@ private:
 	void HandleWorldSnapshotRestored();
 	UFUNCTION()
 	void HandleFestivalStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
-	// 권위 실패 코드와 상세 사유를 신규 UMG 토스트에 표시한다. 프리뷰 Tick에서는 호출하지 않는다.
-	void PresentPlacementFailure(EFFZSPlacementFailure FailureReason, const FText& Detail);
 	UFF_BuildPlacementFailureFeedback* GetOrCreatePlacementFailureFeedback();
 	UFF_FacilityInfoSubsystem* GetFacilityInfoSubsystem() const;
 	void DismissPlacementFailureFeedback(bool bRemoveFromParent = false);

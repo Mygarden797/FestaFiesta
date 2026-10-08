@@ -45,7 +45,7 @@
        CurrentZoneDensityRatio, Thresholds.DensityThresholdRatio)
      → EFF_NoChoiceAction (Wander / Relocate / Leave)
 
-5. (설계상 재평가 감시 — 현재 프로덕션 호출 없음) FFF_UtilityDestinationSelector::ShouldReevaluate(
+5. (재평가 감시 — 2026-10-09 기준 Crowd 주기 재평가·줄 인내 이탈에서 호출됨) FFF_UtilityDestinationSelector::ShouldReevaluate(
        CurrentWaitMinutes, Thresholds.WaitThresholdMinutes,
        CurrentDensityRatio, Thresholds.DensityThresholdRatio,
        SecondsSinceLastEvaluation, Thresholds.ReevaluateIntervalSeconds,
@@ -90,6 +90,8 @@ PreferenceVectorByCategory[c] =
 
 일반 후보는 현재·직접 인접 Zone에서 최대 12개다. 공연 중 `Performance_MainStage_SunsetMainStage`만 모든 등록 Zone에서 상한 밖에 중복 없이 추가한다. StreetStage·DanceBattle·LocalArtist는 메인 공연 시간과 무관한 지역 후보다（예약 프로그램 편성 시에는 당일 전용 정책 적용）.
 
+어떤 Zone 에도 속하지 않은 파티는 200m 안 가장 가까운 Zone(액터 원점 기준, `MaxOutsideZoneFallbackMeters`)을 현재 Zone 으로 보고 후보를 만든다（2026-10-09 변경. 전엔 `OutsideZone` 으로 결정 포기. `FF.Decision.Stats` 의 `OutsideZoneUsedNearest`）.
+
 - `Random(0)`: 시설 선택 없이 폴백으로 간다（체류 소진이면 Leave도 가능하므로 무조건 배회는 아님）.
 - `Greedy(1)`: 취향·Need·대기·혼잡·방문 이력·이동 중 인원을 끈 입력으로 **같은 softmax**를 호출한다（엄밀한 argmax가 아님. 실패 목적지 감점과 no_choice는 남음）.
 - `Full(2)`: 9항 계산 경로. Attraction 입력 0, Zone density 보고 미연결, 개인 신규성 배수 1.0이라는 한계가 남는다（콘솔의 “6항 전부” 문구는 낡은 표시）.
@@ -106,7 +108,7 @@ PreferenceVectorByCategory[c] =
 
 ## 7. 구현 상태와 남은 것 (초기 미완료 목록 보존)
 
-1. **NPC 상태와 실행 루프는 Crowd에 연결됨.** `FFF_PartyDecisionContext`로 파티 Need·방문 이력·연속 no_choice·예약·속도·이동 중 원장을 넘긴다. `ShouldReevaluate` 주기 감시와 개인 임계/취향 강도/신규성 배수 전달은 미연결이다（Pawn/AIController를 추가하는 설계가 아님）.
+1. **NPC 상태와 실행 루프는 Crowd에 연결됨.** `FFF_PartyDecisionContext`로 파티 Need·방문 이력·연속 no_choice·예약·속도·이동 중 원장을 넘긴다. `ShouldReevaluate` 주기 감시와 개인 임계/취향 강도/신규성 배수 전달은 미연결이다（Pawn/AIController를 추가하는 설계가 아님）. （2026-10-09 기준: 주기 감시는 Crowd 리더 분기에서 연결됨. 시설로 걸어가는 중이면 주기 ×3 `EnRouteReevaluateIntervalScale`.）
 
 1-1. ~~**`FFF_ZoneSystemBridge::BuildCandidates`가 스텁**~~ — **2026-08-10 구현 완료.** 현재+직접 인접 Zone으로 좁히되 공연 중 Sunset은 전역으로 추가하고, 닫힌 시설·Info·Safety를 빼고, (같은 Zone → 가까운 순 → ID 순)으로 상한을 자른다. 테스트 10개.
 
@@ -129,6 +131,7 @@ PreferenceVectorByCategory[c] =
 
 | 날짜 | 변경 | 이유 |
 |---|---|---|
+| 2026-10-09 | `distance_ref_meters` 400 → 150, 새 계수 `distance_cost_cap` 3（거리 비용 = 0.8 × min(거리/150m, 3)）. Zone 밖 파티는 200m 안 가장 가까운 Zone 으로 결정. 이동 중 재평가 주기 ×3. 굿즈·공방·게임 부스가 `Stimulation` 해소 | 전엔 거리 비용이 400m 에서 1로 포화했다. 입구·길 위 파티가 결정을 포기했고, 걷는 도중 돌아서 줄에 서지 못했다. 세 부스는 Need 항이 없어 손님이 거의 오지 않았다 |
 | 2026-09-03 코드 확인 | 실패 목적지·이동 중 인원 감점 포함 **9항**, 방문 이력 Full 연결 | 실패 반복·이동 중 수요를 별도로 반영（신규 계수 3행은 CSV에 없어 코드 폴백 사용） |
 | 2026-09-03 | 시간 게이트·전역 후보를 SunsetMainStage ID 하나로 한정 | 소규모 공연 시설은 주변 후보 유지. 적격 리더 전체 요청·64개/프레임 처리 |
 | 2026-08-04 | `preference_match` 항을 `preference_norm` 하나로 확정, `affinity_norm` v0 미사용 | 아키타입 구조 확정으로 정의가 겹쳤다 |

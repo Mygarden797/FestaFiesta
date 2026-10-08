@@ -652,9 +652,9 @@ void UFF_FestivalViewModelSubsystem::RequestSetWeather(EFF_WeatherType NewWeathe
 
 int32 UFF_FestivalViewModelSubsystem::GetDailyVisitorGoal() const
 {
+	// 목표가 날마다 늘어나므로 오늘 목표를 묻는다
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
-	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
-	return Definition ? Definition->DailyVisitorGoal : INDEX_NONE;
+	return Progression ? Progression->GetDailyVisitorGoal() : INDEX_NONE;
 }
 
 int32 UFF_FestivalViewModelSubsystem::GetDailyGoalBonusGold() const

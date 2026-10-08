@@ -129,19 +129,19 @@ bool FFF_ScoreSatisfaction_AddsFinaleBonusAndClampsAtMax::RunTest(const FString&
 	Harness.CommitSimSatisfaction(40.f);
 	TestEqual(TEXT("구매 전 SimSatisfaction은 40이다"), Harness.ViewModel->GetSimSatisfaction(), 40);
 
-	// A 등급 보너스는 +20이다([기획서] §10, `FF_FinalePurchaseTests.cpp`의 BonusA와 동일).
+	// A 등급 보너스는 +10이다(`FF_FinalePurchaseTests.cpp`의 BonusA와 동일).
 	TestEqual(TEXT("A 등급을 구매한다"),
 		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::A),
 		EFF_FinalePurchaseResult::Success);
 
-	TestEqual(TEXT("ViewModel에 보너스 20이 노출된다"), Harness.ViewModel->GetFinaleSatisfactionBonus(), 20);
-	TestEqual(TEXT("ScoreSatisfaction이 40+20=60으로 갈라진다(클램프 없이)"),
-		Harness.ViewModel->GetScoreSatisfaction(), 60);
+	TestEqual(TEXT("ViewModel에 보너스 10이 노출된다"), Harness.ViewModel->GetFinaleSatisfactionBonus(), 10);
+	TestEqual(TEXT("ScoreSatisfaction이 40+10=50으로 갈라진다(클램프 없이)"),
+		Harness.ViewModel->GetScoreSatisfaction(), 50);
 
 	// SimSatisfaction이 나중에 다시 바뀌어도(보너스는 구매 시점에 고정) 합이 계속 따라간다.
 	Harness.CommitSimSatisfaction(95.f);
 	TestEqual(TEXT("SimSatisfaction이 95로 갱신된다"), Harness.ViewModel->GetSimSatisfaction(), 95);
-	TestEqual(TEXT("95+20=115는 100으로 클램프된다"), Harness.ViewModel->GetScoreSatisfaction(), 100);
+	TestEqual(TEXT("95+10=105는 100으로 클램프된다"), Harness.ViewModel->GetScoreSatisfaction(), 100);
 
 	return true;
 }

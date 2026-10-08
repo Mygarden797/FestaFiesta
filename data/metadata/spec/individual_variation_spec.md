@@ -5,6 +5,7 @@
 
 > **8개 knob를 읽어 multiplier 7종과 LeisurelinessAxis를 계산한다. 현재 Crowd는 속도·체류 배수 2종을 직접 소비한다.**
 > 나머지 multiplier 5종(인내심·혼잡내성·선호강도·재평가주기·신규성)은 결정 컨텍스트에 전달되지 않는다. 취향 강도와 신규성 배수는 Decision에서 1.0을 쓴다. `ResolvePersonalThresholds`와 `ShouldReevaluate`는 프로덕션 C++ 호출이 없다.
+> （2026-10-09 코드 기준: Crowd 스폰이 `ResolvePersonalThresholds` 를 부르고, 주기 재평가·줄 인내 이탈이 `ShouldReevaluate` 를 부른다. 취향 강도·신규성 배수도 결정 컨텍스트로 전달된다. 시설로 걸어가는 중이면 재평가 주기 ×3(`EnRouteReevaluateIntervalScale`).）
 > （LeisurelinessAxis는 Resolver 안에서 상관에 쓰이므로 “미사용 5종”에 넣지 않는다. 판단도 전원이 같지는 않다: 아키타입·일행 크기·Need·위치·방문 이력·결정 시드가 다르다.）
 > （Zone density 비용은 인구 보고 미연결, `Relocate`는 현재 밀도 0/개인 임계 1 고정이라는 별도 한계가 있다. 개인 임계 전달만으로 Zone 보고가 채워지지는 않는다.）
 
@@ -84,7 +85,7 @@ U ≥ C 이면:  X = Max - sqrt((1 - U) * (Max - Min) * (Max - Mode))
 
 | TraitKey | 곱해지는 대상 | Min | Mode | Max | 상태 |
 |---|---|---|---|---|---|
-| `walk_speed_multiplier` | Crowd `FUnitData`의 기본 속도 150cm/s（Character MovementComponent 경로가 아님） | 0.85 | 1.00 | 1.15 | draft_assumption |
+| `walk_speed_multiplier` | Crowd `FUnitData`의 기본 속도 150cm/s（Character MovementComponent 경로가 아님）. 2026-10-09 변경: 손님은 여기에 `GuestWalkSpeedScale` 1.6 을 먼저 곱한다（150 × 1.6 = 2.4m/s） | 0.85 | 1.00 | 1.15 | draft_assumption |
 | `patience_multiplier` | `wait_threshold_minutes` (재평가 트리거, 기본 15분) | 0.70 | 1.00 | 1.30 | draft_assumption |
 | `crowd_tolerance_multiplier` | `density_threshold_ratio` (재평가 트리거, 기본 0.85) | 0.70 | 1.00 | 1.30 | draft_assumption |
 | `preference_strength_multiplier` | `preference_vector` (아키타입+동반유형 delta 합산값 — `lambda_affinity` 자체는 건드리지 않음) | 0.60 | 1.00 | 1.40 | draft_assumption |
