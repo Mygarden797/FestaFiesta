@@ -1,9 +1,9 @@
 Name,Kind,NextJump,Speaker,Text,WaitCondition,BackgroundImage,ExpectedTab,HighlightAnchor,ClickArea,Skippable,SkipSummary,Choice1Text,Choice1Jump,Choice2Text,Choice2Jump,Choice3Text,Choice3Jump,WaitTarget
-Arrival_001,Speech,,비서,오셨네요. 기다리고 있었습니다.,,,,,,true,,,,,,,,
-Arrival_002,Speech,,비서,대표님께 말씀 들었어요.,,,,,,true,,,,,,,,
-Arrival_003,Choice,,,,,,,,,true,,잘 부탁드립니다.,Arrival_004b,여기가 행사장인가요,Arrival_004a,,,
+Arrival_001,Speech,,비서,도착했어요. 여기가 실습장이에요.,,,,,,true,,,,,,,,
+Arrival_002,Speech,,비서,여기서 축제 하나를 처음부터 끝까지 해 볼 거예요.,,,,,,true,,,,,,,,
+Arrival_003,Choice,,,,,,,,,true,,바로 시작할까요.,Arrival_004b,여기가 행사장인가요,Arrival_004a,,,
 Arrival_004a,Speech,Arrival_005,비서,"네, 맞아요. 지금은 아무것도 없죠.",,,,,,true,,,,,,,,
-Arrival_004b,Speech,,비서,"네, 저야말로 잘 부탁드립니다.",,,,,,true,,,,,,,,
+Arrival_004b,Speech,,비서,좋아요. 금방 익숙해지실 거예요.,,,,,,true,,,,,,,,
 Arrival_005,Speech,,비서,사흘 뒤면 여기가 다 찹니다.,,,,,,true,,,,,,,,
 Arrival_006,Speech,,비서,천천히 한 바퀴 둘러보세요.,,,,,,false,화면을 움직여 현장을 둘러보세요.,,,,,,,
 Arrival_007,WaitForAction,,,화면 가장자리로 마우스를 옮기거나 WASD 로 이동해 보세요.,CameraMoved,,,,,false,,,,,,,,
