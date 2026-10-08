@@ -52,6 +52,15 @@ public:
 		meta = (DisplayName = "Tutorial Festival Id"))
 	FName TutorialFestivalId = TEXT("Tutorial");
 
+	/* 튜토리얼 레벨을 끝까지 봤거나 건너뛴 뒤 국가 지도에 띄울 잠긴 이유.
+
+	   그 판에서는 튜토리얼 레벨을 다시 고를 수 없다. 새 게임을 누르면 다시 열린다(2026-10-07 결정).
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
+		meta = (DisplayName = "Tutorial Level Locked Reason"))
+	FText TutorialLevelLockedReason = NSLOCTEXT("FestaFiestaTutorial", "TutorialLevelLocked",
+		"튜토리얼을 마쳤습니다. 새 게임에서 다시 할 수 있어요.");
+
 	/* 화자 이름 → 초상화. 대사의 Speaker 칸과 글자가 똑같아야 한다(예: 삼촌).
 
 	   대사 줄마다 그림을 적지 않고 화자로 찾는 이유: 한 사람이 수십 줄을 말하는데

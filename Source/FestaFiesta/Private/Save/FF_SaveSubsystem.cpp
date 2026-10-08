@@ -981,6 +981,18 @@ void UFF_SaveSubsystem::MarkTutorialOptedOut()
 	WriteRunMeta();
 }
 
+void UFF_SaveSubsystem::WriteLobbyAutoSaveAfterTutorial()
+{
+	if (!bRunActive)
+	{
+		UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 판을 시작하지 않아 튜토리얼 뒤 로비 세이브를 남기지 않는다."));
+		return;
+	}
+
+	UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 튜토리얼 레벨을 마치고 레벨 선택으로 돌아간다. 로비 세이브를 남긴다."));
+	WriteLobbyAutoSave();
+}
+
 void UFF_SaveSubsystem::BeginNewRun()
 {
 	/* 새 게임. 메타를 전부 비우고, 이 판의 세이브도 아직 없는 것으로 한다.

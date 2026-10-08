@@ -426,6 +426,9 @@ void AFF_FestivalPlayerController::PlayerTick(float DeltaTime)
 		// 차단되기 직전의 팬 입력, 줌 전환, 명시적 추적도 숨은 상태로 진행시키지 않는다.
 		StopOverviewCameraMotion();
 	}
+
+	// 끌기 이동은 막힘을 스스로 본다(위와 같은 IsCameraMovementAllowed). 멈춘 카메라를 다시 움직이지 않는다.
+	TickDragPan();
 }
 
 bool AFF_FestivalPlayerController::SwitchToActorView(AActor* TargetActor, float BlendTime)
@@ -683,6 +686,56 @@ void AFF_FestivalPlayerController::TickEdgeScroll(float DeltaTime)
 
 	// 배율을 여기서 곱하지 않는다. 리그가 EdgeScroll 전용 속도로 처리한다.
 	CameraPawn->AddEdgeScrollInput(EdgeInput);
+}
+
+void AFF_FestivalPlayerController::TickDragPan()
+{
+	/* 땅을 잡아 끄는 이동(2026-10-07 피드백: 탑뷰를 마우스 드래그로 움직이고 싶다).
+
+	   누른 순간 커서 아래 땅 지점을 잡고, 누르는 동안 그 지점이 커서 아래에 남도록 초점을 옮긴다.
+	   커서가 움직인 화면 거리로 속도를 정하지 않고 땅 위치끼리 맞추므로, 확대 정도와 회전에 관계없이
+	   손에 붙어 움직인다. 초점은 보간되므로 땅이 커서를 살짝 늦게 따라와 맞춰진다.
+
+	   건축 중에는 끈다. 길을 끌어서 까는 조작 · 오른쪽 클릭 취소와 겹친다(사용자 지시).
+	   누를 때만 보지 않고 끄는 도중에도 본다. 건축이 열리거나 시점이 바뀌면 그 자리에서 놓는다.
+	*/
+	const bool bKeyDown = DragPanKey.IsValid() && IsInputKeyDown(DragPanKey);
+	if (!bKeyDown || !bShowMouseCursor || !IsCameraMovementAllowed() || IsBuildSessionActive())
+	{
+		bDragPanActive = false;
+		return;
+	}
+
+	AFF_OverviewCameraPawn* CameraPawn = GetOverviewCameraPawn();
+	FVector Cursor = FVector::ZeroVector;
+	if (!CameraPawn || !ResolveCursorWorldAnchor(Cursor))
+	{
+		// 커서가 창 밖이거나 하늘을 가리킨다. 다시 땅을 가리키면 새로 눌러야 이어진다.
+		bDragPanActive = false;
+		return;
+	}
+
+	if (!bDragPanActive)
+	{
+		// 시작은 막 누른 프레임에만. 정보창 위에서 누른 것은 끌기가 아니다.
+		// 끄는 도중 커서가 정보창 위를 지나가는 것은 막지 않는다.
+		if (!WasInputKeyJustPressed(DragPanKey) || IsPointerOverFacilityUI(GetWorld()))
+		{
+			return;
+		}
+		DragPanAnchor = Cursor;
+		bDragPanActive = true;
+		return;
+	}
+
+	// 잡은 지점과 지금 커서 아래 지점의 차이만큼 초점을 민다. 높이는 지면 추종이 정한다.
+	const FVector Offset = DragPanAnchor - Cursor;
+	if (FVector2D(Offset.X, Offset.Y).IsNearlyZero(1.f))
+	{
+		return;
+	}
+	const FVector Focus = CameraPawn->GetCameraState().FocusLocation;
+	CameraPawn->FocusOnLocation(FVector(Focus.X + Offset.X, Focus.Y + Offset.Y, Focus.Z));
 }
 
 void AFF_FestivalPlayerController::HandleRotate(const FInputActionValue& Value)
