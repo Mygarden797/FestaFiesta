@@ -9,6 +9,8 @@
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/ComboBoxString.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
@@ -223,12 +225,12 @@ bool FFFBuildFeatureGuideAcknowledgementTest::RunTest(const FString& Parameters)
 	const FLinearColor AuthoredTint(.31f, .42f, .53f, 1.f);
 	Grid->SetBackgroundColor(AuthoredTint);
 	Grid->SetToolTipText(FText::FromString(TEXT("Authored grid tooltip")));
-	// Match the toolbar hierarchy: only the named icon subtree may be highlighted.
+	// Match the toolbar hierarchy: a separate badge shares the unchanged icon canvas.
 	auto* ButtonContents = Widget->WidgetTree->ConstructWidget<UVerticalBox>();
 	Grid->SetContent(ButtonContents);
 	auto* IconSize = Widget->WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("Size_BuildToolbarLine2"));
 	ButtonContents->AddChildToVerticalBox(IconSize);
-	auto* IconContents = Widget->WidgetTree->ConstructWidget<UVerticalBox>();
+	auto* IconContents = Widget->WidgetTree->ConstructWidget<UCanvasPanel>();
 	IconSize->SetContent(IconContents);
 	auto* IconFill = Widget->WidgetTree->ConstructWidget<UBorder>();
 	FSlateBrush AuthoredFill;
@@ -238,7 +240,7 @@ bool FFFBuildFeatureGuideAcknowledgementTest::RunTest(const FString& Parameters)
 	IconFill->SetBrush(AuthoredFill);
 	const FLinearColor AuthoredBrushColor(.65f, .75f, .85f, 1.f);
 	IconFill->SetBrushColor(AuthoredBrushColor);
-	IconContents->AddChildToVerticalBox(IconFill);
+	IconContents->AddChildToCanvas(IconFill);
 	auto* IconOutline = Widget->WidgetTree->ConstructWidget<UBorder>();
 	FSlateBrush AuthoredOutline;
 	AuthoredOutline.DrawAs = ESlateBrushDrawType::RoundedBox;
@@ -246,47 +248,61 @@ bool FFFBuildFeatureGuideAcknowledgementTest::RunTest(const FString& Parameters)
 	AuthoredOutline.OutlineSettings.Color = FSlateColor(FLinearColor(.21f, .32f, .43f, .7f));
 	AuthoredOutline.OutlineSettings.Width = 2.f;
 	IconOutline->SetBrush(AuthoredOutline);
-	IconContents->AddChildToVerticalBox(IconOutline);
+	IconContents->AddChildToCanvas(IconOutline);
 	auto* IconText = Widget->WidgetTree->ConstructWidget<UTextBlock>();
 	const FLinearColor AuthoredIconText(.24f, .35f, .46f, 1.f);
 	IconText->SetColorAndOpacity(FSlateColor(AuthoredIconText));
-	IconContents->AddChildToVerticalBox(IconText);
+	IconContents->AddChildToCanvas(IconText);
+	auto* Badge = Widget->WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Badge_BuildGrid"));
+	Badge->SetVisibility(ESlateVisibility::Collapsed);
+	auto* BadgeSlot = IconContents->AddChildToCanvas(Badge);
+	BadgeSlot->SetPosition(FVector2D(32.f, -3.f));
+	BadgeSlot->SetSize(FVector2D(18.f, 18.f));
+	auto* BadgeText = Widget->WidgetTree->ConstructWidget<UTextBlock>();
+	BadgeText->SetText(FText::FromString(TEXT("!")));
+	Badge->SetContent(BadgeText);
 	auto* ButtonLabel = Widget->WidgetTree->ConstructWidget<UTextBlock>();
 	const FLinearColor AuthoredLabel(.14f, .25f, .36f, 1.f);
 	ButtonLabel->SetText(FText::FromString(TEXT("격자")));
 	ButtonLabel->SetColorAndOpacity(FSlateColor(AuthoredLabel));
 	ButtonContents->AddChildToVerticalBox(ButtonLabel);
 	Widget->RefreshFeatureHints();
+	TestEqual(TEXT("Unread guidance displays a click-through exclamation badge"), Badge->GetVisibility(), ESlateVisibility::HitTestInvisible);
 	TestTrue(TEXT("Unread guidance preserves the button background"), Grid->GetBackgroundColor().Equals(AuthoredTint));
 	TestTrue(TEXT("Unread guidance preserves the caption below the icon"), ButtonLabel->GetColorAndOpacity().GetSpecifiedColor().Equals(AuthoredLabel));
-	TestFalse(TEXT("The icon's visible fill is highlighted"), IconFill->Background.TintColor.GetSpecifiedColor().Equals(AuthoredFill.TintColor.GetSpecifiedColor()));
-	TestFalse(TEXT("The icon's visible outline is highlighted"), IconOutline->Background.OutlineSettings.Color.GetSpecifiedColor().Equals(AuthoredOutline.OutlineSettings.Color.GetSpecifiedColor()));
-	TestEqual(TEXT("Icon highlighting preserves a transparent fill"), IconOutline->Background.TintColor.GetSpecifiedColor().A, 0.f);
-	TestEqual(TEXT("Icon highlighting preserves a transparent outline"), IconFill->Background.OutlineSettings.Color.GetSpecifiedColor().A, 0.f);
-	TestFalse(TEXT("Text inside the icon is highlighted"), IconText->GetColorAndOpacity().GetSpecifiedColor().Equals(AuthoredIconText));
+	TestTrue(TEXT("Unread guidance preserves the icon's original fill brush"), IconFill->Background == AuthoredFill);
+	TestTrue(TEXT("Unread guidance preserves the icon's original outline brush"), IconOutline->Background == AuthoredOutline);
+	TestTrue(TEXT("Unread guidance preserves the icon's original brush color"), IconFill->GetBrushColor().Equals(AuthoredBrushColor));
+	TestTrue(TEXT("Unread guidance preserves text inside the icon"), IconText->GetColorAndOpacity().GetSpecifiedColor().Equals(AuthoredIconText));
 	Widget->RequestFeatureToolbarAction(TEXT("BuildGrid"));
 	TestTrue(TEXT("A fresh toolbar click opens its explanation first"), Widget->IsFeatureGuideOpen());
 	TestEqual(TEXT("The selected action is held until confirmation"), Widget->PendingGuideAction, FName(TEXT("BuildGrid")));
 	TestFalse(TEXT("Showing the explanation does not mark it read"), Session.Discovery->HasSeenFeature(TEXT("BuildGrid")));
+	TestEqual(TEXT("Opening the explanation keeps its unread badge"), Badge->GetVisibility(), ESlateVisibility::HitTestInvisible);
 	TestFalse(TEXT("First-use topics cannot switch the pending action"), Widget->Combo_FeatureGuideTopic->GetIsEnabled());
 	Widget->CloseFeatureGuide();
 	TestTrue(TEXT("Dismissing cancels the pending action"), Widget->PendingGuideAction.IsNone());
 	TestFalse(TEXT("Dismissal does not silently acknowledge it"), Session.Discovery->HasSeenFeature(TEXT("BuildGrid")));
+	Widget->RefreshFeatureHints();
+	TestEqual(TEXT("Dismissed guidance retains its unread badge"), Badge->GetVisibility(), ESlateVisibility::HitTestInvisible);
+	TestTrue(TEXT("Dismissed guidance leaves the original icon fill unchanged"), IconFill->Background == AuthoredFill);
 	Widget->RequestFeatureToolbarAction(TEXT("BuildGrid"));
 	TestTrue(TEXT("Dismissed help remains available on the next click"), Widget->IsFeatureGuideOpen());
 	Widget->ConfirmFeatureGuide();
 	TestTrue(TEXT("Explicit confirmation records only the viewed feature"), Session.Discovery->HasSeenFeature(TEXT("BuildGrid")));
 	TestFalse(TEXT("Other toolbar features remain unseen"), Session.Discovery->HasSeenFeature(TEXT("BuildSnap")));
 	TestFalse(TEXT("Confirmation closes the panel"), Widget->IsFeatureGuideOpen());
+	TestEqual(TEXT("Confirmation removes the acknowledged feature's badge"), Badge->GetVisibility(), ESlateVisibility::Collapsed);
 	TestTrue(TEXT("Confirmation leaves the designer's button background unchanged"), Grid->GetBackgroundColor().Equals(AuthoredTint));
 	TestTrue(TEXT("Confirmation leaves the caption color unchanged"), ButtonLabel->GetColorAndOpacity().GetSpecifiedColor().Equals(AuthoredLabel));
-	TestTrue(TEXT("Confirmation restores the icon's original fill brush"), IconFill->Background == AuthoredFill);
-	TestTrue(TEXT("Confirmation restores the icon's original outline brush"), IconOutline->Background == AuthoredOutline);
-	TestTrue(TEXT("Confirmation restores the icon's original brush color"), IconFill->GetBrushColor().Equals(AuthoredBrushColor));
-	TestTrue(TEXT("Confirmation restores the icon text color"), IconText->GetColorAndOpacity().GetSpecifiedColor().Equals(AuthoredIconText));
+	TestTrue(TEXT("Confirmation preserves the icon's original fill brush"), IconFill->Background == AuthoredFill);
+	TestTrue(TEXT("Confirmation preserves the icon's original outline brush"), IconOutline->Background == AuthoredOutline);
+	TestTrue(TEXT("Confirmation preserves the icon's original brush color"), IconFill->GetBrushColor().Equals(AuthoredBrushColor));
+	TestTrue(TEXT("Confirmation preserves the icon text color"), IconText->GetColorAndOpacity().GetSpecifiedColor().Equals(AuthoredIconText));
 	TestEqual(TEXT("First-use tooltip is restored"), Grid->GetToolTipText().ToString(), FString(TEXT("Authored grid tooltip")));
 	Widget->RequestFeatureToolbarAction(TEXT("BuildGrid"));
 	TestFalse(TEXT("Later toolbar clicks no longer show the explanation"), Widget->IsFeatureGuideOpen());
+	TestEqual(TEXT("Later toolbar clicks keep the acknowledged badge hidden"), Badge->GetVisibility(), ESlateVisibility::Collapsed);
 	Widget->ShowFeatureGuide(TEXT("BuildGrid"), false);
 	TestTrue(TEXT("The manual guide can reopen an acknowledged feature"), Widget->IsFeatureGuideOpen());
 	TestTrue(TEXT("Manual browsing never queues an actual toolbar operation"), Widget->PendingGuideAction.IsNone());
@@ -299,6 +315,9 @@ bool FFFBuildFeatureGuideAcknowledgementTest::RunTest(const FString& Parameters)
 	FFF_CodexIntroductionTests::FFeatureSession Restarted;
 	TestTrue(TEXT("Confirmed toolbar history survives restart"), Restarted.Discovery->HasSeenFeature(TEXT("BuildGrid")));
 	TestFalse(TEXT("Viewed but unconfirmed history stays unseen after restart"), Restarted.Discovery->HasSeenFeature(TEXT("BuildFavorites")));
+	Widget->FeatureDiscovery = Restarted.Discovery.Get();
+	Widget->RefreshFeatureHints();
+	TestEqual(TEXT("Reloaded acknowledgement keeps its badge hidden"), Badge->GetVisibility(), ESlateVisibility::Collapsed);
 	return true;
 }
 
