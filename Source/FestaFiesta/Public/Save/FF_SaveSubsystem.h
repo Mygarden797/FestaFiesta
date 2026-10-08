@@ -230,6 +230,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void MarkTutorialOptedOut();
 
+	/* 튜토리얼 레벨을 마치고 레벨 선택으로 돌아갈 때 로비 자동 저장을 남긴다.
+
+	   튜토리얼 레벨은 끝까지 하든 건너뛰든 축제를 다 치르지 않고 레벨 선택으로 나온다. 축제를 깼을 때처럼
+	   로비 세이브를 남기지 않으면 이 판의 마지막 저장이 튜토리얼 레벨 안(첫날 아침)으로 남는다. 튜토리얼
+	   레벨은 마치면 지도에서 잠기므로(UFF_TutorialSubsystem::SyncTutorialLevelLock) 이어하기가 그 레벨을
+	   열려다 막힌다. 로비 세이브가 있으면 이어하기가 그 나라의 레벨 선택으로 간다.
+	   판을 시작하지 않았으면(흐름 밖에서 맵을 연 개발 중) 남기지 않는다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
+	void WriteLobbyAutoSaveAfterTutorial();
+
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void MarkFestivalCleared(FName FestivalId, const FFF_FestivalRecord& Record);
 

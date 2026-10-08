@@ -191,6 +191,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input")
 	FKey EdgeScrollActivationKey = EKeys::MiddleMouseButton;
 
+	// 이 키를 누른 채 끌면 잡은 땅이 커서를 따라오게 관찰 카메라를 옮긴다. 기본값은 오른쪽 버튼이다.
+	// 건축 중에는 쓰지 않는다(TickDragPan 참고). 무효 키는 끌기 이동을 끈다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input")
+	FKey DragPanKey = EKeys::RightMouseButton;
+
 	// 시점 전환에 쓸 블렌드 시간. 0 이면 즉시 전환한다.
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera", meta = (ClampMin = "0.0"))
 	float ViewSwitchBlendTime = 0.5f;
@@ -238,6 +243,13 @@ private:
 
 	// 활성화 키를 누른 채 마우스가 화면 가장자리에 있으면 그쪽으로 팬한다.
 	void TickEdgeScroll(float DeltaTime);
+
+	// 끌기 키를 누르는 동안, 누른 순간 커서 아래에 있던 땅 지점이 계속 커서 아래에 오도록 초점을 옮긴다.
+	void TickDragPan();
+
+	// 끌기를 시작할 때 잡은 땅 지점(초점 평면 위). 키를 떼거나 끌기가 막히면 풀린다.
+	FVector DragPanAnchor = FVector::ZeroVector;
+	bool bDragPanActive = false;
 
 	// 보고 있던 대상이 파괴됐는지 확인하고, 그렇다면 관찰 시점으로 되돌린다.
 	// 액터가 사라지면 뷰타깃이 없어져서 화면이 원점을 비추게 된다.

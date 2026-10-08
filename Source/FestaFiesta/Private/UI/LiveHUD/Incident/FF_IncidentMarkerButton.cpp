@@ -7,6 +7,7 @@
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Engine/Texture2D.h"
+#include "TextureResource.h"
 #include "InputCoreTypes.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -24,6 +25,57 @@ namespace FFIncidentMarkerButton
 	constexpr float PulseAmount = 0.06f;
 	constexpr float BlinkHz = 2.5f;
 	constexpr float BlinkMinOpacity = 0.55f;
+
+	static UTexture2D* MakeArrowTexture()
+	{
+		constexpr int32 Size = 64;
+		constexpr int32 Sub = 4;
+		UTexture2D* Texture = UTexture2D::CreateTransient(Size, Size, PF_B8G8R8A8);
+		if (!Texture || !Texture->GetPlatformData() || Texture->GetPlatformData()->Mips.Num() == 0)
+		{
+			return nullptr;
+		}
+
+		const FVector2D A(0.15, 0.1);
+		const FVector2D B(0.15, 0.9);
+		const FVector2D C(0.95, 0.5);
+		auto Cross = [](const FVector2D& P, const FVector2D& Q, const FVector2D& R)
+		{
+			return (Q.X - P.X) * (R.Y - P.Y) - (Q.Y - P.Y) * (R.X - P.X);
+		};
+
+		FTexture2DMipMap& Mip = Texture->GetPlatformData()->Mips[0];
+		uint8* Pixels = static_cast<uint8*>(Mip.BulkData.Lock(LOCK_READ_WRITE));
+		for (int32 Y = 0; Y < Size; ++Y)
+		{
+			for (int32 X = 0; X < Size; ++X)
+			{
+				int32 Covered = 0;
+				for (int32 SY = 0; SY < Sub; ++SY)
+				{
+					for (int32 SX = 0; SX < Sub; ++SX)
+					{
+						const FVector2D P((X + (SX + 0.5) / Sub) / Size, (Y + (SY + 0.5) / Sub) / Size);
+						const double D1 = Cross(A, B, P);
+						const double D2 = Cross(B, C, P);
+						const double D3 = Cross(C, A, P);
+						if ((D1 >= 0. && D2 >= 0. && D3 >= 0.) || (D1 <= 0. && D2 <= 0. && D3 <= 0.))
+						{
+							++Covered;
+						}
+					}
+				}
+				uint8* Pixel = Pixels + (Y * Size + X) * 4;
+				Pixel[0] = 255;
+				Pixel[1] = 255;
+				Pixel[2] = 255;
+				Pixel[3] = static_cast<uint8>(255 * Covered / (Sub * Sub));
+			}
+		}
+		Mip.BulkData.Unlock();
+		Texture->UpdateResource();
+		return Texture;
+	}
 }
 
 void UFF_IncidentMarkerButton::EnsureTree()
@@ -62,6 +114,20 @@ void UFF_IncidentMarkerButton::EnsureTree()
 	Disc->SetBrush(FFIncidentUiStyle::MakePill(DiscColor));
 	Ring->SetVisibility(ESlateVisibility::Collapsed);
 	Glyph->SetVisibility(ESlateVisibility::Collapsed);
+
+	Arrow = AddLayer(TEXT("Image_Arrow"));
+	if (UOverlaySlot* ArrowSlot = Cast<UOverlaySlot>(Arrow->Slot))
+	{
+		ArrowSlot->SetHorizontalAlignment(HAlign_Center);
+		ArrowSlot->SetVerticalAlignment(VAlign_Center);
+	}
+	ArrowTexture = FFIncidentMarkerButton::MakeArrowTexture();
+	if (ArrowTexture)
+	{
+		Arrow->SetBrushFromTexture(ArrowTexture, false);
+	}
+	Arrow->SetDesiredSizeOverride(FVector2D(ArrowSizePx));
+	Arrow->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 TSharedRef<SWidget> UFF_IncidentMarkerButton::RebuildWidget()
@@ -73,6 +139,7 @@ TSharedRef<SWidget> UFF_IncidentMarkerButton::RebuildWidget()
 void UFF_IncidentMarkerButton::SetMarkerSize(const FVector2D& Size)
 {
 	EnsureTree();
+	MarkerSize = Size;
 	if (UOverlaySlot* DiscSlot = Disc ? Cast<UOverlaySlot>(Disc->Slot) : nullptr)
 	{
 		const float Inset = (0.5f - DiscRadiusUV) * FMath::Min(Size.X, Size.Y);
@@ -116,9 +183,35 @@ void UFF_IncidentMarkerButton::ApplyLook(const FFF_IncidentMarkerLook& InLook, U
 		}
 	}
 
+	if (Arrow)
+	{
+		Arrow->SetColorAndOpacity(Look.RingColor);
+	}
+
 	ApplyRingParameters();
 	SetToolTipText(Look.Tooltip);
 	ApplyTransform();
+}
+
+void UFF_IncidentMarkerButton::SetEdgeIndicator(bool bOffscreen, const FVector2D& Direction)
+{
+	EnsureTree();
+	if (!Arrow || !ArrowTexture)
+	{
+		return;
+	}
+	if (!bOffscreen)
+	{
+		Arrow->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	const float Distance = DiscRadiusUV * FMath::Min(MarkerSize.X, MarkerSize.Y) + ArrowGapPx + ArrowSizePx * 0.5f;
+	FWidgetTransform Transform;
+	Transform.Translation = Direction * Distance;
+	Transform.Angle = FFIncidentMarkerRules::DirectionToAngleDegrees(Direction);
+	Arrow->SetRenderTransform(Transform);
+	Arrow->SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 
 float UFF_IncidentMarkerButton::GetRingOuterRadius() const

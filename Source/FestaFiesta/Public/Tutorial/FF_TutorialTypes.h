@@ -67,14 +67,45 @@ enum class EFF_TutorialWaitCondition : uint8
 	// 준비 화면의 특정 탭을 열었다.
 	PrepTabOpened       UMETA(DisplayName = "준비 탭 열기"),
 
-	// 시설을 하나 설치했다.
+	// 시설을 하나 설치했다. 줄의 WaitTarget 에 시설 정의 이름을 적으면 그 시설만 센다.
 	FacilityPlaced      UMETA(DisplayName = "시설 설치"),
 
 	// 축제 단계가 넘어갔다.
 	StageAdvanced       UMETA(DisplayName = "단계 진행"),
 
 	// 밖에서 신호를 보내줄 때까지. 위 조건으로 표현이 안 되는 경우에 쓴다.
-	ExternalSignal      UMETA(DisplayName = "외부 신호")
+	ExternalSignal      UMETA(DisplayName = "외부 신호"),
+
+	/* 아래는 2026-10-07 에 더했다(튜토리얼 직접 해 보기). 표는 이름으로 읽으므로 뒤에 붙인다.
+
+	   전부 튜토리얼이 상대 시스템의 공개 값을 주기적으로 읽어 판정한다(FF_TutorialSubsystem_Watch.cpp).
+	   상대 시스템이 튜토리얼을 알 필요가 없다.
+	*/
+
+	// 위에서 보는 카메라를 Q·E 로 돌렸다(한 칸의 절반 넘게).
+	CameraRotated       UMETA(DisplayName = "카메라 회전"),
+
+	// Tab 으로 시점(위에서 보기 ↔ 캐릭터)을 바꿨다.
+	ViewToggled         UMETA(DisplayName = "시점 전환"),
+
+	// 배치 탭에서 WaitTarget 카테고리(Booth · Info · Rest · Performance …)를 골랐다.
+	BuildCategorySelected UMETA(DisplayName = "건축 카테고리 선택"),
+
+	// WaitTarget 시설의 설치 미리보기를 시작했다(카드를 눌렀다). 비우면 아무 시설이나.
+	PlacementStarted    UMETA(DisplayName = "설치 미리보기 시작"),
+
+	// 설치 미리보기를 Q·E 로 돌렸다.
+	PlacementRotated    UMETA(DisplayName = "설치 미리보기 회전"),
+
+	// WaitTarget 조합(DT_FacilitySynergies 의 행 이름, 예: BurgerPicnic)이 지금 성립했다.
+	SynergyActive       UMETA(DisplayName = "조합 성립"),
+
+	// 안내 시설에 스태프를 한 명 이상 배정했다(출동할 수 있는 스태프가 생겼다).
+	StaffAssigned       UMETA(DisplayName = "스태프 배정"),
+
+	// 설치 미리보기에서 시설 목록으로 돌아왔다. 설치는 연속 배치라 놓은 뒤에도 미리보기가 남고,
+	// 그동안 카테고리 목록은 접혀 있다. 다른 시설을 고르게 하기 전에 거친다.
+	BuildCatalogOpened  UMETA(DisplayName = "시설 목록 열림")
 };
 
 // 선택지 하나.
@@ -153,6 +184,14 @@ struct FFF_DialogueLine
 	*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
 	FName ExpectedTab;
+
+	/* 조작 대기 조건의 대상. 조건마다 뜻이 다르다(EFF_TutorialWaitCondition 주석).
+
+	   카테고리 이름(BuildCategorySelected), 시설 정의 이름(PlacementStarted · FacilityPlaced),
+	   조합 이름(SynergyActive). ExpectedTab 과 나눈 이유는 그 칸이 준비 탭 이름만 받기 때문이다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
+	FName WaitTarget;
 
 	// 어디를 가리킬지. 비어 있으면 강조하지 않는다.
 	//

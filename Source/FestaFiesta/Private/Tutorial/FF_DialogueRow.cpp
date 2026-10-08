@@ -75,6 +75,7 @@ namespace FFF_DialogueTable
 		Line.Text = Row.Text.IsEmpty() ? FText::GetEmpty() : FText::FromString(Row.Text);
 
 		Line.ExpectedTab = Row.ExpectedTab.IsEmpty() ? NAME_None : FName(*Row.ExpectedTab);
+		Line.WaitTarget = Row.WaitTarget.IsEmpty() ? NAME_None : FName(*Row.WaitTarget);
 
 		/* 배경 그림. "None" 은 지우라는 뜻이다.
 

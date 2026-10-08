@@ -144,12 +144,16 @@ public:
         const TArray<FFF_CrowdGate>& AuthoredGates =
             *GatesProperty->ContainerPtrToValuePtr<TArray<FFF_CrowdGate>>(Spawn);
         const TArray<FFF_CrowdGate>& RuntimeGates = CrowdSim->GetValidGates();
-        Test->TestEqual(TEXT("Release map retains all four authored crowd gates"), AuthoredGates.Num(), 4);
-        Test->TestEqual(TEXT("All four authored crowd gates survive runtime validation"), RuntimeGates.Num(), 4);
-        Test->TestEqual(TEXT("All four release-map gates remain selectable for spawning"), CrowdSim->GetSpawnGateCount(), 4);
-        // Exact cardinality plus all four distinct identities also rejects a
+        // Keep the authored release-map contract independent of runtime discovery.
+        // Gate 5 is the sea-side entrance added to Test_Main in af3223d6.
+        const TCHAR* const ExpectedGateNames[] = { TEXT("1"), TEXT("2"), TEXT("3"), TEXT("4"), TEXT("5") };
+        constexpr int32 ExpectedGateCount = UE_ARRAY_COUNT(ExpectedGateNames);
+        Test->TestEqual(TEXT("Release map retains all expected authored crowd gates"), AuthoredGates.Num(), ExpectedGateCount);
+        Test->TestEqual(TEXT("All expected authored crowd gates survive runtime validation"), RuntimeGates.Num(), ExpectedGateCount);
+        Test->TestEqual(TEXT("All expected release-map gates remain selectable for spawning"), CrowdSim->GetSpawnGateCount(), ExpectedGateCount);
+        // Exact cardinality plus every expected distinct identity also rejects a
         // duplicate identity, an unexpected gate, or a synthesized fallback.
-        for (const TCHAR* GateName : { TEXT("1"), TEXT("2"), TEXT("3"), TEXT("4") })
+        for (const TCHAR* GateName : ExpectedGateNames)
         {
             const FName ExpectedId(GateName);
             const FFF_CrowdGate* Authored = AuthoredGates.FindByPredicate(

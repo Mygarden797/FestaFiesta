@@ -57,7 +57,12 @@ enum class EFF_AudioEvent : uint8
 	// ── 축제 진행 ───────────────────────────────────────────────────────────
 	StageChanged = 90       UMETA(DisplayName = "진행 - 단계 전환"),
 	DayStarted = 91         UMETA(DisplayName = "진행 - 낮 시작"),
-	NightStarted = 92       UMETA(DisplayName = "진행 - 밤 시작")
+	NightStarted = 92       UMETA(DisplayName = "진행 - 밤 시작"),
+
+	// ── 사건 ────────────────────────────────────────────────────────────────
+	// 긴급도가 높음 이상이면 IncidentRaisedUrgent, 그 밖에는 IncidentRaised.
+	IncidentRaised = 110       UMETA(DisplayName = "사건 - 발생"),
+	IncidentRaisedUrgent = 111 UMETA(DisplayName = "사건 - 긴급 발생")
 };
 
 // 배경음 갈래. 상황에 따라 크로스페이드로 갈아탄다.

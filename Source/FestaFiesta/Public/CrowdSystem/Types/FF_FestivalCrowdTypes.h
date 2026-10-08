@@ -161,6 +161,16 @@ struct FUnitData
 	
 };
 
+// BaseCrowd 가 소유하는 애니메이션 상태(보이는 모습만 정한다): Running=Simulation 배속, Holding=제자리 Idle, Dancing=제자리 춤, Stopped=정지
+UENUM(BlueprintType)
+enum class EFF_CrowdRunState : uint8
+{
+	Running,
+	Holding,
+	Dancing,
+	Stopped
+};
+
 /**
  * 파티가 새 목적지를 필요로 하게 된 이유.
  *

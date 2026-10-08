@@ -444,7 +444,10 @@ bool FFF_PrepBuildPresentation_TileDataTest::RunTest(const FString& Parameters)
 	Entry.CurrentInstanceCount = 1;
 	Entry.bBuildLimitReached = true;
 	Tile->Initialize(Entry, 900, true);
-	TestEqual(TEXT("설치 후 상태 칸은 1/1로 갱신된다"), Tile->GetStateLabelText().ToString(), FString(TEXT("1/1")));
+	TestEqual(TEXT("설치 한도에 도달하면 짧은 잠금 표시로 갱신된다"), Tile->GetStateLabelText().ToString(), FString(TEXT("잠김")));
+	TestTrue(TEXT("잠금 설명에는 시설 이름, 실제 설치 수량, 해제 방법이 포함된다"),
+		Tile->GetStateText().ToString().Contains(Tile->GetDisplayName().ToString()) &&
+		Tile->GetStateText().ToString().Contains(TEXT("1/1")) && Tile->GetStateText().ToString().Contains(TEXT("철거")));
 	TestFalse(TEXT("1/1 시설은 한도에 도달해 추가 배치할 수 없다"), Tile->IsAffordable());
 	Entry.CurrentInstanceCount = 0;
 	Entry.bBuildLimitReached = false;
@@ -468,7 +471,7 @@ bool FFF_PrepBuildPresentation_TileDataTest::RunTest(const FString& Parameters)
 	Entry.CurrentInstanceCount = 1;
 	Entry.bBuildLimitReached = true;
 	Tile->Initialize(Entry, 900, true);
-	TestEqual(TEXT("필수 시설 설치 후에는 완료를 안내한다"), Tile->GetStateLabelText().ToString(), FString(TEXT("설치 완료")));
+	TestEqual(TEXT("필수 시설도 한도에 도달하면 잠금 상태를 우선 안내한다"), Tile->GetStateLabelText().ToString(), FString(TEXT("잠김")));
 	TestFalse(TEXT("비율을 숨겨도 실제 설치 한도는 유지한다"), Tile->IsAffordable());
 	return true;
 }

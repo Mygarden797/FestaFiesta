@@ -31,6 +31,13 @@ namespace FFF_CrowdWalls
 	                    const FVector2f& FromMeters, const FVector2f& ToMeters, float ClearanceMeters);
 }
 
+enum class EFF_CrowdPosture : uint8
+{
+	None = 0,
+	Moving = 1,
+	Holding = 2
+};
+
 // 한 개체가 받는 힘(N)을 비접촉/접촉으로 나눠 담는다.
 // 두 항은 스케일이 10배 이상 다르고 상한도 달라야 하므로 합치지 않는다.
 //   Social  : 닿기 전 심리적 반발. 보행 스케일(수 m/s^2)
@@ -75,6 +82,16 @@ struct FFF_CrowdForceInput
 	 */
 	const TArray<float>* SocialScale = nullptr;
 
+	/**
+	 * 개체별 자세(EFF_CrowdPosture). nullptr 이면 전원 None 이다.
+	 *
+	 * 자리를 잡고 멈춰 선(Holding) 개체는 개체 간 힘(Social, Contact, 차선 편향)을 전부 받지 않는다.
+	 * 이동 중(Moving)인 개체도 Holding 이웃에게서는 같은 힘을 받지 않는다.
+	 * 벽 반발은 그대로라 시설 안으로는 들어가지 않는다. None 인 개체와 Holding 의 관계는
+	 * None 쪽이 받는 힘만 그대로다.
+	 */
+	const TArray<uint8>* Posture = nullptr;
+
 	// 구동력을 합에 넣는다. StepAgent의 Lerp와 배타적이다.
 	bool bApplyDrivingForce = false;
 
@@ -89,7 +106,8 @@ struct FFF_CrowdForceInput
 			&& PosMeters->Num() == VelMeters->Num()
 			&& PosMeters->Num() == RadiusMeters->Num()
 			&& (!DesiredVelMeters || DesiredVelMeters->Num() == PosMeters->Num())
-			&& (!SocialScale || SocialScale->Num() == PosMeters->Num());
+			&& (!SocialScale || SocialScale->Num() == PosMeters->Num())
+			&& (!Posture || Posture->Num() == PosMeters->Num());
 	}
 
 	bool HasDesiredVelocities() const

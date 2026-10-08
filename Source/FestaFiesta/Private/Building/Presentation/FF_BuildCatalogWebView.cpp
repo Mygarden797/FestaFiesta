@@ -19,6 +19,7 @@
 #include "SWebBrowser.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "Tutorial/FF_TutorialSubsystem.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
 #include "Widgets/Layout/SBox.h"
@@ -300,6 +301,8 @@ void UFF_BuildCatalogWebView::PushSnapshot()
 	const auto* Favorites = Game ? Game->GetSubsystem<UFF_BuildFavoritesSubsystem>() : nullptr;
 	const auto* BuildMode = World ? World->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
 	const auto* Discovery = Game ? Game->GetSubsystem<UFF_BuildingFeatureDiscoverySubsystem>() : nullptr;
+	const auto* Tutorial = World ? World->GetSubsystem<UFF_TutorialSubsystem>() : nullptr;
+	const bool bTutorialLevel = Tutorial && Tutorial->IsTutorialLevel();
 	const bool Active = BuildMode && BuildMode->GetBuildModeState() == EFF_BuildModeState::CatalogOpen;
 	const TSharedRef<FJsonObject> Snapshot = MakeShared<FJsonObject>();
 	Snapshot->SetNumberField(TEXT("version"), 1);
@@ -324,6 +327,7 @@ void UFF_BuildCatalogWebView::PushSnapshot()
 		Entry->SetNumberField(TEXT("cost"), Tile->GetInstallCost());
 		Entry->SetStringField(TEXT("costText"), Tile->GetCostText().ToString());
 		Entry->SetBoolField(TEXT("affordable"), Tile->IsAffordable());
+		Entry->SetBoolField(TEXT("buildLimitReached"), Tile->GetTileState() == EFF_PrepBuildTileState::BuildLimitReached);
 		Entry->SetBoolField(TEXT("favorite"), Favorites && Favorites->IsFavorite(Tile->GetFacilityDefinitionId()));
 		Entry->SetBoolField(TEXT("required"), Tile->IsRequiredFacility());
 		Entry->SetBoolField(TEXT("requiredSatisfied"), Tile->IsRequiredFacilitySatisfied());
@@ -364,7 +368,9 @@ void UFF_BuildCatalogWebView::PushSnapshot()
 	}
 	LastWebItemCount = Items.Num();
 	Snapshot->SetArrayField(TEXT("items"), Items);
-	Snapshot->SetBoolField(TEXT("showLightingIntroduction"), Active && bHasLightingFacility && Discovery &&
+	// Tutorial input is owned by its guide. Keep the catalog unobstructed for the entire level,
+	// and leave first-use history untouched so the introduction can appear in a normal festival.
+	Snapshot->SetBoolField(TEXT("showLightingIntroduction"), !bTutorialLevel && Active && bHasLightingFacility && Discovery &&
 		!Discovery->HasSeenFeature(UFF_BuildingFeatureDiscoverySubsystem::LightingControlsFeatureId()));
 	FString Metadata;
 	const auto MetadataWriter = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Metadata);
@@ -444,6 +450,9 @@ bool UFF_BuildCatalogWebView::SetFacilityFavorite(const FString& FacilityId, boo
 bool UFF_BuildCatalogWebView::DismissLightingIntroduction()
 {
 	UFF_PrepPanelBuild* Panel = FindPanel();
+	UWorld* World = Panel ? Panel->GetWorld() : nullptr;
+	const auto* Tutorial = World ? World->GetSubsystem<UFF_TutorialSubsystem>() : nullptr;
+	if (Tutorial && Tutorial->IsTutorialLevel()) return false;
 	UGameInstance* Game = Panel ? Panel->GetGameInstance() : nullptr;
 	auto* Discovery = Game ? Game->GetSubsystem<UFF_BuildingFeatureDiscoverySubsystem>() : nullptr;
 	if (!Panel || !Discovery) return false;

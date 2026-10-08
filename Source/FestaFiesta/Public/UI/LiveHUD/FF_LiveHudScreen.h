@@ -514,6 +514,19 @@ private:
 	/** [보내기]/[확인] 결과를 잠깐 띄운다. 거부면 이유를 적는다. 상세 패널보다 위에 둔다. */
 	void EnsureIncidentToast();
 
+	/**
+	 * 사건이 닫힌 이유(완료·소멸·방치·놓침)를 같은 토스트에 띄운다. 표시 여부는 FFF_IncidentRules::ShouldToastClosed 가 정한다.
+	 * 즉시 해결은 [보내기] 결과 토스트가 이미 알리므로 ResolveIncident 를 부르는 동안만 bSuppressClosedToast 로 막는다.
+	 */
+	void BindIncidentFinished();
+
+	void UnbindIncidentFinished();
+
+	UFUNCTION()
+	void HandleIncidentFinished(const FFF_IncidentClosedInfo& Info);
+
+	bool bSuppressClosedToast = false;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_IncidentToast> IncidentToast;
 

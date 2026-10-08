@@ -91,4 +91,39 @@ bool FFF_IncidentMarkerRulesDispatchRingTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_IncidentMarkerRulesEdgeClampTest,
+	"FestaFiesta.UI.Incident.MarkerRules.OffscreenMarkerSticksToEdgeAlongItsDirection",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_IncidentMarkerRulesEdgeClampTest::RunTest(const FString& Parameters)
+{
+	const FVector2D Min(100.f, 50.f);
+	const FVector2D Max(900.f, 650.f);
+	const FVector2D Center(500.f, 350.f);
+
+	TestTrue(TEXT("Inside"), FFIncidentMarkerRules::IsInsideRect(Center, Min, Max));
+	TestTrue(TEXT("On the border counts as inside"), FFIncidentMarkerRules::IsInsideRect(Min, Min, Max));
+	TestFalse(TEXT("Left of the rect"), FFIncidentMarkerRules::IsInsideRect(FVector2D(99.f, 350.f), Min, Max));
+
+	TestTrue(TEXT("Right lands on the right edge"), FFIncidentMarkerRules::ClampToRectEdge(FVector2D(1.f, 0.f), Min, Max).Equals(FVector2D(900.f, 350.f), 0.01f));
+	TestTrue(TEXT("Left lands on the left edge"), FFIncidentMarkerRules::ClampToRectEdge(FVector2D(-1.f, 0.f), Min, Max).Equals(FVector2D(100.f, 350.f), 0.01f));
+	TestTrue(TEXT("Up lands on the top edge"), FFIncidentMarkerRules::ClampToRectEdge(FVector2D(0.f, -1.f), Min, Max).Equals(FVector2D(500.f, 50.f), 0.01f));
+	TestTrue(TEXT("Down lands on the bottom edge"), FFIncidentMarkerRules::ClampToRectEdge(FVector2D(0.f, 1.f), Min, Max).Equals(FVector2D(500.f, 650.f), 0.01f));
+	TestTrue(TEXT("Direction length does not matter"), FFIncidentMarkerRules::ClampToRectEdge(FVector2D(300.f, 0.f), Min, Max).Equals(FVector2D(900.f, 350.f), 0.01f));
+
+	const FVector2D Diagonal = FFIncidentMarkerRules::ClampToRectEdge(FVector2D(1.f, 1.f), Min, Max);
+	TestTrue(TEXT("Diagonal hits the nearer edge (bottom) and stays on its ray"), Diagonal.Equals(FVector2D(800.f, 650.f), 0.01f));
+
+	TestTrue(TEXT("A zero direction falls back to straight down"), FFIncidentMarkerRules::ClampToRectEdge(FVector2D::ZeroVector, Min, Max).Equals(FVector2D(500.f, 650.f), 0.01f));
+
+	TestTrue(TEXT("Camera-right target points right on screen"), FFIncidentMarkerRules::DirectionFromCameraLocal(100.f, 0.f).Equals(FVector2D(1.f, 0.f), 0.01f));
+	TestTrue(TEXT("Camera-up target points up on screen (screen Y is down)"), FFIncidentMarkerRules::DirectionFromCameraLocal(0.f, 100.f).Equals(FVector2D(0.f, -1.f), 0.01f));
+	TestTrue(TEXT("Dead behind the camera still gets a direction"), FFIncidentMarkerRules::DirectionFromCameraLocal(0.f, 0.f).Equals(FVector2D(0.f, 1.f), 0.01f));
+
+	TestEqual(TEXT("Right is 0 degrees"), FFIncidentMarkerRules::DirectionToAngleDegrees(FVector2D(1.f, 0.f)), 0.f);
+	TestEqual(TEXT("Down is 90 degrees (clockwise on screen)"), FFIncidentMarkerRules::DirectionToAngleDegrees(FVector2D(0.f, 1.f)), 90.f);
+	TestEqual(TEXT("Left is 180 degrees"), FMath::Abs(FFIncidentMarkerRules::DirectionToAngleDegrees(FVector2D(-1.f, 0.f))), 180.f);
+	return true;
+}
+
 #endif

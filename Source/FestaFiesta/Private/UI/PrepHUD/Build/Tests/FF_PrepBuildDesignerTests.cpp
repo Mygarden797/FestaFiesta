@@ -7,6 +7,7 @@
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/Border.h"
+#include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
@@ -249,10 +250,24 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed &&
 		RequiredSatisfied->GetVisibility() == ESlateVisibility::HitTestInvisible &&
 		ProgramBadge->GetVisibility() == ESlateVisibility::Collapsed);
-	TestEqual(TEXT("Completed required installation uses plain completion wording"),
-		StateLabel->GetText().ToString(), FString(TEXT("설치 완료")));
-	TestTrue(TEXT("Completing a requirement clears its warning accent while retaining program identity"),
-		ThumbnailBackdrop->Background == ProgramSurface && Card->Background.TintColor == FSlateColor(ProgramTint));
+	TestEqual(TEXT("A capped facility displays a compact lock rather than its full rejection sentence"),
+		StateLabel->GetText().ToString(), FString(TEXT("잠김")));
+	const FLinearColor LockedTint = Card->Background.TintColor.GetSpecifiedColor();
+	TestTrue(TEXT("The capacity lock overrides program and required colors with a neutral gray surface"),
+		FMath::Abs(LockedTint.R - LockedTint.G) < .03f && FMath::Abs(LockedTint.G - LockedTint.B) < .04f &&
+		ThumbnailBackdrop->Background != ProgramSurface && Card->Background.TintColor != FSlateColor(ProgramTint));
+	auto* Favorite = Cast<UButton>(Tile->GetWidgetFromName(TEXT("Button_Favorite")));
+	TestTrue(TEXT("Only decorative artwork is disabled; locked rows and favorites remain clickable"),
+		!Thumbnail->GetIsEnabled() && Tile->GetIsEnabled() && Favorite && Favorite->GetIsEnabled());
+	TestTrue(TEXT("The full limit reason remains available in the tooltip"),
+		Tile->GetToolTipText().ToString().Contains(TEXT("1/1")) && Tile->GetToolTipText().ToString().Contains(TEXT("철거")));
+	Entry.CurrentInstanceCount = 0;
+	Entry.bBuildLimitReached = false;
+	Data->Initialize(Entry, 1000, true);
+	Tile->RefreshItemPresentation();
+	TestTrue(TEXT("Removing a capacity lock restores the authored program surface and artwork"),
+		Thumbnail->GetIsEnabled() && ThumbnailBackdrop->Background == ProgramSurface &&
+		Card->Background.TintColor == FSlateColor(ProgramTint));
 	Entry.RequiredMinimumCount = 0;
 	Data->Initialize(Entry, 1000, true);
 	Tile->RefreshItemPresentation();

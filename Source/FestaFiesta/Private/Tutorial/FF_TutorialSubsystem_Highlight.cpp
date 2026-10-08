@@ -14,15 +14,50 @@
 #include "Components/Widget.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Tutorial/FF_TutorialMarker.h"
+#include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildCategoryChoice.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
 #include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UI/PrepHUD/FF_PrepHudTabButton.h"
 #include "UI/PrepHUD/FF_PrepHudTypes.h"
+
+namespace
+{
+	// 다시 찾아야 하는 강조 이름의 앞머리. 뒤에는 카테고리 이름 · 시설 정의 이름이 붙는다.
+	const TCHAR* const BuildCategoryAnchorPrefix = TEXT("BuildCategory_");
+	const TCHAR* const BuildCardAnchorPrefix = TEXT("BuildCard_");
+	const TCHAR* const FacilityInfoAnchorPrefix = TEXT("FacilityInfo_");
+	const TCHAR* const BuildToolsAnchorPrefix = TEXT("BuildTools_");
+}
 
 void UFF_TutorialSubsystem::ApplyHighlight(const FName AnchorId)
 {
 	if (CurrentAnchor == AnchorId)
 	{
+		return;
+	}
+
+	/* 다시 만들어지는 위젯(카테고리 버튼 · 목록 카드 · 시설 정보창 · 건축 도구)은 지금 찾아 보고, 없어도 알리지 않는다.
+
+	   이런 위젯은 대사가 뜬 뒤에 열리는 경우가 많다(배치 탭을 막 연 순간 · 시설을 눌러 정보창을 열기 전).
+	   Tick 이 짧은 주기로 다시 찾으므로(RefreshDynamicAnchor) 나타나는 대로 박스가 씌워진다.
+	*/
+	if (IsDynamicAnchor(AnchorId))
+	{
+		if (UWidget* Found = FindDynamicAnchorWidget(AnchorId))
+		{
+			AnchorWidgets.Add(AnchorId, Found);
+		}
+		else
+		{
+			AnchorWidgets.Remove(AnchorId);
+		}
+		DynamicAnchorScanCountdown = 0.1f;
+		CurrentAnchor = AnchorId;
+		OnHighlightAnchorChanged.Broadcast(AnchorId);
 		return;
 	}
 
@@ -173,6 +208,145 @@ int32 UFF_TutorialSubsystem::ScanPrepHudAnchors()
 	}
 
 	return Registered;
+}
+
+bool UFF_TutorialSubsystem::IsDynamicAnchor(const FName AnchorId)
+{
+	if (AnchorId.IsNone())
+	{
+		return false;
+	}
+	const FString Id = AnchorId.ToString();
+	return Id.StartsWith(BuildCategoryAnchorPrefix) || Id.StartsWith(BuildCardAnchorPrefix)
+		|| Id.StartsWith(FacilityInfoAnchorPrefix) || Id.StartsWith(BuildToolsAnchorPrefix);
+}
+
+bool UFF_TutorialSubsystem::IsWidgetOnScreen(const UWidget* Widget)
+{
+	if (!Widget || !Widget->GetCachedWidget().IsValid())
+	{
+		return false;
+	}
+
+	// 자기 자신부터 화면 맨 위까지 하나라도 숨어 있으면 안 보인다. 접힌 패널 안의 카드는 옛 자리를 들고 있다.
+	TSharedPtr<SWidget> Slate = Widget->GetCachedWidget();
+	for (int32 Depth = 0; Slate.IsValid() && Depth < 128; ++Depth)
+	{
+		if (!Slate->GetVisibility().IsVisible())
+		{
+			return false;
+		}
+		Slate = Slate->GetParentWidget();
+	}
+	return true;
+}
+
+UFF_PrepBuildCategoryChoice* UFF_TutorialSubsystem::FindBuildCategoryChoice(const FName CategoryName) const
+{
+	const UEnum* Categories = StaticEnum<EFFZSFacilityCategory>();
+	const int64 Wanted = Categories ? Categories->GetValueByNameString(CategoryName.ToString()) : INDEX_NONE;
+	if (Wanted == INDEX_NONE)
+	{
+		return nullptr;
+	}
+
+	TArray<UUserWidget*> Chips;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Chips, UFF_PrepBuildCategoryChoice::StaticClass(), false);
+	for (UUserWidget* Widget : Chips)
+	{
+		UFF_PrepBuildCategoryChoice* Chip = Cast<UFF_PrepBuildCategoryChoice>(Widget);
+		if (Chip && Chip->GetChoiceId() == Wanted && IsWidgetOnScreen(Chip))
+		{
+			return Chip;
+		}
+	}
+	return nullptr;
+}
+
+UWidget* UFF_TutorialSubsystem::FindDynamicAnchorWidget(const FName AnchorId) const
+{
+	const FString Id = AnchorId.ToString();
+
+	// 배치 탭의 카테고리 버튼. BuildCategory_Performance 처럼 카테고리 열거형 이름을 붙인다.
+	if (Id.StartsWith(BuildCategoryAnchorPrefix))
+	{
+		return FindBuildCategoryChoice(FName(*Id.RightChop(FCString::Strlen(BuildCategoryAnchorPrefix))));
+	}
+
+	// 배치 목록의 시설 카드. BuildCard_Booth_FoodStall_Burger 처럼 시설 정의 이름을 붙인다.
+	if (Id.StartsWith(BuildCardAnchorPrefix))
+	{
+		const FName FacilityId(*Id.RightChop(FCString::Strlen(BuildCardAnchorPrefix)));
+		TArray<UUserWidget*> Cards;
+		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Cards, UFF_PrepBuildTileWidget::StaticClass(), false);
+		for (UUserWidget* Widget : Cards)
+		{
+			const UFF_PrepBuildTileWidget* Card = Cast<UFF_PrepBuildTileWidget>(Widget);
+			const UFF_PrepBuildTileData* Item = Card ? Card->GetPresentedItem() : nullptr;
+			if (Item && Item->GetFacilityDefinitionId() == FacilityId && IsWidgetOnScreen(Card))
+			{
+				return Widget;
+			}
+		}
+		return nullptr;
+	}
+
+	// 화면 하나 안의 이름 붙은 단추. 그 화면의 공개 조회(GetWidgetFromName)로만 찾는다.
+	const auto FindNamedButton = [this](UClass* ScreenClass, const FString& ButtonName) -> UWidget*
+	{
+		TArray<UUserWidget*> Screens;
+		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Screens, ScreenClass, false);
+		for (UUserWidget* Screen : Screens)
+		{
+			UWidget* Button = Screen ? Screen->GetWidgetFromName(FName(*ButtonName)) : nullptr;
+			if (Button && IsWidgetOnScreen(Button))
+			{
+				return Button;
+			}
+		}
+		return nullptr;
+	};
+
+	// 시설 정보창 안의 단추. FacilityInfo_AssignStaff 는 "+ 배정"(Button_AssignStaff)이다.
+	if (Id.StartsWith(FacilityInfoAnchorPrefix))
+	{
+		return FindNamedButton(UFF_FacilityInfoPanel::StaticClass(),
+			TEXT("Button_") + Id.RightChop(FCString::Strlen(FacilityInfoAnchorPrefix)));
+	}
+
+	// 설치 미리보기 중 오른쪽 아래 도구 단추. BuildTools_Catalog 는 "시설 목록"(Button_Catalog)이다.
+	if (Id.StartsWith(BuildToolsAnchorPrefix))
+	{
+		return FindNamedButton(UFF_BuildToolsWidget::StaticClass(),
+			TEXT("Button_") + Id.RightChop(FCString::Strlen(BuildToolsAnchorPrefix)));
+	}
+
+	return nullptr;
+}
+
+void UFF_TutorialSubsystem::RefreshDynamicAnchor()
+{
+	if (!IsDynamicAnchor(CurrentAnchor))
+	{
+		return;
+	}
+
+	UWidget* Found = FindDynamicAnchorWidget(CurrentAnchor);
+	if (Found == FindAnchorWidget(CurrentAnchor))
+	{
+		return;
+	}
+
+	// 바뀐 때만 알린다. 매 주기 알리면 화면이 박스를 계속 새로 그린다.
+	if (Found)
+	{
+		RegisterAnchor(CurrentAnchor, Found);
+	}
+	else
+	{
+		AnchorWidgets.Remove(CurrentAnchor);
+		OnHighlightAnchorChanged.Broadcast(CurrentAnchor);
+	}
 }
 
 bool UFF_TutorialSubsystem::FindAnchorWorldPoint(

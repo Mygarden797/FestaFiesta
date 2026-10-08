@@ -353,7 +353,7 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	{
 		return;
 	}
-	
+
 	// 조회 시점에만 쓰이는 값이라 재빌드 없이 콘솔에서 바로 듣는다
 	ApplyWalkableCeiling();
 
@@ -1527,9 +1527,11 @@ void UFF_CrowdSimulationSubsystem::ComputeAvoidanceForces(const CrowdSteering::F
 	// 관람 중인 개체만 개인 공간을 좁힌다. 리더의 단계를 파티원 전원이 물려받는다 —
 	// 일행 중 리더만 붙어 서면 대열이 갈라진다.
 	ScratchSocialScale.SetNum(UnitDatas.Num(), EAllowShrinking::No);
+	ScratchPosture.SetNumZeroed(UnitDatas.Num(), EAllowShrinking::No);
 	for (int32 AgentIndex = 0; AgentIndex < UnitDatas.Num(); ++AgentIndex)
 	{
 		float Scale = 1.f;
+		EFF_CrowdPosture Posture = EFF_CrowdPosture::None;
 		const int32 LeaderIndex = UnitDatas[AgentIndex].LeaderAgentIndex;
 		if (UnitDatas[AgentIndex].bIsActive && PartyDecisionStates.IsValidIndex(LeaderIndex))
 		{
@@ -1538,17 +1540,21 @@ void UFF_CrowdSimulationSubsystem::ComputeAvoidanceForces(const CrowdSteering::F
 			case EFF_PartyAudiencePhase::Waiting:
 			case EFF_PartyAudiencePhase::Spectating:
 				Scale = FMath::Clamp(AudienceSocialForceScale, 0.f, 1.f);
+				Posture = EFF_CrowdPosture::Holding;
 				break;
 			case EFF_PartyAudiencePhase::GoingToSlot:
 				Scale = FMath::Clamp(AudienceApproachSocialForceScale, 0.f, 1.f);
+				Posture = EFF_CrowdPosture::Moving;
 				break;
 			default:
 				break;
 			}
 		}
 		ScratchSocialScale[AgentIndex] = Scale;
+		ScratchPosture[AgentIndex] = static_cast<uint8>(Posture);
 	}
 	Input.SocialScale = &ScratchSocialScale;
+	Input.Posture = &ScratchPosture;
 
 	Input.bApplyDrivingForce = Params.bDrivingForceInForce;
 	Input.FixedDtSeconds = FixedStepSeconds;
@@ -1585,6 +1591,7 @@ void UFF_CrowdSimulationSubsystem::ClearAvoidanceForces()
 
 	ScratchDesiredVel2DMeters.Reset();
 	ScratchSocialScale.Reset();
+	ScratchPosture.Reset();
 }
 
 void UFF_CrowdSimulationSubsystem::RebuildAvoidanceWalls()
@@ -4637,6 +4644,40 @@ void UFF_CrowdSimulationSubsystem::RebuildInTransitMemberCounts()
 
 		InTransitMemberCounts.FindOrAdd(State.CurrentDestinationId) += MemberCount;
 	}
+}
+
+void UFF_CrowdSimulationSubsystem::SetCrowdState(EFF_CrowdRunState NewState)
+{
+	for (AFF_BaseCrowd* Actor : CrowdPool)
+	{
+		if (IsValid(Actor))
+		{
+			Actor->SetState(NewState);
+		}
+	}
+}
+
+bool UFF_CrowdSimulationSubsystem::SetCrowdStateForAgent(int32 AgentIndex, EFF_CrowdRunState NewState)
+{
+	if (!UnitDatas.IsValidIndex(AgentIndex))
+	{
+		return false;
+	}
+
+	const int32 ActorSlot = PoolBinding.GetBoundSlot(AgentIndex);
+	if (ActorSlot == INDEX_NONE || !CrowdPool.IsValidIndex(ActorSlot))
+	{
+		return false;
+	}
+
+	AFF_BaseCrowd* Actor = CrowdPool[ActorSlot];
+	if (!IsValid(Actor))
+	{
+		return false;
+	}
+
+	Actor->SetState(NewState);
+	return true;
 }
 
 void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage)

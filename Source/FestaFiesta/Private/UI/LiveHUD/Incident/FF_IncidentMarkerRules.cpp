@@ -49,6 +49,33 @@ namespace FFIncidentMarkerRules
 		}
 	}
 
+	bool IsInsideRect(const FVector2D& Point, const FVector2D& Min, const FVector2D& Max)
+	{
+		return Point.X >= Min.X && Point.Y >= Min.Y && Point.X <= Max.X && Point.Y <= Max.Y;
+	}
+
+	FVector2D DirectionFromCameraLocal(float Right, float Up)
+	{
+		const FVector2D Direction(Right, -Up);
+		return Direction.IsNearlyZero() ? FVector2D(0.f, 1.f) : Direction.GetSafeNormal();
+	}
+
+	FVector2D ClampToRectEdge(const FVector2D& Direction, const FVector2D& Min, const FVector2D& Max)
+	{
+		const FVector2D Center = (Min + Max) * 0.5f;
+		const FVector2D Half = (Max - Min) * 0.5f;
+		const FVector2D Dir = Direction.IsNearlyZero() ? FVector2D(0.f, 1.f) : Direction.GetSafeNormal();
+
+		const float ScaleX = FMath::Abs(Dir.X) > KINDA_SMALL_NUMBER ? Half.X / FMath::Abs(Dir.X) : TNumericLimits<float>::Max();
+		const float ScaleY = FMath::Abs(Dir.Y) > KINDA_SMALL_NUMBER ? Half.Y / FMath::Abs(Dir.Y) : TNumericLimits<float>::Max();
+		return Center + Dir * FMath::Min(ScaleX, ScaleY);
+	}
+
+	float DirectionToAngleDegrees(const FVector2D& Direction)
+	{
+		return FMath::RadiansToDegrees(FMath::Atan2(Direction.Y, Direction.X));
+	}
+
 	FFF_IncidentMarkerLook Resolve(const FFF_IncidentView& View, bool bHasNow, float NowMinutes, const FFF_UIPaletteInGame& Palette)
 	{
 		FFF_IncidentMarkerLook Look;
