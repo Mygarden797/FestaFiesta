@@ -45,6 +45,7 @@ git lfs pull
 기본은 clean Shipping 빌드다. 표준 후보에는 `-Incremental`, `-SkipTests`, `-SkipSmokeTest`, `-SkipZip`을 추가하지 않는다.
 Editor 빌드, `FestaFiesta`·`FF_ZoneSystem` 전체 자동화, 데이터 검증 후 Build/Cook/Stage/Package/Archive를 실행한다.
 전체 자동화에는 위젯 픽셀 검사가 포함되어 `-RenderOffscreen`으로 실행한다. 창을 띄우지 않아도 GPU·드라이버가 필요하며, 데이터 검증은 `-nullrhi`로 실행한다.
+자동화의 각 필터 실행은 보고서 옆 `User-<고유 ID>`를 절대 `-UserDir`로 사용해 플레이어 저장과 이전 실행의 저장 데이터를 격리한다. 실패 분석을 위해 이 폴더도 검증 보고서와 함께 보관한다.
 Pak·IoStore 압축, 필수 에셋·SM5/SM6 셰이더 포함, NullRHI 초기 실행, 기본 런처와 DX11 SM5 / DX12 SM6 초기화를 검사한다.
 실제 실행 결과는 보고서로 판정하며 스크립트의 종료 성공만 보고 수동 플레이 QA까지 완료했다고 기록하지 않는다.
 CI의 정식 패키징도 GPU가 있는 Windows runner에서 수행한다. `-GraphicsSmokeTest`를 생략한 후보의 패키지 그래픽 초기화는 QA PC에서 아래 명령으로 재검사한다.
