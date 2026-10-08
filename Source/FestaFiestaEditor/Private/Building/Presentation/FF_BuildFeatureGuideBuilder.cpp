@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 
 #if WITH_EDITOR
+#include "Building/Presentation/FF_BuildFeatureGuide.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Building/Presentation/FF_BuildTypography.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
@@ -342,6 +343,131 @@ void Apply()
 FAutoConsoleCommand Command(TEXT("FF.MigrateBuildFeatureGuide"),
     TEXT("Add the feature guide to the saved BuildTools WBP, preserving existing authored widgets."),
     FConsoleCommandDelegate::CreateStatic(&Apply));
+
+namespace FeatureBadges
+{
+constexpr const TCHAR* BadgePrefix = TEXT("FF_BUILD_FEATURE_BADGES");
+constexpr const TCHAR* BadgeVersion = TEXT("FF.BuildFeatureBadges.20261008.v1");
+
+FName BadgeName(const FFBuildFeatureGuide::FTopic& Topic)
+{
+    return FName(*FString::Printf(TEXT("Badge_%s"), *Topic.Id.ToString()));
+}
+
+FName MarkName(const FFBuildFeatureGuide::FTopic& Topic)
+{
+    return FName(*FString::Printf(TEXT("Text_Badge_%s"), *Topic.Id.ToString()));
+}
+
+UCanvasPanel* IconCanvas(UWidgetTree& Tree, const FFBuildFeatureGuide::FTopic& Topic)
+{
+    const auto* Bounds = Cast<USizeBox>(Tree.FindWidget(Topic.ToolbarIcon));
+    return Bounds ? Cast<UCanvasPanel>(Bounds->GetContent()) : nullptr;
+}
+
+bool VerifyBadges(UWidgetBlueprint& BP)
+{
+    auto& Tree = *BP.WidgetTree;
+    int32 Count = 0;
+    for (const auto& Topic : FFBuildFeatureGuide::Topics())
+    {
+        if (Topic.ToolbarButton.IsNone()) continue;
+        const auto* Canvas = IconCanvas(Tree, Topic);
+        const auto* Badge = Cast<UBorder>(Tree.FindWidget(BadgeName(Topic)));
+        const auto* Mark = Cast<UTextBlock>(Tree.FindWidget(MarkName(Topic)));
+        const auto* Slot = Badge ? Cast<UCanvasPanelSlot>(Badge->Slot) : nullptr;
+        if (!Canvas || !Badge || !Mark || !Slot || Badge->GetParent() != Canvas ||
+            Badge->GetContent() != Mark || Mark->GetText().ToString() != TEXT("!") ||
+            Badge->GetVisibility() != ESlateVisibility::Collapsed ||
+            Mark->GetVisibility() != ESlateVisibility::HitTestInvisible ||
+            !Slot->GetPosition().Equals(FVector2D(32.f, -3.f)) ||
+            !Slot->GetSize().Equals(FVector2D(18.f, 18.f)) || Slot->GetZOrder() < 10)
+            return false;
+        ++Count;
+    }
+    return Count == 7;
+}
+
+bool MigrateBadges(UWidgetBlueprint& BP)
+{
+    auto& Tree = *BP.WidgetTree;
+    auto& Metadata = BP.GetOutermost()->GetMetaData();
+    if (Metadata.GetValue(&BP, BadgeVersion) == TEXT("1"))
+    {
+        if (!VerifyBadges(BP)) return false;
+        UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_REUSE: existing badges preserved; no save"), BadgePrefix);
+        return true;
+    }
+    // Validate every target before adding siblings to the existing artwork.
+    for (const auto& Topic : FFBuildFeatureGuide::Topics())
+    {
+        if (Topic.ToolbarButton.IsNone()) continue;
+        if (!IconCanvas(Tree, Topic) || !Cast<UButton>(Tree.FindWidget(Topic.ToolbarButton)) ||
+            Tree.FindWidget(BadgeName(Topic)) || Tree.FindWidget(MarkName(Topic)))
+        {
+            UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: missing icon canvas or unversioned badge for %s; no changes"),
+                BadgePrefix, *Topic.Id.ToString());
+            return false;
+        }
+    }
+    BP.Modify();
+    Tree.Modify();
+    for (const auto& Topic : FFBuildFeatureGuide::Topics())
+    {
+        if (Topic.ToolbarButton.IsNone()) continue;
+        auto* Canvas = IconCanvas(Tree, Topic);
+        Canvas->Modify();
+        auto* Badge = MakeWidget<UBorder>(BP, Tree, BadgeName(Topic));
+        Badge->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(229, 65, 77), 9.f,
+            FLinearColor::White, 1.f));
+        Badge->SetBrushColor(FLinearColor::White);
+        Badge->SetPadding(FMargin(0.f));
+        Badge->SetHorizontalAlignment(HAlign_Center);
+        Badge->SetVerticalAlignment(VAlign_Center);
+        Badge->SetVisibility(ESlateVisibility::Collapsed);
+        auto* Mark = Text(BP, *MarkName(Topic).ToString(), FText::FromString(TEXT("!")),
+            FFBuildTypography::ERole::Heading, 14, FLinearColor::White);
+        Mark->SetAutoWrapText(false);
+        Mark->SetJustification(ETextJustify::Center);
+        Badge->AddChild(Mark);
+        auto* Slot = Canvas->AddChildToCanvas(Badge);
+        Slot->SetPosition(FVector2D(32.f, -3.f));
+        Slot->SetSize(FVector2D(18.f, 18.f));
+        Slot->SetZOrder(10);
+    }
+    if (!VerifyBadges(BP)) return false;
+    Metadata.SetValue(&BP, BadgeVersion, TEXT("1"));
+    if (SaveNewBlueprint(BadgePrefix, BP)) return true;
+    Metadata.RemoveValue(&BP, BadgeVersion);
+    return false;
+}
+
+void ApplyBadges()
+{
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World || GEditor->PlayWorld || World->GetOutermost()->GetName() != TEXT("/Engine/Maps/Entry"))
+    {
+        UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: requires idle Entry editor"), BadgePrefix);
+        return;
+    }
+    auto* BP = LoadExistingBlueprint(FFBuildUIAssetPaths::BuildToolsPackage);
+    if (BP && BP->GetOutermost()->IsDirty())
+    {
+        UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: save or discard unsaved BuildTools edits before migration"), BadgePrefix);
+        return;
+    }
+    if (!BP || !BP->WidgetTree || BP->ParentClass != UFF_BuildToolsWidget::StaticClass() || !MigrateBadges(*BP))
+    {
+        UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: saved BuildTools badge migration failed"), BadgePrefix);
+        return;
+    }
+    UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_PASS: seven first-use badges ready; original icons preserved"), BadgePrefix);
+}
+
+FAutoConsoleCommand BadgeCommand(TEXT("FF.MigrateBuildFeatureBadges"),
+    TEXT("Add first-use exclamation badges to existing toolbar icon canvases without changing their artwork."),
+    FConsoleCommandDelegate::CreateStatic(&ApplyBadges));
+}
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -104,6 +104,10 @@ bool FFFBuildFeatureGuideRenderTest::RunTest(const FString& Parameters)
         NewObject<UFF_BuildingFeatureDiscoverySubsystem>(HintGameInstance.Get()));
     TMap<UButton*, FLinearColor> OriginalButtonTints;
     TMap<UTextBlock*, FSlateColor> OriginalCaptions;
+    TMap<UBorder*, FSlateBrush> OriginalIconBrushes;
+    TMap<UBorder*, FLinearColor> OriginalIconTints;
+    TMap<UTextBlock*, FSlateColor> OriginalIconText;
+    TMap<UBorder*, UButton*> Badges;
     int32 ToolbarIndex = 0;
     for (const auto& Topic : FFBuildFeatureGuide::Topics())
     {
@@ -115,16 +119,48 @@ bool FFFBuildFeatureGuideRenderTest::RunTest(const FString& Parameters)
             FName(*FString::Printf(TEXT("Label_PearlTool%d"), ++ToolbarIndex))));
         if (!TestNotNull(TEXT("Authored toolbar caption"), Caption)) return false;
         OriginalCaptions.Add(Caption, Caption->GetColorAndOpacity());
+        auto* Icon = Widget->GetWidgetFromName(Topic.ToolbarIcon);
+        auto* Badge = Cast<UBorder>(Widget->GetWidgetFromName(
+            FName(*FString::Printf(TEXT("Badge_%s"), *Topic.Id.ToString()))));
+        if (!TestNotNull(TEXT("Authored toolbar icon"), Icon) || !TestNotNull(TEXT("Authored first-use badge"), Badge)) return false;
+        auto* Mark = Cast<UTextBlock>(Badge->GetContent());
+        if (!TestNotNull(TEXT("Badge exclamation text"), Mark)) return false;
+        TestEqual(Topic.Id.ToString() + TEXT(" badge uses an exclamation mark"), Mark->GetText().ToString(), FString(TEXT("!")));
+        TestEqual(Topic.Id.ToString() + TEXT(" badge is initially hidden without discovery state"),
+            Badge->GetVisibility(), ESlateVisibility::Collapsed);
+        Badges.Add(Badge, Button);
+        UWidgetTree::ForWidgetAndChildren(Icon, [&](UWidget* Child)
+        {
+            if (Child == Badge || Child == Mark) return;
+            if (auto* Border = Cast<UBorder>(Child))
+            {
+                OriginalIconBrushes.Add(Border, Border->Background);
+                OriginalIconTints.Add(Border, Border->GetBrushColor());
+            }
+            if (auto* Text = Cast<UTextBlock>(Child)) OriginalIconText.Add(Text, Text->GetColorAndOpacity());
+        });
     }
     Widget->FeatureDiscovery = Discovery.Get();
     Widget->RefreshFeatureHints();
     TestEqual(TEXT("Seven first-use toolbar icons are covered"), OriginalButtonTints.Num(), 7);
+    TestEqual(TEXT("Seven independent first-use badges are authored"), Badges.Num(), 7);
+    TestTrue(TEXT("Original icon border styles are covered"), !OriginalIconBrushes.IsEmpty());
+    TestTrue(TEXT("Original icon text styles are covered"), !OriginalIconText.IsEmpty());
+    for (const auto& Entry : Badges)
+        TestEqual(Entry.Key->GetName() + TEXT(" is visible without intercepting clicks"),
+            Entry.Key->GetVisibility(), ESlateVisibility::HitTestInvisible);
     for (const auto& Entry : OriginalButtonTints)
         TestTrue(Entry.Key->GetName() + TEXT(" preserves its background during first-use emphasis"),
             Entry.Key->GetBackgroundColor().Equals(Entry.Value));
     for (const auto& Entry : OriginalCaptions)
         TestTrue(Entry.Key->GetName() + TEXT(" preserves its caption color during first-use emphasis"),
             Entry.Key->GetColorAndOpacity() == Entry.Value);
+    for (const auto& Entry : OriginalIconBrushes)
+        TestTrue(Entry.Key->GetName() + TEXT(" preserves its original icon brush"), Entry.Key->Background == Entry.Value);
+    for (const auto& Entry : OriginalIconTints)
+        TestTrue(Entry.Key->GetName() + TEXT(" preserves its original icon tint"), Entry.Key->GetBrushColor().Equals(Entry.Value));
+    for (const auto& Entry : OriginalIconText)
+        TestTrue(Entry.Key->GetName() + TEXT(" preserves its original icon text color"), Entry.Key->GetColorAndOpacity() == Entry.Value);
     TestEqual(TEXT("Every guide topic is available in the real selector"), Combo->GetOptionCount(), FFBuildFeatureGuide::Topics().Num());
     TestTrue(TEXT("Confirm accepts keyboard focus"), Confirm->GetIsFocusable());
     TestTrue(TEXT("Close accepts keyboard focus"), Close->GetIsFocusable());
@@ -172,6 +208,22 @@ bool FFFBuildFeatureGuideRenderTest::RunTest(const FString& Parameters)
         TestTrue(TEXT("Extended toolbar fits viewport"), Contains(Viewport, Bounds(Top)));
         TestTrue(TEXT("Guide appears immediately right of help"), Bounds(Open).Left >= Bounds(Help).Right &&
             Bounds(Open).Left - Bounds(Help).Right <= 12.f * Dpi);
+        for (const auto& Entry : Badges)
+        {
+            const FString Case = FString::Printf(TEXT("%s %dx%d: "), *Entry.Key->GetName(), Resolution.X, Resolution.Y);
+            const FSlateRect BadgeBounds = Bounds(Entry.Key);
+            TestTrue(Case + TEXT("badge fits toolbar"), Contains(Bounds(Top), BadgeBounds));
+            TestTrue(Case + TEXT("badge fits its clickable button"), Contains(Bounds(Entry.Value), BadgeBounds));
+            const FVector2D BadgeCenter((BadgeBounds.Left + BadgeBounds.Right) * .5f,
+                (BadgeBounds.Top + BadgeBounds.Bottom) * .5f);
+            const auto HitPath = Grid.GetBubblePath(BadgeCenter, 0.f, false);
+            TestTrue(Case + TEXT("clicking the badge reaches its toolbar button"),
+                HitPath.ContainsByPredicate([&](const FWidgetAndPointer& Hit)
+                { return &Hit.Widget.Get() == Entry.Value->GetCachedWidget().Get(); }));
+            TestFalse(Case + TEXT("badge does not intercept pointer input"),
+                HitPath.ContainsByPredicate([&](const FWidgetAndPointer& Hit)
+                { return &Hit.Widget.Get() == Entry.Key->GetCachedWidget().Get(); }));
+        }
         Capture(TEXT("Toolbar"));
         Open->OnClicked.Broadcast();
         TestTrue(TEXT("Saved toolbar button opens guide"), Widget->IsFeatureGuideOpen());

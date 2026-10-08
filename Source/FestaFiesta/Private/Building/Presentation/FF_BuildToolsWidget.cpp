@@ -16,7 +16,6 @@
 #include "Building/Presentation/FF_BuildFeedback.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
-#include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanelSlot.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Components/Border.h"
@@ -335,18 +334,8 @@ void UFF_BuildToolsWidget::NativeDestruct()
     if (auto* Discovery = FeatureDiscovery.Get()) Discovery->OnFeatureSeen.RemoveAll(this);
     FeatureDiscovery.Reset();
     if (Combo_FeatureGuideTopic) Combo_FeatureGuideTopic->OnSelectionChanged.RemoveAll(this);
-    for (const auto& Style : AuthoredFeatureIconBrushes)
-        if (UBorder* Icon = Style.Key.Get())
-        {
-            Icon->SetBrush(Style.Value.Brush);
-            Icon->SetBrushColor(Style.Value.Color);
-        }
-    for (const auto& Color : AuthoredFeatureIconTextColors)
-        if (UTextBlock* Icon = Color.Key.Get()) Icon->SetColorAndOpacity(Color.Value);
     for (const auto& Tooltip : AuthoredFeatureButtonTooltips)
         if (UButton* Button = Tooltip.Key.Get()) Button->SetToolTipText(Tooltip.Value);
-    AuthoredFeatureIconBrushes.Reset();
-    AuthoredFeatureIconTextColors.Reset();
     AuthoredFeatureButtonTooltips.Reset();
     CurrentGuideFeature = PendingGuideAction = NAME_None;
     if (UFF_BuildCatalogEconomyReadModel* Model = Economy.Get()) { Model->OnGoldChanged.RemoveAll(this); }
@@ -426,54 +415,13 @@ void UFF_BuildToolsWidget::RefreshFeatureHints()
             AuthoredFeatureButtonTooltips.Add(Key, Button->GetToolTipText());
         }
         const bool bUnseen = Discovery && !Discovery->HasSeenFeature(Topic.Id);
-        if (!Topic.ToolbarIcon.IsNone()) RefreshFeatureIcon(GetWidgetFromName(Topic.ToolbarIcon), bUnseen);
+        // First-use guidance has its own mark; leave the authored icon and button states intact.
+        if (UWidget* Badge = GetWidgetFromName(FName(*FString::Printf(TEXT("Badge_%s"), *Topic.Id.ToString()))))
+            Badge->SetVisibility(bUnseen ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
         if (bUnseen) Button->SetToolTipText(FText::Format(
             LOCTEXT("UnseenFeatureHint", "{0} · 처음 사용하는 기능입니다. 클릭해 사용법을 확인하세요."), Topic.Title));
         else if (Button->GetToolTipText().ToString().Contains(TEXT("처음 사용하는 기능입니다")))
             Button->SetToolTipText(AuthoredFeatureButtonTooltips[Key]);
-    }
-}
-
-void UFF_BuildToolsWidget::RefreshFeatureIcon(UWidget* Icon, const bool bUnseen)
-{
-    if (!Icon) return;
-    TArray<UWidget*> Parts;
-    UWidgetTree::GetChildWidgets(Icon, Parts);
-    Parts.Add(Icon);
-    const FLinearColor Highlight = FLinearColor::FromSRGBColor(FColor(229, 65, 77));
-    auto Emphasize = [&Highlight](const FSlateColor& Original)
-    {
-        FLinearColor Color = Highlight;
-        Color.A = Original.GetSpecifiedColor().A;
-        return FSlateColor(Color);
-    };
-    // Only the authored icon subtree changes. Its label and button states retain
-    // their original colors, and transparent interiors remain transparent.
-    for (UWidget* Part : Parts)
-    {
-        if (auto* Stroke = Cast<UBorder>(Part))
-        {
-            const TWeakObjectPtr<UBorder> Key(Stroke);
-            if (!AuthoredFeatureIconBrushes.Contains(Key))
-                AuthoredFeatureIconBrushes.Add(Key, {Stroke->Background, Stroke->GetBrushColor()});
-            const FFeatureIconBrush& Original = AuthoredFeatureIconBrushes[Key];
-            FSlateBrush Brush = Original.Brush;
-            if (bUnseen)
-            {
-                Brush.TintColor = Emphasize(Brush.TintColor);
-                Brush.OutlineSettings.Color = Emphasize(Brush.OutlineSettings.Color);
-            }
-            Stroke->SetBrush(Brush);
-            Stroke->SetBrushColor(bUnseen ? FLinearColor(1.f, 1.f, 1.f, Original.Color.A) : Original.Color);
-        }
-        else if (auto* Mark = Cast<UTextBlock>(Part))
-        {
-            const TWeakObjectPtr<UTextBlock> Key(Mark);
-            if (!AuthoredFeatureIconTextColors.Contains(Key))
-                AuthoredFeatureIconTextColors.Add(Key, Mark->GetColorAndOpacity());
-            const FSlateColor& Original = AuthoredFeatureIconTextColors[Key];
-            Mark->SetColorAndOpacity(bUnseen ? Emphasize(Original) : Original);
-        }
     }
 }
 
