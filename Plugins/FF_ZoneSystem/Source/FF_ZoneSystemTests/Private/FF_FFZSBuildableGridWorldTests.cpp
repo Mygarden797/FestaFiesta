@@ -184,7 +184,7 @@ bool FFFZSBuildableGridWorldReservationTest::RunTest(const FString& Parameters)
     FFFZSBuildableGridMask Mask;
     Subsystem->BuildPlacementGridMask(Overview, FVector2D(1000.0), FVector2D(5000.0), 100, 0.0, Mask);
     TestFalse(TEXT("The placed footprint has no grid"), IsWorldCellVisible(Mask, FVector2D(2050, 2050)));
-    TestFalse(TEXT("Safety clearance also has no grid"), IsWorldCellVisible(Mask, FVector2D(1950, 2050)));
+    TestTrue(TEXT("Space beside the footprint remains buildable despite legacy clearance"), IsWorldCellVisible(Mask, FVector2D(1950, 2050)));
     const FFFZSPlacementValidation Validation = Subsystem->ValidatePlacement(Install);
     for (const FFFZSOrientedRect& QueueRect : Validation.QueueOrientedRects)
     {

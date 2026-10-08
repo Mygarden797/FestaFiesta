@@ -10,7 +10,7 @@
 class SFFFacilityColorPicker;
 DECLARE_MULTICAST_DELEGATE_OneParam(FFF_OnLightingColorPicked, FLinearColor);
 
-/** A designer-placeable hue ring and saturation/value square. Values use sRGB HSV. */
+/** A designer-placeable full hue/saturation disk. Precision inputs retain HSV value control. */
 UCLASS(meta=(DisplayName="FF Facility Color Picker"))
 class FESTAFIESTA_API UFF_FacilityColorPicker : public UWidget
 {

@@ -99,6 +99,10 @@ bool UFFZSFacilityDefinition::DoesSpecMatchLoadedDefinition(
     Candidate.FacilitySpec.QueueLayout = Definition->Spec.QueueLayout;
     FFFZSCommand Canonical = Candidate;
     Canonical.FacilitySpec = Definition->Spec;
+    // Legacy padding no longer affects facility identity or placement. Preserve the raw
+    // fingerprint format for stored command receipts, and normalize only this comparison.
+    Candidate.FacilitySpec.ClearanceCells = 0;
+    Canonical.FacilitySpec.ClearanceCells = 0;
     return UFFZSGridLibrary::BuildCommandFingerprint(Candidate) ==
         UFFZSGridLibrary::BuildCommandFingerprint(Canonical);
 }

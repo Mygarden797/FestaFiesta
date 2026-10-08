@@ -26,6 +26,7 @@ bool FFFZSGroundSettingsResolutionTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Authored lower trace is preserved"), Resolved.TraceBelowCm, 1200.0);
     TestEqual(TEXT("Authored slope is preserved"), Resolved.MaxSlopeDegrees, 12.0);
     TestEqual(TEXT("Authored height variation is preserved"), Resolved.MaxHeightVarianceCm, 30.0);
+    TestFalse(TEXT("Legacy callers retain normal facility support height"), Resolved.bUseHighestSupport);
 
     Settings->GroundSampleSpacingCm = std::numeric_limits<float>::quiet_NaN();
     Settings->GroundTraceAboveCm = std::numeric_limits<float>::infinity();
@@ -42,6 +43,50 @@ bool FFFZSGroundSettingsResolutionTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Negative height variation becomes zero"), Resolved.MaxHeightVarianceCm, 0.0);
     TestTrue(TEXT("Resolving never silently rewrites the authored config"),
         FMath::IsNaN(Settings->GroundSampleSpacingCm) && Settings->GroundTraceBelowCm == -2.0f);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSTileGroundSettingsResolutionTest,
+    "FF_ZoneSystem.Unit.Settings.TileGroundValidationResolution",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSTileGroundSettingsResolutionTest::RunTest(const FString& Parameters)
+{
+    UFFZSDeveloperSettings* Settings = NewObject<UFFZSDeveloperSettings>();
+    Settings->MaxGroundSlopeDegrees = 12.0f;
+    Settings->MaxGroundHeightVarianceCm = 30.0f;
+    Settings->MaxTileGroundSlopeDegrees = 75.0f;
+    Settings->MaxTileGroundHeightVarianceCm = 650.0f;
+    Settings->GroundSampleSpacingCm = 50.0f;
+    Settings->GroundTraceAboveCm = 900.0f;
+    Settings->GroundTraceBelowCm = 800.0f;
+
+    const FFFZSGroundValidationSettings Road = Settings->ResolveGroundValidationSettings(EFFZSFacilityCategory::Road);
+    FFFZSGroundValidationSettings Tile = Settings->ResolveGroundValidationSettings(EFFZSFacilityCategory::Tile);
+    TestEqual(TEXT("Road retains the regular slope limit"), Road.MaxSlopeDegrees, 12.0);
+    TestEqual(TEXT("Road retains the regular height difference limit"), Road.MaxHeightVarianceCm, 30.0);
+    TestFalse(TEXT("Road does not inherit tile support height"), Road.bUseHighestSupport);
+    TestEqual(TEXT("Tile uses its independent slope limit"), Tile.MaxSlopeDegrees, 75.0);
+    TestEqual(TEXT("Tile uses its independent height difference limit"), Tile.MaxHeightVarianceCm, 650.0);
+    TestTrue(TEXT("Only tile resolves to highest ground support"), Tile.bUseHighestSupport);
+    TestEqual(TEXT("Both policies share the configured sample spacing"), Tile.SampleSpacingCm, Road.SampleSpacingCm);
+    TestEqual(TEXT("Both policies share the upper trace band"), Tile.TraceAboveCm, Road.TraceAboveCm);
+    TestEqual(TEXT("Both policies share the lower trace band"), Tile.TraceBelowCm, Road.TraceBelowCm);
+
+    Settings->MaxTileGroundSlopeDegrees = std::numeric_limits<float>::quiet_NaN();
+    Settings->MaxTileGroundHeightVarianceCm = std::numeric_limits<float>::infinity();
+    Tile = Settings->ResolveGroundValidationSettings(EFFZSFacilityCategory::Tile);
+    TestEqual(TEXT("Non-finite tile slope uses the tile default"), Tile.MaxSlopeDegrees,
+        static_cast<double>(UFFZSDeveloperSettings::DefaultMaxTileGroundSlopeDegrees));
+    TestEqual(TEXT("Non-finite tile variance uses the tile default"), Tile.MaxHeightVarianceCm,
+        static_cast<double>(UFFZSDeveloperSettings::DefaultMaxTileGroundHeightVarianceCm));
+    Settings->MaxTileGroundSlopeDegrees = 100.0f;
+    Settings->MaxTileGroundHeightVarianceCm = -1.0f;
+    Tile = Settings->ResolveGroundValidationSettings(EFFZSFacilityCategory::Tile);
+    TestEqual(TEXT("Tile slope obeys the Project Settings upper limit"), Tile.MaxSlopeDegrees, 89.0);
+    TestEqual(TEXT("Negative tile variance is clamped"), Tile.MaxHeightVarianceCm, 0.0);
+    TestEqual(TEXT("Sanitizing tile rules cannot change ordinary facility rules"),
+        Settings->ResolveGroundValidationSettings().MaxHeightVarianceCm, 30.0);
     return true;
 }
 

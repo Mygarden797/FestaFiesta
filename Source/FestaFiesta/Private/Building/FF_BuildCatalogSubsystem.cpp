@@ -550,6 +550,7 @@ bool UFF_BuildCatalogSubsystem::TryMakeEntry(
 	OutEntry.Definition = TSoftObjectPtr<UFFZSFacilityDefinition>(&Definition);
 	// UI 전용 이미지도 소프트 참조 그대로 전달하여 카탈로그 구성 중 동기 로드를 강제하지 않습니다.
 	OutEntry.Thumbnail = Definition.CatalogThumbnail;
+	OutEntry.bSupportsLighting = !Definition.Spec.LightingSettings.LightingRigClass.IsNull();
 	return true;
 }
 

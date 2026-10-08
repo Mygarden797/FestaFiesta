@@ -42,6 +42,9 @@ public:
 	/** Global collection progress, independent of the screen's category/search filters. */
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
 	TArray<FFF_FacilityCodexCollectionMilestone> GetCollectionMilestones() const;
+	/** Earned recipe or collection rewards still awaiting a claim, including during startup. */
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
+	bool HasUnclaimedRewards() const;
 	/** Claims one configured collection stage once per profile, using the same Gold wallet. */
 	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
 	bool ClaimCollectionReward(FName MilestoneId);

@@ -1576,7 +1576,6 @@ void UFF_CrowdSimulationSubsystem::RebuildAvoidanceWalls()
 	FacilityWallCount = AppendFacilityWalls();
 
 	bBuiltWithFacilityWalls = bAvoidanceUseFacilityWalls;
-	bBuiltWithClearance = bAvoidanceFacilityWallsIncludeClearance;
 }
 
 void UFF_CrowdSimulationSubsystem::ApplyWalkableCeiling()
@@ -1916,15 +1915,8 @@ int32 UFF_CrowdSimulationSubsystem::AppendFacilityWalls()
 		const FFFZSFacilitySpec Spec = Actor->GetFacilitySpec();
 		if (Spec.IsGroundSurface()) continue;
 
-		float HalfXCm = static_cast<float>(Spec.FootprintSizeCells.X) * 0.5f;
-		float HalfYCm = static_cast<float>(Spec.FootprintSizeCells.Y) * 0.5f;
-
-		if (bAvoidanceFacilityWallsIncludeClearance)
-		{
-			const float ClearanceCm = static_cast<float>(Spec.ClearanceCells);
-			HalfXCm += ClearanceCm;
-			HalfYCm += ClearanceCm;
-		}
+		const float HalfXCm = static_cast<float>(Spec.FootprintSizeCells.X) * 0.5f;
+		const float HalfYCm = static_cast<float>(Spec.FootprintSizeCells.Y) * 0.5f;
 
 		const FVector2f CenterMeters(
 			static_cast<float>(Facility.WorldLocation.X) * FFF_CrowdUnits::MetersPerUU,
@@ -1951,9 +1943,7 @@ int32 UFF_CrowdSimulationSubsystem::AppendFacilityWalls()
 
 void UFF_CrowdSimulationSubsystem::EnsureFacilityWalls()
 {
-	const bool bKnobsChanged =
-		(bBuiltWithFacilityWalls != bAvoidanceUseFacilityWalls) ||
-		(bBuiltWithClearance != bAvoidanceFacilityWallsIncludeClearance);
+	const bool bKnobsChanged = bBuiltWithFacilityWalls != bAvoidanceUseFacilityWalls;
 
 	if (!bAvoidanceUseFacilityWalls)
 	{

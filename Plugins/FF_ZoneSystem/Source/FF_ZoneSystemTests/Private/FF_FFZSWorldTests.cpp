@@ -127,6 +127,64 @@ namespace
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSWorldRemovedSafetyClearanceTest,
+    "FF_ZoneSystem.Integration.World.RemovedSafetyClearance",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSWorldRemovedSafetyClearanceTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    UFFZSWorldSubsystem* Subsystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+    if (!TestNotNull(TEXT("World subsystem exists"), Subsystem)) return false;
+    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    if (!TestNotNull(TEXT("Zone exists"), Zone) ||
+        !TestTrue(TEXT("Zone registers"), Subsystem->RegisterZone(Zone))) return false;
+
+    FFFZSFacilitySpec Legacy = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    Legacy.ClearanceCells = 100;
+    FFFZSGridPlacement Placement;
+    Placement.OriginCell = FIntPoint(1000, 1000);
+    const FFFZSCommand First = UFFZSGridLibrary::MakeInstallCommand(Legacy, ZoneId, Placement);
+    if (!TestTrue(TEXT("Legacy facility installs"), Subsystem->ExecuteCommand(First).bSucceeded)) return false;
+    Placement.OriginCell.X += Legacy.FootprintSizeCells.X;
+    const FFFZSCommand Adjacent = UFFZSGridLibrary::MakeInstallCommand(Legacy, ZoneId, Placement);
+    const FFFZSPlacementValidation Preview = Subsystem->ValidatePlacement(Adjacent);
+    TestTrue(TEXT("Legacy clearance produces no extra preview regions"), Preview.ClearanceOrientedRects.IsEmpty());
+    if (!TestTrue(TEXT("Service facilities can touch along their actual footprint edges"),
+        Subsystem->ExecuteCommand(Adjacent).bSucceeded)) return false;
+
+    FFFZSCommand Overlap = MakeMoveCommand(Adjacent.FacilityInstanceId, ZoneId,
+        Placement.OriginCell - FIntPoint(1, 0), Subsystem->GetWorldRevision());
+    TestFalse(TEXT("A one-centimeter body overlap remains blocked"), Subsystem->ExecuteCommand(Overlap).bSucceeded);
+
+    FFFZSWorldSnapshot Snapshot = Subsystem->CaptureWorldSnapshot();
+    for (FFFZSFacilityInstanceSnapshot& Saved : Snapshot.Facilities)
+    {
+        TestEqual(TEXT("New snapshots contain no clearance"), Saved.FacilitySpec.ClearanceCells, 0);
+        Saved.FacilitySpec.ClearanceCells = 100;
+    }
+    TArray<FText> Errors;
+    if (!TestTrue(TEXT("Older snapshots restore adjacent facilities without clearance conflicts"),
+        Subsystem->RestoreWorldSnapshot(Snapshot, Errors))) return false;
+    const FFFZSWorldSnapshot Restored = Subsystem->CaptureWorldSnapshot();
+    for (const FFFZSFacilityInstanceSnapshot& Saved : Restored.Facilities)
+    {
+        TestEqual(TEXT("Restoring removes saved legacy clearance"), Saved.FacilitySpec.ClearanceCells, 0);
+    }
+
+    FFFZSFacilitySpec Blocker = Legacy;
+    Blocker.Category = EFFZSFacilityCategory::Lighting;
+    Blocker.NormalizeNonServiceGeometry();
+    Blocker.FootprintSizeCells = FIntPoint(50, 50);
+    Placement.OriginCell = First.Placement.OriginCell + FIntPoint(525, 325);
+    TestFalse(TEXT("The authored queue remains protected from other facility bodies"),
+        Subsystem->ExecuteCommand(UFFZSGridLibrary::MakeInstallCommand(Blocker, ZoneId, Placement)).bSucceeded);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FFFZSWorldCommandLifecycleSnapshotTest,
     "FF_ZoneSystem.Integration.World.CommandLifecycleQueueAndSnapshot",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -1573,8 +1631,8 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
             MigratedSaved.FacilitySpec.SchemaVersion, 2);
         TestEqual(*FString::Printf(TEXT("%s: 6m x 3m Footprint를 보존한다"), *CaseLabel),
             MigratedSaved.FacilitySpec.FootprintSizeCells, FIntPoint(600, 300));
-        TestEqual(*FString::Printf(TEXT("%s: 1m Clearance를 보존한다"), *CaseLabel),
-            MigratedSaved.FacilitySpec.ClearanceCells, 100);
+        TestEqual(*FString::Printf(TEXT("%s: Legacy clearance is removed"), *CaseLabel),
+            MigratedSaved.FacilitySpec.ClearanceCells, 0);
         TestTrue(*FString::Printf(TEXT("%s: Legacy Queue Cell을 제거한다"), *CaseLabel),
             MigratedSaved.FacilitySpec.QueueReservedCells.IsEmpty());
 

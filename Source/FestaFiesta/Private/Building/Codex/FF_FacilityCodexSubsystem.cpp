@@ -260,6 +260,20 @@ TArray<FFF_FacilityCodexCollectionMilestone> UFF_FacilityCodexSubsystem::GetColl
 	return Result;
 }
 
+bool UFF_FacilityCodexSubsystem::HasUnclaimedRewards() const
+{
+	if (CachedEntries.ContainsByPredicate([](const FFF_FacilityCodexEntry& Entry)
+	{
+		return Entry.bDiscovered && !Entry.bDiscoveryRewardClaimed && Entry.DiscoveryRewardGold > 0;
+	})) return true;
+
+	// An earned reward remains pending even while startup temporarily prevents a claim.
+	return GetCollectionMilestones().ContainsByPredicate([](const FFF_FacilityCodexCollectionMilestone& Milestone)
+	{
+		return Milestone.bReached && !Milestone.bClaimed;
+	});
+}
+
 bool UFF_FacilityCodexSubsystem::ClaimCollectionReward(const FName MilestoneId)
 {
 	if (!bReadyToClaimRewards || MilestoneId.IsNone()) { return false; }

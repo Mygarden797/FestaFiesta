@@ -8,6 +8,9 @@
 #include "FF_FacilityCodexLauncher.generated.h"
 
 class UButton;
+class UBorder;
+class UFF_FacilityCodexProgressSubsystem;
+class UFF_FacilityCodexSubsystem;
 
 /** Opens the complete collection from a facility inspector, including undiscovered recipes. */
 UCLASS(Abstract, Blueprintable, meta=(DisplayName="FF Facility Codex Launcher"))
@@ -20,8 +23,17 @@ public:
 	void SetFacilityContext(FName FacilityId) { ExplicitFacilityId = FacilityId; }
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_OpenCodex;
+	/** Red first-use badge is consumed by a successfully opened explanation. */
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UBorder> Border_IntroductionHint;
+	/** Earned rewards remain visible separately after the first-use badge clears. */
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UBorder> Border_RewardHint;
 private:
 	UFUNCTION() void HandleOpen();
+	UFUNCTION() void RefreshNotificationHint();
+	UPROPERTY(Transient) TObjectPtr<UFF_FacilityCodexProgressSubsystem> Progress;
+	UPROPERTY(Transient) TObjectPtr<UFF_FacilityCodexSubsystem> Codex;
 	FName ExplicitFacilityId;
 };

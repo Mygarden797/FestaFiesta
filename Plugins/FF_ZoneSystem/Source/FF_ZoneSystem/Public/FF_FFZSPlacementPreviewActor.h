@@ -102,6 +102,14 @@ public:
     // 시각 상태만 바뀐 입력에서 외부 정책과 전체 배치 검증을 중복 실행하지 않게 한다.
     void RefreshPlacementGridVisual();
 
+    // Display only the problem currently explained by the UI. None (or an absent reason)
+    // resets to the primary reason. This changes presentation only, never placement validity.
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Preview")
+    void SetDisplayedFailureReason(EFFZSPlacementFailure Reason);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Preview")
+    EFFZSPlacementFailure GetDisplayedFailureReason() const;
+
     // 커서가 가리킨 실제 지면의 점과 법선을 격자 표현에만 제공한다. 저장 좌표와 시설 Transform은
     // 기존 Zone 1cm 계약을 유지하고, 선만 완만한 지면 평면을 따라가도록 한다.
     void SetPlacementGridSurface(const FVector& WorldPoint, const FVector& WorldNormal);
@@ -144,6 +152,7 @@ private:
     bool bFeedbackMaterialLoadAttempted = false;
     bool bHasUnvalidatedPreviewTransform = false;
     bool bUsesEffectiveBatchSpec = false;
+    EFFZSPlacementFailure RequestedFailureReason = EFFZSPlacementFailure::None;
     void RefreshGhostFeedback();
     void ShowFailureSurface(const FFFZSOrientedRect& WorldRegion, double BaseZ, int32 SurfaceIndex);
     UPROPERTY(VisibleAnywhere, Category = "Preview")

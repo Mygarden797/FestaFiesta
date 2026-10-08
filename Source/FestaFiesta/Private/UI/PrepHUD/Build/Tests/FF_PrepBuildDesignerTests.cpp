@@ -188,7 +188,7 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	Data->SetSynergyHighlighted(true);
 	Tile->RefreshItemPresentation();
 	// Required progress is independent from combo recommendations. Both states can
-	// coexist while the model's 0/1 -> 1/1 progress still reaches the original label.
+	// coexist while the installation instruction changes to its completion label.
 	Entry.bRequiredForSetup = true;
 	Entry.CompatibleProgramCount = 2;
 	Entry.CompatibleProgramNames = FText::FromString(TEXT("바다향기 공방, 선셋 요가"));
@@ -216,13 +216,13 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Program names are explained alongside the requirement and price"),
 		Tile->GetToolTipText().ToString().Contains(TEXT("바다향기 공방")) &&
 		Tile->GetToolTipText().ToString().Contains(TEXT("선셋 요가")));
-	TestEqual(TEXT("Limited facility displays empty installation progress in the original state slot"),
-		StateLabel->GetText().ToString(), FString(TEXT("0/1")));
-	TestTrue(TEXT("Missing requirement preserves Designer brush, font and caption"),
+	TestEqual(TEXT("Required facility explains the installation amount in the original state slot"),
+		StateLabel->GetText().ToString(), FString(TEXT("1개 설치")));
+	TestTrue(TEXT("Missing requirement preserves Designer brush and font with a count instruction"),
 		RequiredMissing->Background.TintColor == AuthoredRequiredBrush.TintColor &&
-		RequiredMissingText->GetFont().Size == RequiredFont.Size && RequiredMissingText->GetText().EqualTo(AuthoredRequiredLabel));
+		RequiredMissingText->GetFont().Size == RequiredFont.Size && RequiredMissingText->GetText().ToString() == TEXT("필수 · 1개 설치"));
 	TestTrue(TEXT("Requirement minimum is available alongside the original price tooltip"),
-		Tile->GetToolTipText().ToString().Contains(TEXT("필요 최소 1개")) &&
+		Tile->GetToolTipText().ToString().Contains(TEXT("필수 시설 1개를 설치")) &&
 		Tile->GetToolTipText().ToString().Contains(Data->GetCostText().ToString()));
 	Entry.bRequiredSetupSatisfied = true;
 	Entry.RequiredInstalledCount = 1;
@@ -235,8 +235,8 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed &&
 		RequiredSatisfied->GetVisibility() == ESlateVisibility::HitTestInvisible &&
 		ProgramBadge->GetVisibility() == ESlateVisibility::HitTestInvisible);
-	TestEqual(TEXT("Completed installation retains its real 1/1 progress instead of availability wording"),
-		StateLabel->GetText().ToString(), FString(TEXT("1/1")));
+	TestEqual(TEXT("Completed required installation uses plain completion wording"),
+		StateLabel->GetText().ToString(), FString(TEXT("설치 완료")));
 	TestTrue(TEXT("Completing a requirement retains the rose identity while its completion badge changes"),
 		ThumbnailBackdrop->Background.GetResourceObject() == RequiredBrush.GetResourceObject() && Card->Background == RequiredCardBrush);
 	Entry.RequiredMinimumCount = 0;

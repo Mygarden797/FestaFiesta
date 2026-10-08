@@ -38,6 +38,7 @@ void UFF_FacilityCodexScreen::NativeOnInitialized()
 	SetIsFocusable(true);
 	if (Button_Close) Button_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleClose);
 	if (Button_ExitCodex) Button_ExitCodex->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleExitCodex);
+	if (Button_DismissIntroduction) Button_DismissIntroduction->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDismissIntroduction);
 	if (Button_All) Button_All->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAll);
 	if (Button_Discovered) Button_Discovered->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDiscovered);
 	if (Button_Undiscovered) Button_Undiscovered->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUndiscovered);
@@ -348,6 +349,16 @@ void UFF_FacilityCodexScreen::UpdateResponsiveLayout()
 
 FReply UFF_FacilityCodexScreen::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
 {
+	if (IsIntroductionVisible())
+	{
+		if (!KeyEvent.IsRepeat() && (KeyEvent.GetKey() == EKeys::Escape ||
+			KeyEvent.GetKey() == EKeys::Enter || KeyEvent.GetKey() == EKeys::SpaceBar))
+		{
+			HandleDismissIntroduction();
+		}
+		// Keep keyboard navigation on the guide until it has been dismissed.
+		return FReply::Handled();
+	}
 	if (Column_CollectionCategories && !KeyEvent.IsRepeat())
 	{
 		if (bCollectionDetailOpen && (KeyEvent.GetKey() == EKeys::Left || KeyEvent.GetKey() == EKeys::Right))
@@ -756,8 +767,32 @@ void UFF_FacilityCodexScreen::RefreshPreviewVisibility()
 		if (Button) Button->SetIsEnabled(bModelVisible);
 }
 
+bool UFF_FacilityCodexScreen::ShowIntroduction()
+{
+	if (!Border_Introduction || !Button_DismissIntroduction) return false;
+	Border_Introduction->SetVisibility(ESlateVisibility::Visible);
+	Button_DismissIntroduction->SetKeyboardFocus();
+	return true;
+}
+
+bool UFF_FacilityCodexScreen::IsIntroductionVisible() const
+{
+	return Border_Introduction && Border_Introduction->IsVisible();
+}
+
+void UFF_FacilityCodexScreen::HandleDismissIntroduction()
+{
+	if (Border_Introduction) Border_Introduction->SetVisibility(ESlateVisibility::Collapsed);
+	SetKeyboardFocus();
+}
+
 void UFF_FacilityCodexScreen::HandleClose()
 {
+	if (IsIntroductionVisible())
+	{
+		HandleDismissIntroduction();
+		return;
+	}
 	if (Column_CollectionCategories && bCollectionDetailOpen)
 	{
 		SetCollectionDetailOpen(false);

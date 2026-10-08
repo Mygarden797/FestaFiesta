@@ -63,8 +63,7 @@ bool FFFZSQueueGeometry::ApplySelectedLayout(FFFZSFacilitySpec& InOutSpec, FText
     const FVector Right(Outward.Y, -Outward.X, 0.0);
     const double HalfLaneWidth = FMath::Max(50.0, Tolerance + 1.0);
     const double Separation = FMath::Max(Spacing, FMath::Max(1.0, Tolerance * 2.0));
-    double HeadDistance = (bXFace ? HalfSize.X : HalfSize.Y) +
-        FMath::Max(0, Candidate.ClearanceCells) + HalfLaneWidth;
+    double HeadDistance = (bXFace ? HalfSize.X : HalfSize.Y) + HalfLaneWidth;
     for (const FFFZSAnchorDefinition& Anchor : Candidate.Anchors)
     {
         if (Anchor.Type != EFFZSAnchorType::Entry || Anchor.Index != 0)

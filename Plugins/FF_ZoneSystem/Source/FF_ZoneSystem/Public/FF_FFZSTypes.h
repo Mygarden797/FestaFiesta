@@ -598,13 +598,13 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Staff", meta = (DisplayName = "Staff Capacity", ToolTip = "Info 안내 시설 한 곳에 배정할 수 있는 스태프 최대 인원입니다. 설치하면 고용 상한과 배정 자리만 늘어나며 스태프를 자동 고용하지 않습니다. 0이면 스태프를 배정하지 않습니다. 설치 시 복사·저장되므로 변경한 값은 새로 설치하는 시설부터 적용됩니다.", EditCondition = "Category == EFFZSFacilityCategory::Info", EditConditionHides, ClampMin = "0", UIMin = "0"))
     int32 StaffCapacity = DefaultStaffCapacity;
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Footprint Size (cm)", ToolTip = "회전 전 건물이 차지하는 바닥 크기입니다. 1 Cell은 1cm이므로 X=가로 폭, Y=세로 깊이입니다. 예: 600×300은 6m×3m입니다. (가로+여유)×(깊이+여유)와 대기열 예약 면적이 설정된 시설 면적 안전 예산을 넘으면 검증에 실패합니다.", ClampMin = "1"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Footprint Size (cm)", ToolTip = "회전 전 건물이 차지하는 바닥 크기입니다. 1 Cell은 1cm이므로 X=가로 폭, Y=세로 깊이입니다. 예: 600×300은 6m×3m입니다. 건물 바닥과 대기열 예약 면적이 설정된 시설 면적 안전 예산을 넘으면 검증에 실패합니다.", ClampMin = "1"))
     FIntPoint FootprintSizeCells = FIntPoint(100, 100);
     // 시설의 실제 바닥 크기를 1 cm 셀 수로 저장한다. 예: 6 m x 3 m는 (600, 300)이다.
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Clearance (cm)", ToolTip = "건물 크기 네 방향에 추가로 확보하는 안전·통행 여백입니다. 값이 커질수록 배치 필요 면적과 안전 예산 사용량이 함께 커지며, 다른 시설과 장애물에서 더 멀리 떨어져야 합니다.", ClampMin = "0"))
-    int32 ClearanceCells = 100;
-    // 시설 둘레 확보 폭을 1 cm 셀 수로 저장한다. 예: 1 m는 100이다.//
+    // Serialized compatibility only. All facility placement ignores the former safety margin.
+    UPROPERTY(SaveGame, EditAnywhere, Category = "Legacy", meta = (EditCondition = "false", EditConditionHides))
+    int32 ClearanceCells = 0;
     
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Queue Reserved Rects", ToolTip = "다른 시설과 장애물이 침범하지 못하도록 확보할 대기열 영역입니다. 좌표 원점은 회전 전 건물의 왼쪽 아래이고 단위는 1cm이며 Max 경계는 포함하지 않습니다. 건물 바닥과 면적으로 겹치면 안 되고, 예약 면적은 설정된 시설 면적 안전 예산에 포함됩니다. 영역만 늘려도 실제 대기 팀 수는 늘지 않습니다."))
     TArray<FFFZSCellRect> QueueReservedRects;
@@ -662,7 +662,7 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "External Keys", meta = (DisplayName = "Experience Effect Key", ToolTip = "외부 경험·만족도 시스템에서 시설 효과를 조회할 키입니다."))
     FName ExperienceEffectKey = NAME_None;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Visual", meta = (DisplayName = "Visual Mesh", ToolTip = "월드와 배치 미리보기에 표시할 Static Mesh입니다. 배치 권위 크기는 이 메시 Collision이 아니라 건물 크기·여유 폭·대기열 예약 영역입니다.", AssetBundles = "FacilityVisual"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Visual", meta = (DisplayName = "Visual Mesh", ToolTip = "월드와 배치 미리보기에 표시할 Static Mesh입니다. 배치 권위 크기는 이 메시 Collision이 아니라 건물 크기·대기열·관람 예약 영역입니다.", AssetBundles = "FacilityVisual"))
     TSoftObjectPtr<UStaticMesh> VisualMesh;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Visual", meta = (DisplayName = "Visual Sizing Mode", ToolTip = "Static Mesh 원본 Bounds를 권위 배치 크기에 맞추는 방식입니다. 프로덕션 시설은 '배치 경계에 정확히 맞춤'을 사용하십시오."))
@@ -703,7 +703,7 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
         return Category != EFFZSFacilityCategory::Lighting && !IsGroundSurface();
     }
 
-    /** Remove obsolete service geometry from passive definitions and saved instances. */
+    /** Clear retired safety margins on every facility and obsolete service geometry on passive facilities. */
     void NormalizeNonServiceGeometry();
 
     bool AllowsFacilityPlacementOnTop() const
@@ -729,11 +729,35 @@ namespace FFZSFacilityUpgradeRules
 }
 
 UENUM(BlueprintType)
+enum class EFFZSPlacementRegion : uint8
+{
+    Footprint,
+    Clearance,
+    Queue,
+    Audience
+};
+
+// Explains the same boundary check used by placement authority; never changes occupancy.
+USTRUCT(BlueprintType)
+struct FF_ZONESYSTEM_API FFFZSPlacementBoundaryIssue
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    EFFZSPlacementRegion Region = EFFZSPlacementRegion::Footprint;
+
+    // World XY centimeters. Only the portion outside the build area should be hatched.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    FFFZSOrientedRect WorldRegion;
+};
+
+UENUM(BlueprintType)
 enum class EFFZSPlacementObstructionKind : uint8
 {
     Facility,
     WorldObstacle,
-    ProtectedArea
+    ProtectedArea,
+    GroundSupport
 };
 
 // Read-only explanation of an already failed authority check. Never used for occupancy or commits.
@@ -748,6 +772,9 @@ struct FF_ZONESYSTEM_API FFFZSPlacementObstruction
     EFFZSPlacementObstructionKind Kind = EFFZSPlacementObstructionKind::WorldObstacle;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
     FText DisplayName;
+    // A sampled terrain limit is explained separately from an object's collision bounds.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    FText Detail;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
     FGuid FacilityInstanceId;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
@@ -787,6 +814,12 @@ struct FF_ZONESYSTEM_API FFFZSPlacementValidation
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
     TArray<FFFZSPlacementObstruction> Obstructions;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    TArray<FFFZSPlacementBoundaryIssue> BoundaryIssues;
+
+    static constexpr int32 MaxBoundaryIssues = 32;
+    FText GetBoundaryFailureText() const;
+
     static constexpr int32 MaxObstructions = 12;
     // Bounded explanatory data only; does not add a failure or change validity.
     void AddObstruction(FFFZSPlacementObstruction Obstruction);
@@ -800,7 +833,7 @@ struct FF_ZONESYSTEM_API FFFZSPlacementValidation
     
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
     TArray<FFFZSCellRect> ClearanceRects;
-    // 본체와 Queue를 제외한 권위 여유 영역.
+    // 호환 이름을 유지한 관람 영역. 본체와 Queue를 제외하며 자동 안전 여백은 없다.
     
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
     TArray<FFFZSCellRect> QueueRects;
@@ -816,7 +849,15 @@ struct FF_ZONESYSTEM_API FFFZSPlacementValidation
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation|Geometry")
     TArray<FFFZSOrientedRect> ClearanceOrientedRects;
-    // 본체와 Queue를 제외한 실제 여유 공간의 권위 회전 사각형들이다.
+    // 호환 이름을 유지한 관람 공간의 권위 회전 사각형. 자동 안전 여백은 없다.
+
+    // Retired compatibility output: always empty and ignored by boundary/range presentation.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation|Geometry")
+    TArray<FFFZSOrientedRect> SafetyClearanceOrientedRects;
+
+    // Named view of ClearanceOrientedRects for audience explanation and display.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation|Geometry")
+    TArray<FFFZSOrientedRect> AudienceOrientedRects;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation|Geometry")
     TArray<FFFZSOrientedRect> QueueOrientedRects;

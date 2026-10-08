@@ -10,6 +10,7 @@
 #include "FF_BuildToolsWidget.generated.h"
 
 class UBorder;
+class UComboBoxString;
 class UEditableTextBox;
 class UImage;
 class USizeBox;
@@ -17,7 +18,9 @@ class UTextBlock;
 class UFF_BuildModeSubsystem;
 class UFF_BuildCatalogEconomyReadModel;
 class UFF_BuildCatalogSubsystem;
+class UFF_BuildingFeatureDiscoverySubsystem;
 struct FKey;
+struct FFFZSFacilitySpec;
 
 UENUM(BlueprintType)
 enum class EFF_BuildToolsDesignerPage : uint8
@@ -45,15 +48,21 @@ struct FESTAFIESTA_API FFF_BuildToolsViewData
     UPROPERTY(BlueprintReadOnly) FText BalanceText;
     UPROPERTY(BlueprintReadOnly) FText FootprintText;
     UPROPERTY(BlueprintReadOnly) FText QueueText;
+    UPROPERTY(BlueprintReadOnly) FText AudienceText;
 };
 
 namespace FFBuildToolsModel
 {
+    FESTAFIESTA_API FText FormatAudienceSpace(const FFFZSFacilitySpec& Spec);
+    FESTAFIESTA_API FText FormatProblemStatus(const FText& Title, int32 ProblemIndex, int32 ProblemCount);
     // Explicit degree input is finite, decimal and within the displayed 0..360 range.
     // Invalid edits leave the caller's previous value untouched; 360 wraps to 0.
     FESTAFIESTA_API bool TryParseYawText(const FString& Text, float& OutYawDegrees);
     /** Top and height of the guide, bounded above the measured catalog edge. */
-    FESTAFIESTA_API FVector2D ResolveHelpVerticalBounds(float ContentHeight, float AvailableBottom);
+    FESTAFIESTA_API FVector2D ResolveHelpVerticalBounds(float ContentHeight, float AvailableBottom,
+        float PreferredTop = 525.f, float ReservedTop = 104.f);
+    /** Required local dimensions, not a measurement of remaining free space. */
+    FESTAFIESTA_API void FormatRequiredSpace(const FFFZSFacilitySpec& Spec, FText& OutFootprint, FText& OutQueue);
 }
 
 // UButton exposes focus initialization to subclasses, avoiding deprecated property writes.
@@ -102,6 +111,10 @@ public:
     bool IsRadialMenuOpen() const;
     bool IsAuxiliaryPanelOpen() const;
     bool IsBuildSettingsOpen() const;
+    bool IsFeatureGuideOpen() const;
+    UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void OpenFeatureGuide();
+    UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") bool OpenFeatureGuideTopic(FName FeatureId);
+    UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void CloseFeatureGuide();
 
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools")
     void RefreshTools();
@@ -135,6 +148,9 @@ protected:
     virtual void NativeDestruct() override;
     virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
     virtual FReply NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent) override;
+    virtual FReply NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& MouseEvent) override;
+    virtual FReply NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& MouseEvent) override;
+    virtual FReply NativeOnMouseWheel(const FGeometry& Geometry, const FPointerEvent& MouseEvent) override;
 
     UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Building|Tools")
     void BP_OnToolsStateChanged(const FFF_BuildToolsViewData& Data);
@@ -162,6 +178,14 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ToolbarRanges;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ToolbarCatalog;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ToolbarHelp;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_FeatureGuide;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Panel_FeatureGuide;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Combo_FeatureGuideTopic;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_FeatureGuideTitle;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_FeatureGuideBody;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_FeatureGuideHint;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_FeatureGuideConfirm;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_FeatureGuideClose;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ToolbarGold;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UImage> Image_PlacementFacility;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildSettingsClose;
@@ -199,6 +223,7 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Balance;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Footprint;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Queue;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Audience;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ControlHelp;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildHelpUndo;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildHelpRedo;
@@ -241,6 +266,36 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_NudgeRight;
 
 private:
+    TWeakObjectPtr<UFF_BuildingFeatureDiscoverySubsystem> FeatureDiscovery;
+    struct FFeatureIconBrush
+    {
+        FSlateBrush Brush;
+        FLinearColor Color;
+    };
+    TMap<TWeakObjectPtr<UBorder>, FFeatureIconBrush> AuthoredFeatureIconBrushes;
+    TMap<TWeakObjectPtr<UTextBlock>, FSlateColor> AuthoredFeatureIconTextColors;
+    TMap<TWeakObjectPtr<UButton>, FText> AuthoredFeatureButtonTooltips;
+    friend class FFFBuildFeatureGuideAcknowledgementTest;
+    friend class FFFBuildFeatureGuideInputTest;
+    friend class FFFBuildFeatureGuideRenderTest;
+    FName CurrentGuideFeature;
+    FName PendingGuideAction;
+    bool bUpdatingGuideTopic = false;
+    bool ShowFeatureGuide(FName FeatureId, bool bRunAfterConfirm);
+    void RunFeatureToolbarAction(FName FeatureId);
+    void RequestFeatureToolbarAction(FName FeatureId);
+    void RefreshFeatureHints();
+    void RefreshFeatureIcon(UWidget* Icon, bool bUnseen);
+    UFUNCTION() void HandleFeatureSeen(FName FeatureId);
+    UFUNCTION() void ConfirmFeatureGuide();
+    UFUNCTION() void HandleFeatureGuideTopicChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+    UFUNCTION() void HandleGuidedMultiSelect();
+    UFUNCTION() void HandleGuidedGrid();
+    UFUNCTION() void HandleGuidedSnap();
+    UFUNCTION() void HandleGuidedRanges();
+    UFUNCTION() void HandleGuidedSettings();
+    UFUNCTION() void HandleGuidedCatalog();
+    UFUNCTION() void HandleGuidedControls();
     FVector2D AuthoredHelpPosition = FVector2D(32.f, 525.f);
     float AuthoredSettingsHeight = 950.f;
     TWeakObjectPtr<UFF_BuildModeSubsystem> BuildMode;
@@ -248,6 +303,8 @@ private:
     TWeakObjectPtr<UFF_BuildCatalogSubsystem> CatalogModel;
     TWeakObjectPtr<UWidget> CatalogHelpAvoidanceSurface;
     TWeakObjectPtr<UWidget> GroupHelpAvoidanceSurface;
+    TWeakObjectPtr<UWidget> SynergyHelpAvoidanceSurface;
+    double NextSynergyHelpSearchTime = 0.0;
     double NextCatalogHelpSearchTime = 0.0;
     double NextGroupHelpSearchTime = 0.0;
     UPROPERTY(Transient) FFF_BuildToolsViewData ViewData;

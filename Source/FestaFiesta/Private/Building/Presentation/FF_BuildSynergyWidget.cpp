@@ -80,7 +80,7 @@ void UFF_BuildSynergyWidget::BuildNativeTree()
     UCanvasPanel* Canvas = WidgetTree->ConstructWidget<UCanvasPanel>();
     WidgetTree->RootWidget = Canvas;
     Canvas->SetVisibility(ESlateVisibility::HitTestInvisible);
-    USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>();
+    USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("Size_Synergy"));
     Size->SetWidthOverride(344.0f);
     UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Border_Synergy"));
     CardPanel = Panel;
@@ -89,9 +89,9 @@ void UFF_BuildSynergyWidget::BuildNativeTree()
     Panel->SetPadding(FMargin(14.0f, 8.0f));
     Size->AddChild(Panel);
     UCanvasPanelSlot* Position = Canvas->AddChildToCanvas(Size);
-    Position->SetAnchors(FAnchors(1.0f, 0.0f));
-    Position->SetAlignment(FVector2D(1.0, 0.0));
-    Position->SetPosition(FVector2D(-28.0, 440.0));
+    Position->SetAnchors(FAnchors(0.0f, 0.0f));
+    Position->SetAlignment(FVector2D::ZeroVector);
+    Position->SetPosition(FVector2D(32.0, 104.0));
     Position->SetAutoSize(true);
     UVerticalBox* Rows = WidgetTree->ConstructWidget<UVerticalBox>();
     Panel->AddChild(Rows);
@@ -144,16 +144,15 @@ void UFF_BuildSynergyWidget::PresentPreview(
     { ClearPreview(); return; }
 
     // Move only the authored card: the full-screen widget must stay in place for world
-    // connection lines, while the card sits below the right-side facility information.
+    // connection lines. The left card leaves the entire right placement inspector
+    // available for required space; its measured bottom also bounds the help below.
     if (USizeBox* CardSize = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_Synergy"))))
     {
         if (UCanvasPanelSlot* CardSlot = Cast<UCanvasPanelSlot>(CardSize->Slot))
         {
-            const float Scale = FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(this));
-            const float LogicalHeight = UWidgetLayoutLibrary::GetViewportSize(this).Y / Scale;
-            const float Top = LogicalHeight > 0.f
-                ? FMath::Min(440.f, FMath::Max(56.f, LogicalHeight - 600.f)) : 56.f;
-            const FVector2D Desired(-28.f, Top);
+            CardSlot->SetAnchors(FAnchors(0.f, 0.f));
+            CardSlot->SetAlignment(FVector2D::ZeroVector);
+            const FVector2D Desired(32.f, 104.f);
             if (!CardSlot->GetPosition().Equals(Desired, .5f)) CardSlot->SetPosition(Desired);
         }
     }

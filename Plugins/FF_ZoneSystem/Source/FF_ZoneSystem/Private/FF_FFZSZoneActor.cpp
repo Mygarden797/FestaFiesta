@@ -218,9 +218,13 @@ TArray<FVector2D> AFFZSGameplayZone::GetBoundaryPolygonLocalCm() const
     // 점 개수는 순회 중 변하지 않으므로 한 번만 조회한다.
     const int32 PointCount = BoundarySpline->GetNumberOfSplinePoints();
     Result.Reserve(PointCount);
+    const FTransform ActorTransform = GetActorTransform();
     for (int32 Index = 0; Index < PointCount; ++Index)
     {
-        const FVector Point = BoundarySpline->GetLocationAtSplinePoint(Index, ESplineCoordinateSpace::Local);
+        // Spline-local coordinates omit a component's authored offset, rotation and scale.
+        // Convert its visible world position back to actor-local space for every consumer.
+        const FVector Point = ActorTransform.InverseTransformPosition(
+            BoundarySpline->GetLocationAtSplinePoint(Index, ESplineCoordinateSpace::World));
         Result.Add(FVector2D(Point.X, Point.Y));
     }
     return Result;

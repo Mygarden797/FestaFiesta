@@ -12,7 +12,7 @@
 | PDA 폴더 | `/Game/FestaFiesta/Building/FF_Data_Building/Road` | `/Game/FestaFiesta/Building/FF_Data_Building/Tile` |
 | PDA 이름 | `PDA_FFZS_Road_Surface_<종류>` | `PDA_FFZS_Tile_Surface_<종류>` |
 | 기본 비용 키 | `Cost.Road.Surface.<종류>` | `Cost.Tile.Surface.<종류>` |
-| 다른 시설과 겹침 | 본체·여유 공간·대기열 모두 차단 | 상부 시설의 배치 허용 |
+| 다른 시설과 겹침 | 본체·관람 공간·대기열 모두 차단 | 상부 시설의 배치 허용 |
 
 메시는 `/Game/Asset/FacilitiesAsset_HKH/Roads/SM_Road_<종류>`, 재질은 같은 폴더의
 `Materials/M_Road_Palette`를 공유한다. Tile은 Road의 메시와 썸네일을 재사용한다.

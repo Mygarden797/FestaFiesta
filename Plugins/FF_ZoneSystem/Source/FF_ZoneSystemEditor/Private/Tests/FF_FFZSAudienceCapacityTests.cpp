@@ -7,6 +7,7 @@
 #include "EditorValidatorSubsystem.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "FF_FFZSAudienceCapacityEditor.h"
+#include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSFacilityEditorHelpers.h"
 #include "FF_FFZSGridLibrary.h"
@@ -78,6 +79,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSAudienceAutoFitTest, "FF_ZoneSystem.Audien
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FFFZSAudienceAutoFitTest::RunTest(const FString& Parameters)
 {
+    // Keep the repair threshold independent of production tuning and retired clearance.
+    // The Lv.2 body/Queue fits 1,000 m²; adding its 610 m² audience requires a separate allowance.
+    TGuardValue<int32> Budget(GetMutableDefault<UFFZSDeveloperSettings>()->MaxEnumeratedCellsPerFacility, 10'000'000);
     FFFZSFacilitySpec Spec = MakeCapacitySpec();
     FFFZSAudienceLayout Fitted;
     TArray<FText> Errors;
@@ -168,6 +172,9 @@ bool FFFZSAudienceCapacityPropertyTest::RunTest(const FString& Parameters)
     UEditorValidatorSubsystem* Validator = GEditor->GetEditorSubsystem<UEditorValidatorSubsystem>();
     TestTrue(TEXT("Real PDA passes full validation without being modified"), Validator && Validator->IsObjectValid(
         Source, SourceErrors, SourceWarnings, EDataValidationUsecase::Manual) == EDataValidationResult::Valid);
+    // Validate production content under its own budget above, then isolate the synthetic fixture.
+    // At 50 rows its 1,174 m² audience exceeds this shared limit and exercises automatic repair.
+    TGuardValue<int32> Budget(GetMutableDefault<UFFZSDeveloperSettings>()->MaxEnumeratedCellsPerFacility, 10'000'000);
     // Unsaved, uniquely identified test object in the required validator root. Never edits the PDA.
     const FString Name = TEXT("AudienceCapacityTest_") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
     UPackage* Package = CreatePackage(*(TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/") + Name));
@@ -213,7 +220,9 @@ bool FFFZSAudienceCapacityPropertyTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Status preserves the unsupported requested count"), FFFZSAudienceCapacityEditor::GetStatus(Asset).ToString().Contains(TEXT("512")));
     FFFZSFacilitySpec NonAudience = Asset->Spec;
     NonAudience.Audience = Original.Audience;
-    TestTrue(TEXT("No Queue, mesh, identity or other fields were changed"), FFFZSFacilitySpec::StaticStruct()->CompareScriptStruct(&Original, &NonAudience, 0));
+    FFFZSFacilitySpec NormalizedOriginal = Original;
+    NormalizedOriginal.ClearanceCells = 0;
+    TestTrue(TEXT("No Queue, mesh, identity or other active fields were changed"), FFFZSFacilitySpec::StaticStruct()->CompareScriptStruct(&NormalizedOriginal, &NonAudience, 0));
     // A cancelled drag followed by another field must not re-use the old rollback state.
     EditAudienceProperty(*Asset, Rows, 51, EPropertyChangeType::Interactive);
     Asset->Spec.Audience = Larger; // Simulate the editor restoring the cancelled value.

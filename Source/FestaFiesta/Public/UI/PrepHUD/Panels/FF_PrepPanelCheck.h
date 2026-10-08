@@ -162,6 +162,9 @@ protected:
 	void HandleContinueBuildClicked();
 
 	UFUNCTION()
+	void HandleStaffAssignmentGuidanceClicked();
+
+	UFUNCTION()
 	void HandleOpenGateClicked();
 
 	/** 날씨 선택지 클릭. 베이스가 `int32` 로 주므로 여기서 되돌려 해석한다. */
@@ -292,6 +295,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_RequiredFacilities;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UButton> Button_RequiredFacilities;
+
 	/** 마지막 날이 아니면 줄째 숨긴다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_FinaleSummary;
@@ -332,6 +338,10 @@ protected:
 	/** 하단 바와 같은 판정/사유. 준비 선택 사항을 별도의 필수 조건으로 만들지 않는다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_OpenGateReason;
+
+	/** 안내 문구 오른쪽의 스태프 배정 바로가기. 배정할 대상이 없으면 숨긴다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UButton> Button_OpenGateReason;
 
 	// --- 설정 ---
 
@@ -407,6 +417,7 @@ private:
 	void RefreshSummary();
 	void RefreshEstimate();
 	void RefreshRequiredFacilities();
+	void RefreshStaffAssignmentLinks();
 
 	/**
 	 * 개장 버튼의 문구와 활성 상태를 바의 판정으로 맞춘다.

@@ -21,12 +21,24 @@ namespace
 
 FFFZSGroundValidationSettings UFFZSDeveloperSettings::ResolveGroundValidationSettings() const
 {
+    return ResolveGroundValidationSettings(EFFZSFacilityCategory::Booth);
+}
+
+FFFZSGroundValidationSettings UFFZSDeveloperSettings::ResolveGroundValidationSettings(
+    const EFFZSFacilityCategory Category) const
+{
+    const bool bTile = Category == EFFZSFacilityCategory::Tile;
+    const double Slope = bTile ? MaxTileGroundSlopeDegrees : MaxGroundSlopeDegrees;
+    const double HeightVariance = bTile ? MaxTileGroundHeightVarianceCm : MaxGroundHeightVarianceCm;
+    const double DefaultSlope = bTile ? DefaultMaxTileGroundSlopeDegrees : DefaultMaxGroundSlopeDegrees;
+    const double DefaultVariance = bTile ? DefaultMaxTileGroundHeightVarianceCm : DefaultMaxGroundHeightVarianceCm;
     return {
         FMath::Clamp(FiniteOrDefault(GroundSampleSpacingCm, DefaultGroundSampleSpacingCm), 1.0, 1000.0),
         FMath::Max(1.0, FiniteOrDefault(GroundTraceAboveCm, DefaultGroundTraceDistanceCm)),
         FMath::Max(1.0, FiniteOrDefault(GroundTraceBelowCm, DefaultGroundTraceDistanceCm)),
-        FMath::Clamp(FiniteOrDefault(MaxGroundSlopeDegrees, DefaultMaxGroundSlopeDegrees), 0.0, 89.0),
-        FMath::Max(0.0, FiniteOrDefault(MaxGroundHeightVarianceCm, DefaultMaxGroundHeightVarianceCm))
+        FMath::Clamp(FiniteOrDefault(Slope, DefaultSlope), 0.0, 89.0),
+        FMath::Max(0.0, FiniteOrDefault(HeightVariance, DefaultVariance)),
+        bTile
     };
 }
 

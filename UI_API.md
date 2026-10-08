@@ -501,7 +501,7 @@ Editor와 Shipping 패키지의 `Test_Main`에서는 `WBP_FF_ZoneLifecycleTestPa
 닫히면 카탈로그·프리뷰·시설 선택·입력 상태를 정리하고 `Closed`로 자동 전환한다.
 
 신규 설치는 선택한 `UFFZSFacilityDefinition::Spec`을, 이동은 기존 액터의 권위 Spec·GUID·현재 회전을
-`AFFZSPlacementPreviewActor`와 `ExecuteCommand()` 경로에 전달한다. 따라서 Zone 경계·충돌·여유 공간·
+`AFFZSPlacementPreviewActor`와 `ExecuteCommand()` 경로에 전달한다. 따라서 Zone 경계·충돌·관람 공간·
 Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우회하지 않는다.
 
 배치 회전의 권위 표현은 `FFFZSGridPlacement::YawCentidegrees`(0.01도 단위)다. 기존
@@ -513,7 +513,8 @@ Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우
 안전값은 45도, 초당 90도, 1cm다. 자유 회전은 매 프레임 최신 yaw만 기록하고 전체 배치 검증은 기존
 0.08초 주기를 유지하며, 확정 직전에는 최신 커서·각도·revision을 강제 재검증한다.
 
-활성 건축 세션에서는 설치 시설의 footprint(초록)·clearance(청록)·queue 예약 범위(노랑)를 표시한다.
+활성 건축 세션에서는 설치 시설의 footprint(파랑)·queue 예약 범위(청록)와 명시적 관람 공간을 표시한다.
+시설 둘레의 안전 여유 거리와 해당 수치·범례는 표시하지 않으며, 기존 `ClearanceCells` 값은 배치 판정에 적용하지 않는다.
 카탈로그가 닫힌 `BuildMode`에서 시설을 좌클릭하면 청록색으로 강조되고, 공용 우측 시설 정보 패널이
 `Build` 컨텍스트로 열린다. 패널은 시설 정보와 `이동`·`철거` 액션 및 닫기를 제공하며, 패널 위 좌클릭은
 월드 시설 선택 입력으로 전달되지 않는다. 패널 버튼에서 발생한 이동·철거·닫기 요청은 패널의 시설 GUID가
@@ -634,7 +635,7 @@ FFZS Phase의 교집합 게이트를 유지하며, 이동·철거 액션 경계�
 | 묶음 | 필드 |
 | --- | --- |
 | 식별·Context | `FacilityInstanceId`, `Context`, `ContextTitle` |
-| 시설 표시 | `DisplayName`, `CategoryText`, `ZoneText`, `FacilityStateText`, `FootprintText`, `ClearanceText` |
+| 시설 표시 | `DisplayName`, `CategoryText`, `ZoneText`, `FacilityStateText`, `FootprintText` |
 | 가격·정적 사양 | `InstallCostText`, `RecoveryCostText`, `QueueCapacityText`, `ServiceDurationText`, `Thumbnail`, `ThumbnailPlaceholderText` |
 | 건축 한도 | `CurrentInstancesInWorld`, `MaxInstancesPerWorld`, `InstanceLimitText`, `bInstanceLimitReached` |
 | 운영·Queue | `OperationStateText`, `WaitingPartiesText`, `OccupancyText`, `RemainingServiceText`, `ExpectedWaitText`, `ThroughputText` |
@@ -669,6 +670,8 @@ Text_Footprint, Text_Clearance, Text_InstallCost, Text_RecoveryCost, Text_QueueC
 Text_ServiceDuration, Text_OperationState, Text_WaitingParties, Text_Occupancy,
 Text_RemainingService, Text_ExpectedWait, Text_Throughput, Text_Feedback
 ```
+
+`Text_Clearance`와 `ClearanceText`는 기존 WBP·Blueprint 호환용으로만 유지한다. 안전 여유 값은 비우고 위젯을 접어 화면에 표시하지 않는다.
 
 ```text
 Text_InstanceLimit, Button_StartMinigame, Text_StartMinigame,
@@ -813,17 +816,19 @@ FFF_CrowdCellSample {
 
 - **헤더**: `Public/Festival/FF_RequiredFacilitiesSubsystem.h`
 - **접근**: `WorldSubsystem`
-- **갱신 주기**: 이벤트 (시설 설치·철거 / 축제 정의 교체)
+- **갱신 주기**: 이벤트 (시설 설치·철거 / 축제 정의 교체 / 스태프 배정·해제·고용)
 - **상태**: `구현완료`
 
 | 멤버 | 형 | 설명 |
 |---|---|---|
 | `GetRequiredFacilitiesStatus()` | `FFF_RequiredFacilitiesStatus` | 전체 요구사항 + `bCanProceed` + `BlockingReason` |
-| `HasMissingRequiredFacilitiesInCategory(Category)` | `bool` | 카테고리 탭에 느낌표를 붙일지 |
+| `HasMissingRequiredFacilitiesInCategory(Category)` | `bool` | 카테고리 탭에 느낌표를 붙일지. **설치 부족만** 봅니다(배정 부족은 탭 문제가 아님) |
 | `TryGetRequiredFacilityRow(FacilityDefinitionId, OutRow)` | `bool` | 카탈로그 **카드 1장**용 조회 |
-| `OnRequiredFacilitiesChanged` | (인자 없음) | 시설 설치·철거·축제 정의 교체 시 |
+| `OnRequiredFacilitiesChanged` | (인자 없음) | 시설 설치·철거·축제 정의 교체·스태프 배정/해제 시 |
 
-`FFF_RequiredFacilityRow` 한 행 — `FacilityDefinitionId` · `DisplayName` · `Category` · `MinimumCount` · `InstalledCount` · `MissingCount` · `bDefinitionValid` · `Guidance`.
+`FFF_RequiredFacilityRow` 한 행 — `FacilityDefinitionId` · `DisplayName` · `Category` · `MinimumCount` · `InstalledCount` · `MissingCount` · `RequiredStaffCount` · `AssignedStaffCount` · `MissingStaffCount` · `bDefinitionValid` · `Guidance`.
+
+> **기본 필수 시설은 2종입니다 (2026-10-07, 한광훈).** 선셋 메인공연장 1개(설치만) + **메인안내소 1개(설치 후 스태프 1명 이상 배정)**. 축제 정의의 `Required Setup Facilities` 행마다 `Minimum Assigned Staff`(0이면 설치만)를 둘 수 있습니다. 배정은 자동으로 되지 않으며, 설치만 하고 배정이 남으면 `MissingCount == 0 && MissingStaffCount > 0` 이고 `Guidance` 에 "`+ 배정`" 안내가 들어옵니다. 설치 안내 범례처럼 '설치'만 묻는 곳은 `FFF_RequiredFacilitiesStatus::HasMissingInstallations()` 를 쓰세요.
 
 > **`bDefinitionValid == false` 면 `Category` 도 믿지 마세요.** 저작 오류가 있는 행이라 카테고리가 미확정입니다 — 그 행으로 느낌표를 붙이면 엉뚱한 탭이 빨개집니다. 그 경우 `Guidance` 에 저작 오류 안내가 들어옵니다.
 
@@ -2403,3 +2408,4 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | 2026-09-21 | 김시리 | 🔴 **임대료·미납 제거 + Staff 영구 고용 + 프로그램에서 Staff 분리.** 화면에서 **빼셔야 하는 것**: ① 미납 관련 전부(`GetTotalArrears`·`OnTotalArrearsChanged` **삭제**) ② `가용 인원` 개념 전부(`GetAvailableStaffCount`·`GetStaffAssignedToPrograms`·`OnAvailableStaffCountChanged` **삭제**) — 프로그램이 인원을 안 쓰므로 `GetTotalStaffCount()` 하나면 됩니다 ③ 프로그램 카드·패널·시설 피커의 `필요 인력` 칸(`FFF_ProgramCard::RequiredStaff` **필드째 삭제**). **이름이 바뀐 것**: `TryHireTemporaryStaff`→`TryHireStaff`, `GetAffordableTemporaryStaffCount`→`GetAffordableHireCount`, `GetTemporaryStaffCount`→`GetHiredStaffCount`, `DailyStaffWageGold`→`StaffHireCostGold`(150/일 → 450/1회), `MaxHiredStaffPerDay`→`MaxHiredStaffCount`(**하루 상한이 아니라 축제 총원 상한**). `EFF_SpendReason::StaffWages` 와 결과 enum 3종의 `NotEnoughStaff` 도 삭제됐고 뒤 값이 재번호됐습니다. ✅ 8/26 요청하신 `GetRemainingHireCap()` public 전환 완료 — UI 쪽 중복 식 지우셔도 됩니다. ⚠️ **WBP 자산 9종은 재생성했습니다**(`FF.RebuildPrepHudStaffUI`·`FF.RebuildLiveHudStaffUI`·`FF.RefreshFacilityPaidProgramUMG`) — 죽은 칸이 자산에만 남아 `밀린 임대료 미납 2,400` 이 화면에 나오던 문제입니다. 스태프 강화(승급)는 **세부 미정이라 이번에 안 넣었습니다** |
 | 2026-09-22 | 김시리 | 🆕 **스태프 강화(승급) 규칙 확정 + API 완성.** 위 「스태프 강화(승급)」 절 새로 씀. 핵심 3개: `GetStaffRoster()`(개인별 명단, `FFF_StaffMember{StaffId, TrainingLevel, HiredOnDay, LastPromotedDay, bIsBaseStaff}`) · `TryPromoteStaff(int32 StaffId)`(승급 실행) · `OnStaffRosterChanged`(고용·승급 둘 다 이걸로 옴 — 승급은 `OnTotalStaffCountChanged` 로 안 옵니다, 인원수가 안 바뀌니까요). 규칙: 고용 다음 날 아침부터 승급 가능(당일 불가), 한 아침에 1인당 1단계만, 최대 Lv3. **⚠️ 아직 체감 효과는 없습니다** — 승급해도 사건 시스템(이정원)이 없어서 게임 안에서 달라지는 게 없습니다. 그래도 화면은 지금 만드셔도 나중에 API가 안 바뀝니다. 사건별 배치(`스태프 N명 배치`)는 여전히 이번 범위 밖 — §6 참고 |
 | 2026-10-03 | 김시리 | 🔴 **3일차 종료 이벤트 복구 + 최종 결산 UI 계약.** `DT_DaySequence` 에 `Day3_Report` 가 없어 `OnFestivalEnded` 가 안 울리던 문제를 `FinishFestival()`/`RequestFinishFestival()` 로 해결(「축제 종료·최종 결산」 절). 최종 결산 화면의 `로비로` 는 `RequestFinishFestival()`. 새 축제 시작 시 만족도·욕구·SNS·배속·날씨 초기화. 화면이 아직 없는 7건과 잘못 나가는 문구 목록 수록 |
+| 2026-10-07 | 한광훈 | 🆕 **필수 시설에 메인안내소(스태프 배정 시설) 1곳 추가 + 배정까지 필수.** `UFF_FestivalDefinition` 기본 `RequiredSetupFacilities` 에 `Info_GeneralInfo_General` 1개(`MinimumAssignedStaff = 1`)를 더했습니다 — 설치하고 스태프를 1명 이상 `+ 배정`해야 Day 1 시작·개장이 열립니다. `FFF_RequiredFacilityRow` 에 `RequiredStaffCount`·`AssignedStaffCount`·`MissingStaffCount` 추가, `OnRequiredFacilitiesChanged` 가 스태프 배정·해제에도 울립니다. 화면 반영: 하단 바·점검 패널 사유(`+ 배정` 안내), 점검 패널 필수 시설 줄(`! 스태프 배정 필요 (배정 0/1명)`)과 인력 줄(`· 배정 N명`), 카탈로그 카드 툴팁(설치 후 배정 필요), 시설 정보 스태프 영역(`! 필수 배정` 줄). 카탈로그 `필수 · 1일차 시작 전 설치` 범례는 이제 **설치가 남았을 때만** 보입니다 |

@@ -327,8 +327,12 @@ bool FFFFacilityDefinitionContentProjectionTest::RunTest(const FString& Paramete
             UFFZSFacilityDefinition::DoesSpecMatchLoadedDefinition(Definition->Spec));
         FFFZSFacilitySpec MutatedSpec = Definition->Spec;
         ++MutatedSpec.ClearanceCells;
+        TestTrue(
+            *FString::Printf(TEXT("Legacy safety margin is ignored when matching a Definition: %s"), *AssetId.ToString()),
+            UFFZSFacilityDefinition::DoesSpecMatchLoadedDefinition(MutatedSpec));
+        ++MutatedSpec.FootprintSizeCells.X;
         TestFalse(
-            *FString::Printf(TEXT("A mutated Spec cannot bypass its Definition: %s"), *AssetId.ToString()),
+            *FString::Printf(TEXT("A mutated footprint cannot bypass its Definition: %s"), *AssetId.ToString()),
             UFFZSFacilityDefinition::DoesSpecMatchLoadedDefinition(MutatedSpec));
 
         UStaticMesh* Mesh = Definition->Spec.VisualMesh.LoadSynchronous();

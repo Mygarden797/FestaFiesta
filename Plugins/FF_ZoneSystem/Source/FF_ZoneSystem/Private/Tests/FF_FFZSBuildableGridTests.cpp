@@ -92,8 +92,11 @@ bool FFFZSBuildableGridBudgetTest::RunTest(const FString& Parameters)
         Mask.GetStepCm() > 25.0 && FMath::Fmod(Mask.GetStepCm(), 25.0) == 0.0);
     TestTrue(TEXT("Negative origin still aligns to the zone lattice"),
         FMath::Fmod(Mask.GetMinLocalCm().X, Mask.GetStepCm()) == 0.0);
+    Mask.FacilityCategory = EFFZSFacilityCategory::Tile;
     TestFalse(TEXT("Zero extent is rejected"), Mask.Initialize(FVector2D::ZeroVector, FVector2D::ZeroVector, 100));
     TestEqual(TEXT("Rejected requests clear stale visibility"), Mask.GetCellCount(), 0);
+    TestTrue(TEXT("Reinitialization clears a previous tile terrain policy"),
+        Mask.FacilityCategory == EFFZSFacilityCategory::Booth);
     TestFalse(TEXT("A physical 1 cm request cannot bypass the visual budget"),
         Mask.Initialize(FVector2D::ZeroVector, FVector2D(100.0), 1));
     TestFalse(TEXT("Reversed bounds are rejected"),
