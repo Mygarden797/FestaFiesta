@@ -474,7 +474,7 @@ public:
 	 *   진짜로 낀 개체도 못 빠져나온다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float AudienceSocialForceScale = 0.25f;
+	float AudienceSocialForceScale = 0.1f;
 
 	/**
 	 * 약속된 장소(관람 좌석·유료 프로그램 대기 슬롯)로 가는 동안의 보행 속도 배수.
@@ -1486,6 +1486,8 @@ private:
 	TArray<FVector2f> ScratchDesiredVel2DMeters;
 	// 개체별 사회력 배수. 관람 단계에 따라 매 스텝 채운다.
 	TArray<float> ScratchSocialScale;
+	// 개체별 자세(EFF_CrowdPosture). 관람 단계에서 매 스텝 채우며, 멈춰 선 사람에게서 받는 Social 을 끄는 데 쓴다.
+	TArray<uint8> ScratchPosture;
 
 	// 활성 개체의 조밀 인덱스. 오름차순으로 채운다 — 힘 합산 순서가 결정성의 전제다
 	TArray<int32> ScratchActiveIds;
