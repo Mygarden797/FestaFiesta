@@ -34,6 +34,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
 #include "Engine/TextureRenderTarget2D.h"
+#include "Engine/UserInterfaceSettings.h"
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
@@ -70,12 +71,20 @@
 #include "UI/Facility/FF_FacilityPaidProgramLayout.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "WidgetBlueprint.h"
+#include "Widgets/Layout/SDPIScaler.h"
 
 namespace
 {
 	UTextureRenderTarget2D* DrawCaptureWidget(
-		FWidgetRenderer& Renderer, const TSharedRef<SWidget>& Widget, const FVector2D Size)
+		FWidgetRenderer& Renderer, const TSharedRef<SWidget>& Widget, const FVector2D Size,
+		const bool bUseProjectDpi = false)
 	{
+		TSharedRef<SWidget> RenderWidget = Widget;
+		if (bUseProjectDpi)
+		{
+			const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(FIntPoint(Size.X, Size.Y));
+			RenderWidget = SNew(SDPIScaler).DPIScale(Dpi)[Widget];
+		}
 		// An explicit sRGB target performs the one display conversion. Renderer must
 		// disable shader gamma; its convenience DrawWidget would choose a linear target.
 		UTextureRenderTarget2D* Target = FWidgetRenderer::CreateTargetFor(Size, TF_Bilinear, true);
@@ -83,11 +92,11 @@ namespace
 		{
 			// 첫 그리기에서 지연 생성되는 Slate 재질을 준비한 뒤 실제 검사 화면을 다시 그린다.
 			// 단순히 여러 번 찍는 대신 비동기 컴파일과 렌더 반영을 명시적으로 기다린다.
-			Renderer.DrawWidget(Target, Widget, Size, 0.0f, false);
+			Renderer.DrawWidget(Target, RenderWidget, Size, 0.0f, false);
 			FlushRenderingCommands();
 			FAssetCompilingManager::Get().FinishAllCompilation();
 			FlushRenderingCommands();
-			Renderer.DrawWidget(Target, Widget, Size, 0.0f, false);
+			Renderer.DrawWidget(Target, RenderWidget, Size, 0.0f, false);
 		}
 		return Target;
 	}
@@ -1123,10 +1132,11 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("카드는 전체 화면 Canvas의 직접 자식이다"), PanelSlot);
 	const bool bAurora = Tree->FindWidget(TEXT("Aurora_InfoV7")) != nullptr;
 	const bool bClarity = Tree->FindWidget(TEXT("Clarity_InfoV1")) != nullptr;
-	const float ExpectedPanelWidth = bClarity ? 456.f : (bAurora ? 592.f : 405.f);
+	const bool bReference = Tree->FindWidget(TEXT("Reference_InspectorTabsSize")) != nullptr;
+	const float ExpectedPanelWidth = bReference ? 480.f : (bClarity ? 456.f : (bAurora ? 592.f : 405.f));
 	if (PanelSize)
 	{
-		TestTrue(TEXT("카드 너비는 WBP가 소유한 405px이다"),
+		TestTrue(TEXT("카드 너비는 현재 WBP의 디자인 기준을 따른다"),
 			FMath::IsNearlyEqual(PanelSize->GetWidthOverride(), ExpectedPanelWidth));
 		TestEqual(TEXT("Clarity 카드는 화면을 채우지 않는 고정 높이를 사용한다"), PanelSize->IsHeightOverride(), bClarity);
 	}
@@ -1136,9 +1146,9 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("카드 anchor는 우측 안전 영역에 있다"),
 			Anchors.Minimum.Equals(FVector2D(1.0f, 0.0f)) && Anchors.Maximum.Equals(FVector2D(1.0f, bClarity ? 0.f : 1.f)));
 		const FMargin Offsets = PanelSlot->GetOffsets();
-		TestTrue(TEXT("카드는 우측18/상단18/폭405/하단126 dock이다"),
-			FMath::IsNearlyEqual(Offsets.Left, -18.f) && FMath::IsNearlyEqual(Offsets.Top, 18.f) &&
-			FMath::IsNearlyEqual(Offsets.Right, ExpectedPanelWidth) && FMath::IsNearlyEqual(Offsets.Bottom, bClarity ? 620.f : (bAurora ? 66.f : 126.f)));
+		TestTrue(TEXT("카드는 현재 저작된 우측/상단 여백과 크기를 보존한다"),
+			FMath::IsNearlyEqual(Offsets.Left, bReference ? -24.f : -18.f) && FMath::IsNearlyEqual(Offsets.Top, bReference ? 24.f : 18.f) &&
+			FMath::IsNearlyEqual(Offsets.Right, ExpectedPanelWidth) && FMath::IsNearlyEqual(Offsets.Bottom, bReference ? 800.f : (bClarity ? 620.f : (bAurora ? 66.f : 126.f))));
 		TestFalse(TEXT("카드 Canvas 슬롯은 AutoSize를 사용하지 않는다"), PanelSlot->GetAutoSize());
 		TestTrue(TEXT("하단126 예약은 팀원HUD58, 여백12, compact42보다 크다"), Offsets.Bottom >= (bAurora ? 66.f : 112.f));
 	}
@@ -1968,7 +1978,7 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 	auto Capture = [&](const TCHAR* Filename)
 	{
 		Panel->ForceLayoutPrepass();
-		UTextureRenderTarget2D* Target = DrawCaptureWidget(Renderer, PanelSlate, FVector2D(Width, Height));
+		UTextureRenderTarget2D* Target = DrawCaptureWidget(Renderer, PanelSlate, FVector2D(Width, Height), true);
 		FTextureRenderTargetResource* Resource = Target ? Target->GameThread_GetRenderTargetResource() : nullptr;
 		TArray<FColor> Pixels;
 		if (!TestTrue(TEXT("720p 실제 WBP 렌더"), Resource && Resource->ReadPixels(Pixels, ReadFlags) && Pixels.Num() == Width * Height)) return false;
@@ -1981,7 +1991,7 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 		const FVector2D HeaderSize = HeaderGeometry.GetLocalSize();
 		if (!TestTrue(TEXT("헤더에는 실제로 그려진 영역이 있다"), HeaderSize.X > 0 && HeaderSize.Y > 0)) return false;
 		const FVector2D SampleLocal = HeaderSize * .5;
-		const FVector2D Sample = PanelSlate->GetPaintSpaceGeometry().AbsoluteToLocal(HeaderGeometry.LocalToAbsolute(SampleLocal));
+		const FVector2D Sample = HeaderGeometry.LocalToAbsolute(SampleLocal);
 		const int32 SampleX = FMath::FloorToInt(Sample.X);
 		const int32 SampleY = FMath::FloorToInt(Sample.Y);
 		if (!TestTrue(TEXT("헤더 검사 지점은 캡처 화면 안에 있다"),
@@ -1991,8 +2001,8 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 		const UMaterialInterface* HeaderMaterial=Cast<UMaterialInterface>(Header->Background.GetResourceObject());
 		if(Panel->GetWidgetFromName(TEXT("ClarityV2_Info")))
 		{
-			TestTrue(TEXT("Build inspector authors the shared pearl hero material"),
-				HeaderMaterial && Header->Background.DrawAs == ESlateBrushDrawType::Image);
+			TestTrue(TEXT("Build inspector retains its opaque authored Pearl header"),
+				Header->Background.DrawAs == ESlateBrushDrawType::RoundedBox && ExpectedHeader.A >= 250);
 			TestTrue(TEXT("Rendered pearl hero remains visible over the world"),
 				HeaderPixel.A >= 150 && (HeaderPixel.R + HeaderPixel.G + HeaderPixel.B) > 90);
 		}
@@ -2643,7 +2653,7 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 		for(int32 Frame=0;Frame<3;++Frame)
 		{
 			Panel->ForceLayoutPrepass();
-			Target=DrawCaptureWidget(Renderer,Widget,FVector2D(Width,Height));
+			Target=DrawCaptureWidget(Renderer,Widget,FVector2D(Width,Height),true);
 		}
 		FTextureRenderTargetResource* Resource = Target ? Target->GameThread_GetRenderTargetResource() : nullptr;
 		TArray<FColor> Pixels;
@@ -2663,7 +2673,8 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 		bSaved &= Capture(Slate,1280,720,TEXT("FacilityLightingPanelClarityV2_720.png"));
 		TestTrue(*FString::Printf(TEXT("Compact lighting needs no detail scrolling at 720p (%.1fpx)"),Scroll->GetScrollOffsetOfEnd()),Scroll->GetScrollOffsetOfEnd()<=1.f);
 		if(auto* Wheel=Cast<USizeBox>(Controls->GetWidgetFromName(TEXT("Aurora_ColorPickerSize"))))
-			TestEqual(TEXT("Color wheel stays compact"),Wheel->GetWidthOverride(),190.f);
+			TestEqual(TEXT("Color wheel preserves the authored compact reference size"),Wheel->GetWidthOverride(),
+				Controls->GetWidgetFromName(TEXT("Reference_LightingEditorCard")) ? 192.f : 190.f);
 		if(auto* Precision=Cast<UButton>(Controls->GetWidgetFromName(TEXT("Button_LightingPrecision"))))
 		{
 			Precision->OnClicked.Broadcast();
@@ -2943,7 +2954,7 @@ bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Paramet
 		for (int32 Frame = 0; Frame < 3; ++Frame)
 		{
 			Panel->ForceLayoutPrepass();
-			Target = DrawCaptureWidget(Renderer, Slate, FVector2D(Resolution.X, Resolution.Y));
+			Target = DrawCaptureWidget(Renderer, Slate, FVector2D(Resolution.X, Resolution.Y), true);
 		}
 		UWidget* Footer = Page == EFF_FacilityInfoPage::RemoveConfirmation ? RemoveActions : NormalActions;
 		const FSlateRect FooterRect = Footer->GetPaintSpaceGeometry().GetLayoutBoundingRect();
@@ -2974,7 +2985,8 @@ bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Paramet
 				UWidget* Button = Panel->GetWidgetFromName(Name);
 				const FSlateRect Rect = Button->GetPaintSpaceGeometry().GetLayoutBoundingRect();
 				TestTrue(TEXT("Staff assignment actions fit in the visible page"), Button->IsVisible() &&
-					Rect.GetSize().Y >= 24.f && Rect.Top >= ScrollRect.Top && Rect.Bottom <= ScrollRect.Bottom + 1.f);
+					Rect.GetSize().Y >= 24.f &&
+					Rect.Top >= ScrollRect.Top && Rect.Bottom <= ScrollRect.Bottom + 1.f);
 			}
 		}
 		if (Page == EFF_FacilityInfoPage::RemoveConfirmation)

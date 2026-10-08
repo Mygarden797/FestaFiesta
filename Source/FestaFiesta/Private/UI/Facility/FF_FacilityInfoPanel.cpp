@@ -1091,7 +1091,11 @@ void UFF_FacilityInfoPanel::RefreshLightingPanelLayout()
 	if(!Button_TabLighting || !WidgetTree) return;
 	const bool bLighting=ActivePage==EFF_FacilityInfoPage::Lighting;
 	const bool bClarityV2=WidgetTree->FindWidget(TEXT("ClarityV2_Info"))!=nullptr;
-	const FVector2D Viewport = GetCachedGeometry().GetLocalSize();
+	// NativeTick receives the current allocation before GetCachedGeometry catches
+	// up. Using the previous frame here can leave the panel permanently clamped
+	// to the old window height after a resize.
+	const FVector2D Viewport = LastLayoutViewport.IsNearlyZero()
+		? GetCachedGeometry().GetLocalSize() : LastLayoutViewport;
 	if(USizeBox* Size=Cast<USizeBox>(WidgetTree->FindWidget(TEXT("Panel_Size"))))
 	{
 		if (AuthoredPanelSize.IsNearlyZero())

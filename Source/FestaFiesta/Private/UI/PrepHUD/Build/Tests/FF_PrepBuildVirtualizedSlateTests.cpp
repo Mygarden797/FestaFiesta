@@ -288,7 +288,8 @@ namespace FFPrepBuildVirtualizedSlateTest
                 auto* Candidate = Cast<UButton>(Row->GetWidgetFromName(TEXT("Button_Favorite")));
                 if (!Candidate) { continue; }
                 const FSlateRect Rect = Candidate->GetCachedGeometry().GetLayoutBoundingRect();
-                if (Rect.Top >= ListRect.Top && Rect.Bottom <= ListRect.Bottom && Rect.GetSize().X > 10)
+                if (Rect.Left >= ListRect.Left && Rect.Right <= ListRect.Right &&
+                    Rect.Top >= ListRect.Top && Rect.Bottom <= ListRect.Bottom && Rect.GetSize().X > 10)
                 {
                     Favorite = Candidate;
                     break;
@@ -300,7 +301,12 @@ namespace FFPrepBuildVirtualizedSlateTest
             TArray<FWidgetAndPointer> Bubble = HitGrid.GetBubblePath(Point, 0.0f, false);
             FWidgetPath Path(MakeArrayView(Bubble));
             if (!Test.TestTrue(TEXT("The actual painted star is hit-testable"),
-                Path.IsValid() && Path.ContainsWidget(Favorite->GetCachedWidget().Get()))) { return false; }
+                Path.IsValid() && Path.ContainsWidget(Favorite->GetCachedWidget().Get())))
+            {
+                Test.AddInfo(FString::Printf(TEXT("Favorite point %.1f,%.1f, hit path %s, visibility %d"),
+                    Point.X, Point.Y, *Path.ToString(), int32(Favorite->GetVisibility())));
+                return false;
+            }
             Test.TestTrue(TEXT("The star retains its native action binding"), Favorite->OnClicked.IsBound());
             int32 PlacementActivations = 0;
             const FDelegateHandle ClickHandle = List->OnItemClicked().AddLambda(
@@ -1201,17 +1207,33 @@ namespace FFPrepBuildVirtualizedSlateTest
                 Measurements.SeenItems.Add(Item);
                 const FString Label = FString::Printf(TEXT("%s / %s"), *Step, *Item->GetFacilityDefinitionId().ToString());
                 const bool bHasPrograms = Item->GetEntry().CompatibleProgramCount > 0;
-                const ESlateVisibility ProgramVisibility = bHasPrograms ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+                const ESlateVisibility ProgramVisibility = bHasPrograms && !Item->IsRequiredFacility()
+                    ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
                 Test.TestTrue(*FString::Printf(TEXT("%s: pooled program badge belongs to the current facility and cannot intercept input"), *Label),
                     Tile->HasCompatiblePrograms() == bHasPrograms && ProgramBorder->GetVisibility() == ProgramVisibility &&
                     ProgramLabel->GetVisibility() == ProgramVisibility);
-                UObject* SurfaceResource = ProgramBackdrop ? ProgramBackdrop->Background.GetResourceObject() : nullptr;
-                const FName SurfaceName = SurfaceResource ? SurfaceResource->GetFName() : NAME_None;
-                const bool bSurfaceMatchesItem = SurfaceName == TEXT("MI_UI_BuildPearl_Card") ||
-                    (Item->IsRequiredFacility() && SurfaceName == TEXT("MI_UI_BuildClarity_Required")) ||
-                    (!Item->IsRequiredFacility() && bHasPrograms && SurfaceName == TEXT("MI_UI_BuildClarity_Program"));
-                Test.TestTrue(*FString::Printf(TEXT("%s: recycled surface uses the pearl card or its valid facility accent"), *Label),
-                    ProgramBackdrop && bSurfaceMatchesItem);
+                // The saved style can use a material or a rounded Slate brush. Verify
+                // the authored state contract rather than a retired material filename.
+                const UWidgetTree* TileTree = CastChecked<UWidgetBlueprintGeneratedClass>(Row->GetClass())->GetWidgetTreeArchetype();
+                const auto* AuthoredBackdrop = TileTree ? Cast<UBorder>(TileTree->FindWidget(TEXT("Border_ThumbnailBackdrop"))) : nullptr;
+                FSlateBrush ExpectedBackdrop = AuthoredBackdrop ? AuthoredBackdrop->Background : FSlateBrush();
+                const bool bMissingRequired = Item->IsRequiredFacility() && !Item->IsRequiredFacilitySatisfied();
+                if (bMissingRequired || bHasPrograms)
+                {
+                    const auto* BrushProperty = FindFProperty<FStructProperty>(Row->GetClass(),
+                        bMissingRequired ? TEXT("RequiredThumbnailBrush") : TEXT("ProgramThumbnailBrush"));
+                    const auto* TintProperty = FindFProperty<FStructProperty>(Row->GetClass(),
+                        bMissingRequired ? TEXT("RequiredCardTint") : TEXT("ProgramCardTint"));
+                    if (BrushProperty && TintProperty)
+                    {
+                        const FSlateBrush& Accent = *BrushProperty->ContainerPtrToValuePtr<FSlateBrush>(Row);
+                        if (Accent.GetResourceObject()) ExpectedBackdrop = Accent;
+                        else ExpectedBackdrop.TintColor = *TintProperty->ContainerPtrToValuePtr<FLinearColor>(Row);
+                    }
+                    else Test.AddError(Label + TEXT(": authored facility accent properties are missing"));
+                }
+                Test.TestTrue(*FString::Printf(TEXT("%s: recycled thumbnail surface matches the current facility and authored style"), *Label),
+                    ProgramBackdrop && AuthoredBackdrop && ProgramBackdrop->Background == ExpectedBackdrop);
                 Test.TestTrue(*FString::Printf(TEXT("%s: pooled required and synergy flags belong to the current facility"), *Label),
                     Tile->IsRequiredFacility() == Item->IsRequiredFacility() &&
                     Tile->IsRequiredFacilitySatisfied() == Item->IsRequiredFacilitySatisfied() &&
@@ -1313,10 +1335,11 @@ namespace FFPrepBuildVirtualizedSlateTest
                     Texture && ImageHeight > 0.0 && FMath::IsNearlyEqual(ImageWidth / ImageHeight,
                         static_cast<double>(Texture->GetSizeX()) / Texture->GetSizeY(), 0.01));
                 const FSlateRect NameRect = Name->GetCachedGeometry().GetLayoutBoundingRect();
-                Test.TestTrue(*FString::Printf(TEXT("%s: complete wrapped facility name fits its allocated area"), *Label),
-                    Name->GetDesiredSize().Y <= Name->GetCachedGeometry().GetLocalSize().Y + 1.0f &&
-                    Name->GetDesiredSize().X <= Name->GetCachedGeometry().GetLocalSize().X + 1.0f &&
-                    Name->GetTextOverflowPolicy() != ETextOverflowPolicy::Ellipsis);
+                const bool bNameFits = Name->GetDesiredSize().Y <= Name->GetCachedGeometry().GetLocalSize().Y + 1.0f &&
+                    Name->GetDesiredSize().X <= Name->GetCachedGeometry().GetLocalSize().X + 1.0f;
+                Test.TestTrue(*FString::Printf(TEXT("%s: name fits or uses authored ellipsis with the complete name in its tooltip"), *Label),
+                    bNameFits || (Name->GetTextOverflowPolicy() == ETextOverflowPolicy::Ellipsis &&
+                        Tile->GetToolTipText().ToString().Contains(Item->GetDisplayName().ToString())));
                 Test.TestTrue(*FString::Printf(TEXT("%s: name keeps visible space inside its card"), *Label),
                     NameRect.Right > NameRect.Left && NameRect.Bottom - NameRect.Top >= Name->GetFont().Size * DpiScale * 0.7 &&
                     NameRect.Top >= CardRect.Top - 1.0 && NameRect.Bottom <= CardRect.Bottom + 1.0);

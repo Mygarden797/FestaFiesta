@@ -22,6 +22,7 @@
 #include "TextureResource.h"
 #include "UI/LiveHUD/FF_LiveHudScreen.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
+#include "UI/LiveHUD/FF_LiveUtilityDock.h"
 #include "UObject/Package.h"
 #include "UObject/StrongObjectPtr.h"
 #include "Widgets/SOverlay.h"
@@ -105,6 +106,14 @@ namespace FFLiveHudBrightLayoutTest
 		{
 			UFF_LiveTabButton* Tab = Cast<UFF_LiveTabButton>(Hud.GetWidgetFromName(Name));
 			if (!Test.TestNotNull(Context + TEXT(" / ") + Name, Tab)) { continue; }
+			// SNS moved to the utility dock; the retained compatibility tab must
+			// collapse so it neither consumes menu space nor intercepts input.
+			if (FCString::Strcmp(Name, TEXT("Tab_SNS")) == 0 && UFF_LiveUtilityDock::IsConfigured())
+			{
+				Test.TestEqual(Context + TEXT(" SNS는 상단 도크로 이동해 하단 클릭 영역을 남기지 않는다"),
+					Tab->GetVisibility(), ESlateVisibility::Collapsed);
+				continue;
+			}
 			const FSlateRect Rect = Tab->GetCachedGeometry().GetLayoutBoundingRect();
 			Test.TestTrue(Context + TEXT(" 표시되는 탭 / ") + Name, Tab->IsVisible());
 			Test.TestTrue(Context + TEXT(" 탭이 메뉴 안에 들어온다 / ") + Name, Contains(MenuRect, Rect));

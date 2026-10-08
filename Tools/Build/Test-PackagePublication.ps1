@@ -13,7 +13,7 @@ $ast = [System.Management.Automation.Language.Parser]::ParseFile(
 if ($parseErrors.Count -gt 0) { throw 'Package-Win64.ps1 has syntax errors.' }
 
 # Load only the actual helpers; dot-sourcing the package entry point would build.
-foreach ($name in @('Write-Utf8Json', 'Get-GitSourcePaths', 'Write-SourceArchive')) {
+foreach ($name in @('Write-Utf8Json', 'Move-ReleaseDirectory', 'Get-GitSourcePaths', 'Write-SourceArchive')) {
     $functionAst = $ast.Find({
         param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
@@ -76,11 +76,149 @@ $latestBytes = [System.IO.File]::ReadAllBytes($latestPath)
 Assert-Test -Condition (-not ($latestBytes.Length -ge 3 -and $latestBytes[0] -eq 0xef -and
     $latestBytes[1] -eq 0xbb -and $latestBytes[2] -eq 0xbf)) -Message 'Published JSON is UTF-8 without BOM.'
 
+# Hold an actual Windows directory handle without FILE_SHARE_DELETE. Only the
+# delay is substituted, so lock failure and successful rename use real I/O.
+if ($null -eq ('FFPackagePublicationDirectoryLock' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+public static class FFPackagePublicationDirectoryLock {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFile(string name, uint access,
+        uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+    public static SafeFileHandle Open(string path) {
+        SafeFileHandle handle = CreateFile(path, 0x80000000, 3, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero);
+        if (handle.IsInvalid) {
+            int error = Marshal.GetLastWin32Error();
+            handle.Dispose();
+            throw new Win32Exception(error);
+        }
+        return handle;
+    }
+}
+'@
+}
+$promotionRoot = Join-Path $OutputRoot 'Release promotion fixture'
+$promotionStaging = Join-Path $promotionRoot '.staging'
+[System.IO.Directory]::CreateDirectory($promotionStaging) | Out-Null
+$promotionLatest = Join-Path $promotionRoot 'latest.json'
+Write-Utf8Json -Value ([ordered]@{ buildLabel = 'previous'; releasePath = 'previous' }) -Path $promotionLatest -Atomic
+$promotionLatestHash = (Get-FileHash -LiteralPath $promotionLatest -Algorithm SHA256).Hash
+
+$transientSource = Join-Path $promotionStaging 'transient'
+[System.IO.Directory]::CreateDirectory($transientSource) | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $transientSource 'payload.txt'), 'validated payload', $encoding)
+$payloadHash = (Get-FileHash -LiteralPath (Join-Path $transientSource 'payload.txt') -Algorithm SHA256).Hash
+$script:promotionTestLock = [FFPackagePublicationDirectoryLock]::Open($transientSource)
+$script:promotionTestDelays = New-Object System.Collections.Generic.List[int]
+function Start-Sleep {
+    param([int] $Milliseconds)
+    $script:promotionTestDelays.Add($Milliseconds)
+    $script:promotionTestLock.Dispose()
+}
+try {
+    Move-ReleaseDirectory -OutputRoot $promotionRoot -BuildLabel 'transient' -WarningAction SilentlyContinue
+}
+finally {
+    $script:promotionTestLock.Dispose()
+    Remove-Item -LiteralPath Function:Start-Sleep
+}
+Assert-Test -Condition ($script:promotionTestDelays.Count -eq 1 -and $script:promotionTestDelays[0] -eq 500) `
+    -Message 'A real transient directory lock is retried and succeeds after release.'
+Assert-Test -Condition (-not (Test-Path -LiteralPath $transientSource) -and
+    (Get-FileHash -LiteralPath (Join-Path $promotionRoot 'transient\payload.txt') -Algorithm SHA256).Hash -ceq $payloadHash) `
+    -Message 'Successful promotion moves the exact validated payload to the expected final directory.'
+
+$persistentSource = Join-Path $promotionStaging 'persistent'
+[System.IO.Directory]::CreateDirectory($persistentSource) | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $persistentSource 'payload.txt'), 'retained payload', $encoding)
+$persistentHash = (Get-FileHash -LiteralPath (Join-Path $persistentSource 'payload.txt') -Algorithm SHA256).Hash
+$script:promotionTestLock = [FFPackagePublicationDirectoryLock]::Open($persistentSource)
+$script:promotionTestDelays.Clear()
+function Start-Sleep {
+    param([int] $Milliseconds)
+    $script:promotionTestDelays.Add($Milliseconds)
+}
+$persistentError = $null
+try {
+    try { Move-ReleaseDirectory -OutputRoot $promotionRoot -BuildLabel 'persistent' -WarningAction SilentlyContinue }
+    catch { $persistentError = $_ }
+}
+finally {
+    $script:promotionTestLock.Dispose()
+    Remove-Item -LiteralPath Function:Start-Sleep
+}
+Assert-Test -Condition ($null -ne $persistentError -and
+    $persistentError.Exception.Data['ReleasePromotionAttempts'] -eq 8 -and
+    ($script:promotionTestDelays -join ',') -ceq '500,1000,2000,4000,4000,4000,4000') `
+    -Message 'Persistent locks stop after eight attempts and 19.5 seconds of bounded scheduled delays.'
+Assert-Test -Condition ((Get-FileHash -LiteralPath (Join-Path $persistentSource 'payload.txt') -Algorithm SHA256).Hash -ceq $persistentHash -and
+    -not (Test-Path -LiteralPath (Join-Path $promotionRoot 'persistent'))) `
+    -Message 'Exhausted promotion preserves staging bytes and does not create a final release.'
+
+# A destination appearing between attempts must stop retrying and retain both
+# the existing destination and the FIRST lock error, not the later safety error.
+$raceSource = Join-Path $promotionStaging 'appeared'
+$script:promotionRaceDestination = Join-Path $promotionRoot 'appeared'
+[System.IO.Directory]::CreateDirectory($raceSource) | Out-Null
+$script:promotionTestLock = [FFPackagePublicationDirectoryLock]::Open($raceSource)
+$script:promotionTestDelays.Clear()
+function Start-Sleep {
+    param([int] $Milliseconds)
+    $script:promotionTestDelays.Add($Milliseconds)
+    $script:promotionTestLock.Dispose()
+    [System.IO.Directory]::CreateDirectory($script:promotionRaceDestination) | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $script:promotionRaceDestination 'keep.txt'), 'existing release')
+}
+$raceError = $null
+try {
+    try { Move-ReleaseDirectory -OutputRoot $promotionRoot -BuildLabel 'appeared' -WarningAction SilentlyContinue }
+    catch { $raceError = $_ }
+}
+finally {
+    $script:promotionTestLock.Dispose()
+    Remove-Item -LiteralPath Function:Start-Sleep
+}
+$originalMoveException = $raceError.Exception
+while ($null -ne $originalMoveException.InnerException) { $originalMoveException = $originalMoveException.InnerException }
+Assert-Test -Condition (($originalMoveException.HResult -band 0xffff) -in @(5, 32, 33) -and
+    $raceError.Exception.Data['ReleasePromotionLastError'] -like '*destination already exists*' -and
+    $script:promotionTestDelays.Count -eq 1) `
+    -Message 'A destination race stops immediately while preserving the first native lock error.'
+Assert-Test -Condition ((Test-Path -LiteralPath $raceSource -PathType Container) -and
+    [System.IO.File]::ReadAllText((Join-Path $script:promotionRaceDestination 'keep.txt')) -ceq 'existing release') `
+    -Message 'A destination race preserves both staging and the pre-existing destination.'
+
+$invalidLabelError = $null
+try { Move-ReleaseDirectory -OutputRoot $promotionRoot -BuildLabel '..\outside' }
+catch { $invalidLabelError = $_ }
+Assert-Test -Condition ($null -ne $invalidLabelError) -Message 'Promotion rejects a label that escapes the selected release root.'
+$redirectedPayload = Join-Path $OutputRoot 'Outside staging payload'
+[System.IO.Directory]::CreateDirectory($redirectedPayload) | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $redirectedPayload 'keep.txt'), 'do not move')
+$redirectedSource = Join-Path $promotionStaging 'redirected'
+New-Item -ItemType Junction -Path $redirectedSource -Target $redirectedPayload | Out-Null
+$redirectedError = $null
+try { Move-ReleaseDirectory -OutputRoot $promotionRoot -BuildLabel 'redirected' }
+catch { $redirectedError = $_ }
+Assert-Test -Condition ($null -ne $redirectedError -and
+    $redirectedError.Exception.Data['ReleasePromotionAttempts'] -eq 1 -and
+    -not (Test-Path -LiteralPath (Join-Path $promotionRoot 'redirected')) -and
+    [System.IO.File]::ReadAllText((Join-Path $redirectedPayload 'keep.txt')) -ceq 'do not move') `
+    -Message 'A staging junction is rejected before moving its outside payload or retrying.'
+Assert-Test -Condition ((Get-FileHash -LiteralPath $promotionLatest -Algorithm SHA256).Hash -ceq $promotionLatestHash) `
+    -Message 'Successful and failed directory promotion leave the previous latest.json byte-for-byte intact.'
+
 $source = $ast.Extent.Text
 $verificationWrite = $source.IndexOf('Write-Utf8Json -Value $verificationSummary -Path $finalVerificationPath', [StringComparison]::Ordinal)
 $latestWrite = $source.IndexOf("Write-Utf8Json -Value `$latest -Path (Join-Path `$OutputRoot 'latest.json') -Atomic", [StringComparison]::Ordinal)
 Assert-Test -Condition ($verificationWrite -ge 0 -and $latestWrite -gt $verificationWrite) `
     -Message 'Production latest publication follows final verification metadata.'
+$promotionCall = $source.IndexOf('Move-ReleaseDirectory -OutputRoot $OutputRoot -BuildLabel $BuildLabel', [StringComparison]::Ordinal)
+Assert-Test -Condition ($promotionCall -ge 0 -and $verificationWrite -gt $promotionCall) `
+    -Message 'Production uses bounded promotion before final verification metadata and latest publication.'
 
 $projectRoot = Join-Path $OutputRoot 'Source fixture'
 $metadataRoot = Join-Path $OutputRoot 'Snapshot'

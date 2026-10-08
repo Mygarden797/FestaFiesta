@@ -163,6 +163,9 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
         !TestNotNull(TEXT("Authored help bounds"), HelpSize) ||
         !TestNotNull(TEXT("Authored scrollable help content"), HelpColumn) ||
         !TestNotNull(TEXT("Help keeps all instructions reachable after fitting"), HelpScroll)) return false;
+    const auto* AuthoredHelpSlot = Cast<UCanvasPanelSlot>(HelpSize->Slot);
+    if (!TestNotNull(TEXT("Designer-owned help position"), AuthoredHelpSlot)) return false;
+    const FVector2D AuthoredHelpPosition = AuthoredHelpSlot->GetPosition();
     // The playerless editor world is Closed. Render the real placement dock
     // explicitly, as the build-tools visual fixture does, to measure overlap.
     ToolsPanel->SetVisibility(ESlateVisibility::Visible);
@@ -199,10 +202,10 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
                 // content has a desired height. No runtime gameplay state is seeded.
                 const float ReservedTop = 104.f + Widget->CardPanel->GetDesiredSize().Y + 16.f;
                 const FVector2D HelpBounds = FFBuildToolsModel::ResolveHelpVerticalBounds(
-                    HelpColumn->GetDesiredSize().Y + 24.f, Size.Y - 100.f, 525.f, ReservedTop);
+                    HelpColumn->GetDesiredSize().Y + 24.f, Size.Y - 100.f, AuthoredHelpPosition.Y, ReservedTop);
                 HelpSize->SetHeightOverride(HelpBounds.Y);
                 if (auto* HelpSlot = Cast<UCanvasPanelSlot>(HelpSize->Slot))
-                    HelpSlot->SetPosition(FVector2D(32.f, HelpBounds.X));
+                    HelpSlot->SetPosition(FVector2D(AuthoredHelpPosition.X, HelpBounds.X));
             }
             Renderer.DrawWidget(Target.Get(), Composition, FVector2D(Size), 0.0f, false);
         }
@@ -221,8 +224,8 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
             const FSlateRect Help = HelpPanel->GetCachedGeometry().GetLayoutBoundingRect();
             TestTrue(TEXT("Open instructions remain measurable below every combination rule"),
                 Help.GetSize().Y > 0.f && Help.Top >= Card.Bottom + 15.f && Help.Bottom <= Size.Y - 99.f);
-            TestTrue(TEXT("Help stays in the same left margin and cannot cover the placement inspector"),
-                FMath::IsNearlyEqual(Help.Left, 32.f, 1.f) && Help.Right + 16.f <= Inspector.Left);
+            TestTrue(TEXT("Help preserves its Designer left margin and cannot cover the placement inspector"),
+                FMath::IsNearlyEqual(Help.Left, float(AuthoredHelpPosition.X), 1.f) && Help.Right + 16.f <= Inspector.Left);
             TestTrue(TEXT("A short viewport retains a scrollable guide without clipping the combination card"),
                 Size.Y > 720 || HelpScroll->GetScrollOffsetOfEnd() > 0.f);
         }

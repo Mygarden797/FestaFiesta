@@ -139,10 +139,23 @@ namespace FFPrepStaffSkyLayoutTest
 		{
 			CheckText(Test, Panel, Name, QuoteRect, Context);
 		}
-		// 열의 아래쪽 수치는 작은 패널에서 스크롤 밖일 수 있다. 화면에 보인다고 판정하지 않는다.
-		if (Size.Y <= 350)
+		// The staff/training tabs share the authored frame. Available body height,
+		// rather than the outer panel's old fixed height, determines scrolling.
+		if (Scroll->GetScrollOffsetOfEnd() > Tolerance)
 		{
-			Test.TestTrue(Context + TEXT(" 짧은 패널에서 본문 끝까지 스크롤할 수 있다"), Scroll->GetScrollOffsetOfEnd() > 0.f);
+			Scroll->ScrollToEnd();
+			for (int32 Frame = 0; Frame < 4; ++Frame)
+				Renderer.DrawWidget(Target.Get(), Surface, FVector2D(Size.X, Size.Y), 1.f / 60.f, false);
+			for (const TCHAR* Name : {TEXT("Text_HireSpentValue"), TEXT("Text_GoldAfterValue")})
+			{
+				const UWidget* Value = Panel.GetWidgetFromName(Name);
+				Test.TestTrue(Context + TEXT(" 스크롤하면 마지막 비용 수치를 모두 읽을 수 있다 / ") + Name,
+					Value && Contains(Scroll->GetCachedGeometry().GetLayoutBoundingRect(),
+						Value->GetCachedGeometry().GetLayoutBoundingRect()));
+			}
+			Scroll->ScrollToStart();
+			for (int32 Frame = 0; Frame < 4; ++Frame)
+				Renderer.DrawWidget(Target.Get(), Surface, FVector2D(Size.X, Size.Y), 1.f / 60.f, false);
 		}
 		else
 		{

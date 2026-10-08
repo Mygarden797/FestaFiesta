@@ -66,6 +66,13 @@ namespace FFFacilityCodexCatalogTest
 		return A.Left < B.Right - .5f && A.Right > B.Left + .5f &&
 			A.Top < B.Bottom - .5f && A.Bottom > B.Top + .5f;
 	}
+
+	bool IsWithin(const UWidget* Widget, const UWidget* Container)
+	{
+		for (const UWidget* Current = Widget; Current; Current = Current->GetParent())
+			if (Current == Container) return true;
+		return false;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityCodexCatalogUiTest,
@@ -130,12 +137,14 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 		TEXT("Size_CategoryDivider"), TEXT("Panel_PlacementCompact"), TEXT("Text_CategoryBreadcrumb")})
 		TestNull(*FString::Printf(TEXT("Retired catalog presentation is removed: %s"), Retired), Panel->GetWidgetFromName(Retired));
 	TestTrue(TEXT("Additive entry is the saved compact launcher class"), Launcher->GetClass() == LauncherClass);
-	TestTrue(TEXT("Search and ranking share the subcategory row; codex stays beside category filters"),
+	TestTrue(TEXT("Search, ranking and codex share the action row below the category filters"),
 		Search->GetParent() == SearchBounds && SearchBounds->GetParent() == SubcategoryHeader &&
-		Ranking->GetParent() == RankingBounds && RankingBounds->GetParent() == SubcategoryHeader &&
+		// The revenue introduction badge adds a noninteractive overlay inside its bounds.
+		IsWithin(Ranking, RankingBounds) && RankingBounds->GetParent() == SubcategoryHeader &&
 		Launcher->GetParent() == CodexRow &&
 		CategoryScroll->GetParent() == Panel->GetWidgetFromName(TEXT("Size_BuildCodexCategoryViewport")) &&
-		CodexRow->GetParent() == CategorySize);
+		CodexRow->GetParent() == SubcategoryHeader &&
+		Panel->GetWidgetFromName(TEXT("Size_BuildCodexCategoryViewport"))->GetParent() == CategorySize);
 	TestEqual(TEXT("Revenue ranking immediately follows search"),
 		SubcategoryHeader->GetChildIndex(RankingBounds), SubcategoryHeader->GetChildIndex(SearchBounds) + 1);
 	auto* Button = Cast<UButton>(Launcher->GetWidgetFromName(TEXT("Button_OpenCodex")));
@@ -221,9 +230,11 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 				TestFalse(TEXT("Codex button does not overlap search"), Overlaps(SearchRect, ButtonRect));
 				TestFalse(TEXT("Codex button does not overlap ranking"), Overlaps(ButtonRect, RankingRect));
 				TestFalse(TEXT("Search does not overlap ranking"), Overlaps(SearchRect, RankingRect));
-				TestTrue(TEXT("Codex tab occupies the category row above search"), ButtonRect.Bottom <= SearchRect.Top + 1.f);
-				TestTrue(TEXT("Codex tab remains inside the category row"),
-					Contains(CategorySize->GetPaintSpaceGeometry().GetLayoutBoundingRect(), ButtonRect));
+				TestTrue(TEXT("Codex action follows ranking on the search row"),
+					ButtonRect.Left >= RankingRect.Right - 1.f &&
+					FMath::IsNearlyEqual(ButtonRect.GetCenter().Y, SearchRect.GetCenter().Y, 1.f));
+				TestTrue(TEXT("Codex action remains inside its authored action row"),
+					Contains(SubcategoryHeader->GetPaintSpaceGeometry().GetLayoutBoundingRect(), ButtonRect));
 				TestTrue(TEXT("Complete button label stays inside its button"), Contains(ButtonRect, LabelRect));
 				for (UTextBlock* ActionLabel : { Label, Cast<UTextBlock>(Ranking->GetContent()) })
 				{

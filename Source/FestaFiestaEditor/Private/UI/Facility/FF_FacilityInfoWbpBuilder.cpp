@@ -1893,8 +1893,10 @@ namespace FFFacilityInfoWbpBuilder
 		AddVertical(*Section, *Heading, FMargin(8, 12, 8, 12));
 		AddVertical(*Section, *Summary, FMargin(8, 0, 8, 10));
 		AddVertical(*Section, *Help, FMargin(8, 0, 8, 16));
-		AddHorizontal(*Actions, *Assign, FMargin(0, 0, 6, 0), ESlateSizeRule::Fill);
-		AddHorizontal(*Actions, *Unassign, FMargin(6, 0, 0, 0), ESlateSizeRule::Fill);
+		// Both actions share the taller move-style button's hit target, including
+		// at 720p DPI. Centering the smaller tab-style action shrinks it to 21px.
+		AddHorizontal(*Actions, *Assign, FMargin(0, 0, 6, 0), ESlateSizeRule::Fill)->SetVerticalAlignment(VAlign_Fill);
+		AddHorizontal(*Actions, *Unassign, FMargin(6, 0, 0, 0), ESlateSizeRule::Fill)->SetVerticalAlignment(VAlign_Fill);
 		AddVertical(*Section, *Actions, FMargin(8, 0, 8, 12));
 		AddVertical(*Content, *Section, FMargin(0, 0, 0, 8));
 		Section->SetVisibility(ESlateVisibility::Collapsed);

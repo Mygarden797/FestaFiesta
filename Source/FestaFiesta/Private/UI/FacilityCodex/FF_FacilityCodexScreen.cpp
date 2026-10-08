@@ -5,13 +5,18 @@
 
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
 #include "Building/Codex/FF_FacilityCodexSettings.h"
+#include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/Border.h"
+#include "Components/BorderSlot.h"
+#include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/Image.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Components/ProgressBar.h"
 #include "Components/SizeBox.h"
 #include "Components/StackBox.h"
@@ -90,6 +95,80 @@ void UFF_FacilityCodexScreen::NativeOnInitialized()
 			Bounds->ClearWidthOverride();
 			Bounds->ClearMinDesiredWidth();
 			Bounds->ClearMaxDesiredWidth();
+		}
+	}
+	EnsureCloseTargetLayer();
+}
+
+void UFF_FacilityCodexScreen::EnsureCloseTargetLayer()
+{
+	if (CloseTargetCanvas || !WidgetTree || !Button_ExitCodex || !Size_Dialog) return;
+	UWidget* ReferenceScale = GetWidgetFromName(TEXT("Scale_ApprovedCodexReference"));
+	auto* Shield = Cast<UBorder>(GetWidgetFromName(TEXT("Border_InputShield")));
+	auto* OriginalSlot = Cast<UCanvasPanelSlot>(Button_ExitCodex->Slot);
+	auto* ScaleSlot = ReferenceScale ? Cast<UBorderSlot>(ReferenceScale->Slot) : nullptr;
+	if (!Shield || Shield->GetContent() != ReferenceScale || !OriginalSlot || !ScaleSlot) return;
+	// Keep the authored button, its delegates and its styles, but let its hit area
+	// stay usable when the six-column reference composition scales down sharply.
+	// This layer remains inside the shield, below the separate introduction modal.
+	AuthoredClosePosition = OriginalSlot->GetPosition();
+	AuthoredCloseSize = OriginalSlot->GetSize();
+	const FMargin ContentPadding = ScaleSlot->GetPadding();
+	const EHorizontalAlignment Horizontal = ScaleSlot->GetHorizontalAlignment();
+	const EVerticalAlignment Vertical = ScaleSlot->GetVerticalAlignment();
+	ReferenceScale->RemoveFromParent();
+	auto* Layer = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("Overlay_ResponsiveCodexClose"));
+	Layer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	Shield->SetContent(Layer);
+	auto* LayerSlot = CastChecked<UBorderSlot>(Layer->Slot);
+	LayerSlot->SetPadding(ContentPadding);
+	LayerSlot->SetHorizontalAlignment(Horizontal);
+	LayerSlot->SetVerticalAlignment(Vertical);
+	auto* ReferenceSlot = Layer->AddChildToOverlay(ReferenceScale);
+	ReferenceSlot->SetHorizontalAlignment(HAlign_Fill);
+	ReferenceSlot->SetVerticalAlignment(VAlign_Fill);
+	CloseTargetCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Canvas_ResponsiveCodexClose"));
+	CloseTargetCanvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	auto* TargetSlot = Layer->AddChildToOverlay(CloseTargetCanvas);
+	TargetSlot->SetHorizontalAlignment(HAlign_Fill);
+	TargetSlot->SetVerticalAlignment(VAlign_Fill);
+	Button_ExitCodex->RemoveFromParent();
+	CloseTargetCanvas->AddChildToCanvas(Button_ExitCodex)->SetAutoSize(false);
+	// The parent canvas must paint once to establish its geometry. Keep the
+	// reparented button transparent until its initial position has been resolved.
+	AuthoredCloseOpacity = Button_ExitCodex->GetRenderOpacity();
+	bCloseTargetLayoutPending = true;
+	Button_ExitCodex->SetRenderOpacity(0.f);
+}
+
+void UFF_FacilityCodexScreen::UpdateCloseTargetLayout()
+{
+	if (!CloseTargetCanvas || !Button_ExitCodex || !Size_Dialog) return;
+	const FGeometry& Dialog = Size_Dialog->GetPaintSpaceGeometry();
+	const FGeometry& Layer = CloseTargetCanvas->GetPaintSpaceGeometry();
+	if (Dialog.GetLocalSize().GetMin() <= 1.f || Layer.GetLocalSize().GetMin() <= 1.f) return;
+	const FVector2D ReferencePosition(Dialog.GetLocalSize().X + AuthoredClosePosition.X, AuthoredClosePosition.Y);
+	const FVector2D OriginalTopLeft = Dialog.LocalToAbsolute(ReferencePosition);
+	const FVector2D OriginalBottomRight = Dialog.LocalToAbsolute(ReferencePosition + AuthoredCloseSize);
+	const FVector2D OriginalSize = OriginalBottomRight - OriginalTopLeft;
+	const FVector2D PixelSize(FMath::Max(32.0, OriginalSize.X), FMath::Max(32.0, OriginalSize.Y));
+	FVector2D PixelPosition = OriginalTopLeft + (OriginalSize - PixelSize) * .5;
+	// Reserve the authored filter row. In very narrow windows the button can
+	// extend slightly above the paper, inside its existing outer screen inset.
+	if (UWidget* Filters = GetWidgetFromName(TEXT("Horizontal_Toolbar")))
+		if (const auto* FilterSlot = Cast<UCanvasPanelSlot>(Filters->Slot))
+			PixelPosition.Y = FMath::Min(PixelPosition.Y,
+				Dialog.LocalToAbsolute(FVector2D(0, FilterSlot->GetPosition().Y)).Y - PixelSize.Y - 2.0);
+	const FVector2D Position = Layer.AbsoluteToLocal(PixelPosition);
+	const FVector2D Size = Layer.AbsoluteToLocal(PixelPosition + PixelSize) - Position;
+	if (auto* CloseCanvasSlot = Cast<UCanvasPanelSlot>(Button_ExitCodex->Slot))
+	{
+		if (!CloseCanvasSlot->GetPosition().Equals(Position, .01f)) CloseCanvasSlot->SetPosition(Position);
+		if (!CloseCanvasSlot->GetSize().Equals(Size, .01f)) CloseCanvasSlot->SetSize(Size);
+		if (bCloseTargetLayoutPending)
+		{
+			Button_ExitCodex->SetRenderOpacity(AuthoredCloseOpacity);
+			bCloseTargetLayoutPending = false;
 		}
 	}
 }
@@ -179,6 +258,7 @@ void UFF_FacilityCodexScreen::NativeDestruct()
 void UFF_FacilityCodexScreen::NativeTick(const FGeometry& Geometry, float DeltaTime)
 {
 	Super::NativeTick(Geometry, DeltaTime);
+	UpdateCloseTargetLayout();
 	if (IsDesignTime()) { UpdateResponsiveLayout(); return; }
 	UpdateRewardFeedback(DeltaTime);
 	// Layout-only resize handling. Gameplay data still refreshes exclusively through events.

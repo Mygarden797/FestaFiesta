@@ -562,7 +562,6 @@ static void CrowdStuckProbeCommand(const TArray<FString>& Args, UWorld* World, F
 
 	const int32 MaxPrint = FMath::Max(1, FFCrowdConsole::ParseIntArg(Args, 0, 8));
 	const int32 MinStuck = FMath::Max(1, FFCrowdConsole::ParseIntArg(Args, 1, 10));
-	const FFF_CrowdHeightField& Ground = CrowdSim->GetHeightField();
 	const double CeilingCm = CrowdSim->SimOrigin.Z + static_cast<double>(CrowdSim->MaxWalkableHeightAboveOriginUU);
 
 	Ar.Logf(TEXT("--- 막힘 진단 (StuckSteps >= %d, 최대 %d명) --- 통행 상한 Z %.0f%s, 막아 되돌린 스텝 %d회"),
@@ -593,10 +592,11 @@ static void CrowdStuckProbeCommand(const TArray<FString>& Args, UWorld* World, F
 
 		Ar.Logf(TEXT("[%d] 위치 (%.0f, %.0f, %.0f) 목적지까지 %.0fcm StuckSteps %d  현재 칸 %s / 50cm 앞 칸 %s"),
 			Index, Pos.X, Pos.Y, Pos.Z, Dir.Size2D(), CrowdSim->GetAgentStuckSteps(Index),
-			Ground.IsWalkable(FVector2D(Pos.X, Pos.Y)) ? TEXT("통행 가능") : TEXT("통행 불가"),
-			Ground.IsWalkable(FVector2D(Ahead.X, Ahead.Y)) ? TEXT("통행 가능") : TEXT("통행 불가"));
+			CrowdSim->IsGroundWalkable(Pos) ? TEXT("통행 가능") : TEXT("통행 불가"),
+			CrowdSim->IsGroundWalkable(Ahead) ? TEXT("통행 가능") : TEXT("통행 불가"));
 
 		FFF_CrowdHeightField::FCellProbe Probe;
+		const FFF_CrowdHeightField& Ground = CrowdSim->GetHeightFieldAt(FVector2D(Ahead.X, Ahead.Y));
 		if (!Ground.ProbeCell(FVector2D(Ahead.X, Ahead.Y), Probe))
 		{
 			Ar.Logf(TEXT("    높이 격자 없음"));
