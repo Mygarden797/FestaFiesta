@@ -245,6 +245,15 @@ void UFF_BuildCatalogWebView::ApplyFallbackVisibility()
 		Browser->SetVisibility(bShowWeb ? EVisibility::Visible : EVisibility::HitTestInvisible);
 		Browser->SetRenderOpacity(bShowWeb ? 1.f : 0.f);
 	}
+	else if (const TSharedPtr<SWidget> Placeholder = GetCachedWidget())
+	{
+		// UWidget::SynchronizeProperties reapplies the saved Visible state after
+		// RebuildWidget creates the playerless/empty-document placeholder. Keep
+		// that transparent overlay out of the hit grid so native cards, including
+		// their independent favorite buttons, remain usable in every fallback.
+		Placeholder->SetVisibility(EVisibility::HitTestInvisible);
+		Placeholder->SetRenderOpacity(0.f);
+	}
 	UWidget* Native = Panel ? Panel->GetWidgetFromName(NativeFallbackWidgetName) : nullptr;
 	if (!Native || Native == this) return;
 	// Native panel reconciliation can restore visibility later in the same frame.

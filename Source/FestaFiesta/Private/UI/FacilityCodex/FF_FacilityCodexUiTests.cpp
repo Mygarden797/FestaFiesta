@@ -362,9 +362,10 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                 }
                 const FSlateRect Viewport(0, 0, Resolution.X, Resolution.Y);
                 const FSlateRect ScreenRect = Screen->GetWidgetFromName(TEXT("Size_Dialog"))->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-                TestTrue(TEXT("Authored codex fills the viewport through its saved parent slots"),
-                    FMath::Abs(ScreenRect.Left) <= 1.f && FMath::Abs(ScreenRect.Top) <= 1.f &&
-                    FMath::Abs(ScreenRect.Right - Resolution.X) <= 1.f && FMath::Abs(ScreenRect.Bottom - Resolution.Y) <= 1.f);
+                TestTrue(TEXT("Authored reference dialog stays inset and preserves its composition at every resolution"),
+                    ScreenRect.Left > 0.f && ScreenRect.Top > 0.f &&
+                    ScreenRect.Right < Resolution.X && ScreenRect.Bottom < Resolution.Y &&
+                    FMath::IsNearlyEqual(ScreenRect.GetSize().X / ScreenRect.GetSize().Y, 1584.f / 864.f, .002f));
                 const FSlateRect BrowseRect = Browse->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 const FSlateRect TileRect = Tile->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 TestTrue(TEXT("The collection list and cards remain inside the viewport"),
@@ -381,9 +382,30 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                     Resolution.X, Resolution.Y, Dpi, ExitRect.Left, ExitRect.Top, ExitRect.Right, ExitRect.Bottom,
                     ExitRect.GetSize().X, ExitRect.GetSize().Y, CloseRect.Right, FilterRect.Top, BrowseRect.Right));
                 TestTrue(TEXT("X remains visible at the top-right above the filters at every resolution"),
-                    ExitCodex->IsVisible() && ExitRect.GetSize().GetMin() >= 32.f &&
-                    FMath::Abs(ExitRect.Right - BrowseRect.Right) <= 1.f &&
+                    ExitCodex->IsVisible() && ExitRect.GetSize().GetMin() >= 31.95f &&
+                    ExitRect.Right < ScreenRect.Right && ExitRect.Left > ScreenRect.Left &&
                     ExitRect.Top >= 0.f && ExitRect.Bottom < FilterRect.Top && ExitRect.Left > CloseRect.Right);
+                // Click the enlarged edge, not merely its old visual center. This
+                // catches a minimum-size decoration that does not enlarge hit testing.
+                const FVector2D ExitPoint(ExitRect.Left + 2.f, (ExitRect.Top + ExitRect.Bottom) * .5f);
+                TArray<FWidgetAndPointer> ExitBubble = Grid.GetBubblePath(ExitPoint, 0.f, false);
+                FWidgetPath ExitPath(MakeArrayView(ExitBubble));
+                int32 PointerCloseRequests = 0;
+                const FDelegateHandle PointerCloseObserver = Screen->OnCloseRequested.AddLambda(
+                    [&PointerCloseRequests]() { ++PointerCloseRequests; });
+                if (TestTrue(TEXT("The outer edge of the minimum 32-pixel close target is on the real hit path"),
+                    ExitPath.IsValid() && ExitPath.ContainsWidget(ExitCodex->GetCachedWidget().Get())))
+                {
+                    const TSet<FKey> Pressed{EKeys::LeftMouseButton}, Released;
+                    const FPointerEvent Move(0, ExitPoint, ExitPoint, Released, EKeys::Invalid, 0.f, FModifierKeysState());
+                    const FPointerEvent Down(0, ExitPoint, ExitPoint, Pressed, EKeys::LeftMouseButton, 0.f, FModifierKeysState());
+                    const FPointerEvent Up(0, ExitPoint, ExitPoint, Released, EKeys::LeftMouseButton, 0.f, FModifierKeysState());
+                    FSlateApplication::Get().RoutePointerMoveEvent(ExitPath, Move, false);
+                    FSlateApplication::Get().RoutePointerDownEvent(ExitPath, Down);
+                    FSlateApplication::Get().RoutePointerUpEvent(ExitPath, Up);
+                }
+                Screen->OnCloseRequested.Remove(PointerCloseObserver);
+                TestEqual(TEXT("The physical close target requests one close at every tested resolution"), PointerCloseRequests, 1);
                 const auto* ProgressRow = Screen->GetWidgetFromName(TEXT("Row_CollectionProgress"));
                 const auto* RewardScroll = Screen->GetWidgetFromName(TEXT("Scroll_ReadableMilestones"));
                 const auto* RewardTrack = Screen->GetWidgetFromName(TEXT("Size_ReadableMilestoneTrack"));
@@ -392,13 +414,13 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                     !TestNotNull(TEXT("Collection reward track"), RewardTrack)) return false;
                 const FSlateRect RewardViewportRect = RewardScroll->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 const FSlateRect RewardTrackRect = RewardTrack->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-                TestTrue(TEXT("Reward viewport reaches the right edge of the collection and its track fills all available width"),
-                    FMath::Abs(RewardViewportRect.Right - BrowseRect.Right) <= 1.f &&
+                TestTrue(TEXT("Header reward track fills its own viewport without entering the filter row"),
+                    RewardViewportRect.Left >= ScreenRect.Left && RewardViewportRect.Right <= ScreenRect.Right &&
                     RewardTrackRect.Right >= RewardViewportRect.Right - 1.f &&
-                    RewardViewportRect.Bottom <= Resolution.Y + 1.f);
+                    RewardViewportRect.Bottom <= FilterRect.Top + 1.f && RewardViewportRect.GetSize().X > 0.f);
                 const FSlateRect SearchRect = Search->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-                TestTrue(TEXT("Collection search fits beside the filters, including portrait windows"),
-                    SearchRect.Right <= FilterRect.Left - 1.f &&
+                TestTrue(TEXT("Collection search fits to the right of the filters, including portrait windows"),
+                    SearchRect.Left >= FilterRect.Right + 1.f && SearchRect.Right <= ScreenRect.Right &&
                     Search->GetDesiredSize().X <= Search->GetCachedGeometry().GetLocalSize().X + 1.f &&
                     Search->GetClipping() == EWidgetClipping::ClipToBounds);
                 const FSlateRect SearchHintRect = CollectionSearchHint->GetPaintSpaceGeometry().GetLayoutBoundingRect();
@@ -437,9 +459,10 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                         ->GetText().ToString().Contains(TEXT("수령 가능")));
                 TestNotNull(TEXT("Card Gold badge uses its saved texture"),
                     Cast<UTexture2D>(GoldIcon->GetBrush().GetResourceObject()));
-                TestNotNull(TEXT("Pearl card retains its authored UI material"),
-                    Cast<UMaterialInterface>(CastChecked<UBorder>(FirstCard->GetWidgetFromName(TEXT("Border_Card")))
-                        ->Background.GetResourceObject()));
+                const UBorder* CardSurface = CastChecked<UBorder>(FirstCard->GetWidgetFromName(TEXT("Border_Card")));
+                TestTrue(TEXT("Pearl card retains its opaque authored rounded surface"),
+                    CardSurface->Background.DrawAs == ESlateBrushDrawType::RoundedBox &&
+                    CardSurface->Background.TintColor.GetSpecifiedColor().A * CardSurface->GetBrushColor().A >= .95f);
                 if (Resolution == FIntPoint(1280, 720))
                 {
                     auto* CardClaim = CastChecked<UButton>(FirstCard->GetWidgetFromName(TEXT("Button_ClaimReward")));

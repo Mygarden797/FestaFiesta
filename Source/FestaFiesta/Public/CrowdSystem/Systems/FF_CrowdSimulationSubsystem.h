@@ -1226,6 +1226,11 @@ public:
 	bool DidFacilityWallsSeeZoneSystem() const { return bFacilityWallsSawZoneSystem; }
 
 	const FFF_CrowdHeightField& GetHeightField() const { return HeightField; }
+	const FFF_CrowdHeightField& GetHeightFieldAt(const FVector2D& WorldXYCm) const;
+	int32 GetGroundRefinementCount() const { return GroundRefinements.Num(); }
+	int32 GetGroundRefinementSampleCount() const;
+	double GetGroundRefinementBuildSeconds() const { return GroundRefinementBuildSeconds; }
+	bool IsGroundWalkable(const FVector& WorldLocation) const;
 
 	bool TryGetGroundZ(const FVector& WorldLocation, double& OutZ) const;
 
@@ -1558,6 +1563,18 @@ private:
 	// --- 지형 ------------------------------------------------------------------------------
 
 	FFF_CrowdHeightField HeightField;
+	// Only explicitly tagged, static cube walkways receive a local physics bake.
+	// The apron also samples overlapping landings; a cube plane alone would put
+	// feet through a higher deck where the two surfaces overlap.
+	struct FGroundRefinement
+	{
+		FBox2D BoundsCm = FBox2D(ForceInit);
+		FFF_CrowdHeightField Field;
+		FBox2D CoreBoundsCm = FBox2D(ForceInit);
+		FFF_CrowdHeightField CoreField;
+	};
+	TArray<FGroundRefinement> GroundRefinements;
+	double GroundRefinementBuildSeconds = 0.0;
 
 	// Roads overlay the coarse terrain height without rebuilding its physics samples.
 	// Buckets refresh once per layout revision; each NPC only inspects its local bucket.

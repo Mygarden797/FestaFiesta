@@ -190,13 +190,15 @@ def apply(context):
     for group,caption,names in [
         ('Capacity','운영 규모',['Reference_BasicStatPair','Reference_LimitPill','Clarity_Row_Text_ServiceDuration']),
         ('Placement','설치 정보',['Clarity_Row_Text_Footprint','Clarity_Row_Text_Clearance','Clarity_Row_Text_InstallCost','Clarity_Row_Text_RecoveryCost'])]:
-        groupbox=inode(u.Border,'Reference_Basic'+group+'Section');groupbox.clear_children();surface(groupbox,'#EEF3FD',10,10)
+        # Keep the complete overview on its first page after the header, quote
+        # and fixed actions receive their authored allocation at 1080p.
+        groupbox=inode(u.Border,'Reference_Basic'+group+'Section');groupbox.clear_children();surface(groupbox,'#EEF3FD',10,8)
         content=inode(u.VerticalBox,'Reference_Basic'+group+'Content');content.clear_children();add(groupbox,content)
         heading=inode(u.TextBlock,'Reference_Basic'+group+'Heading');heading.set_editor_property('font',w['Text_FacilityName'].get_editor_property('font'));text(heading,caption,15,action);add(content,heading,padding=(0,0,0,8))
         for name in names:add(content,w[name],padding=(0,0,0,4))
         add(facts,groupbox,padding=(0,0,0,8))
     add(facts,links)
-    surface(w['Panel_BuildSection'],pearl,12,10)
+    surface(w['Panel_BuildSection'],pearl,12,8)
     for n in ['Reference_QueuePill','Reference_ServicePill','Reference_LimitPill','TeamRevenue_OverviewCard']:
         surface(w[n],'#EEF3FD',10,10)
     for n,p in w.items():
