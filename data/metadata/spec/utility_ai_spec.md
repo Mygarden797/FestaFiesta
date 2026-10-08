@@ -16,6 +16,7 @@
 >
 > 9항 중 7항에 런타임 입력 경로가 있다. 매 결정마다 모두 비영(非零)이라는 뜻은 아니다. `no_choice`는 별도 대안이며 열 번째 시설 효용항이 아니다.
 > 개인 혼잡 임계값은 `density` 비용식의 입력이 아니다. 비용용 Zone 인구 보고와 `Relocate`/주기 재평가 배선은 서로 별개인 미구현 사항이다.
+> （2026-10-09 변경: 주기 재평가는 Crowd 리더 분기에서 `ShouldReevaluate` 로 연결돼 있고, 시설로 걸어가는 중이면 주기 ×3(`EnRouteReevaluateIntervalScale`). 거리 비용은 `distance_ref_meters` 150·상한 3（§3）. Zone 밖 파티는 200m 안 가장 가까운 Zone 으로 결정（§5）. 미구현으로 남은 것은 인구 보고와 `Relocate` 쪽이다.）
 > 진행 상황은 `../SiriKim_Docs/utility_ai_todo.md`, 판단 근거는 `../SiriKim_Docs/portfolio_casebook.md`.
 
 - 계수 표: `data/derived/utility_coefficients_v0.csv` (원본) / `data/unreal/utility_coefficients_v0.csv` (UE DataTable용)
@@ -65,6 +66,8 @@ need_urgency_norm(i, j) = max{ Need_i[n] * need_priority[n] : n 은 j 가 해소
 ```
 
 `j`가 해소할 수 있는 Need 성분은 `FFF_NeedReliefFlags`(`NPC/Party/FF_NeedState.h`)가 담고, 판정은 `FFF_ZoneSystemBridge::GetNeedReliefFlags`가 한다(`FF_NeedState.h` 상단 매핑 표).
+
+（2026-10-09 변경: 굿즈 `MarketGoods`·공방 `CraftExperience`·게임 `ActivityGame` 부스가 `Stimulation` 을 해소한다. 전엔 아무 Need 도 해소하지 않아 취향 항만으로는 Need 항을 가진 시설을 이기지 못했고 손님이 거의 오지 않았다. 판정 기준은 Bridge 코드이고 `FF_NeedState.h` 상단 표는 이 변경 전 내용이다.）
 
 **합이 아니라 최대값이다.** 합을 쓰면 3가지를 해소하는 시설(예: Rest = Fatigue + Thirst)이 각 성분이 아무리 안 급해도 1가지만 해소하는 시설을 항상 이긴다. `FFF_NeedState::MakeAggregated`가 그룹 집계에 성분별 최대를 쓰는 것과 같은 논리다 — **가장 급한 것이 행동을 결정한다.**
 
@@ -233,7 +236,7 @@ P(i가 j를 고를 확률) = exp(U_ij / σ) / Σ_k exp(U_ik / σ)
 | `attraction_norm` | `base_attraction` 을 0~1로 | 부스 설정 (설계 필요) | 미정 |
 | `preference_norm` | `preference_vector(i)[category(j)] / preference_vector_scale_ref`, [-1,1] 클램프 | `npc_archetypes_v0.csv` + `companion_type_modifier_v0.csv` + 개체 변주 | draft_assumption |
 | `affinity_norm` (v0 미사용) | `centered_log_share_ratio / affinity_scale_ref`, [-1,1] 클램프 | `data/derived/affinity_prior_equal_site_v0.csv` | assumption, 보류 |
-| `distance_norm` | `clamp(DistanceMeters / distance_ref_meters, 0, 1)` | 기본은 직선거리. 보행거리 토글 시 NPC→현재 Zone 앵커 직선 + 앵커 간 NavMesh 거리 + 목적 Zone 앵커→시설 직선 | 선택적 보행거리 구현됨（기본 꺼짐, 같은 Zone·실패한 쌍은 직선 폴백） |
+| `distance_norm` | `clamp(DistanceMeters / distance_ref_meters, 0, distance_cost_cap)`（2026-10-09 변경: 기준 400m→150m, 상한 1→`distance_cost_cap` 3. 비용 = 0.8 × min(거리/150m, 3). 전엔 400m 에서 1로 포화） | 기본은 직선거리. 보행거리 토글 시 NPC→현재 Zone 앵커 직선 + 앵커 간 NavMesh 거리 + 목적 Zone 앵커→시설 직선 | 선택적 보행거리 구현됨（기본 꺼짐, 같은 Zone·실패한 쌍은 직선 폴백） |
 | `wait_norm` | `min(estimated_wait / wait_ref_minutes, 1)` | 런타임 동적 상태 | 계산값 |
 | `density_norm` | `clamp((Zone 인원/Zone 정원) / density_ref_ratio, 0, 1)` | `ReportedPopulation / max(SoftCapacity, 1)` | 근사값（정기 인구 보고 미연결. 셀 밀도와 별개） |
 | `need_urgency_norm` | 해소 가능한 성분의 `max(Need × priority)` | 파티 집계 Need | 연결됨 |
@@ -325,6 +328,8 @@ preference_vector[category] =
 
 （2026-09-03 코드 대조: 아래는 의도된 트리거 목록이다. 실제 결정 요청은 Spawned·Arrived·MoveFailed·JoinRejected·Interrupted·DestinationOpened이며 `ShouldReevaluate`의 프로덕션 C++ 호출은 없다. 대기/밀집 임계·주기·일반 개폐 감시는 미연결이다. 메인 시작은 재평가를 요청하지만 종료는 후보 게이트만 닫는다.）
 
+（2026-10-09 기준: 주기 재평가(`Reevaluated`)와 줄 인내 이탈(`QueuePatienceExpired`)은 `ShouldReevaluate` 로 연결돼 있다. 시설로 걸어가는 중이면 개인 주기에 `EnRouteReevaluateIntervalScale`(3)을 곱한다 — 같은 주기로 다시 고르면 도착 전에 돌아서 버려 시설을 고른 파티 대부분이 줄에 서지 못했다. 메인 공연 휴지 구간(공연 3분 전~종료, 서비스 정지) 동안의 시간은 줄 인내 판정 대기 시간에서 뺀다. 밀집 임계 감시는 여전히 미연결.）
+
 - 현재 목적지 도착 또는 활동 종료
 - `estimated_wait > wait_threshold_minutes`
 - `current_density > density_threshold_ratio`
@@ -336,6 +341,8 @@ preference_vector[category] =
 ### 후보 범위와 SunsetMainStage 예외
 
 일반 후보는 현재 Zone + 직접 인접 Zone이며 상한 기본 12개다. 상한 초과 시 현재 Zone → 거리 → ID 순으로 남긴다. Info·Safety, 비활성·재배치 시설은 제외한다.
+
+（2026-10-09 변경: 어떤 Zone 에도 속하지 않은 파티(입구·길 위)는 200m 안 가장 가까운 Zone(액터 원점 기준, `MaxOutsideZoneFallbackMeters`)을 현재 Zone 으로 보고 결정한다. 전엔 결정을 포기했다(`OutsideZone`). 통계 `OutsideZoneUsedNearest`.）
 
 | 시설 | 메인 공연 시간 게이트 | 탐색 범위 |
 |---|---|---|
@@ -407,7 +414,7 @@ arrival_flow[j] += P(i가 j를 고를 확률)
 
 ### 현재 구현 상태와 미완료
 
-- **NPC 런타임 층(L3)은 연결됐다.** Simulation이 스폰·Need 증가·체류 예산·Queue 이용 완료·방문 기록을 관리하고 Decision이 후보를 조립해 `Choose`를 호출한다（주기 재평가와 개인 변주 5종 전달은 아직 미연결）.
+- **NPC 런타임 층(L3)은 연결됐다.** Simulation이 스폰·Need 증가·체류 예산·Queue 이용 완료·방문 기록을 관리하고 Decision이 후보를 조립해 `Choose`를 호출한다（주기 재평가와 개인 변주 5종 전달은 아직 미연결 — 2026-10-09 기준 주기 재평가는 연결됨, §5）.
 
 - **`ReportZonePopulation`을 부르는 코드가 0곳이다** (2026-08-10 발견) — 플러그인은 "외부 시뮬레이션이 인구와 DeltaSeconds를 보고"하면 Zone 밀도를 계산하는 설계인데 아무도 안 부른다. 별도 보고/초기화가 없으면 `FFFZSZoneReadModel::ReportedPopulation`이 0으로 남고, `BuildCandidates`가 그걸 물려받아 **`density_cost` 항도 0으로 남는다**（C++ 프로덕션 호출 검색 기준. Blueprint·에셋별 외부 주입은 별도 확인）. Zone별 재실 인원은 crowdAI가 아는 값이라 호출 주체를 이정원 님과 협의해야 한다.
 - ~~**`FFF_ZoneSystemBridge::BuildCandidates`가 스텁**~~ — **2026-08-10 구현 완료**(테스트 10개). `DistanceMeters`는 Read Model의 시설 대표 위치와 Party 위치로 계산한다. 목적지 선택의 L3 연결도 완료됐으며, `BaseAttraction` 출처는 아직 대기 중이다 — 자세한 내용은 `utility_destination_selector_spec.md` §7의 1-1.
@@ -437,7 +444,7 @@ arrival_flow[j] += P(i가 j를 고를 확률)
 |---|---|---|
 | en-route 인원 반영 | 별도 `InTransitCostTerm`으로 연결됨. Queue 대기에 더하지 않는다（규모별 감점 민감도는 미검증） | Crowd·Decision |
 | Queue가 Party를 쪼개는가 | `TryJoinZoneFacility`가 Party 단위 진입점인데 정원 초과 시 파티 전체를 거절함（부분 입장 없음） | 장원재 (Queue) |
-| 모든 시간 필드의 기준 = "Live 경과분"인가 | 유입 진행도·예약은 Stage, Need·방문 이력은 Crowd 시계, Queue 대기는 실제 분이다. Crowd는 Live·Closing에서 실행된다（초기 체류 예산 240·시간 기준 통합은 남음. SecondsSinceLastEvaluation 기반 주기 감시 미연결） | 강민서 (Stage) |
+| 모든 시간 필드의 기준 = "Live 경과분"인가 | 유입 진행도·예약은 Stage, Need·방문 이력은 Crowd 시계, Queue 대기는 실제 분이다（2026-10-09 변경: `UFF_QueueSubsystem::Tick` 이 축제 실효 배속 `GetEffectiveTimeScale` 을 따른다. 전엔 실제 시간으로만 흘러 4배속에서 서비스가 손님 기준 4배 느렸다）. Crowd는 Live·Closing에서 실행된다（초기 체류 예산 240·시간 기준 통합은 남음. SecondsSinceLastEvaluation 기반 주기 감시 미연결） | 강민서 (Stage) |
 | ~~리더가 `Leave`면 그룹 전체가 퇴장하는가~~ | **8/6 결정: 전원 함께 퇴장.** `no_choice` 행동 3종 전부 리더가 결정하고 그룹원이 상속한다 | 결정 완료 |
 | ~~`ActivityGame` 토큰을 쓰는 부스가 있는가~~ | **8/6 해소.** 팀 네이밍 규칙 페이지에 `Booth_ActivityGame_RingToss` 예시가 명시됐다 — `activity_game` 축은 죽은 값이 아니다 | 해소 |
 | 인원 보존 카운터의 소유자 | 총 방문객 = 장내 + 퇴장 + 미입장. §7 검증 항목인데 Crowd가 활성·입장·퇴장·예약 스폰 수를 들고 있다（전체 수요와 풀 초과분 보존 검증은 별도）. 경제 파트와도 직결(매출 = 장내 인원 × 소비) | 김시리 (경제) |

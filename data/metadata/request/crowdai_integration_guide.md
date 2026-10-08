@@ -52,7 +52,7 @@
 
 | 특성 | 소비 지점 | 상태 |
 |---|---|---|
-| `walk_speed` | `FUnitData::Speed`/`MaxSpeed`/`CruiseSpeed` | 기존 |
+| `walk_speed` | `FUnitData::Speed`/`MaxSpeed`/`CruiseSpeed` | 기존（2026-10-09: 손님 기본 속도에 `GuestWalkSpeedScale` 1.6 을 곱한 뒤 적용. 150cm/s × 1.6 = 2.4m/s） |
 | `stay_duration` | `PartyRemainingStayMinutes` | 기존 |
 | `patience` | 줄 이탈 임계 (`AdvancePartyQueueOnArrival`) | **신규** |
 | `reevaluate_interval` | 주기 재평가 (`StepSimulation` 리더 분기) | **신규** |
@@ -74,6 +74,8 @@
 > ⚠️ 이탈은 `ClearPartyQueueState(.., bLeaveQueue=true)`를 **먼저** 호출해 Queue에 실제 탈퇴를 알린 뒤 재결정을 겁니다. 순서를 바꾸면 안 됩니다 — `RequestDecision`이 내부에서 부르는 것은 `bLeaveQueue=false`라 로컬 상태만 지우고, Queue는 그 파티를 계속 들고 있어 자리가 영영 비지 않습니다(I-9와 같은 문제).
 
 **주기 재평가(jockeying).** 걷는 도중 개인 주기가 차면 목적지를 다시 고릅니다. `reevaluate_interval_seconds` 120 × 0.8~1.2 = 96~144초. 큐·프로그램 구간과 이미 결정 대기 중인 파티는 제외합니다.
+
+> 2026-10-09 변경: 시설로 걸어가는 중이면 개인 주기에 `EnRouteReevaluateIntervalScale`(3)을 곱합니다. 같은 주기로 다시 고르면 도착 전에 다른 시설로 돌아서, 시설을 고른 파티 대부분이 줄에 서지 못했습니다. 줄 이탈 쪽은 메인 공연 휴지 구간(공연 3분 전~종료, 서비스 정지) 동안의 시간을 대기 시간에서 뺍니다(`QueueBreakSimSeconds`). 또 `UFF_QueueSubsystem::Tick` 이 축제 실효 배속을 따르도록 바뀌었습니다 — 전엔 실제 시간으로만 흘러 4배속에서 서비스가 손님 기준 4배 느렸습니다.
 
 둘 다 `FF.Crowd.Variation [인내심 0|1] [주기 0|1]`로 런타임에 끄고 켤 수 있습니다(재스폰 불필요). 아무 일이 없어도 결정을 만들어내는 경로라, 결정 큐가 넘칠 때 원인을 가르려면 꺼서 대조할 수 있어야 한다고 판단했습니다.
 
@@ -148,6 +150,8 @@
 **따라서 군중 위치에서 400m 를 넘는 곳에 시설을 두면 배회(`no_choice` 효용 0.15)가 이깁니다.** 시설이 듬성하면 NPC 가 아무 데도 안 가고, 그 상태가 길어지면 연속 `no_choice` 한계로 퇴장해 인원 보존까지 깨집니다(위 표의 35건).
 
 `attraction_norm` 이 붙으면 이 제약이 완화됩니다. 그때까지는 **시설 간 간격을 400m 이내로** 유지해 주세요.
+
+> 2026-10-09 변경: 거리 비용 식이 바뀌어 위 400m 기준은 더 이상 맞지 않습니다. `distance_ref_meters` 400 → 150, 새 계수 `distance_cost_cap` 3 으로 비용 = 0.8 × min(거리/150m, 3) 입니다(전엔 400m 에서 1로 포화). 또 어떤 Zone 에도 속하지 않은 파티(입구·길 위)는 200m 안 가장 가까운 Zone 을 현재 Zone 으로 보고 결정합니다(`MaxOutsideZoneFallbackMeters`, 전엔 `OutsideZone` 으로 결정 포기). 굿즈·공방·게임 부스는 이제 `Stimulation` 을 해소해 Need 항을 받습니다.
 
 ### 정원님 확인 부탁드리는 것 2건
 

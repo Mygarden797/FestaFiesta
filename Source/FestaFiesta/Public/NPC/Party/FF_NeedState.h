@@ -36,7 +36,7 @@ struct FFF_NeedPriorityWeights;
  * | Thirst			| Booth(FoodStall·Nightlife 토큰) + Rest(Cooling 토큰만) | "오아시스 존"이 그늘+음수대+무릎나눔 복합 시설
  * | Restroom		| Toilet												| 1:1 (소분류 4종 전부)
  * | Fatigue		| Rest													| 소분류 4종 전부
- * | Stimulation	| Performance, PhotoSpot, Booth(Nightlife 토큰)			| Performance=다대포차 스테이지(콘서트), Booth(Nightlife)=선셋클럽(EDM 비치클럽)·선셋펍(하우스DJ 라운지)
+ * | Stimulation	| Performance, PhotoSpot, Booth(Nightlife·MarketGoods·CraftExperience·ActivityGame 토큰)	| Performance=다대포차 스테이지(콘서트), Booth(Nightlife)=선셋클럽(EDM 비치클럽)·선셋펍(하우스DJ 라운지)
  *
  * Info는 "몰라서 헤맨다"는 욕구를 뒷받침할 근거가 없어서 제외 - 필요해지면 그때 추가한다.
  * Safety는 이중 반영을 막기 위해 제외 - 안전 Need를 만들면 그 "위험"이 결국 밀집 위험이고,
@@ -73,7 +73,7 @@ struct FFF_NeedState
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
 	float Fatigue = 0.f;
 
-	// Phase 2 대상. Performance·PhotoSpot 또는 Booth(Nightlife)로 해소
+	// Phase 2 대상. Performance·PhotoSpot 또는 Booth(Nightlife·MarketGoods·CraftExperience·ActivityGame)로 해소
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
 	float Stimulation = 0.f;
 

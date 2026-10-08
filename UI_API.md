@@ -1052,7 +1052,7 @@ ViewModel의 `RequestScheduleProgram`으로 요청한다. 전역 탭이 빈 자�
 
 **"손님 N명이 옵니다" 줄이 이 화면의 핵심입니다.** 체험비 순익만 보면 두 카드가 +160/+150 로
 비슷해 보이는데, 실제 값어치는 **데려오는 인원**에서 갈립니다 — 그 손님들이 부스에서도 쓰고
-그 수수료가 따로 들어오기 때문입니다. `Capacity` 를 그대로 쓰시면 됩니다.
+그 부스 매출이 따로 들어오기 때문입니다. `Capacity` 를 그대로 쓰시면 됩니다.
 
 **실패 이유는 한글로 드립니다** —
 `UFF_EconomyDisplayTextLibrary::GetProgramPurchaseResultText(Result)`.
@@ -1112,7 +1112,7 @@ ViewModel의 `RequestScheduleProgram`으로 요청한다. 전역 탭이 빈 자�
 #### 체험비는 프로그램이 **열리는 시각**에 들어옵니다
 
 카드마다 열리는 시각이 다릅니다(공방 30분 · 요가 90분). 그 시각이 되면 그 카드 몫의 체험비가
-**그때** 원장에 들어갑니다 — 부스 수수료와 같은 리듬입니다. Closing 이 아닙니다.
+**그때** 원장에 들어갑니다 — 부스 매출과 같은 리듬입니다. Closing 이 아닙니다.
 
 `GetEarnRowsForDay(Day)` 의 **`유료 프로그램 체험비`** 줄이 그것입니다. 줄의 내용은 그대로이고
 **값이 채워지는 시점만** 다릅니다 — Live 중에 두 번 올라갑니다(공방 열릴 때, 요가 열릴 때).
@@ -1235,7 +1235,7 @@ Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 
 - **버튼 활성화**: `UFF_StageEconomyBridgeSubsystem::CanPurchaseFinaleNow()` — Day3 MorningCheck이고
   아직 안 샀을 때만 `true`. **표시용이고 구매를 막지는 않습니다**(`CanSkipCurrentStage`와 같은 성격)
 - **목록**: 등급·비용·보너스는 `GetDefinition()->FinaleTiers`에 있습니다.
-  C/B/A/S = 2,000/4,000/6,000/8,000 Gold, 만족도 +5/+12/+20/+30. UI가 쓰기 편한 Getter가 필요하시면 만들겠습니다
+  C/B/A/S = 2,000/4,000/6,000/8,000 Gold, 만족도 +3/+6/+10/+15(2026-10-09 변경, 전 +5/+12/+20/+30). 숫자는 밸런싱으로 또 바뀌니 UI 에 복제하지 말고 `GetFinaleTiers()` 로 읽어 주세요
 - **구매**: `TryPurchaseFinale(EFF_FinaleGrade)` → `EFF_FinalePurchaseResult`.
   실패 이유 한글은 **`UFF_EconomyDisplayTextLibrary::GetFinalePurchaseResultText(Result)`** 로
   뽑아 주세요 (`Gold 부족` / `이미 구매했다` 등). ⚠️ enum 의 `DisplayName` 을 직접 읽으면
@@ -1245,7 +1245,7 @@ Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 
 ⚠️ **구매는 축제당 1회이고 되돌릴 수 없습니다.** 등급 변경·취소·환불이 없으니 **확인창을 넣어 주세요.**
 두 번째 시도는 `이미 구매했다`로 거부됩니다.
 
-**만족도 보너스는 Gold가 아닙니다.** `GetFinaleSatisfactionBonus()`가 0~100 척도의 가산점(A면 20)을
+**만족도 보너스는 Gold가 아닙니다.** `GetFinaleSatisfactionBonus()`가 0~100 척도의 가산점(A면 10)을
 돌려주는데, 매출에도 잔액에도 섞이지 않습니다. 최종 평가 점수(`ScoreSatisfaction` = 관객 만족도 + 이 보너스)의
 합산은 관객 만족도가 아직 없어서 붙이지 않았습니다 — 지금은 "몇 점짜리를 샀는가"까지만 보여드릴 수 있습니다.
 
@@ -1299,7 +1299,10 @@ Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 
 나가는데 사실이 아닙니다.
 
 > 화면의 `최대 N명` 은 **기본 팀 + 고용 상한**으로 보여 주세요. 상한(6)만 쓰면 `최대 6명` 이
-> 되어 이미 있는 기본 팀 6명이 화면에서 사라집니다. → `최대 12명 (기본 6 + 고용 6)`
+> 되어 이미 있는 기본 팀이 화면에서 사라집니다. → `최대 7명 (기본 1 + 고용 6)`
+>
+> **2026-10-09 — 기본 팀이 6명에서 1명이 됐습니다**(`InitialStaffCount` 1). 메인안내소 필수 배정 1명만 채우고,
+> 사건 대응 인력은 고용(450 Gold)으로 확보합니다. 6명이면 고용 없이도 사건이 다 풀려 고용이 선택지가 되지 않았습니다.
 
 **"왜 더 못 뽑는가"를 문구로 가르는 법** — 거부 사유가 `bool` 하나뿐이라 두 값을 비교하는 것이
 유일한 구분 수단입니다:
@@ -1345,7 +1348,7 @@ UFUNCTION(BlueprintPure) TArray<FFF_StaffMember> GetStaffRoster() const;
 
 `FFF_StaffMember` 필드: `StaffId`(int32) · `TrainingLevel`(1~3) · `HiredOnDay` ·
 `LastPromotedDay`(승급한 적 없으면 `INDEX_NONE`) · `bIsBaseStaff`(무페이 기본 팀 여부).
-기본 팀 6명도 이 배열에 같이 들어 있습니다 — 기본 팀도 승급 가능합니다(Day1 부터).
+기본 팀(현재 1명)도 이 배열에 같이 들어 있습니다 — 기본 팀도 승급 가능합니다(Day1 부터).
 
 **승급 실행**
 
@@ -1369,7 +1372,7 @@ UPROPERTY(BlueprintAssignable) FFF_OnStaffRosterChanged OnStaffRosterChanged;
 **화면 만드실 때 참고**
 
 - `필요 인원 3명` 같은 옛 프로그램 편성 칸과 헷갈리지 않게, 이건 "누구를 몇 레벨로 키울지"
-  고르는 화면입니다 — 최대 12행(기본 6 + 고용 6), 각 행에 레벨·승급 버튼.
+  고르는 화면입니다 — 최대 7행(기본 1 + 고용 6), 각 행에 레벨·승급 버튼.
 - `오늘 고용됨 — 내일부터 승급 가능` 문구는 `CurrentDay <= HiredOnDay`로 직접 판정하시거나,
   `TryPromoteStaff` 호출 결과(`false`)로 버튼만 비활성화하는 두 방식 다 가능합니다. 서버
   쪽에 "왜 안 되는지" API가 따로 없어서, 세분화된 문구가 필요하면 요청해 주세요.
@@ -1430,7 +1433,7 @@ struct FFF_FacilityRevenueRow { FName FacilityId; int32 Amount; };   // DisplayN
 경제는 시설의 한글 이름을 모릅니다. **표시 이름은 Building 카탈로그에서 해석해 주세요.**
 
 부스별 표는 **실제 값으로 찹니다.** NPC 파티가 부스 이용을 마치면(`EFF_QueueExit::Served`)
-수수료가 원장에 들어갑니다 — 화면에 `잠정`·`더미` 배지가 남아 있으면 떼셔도 됩니다.
+부스 매출이 원장에 들어갑니다 — 화면에 `잠정`·`더미` 배지가 남아 있으면 떼셔도 됩니다.
 
 **`FacilityId` 는 `FacilityDefinitionId`(`Booth_FoodStall_Grill` 형태)입니다.** Building
 카탈로그의 키와 같으므로 표시 이름을 그대로 해석하실 수 있습니다.
@@ -1456,7 +1459,7 @@ struct FFF_FacilityRevenueRow { FName FacilityId; int32 Amount; };   // DisplayN
 - **비고**: 부스별 표가 **종류**(`FacilityDefinitionId`) 합계인 것과 달리 **설치 시설 한 곳**(Zone 인스턴스 GUID)의 값이다.
   `FFF_FacilityInstanceRevenue { TodayGold, TotalGold, TodayPaymentCount, TotalPaymentCount }`.
   기록이 없으면 `false` + 전부 0 ("아직 결제 없음"). 오늘 값은 하루 경계에서 0, 누적은 새 축제에서만 0.
-  부스 수수료(`Served` 파티 1회 = 1건)와 유료 프로그램 체험비(프로그램 1회 = 1건)가 들어가고, 입장료·보너스처럼
+  부스 매출(`Served` 파티 1회 = 1건)과 유료 프로그램 체험비(프로그램 1회 = 1건)가 들어가고, 입장료·보너스처럼
   시설 핸들이 없는 매출은 들어가지 않는다. 자금·원장과 **같은 호출**(`AddFacilityRevenue(Amount, Reason, FacilityId, FacilityInstanceId)`)에서
   쌓이므로 결산 표와 합이 어긋나지 않는다. 경제 쪽 변경은 가산뿐이다 — `AddRevenue` 시그니처·기존 표 4종은 그대로다
   (김시리 님 확인 부탁드립니다). 사용처: 설치 시설 공용 정보 패널의 `시설 수익` 카드.
@@ -1514,7 +1517,7 @@ Overview HUD·Report·공통 지표 위젯은 **이 서브시스템만 참조**�
 | ----------------- | ------------------------------------- | ---------------------------- | --------- |
 | SimSatisfaction   | `GetSimSatisfaction()`                | `OnSimSatisfactionChanged`   | **원본 연결 완료** — 대기·밀도·취향매칭·Need 충족도 4항의 2단 계층 산출. 첫 확정 전엔 중립값 50 |
 | SimSatisfaction 분해 4종 | `GetSimSatisfactionWaitScore()` / `GetSimSatisfactionDensityScore()` / `GetSimSatisfactionPreferenceScore()` / `GetSimSatisfactionNeedFulfillmentScore()` | `OnSimSatisfactionWaitScoreChanged` 등 (이름은 각 Getter + `Changed`) | **원본 연결 완료**. SimSatisfaction과 같은 순간(1초 주기)에 같이 갱신됩니다. "지금 만족도가 왜 이 숫자인지" 분해해 보여주는 용도라 필수는 아니고 화면에 넣으면 원인 진단에 도움이 됩니다 |
-| ScoreSatisfaction | `GetScoreSatisfaction()`              | `OnScoreSatisfactionChanged` | 더미 72 (SimSatisfaction + FinaleBonus 합산은 아직 미구현) |
+| ScoreSatisfaction | `GetScoreSatisfaction()`              | `OnScoreSatisfactionChanged` | SimSatisfaction + FinaleBonus 합산(0~100, 구현됨) |
 | Safety            | `GetSafety()`                         | `OnSafetyChanged`            | 더미 88     |
 | Gold              | `GetGold()`                           | `OnGoldChanged`              | **원본 연결 완료 · ViewModel 구독 중** |
 | TotalRevenue      | `GetTotalRevenue()`                   | `OnTotalRevenueChanged`      | **원본 API 완료 · ViewModel 연결 요청** |
@@ -1549,7 +1552,7 @@ int32 SimSatisfactionWaitScore;           // 0~100, 대기 항 하위 점수(큐
 int32 SimSatisfactionDensityScore;        // 0~100, 밀도 항 하위 점수
 int32 SimSatisfactionPreferenceScore;     // 0~100, 취향매칭 항 하위 점수
 int32 SimSatisfactionNeedFulfillmentScore; // 0~100, Need 충족도 하위 점수
-int32 ScoreSatisfaction;  // 0~100, 높을수록 좋음. SimSatisfaction + FinaleBonus + 연출 보정 (합산 로직은 아직 더미)
+int32 ScoreSatisfaction;  // 0~100, 높을수록 좋음. SimSatisfaction + FinaleBonus (구현됨, 연출 보정은 없음)
 int32 Safety;             // 0~100, 높을수록 안전 (2026-08-06 확정)
 int32 Gold;               // 잔액. 지출로 줄어들고, 매출·시설 철거 환급으로 늘어난다. 초기 10,000 (밸런스 시드 v0)
 int32 TotalRevenue;       // 축제 전체 누적 매출. 줄어들지 않는다
@@ -1585,8 +1588,8 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 화면                  | 표시                                                   | 이유                                                                                               |
 | ------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | Overview HUD (Live) | `SimSatisfaction` **하나만**                            | Live 중엔 FinaleBonus가 없어 두 값이 같습니다. 같은 숫자를 두 번 띄우지 않습니다. 이때 플레이어가 개선할 수 있는 것도 SimSatisfaction뿐입니다 |
-| Report              | **둘 다, 분해식으로** — `관객 만족도 62` `+ 피날레 20` `= 평가 점수 82` | 두 지표의 관계가 화면 자체로 설명됩니다                                                                           |
-| Finale 구매           | `ScoreSatisfaction` **예상치** — "S 구매 시 → 92"          | 지표를 나눈 기획 의도가 그대로 구매 판단 근거가 됩니다                                                                  |
+| Report              | **둘 다, 분해식으로** — `관객 만족도 62` `+ 피날레 10` `= 평가 점수 72` | 두 지표의 관계가 화면 자체로 설명됩니다                                                                           |
+| Finale 구매           | `ScoreSatisfaction` **예상치** — "S 구매 시 → 77"          | 지표를 나눈 기획 의도가 그대로 구매 판단 근거가 됩니다                                                                  |
 
 화면 라벨은 내부 이름을 그대로 쓰지 않습니다 — `SimSatisfaction` → **관객 만족도**,
 `ScoreSatisfaction` → **평가 점수**. Report 드릴다운(AT-005)은 왼쪽 항인 관객 만족도에 걸립니다.
@@ -1598,7 +1601,7 @@ Getter + 델리게이트 쌍, 0~100, SimSatisfaction과 같은 주기(1초)로 �
 넣을지·어디에 넣을지는 UI 판단입니다 — 최종 숫자 하나로는 원인을 못 짚을 때 쓰시면 됩니다.
 
 산식은 2단 계층입니다: 환경 축(대기+밀도)과 개인 부합도 축(취향+Need)을 각각 합친 뒤
-그 둘을 다시 합칩니다. 축 가중치(현재 0.5/0.5)는 draft_assumption이라 조정 대상이지만
+그 둘을 다시 합칩니다. 축 가중치(2026-10-09부터 환경 0.4 / 개인 부합 0.6, 개인 부합 안에서 취향 0.35 / 욕구 충족 0.65. 전엔 전부 0.5)는 조정 대상이지만
 API 계약(Getter·델리게이트·0~100 범위)은 안 바뀝니다.
 
 ### Slot을 노출하지 않습니다
@@ -1724,7 +1727,7 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 빗나감·놓친
 
 | 필요한 것 | 소유자 | UI에서 쓰는 곳 |
 | --- | --- | --- |
-| ~~**Satisfaction** (`SimSatisfaction` 0~100)~~ | 김시리 · 이정원 | ✅ **연결 완료.** 대기·밀도·취향매칭·Need 충족도 4항을 2단 계층(환경 축/개인 부합도 축)으로 산출 + 분해값 4종. 위 「값 규격」·「분해값 4종」 절 참조. `ScoreSatisfaction` 합산(SimSatisfaction + FinaleBonus)은 **아직 남았습니다** — `GetFinaleSatisfactionBonus()` 는 이미 있습니다 |
+| ~~**Satisfaction** (`SimSatisfaction` 0~100)~~ | 김시리 · 이정원 | ✅ **연결 완료.** 대기·밀도·취향매칭·Need 충족도 4항을 2단 계층(환경 축/개인 부합도 축)으로 산출 + 분해값 4종. 위 「값 규격」·「분해값 4종」 절 참조. `ScoreSatisfaction` 합산(SimSatisfaction + FinaleBonus)도 구현됐습니다(10/9 확인) |
 | **Safety** | 이정원 | Overview 지표, 경고 |
 | **예상 방문객 범위·가정값 미리보기** | 김시리 | 현재 구매 상태의 하루 단일값은 구현됨. `Min`/`Max`와 구매 전 등급별 미리보기 API는 없음. 단일값을 임의 범위로 늘리지 않음 |
 | **`UFF_FestivalEventSubsystem`** — 사건 목록·심각도·필요 인력·남은 시간·`CauseId` | 이정원 | Live 우측 상단 상시 사건 트레이 (`FF_FestivalDefinition.h:146`) |
@@ -2049,7 +2052,7 @@ UI 가 3일차에 배속을 막고 있었는데, **소유자 코드에는 그런
 | 2 | **홍보 카드 4장** | 홍보 단계(기존 패널) | 홍보 없음 / 지역 SNS / 전국 홍보 / 인플루언서. 카드마다 비용·방문객 배수·화제성 +N·예상 방문객 |
 | 3 | **화제성 게이지** | Live HUD (+ 준비 화면) | 0~100 막대, 50 이 중립. "오늘 +4.2" 처럼 아침 대비 변화 |
 | 4 | **축제 평가 화면** | 마지막 날 Report 이후(`FinalReportScreenClass` 가 지금 비어 있음) | 등급 S~D, 총점, 항목 4개 점수, 한 줄 평, 보완 한 줄, 날짜별 만족도 |
-| 5 | 일일 목표 진행도 | Live 패널(운영) | "오늘 방문객 312 / 500 · 달성 시 +300 Gold". 지금 `Debug_SetVisitorCount` 로만 채워짐 |
+| 5 | 일일 목표 진행도 | Live 패널(운영) | "오늘 방문객 312 / 900 · 달성 시 +300 Gold"(목표는 날마다 900/1000/1100). 지금 `Debug_SetVisitorCount` 로만 채워짐 |
 
 SNS 입장료 글(화제 15·16)은 **기존 SNS 피드에 그대로 섞여 나오므로 추가 UI 가 필요 없습니다.**
 
@@ -2061,11 +2064,11 @@ SNS 입장료 글(화제 15·16)은 **기존 SNS 피드에 그대로 섞여 나�
 | **미리보기** | `FFF_VisitorForecast PreviewVisitorForecast(EFF_PromotionGrade, int32 Fee)` | **상태를 안 바꿉니다.** 슬라이더를 끄는 동안·홍보 카드 호버 때 부르세요. 안 산 등급을 넣으면 그 등급의 화제성 시작값까지 얹어서 계산합니다 |
 | 예상 방문객 한 숫자 | `int32 GetExpectedVisitors()` + `OnExpectedVisitorsChanged(int32)` | = `GetVisitorForecast().ExpectedVisitors`. 입장료·홍보·화제성 어느 게 바뀌어도 발행 |
 | 입장료 현재값 | `int32 GetAdmissionFee()` + `OnAdmissionFeeChanged(int32)` | 축제 전이면 `INDEX_NONE` |
-| 입장료 범위 | `GetAdmissionFeeRange(int32& Min, int32& Max, int32& Reference)` | 지금 0 / 15 / 5. **숫자를 UI 에 복제하지 마세요** — 밸런싱으로 바뀝니다 |
+| 입장료 범위 | `GetAdmissionFeeRange(int32& Min, int32& Max, int32& Reference)` | 지금 0 / 15 / 3(기준값 2026-10-09 에 5 → 3). **숫자를 UI 에 복제하지 마세요** — 밸런싱으로 바뀝니다 |
 | 입장료 변경 | `EFF_AdmissionFeeResult TrySetAdmissionFee(int32)` | `Success / FestivalNotStarted / OutOfRange / LockedDuringLive`. **Live 중에는 거부**합니다 |
 | 홍보 티어 | `FFF_PromotionTier GetPromotionTier(EFF_PromotionGrade)` | `CostGold`·`VisitorMultiplier`·`StartingBuzz`. `None` 도 부를 수 있고 배수 0.85 가 옵니다 |
 | 홍보 구매 | `TryPurchasePromotion(EFF_PromotionGrade)` (기존) | `EFF_PromotionGrade::Influencer` 가 추가됐습니다 |
-| 일일 목표 | `GetAdmittedVisitorsToday()` · `GetDailyVisitorGoal()` · `IsDailyGoalBonusPaid()` + `OnAdmittedVisitorsTodayChanged(int32)` | 목표 없음은 `INDEX_NONE`. 달성 여부는 이벤트를 받은 뒤 `IsDailyGoalBonusPaid()` 로 읽으세요 |
+| 일일 목표 | `GetAdmittedVisitorsToday()` · `GetDailyVisitorGoal()` · `IsDailyGoalBonusPaid()` + `OnAdmittedVisitorsTodayChanged(int32)` | 목표 없음은 `INDEX_NONE`. 달성 여부는 이벤트를 받은 뒤 `IsDailyGoalBonusPaid()` 로 읽으세요. `GetDailyVisitorGoal()` 은 **오늘 목표**입니다(2026-10-09 부터 Day N = 900 + 100 × (N−1) → 900/1000/1100). 날이 바뀌면 다시 읽으세요 |
 | 축제 평가 | `FFF_FestivalEvaluation GetFestivalEvaluation()` | 축제 도중에 불러도 됩니다(진행 중 평가). 마지막 날은 현재 만족도를 그날 값으로 씁니다 |
 | 날짜별 만족도 | `TArray<int32> GetDailySatisfactionHistory()` | 끝난 날만. 평가 화면 그래프용 |
 
@@ -2089,7 +2092,7 @@ SNS 입장료 글(화제 15·16)은 **기존 SNS 피드에 그대로 섞여 나�
 | 입장료 슬라이더 | `GetAdmissionFeeGold()` + `OnAdmissionFeeChanged` · `GetAdmissionFeeRange(Min, Max, Reference)` · `CanSetAdmissionFeeNow()`(Live 중 false — 슬라이더 비활성) · **`RequestSetAdmissionFee(int32)` → `EFF_AdmissionFeeResult`** |
 | 예보·미리보기 | `GetVisitorForecast()` · `PreviewVisitorForecast(EFF_PromotionChoice, int32 Fee)`(상태 안 바뀜) · `GetExpectedVisitors()` + `OnExpectedVisitorsChanged` |
 | 화제성 게이지 | `GetBuzz()` · `GetBuzzAtDayStart()` · `GetBuzzChangeToday()`("오늘 +N" 그대로) + `OnBuzzChanged(NewBuzz, PreviousBuzz)`. 하루가 바뀌어 아침 기준만 바뀌어도 옵니다 |
-| 일일 목표 진행도 | `GetAdmittedVisitorsToday()` + `OnAdmittedVisitorsTodayChanged` · `GetDailyVisitorGoal()` · `GetDailyGoalBonusGold()` · `IsDailyGoalBonusPaid()` · `GetTotalAdmittedVisitors()`(축제 누적). `Debug_SetVisitorCount` 자리를 이걸로 바꾸시면 됩니다 |
+| 일일 목표 진행도 | `GetAdmittedVisitorsToday()` + `OnAdmittedVisitorsTodayChanged` · `GetDailyVisitorGoal()` · `GetDailyGoalBonusGold()` · `IsDailyGoalBonusPaid()` · `GetTotalAdmittedVisitors()`(축제 누적). `Debug_SetVisitorCount` 자리를 이걸로 바꾸시면 됩니다. `GetDailyVisitorGoal()` 은 오늘 목표(900/1000/1100)라 날이 바뀌면 다시 읽어야 합니다 |
 | 축제 평가 화면 | `GetFestivalEvaluation()` · `GetDailySatisfactionHistory()` |
 | 스태프 승급 | `GetStaffRoster()` · `CanPromoteStaff(StaffId)`(행별 버튼 활성) · `RequestPromoteStaff(StaffId)` + `OnStaffRosterChanged` |
 
@@ -2112,7 +2115,7 @@ SNS 입장료 글(화제 15·16)은 **기존 SNS 피드에 그대로 섞여 나�
 | 필드 | 뜻 |
 |---|---|
 | `ExpectedVisitors` | 최종 예상 방문객 |
-| `VisitorsAtReferenceFee` | 입장료가 기준값(5)이었다면 올 인원 |
+| `VisitorsAtReferenceFee` | 입장료가 기준값(지금 3)이었다면 올 인원 |
 | `VisitorDeltaFromFee` | 위 둘의 차. **비싸면 음수, 싸면 양수** — "입장료로 −80명" 에 그대로 쓰세요 |
 | `ExpectedAdmissionRevenue` | `ExpectedVisitors × AdmissionFeeGold` |
 | `AdmissionFeeGold` | 이 예보의 입장료 |
@@ -2131,13 +2134,16 @@ SNS 입장료 글(화제 15·16)은 **기존 SNS 피드에 그대로 섞여 나�
 
 #### 규칙 (화면 문구에 필요한 만큼만)
 
-- **방문객 = 기본 500 × 홍보 × 입장료 × 화제성.**
+- **방문객 = 기본 1000(`BaseDailyVisitors`) × 홍보 × 입장료 × 화제성 × 평판(전날 만족도, ×0.75~1.25).**
 - 홍보 4등급 — 홍보 없음 ×0.85 · 0 Gold / 지역 SNS ×1.00 · 600 · 화제성 +6 / 전국 홍보 ×1.12 · 1,400 · +14 / 인플루언서 ×1.25 · 2,600 · +26.
   **안 사면 손해**입니다. 카드 문구도 그 방향으로 부탁드립니다.
-- 입장료 — 기준 5 Gold 에서 1 Gold 비쌀 때마다 방문객 −5%(최대 ×0.5), 쌀 때마다 +5%(최대 ×1.15).
+- 입장료 — 기준 3 Gold(2026-10-09 전 5) 에서 1 Gold 비쌀 때마다 방문객 −5%(최대 ×0.5), 쌀 때마다 +5%(최대 ×1.15).
   비싸면 입장료 수입은 늘지만 손님이 줄어 **부스 매출이 줄고 SNS 부정 글이 늘어 다음 날 화제성이 떨어집니다.**
-- 화제성 — 홍보 구매·SNS 긍정 글·유료 프로그램 개최로 오르고, SNS 부정 글로 내려갑니다. 하루가 바뀌면 중립 쪽으로 25% 식습니다.
-- 축제 평가 — 만족도 40% · 방문객 목표 달성률 25% · 재무(원금 대비) 20% · 화제성 15%. S ≥ 85, A ≥ 70, B ≥ 55, C ≥ 40.
+- 화제성 — 홍보 구매·SNS 긍정 글·유료 프로그램 개최로 오르고, SNS 부정 글로 내려갑니다. SNS 글 1건은 최대 0.3 움직이고, 하루가 바뀌면 중립 쪽으로 40% 식습니다(2026-10-09 전: 0.6 · 25%).
+- 축제 평가 — 만족도 40% · 방문객 목표 달성률 25% · 재무 20% · 화제성 15%. S ≥ 85, A ≥ 70, B ≥ 55, C ≥ 40.
+  방문객 달성률의 분모는 날짜별 목표의 합(`VisitorGoalTotal`)입니다.
+  재무 점수 = 100 × (최종 Gold − 시작 Gold) / `FinanceTargetProfitGold`(축제 정의, 지금 15,000 · 잠정), 0~100 으로 자릅니다. 본전·손해면 0점입니다
+  (2026-10-09 전: 50 + 50 × 이익 / 시작 자금).
 
 #### 유료 프로그램 — "하루 한 번" 이 시설 단위로 바뀌었습니다 (2026-09-23)
 
@@ -2310,7 +2316,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | 축제 전체(3일 합계) 결산 표 | `Progression::GetEarnRowsForFestival / GetSpendRowsForFestival / GetRevenueByFacilityRowsForFestival / GetTotalRefundForFestival` | `ForDay` 표와 같은 모양. 끝난 날 원장을 **전부** 보관하게 바꿨으므로 Day1 도 `GetEarnRowsForDay(1)` 로 읽힌다(이전엔 2일치만) |
 | 평가가 굳는다 | `GetFestivalEvaluation()` / `IsFestivalEvaluationFrozen()` | `OnFestivalEnded` 이후엔 그 순간 값으로 **고정**. 새 축제에서 풀림. 화면에서 따로 캐시할 필요 없음 |
 | 날짜별 만족도 3칸 | `GetDailySatisfactionHistory()` | 종료 시 마지막 날 값이 들어가 3칸이 된다 |
-| 예보의 평판 배수 | `FFF_VisitorForecast.ReputationMultiplier` | 어제 만족도 → ×0.88~1.08(50 에서 1.0, 첫날 1.0). 예상 방문객에 이미 반영됨. 미리보기 문구에 "어제 만족도 영향" 줄을 넣을 수 있다 |
+| 예보의 평판 배수 | `FFF_VisitorForecast.ReputationMultiplier` | 어제 만족도 → ×0.75~1.25(2026-10-09 전 ×0.88~1.08. 50 에서 1.0, 첫날 1.0). 예상 방문객에 이미 반영됨. 미리보기 문구에 "어제 만족도 영향" 줄을 넣을 수 있다 |
 | 클리어 기록에 평가 | `UFF_SaveSubsystem::GetRecord(FestivalId)` → `BestScore`, `BestGrade`, `BestSatisfaction`(평가의 날짜별 평균) | `HasClearedFestival(FestivalId)` 는 국가 지도의 해금/뱃지 표시에 쓸 수 있다. 지금은 호출하는 UI 가 없다 |
 | 이어하기 후 결산 | — | 끝난 날 원장·시설별 누적 매출이 저장에 담긴다. 이어하기 직후 "어제 결산"이 비지 않는다 |
 
@@ -2319,7 +2325,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | # | 화면 | 쓰는 API | 영향 |
 |---|---|---|---|
 | 1 | **피날레 구매 패널** (3일차 MorningCheck) | `RequestPurchaseFinale`, `GetFinaleTiers`, `CanPurchaseFinaleNow` | 없으면 피날레 보너스·불꽃이 영구히 꺼져 있습니다. Finale 탭은 "만드는 중" |
-| 2 | **입장료 슬라이더 + 예상 방문객 미리보기** | `RequestSetAdmissionFee`, `CanSetAdmissionFeeNow`, `GetAdmissionFeeRange`, `PreviewVisitorForecast`, `GetVisitorForecast` | 없으면 입장료가 기준값 5 에 고정되어 평가의 재무·방문객 축이 플레이어 입력과 무관해집니다 |
+| 2 | **입장료 슬라이더 + 예상 방문객 미리보기** | `RequestSetAdmissionFee`, `CanSetAdmissionFeeNow`, `GetAdmissionFeeRange`, `PreviewVisitorForecast`, `GetVisitorForecast` | 없으면 입장료가 기준값(지금 3) 에 고정되어 평가의 재무·방문객 축이 플레이어 입력과 무관해집니다 |
 | 3 | **화제성 게이지** | `GetBuzz`, `GetBuzzChangeToday`, `OnBuzzChanged` | |
 | 4 | **일일 목표 진행도** | `GetAdmittedVisitorsToday`, `IsDailyGoalBonusPaid`, `OnAdmittedVisitorsTodayChanged` | 지금은 `Debug_SetVisitorCount` 로만 채워져 늘 "아직 알 수 없습니다" |
 | 5 | **마감 리포트 보강** | 결산 표 5종(위), `GetDayLedger` | 지금 패널은 매출·Gold·만족도·스태프 수만 보여줍니다. 지출·순이익·방문객·목표 달성이 없습니다 |
@@ -2336,6 +2342,51 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | `FF_LiveHudStatusBar` | `bUsePlaceholderResourceValues=true` 기본값(관객 284 등 가짜값). 지금은 참조하는 WBP 가 없어 노출되지 않음 |
 | `UFF_ReportScreen` | 사용하는 WBP 가 없는 죽은 코드. 최종 결산 화면을 새로 만들 때 흡수하거나 지우세요 |
 
+### 10/9 추가 — 피날레 SNS 후기 · 오늘 목표 · 재무 점수 · 1차 밸런싱 (김시리)
+
+#### `UFF_FestivalViewModelSubsystem::OnFinaleSnsPostAdded`
+
+- **헤더**: `Public/UI/ViewModel/FF_FestivalViewModelSubsystem.h`
+- **접근**: ViewModel 델리게이트 (`BlueprintAssignable`)
+- **시그니처**: `FFF_OnSnsSocialPostChanged OnFinaleSnsPostAdded` — 인자 `FFF_LiveSocialPost NewPost` (`OnSnsPostAdded` 와 같은 타입)
+- **갱신 주기**: 이벤트 — 피날레 단계 동안 글이 하나 생길 때마다. 평균 간격은 구매 등급에 따라 미구매 1.6 / C 1.2 / B 0.8 / A 0.55 / S 0.35초(±40%)
+- **상태**: `구현완료`
+- **비고**: 처음 6초는 기대감 글(화제 17), 그 뒤는 구매 등급 평가(18 미구매 · 19 C · 20 B · 21 A · 22 S). 미구매·C 는 부정, B 이상은 긍정입니다.
+  흘려보내는 용도라 **ViewModel 은 목록을 들고 있지 않습니다** — 지난 글이 필요하면 아래 `GetFinalePosts()` 를 읽으세요.
+  피날레 글은 5건에 1건만 일반 SNS 피드(`OnSnsPostAdded`)에도 들어가고, **화제성에는 반영되지 않습니다.** 불꽃이 끝나고 10초(연출이 없으면 20초) 뒤 멈춥니다.
+
+#### `UFF_CrowdInsightsSubsystem::GetFinalePosts()`
+
+- **헤더**: `Public/NPC/Insights/FF_CrowdInsightsSubsystem.h`
+- **접근**: `GameInstanceSubsystem`
+- **시그니처**: `const TArray<FFF_SnsPostRow>& GetFinalePosts() const` (`BlueprintPure`). 원본 델리게이트는 `OnFinalePostAdded`
+- **갱신 주기**: 요청 시 (최신이 `[0]`, 최대 400건)
+- **상태**: `구현완료`
+- **비고**: 새 축제를 시작할 때 비웁니다. 위젯은 원칙대로 ViewModel 의 `OnFinaleSnsPostAdded` 를 구독하고, 결산 화면 등에서 지난 피날레 글을 다시 보여 줄 때만 이걸 읽으세요.
+
+#### `UFF_FinaleSnsOverlay` — 이미 화면에 붙어 있습니다
+
+- **헤더**: `Public/UI/LiveHUD/FF_FinaleSnsOverlay.h`
+- **상태**: `구현완료` — **`UFF_LiveHudScreen` 이 만들어 뷰포트(ZOrder 15)에 올립니다.** WBP 없이 C++ 로 트리를 만듭니다.
+- **비고**: 화면 왼쪽 아래 라이브 채팅 줄(반투명 띠, 작성자 11px + 본문 13px, 왼쪽 2px 반응 색 띠, 폭 340, 최대 6줄). `OnFinaleSnsPostAdded` 를 직접 구독하고,
+  피날레 단계를 벗어나면 비우고 숨깁니다. 전체가 `HitTestInvisible` 이라 월드 클릭을 막지 않습니다. 모양은 `MaxEntries` · `ListWidth` · `BodyFontSize` 등 `EditDefaultsOnly` 값으로 조정합니다.
+  확인은 콘솔 `FF.SNS.Finale <None|C|B|A|S>`.
+
+#### 바뀐 값·규칙 — 화면에 영향 있는 것만
+
+| 항목 | 지금 | 화면에서 할 일 |
+|---|---|---|
+| `GetDailyVisitorGoal()` (ViewModel·Progression) | **오늘 목표**. Day N = 900 + 100 × (N−1) → 900 / 1000 / 1100 (`DailyVisitorGoalGrowthPerDay`, `GetDailyVisitorGoalForDay`) | 날이 바뀌면 다시 읽기. 고정값으로 캐시하지 않기 |
+| 재무 점수 (`FFF_FestivalEvaluation::FinanceScore`) | 100 × (최종 Gold − 시작 Gold) / `FinanceTargetProfitGold`(15,000, 잠정), 0~100. 본전·손해면 0 | 평가 화면 설명 문구가 "원금 대비"라면 "목표 이익 대비"로 |
+| 방문객 점수 | 분모가 날짜별 목표의 합(`VisitorGoalTotal`) | — |
+| 피날레 만족도 보너스 C/B/A/S | +3 / +6 / +10 / +15 (가격 2,000/4,000/6,000/8,000 그대로) | 숫자를 복제하지 말고 `GetFinaleTiers()` 로 읽기. 2차 조정에서 가격도 바뀔 예정 |
+| 부스 수익 | `BoothCommissionRate` 0.12 → **1.0**. 부스 매출 전액이 축제 몫이고, `DT_FacilityRevenues` 모든 행이 행별 덮어쓰기 꺼짐 | 화면 문구 **"수수료" → "부스 매출"**. 남은 곳: `GetEarnReasonText(FacilityCommission)`("부스 수수료"), 준비 화면 예상 안내("부스 수수료와 미니게임 보상은…"), 시설 정보 예상 수익 툴팁("현재 수수료율…"), 매출 탭 빈 상태("…수수료가 들어옵니다"), 조합 보너스 표기("수수료 +N%") |
+| 기본 스태프 | `InitialStaffCount` 6 → **1** (메인안내소 필수 배정만, 사건 대응은 고용 450) | `최대 N명` 은 `기본 1 + 고용 상한` |
+| 입장료 기준값 | 5 → **3** (범위 0~15 그대로) | `GetAdmissionFeeRange` 로 읽기 |
+| 평판 배수 | ×0.75~1.25 | — |
+| 화제성 | SNS 글 1건 최대 0.3, 하루 감쇠 40% | — |
+| 대기열 | `UFF_QueueSubsystem` 이 축제 배속을 따름. 공연 휴지 구간은 줄 인내 판정에서 빠짐 | 예상 대기시간·처리량 표시는 배속과 무관하게 Stage 시간 기준 |
+
 
 ---
 
@@ -2345,6 +2396,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 | 날짜         | 작성자 | 내용                                                                                             |
 | ---------- | --- | ---------------------------------------------------------------------------------------------- |
+| 2026-10-09 | 김시리 | 🆕 피날레 SNS 후기 계약(`ViewModel::OnFinaleSnsPostAdded`, `CrowdInsights::GetFinalePosts`, LiveHUD 가 만드는 `UFF_FinaleSnsOverlay`)과 1차 밸런싱 반영("10/9 추가" 절). `GetDailyVisitorGoal()` 은 오늘 목표(900/1000/1100), 재무 점수 = 100 × 이익 / `FinanceTargetProfitGold`, 피날레 보너스 +3/+6/+10/+15, 부스 수익 100%(화면 문구 "수수료" → "부스 매출"), 기본 스태프 1명, 입장료 기준 3, 평판 ×0.75~1.25, 화제성 감쇠 40% |
 | 2026-09-28 | 김시리 | 입장료·예보·화제성·일일 목표·축제 평가·스태프 승급을 **ViewModel 에 전부 중계**("✅ ViewModel 경로" 절). 입장료 변경 명령 `RequestSetAdmissionFee` 신설, 표시 문자열 4종 추가. SNS `{시설}` 문장은 화제 1·7·10·14 에서 실제 시설 이름으로 나옵니다(아래 9/16 기록의 전부 제외 서술은 지난 것) |
 | 2026-09-23 | 김시리 | 홍보 기획 결정 반영(4등급·홍보 없음 ×0.85). 매일 입장료 설정·예보 미리보기·화제성(Buzz)·축제 평가·일일 목표 진행도 API 와 필요한 화면 5가지를 "🆕 홍보 4등급 · 입장료 · 화제성 · 축제 평가" 절에 정리 |
 | 2026-09-02 | Codex | 홍보 구매·예상 방문객 원본과 UI/스폰 미연동 경계를 반영. 가용 스태프·프로그램 패널·표시 문자열·Crowd 테스트 상태 정정. 예약자 전용 및 실제 참여 인원 미노출, 재시작 홍보 캐시 주의사항 추가 |
