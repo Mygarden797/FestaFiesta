@@ -1,4 +1,4 @@
-"""Add first-use badges to the existing toolbar in an idle Entry editor.
+"""Apply first-use red dot badges to the existing toolbar in an idle Entry editor.
 
 Backs up only WBP_FF_BuildTools, retains all authored widgets and slots, and
 checks badge geometry plus no-op behavior on a second migration.
@@ -17,7 +17,7 @@ ROOT = Path(unreal.Paths.project_dir()).resolve()
 OUT = ROOT / "Saved/BuildFeatureBadges"
 RUN = OUT / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
 TOOLS = "/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools"
-VERSION = "FF.BuildFeatureBadges.20261008.v1"
+VERSION = "FF.BuildFeatureBadges.20261009.v2"
 COMMAND = "FF.MigrateBuildFeatureBadges"
 TOPICS = ("MultiSelection", "BuildGrid", "BuildSnap", "FacilityRanges",
           "BuildSettings", "BuildCatalog", "BuildControls")
@@ -48,9 +48,11 @@ def main():
     original_parents = {name: widget.get_parent() for name, widget in original.items()}
     original_slots = {name: widget.get_editor_property("slot") for name, widget in original.items()}
     original_art = {name: widget.get_editor_property("background").export_text()
-                    for name, widget in original.items() if isinstance(widget, unreal.Border)}
+                    for name, widget in original.items() if isinstance(widget, unreal.Border)
+                    and not name.startswith("Badge_")}
     original_text = {name: (str(widget.get_text()), widget.get_editor_property("color_and_opacity").export_text())
-                     for name, widget in original.items() if isinstance(widget, unreal.TextBlock)}
+                     for name, widget in original.items() if isinstance(widget, unreal.TextBlock)
+                     and not name.startswith("Text_Badge_")}
     unreal.SystemLibrary.execute_console_command(world, COMMAND)
 
     toolbar = widgets(blueprint)
@@ -70,12 +72,17 @@ def main():
         badge = toolbar.get(f"Badge_{topic}")
         mark = toolbar.get(f"Text_Badge_{topic}")
         assert isinstance(badge, unreal.Border), topic
-        assert isinstance(mark, unreal.TextBlock) and str(mark.get_text()) == "!", topic
+        assert isinstance(mark, unreal.TextBlock) and str(mark.get_text()) == "", topic
         assert badge.get_content() == mark, topic
         canvas = toolbar[f"Size_BuildToolbarLine{index}"].get_content()
         assert isinstance(canvas, unreal.CanvasPanel) and badge.get_parent() == canvas, topic
         assert badge.get_visibility() == unreal.SlateVisibility.COLLAPSED, topic
-        assert mark.get_visibility() == unreal.SlateVisibility.HIT_TEST_INVISIBLE, topic
+        assert mark.get_visibility() == unreal.SlateVisibility.COLLAPSED, topic
+        brush = badge.get_editor_property("background")
+        assert brush.get_editor_property("draw_as") == unreal.SlateBrushDrawType.ROUNDED_BOX, topic
+        red = brush.get_editor_property("tint_color").get_editor_property("specified_color")
+        assert (red.r, red.g, red.b, red.a) == (1.0, 0.0, 0.0, 1.0), topic
+        assert brush.get_editor_property("outline_settings").get_editor_property("width") == 0.0, topic
         slot = badge.get_editor_property("slot")
         assert isinstance(slot, unreal.CanvasPanelSlot), topic
         position, size = slot.get_position(), slot.get_size()

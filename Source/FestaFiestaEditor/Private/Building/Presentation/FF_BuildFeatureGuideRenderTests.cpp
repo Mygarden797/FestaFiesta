@@ -124,8 +124,13 @@ bool FFFBuildFeatureGuideRenderTest::RunTest(const FString& Parameters)
             FName(*FString::Printf(TEXT("Badge_%s"), *Topic.Id.ToString()))));
         if (!TestNotNull(TEXT("Authored toolbar icon"), Icon) || !TestNotNull(TEXT("Authored first-use badge"), Badge)) return false;
         auto* Mark = Cast<UTextBlock>(Badge->GetContent());
-        if (!TestNotNull(TEXT("Badge exclamation text"), Mark)) return false;
-        TestEqual(Topic.Id.ToString() + TEXT(" badge uses an exclamation mark"), Mark->GetText().ToString(), FString(TEXT("!")));
+        if (!TestNotNull(TEXT("Legacy badge text"), Mark)) return false;
+        TestTrue(Topic.Id.ToString() + TEXT(" badge has no text"), Mark->GetText().IsEmpty());
+        TestEqual(Topic.Id.ToString() + TEXT(" legacy text is collapsed"), Mark->GetVisibility(), ESlateVisibility::Collapsed);
+        TestTrue(Topic.Id.ToString() + TEXT(" badge is round"), Badge->Background.DrawAs == ESlateBrushDrawType::RoundedBox);
+        TestTrue(Topic.Id.ToString() + TEXT(" badge is red"),
+            Badge->Background.TintColor.GetSpecifiedColor().Equals(FLinearColor::Red));
+        TestEqual(Topic.Id.ToString() + TEXT(" badge has no outline"), Badge->Background.OutlineSettings.Width, 0.f);
         TestEqual(Topic.Id.ToString() + TEXT(" badge is initially hidden without discovery state"),
             Badge->GetVisibility(), ESlateVisibility::Collapsed);
         Badges.Add(Badge, Button);

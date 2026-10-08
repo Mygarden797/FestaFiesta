@@ -347,7 +347,8 @@ FAutoConsoleCommand Command(TEXT("FF.MigrateBuildFeatureGuide"),
 namespace FeatureBadges
 {
 constexpr const TCHAR* BadgePrefix = TEXT("FF_BUILD_FEATURE_BADGES");
-constexpr const TCHAR* BadgeVersion = TEXT("FF.BuildFeatureBadges.20261008.v1");
+constexpr const TCHAR* PreviousBadgeVersion = TEXT("FF.BuildFeatureBadges.20261008.v1");
+constexpr const TCHAR* BadgeVersion = TEXT("FF.BuildFeatureBadges.20261009.v2");
 
 FName BadgeName(const FFBuildFeatureGuide::FTopic& Topic)
 {
@@ -377,9 +378,12 @@ bool VerifyBadges(UWidgetBlueprint& BP)
         const auto* Mark = Cast<UTextBlock>(Tree.FindWidget(MarkName(Topic)));
         const auto* Slot = Badge ? Cast<UCanvasPanelSlot>(Badge->Slot) : nullptr;
         if (!Canvas || !Badge || !Mark || !Slot || Badge->GetParent() != Canvas ||
-            Badge->GetContent() != Mark || Mark->GetText().ToString() != TEXT("!") ||
+            Badge->GetContent() != Mark || !Mark->GetText().IsEmpty() ||
+            Badge->Background.DrawAs != ESlateBrushDrawType::RoundedBox ||
+            !Badge->Background.TintColor.GetSpecifiedColor().Equals(FLinearColor::Red) ||
+            Badge->Background.OutlineSettings.Width != 0.f ||
             Badge->GetVisibility() != ESlateVisibility::Collapsed ||
-            Mark->GetVisibility() != ESlateVisibility::HitTestInvisible ||
+            Mark->GetVisibility() != ESlateVisibility::Collapsed ||
             !Slot->GetPosition().Equals(FVector2D(32.f, -3.f)) ||
             !Slot->GetSize().Equals(FVector2D(18.f, 18.f)) || Slot->GetZOrder() < 10)
             return false;
@@ -398,12 +402,18 @@ bool MigrateBadges(UWidgetBlueprint& BP)
         UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_REUSE: existing badges preserved; no save"), BadgePrefix);
         return true;
     }
-    // Validate every target before adding siblings to the existing artwork.
+    const bool bUpgradeExisting = Metadata.GetValue(&BP, PreviousBadgeVersion) == TEXT("1");
+    // Validate every target before updating badges or adding siblings to the artwork.
     for (const auto& Topic : FFBuildFeatureGuide::Topics())
     {
         if (Topic.ToolbarButton.IsNone()) continue;
+        const auto* Badge = Cast<UBorder>(Tree.FindWidget(BadgeName(Topic)));
+        const auto* Mark = Cast<UTextBlock>(Tree.FindWidget(MarkName(Topic)));
+        const bool bValidExisting = Badge && Mark && Badge->GetContent() == Mark &&
+            Badge->GetParent() == IconCanvas(Tree, Topic) && Cast<UCanvasPanelSlot>(Badge->Slot);
         if (!IconCanvas(Tree, Topic) || !Cast<UButton>(Tree.FindWidget(Topic.ToolbarButton)) ||
-            Tree.FindWidget(BadgeName(Topic)) || Tree.FindWidget(MarkName(Topic)))
+            (bUpgradeExisting ? !bValidExisting :
+                (Tree.FindWidget(BadgeName(Topic)) || Tree.FindWidget(MarkName(Topic)))))
         {
             UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: missing icon canvas or unversioned badge for %s; no changes"),
                 BadgePrefix, *Topic.Id.ToString());
@@ -417,20 +427,27 @@ bool MigrateBadges(UWidgetBlueprint& BP)
         if (Topic.ToolbarButton.IsNone()) continue;
         auto* Canvas = IconCanvas(Tree, Topic);
         Canvas->Modify();
-        auto* Badge = MakeWidget<UBorder>(BP, Tree, BadgeName(Topic));
-        Badge->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(229, 65, 77), 9.f,
-            FLinearColor::White, 1.f));
+        auto* Badge = bUpgradeExisting ? Cast<UBorder>(Tree.FindWidget(BadgeName(Topic))) :
+            MakeWidget<UBorder>(BP, Tree, BadgeName(Topic));
+        Badge->Modify();
+        Badge->SetBrush(FFBuildPearl::Rounded(FLinearColor::Red, 9.f,
+            FLinearColor::Transparent, 0.f));
         Badge->SetBrushColor(FLinearColor::White);
         Badge->SetPadding(FMargin(0.f));
         Badge->SetHorizontalAlignment(HAlign_Center);
         Badge->SetVerticalAlignment(VAlign_Center);
         Badge->SetVisibility(ESlateVisibility::Collapsed);
-        auto* Mark = Text(BP, *MarkName(Topic).ToString(), FText::FromString(TEXT("!")),
-            FFBuildTypography::ERole::Heading, 14, FLinearColor::White);
+        auto* Mark = bUpgradeExisting ? Cast<UTextBlock>(Tree.FindWidget(MarkName(Topic))) :
+            Text(BP, *MarkName(Topic).ToString(), FText::GetEmpty(),
+                FFBuildTypography::ERole::Heading, 14, FLinearColor::White);
+        Mark->Modify();
+        Mark->SetText(FText::GetEmpty());
+        Mark->SetVisibility(ESlateVisibility::Collapsed);
         Mark->SetAutoWrapText(false);
         Mark->SetJustification(ETextJustify::Center);
-        Badge->AddChild(Mark);
-        auto* Slot = Canvas->AddChildToCanvas(Badge);
+        if (!bUpgradeExisting) Badge->AddChild(Mark);
+        auto* Slot = bUpgradeExisting ? Cast<UCanvasPanelSlot>(Badge->Slot) : Canvas->AddChildToCanvas(Badge);
+        Slot->Modify();
         Slot->SetPosition(FVector2D(32.f, -3.f));
         Slot->SetSize(FVector2D(18.f, 18.f));
         Slot->SetZOrder(10);
@@ -465,7 +482,7 @@ void ApplyBadges()
 }
 
 FAutoConsoleCommand BadgeCommand(TEXT("FF.MigrateBuildFeatureBadges"),
-    TEXT("Add first-use exclamation badges to existing toolbar icon canvases without changing their artwork."),
+    TEXT("Apply first-use red dot badges to existing toolbar icon canvases without changing their artwork."),
     FConsoleCommandDelegate::CreateStatic(&ApplyBadges));
 }
 }

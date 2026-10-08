@@ -259,7 +259,8 @@ bool FFFBuildFeatureGuideAcknowledgementTest::RunTest(const FString& Parameters)
 	BadgeSlot->SetPosition(FVector2D(32.f, -3.f));
 	BadgeSlot->SetSize(FVector2D(18.f, 18.f));
 	auto* BadgeText = Widget->WidgetTree->ConstructWidget<UTextBlock>();
-	BadgeText->SetText(FText::FromString(TEXT("!")));
+	BadgeText->SetText(FText::GetEmpty());
+	BadgeText->SetVisibility(ESlateVisibility::Collapsed);
 	Badge->SetContent(BadgeText);
 	auto* ButtonLabel = Widget->WidgetTree->ConstructWidget<UTextBlock>();
 	const FLinearColor AuthoredLabel(.14f, .25f, .36f, 1.f);
@@ -267,7 +268,7 @@ bool FFFBuildFeatureGuideAcknowledgementTest::RunTest(const FString& Parameters)
 	ButtonLabel->SetColorAndOpacity(FSlateColor(AuthoredLabel));
 	ButtonContents->AddChildToVerticalBox(ButtonLabel);
 	Widget->RefreshFeatureHints();
-	TestEqual(TEXT("Unread guidance displays a click-through exclamation badge"), Badge->GetVisibility(), ESlateVisibility::HitTestInvisible);
+	TestEqual(TEXT("Unread guidance displays a click-through dot badge"), Badge->GetVisibility(), ESlateVisibility::HitTestInvisible);
 	TestTrue(TEXT("Unread guidance preserves the button background"), Grid->GetBackgroundColor().Equals(AuthoredTint));
 	TestTrue(TEXT("Unread guidance preserves the caption below the icon"), ButtonLabel->GetColorAndOpacity().GetSpecifiedColor().Equals(AuthoredLabel));
 	TestTrue(TEXT("Unread guidance preserves the icon's original fill brush"), IconFill->Background == AuthoredFill);

@@ -29,6 +29,7 @@ namespace FFFacilityCodexIntroduction
 {
 using namespace FFUIWbpBuilder;
 constexpr const TCHAR* Version = TEXT("FF.FacilityCodex.Introduction20261007.1");
+constexpr const TCHAR* BadgeVersion = TEXT("FF.FacilityCodex.IntroductionBadge20261009.1");
 constexpr const TCHAR* Prefix = TEXT("FF_CODEX_INTRODUCTION");
 
 template<class T> T* Get(UWidgetTree& Tree, const TCHAR* Name)
@@ -111,9 +112,35 @@ bool Save(UWidgetBlueprint& BP)
     return false;
 }
 
+void StyleHint(UBorder& Hint, UTextBlock& Mark)
+{
+    Hint.SetBrush(FFBuildPearl::Rounded(FLinearColor::Red, 9.f,
+        FLinearColor::Transparent, 0.f));
+    Hint.SetBrushColor(FLinearColor::White);
+    Mark.SetText(FText::GetEmpty());
+    Mark.SetVisibility(ESlateVisibility::Collapsed);
+    Mark.bHiddenInDesigner = true;
+}
+
+bool UpgradeHint(UWidgetBlueprint& BP)
+{
+    auto& Metadata = BP.GetOutermost()->GetMetaData();
+    if (Metadata.GetValue(&BP, BadgeVersion) == TEXT("1")) return true;
+    auto* Hint = Get<UBorder>(*BP.WidgetTree, TEXT("Border_IntroductionHint"));
+    auto* Mark = Get<UTextBlock>(*BP.WidgetTree, TEXT("Text_IntroductionHint"));
+    if (!Hint || !Mark) return false;
+    BP.Modify(); BP.WidgetTree->Modify(); Hint->Modify(); Mark->Modify();
+    // Preserve the launcher's authored slots and its existing introduction metadata.
+    StyleHint(*Hint, *Mark);
+    Metadata.SetValue(&BP, BadgeVersion, TEXT("1"));
+    if (SaveNewBlueprint(Prefix, BP)) return true;
+    Metadata.RemoveValue(&BP, BadgeVersion);
+    return false;
+}
+
 bool AddLauncherHint(UWidgetBlueprint& BP)
 {
-    if (Applied(BP)) return true;
+    if (Applied(BP)) return UpgradeHint(BP);
     auto& Tree = *BP.WidgetTree;
     auto* Button = Get<UButton>(Tree, TEXT("Button_OpenCodex"));
     UPanelWidget* Parent = Button->GetParent();
@@ -136,17 +163,21 @@ bool AddLauncherHint(UWidgetBlueprint& BP)
     // The 4px inset also contains the short native scale pulse inside the launcher.
     HintSlot->SetPadding(FMargin(0.f, 4.f, 4.f, 0.f));
     auto* Hint = MakeWidget<UBorder>(BP, Tree, TEXT("Border_IntroductionHint"), true);
-    Hint->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(222, 54, 70), 9.f, FLinearColor::White, 1.f));
-    Hint->SetBrushColor(FLinearColor::White); Hint->SetPadding(FMargin(0.f));
+    Hint->SetPadding(FMargin(0.f));
     Hint->SetHorizontalAlignment(HAlign_Center); Hint->SetVerticalAlignment(VAlign_Center);
     Hint->SetRenderTransformPivot(FVector2D(.5f, .5f));
     Hint->SetVisibility(ESlateVisibility::Collapsed); Hint->bHiddenInDesigner = true;
     Bounds->AddChild(Hint);
-    auto* Label = Text(BP, TEXT("Text_IntroductionHint"), FText::FromString(TEXT("!")),
+    auto* Label = Text(BP, TEXT("Text_IntroductionHint"), FText::GetEmpty(),
         FFBuildTypography::ERole::Heading, 13, FLinearColor::White);
     Label->SetJustification(ETextJustify::Center);
     Hint->AddChild(Label);
-    return Save(BP);
+    StyleHint(*Hint, *Label);
+    auto& Metadata = BP.GetOutermost()->GetMetaData();
+    Metadata.SetValue(&BP, BadgeVersion, TEXT("1"));
+    if (Save(BP)) return true;
+    Metadata.RemoveValue(&BP, BadgeVersion);
+    return false;
 }
 
 void AddFullScreenLayer(UWidgetBlueprint& BP, UBorder& Layer)
