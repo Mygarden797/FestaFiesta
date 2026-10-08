@@ -388,6 +388,12 @@ public:
 
 	void RequestDecision(int32 LeaderAgentIndex, EFF_DecisionReason Reason);
 
+	// 외부가 정한 애니메이션 상태를 풀의 모든 Actor 에게 전달만 한다(저장·판단·읽기 없음)
+	void SetCrowdState(EFF_CrowdRunState NewState);
+
+	// 개체 하나(UnitDatas 인덱스)의 Actor 에게만 전달한다. 바인딩된 Actor 가 없으면 false
+	bool SetCrowdStateForAgent(int32 AgentIndex, EFF_CrowdRunState NewState);
+
 	/**
 	 * 새 목적지가 열렸을 때 유휴 파티에게만 재결정을 요청하고 요청한 파티 수를 돌려준다.
 	 *
@@ -1109,7 +1115,7 @@ public:
 	
 	float SimulationTimeScale = 1.0f;
 	float AppliedCrowdAnimPlayRate = 1.0f;
-	
+
 	UFUNCTION(BlueprintPure, Category = "Crowd|Need")
 	float GetLiveMinutes() const { return (SimTimeSeconds - LiveStartSimTime) * Temp_FestivalMinutesPerRealSecond; }
 
