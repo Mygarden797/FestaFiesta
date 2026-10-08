@@ -70,7 +70,12 @@ foreach ($filter in $TestFilter) {
     $filterRoot = Join-Path $OutputRoot $safeFilter
     $reportRoot = Join-Path $filterRoot 'Report'
     $logPath = Join-Path $filterRoot 'Automation.log'
+    # GameInstance tests can migrate/write save metadata. Isolate every filter
+    # invocation, including reruns that reuse OutputRoot, from player/earlier saves.
+    $userDirectory = [System.IO.Path]::GetFullPath((Join-Path $filterRoot (
+        'User-{0}' -f [Guid]::NewGuid().ToString('N'))))
     [System.IO.Directory]::CreateDirectory($reportRoot) | Out-Null
+    [System.IO.Directory]::CreateDirectory($userDirectory) | Out-Null
     $reportIndex = Join-Path $reportRoot 'index.json'
     if (Test-Path -LiteralPath $reportIndex -PathType Leaf) {
         # A prior successful export must not validate a failed or empty current run.
@@ -89,12 +94,14 @@ foreach ($filter in $TestFilter) {
         '-nosound',
         '-stdout',
         '-FullStdOutLogOutput',
+        "-UserDir=$userDirectory",
         "-ReportExportPath=$reportRoot",
         '-TestExit=Automation Test Queue Empty',
         "-ExecCmds=Automation RunTests $filter"
     )
 
     Write-Host "Running Unreal automation tests with offscreen rendering: $filter"
+    Write-Host "Isolated user data: $userDirectory"
     $exitCode = -1
     $savedErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
