@@ -33,6 +33,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI|Incident")
 	FFF_OnIncidentMarkerClicked OnIncidentMarkerClicked;
 
+	// 하단 바처럼 마커를 가리는 UI의 높이. EdgeSafeMargin.Bottom 에 더해져, 바 뒤로 들어간 마커는 바 위쪽 가장자리로 밀려 올라온다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Incident")
+	void SetBottomReserve(float InReserve) { BottomReserve = FMath::Max(0.f, InReserve); }
+
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
@@ -124,4 +128,6 @@ private:
 	TObjectPtr<UMaterialInterface> LoadedRingMaterial;
 
 	TMap<FFF_IncidentHandle, FMarker> Markers;
+
+	float BottomReserve = 0.f;
 };

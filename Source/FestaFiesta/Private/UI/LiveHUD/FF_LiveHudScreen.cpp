@@ -185,6 +185,7 @@ void UFF_LiveHudScreen::EnsureIncidentMarkerLayer()
 	if (IncidentMarkerLayer)
 	{
 		IncidentMarkerLayer->OnIncidentMarkerClicked.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleIncidentMarkerClicked);
+		IncidentMarkerLayer->SetBottomReserve(GetBottomBarHeight());
 	}
 }
 
@@ -1015,6 +1016,10 @@ void UFF_LiveHudScreen::RefreshTabs()
 			FMargin Offsets = BarSlot->GetOffsets();
 			Offsets.Bottom = TargetHeight;
 			BarSlot->SetOffsets(Offsets);
+		}
+		if (IncidentMarkerLayer)
+		{
+			IncidentMarkerLayer->SetBottomReserve(TargetHeight);
 		}
 	}
 	if (Text_SpeedReason)

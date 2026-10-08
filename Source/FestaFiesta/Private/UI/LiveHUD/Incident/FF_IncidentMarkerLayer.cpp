@@ -314,7 +314,7 @@ void UFF_IncidentMarkerLayer::NativeTick(const FGeometry& MyGeometry, float InDe
 
 	const FVector2D LocalSize = MyGeometry.GetLocalSize();
 	const FVector2D RectMin(EdgeSafeMargin.Left, EdgeSafeMargin.Top);
-	const FVector2D RectMax(LocalSize.X - EdgeSafeMargin.Right, LocalSize.Y - EdgeSafeMargin.Bottom);
+	const FVector2D RectMax(LocalSize.X - EdgeSafeMargin.Right, LocalSize.Y - EdgeSafeMargin.Bottom - BottomReserve);
 	if (RectMax.X <= RectMin.X || RectMax.Y <= RectMin.Y)
 	{
 		return;
