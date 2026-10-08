@@ -126,6 +126,7 @@ public:
 		}
 
 		ApplyVisitorConditions(Game);
+		ApplyCrowdOverrides(World);
 
 		// 편성 판정에 쓰는 목록이라 개장 전에 읽는다.
 		const FFFZSReadModel ReadModel = Zones->BuildReadModel();
@@ -267,6 +268,21 @@ private:
 			*UEnum::GetValueAsString(Progression->GetPurchasedPromotionGrade()), Forecast.AdmissionFeeGold,
 			Buzz ? Buzz->GetBuzz() : 0.f, Forecast.ExpectedVisitors,
 			Forecast.PromotionMultiplier, Forecast.AdmissionFeeMultiplier, Forecast.BuzzMultiplier));
+	}
+
+	// 군중 계수를 명령줄로 바꾼다. 같은 빌드로 값만 바꿔 비교하려는 것이다.
+	//   -FFScenarioMaxWalk=600 -FFScenarioHurry=1.5
+	void ApplyCrowdOverrides(UWorld* World)
+	{
+		UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
+		if (!Crowd)
+		{
+			return;
+		}
+		FParse::Value(FCommandLine::Get(), TEXT("FFScenarioMaxWalk="), Crowd->MaxWalkableHeightAboveOriginUU);
+		FParse::Value(FCommandLine::Get(), TEXT("FFScenarioHurry="), Crowd->ScheduledHurrySpeedMultiplier);
+		Test->AddInfo(FString::Printf(TEXT("[계수] 통행 상한 %.0f · 재촉 %.2f"),
+			Crowd->MaxWalkableHeightAboveOriginUU, Crowd->ScheduledHurrySpeedMultiplier));
 	}
 
 	// 필수 시설의 배정 부족분을 대기 스태프로 채운다. 판정은 필수 시설 경계가 준 부족 인원을 그대로 쓴다.

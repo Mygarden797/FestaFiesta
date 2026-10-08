@@ -90,4 +90,30 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GSnsListCommand(
 	TEXT("최근에 쌓인 SNS 글을 N건(기본 10) 본다. 예: FF.SNS.List 20"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&SnsListCommand));
 
+// 3일차까지 가지 않고 피날레 연출 후기와 왼쪽 아래 오버레이를 본다. 불꽃까지 보려면 FF.Finale.Play 를 같이 쓴다.
+static void SnsFinaleCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdInsightsSubsystem* Insights = FFSnsConsole::GetInsights(World, Ar);
+	if (!Insights)
+	{
+		return;
+	}
+
+	const FString Token = Args.IsEmpty() ? FString(TEXT("S")) : Args[0].TrimStartAndEnd().ToUpper();
+	EFF_FinaleGrade Grade = EFF_FinaleGrade::None;
+	if (Token == TEXT("C")) { Grade = EFF_FinaleGrade::C; }
+	else if (Token == TEXT("B")) { Grade = EFF_FinaleGrade::B; }
+	else if (Token == TEXT("A")) { Grade = EFF_FinaleGrade::A; }
+	else if (Token == TEXT("S")) { Grade = EFF_FinaleGrade::S; }
+	else if (Token != TEXT("NONE")) { Ar.Logf(TEXT("등급은 None|C|B|A|S 중 하나다.")); return; }
+
+	Insights->Debug_StartFinaleFeed(Grade);
+	Ar.Logf(TEXT("피날레 후기 시작: %s. 불꽃이 안 돌면 20초 뒤 멈춘다."), *Token);
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GSnsFinaleCommand(
+	TEXT("FF.SNS.Finale"),
+	TEXT("피날레 연출 후기를 지정 등급으로 지금 시작한다. 예: FF.Finale.Play S 다음에 FF.SNS.Finale S"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&SnsFinaleCommand));
+
 #endif // !UE_BUILD_SHIPPING

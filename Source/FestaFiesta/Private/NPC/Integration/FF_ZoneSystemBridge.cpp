@@ -17,16 +17,20 @@ namespace
 		int32 ZoneRank = 0;
 	};
 
-	// 목적지 후보가 될 수 없는 카테고리.
 	bool IsSelectableCategory(EFFZSFacilityCategory Category)
 	{
-		return Category != EFFZSFacilityCategory::Info
-			&& Category != EFFZSFacilityCategory::Safety
-			&& Category != EFFZSFacilityCategory::Lighting
-			&& Category != EFFZSFacilityCategory::Road
-			&& Category != EFFZSFacilityCategory::Tile;
+		return FFF_ZoneSystemBridge::IsGuestDestinationCategory(Category);
 	}
 
+}
+
+bool FFF_ZoneSystemBridge::IsGuestDestinationCategory(EFFZSFacilityCategory Category)
+{
+	return Category != EFFZSFacilityCategory::Info
+		&& Category != EFFZSFacilityCategory::Safety
+		&& Category != EFFZSFacilityCategory::Lighting
+		&& Category != EFFZSFacilityCategory::Road
+		&& Category != EFFZSFacilityCategory::Tile;
 }
 
 // 메인 공연 시간표와 전역 안내는 SunsetMainStage에만 적용한다.
@@ -531,7 +535,12 @@ FFF_NeedReliefFlags FFF_ZoneSystemBridge::GetNeedReliefFlags(
 		Flags.bRelievesHunger = (PreferenceCategory == TEXT("food_stall"));
 		Flags.bRelievesThirst = (PreferenceCategory == TEXT("food_stall")
 			|| PreferenceCategory == TEXT("nightlife_entertainment"));
-		Flags.bRelievesStimulation = (PreferenceCategory == TEXT("nightlife_entertainment"));
+		// 굿즈·공방·게임은 구경하고 만들고 노는 곳이라 자극을 푼다. 아무 Need 도 안 풀면
+		// 취향 항(최대 0.6)만으로는 Need 항(1.8)을 가진 시설을 이기지 못해 손님이 거의 오지 않았다.
+		Flags.bRelievesStimulation = (PreferenceCategory == TEXT("nightlife_entertainment")
+			|| PreferenceCategory == TEXT("market_goods")
+			|| PreferenceCategory == TEXT("craft_experience")
+			|| PreferenceCategory == TEXT("activity_game"));
 		break;
 	}
 	default:

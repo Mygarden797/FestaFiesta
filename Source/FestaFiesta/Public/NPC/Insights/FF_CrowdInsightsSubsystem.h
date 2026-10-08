@@ -7,6 +7,7 @@
 #include "Tickable.h"
 #include "NPC/Insights/FF_SnsTypes.h"
 #include "Time/FF_FestivalStage.h"
+#include "Economy/FF_FestivalEconomyTypes.h"
 #include "FF_CrowdInsightsSubsystem.generated.h"
 
 class UDataTable;
@@ -17,6 +18,7 @@ class UFF_FestivalStageSubsystem;
 class UFF_CrowdSimulationSubsystem;
 class UFF_CrowdDecisionSubsystem;
 class UFFZSWorldSubsystem;
+class UFF_FinaleShowSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsPostAdded, FFF_SnsPostRow, NewPost);
 
@@ -55,9 +57,32 @@ public:
 	// 테스트 전용 — 타이머를 기다리지 않고 지금 한 건 강제로 만들어 큐에 넣는다
 	FFF_SnsPostRow Debug_ForceGeneratePost();
 
+	/**
+	 * 피날레 연출 중 후기. 피날레 단계 동안 몇 초 간격으로 계속 나온다.
+	 * 처음 몇 초는 기대감, 그 뒤로는 구매 등급에 맞는 평가이고, 등급이 높을수록 간격이 짧다.
+	 * 전부 피날레 목록에 쌓고, 피드에는 몇 건에 한 건만 넣어 낮 후기가 밀려나지 않게 한다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|SNS")
+	FFF_OnSnsPostAdded OnFinalePostAdded;
+
+	// 최신 글이 [0]. 새 축제를 시작할 때 비운다
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|SNS")
+	const TArray<FFF_SnsPostRow>& GetFinalePosts() const { return FinalePosts; }
+
+	// 확인용 — 피날레 단계를 기다리지 않고 지정 등급으로 연출 후기를 시작한다
+	void Debug_StartFinaleFeed(EFF_FinaleGrade Grade);
+
 private:
 	// Live 단계인지 확인하고, 간격 카운트다운이 0 이하면 신호를 모아 GeneratePost 호출
 	void MaybeGeneratePost(float DeltaTime);
+	// 만족도·혼잡·단계·시설·입장료·공연 상태를 한 번에 채운다. 주기 글과 강제 글이 같은 신호를 쓰게 한다
+	void FillLiveSignals(struct FFF_SnsFeedSignals& Signals);
+
+	UFUNCTION()
+	void HandleMainProgramStarted(FString EventLabel);
+	UFUNCTION()
+	void HandleMainProgramEnded(FString EventLabel);
+
 	// 링버퍼 맨 앞에 삽입하고 용량 초과분을 잘라낸 뒤 델리게이트 방송
 	void PushPost(const FFF_SnsPostRow& NewPost);
 	// 계수 테이블에서 Min/Max를 읽어 다음 간격을 결정론적으로 예약
@@ -77,6 +102,15 @@ private:
 	UFUNCTION()
 	void HandleFestivalStarted();
 
+	// 피날레 단계에 들어가면 연출 후기를 시작하고, 나가면 멈춘다
+	UFUNCTION()
+	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+
+	void StartFinaleFeed(EFF_FinaleGrade Grade);
+	void MaybeGenerateFinalePost(float DeltaTime);
+	// 다음 피날레 후기까지의 간격. 기대감 구간인지와 등급에 따라 평균이 다르다
+	float NextFinaleIntervalSeconds(bool bHype) const;
+
 	// 이하 다섯 개는 다른 서브시스템을 매번 새로 조회하는 헬퍼 — 캐시하지 않는다
 	// (subsystem-scope-rule: GameInstance보다 짧게 사는 World 스코프 포인터를 들고 있지 않는다)
 	UFF_SatisfactionMetricsSubsystem* GetSatisfactionSubsystem() const;
@@ -85,6 +119,7 @@ private:
 	UFF_CrowdSimulationSubsystem* GetCrowdSimulationSubsystem() const;
 	UFF_CrowdDecisionSubsystem* GetCrowdDecisionSubsystem() const;
 	UFFZSWorldSubsystem* GetZoneSystemSubsystem() const;
+	UFF_FinaleShowSubsystem* GetFinaleShowSubsystem() const;
 
 	static constexpr int32 RingBufferCapacity = 80;
 
@@ -108,4 +143,32 @@ private:
 
 	// 실제 글이 쌓이는 배열
 	TArray<FFF_SnsPostRow> RecentPosts;
+
+	// 오늘 이용 중인 손님을 한 번이라도 봤는지. Live 가 시작될 때 비운다
+	bool bFacilityUsedToday = false;
+
+	// 메인 공연 진행 여부와 끝난 시각(Live 경과 초). 끝나고 MainShowAfterglowLiveSeconds 동안 여운 글이 나간다
+	bool bMainShowRunning = false;
+	float MainShowEndedAtLiveSeconds = -1.f;
+	static constexpr float MainShowAfterglowLiveSeconds = 40.f;
+
+	static constexpr int32 FinalePostCapacity = 400;
+
+	bool bFinaleFeedActive = false;
+	EFF_FinaleGrade FinaleGrade = EFF_FinaleGrade::None;
+	// 피날레 단계에 들어간 뒤 흐른 실제 시간. 배속과 상관없이 같은 속도로 읽히게 한다
+	float FinaleElapsedSeconds = 0.f;
+	float TimeUntilNextFinalePostSeconds = 0.f;
+	// 불꽃이 멈춘 뒤 흐른 시간. 연출이 끝나고 FinaleAfterShowSeconds, 연출이 한 번도 안 돌았으면
+	// FinaleWithoutShowSeconds 가 지나면 후기를 멈춘다
+	float FinaleQuietSeconds = 0.f;
+	bool bFinaleShowSeen = false;
+	static constexpr float FinaleAfterShowSeconds = 10.f;
+	static constexpr float FinaleWithoutShowSeconds = 20.f;
+	int32 FinalePostCount = 0;
+	// 화제별로 지금까지 몇 번째 문장까지 썼는지. 한 바퀴 돌기 전에는 같은 문장이 다시 안 나온다
+	TMap<int32, int32> FinaleLineCycleByTopic;
+	// 이번 피날레에서 이미 나간 문장. 추임새를 붙여서라도 같은 문장이 두 번 보이지 않게 한다
+	TSet<FString> UsedFinaleBodies;
+	TArray<FFF_SnsPostRow> FinalePosts;
 };
