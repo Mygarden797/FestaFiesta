@@ -420,6 +420,24 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
             {
                 UWidget* Label = Widget->GetWidgetFromName(Name);
                 if (IsWithin(Label, Settings) && !Overlaps(Bounds(Label), SettingsViewRect)) continue;
+                // The current inspector has a scrollable body. Offscreen warning
+                // text must be reachable by scrolling, not squeezed into its hero.
+                UScrollBox* BodyScroll = nullptr;
+                for (UWidget* Parent = Label ? Label->GetParent() : nullptr; Parent && Parent != Info; Parent = Parent->GetParent())
+                    if (auto* Scroll = Cast<UScrollBox>(Parent)) { BodyScroll = Scroll; break; }
+                if (IsRendered(Label) && BodyScroll && IsWithin(Label, Info) && !Contains(Bounds(BodyScroll), Bounds(Label)))
+                {
+                    const float PreviousOffset = BodyScroll->GetScrollOffset();
+                    BodyScroll->ScrollWidgetIntoView(Label, false, EDescendantScrollDestination::IntoView);
+                    for (int32 Frame = 0; Frame < 4; ++Frame)
+                        Renderer.DrawWindow(Target.Get(), HitGrid, Window, 1.f, Size, .016f, false);
+                    TestTrue(ContextName + TEXT(": expanded information is fully reachable in its scroll viewport: ") + Name.ToString(),
+                        Contains(Bounds(BodyScroll), Bounds(Label)));
+                    BodyScroll->SetScrollOffset(PreviousOffset);
+                    for (int32 Frame = 0; Frame < 4; ++Frame)
+                        Renderer.DrawWindow(Target.Get(), HitGrid, Window, 1.f, Size, .016f, false);
+                    continue;
+                }
                 if (IsRendered(Label)) TestTrue(ContextName + TEXT(": expanded information stays inside its surface: ") + Name.ToString(),
                     IsWithin(Label, Settings) ? Overlaps(SettingsViewRect, Bounds(Label)) :
                     Contains(Name == TEXT("Text_ControlHelp") ? Bounds(Help) : InfoRect, Bounds(Label)));

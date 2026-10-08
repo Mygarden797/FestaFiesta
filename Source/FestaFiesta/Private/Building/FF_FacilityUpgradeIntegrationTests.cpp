@@ -648,10 +648,33 @@ bool FFFFacilityUpgradeResizeCollisionTest::RunTest(const FString& Parameters)
 		AddError(UnblockedPreview.FailureReason.ToString());
 		return false;
 	}
-	// Baseline reserved bounds end at x=1700. The neighbor starts at x=1750,
-	// while this facility's expanded bounds reach x=1850 and must collide.
-	const FGuid Neighbor = H.Install(this, 1850);
+	// Placement reserves authored geometry, without the legacy ClearanceCells perimeter.
+	// The original footprint ends at x=1600; the 1.25x footprint ends at x=1750.
+	// A neighbor at x=1700 leaves 100cm initially and overlaps the expansion by 50cm.
+	const FGuid Neighbor = H.Install(this, 1700);
 	if (!Id.IsValid() || !Neighbor.IsValid()) return false;
+	const AFFZSFacilityActor* Facility = H.Zones->FindFacility(Id);
+	const AFFZSFacilityActor* NeighborFacility = H.Zones->FindFacility(Neighbor);
+	TArray<FFFZSOrientedRect> Footprint, Clearance, Queue, OriginalReserved;
+	UFFZSGridLibrary::BuildPlacementOrientedRegions(Facility->GetFacilitySpec(), Facility->GetGridPlacement(),
+		Footprint, Clearance, Queue, OriginalReserved);
+	TArray<FFFZSOrientedRect> NeighborFootprint, NeighborClearance, NeighborQueue, NeighborReserved;
+	UFFZSGridLibrary::BuildPlacementOrientedRegions(NeighborFacility->GetFacilitySpec(), NeighborFacility->GetGridPlacement(),
+		NeighborFootprint, NeighborClearance, NeighborQueue, NeighborReserved);
+	TArray<FFFZSOrientedRect> ExpandedFootprint, ExpandedClearance, ExpandedQueue, ExpandedReserved;
+	const FFFZSFacilitySpec ExpandedSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+		Facility->GetBaseFacilitySpec(), 2, TestResizeMultiplier);
+	UFFZSGridLibrary::BuildPlacementOrientedRegions(ExpandedSpec, Facility->GetGridPlacement(),
+		ExpandedFootprint, ExpandedClearance, ExpandedQueue, ExpandedReserved);
+	if (!TestTrue(TEXT("The collision fixture has valid authored regions"),
+			!OriginalReserved.IsEmpty() && !NeighborReserved.IsEmpty() && !ExpandedFootprint.IsEmpty())
+		|| !TestFalse(TEXT("The installed neighbors have no original reservation overlap"),
+			UFFZSGridLibrary::DoOrientedRectSetsOverlap(OriginalReserved, NeighborReserved))
+		|| !TestTrue(TEXT("The proposed footprint overlaps the neighbor's physical footprint"),
+			UFFZSGridLibrary::DoOrientedRectSetsOverlap(ExpandedFootprint, NeighborFootprint)))
+	{
+		return false;
+	}
 	const int32 Gold = H.Progression->GetGold();
 	const int64 Revision = H.Zones->GetWorldRevision();
 	const int32 QueueId = H.QueueBridge->FindQueueFacilityId(Id);

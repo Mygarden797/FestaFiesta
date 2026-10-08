@@ -1,4 +1,4 @@
-// 역할: 실제 도감 진입 버튼의 빨간 알림이 미수령 보상과 함께 갱신되는지 검증한다.
+// 역할: 실제 도감 진입 버튼의 첫 사용 안내와 미수령 보상 표시를 각각 검증한다.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
@@ -165,28 +165,35 @@ bool FFF_FacilityCodexRewardNotificationTest::RunTest(const FString& Parameters)
 		CreateWidget<UFF_FacilityCodexLauncher>(Controller, LauncherClasses[1]));
 	UFF_FacilityCodexLauncher* Launchers[] = {InspectorLauncher.Get(), CatalogLauncher.Get()};
 	UBorder* Hints[2] = {};
+	UBorder* IntroductionHints[2] = {};
 	UButton* Buttons[2] = {};
 	ON_SCOPE_EXIT { for (auto* Launcher : Launchers) if (Launcher) Launcher->RemoveFromParent(); };
 	for (int32 Index = 0; Index < 2; ++Index)
 	{
 		if (!TestNotNull(TEXT("Production notification launcher"), Launchers[Index])) return false;
 		Launchers[Index]->AddToViewport();
-		Hints[Index] = Cast<UBorder>(Launchers[Index]->GetWidgetFromName(TEXT("Border_IntroductionHint")));
+		IntroductionHints[Index] = Cast<UBorder>(Launchers[Index]->GetWidgetFromName(TEXT("Border_IntroductionHint")));
+		Hints[Index] = Cast<UBorder>(Launchers[Index]->GetWidgetFromName(TEXT("Border_RewardHint")));
 		Buttons[Index] = Cast<UButton>(Launchers[Index]->GetWidgetFromName(TEXT("Button_OpenCodex")));
-		if (!TestNotNull(TEXT("Authored red notification icon"), Hints[Index]) ||
+		if (!TestNotNull(TEXT("Authored first-use notification icon"), IntroductionHints[Index]) ||
+			!TestNotNull(TEXT("Authored unclaimed reward icon"), Hints[Index]) ||
 			!TestNotNull(TEXT("Actual notification entry button"), Buttons[Index])) return false;
-		const FLinearColor Color = Hints[Index]->Background.TintColor.GetSpecifiedColor() * Hints[Index]->GetBrushColor();
-		TestTrue(TEXT("Each authored notification remains red"), Color.R > Color.G && Color.R > Color.B);
+		const FLinearColor Color = IntroductionHints[Index]->Background.TintColor.GetSpecifiedColor() * IntroductionHints[Index]->GetBrushColor();
+		TestTrue(TEXT("Each first-use invitation remains red"), Color.R > Color.G && Color.R > Color.B);
+		const FLinearColor RewardColor = Hints[Index]->Background.TintColor.GetSpecifiedColor() * Hints[Index]->GetBrushColor();
+		TestTrue(TEXT("Earned rewards use a separate gold indicator"), RewardColor.R > RewardColor.B && RewardColor.G > RewardColor.B);
 	}
-	const auto TestHints = [this, &Hints](const TCHAR* Message, const bool bVisible)
+	const auto TestHints = [this, &Hints, &IntroductionHints](const TCHAR* Message, const bool bVisible, const bool bIntroduction = false)
 	{
 		for (int32 Index = 0; Index < 2; ++Index)
 		{
 			TestEqual(*FString::Printf(TEXT("%s (%s)"), Message, Index == 0 ? TEXT("inspector") : TEXT("catalog")),
 				Hints[Index]->GetVisibility(), bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+			TestEqual(*FString::Printf(TEXT("%s keeps first-use state independent (%s)"), Message, Index == 0 ? TEXT("inspector") : TEXT("catalog")),
+				IntroductionHints[Index]->GetVisibility(), bIntroduction ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 		}
 	};
-	TestHints(TEXT("Fresh profiles preserve the first-use invitation"), true);
+	TestHints(TEXT("Fresh profiles preserve the first-use invitation without an earned reward"), false, true);
 	TestFalse(TEXT("Undiscovered rewards are not pending"), Codex->HasUnclaimedRewards());
 	Progress->MarkIntroductionSeen();
 	TestHints(TEXT("Seen introduction with no earned rewards hides both icons"), false);

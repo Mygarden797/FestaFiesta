@@ -78,6 +78,79 @@ function Write-Utf8Json {
     }
 }
 
+function Move-ReleaseDirectory {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $OutputRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string] $BuildLabel,
+
+        [ValidateRange(1, 20)]
+        [int] $MaximumAttempts = 8,
+
+        [ValidateRange(1, 4000)]
+        [int] $InitialDelayMilliseconds = 500
+    )
+
+    if ($BuildLabel -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$') {
+        throw 'Release promotion requires a single valid build label.'
+    }
+    $outputFullPath = [System.IO.Path]::GetFullPath($OutputRoot)
+    if ($outputFullPath.Length -gt [System.IO.Path]::GetPathRoot($outputFullPath).Length) {
+        $outputFullPath = $outputFullPath.TrimEnd('\', '/')
+    }
+    $stagingFullPath = [System.IO.Path]::GetFullPath((Join-Path $outputFullPath '.staging'))
+    $sourceFullPath = [System.IO.Path]::GetFullPath((Join-Path $stagingFullPath $BuildLabel))
+    $destinationFullPath = [System.IO.Path]::GetFullPath((Join-Path $outputFullPath $BuildLabel))
+    if ([System.IO.Path]::GetDirectoryName($destinationFullPath) -ine $outputFullPath -or
+        [System.IO.Path]::GetDirectoryName($sourceFullPath) -ine $stagingFullPath) {
+        throw 'Release promotion paths must remain directly inside the selected output/staging directories.'
+    }
+
+    $firstFailure = $null
+    $delayMilliseconds = $InitialDelayMilliseconds
+    for ($attempt = 1; $attempt -le $MaximumAttempts; $attempt++) {
+        try {
+            # Recheck on every attempt: never follow a replaced staging link or
+            # overwrite a destination that appeared while waiting for a lock.
+            foreach ($directoryPath in @($outputFullPath, $stagingFullPath, $sourceFullPath)) {
+                $directory = Get-Item -LiteralPath $directoryPath -Force -ErrorAction Stop
+                if (-not $directory.PSIsContainer -or
+                    ($directory.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+                    throw "Release promotion requires a real directory: $directoryPath"
+                }
+            }
+            if ($null -ne (Get-Item -LiteralPath $destinationFullPath -Force -ErrorAction SilentlyContinue)) {
+                throw "Release destination already exists; refusing to overwrite: $destinationFullPath"
+            }
+            [System.IO.Directory]::Move($sourceFullPath, $destinationFullPath)
+            return
+        }
+        catch {
+            if ($null -eq $firstFailure) { $firstFailure = $_ }
+            $moveException = $_.Exception
+            while ($null -ne $moveException.InnerException) { $moveException = $moveException.InnerException }
+            $nativeError = $moveException.HResult -band 0xffff
+            $mayBeTemporaryLock = ($moveException -is [System.IO.IOException] -or
+                $moveException -is [System.UnauthorizedAccessException]) -and $nativeError -in @(5, 32, 33)
+            if (-not $mayBeTemporaryLock -or $attempt -eq $MaximumAttempts) {
+                # Keep the original exception/Win32 code, including when a later
+                # safety check fails. The extra context does not replace it.
+                $firstFailure.Exception.Data['ReleasePromotionAttempts'] = $attempt
+                $firstFailure.Exception.Data['ReleasePromotionLastError'] = $_.Exception.Message
+                $PSCmdlet.ThrowTerminatingError($firstFailure)
+            }
+            Write-Warning (("Release promotion attempt {0}/{1} failed (Windows {2}); retrying in {3} ms. " +
+                'A temporary lock is possible; its owner has not been identified.') -f
+                $attempt, $MaximumAttempts, $nativeError, $delayMilliseconds)
+            Start-Sleep -Milliseconds $delayMilliseconds
+            $delayMilliseconds = [Math]::Min($delayMilliseconds * 2, 4000)
+        }
+    }
+}
+
 function Get-GitSourcePaths {
     param(
         [Parameter(Mandatory = $true)]
@@ -659,7 +732,7 @@ try {
     [System.IO.Directory]::CreateDirectory($OutputRoot) | Out-Null
     $currentPhase = 'release-promotion'
     $currentLog = 'Metadata/verification.json'
-    [System.IO.Directory]::Move($releaseRoot, $finalReleaseRoot)
+    Move-ReleaseDirectory -OutputRoot $OutputRoot -BuildLabel $BuildLabel
 
     $finalPayloadRoot = Join-Path $finalReleaseRoot (Get-FFRelativePath -BasePath $releaseRoot -Path $payloadRoot)
     $finalSymbolsRoot = Join-Path $finalReleaseRoot 'Symbols'

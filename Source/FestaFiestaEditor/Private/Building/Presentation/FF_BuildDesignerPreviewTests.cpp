@@ -151,10 +151,10 @@ bool FFFBuildDesignerPreviewTest::RunTest(const FString& Parameters)
                 if (TestNotNull(TEXT("Designer codex dialog"), Dialog))
                 {
                     const FSlateRect Bounds = Dialog->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-                    TestTrue(TEXT("Designer codex fills the selected screen resolution"),
-                        FMath::IsNearlyZero(Bounds.Left, 1.f) && FMath::IsNearlyZero(Bounds.Top, 1.f) &&
-                        FMath::IsNearlyEqual(Bounds.Right, float(Resolution.X), 1.f) &&
-                        FMath::IsNearlyEqual(Bounds.Bottom, float(Resolution.Y), 1.f));
+                    TestTrue(TEXT("Designer codex preserves the inset reference composition"),
+                        Bounds.Left > 0.f && Bounds.Top > 0.f &&
+                        Bounds.Right < Resolution.X && Bounds.Bottom < Resolution.Y &&
+                        FMath::IsNearlyEqual(Bounds.GetSize().X / Bounds.GetSize().Y, 1584.f / 864.f, .002f));
                 }
                 for (const TCHAR* HiddenName : {TEXT("Text_Empty"), TEXT("Border_RewardFeedback")})
                     if (UWidget* Hidden = Preview->GetWidgetFromName(HiddenName))
@@ -177,11 +177,17 @@ bool FFFBuildDesignerPreviewTest::RunTest(const FString& Parameters)
                                 CardBounds[6].Top > CardBounds[0].Bottom - 1.f);
                     }
                     auto* Track = Preview->GetWidgetFromName(TEXT("Size_ReadableMilestoneTrack"));
-                    auto* Browse = Preview->GetWidgetFromName(TEXT("Size_Browse"));
-                    if (TestNotNull(TEXT("Designer progress track"), Track) && TestNotNull(TEXT("Designer browse area"), Browse))
-                        TestTrue(TEXT("Designer progress track reaches the list's right edge"),
-                            FMath::Abs(Track->GetPaintSpaceGeometry().GetLayoutBoundingRect().Right -
-                                Browse->GetPaintSpaceGeometry().GetLayoutBoundingRect().Right) <= 1.f);
+                    auto* RewardViewport = Preview->GetWidgetFromName(TEXT("Scroll_ReadableMilestones"));
+                    auto* Filters = Preview->GetWidgetFromName(TEXT("Horizontal_Toolbar"));
+                    if (TestNotNull(TEXT("Designer progress track"), Track) &&
+                        TestNotNull(TEXT("Designer reward viewport"), RewardViewport) && TestNotNull(TEXT("Designer filters"), Filters))
+                    {
+                        const FSlateRect TrackRect = Track->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                        const FSlateRect RewardRect = RewardViewport->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                        TestTrue(TEXT("Designer header progress fills its viewport above filters"),
+                            TrackRect.Right >= RewardRect.Right - 1.f && RewardRect.GetSize().X > 0.f &&
+                            RewardRect.Bottom <= Filters->GetPaintSpaceGeometry().GetLayoutBoundingRect().Top + 1.f);
+                    }
                 }
             }
             TArray<FColor> Pixels;

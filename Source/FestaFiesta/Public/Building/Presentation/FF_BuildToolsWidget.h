@@ -267,13 +267,6 @@ protected:
 
 private:
     TWeakObjectPtr<UFF_BuildingFeatureDiscoverySubsystem> FeatureDiscovery;
-    struct FFeatureIconBrush
-    {
-        FSlateBrush Brush;
-        FLinearColor Color;
-    };
-    TMap<TWeakObjectPtr<UBorder>, FFeatureIconBrush> AuthoredFeatureIconBrushes;
-    TMap<TWeakObjectPtr<UTextBlock>, FSlateColor> AuthoredFeatureIconTextColors;
     TMap<TWeakObjectPtr<UButton>, FText> AuthoredFeatureButtonTooltips;
     friend class FFFBuildFeatureGuideAcknowledgementTest;
     friend class FFFBuildFeatureGuideInputTest;
@@ -285,7 +278,6 @@ private:
     void RunFeatureToolbarAction(FName FeatureId);
     void RequestFeatureToolbarAction(FName FeatureId);
     void RefreshFeatureHints();
-    void RefreshFeatureIcon(UWidget* Icon, bool bUnseen);
     UFUNCTION() void HandleFeatureSeen(FName FeatureId);
     UFUNCTION() void ConfirmFeatureGuide();
     UFUNCTION() void HandleFeatureGuideTopicChanged(FString SelectedItem, ESelectInfo::Type SelectionType);

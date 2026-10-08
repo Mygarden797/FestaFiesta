@@ -13,6 +13,7 @@
 
 class UButton;
 class UBorder;
+class UCanvasPanel;
 class UComboBoxString;
 class UEditableTextBox;
 class UImage;
@@ -173,6 +174,13 @@ protected:
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_CollectionPrevious;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_CollectionNext;
 private:
+	void EnsureCloseTargetLayer();
+	void UpdateCloseTargetLayout();
+	UPROPERTY(Transient) TObjectPtr<UCanvasPanel> CloseTargetCanvas;
+	FVector2D AuthoredClosePosition = FVector2D::ZeroVector;
+	FVector2D AuthoredCloseSize = FVector2D::ZeroVector;
+	float AuthoredCloseOpacity = 1.f;
+	bool bCloseTargetLayoutPending = false;
 	void RefreshCollectionNavigation();
 	bool UpdateCollectionLayout(const FVector2D& Viewport);
 	void RefreshCollectionMilestones();

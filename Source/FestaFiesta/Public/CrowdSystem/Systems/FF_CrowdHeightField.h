@@ -39,6 +39,7 @@ struct FESTAFIESTA_API FFF_CrowdHeightField
 
 	bool IsValid() const { return NumX >= 2 && NumY >= 2 && Heights.Num() == NumX * NumY && Stats.HitCount > 0; }
 
+	// 통행 상한 위 표본은 높이 후보에서도 제외한다. 셀에 후보가 없으면 false다.
 	bool TryGetHeightCm(const FVector2D& WorldXYCm, double& OutHeightCm) const;
 
 	// 네 꼭짓점의 높이 차가 이 값을 넘으면 절벽으로 보고 보간 대신 가장 가까운 꼭짓점 값을 쓴다.
