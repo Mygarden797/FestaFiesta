@@ -17,6 +17,7 @@ class UFF_FestivalViewModelSubsystem;
 class UFF_IncidentDetailPanel;
 class UFF_IncidentMarkerLayer;
 class UFF_IncidentToast;
+class UFF_FinaleSnsOverlay;
 class UFF_LivePanelBase;
 class UFF_LivePlaceholderPanel;
 class UFF_LiveTabButton;
@@ -515,6 +516,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_IncidentToast> IncidentToast;
+
+	/** 피날레 연출 중 후기를 왼쪽 아래에 흘려보낸다. 후기가 없으면 스스로 숨는다. */
+	void EnsureFinaleSnsOverlay();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_FinaleSnsOverlay> FinaleSnsOverlay;
 
 	void RefreshTabs();
 	void RefreshStatusRow();

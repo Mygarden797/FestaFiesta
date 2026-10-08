@@ -18,18 +18,19 @@
 #include "Components/CanvasPanel.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/Image.h"
 #include "Components/SafeZone.h"
-#include "Components/ScaleBox.h"
 #include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Engine/Texture2D.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/PackageName.h"
-#include "UI/Core/FF_PauseOptionsLightTealStyle.h"
+#include "UI/Settings/FF_FestivalOptionsStyle.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/Settings/FF_FestivalSettingsScreen.h"
@@ -52,17 +53,12 @@ namespace FFFullscreenOptionsWbpBuilder
 	struct FResponsiveMetrics
 	{
 		static constexpr float HeaderHeight = 88.f;
-		static constexpr float CategoryHeight = 80.f;
-		static constexpr float FooterHeight = 92.f;
-		static constexpr float HorizontalInset = 48.f;
-		static constexpr float BodyTopInset = 24.f;
-		static constexpr float BodyBottomInset = 20.f;
-		static constexpr float CategoryButtonHeight = 56.f;
-		static constexpr float ActionButtonHeight = 58.f;
-		// Category/footer content is authored once at this width and only scales down when a
-		// compact or portrait viewport cannot preserve every action at its native size.
-		static constexpr float AuthoredActionWidth = 1080.f;
-		static constexpr float FooterContentHeight = FooterHeight - 24.f;
+		static constexpr float FooterHeight = 104.f;
+		static constexpr float HorizontalInset = 32.f;
+		static constexpr float NavigationWidth = 244.f;
+		static constexpr float PanelInset = 24.f;
+		static constexpr float CategoryButtonHeight = 48.f;
+		static constexpr float ActionButtonHeight = 56.f;
 	};
 
 	FSlateBrush MakeSolidBrush(const FLinearColor& Color, const float Radius = 0.f,
@@ -101,36 +97,18 @@ namespace FFFullscreenOptionsWbpBuilder
 
 	FButtonStyle MakeActionStyle(const UFF_UIPalette& Palette, const bool bPrimary)
 	{
+		const auto T = FFFestivalOptionsStyle::Get();
 		FButtonStyle Style;
-		Style.Normal = FFPauseOptionsLightTeal::MakeRectButtonBrush(
-			bPrimary ? FFPauseOptionsLightTeal::RectPrimaryPath
-				: FFPauseOptionsLightTeal::RectSecondaryPath,
-			bPrimary ? Palette.InGame.Teal : Palette.InGame.PaperSunken,
-			bPrimary ? Palette.InGame.TealDeep : Palette.InGame.Line);
-		Style.Hovered = FFPauseOptionsLightTeal::MakeRectButtonBrush(
-			bPrimary ? FFPauseOptionsLightTeal::RectPrimaryHoverPath
-				: FFPauseOptionsLightTeal::RectNavHoverPath,
-			bPrimary ? Palette.InGame.TealDeep : Palette.InGame.Hover,
-			Palette.InGame.TealDeep);
-		Style.Pressed = FFPauseOptionsLightTeal::MakeRectButtonBrush(
-			FFPauseOptionsLightTeal::RectNavPressedPath,
-			Palette.InGame.TealDeep, Palette.InGame.TealDeep);
-		Style.Disabled = FFPauseOptionsLightTeal::MakeRectButtonBrush(
-			FFPauseOptionsLightTeal::RectNavDisabledPath,
-			Palette.InGame.Beige, Palette.InGame.Line);
-		Style.NormalPadding = FMargin(16.f, 8.f);
-		Style.PressedPadding = FMargin(16.f, 9.f, 16.f, 7.f);
-		return Style;
-	}
-
-	FButtonStyle MakeCategoryStyle(const UFF_UIPalette& Palette)
-	{
-		FButtonStyle Style = MakeActionStyle(Palette, false);
-		Style.Normal = FFPauseOptionsLightTeal::MakeRectButtonBrush(
-			FFPauseOptionsLightTeal::RectNavDefaultPath,
-			Palette.InGame.Paper, Palette.InGame.Line);
-		Style.NormalPadding = FMargin(18.f, 8.f);
-		Style.PressedPadding = FMargin(18.f, 9.f, 18.f, 7.f);
+		Style.Normal = FFFestivalOptionsStyle::Rounded(
+			bPrimary ? T.Green : T.Paper, bPrimary ? T.Green : T.LineStrong);
+		Style.Hovered = FFFestivalOptionsStyle::Rounded(
+			bPrimary ? T.GreenDeep : T.Hover, T.Green, 12.f, 2.f);
+		Style.Pressed = FFFestivalOptionsStyle::Rounded(
+			bPrimary ? T.GreenDeep : T.Selected, T.GreenDeep, 12.f, 2.f);
+		Style.Disabled = FFFestivalOptionsStyle::Rounded(
+			bPrimary ? T.Muted : T.Disabled, T.LineStrong);
+		Style.NormalPadding = FMargin(18.f, 10.f);
+		Style.PressedPadding = FMargin(18.f, 11.f, 18.f, 9.f);
 		return Style;
 	}
 
@@ -146,8 +124,8 @@ namespace FFFullscreenOptionsWbpBuilder
 		}
 
 		Button->SetStyle(MakeActionStyle(Palette, bPrimary));
-		Button->SetClipping(EWidgetClipping::ClipToBounds);
-		StyleText(*Text, 17, bPrimary ? Palette.InGame.White : Palette.InGame.Ink, TEXT("SemiBold"));
+		const auto T = FFFestivalOptionsStyle::Get();
+		StyleText(*Text, 18, bPrimary ? T.White : T.Ink, TEXT("SemiBold"));
 		Text->SetText(Label);
 		ConfigureWrappedText(*Text, ETextJustify::Center);
 		Text->SetToolTipText(Label);
@@ -162,297 +140,291 @@ namespace FFFullscreenOptionsWbpBuilder
 	bool BuildResponsiveScreen(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
 		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
-		if (!Palette)
-		{
-			return false;
-		}
+		if (!Palette) return false;
+		const auto T = FFFestivalOptionsStyle::Get();
 
 		UCanvasPanel* Root = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("CanvasPanel_Root"));
-		UBorder* ViewportSurface = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_ViewportSurface"));
+		UBorder* Surface = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_ViewportSurface"));
 		USafeZone* SafeZone = MakeWidget<USafeZone>(Blueprint, Tree, TEXT("SafeZone_Viewport"));
 		UVerticalBox* Shell = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_ResponsiveShell"));
-
 		USizeBox* HeaderBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_Header"));
 		UBorder* Header = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_Header"));
 		UHorizontalBox* HeaderContent = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Header"));
-		UTextBlock* HeaderBrand = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_HeaderBrand"));
-		UTextBlock* HeaderTitle = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_HeaderTitle"));
-		UTextBlock* KeyHint = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_KeyHint"), true);
+		UTextBlock* Title = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_HeaderTitle"));
+		UTextBlock* Tagline = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_HeaderBrand"));
+		USizeBox* BrandMarkBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_BrandMark"));
+		UImage* BrandMark = MakeWidget<UImage>(Blueprint, Tree, TEXT("Image_BrandMark"));
 		USizeBox* CloseBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_Close"));
 		UButton* Close = MakeTextButton(Blueprint, Tree, TEXT("Button_Close"), TEXT("Text_Close"),
 			LOCTEXT("CloseGlyph", "×"), *Palette);
 
-		USizeBox* CategoryBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_CategoryBar"));
-		UBorder* CategoryBar = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_CategoryBar"));
-		UScaleBox* CategoryScale = MakeWidget<UScaleBox>(
-			Blueprint, Tree, TEXT("ScaleBox_CategoryActions"));
-		USizeBox* CategoryDesign = MakeWidget<USizeBox>(
-			Blueprint, Tree, TEXT("SizeBox_CategoryActionsDesign"));
-		UHorizontalBox* Categories = MakeWidget<UHorizontalBox>(
-			Blueprint, Tree, TEXT("HorizontalBox_Categories"), true);
-
+		UHorizontalBox* Main = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_MainContent"));
+		USizeBox* Rail = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_CategoryRail"));
+		UScrollBox* NavigationScroll = MakeWidget<UScrollBox>(Blueprint, Tree, TEXT("ScrollBox_Navigation"));
+		UVerticalBox* Categories = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Categories"), true);
 		UBorder* Body = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_SettingsPanel"));
 		UVerticalBox* BodyContent = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_SettingsContent"));
-		UTextBlock* CategoryTitle = MakeWidget<UTextBlock>(
-			Blueprint, Tree, TEXT("Text_CategoryTitle"), true);
+		UTextBlock* CategoryTitle = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CategoryTitle"), true);
 		UTextBlock* Intro = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Intro"), true);
 		USizeBox* RuleBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_ContentRule"));
-		UBorder* ContentRule = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_ContentRule"));
+		UBorder* Rule = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_ContentRule"));
 		UScrollBox* RowsScroll = MakeWidget<UScrollBox>(Blueprint, Tree, TEXT("ScrollBox_Rows"));
 		UVerticalBox* Rows = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Rows"), true);
 
 		USizeBox* FooterBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_Footer"));
 		UBorder* Footer = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_Footer"));
-		UScaleBox* FooterScale = MakeWidget<UScaleBox>(
-			Blueprint, Tree, TEXT("ScaleBox_FooterActions"));
-		USizeBox* FooterDesign = MakeWidget<USizeBox>(
-			Blueprint, Tree, TEXT("SizeBox_FooterActionsDesign"));
 		UHorizontalBox* FooterContent = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Footer"));
-		UTextBlock* Summary = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CurrentSummary"), true);
-		USizeBox* BackBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_BackAction"));
-		UButton* Back = MakeTextButton(Blueprint, Tree, TEXT("Button_Back"), TEXT("Text_Back"),
-			LOCTEXT("Back", "이전으로"), *Palette);
 		USizeBox* SaveBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_SaveAction"));
 		UButton* Save = MakeTextButton(Blueprint, Tree, TEXT("Button_Save"), TEXT("Text_Save"),
 			LOCTEXT("Save", "저장"), *Palette, true);
+		USizeBox* BackBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_BackAction"));
+		UButton* Back = MakeTextButton(Blueprint, Tree, TEXT("Button_Back"), TEXT("Text_Back"),
+			LOCTEXT("Back", "이전으로"), *Palette);
+		UVerticalBox* FooterStatus = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_FooterStatus"));
+		UTextBlock* Summary = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CurrentSummary"), true);
+		UTextBlock* KeyHint = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_KeyHint"), true);
 
-		if (!Root || !ViewportSurface || !SafeZone || !Shell
-			|| !HeaderBox || !Header || !HeaderContent || !HeaderBrand || !HeaderTitle || !KeyHint || !CloseBox || !Close
-			|| !CategoryBox || !CategoryBar || !CategoryScale || !CategoryDesign || !Categories
-			|| !Body || !BodyContent || !CategoryTitle || !Intro || !RuleBox || !ContentRule || !RowsScroll || !Rows
-			|| !FooterBox || !Footer || !FooterScale || !FooterDesign || !FooterContent
-			|| !Summary || !BackBox || !Back || !SaveBox || !Save)
-		{
-			return false;
-		}
+		if (!Root || !Surface || !SafeZone || !Shell || !HeaderBox || !Header || !HeaderContent
+			|| !Title || !Tagline || !BrandMarkBox || !BrandMark || !CloseBox || !Close || !Main || !Rail || !NavigationScroll || !Categories
+			|| !Body || !BodyContent || !CategoryTitle || !Intro || !RuleBox || !Rule || !RowsScroll || !Rows
+			|| !FooterBox || !Footer || !FooterContent || !SaveBox || !Save || !BackBox || !Back
+			|| !FooterStatus || !Summary || !KeyHint) return false;
 
 		Tree.RootWidget = Root;
-
-		// Opaque, full-viewport ownership. The world is never visible through gaps or aspect-ratio bars.
-		ViewportSurface->SetBrush(MakeSolidBrush(Palette->InGame.Paper));
-		ViewportSurface->SetVisibility(ESlateVisibility::Visible);
-		StretchOnCanvas(*Root, *ViewportSurface);
+		Surface->SetBrush(MakeSolidBrush(T.Background));
+		Surface->SetVisibility(ESlateVisibility::Visible);
+		StretchOnCanvas(*Root, *Surface);
 		SafeZone->AddChild(Shell);
 		StretchOnCanvas(*Root, *SafeZone);
 
 		HeaderBox->SetHeightOverride(FResponsiveMetrics::HeaderHeight);
-		Header->SetBrush(MakeSolidBrush(Palette->InGame.TealDeep));
-		Header->SetClipping(EWidgetClipping::ClipToBounds);
-		HeaderContent->SetClipping(EWidgetClipping::ClipToBounds);
+		Header->SetBrush(MakeSolidBrush(T.Paper));
 		Header->SetPadding(FMargin(FResponsiveMetrics::HorizontalInset, 0.f));
 		Header->AddChild(HeaderContent);
 		HeaderBox->AddChild(Header);
-		if (UVerticalBoxSlot* Slot = Shell->AddChildToVerticalBox(HeaderBox))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot->SetHorizontalAlignment(HAlign_Fill);
-		}
-
-		StyleText(*HeaderBrand, 30, Palette->InGame.White, TEXT("SemiBold"));
-		const FText HeaderBrandText = LOCTEXT("Brand", "FESTA FIESTA!");
-		HeaderBrand->SetText(HeaderBrandText);
-		ConfigureSingleLineText(*HeaderBrand, HeaderBrandText);
-		StyleText(*HeaderTitle, 20, Palette->InGame.White, TEXT("SemiBold"));
-		const FText HeaderTitleText = LOCTEXT("Title", "옵션");
-		HeaderTitle->SetText(HeaderTitleText);
-		ConfigureSingleLineText(*HeaderTitle, HeaderTitleText, ETextJustify::Center);
-		StyleText(*KeyHint, 14, Palette->InGame.TealSoft, TEXT("Medium"));
-		const FText KeyHintText = LOCTEXT("KeyHint", "ESC · F5  이전으로");
-		KeyHint->SetText(KeyHintText);
-		ConfigureSingleLineText(*KeyHint, KeyHintText, ETextJustify::Right);
-		if (UHorizontalBoxSlot* Slot = HeaderContent->AddChildToHorizontalBox(HeaderBrand))
+		Shell->AddChildToVerticalBox(HeaderBox);
+		StyleText(*Title, 32, T.Ink, TEXT("Bold"));
+		Title->SetText(LOCTEXT("Title", "옵션"));
+		ConfigureSingleLineText(*Title, Title->GetText());
+		if (UHorizontalBoxSlot* Slot = HeaderContent->AddChildToHorizontalBox(Title))
 		{
 			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 			Slot->SetVerticalAlignment(VAlign_Center);
-			Slot->SetPadding(FMargin(0.f, 0.f, 28.f, 0.f));
 		}
-		if (UHorizontalBoxSlot* Slot = HeaderContent->AddChildToHorizontalBox(HeaderTitle))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot->SetVerticalAlignment(VAlign_Center);
-		}
-		if (UHorizontalBoxSlot* Slot = HeaderContent->AddChildToHorizontalBox(KeyHint))
+		StyleText(*Tagline, 16, T.Muted, TEXT("Medium"));
+		Tagline->SetText(LOCTEXT("Tagline", "나에게 맞는 축제 여행을 준비하세요"));
+		ConfigureSingleLineText(*Tagline, Tagline->GetText(), ETextJustify::Right);
+		if (UHorizontalBoxSlot* Slot = HeaderContent->AddChildToHorizontalBox(Tagline))
 		{
 			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 			Slot->SetVerticalAlignment(VAlign_Center);
-			Slot->SetPadding(FMargin(0.f, 0.f, 18.f, 0.f));
+			Slot->SetPadding(FMargin(16.f, 0.f, 12.f, 0.f));
 		}
-		CloseBox->SetWidthOverride(52.f);
-		CloseBox->SetHeightOverride(52.f);
+		// Reuse the reference options screen's flower without modifying the shared texture.
+		UTexture2D* BrandTexture = LoadObject<UTexture2D>(nullptr,
+			TEXT("/Game/FestaFiesta/UI/Title/CleanCasual/Brand/T_FF_Title_CasualBright_Logo_512.T_FF_Title_CasualBright_Logo_512"));
+		if (!BrandTexture) return false;
+		BrandMark->SetBrushFromTexture(BrandTexture);
+		BrandMark->SetOpacity(0.55f);
+		BrandMark->SetVisibility(ESlateVisibility::HitTestInvisible);
+		BrandMarkBox->SetWidthOverride(70.f);
+		BrandMarkBox->SetHeightOverride(70.f);
+		BrandMarkBox->AddChild(BrandMark);
+		if (UHorizontalBoxSlot* Slot = HeaderContent->AddChildToHorizontalBox(BrandMarkBox))
+		{
+			Slot->SetVerticalAlignment(VAlign_Center);
+			Slot->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
+		}
+		Close->SetToolTipText(LOCTEXT("CloseTooltip", "이전 화면으로 돌아가기 (ESC / F5)"));
+		FButtonStyle CloseStyle = Close->GetStyle();
+		CloseStyle.NormalPadding = FMargin(4.f);
+		CloseStyle.PressedPadding = FMargin(4.f, 5.f, 4.f, 3.f);
+		Close->SetStyle(CloseStyle);
+		CloseBox->SetWidthOverride(44.f);
+		CloseBox->SetHeightOverride(44.f);
 		CloseBox->AddChild(Close);
 		if (UHorizontalBoxSlot* Slot = HeaderContent->AddChildToHorizontalBox(CloseBox))
 		{
 			Slot->SetVerticalAlignment(VAlign_Center);
 		}
 
-		CategoryBox->SetHeightOverride(FResponsiveMetrics::CategoryHeight);
-		CategoryBox->SetClipping(EWidgetClipping::ClipToBounds);
-		CategoryBar->SetBrush(MakeSolidBrush(
-			Palette->InGame.StatusBar, 0.f, Palette->InGame.Line, 1.f));
-		CategoryBar->SetClipping(EWidgetClipping::ClipToBounds);
-		CategoryScale->SetStretch(EStretch::ScaleToFit);
-		CategoryScale->SetStretchDirection(EStretchDirection::DownOnly);
-		CategoryScale->SetClipping(EWidgetClipping::ClipToBounds);
-		CategoryDesign->SetWidthOverride(FResponsiveMetrics::AuthoredActionWidth);
-		CategoryDesign->SetHeightOverride(FResponsiveMetrics::CategoryButtonHeight);
-		CategoryDesign->SetClipping(EWidgetClipping::ClipToBounds);
-		Categories->SetClipping(EWidgetClipping::ClipToBounds);
-		CategoryBar->SetPadding(FMargin(FResponsiveMetrics::HorizontalInset, 12.f));
-		CategoryDesign->AddChild(Categories);
-		CategoryScale->AddChild(CategoryDesign);
-		CategoryBar->AddChild(CategoryScale);
-		CategoryBox->AddChild(CategoryBar);
-		if (UVerticalBoxSlot* Slot = Shell->AddChildToVerticalBox(CategoryBox))
+		// A persistent sidebar keeps category selection separate from the scrollable settings.
+		if (UVerticalBoxSlot* Slot = Shell->AddChildToVerticalBox(Main))
 		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot->SetHorizontalAlignment(HAlign_Fill);
+			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot->SetPadding(FMargin(FResponsiveMetrics::HorizontalInset, 24.f,
+				FResponsiveMetrics::HorizontalInset, 0.f));
+		}
+		Rail->SetWidthOverride(FResponsiveMetrics::NavigationWidth);
+		NavigationScroll->SetScrollBarVisibility(ESlateVisibility::Collapsed);
+		NavigationScroll->SetAllowOverscroll(false);
+		NavigationScroll->SetAnimateWheelScrolling(false);
+		NavigationScroll->SetWheelScrollMultiplier(54.f);
+		NavigationScroll->SetScrollWhenFocusChanges(EScrollWhenFocusChanges::InstantScroll);
+		NavigationScroll->AddChild(Categories);
+		Rail->AddChild(NavigationScroll);
+		if (UHorizontalBoxSlot* Slot = Main->AddChildToHorizontalBox(Rail))
+		{
+			Slot->SetPadding(FMargin(0.f, 0.f, 24.f, 0.f));
 		}
 
-		struct FCategoryDefinition
-		{
-			FName ButtonName;
-			FName TextName;
-			FText Label;
+		struct FCategoryDefinition { FName ButtonName; FName TextName; FText Label; const TCHAR* Icon; };
+		const FCategoryDefinition Definitions[] = {
+			{ TEXT("Button_Language"), TEXT("Text_LanguageCategory"), LOCTEXT("Language", "언어"), TEXT("Language") },
+			{ TEXT("Button_Accessibility"), TEXT("Text_AccessibilityCategory"), LOCTEXT("Accessibility", "접근성"), TEXT("Accessibility") },
+			{ TEXT("Button_Sound"), TEXT("Text_SoundCategory"), LOCTEXT("Sound", "사운드"), TEXT("Sound") },
+			{ TEXT("Button_Graphics"), TEXT("Text_GraphicsCategory"), LOCTEXT("Graphics", "그래픽"), TEXT("Graphics") },
+			{ TEXT("Button_Keyboard"), TEXT("Text_KeyboardCategory"), LOCTEXT("Keyboard", "조작"), TEXT("Controls") },
+			{ TEXT("Button_Credits"), TEXT("Text_CreditsCategory"), LOCTEXT("Credits", "크레딧"), TEXT("Info") },
+			{ TEXT("Button_Basic"), TEXT("Text_BasicCategory"), LOCTEXT("Basic", "기본설정"), TEXT("Spark") },
+			{ TEXT("Button_Account"), TEXT("Text_AccountCategory"), LOCTEXT("Account", "계정정보"), TEXT("Folder") },
+			{ TEXT("Button_ExitGame"), TEXT("Text_ExitGameCategory"), LOCTEXT("Exit", "게임종료"), TEXT("Back") }
 		};
-		const FCategoryDefinition CategoryDefinitions[] = {
-			{ TEXT("Button_Basic"), TEXT("Text_BasicCategory"), LOCTEXT("Basic", "기본설정") },
-			{ TEXT("Button_Account"), TEXT("Text_AccountCategory"), LOCTEXT("Account", "계정정보") },
-			{ TEXT("Button_Keyboard"), TEXT("Text_KeyboardCategory"), LOCTEXT("Keyboard", "키보드 키 배치") },
-			{ TEXT("Button_Graphics"), TEXT("Text_GraphicsCategory"), LOCTEXT("Graphics", "그래픽") },
-			{ TEXT("Button_ExitGame"), TEXT("Text_ExitGameCategory"), LOCTEXT("Exit", "게임종료") }
-		};
-		for (const FCategoryDefinition& Definition : CategoryDefinitions)
+		for (const FCategoryDefinition& Definition : Definitions)
 		{
 			UButton* Button = MakeTextButton(Blueprint, Tree, Definition.ButtonName, Definition.TextName,
 				Definition.Label, *Palette);
 			USizeBox* ButtonBox = MakeWidget<USizeBox>(Blueprint, Tree,
 				FName(*(Definition.ButtonName.ToString() + TEXT("_Size"))));
-			if (!Button || !ButtonBox)
+			UHorizontalBox* ButtonContent = MakeWidget<UHorizontalBox>(Blueprint, Tree,
+				FName(*(Definition.ButtonName.ToString() + TEXT("_Content"))));
+			UImage* Icon = MakeWidget<UImage>(Blueprint, Tree,
+				FName(*(Definition.ButtonName.ToString() + TEXT("_Icon"))));
+			USizeBox* IconBox = MakeWidget<USizeBox>(Blueprint, Tree,
+				FName(*(Definition.ButtonName.ToString() + TEXT("_IconSize"))));
+			UTextBlock* Chevron = MakeWidget<UTextBlock>(Blueprint, Tree,
+				FName(*(Definition.ButtonName.ToString() + TEXT("_Chevron"))));
+			if (!Button || !ButtonBox || !ButtonContent || !Icon || !IconBox || !Chevron) return false;
+			UTextBlock* Label = Cast<UTextBlock>(Button->GetContent());
+			if (!Label) return false;
+			Button->ClearChildren();
+			FButtonStyle CategoryStyle = Button->GetStyle();
+			CategoryStyle.NormalPadding = FMargin(16.f, 6.f);
+			CategoryStyle.PressedPadding = FMargin(16.f, 7.f, 16.f, 5.f);
+			Button->SetStyle(CategoryStyle);
+			// Reuse the existing line icons without changing their shared texture assets.
+			Icon->SetColorAndOpacity(T.Ink);
+			const FString IconPackage = FString(TEXT("/Game/FestaFiesta/UI/Frontend/Art/T_FF_")) + Definition.Icon;
+			if (UTexture2D* Texture = LoadObject<UTexture2D>(nullptr, *MakeObjectPath(IconPackage)))
 			{
-				return false;
+				Icon->SetBrushFromTexture(Texture);
 			}
-			Button->SetStyle(MakeCategoryStyle(*Palette));
-			ButtonBox->SetHeightOverride(FResponsiveMetrics::CategoryButtonHeight);
-			ButtonBox->SetClipping(EWidgetClipping::ClipToBounds);
-			ButtonBox->AddChild(Button);
-			if (Definition.ButtonName == FName(TEXT("Button_ExitGame")))
+			else
 			{
-				if (UTextBlock* ExitText = Cast<UTextBlock>(Tree.FindWidget(Definition.TextName)))
-				{
-					ExitText->SetColorAndOpacity(Palette->InGame.Danger);
-				}
+				Icon->SetVisibility(ESlateVisibility::Hidden);
 			}
-			if (UHorizontalBoxSlot* Slot = Categories->AddChildToHorizontalBox(ButtonBox))
+			IconBox->SetWidthOverride(24.f);
+			IconBox->SetHeightOverride(24.f);
+			IconBox->AddChild(Icon);
+			if (UHorizontalBoxSlot* Slot = ButtonContent->AddChildToHorizontalBox(IconBox))
+			{
+				Slot->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
+				Slot->SetVerticalAlignment(VAlign_Center);
+			}
+			ConfigureSingleLineText(*Label, Definition.Label);
+			if (UHorizontalBoxSlot* Slot = ButtonContent->AddChildToHorizontalBox(Label))
 			{
 				Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 				Slot->SetVerticalAlignment(VAlign_Center);
-				Slot->SetPadding(FMargin(0.f, 0.f,
-					Definition.ButtonName == FName(TEXT("Button_ExitGame")) ? 0.f : 8.f, 0.f));
+			}
+			StyleText(*Chevron, 22, T.GreenDeep, TEXT("Medium"));
+			Chevron->SetText(FText::FromString(TEXT("›")));
+			if (UHorizontalBoxSlot* Slot = ButtonContent->AddChildToHorizontalBox(Chevron))
+			{
+				Slot->SetPadding(FMargin(10.f, 0.f, 0.f, 0.f));
+				Slot->SetVerticalAlignment(VAlign_Center);
+			}
+			if (UButtonSlot* Slot = Cast<UButtonSlot>(Button->AddChild(ButtonContent)))
+			{
+				Slot->SetPadding(FMargin(0.f));
+				Slot->SetHorizontalAlignment(HAlign_Fill);
+				Slot->SetVerticalAlignment(VAlign_Center);
+			}
+			ButtonBox->SetHeightOverride(FResponsiveMetrics::CategoryButtonHeight);
+			ButtonBox->AddChild(Button);
+			if (UVerticalBoxSlot* Slot = Categories->AddChildToVerticalBox(ButtonBox))
+			{
+				Slot->SetPadding(FMargin(4.f, 3.f, 4.f, 3.f));
 			}
 		}
 
-		Body->SetBrush(MakeSolidBrush(Palette->InGame.Paper));
-		Body->SetClipping(EWidgetClipping::ClipToBounds);
-		BodyContent->SetClipping(EWidgetClipping::ClipToBounds);
-		Body->SetPadding(FMargin(FResponsiveMetrics::HorizontalInset, FResponsiveMetrics::BodyTopInset,
-			FResponsiveMetrics::HorizontalInset, FResponsiveMetrics::BodyBottomInset));
+		Body->SetBrush(FFFestivalOptionsStyle::Rounded(T.Paper, T.Line, 22.f));
+		Body->SetPadding(FMargin(FResponsiveMetrics::PanelInset));
 		Body->AddChild(BodyContent);
-		if (UVerticalBoxSlot* Slot = Shell->AddChildToVerticalBox(Body))
+		if (UHorizontalBoxSlot* Slot = Main->AddChildToHorizontalBox(Body))
 		{
 			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			Slot->SetHorizontalAlignment(HAlign_Fill);
-			Slot->SetVerticalAlignment(VAlign_Fill);
 		}
-
-		StyleText(*CategoryTitle, 31, Palette->InGame.Ink, TEXT("SemiBold"));
-		const FText CategoryPreviewText = LOCTEXT("CategoryPreview", "기본설정");
-		CategoryTitle->SetText(CategoryPreviewText);
-		ConfigureSingleLineText(*CategoryTitle, CategoryPreviewText);
-		if (UVerticalBoxSlot* Slot = BodyContent->AddChildToVerticalBox(CategoryTitle))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-		}
-		StyleText(*Intro, 14, Palette->InGame.InkMuted, TEXT("Medium"));
+		StyleText(*CategoryTitle, 28, T.Ink, TEXT("Bold"));
+		CategoryTitle->SetText(LOCTEXT("CategoryPreview", "기본설정"));
+		ConfigureSingleLineText(*CategoryTitle, CategoryTitle->GetText());
+		BodyContent->AddChildToVerticalBox(CategoryTitle);
+		StyleText(*Intro, 15, T.Muted, TEXT("Medium"));
 		Intro->SetText(LOCTEXT("Intro", "변경 사항은 저장을 눌러야 적용됩니다."));
 		ConfigureWrappedText(*Intro);
 		if (UVerticalBoxSlot* Slot = BodyContent->AddChildToVerticalBox(Intro))
 		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot->SetPadding(FMargin(0.f, 5.f, 0.f, 18.f));
+			Slot->SetPadding(FMargin(0.f, 5.f, 0.f, 16.f));
 		}
-		ContentRule->SetBrush(MakeSolidBrush(Palette->InGame.Line));
+		Rule->SetBrush(MakeSolidBrush(T.LineStrong));
 		RuleBox->SetHeightOverride(1.f);
-		RuleBox->AddChild(ContentRule);
-		if (UVerticalBoxSlot* Slot = BodyContent->AddChildToVerticalBox(RuleBox))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-		}
-		RowsScroll->SetAnimateWheelScrolling(true);
-		RowsScroll->SetWheelScrollMultiplier(56.f);
+		RuleBox->AddChild(Rule);
+		BodyContent->AddChildToVerticalBox(RuleBox);
+		RowsScroll->SetAnimateWheelScrolling(false);
+		RowsScroll->SetWheelScrollMultiplier(64.f);
+		RowsScroll->SetAllowOverscroll(false);
 		RowsScroll->SetScrollBarVisibility(ESlateVisibility::Visible);
+		RowsScroll->SetScrollbarThickness(FVector2D(6.f, 6.f));
 		RowsScroll->SetClipping(EWidgetClipping::ClipToBounds);
-		Rows->SetClipping(EWidgetClipping::ClipToBounds);
 		RowsScroll->AddChild(Rows);
 		if (UVerticalBoxSlot* Slot = BodyContent->AddChildToVerticalBox(RowsScroll))
 		{
 			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			Slot->SetHorizontalAlignment(HAlign_Fill);
-			Slot->SetVerticalAlignment(VAlign_Fill);
-			Slot->SetPadding(FMargin(0.f, 18.f, 0.f, 0.f));
+			Slot->SetPadding(FMargin(0.f, 12.f, 0.f, 0.f));
 		}
 
+		// Actions never scroll away. Dynamic confirmations remain readable beside the buttons.
 		FooterBox->SetHeightOverride(FResponsiveMetrics::FooterHeight);
-		FooterBox->SetClipping(EWidgetClipping::ClipToBounds);
-		Footer->SetBrush(MakeSolidBrush(
-			Palette->InGame.StatusBar, 0.f, Palette->InGame.Line, 1.f));
-		Footer->SetClipping(EWidgetClipping::ClipToBounds);
-		FooterScale->SetStretch(EStretch::ScaleToFit);
-		FooterScale->SetStretchDirection(EStretchDirection::DownOnly);
-		FooterScale->SetClipping(EWidgetClipping::ClipToBounds);
-		FooterDesign->SetWidthOverride(FResponsiveMetrics::AuthoredActionWidth);
-		FooterDesign->SetHeightOverride(FResponsiveMetrics::FooterContentHeight);
-		FooterDesign->SetClipping(EWidgetClipping::ClipToBounds);
-		FooterContent->SetClipping(EWidgetClipping::ClipToBounds);
-		Footer->SetPadding(FMargin(FResponsiveMetrics::HorizontalInset, 12.f));
-		FooterDesign->AddChild(FooterContent);
-		FooterScale->AddChild(FooterDesign);
-		Footer->AddChild(FooterScale);
+		Footer->SetBrush(MakeSolidBrush(T.Background));
+		Footer->SetPadding(FMargin(FResponsiveMetrics::HorizontalInset, 16.f));
+		Footer->AddChild(FooterContent);
 		FooterBox->AddChild(Footer);
-		if (UVerticalBoxSlot* Slot = Shell->AddChildToVerticalBox(FooterBox))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot->SetHorizontalAlignment(HAlign_Fill);
-		}
-
-		StyleText(*Summary, 14, Palette->InGame.Ink, TEXT("SemiBold"));
-		const FText SummaryPreview = LOCTEXT(
-			"Summary", "저장된 설정  ·  전체 화면  ·  1920 × 1080  ·  음량 80%");
-		Summary->SetText(SummaryPreview);
-		ConfigureSingleLineText(*Summary, SummaryPreview);
-		if (UHorizontalBoxSlot* Slot = FooterContent->AddChildToHorizontalBox(Summary))
-		{
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			Slot->SetVerticalAlignment(VAlign_Center);
-			Slot->SetPadding(FMargin(0.f, 0.f, 24.f, 0.f));
-		}
-		BackBox->SetWidthOverride(196.f);
-		BackBox->SetHeightOverride(FResponsiveMetrics::ActionButtonHeight);
-		BackBox->SetClipping(EWidgetClipping::ClipToBounds);
-		BackBox->AddChild(Back);
-		if (UHorizontalBoxSlot* Slot = FooterContent->AddChildToHorizontalBox(BackBox))
-		{
-			Slot->SetVerticalAlignment(VAlign_Center);
-			Slot->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
-		}
-		SaveBox->SetWidthOverride(216.f);
+		Shell->AddChildToVerticalBox(FooterBox);
+		// Let confirmation labels grow naturally instead of wrapping inside a fixed-width action.
+		CastChecked<UTextBlock>(Save->GetContent())->SetAutoWrapText(false);
+		CastChecked<UTextBlock>(Back->GetContent())->SetAutoWrapText(false);
+		SaveBox->SetMinDesiredWidth(184.f);
 		SaveBox->SetHeightOverride(FResponsiveMetrics::ActionButtonHeight);
-		SaveBox->SetClipping(EWidgetClipping::ClipToBounds);
 		SaveBox->AddChild(Save);
 		if (UHorizontalBoxSlot* Slot = FooterContent->AddChildToHorizontalBox(SaveBox))
 		{
 			Slot->SetVerticalAlignment(VAlign_Center);
+			Slot->SetPadding(FMargin(4.f, 0.f, 16.f, 0.f));
 		}
-
+		BackBox->SetMinDesiredWidth(208.f);
+		BackBox->SetHeightOverride(FResponsiveMetrics::ActionButtonHeight);
+		BackBox->AddChild(Back);
+		if (UHorizontalBoxSlot* Slot = FooterContent->AddChildToHorizontalBox(BackBox))
+		{
+			Slot->SetVerticalAlignment(VAlign_Center);
+		}
+		StyleText(*Summary, 15, T.Ink, TEXT("SemiBold"));
+		Summary->SetText(LOCTEXT("Summary", "저장된 설정  ·  전체 화면  ·  1920 × 1080"));
+		ConfigureWrappedText(*Summary, ETextJustify::Right);
+		FooterStatus->AddChildToVerticalBox(Summary);
+		StyleText(*KeyHint, 14, T.Muted, TEXT("Medium"));
+		KeyHint->SetText(LOCTEXT("KeyHint", "ESC · F5  이전으로"));
+		ConfigureSingleLineText(*KeyHint, KeyHint->GetText(), ETextJustify::Right);
+		if (UVerticalBoxSlot* Slot = FooterStatus->AddChildToVerticalBox(KeyHint))
+		{
+			Slot->SetPadding(FMargin(0.f, 5.f, 0.f, 0.f));
+		}
+		if (UHorizontalBoxSlot* Slot = FooterContent->AddChildToHorizontalBox(FooterStatus))
+		{
+			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot->SetVerticalAlignment(VAlign_Center);
+			Slot->SetPadding(FMargin(32.f, 0.f, 4.f, 0.f));
+		}
 		return true;
 	}
 
@@ -471,17 +443,20 @@ namespace FFFullscreenOptionsWbpBuilder
 			&& Has(TEXT("Border_ViewportSurface"), *UBorder::StaticClass())
 			&& Has(TEXT("SafeZone_Viewport"), *USafeZone::StaticClass())
 			&& Has(TEXT("VerticalBox_ResponsiveShell"), *UVerticalBox::StaticClass())
-			&& Has(TEXT("ScaleBox_CategoryActions"), *UScaleBox::StaticClass())
-			&& Has(TEXT("SizeBox_CategoryActionsDesign"), *USizeBox::StaticClass())
-			&& Has(TEXT("HorizontalBox_Categories"), *UHorizontalBox::StaticClass())
+			&& Has(TEXT("HorizontalBox_MainContent"), *UHorizontalBox::StaticClass())
+			&& Has(TEXT("SizeBox_CategoryRail"), *USizeBox::StaticClass())
+			&& Has(TEXT("VerticalBox_Categories"), *UVerticalBox::StaticClass())
 			&& Has(TEXT("ScrollBox_Rows"), *UScrollBox::StaticClass())
 			&& Has(TEXT("VerticalBox_Rows"), *UVerticalBox::StaticClass())
 			&& Has(TEXT("Text_CategoryTitle"), *UTextBlock::StaticClass())
 			&& Has(TEXT("Text_Intro"), *UTextBlock::StaticClass())
 			&& Has(TEXT("Text_CurrentSummary"), *UTextBlock::StaticClass())
-			&& Has(TEXT("ScaleBox_FooterActions"), *UScaleBox::StaticClass())
-			&& Has(TEXT("SizeBox_FooterActionsDesign"), *USizeBox::StaticClass())
+			&& Has(TEXT("HorizontalBox_Footer"), *UHorizontalBox::StaticClass())
 			&& Has(TEXT("Button_Basic"), *UButton::StaticClass())
+			&& Has(TEXT("Button_Language"), *UButton::StaticClass())
+			&& Has(TEXT("Button_Accessibility"), *UButton::StaticClass())
+			&& Has(TEXT("Button_Sound"), *UButton::StaticClass())
+			&& Has(TEXT("Button_Credits"), *UButton::StaticClass())
 			&& Has(TEXT("Button_Account"), *UButton::StaticClass())
 			&& Has(TEXT("Button_Keyboard"), *UButton::StaticClass())
 			&& Has(TEXT("Button_Graphics"), *UButton::StaticClass())

@@ -7,9 +7,12 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerInput.h"
+#include "Input/Events.h"
 #include "InputKeyEventArgs.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
 #include "Tests/AutomationCommon.h"
+#include "UI/Settings/FF_FestivalSettingsSubsystem.h"
 #include "UObject/StrongObjectPtr.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildFeatureGuideInputTest,
@@ -17,6 +20,11 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildFeatureGuideInputTest,
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FFFBuildFeatureGuideInputTest::RunTest(const FString& Parameters)
 {
+    auto* PauseSettings = GetMutableDefault<UFF_FestivalSettingsDeveloperSettings>();
+    const TArray<FKey> SavedPauseKeys = PauseSettings->OpenCloseKeys;
+    ON_SCOPE_EXIT { PauseSettings->OpenCloseKeys = SavedPauseKeys; };
+    PauseSettings->OpenCloseKeys = { EKeys::Escape, EKeys::F5 };
+
     FTestWorldWrapper Fixture;
     if (!Fixture.CreateTestWorld(EWorldType::Game))
     {
@@ -37,11 +45,27 @@ bool FFFBuildFeatureGuideInputTest::RunTest(const FString& Parameters)
     const TSharedRef<SWidget> GuideSurface = Guide->Panel_FeatureGuide->TakeWidget();
     if (!TestTrue(TEXT("The realized guide surface owns input"), Guide->IsFeatureGuideOpen())) return false;
     Build->BuildToolsWidget = Guide.Get();
+    Guide->BuildMode = Build;
     Build->State = EFF_BuildModeState::Placing;
     Build->bBuildSessionActive = true;
     const bool bGrid = Build->IsPlacementGridVisible();
     const auto Placement = Build->CurrentPlacement;
     const int64 Revision = Zones->GetWorldRevision();
+    // This playerless fixture verifies input priority, not opening a live pause hub.
+    for (const FKey PauseKey : PauseSettings->OpenCloseKeys)
+    {
+        for (const bool bRepeat : { false, true })
+        {
+            const FKeyEvent PauseKeyEvent(PauseKey, FModifierKeysState(), 0, bRepeat, 0, 0);
+            TestTrue(TEXT("Configured pause presses and repeats are handled before guide shortcuts"),
+                Guide->NativeOnPreviewKeyDown(FGeometry(), PauseKeyEvent).IsEventHandled());
+            TestTrue(TEXT("Pause input does not close the feature guide"), Guide->IsFeatureGuideOpen());
+            TestEqual(TEXT("Pause input preserves the active construction state"),
+                Build->GetBuildModeState(), EFF_BuildModeState::Placing);
+            TestTrue(TEXT("Pause input preserves the placement preview"), Build->CurrentPlacement == Placement);
+            TestEqual(TEXT("Pause input does not change construction history"), Zones->GetWorldRevision(), Revision);
+        }
+    }
     constexpr float Delta = 1.f / 60.f;
     TArray<UInputComponent*> InputStack;
     auto Press = [&](const FKey Key, const bool bCtrl)

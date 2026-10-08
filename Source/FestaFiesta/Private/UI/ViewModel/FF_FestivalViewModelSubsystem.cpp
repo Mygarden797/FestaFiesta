@@ -99,6 +99,7 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 	if (CachedInsightsSubsystem)
 	{
 		CachedInsightsSubsystem->OnSnsPostAdded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded);
+		CachedInsightsSubsystem->OnFinalePostAdded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleSnsPostAdded);
 	}
 	CachedInsightsSubsystem = nullptr;
 
@@ -422,6 +423,7 @@ void UFF_FestivalViewModelSubsystem::TryBindInsightsSubsystem()
 
 	CachedInsightsSubsystem = Insights;
 	CachedInsightsSubsystem->OnSnsPostAdded.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded);
+	CachedInsightsSubsystem->OnFinalePostAdded.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleSnsPostAdded);
 
 	// SimSatisfaction과 다르게 "현재값 1개"가 아니라 "지금까지의 글 목록"이라, bind 시점에
 	// 이미 쌓여 있던 글도 놓치지 않게 전부 변환해 채운다.
@@ -551,6 +553,11 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded(FFF_SnsPostRow NewP
 	}
 
 	OnSnsPostAdded.Broadcast(Converted);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerFinaleSnsPostAdded(FFF_SnsPostRow NewPost)
+{
+	OnFinaleSnsPostAdded.Broadcast(ConvertSnsPostToLiveSocialPost(NewPost));
 }
 
 FFF_LiveSocialPost UFF_FestivalViewModelSubsystem::ConvertSnsPostToLiveSocialPost(const FFF_SnsPostRow& Row)

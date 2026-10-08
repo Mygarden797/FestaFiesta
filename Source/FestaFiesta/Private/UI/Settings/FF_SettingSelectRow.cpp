@@ -5,10 +5,18 @@
 
 #include "UI/Settings/FF_SettingSelectRow.h"
 
+#include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
+#include "Components/Image.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
+#include "UI/Settings/FF_FestivalOptionsStyle.h"
+#include "UI/Settings/FF_FestivalSettingsScreen.h"
 
 UFF_SettingSelectRow::UFF_SettingSelectRow(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -26,6 +34,92 @@ void UFF_SettingSelectRow::NativeOnInitialized()
 	if (Button_Next)
 	{
 		Button_Next->OnClicked.AddUniqueDynamic(this, &UFF_SettingSelectRow::HandleNextClicked);
+	}
+}
+
+void UFF_SettingSelectRow::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+	// The row Blueprint is shared with the title menu; only festival instances receive this style.
+	if (!GetTypedOuter<UFF_FestivalSettingsScreen>() || !WidgetTree)
+	{
+		return;
+	}
+
+	const FFFestivalOptionsStyle::FTokens T = FFFestivalOptionsStyle::Get();
+	if (USizeBox* Root = Cast<USizeBox>(WidgetTree->FindWidget(TEXT("SizeBox_Root"))))
+	{
+		Root->ClearHeightOverride();
+		Root->SetMinDesiredHeight(76.f);
+	}
+	if (UBorder* Background = Cast<UBorder>(WidgetTree->FindWidget(TEXT("Border_Background"))))
+	{
+		Background->SetBrush(FFFestivalOptionsStyle::Rounded(T.White, T.Line));
+		Background->SetBrushColor(FLinearColor::White);
+		Background->SetPadding(FMargin(20.f, 12.f));
+	}
+	for (UTextBlock* Text : { Text_Label.Get(), Text_Description.Get(), Text_Value.Get() })
+	{
+		if (!Text)
+		{
+			continue;
+		}
+		const bool bDescription = Text == Text_Description;
+		FSlateFontInfo Font = Text->GetFont();
+		Font.Size = bDescription ? 14 : 18;
+		Font.TypefaceFontName = bDescription ? TEXT("Medium") : TEXT("SemiBold");
+		Text->SetFont(Font);
+		Text->SetColorAndOpacity(bDescription ? T.Muted : T.Ink);
+		Text->SetAutoWrapText(bDescription);
+	}
+	if (Text_Description)
+	{
+		if (UVerticalBoxSlot* DescriptionLayout = Cast<UVerticalBoxSlot>(Text_Description->Slot))
+		{
+			DescriptionLayout->SetPadding(FMargin(0.f, 3.f, 0.f, 0.f));
+		}
+	}
+	if (Text_Value)
+	{
+		Text_Value->SetMinDesiredWidth(200.f);
+		Text_Value->SetJustification(ETextJustify::Center);
+	}
+	for (UButton* Button : { Button_Previous.Get(), Button_Next.Get() })
+	{
+		if (!Button)
+		{
+			continue;
+		}
+		FButtonStyle Style = Button->GetStyle();
+		Style.Normal = FFFestivalOptionsStyle::Rounded(T.Hover, T.LineStrong, 8.f);
+		Style.Hovered = FFFestivalOptionsStyle::Rounded(T.Selected, T.Green, 8.f, 2.f);
+		Style.Pressed = FFFestivalOptionsStyle::Rounded(T.Selected, T.GreenDeep, 8.f, 2.f);
+		Style.Disabled = FFFestivalOptionsStyle::Rounded(T.Disabled, T.Line, 8.f);
+		Style.NormalPadding = FMargin(12.f, 6.f);
+		Style.PressedPadding = Style.NormalPadding;
+		Button->SetStyle(Style);
+		if (UTextBlock* Arrow = Cast<UTextBlock>(Button->GetContent()))
+		{
+			FSlateFontInfo Font = Arrow->GetFont();
+			Font.Size = 24;
+			Font.TypefaceFontName = TEXT("SemiBold");
+			Arrow->SetFont(Font);
+			Arrow->SetColorAndOpacity(T.Ink);
+			Arrow->SetMinDesiredWidth(20.f);
+			Arrow->SetJustification(ETextJustify::Center);
+			if (UButtonSlot* ArrowLayout = Cast<UButtonSlot>(Arrow->Slot))
+			{
+				ArrowLayout->SetPadding(FMargin(0.f));
+			}
+		}
+		Button->SetToolTipText(Button == Button_Previous
+			? NSLOCTEXT("FestaFiestaFestivalSettings", "PreviousValue", "이전 값 선택")
+			: NSLOCTEXT("FestaFiestaFestivalSettings", "NextValue", "다음 값 선택"));
+	}
+	if (Image_FocusRing)
+	{
+		Image_FocusRing->SetBrush(FFFestivalOptionsStyle::Rounded(FLinearColor::Transparent, T.Green, 12.f, 2.f));
+		Image_FocusRing->SetColorAndOpacity(FLinearColor::White);
 	}
 }
 
