@@ -436,6 +436,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
 	FFF_OnSnsSocialPostChanged OnSnsPostAdded;
 
+	/** 피날레 연출 중 후기. 화면 위로 흘려보내는 용도라 목록을 들고 있지 않는다. 지난 글은 Insights 의 GetFinalePosts() 에 있다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_OnSnsSocialPostChanged OnFinaleSnsPostAdded;
+
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnScoreSatisfactionChanged;
 
@@ -1211,6 +1215,8 @@ protected:
 	/** Insights가 쏘는 글 한 건을 변환해 목록 맨 앞에 얹고 위젯에 중계한다. */
 	UFUNCTION()
 	void HandleOwnerSnsPostAdded(FFF_SnsPostRow NewPost);
+	UFUNCTION()
+	void HandleOwnerFinaleSnsPostAdded(FFF_SnsPostRow NewPost);
 
 	/** 새 축제가 시작되면 이전 판의 SNS 표시 캐시를 비운다(Insights 쪽 피드도 같은 시점에 비워진다). */
 	UFUNCTION()

@@ -11,6 +11,7 @@ void FFFZSBuildableGridMask::Reset()
     DeferredWorldObstacles.Reset();
     ObstacleHeightCm = 250.0;
     bIncludeGroundSurfaceSupport = true;
+    FacilityCategory = EFFZSFacilityCategory::Booth;
 }
 
 bool FFFZSBuildableGridMask::Initialize(

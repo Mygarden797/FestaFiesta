@@ -81,6 +81,25 @@ EFF_IncidentState FFF_IncidentRules::LapseStateFor(EFF_IncidentTone Tone)
 	return EFF_IncidentState::Expired;
 }
 
+bool FFF_IncidentRules::ShouldToastClosed(const FFF_IncidentClosedInfo& Info)
+{
+	switch (Info.FinalState)
+	{
+	case EFF_IncidentState::Resolved:
+	case EFF_IncidentState::Ignored:
+	case EFF_IncidentState::Missed:
+		return true;
+	case EFF_IncidentState::Expired:
+		return Info.bWasResponding;
+	case EFF_IncidentState::Active:
+	case EFF_IncidentState::Acknowledged:
+	case EFF_IncidentState::Taken:
+		return false;
+	}
+
+	return false;
+}
+
 float FFF_IncidentRules::MergeIntensity(float ExistingPeak, float IncomingIntensity)
 {
 	
@@ -145,6 +164,7 @@ void FFF_IncidentRules::BuildOptionViews(const UFF_IncidentDefinition& Definitio
 		View.bValid = true;
 		View.Label = Option->Label;
 		View.CostGold = FMath::Max(0, Option->CostGold);
+		View.CostStaff = FMath::Max(0, Option->CostStaff);
 		View.MinStaff = FMath::Max(1, Option->MinStaff);
 		View.WorkAmount = FMath::Max(0.f, Option->WorkAmount);
 		TArray<FText> Descriptions;

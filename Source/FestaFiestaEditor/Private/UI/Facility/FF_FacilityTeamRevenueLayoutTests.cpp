@@ -13,6 +13,7 @@
 #include "Economy/FF_FestivalEconomyTypes.h"
 #include "Editor.h"
 #include "Engine/TextureRenderTarget2D.h"
+#include "Engine/UserInterfaceSettings.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "ImageUtils.h"
@@ -25,6 +26,7 @@
 #include "Slate/WidgetRenderer.h"
 #include "TextureResource.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "Widgets/Layout/SDPIScaler.h"
 
 namespace
 {
@@ -154,13 +156,15 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
         for (const FIntPoint Resolution : {FIntPoint(1280, 720), FIntPoint(1920, 1080)})
         {
             FWidgetRenderer Renderer(false, true);
+            const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Resolution);
+            const TSharedRef<SWidget> ViewportSlate = SNew(SDPIScaler).DPIScale(Dpi)[Slate];
             UTextureRenderTarget2D* Target = FWidgetRenderer::CreateTargetFor(
                 FVector2D(Resolution.X, Resolution.Y), TF_Bilinear, true);
             if (!TestNotNull(TEXT("Offscreen render target"), Target)) continue;
             for (int32 Frame = 0; Frame < 3; ++Frame)
             {
                 Panel->ForceLayoutPrepass();
-                Renderer.DrawWidget(Target, Slate, FVector2D(Resolution.X, Resolution.Y), 0.f, false);
+                Renderer.DrawWidget(Target, ViewportSlate, FVector2D(Resolution.X, Resolution.Y), 0.f, false);
                 FlushRenderingCommands();
                 FAssetCompilingManager::Get().FinishAllCompilation();
             }
@@ -182,9 +186,12 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
             {
                 const FSlateRect BasicsRect = Basics->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 const FSlateRect FirstFactRect = FirstFact->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                const UWidget* CapacitySection = Panel->GetWidgetFromName(TEXT("Reference_BasicCapacitySection"));
+                const FSlateRect FirstSectionRect = CapacitySection
+                    ? CapacitySection->GetPaintSpaceGeometry().GetLayoutBoundingRect() : FirstFactRect;
                 TestTrue(*FString::Printf(TEXT("Non-revenue overview leaves no empty card gap at %dp (%.1fpx)"),
-                    Resolution.Y, FirstFactRect.Top - BasicsRect.Top),
-                    FirstFactRect.Top >= BasicsRect.Top - 1.f && FirstFactRect.Top <= BasicsRect.Top + 16.f);
+                    Resolution.Y, FirstSectionRect.Top - BasicsRect.Top),
+                    FirstSectionRect.Top >= BasicsRect.Top - 1.f && FirstSectionRect.Top <= BasicsRect.Top + 16.f * Dpi);
                 TestEqual(TEXT("Rendered non-revenue card stays collapsed"), Card->GetVisibility(), ESlateVisibility::Collapsed);
                 TestTrue(TEXT("First ordinary facility fact remains visible"),
                     HasVisibleAncestors(FirstFact) && FirstFactRect.GetSize().Y > 0.f);

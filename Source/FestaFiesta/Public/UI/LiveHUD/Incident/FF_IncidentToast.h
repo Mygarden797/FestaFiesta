@@ -12,6 +12,13 @@ class UFont;
 class UTextBlock;
 class UVerticalBox;
 
+enum class EFF_IncidentToastKind : uint8
+{
+	Good,
+	Danger,
+	Neutral
+};
+
 /**
  * 사건 처리 결과를 화면 위쪽 가운데에 잠깐 띄우는 알림 묶음. WBP 없이 C++ 만으로 트리를 만든다.
  *
@@ -21,7 +28,8 @@ class UVerticalBox;
  * 전체가 HitTestInvisible 이라 월드 클릭을 막지 않는다. 한 줄도 없으면 Collapsed.
  *
  * 모양은 UFF_UIPalette(LightTeal)를 따른다. 카드는 PaperStrong 바탕 · Line 테두리 · 카드 모서리 6px, 본문은 Ink.
- * 결과는 색만으로 가르지 않는다(AT-011). 왼쪽 세로 띠의 색(BandGood/Danger)과 앞머리 표시(출동·처리·불가)를 함께 쓴다.
+ * 결과는 색만으로 가르지 않는다(AT-011). 왼쪽 세로 띠의 색(BandGood/Danger/InkMuted)과 앞머리 표시(출동·처리·불가·완료·소멸·방치·놓침)를 함께 쓴다.
+ * 중립(InkMuted)은 좋지도 나쁘지도 않은 닫힘(자연 소멸·기회 놓침)에 쓴다.
  * 글꼴은 프로젝트 UI 글꼴 Pretendard 로, 앞머리는 SemiBold, 본문은 Regular.
  */
 UCLASS(meta = (DisplayName = "FF Incident Toast"))
@@ -35,6 +43,8 @@ public:
 	/** Label 은 앞머리의 짧은 표시(출동·처리·불가), bPositive 는 띠와 앞머리 색(성공 BandGood / 실패 Danger)을 고른다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Incident")
 	void Show(const FText& Label, const FText& Message, bool bPositive);
+
+	void Show(const FText& Label, const FText& Message, EFF_IncidentToastKind Kind);
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Incident")
 	FText GetLabelAt(int32 Index) const;
@@ -85,7 +95,7 @@ private:
 		float RemainingSeconds = 0.f;
 	};
 
-	UBorder* MakeCard(const FText& Label, const FText& Message, bool bPositive, FEntry& OutEntry);
+	UBorder* MakeCard(const FText& Label, const FText& Message, EFF_IncidentToastKind Kind, FEntry& OutEntry);
 	FSlateFontInfo MakeFont(const TCHAR* Typeface, int32 Size) const;
 
 	void BuildTree();

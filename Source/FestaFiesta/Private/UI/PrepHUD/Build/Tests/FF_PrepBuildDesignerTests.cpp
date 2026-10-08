@@ -74,10 +74,24 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	const FSlateBrush AuthoredThumbnailBrush = ThumbnailBackdrop->Background;
 	const FSlateBrush ProgramBrush = *ProgramBrushProperty->ContainerPtrToValuePtr<FSlateBrush>(Tile.Get());
 	const FSlateBrush RequiredBrush = *RequiredBrushProperty->ContainerPtrToValuePtr<FSlateBrush>(Tile.Get());
-	if (!TestNotNull(TEXT("Saved program brush owns its pearl material reference"), ProgramBrush.GetResourceObject())) return false;
-	if (!TestNotNull(TEXT("Saved required brush owns its rose material reference"), RequiredBrush.GetResourceObject())) return false;
-	TestTrue(TEXT("Required and program surfaces remain visually distinct authored materials"),
-		RequiredBrush.GetResourceObject() != ProgramBrush.GetResourceObject());
+	const auto* ProgramTintProperty = FindFProperty<FStructProperty>(Class, TEXT("ProgramCardTint"));
+	const auto* RequiredTintProperty = FindFProperty<FStructProperty>(Class, TEXT("RequiredCardTint"));
+	if (!TestNotNull(TEXT("Authored program color"), ProgramTintProperty) ||
+		!TestNotNull(TEXT("Authored required color"), RequiredTintProperty)) return false;
+	const FLinearColor ProgramTint = *ProgramTintProperty->ContainerPtrToValuePtr<FLinearColor>(Tile.Get());
+	const FLinearColor RequiredTint = *RequiredTintProperty->ContainerPtrToValuePtr<FLinearColor>(Tile.Get());
+	// Current WBPs use inexpensive rounded brushes; material brushes remain supported.
+	// Both representations must preserve the Designer's base brush and state colors.
+	auto AccentSurface = [&AuthoredThumbnailBrush](const FSlateBrush& Accent, const FLinearColor& Tint)
+	{
+		if (Accent.GetResourceObject()) return Accent;
+		FSlateBrush Brush = AuthoredThumbnailBrush;
+		Brush.TintColor = Tint;
+		return Brush;
+	};
+	const FSlateBrush ProgramSurface = AccentSurface(ProgramBrush, ProgramTint);
+	const FSlateBrush RequiredSurface = AccentSurface(RequiredBrush, RequiredTint);
+	TestTrue(TEXT("Required and program surfaces remain visually distinct authored styles"), RequiredSurface != ProgramSurface);
 	// These are instance-only edits made before PreConstruct captures the authored appearance.
 	Size->SetWidthOverride(196.f);
 	Size->SetHeightOverride(188.f);
@@ -188,7 +202,7 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	Data->SetSynergyHighlighted(true);
 	Tile->RefreshItemPresentation();
 	// Required progress is independent from combo recommendations. Both states can
-	// coexist while the model's 0/1 -> 1/1 progress still reaches the original label.
+	// coexist while the installation instruction changes to its completion label.
 	Entry.bRequiredForSetup = true;
 	Entry.CompatibleProgramCount = 2;
 	Entry.CompatibleProgramNames = FText::FromString(TEXT("바다향기 공방, 선셋 요가"));
@@ -199,30 +213,30 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	Entry.CurrentInstanceCount = 0;
 	Data->Initialize(Entry, 1000, true);
 	Tile->RefreshItemPresentation();
-	TestTrue(TEXT("Missing requirement, compatible programs and combination highlight coexist"),
+	TestTrue(TEXT("Missing requirement takes badge priority while program data and combination highlight coexist"),
 		Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() && Tile->IsSynergyHighlighted() && Tile->HasCompatiblePrograms() &&
 		RequiredMissing->GetVisibility() == ESlateVisibility::HitTestInvisible &&
 		RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed &&
-		ProgramBadge->GetVisibility() == ESlateVisibility::HitTestInvisible &&
-		ProgramText->GetVisibility() == ESlateVisibility::HitTestInvisible);
+		ProgramBadge->GetVisibility() == ESlateVisibility::Collapsed &&
+		ProgramText->GetVisibility() == ESlateVisibility::Collapsed);
 	TestTrue(TEXT("Program compatibility preserves the Designer badge brush, caption, font and color"),
 		ProgramBadge->Background.TintColor == AuthoredProgramBrush.TintColor &&
 		ProgramText->GetText().EqualTo(AuthoredProgramLabel) && ProgramText->GetFont().Size == ProgramFont.Size &&
 		ProgramText->GetColorAndOpacity() == AuthoredProgramColor);
-	TestTrue(TEXT("An authoritative requirement takes surface priority while retaining the program badge"),
-		ThumbnailBackdrop->Background.GetResourceObject() == RequiredBrush.GetResourceObject() &&
+	TestTrue(TEXT("An unmet requirement takes surface priority while programs remain in the tooltip"),
+		ThumbnailBackdrop->Background == RequiredSurface &&
 		Card->Background.TintColor != AuthoredBrush.TintColor);
 	const FSlateBrush RequiredCardBrush = Card->Background;
 	TestTrue(TEXT("Program names are explained alongside the requirement and price"),
 		Tile->GetToolTipText().ToString().Contains(TEXT("바다향기 공방")) &&
 		Tile->GetToolTipText().ToString().Contains(TEXT("선셋 요가")));
-	TestEqual(TEXT("Limited facility displays empty installation progress in the original state slot"),
-		StateLabel->GetText().ToString(), FString(TEXT("0/1")));
-	TestTrue(TEXT("Missing requirement preserves Designer brush, font and caption"),
+	TestEqual(TEXT("Required facility explains the installation amount in the original state slot"),
+		StateLabel->GetText().ToString(), FString(TEXT("1개 설치")));
+	TestTrue(TEXT("Missing requirement preserves Designer brush and font with a count instruction"),
 		RequiredMissing->Background.TintColor == AuthoredRequiredBrush.TintColor &&
-		RequiredMissingText->GetFont().Size == RequiredFont.Size && RequiredMissingText->GetText().EqualTo(AuthoredRequiredLabel));
+		RequiredMissingText->GetFont().Size == RequiredFont.Size && RequiredMissingText->GetText().ToString() == TEXT("필수 · 1개 설치"));
 	TestTrue(TEXT("Requirement minimum is available alongside the original price tooltip"),
-		Tile->GetToolTipText().ToString().Contains(TEXT("필요 최소 1개")) &&
+		Tile->GetToolTipText().ToString().Contains(TEXT("필수 시설 1개를 설치")) &&
 		Tile->GetToolTipText().ToString().Contains(Data->GetCostText().ToString()));
 	Entry.bRequiredSetupSatisfied = true;
 	Entry.RequiredInstalledCount = 1;
@@ -234,11 +248,11 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 		Tile->IsRequiredFacilitySatisfied() && Tile->IsSynergyHighlighted() && Tile->HasCompatiblePrograms() &&
 		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed &&
 		RequiredSatisfied->GetVisibility() == ESlateVisibility::HitTestInvisible &&
-		ProgramBadge->GetVisibility() == ESlateVisibility::HitTestInvisible);
-	TestEqual(TEXT("Completed installation retains its real 1/1 progress instead of availability wording"),
-		StateLabel->GetText().ToString(), FString(TEXT("1/1")));
-	TestTrue(TEXT("Completing a requirement retains the rose identity while its completion badge changes"),
-		ThumbnailBackdrop->Background.GetResourceObject() == RequiredBrush.GetResourceObject() && Card->Background == RequiredCardBrush);
+		ProgramBadge->GetVisibility() == ESlateVisibility::Collapsed);
+	TestEqual(TEXT("Completed required installation uses plain completion wording"),
+		StateLabel->GetText().ToString(), FString(TEXT("설치 완료")));
+	TestTrue(TEXT("Completing a requirement clears its warning accent while retaining program identity"),
+		ThumbnailBackdrop->Background == ProgramSurface && Card->Background.TintColor == FSlateColor(ProgramTint));
 	Entry.RequiredMinimumCount = 0;
 	Data->Initialize(Entry, 1000, true);
 	Tile->RefreshItemPresentation();
@@ -253,7 +267,7 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 		!Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() &&
 		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed && RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed);
 	TestTrue(TEXT("Recycling a required program row into a program-only row restores its authored lavender surface"),
-		ThumbnailBackdrop->Background.GetResourceObject() == ProgramBrush.GetResourceObject() &&
+		ThumbnailBackdrop->Background == ProgramSurface &&
 		Card->Background.TintColor != RequiredCardBrush.TintColor);
 	Entry.CompatibleProgramCount = 0;
 	Entry.CompatibleProgramNames = FText::GetEmpty();

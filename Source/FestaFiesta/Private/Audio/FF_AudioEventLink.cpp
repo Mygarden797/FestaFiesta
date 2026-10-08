@@ -18,6 +18,15 @@
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/Core/FF_UIFlowTypes.h"
 
+namespace
+{
+	// 메인 공연곡을 공연보다 일찍 시작할 수 있는 한도(초). 관객이 모이는 동안(공연 60초 전부터) 안에 든다.
+	constexpr float MainShowMaxLeadSeconds = 15.f;
+
+	// 메인 공연곡을 틀고 내릴 때인지 보는 주기(초). 늦게 알아채도 곡 안 위치를 맞춰 트므로 끝은 공연 끝과 맞는다.
+	constexpr float MainShowPollSeconds = 0.1f;
+}
+
 bool UFF_AudioEventLink::DoesSupportWorldType(const EWorldType::Type WorldType) const
 {
 	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
@@ -63,6 +72,12 @@ void UFF_AudioEventLink::OnWorldBeginPlay(UWorld& InWorld)
 			PlaylistPlayerCreateTimer,
 			FTimerDelegate::CreateWeakLambda(this, [this]() { TryCreatePlaylistPlayer(); }),
 			0.5f, true, 0.f);
+
+		// 메인 공연 동안 그날 공연곡을 튼다.
+		InWorld.GetTimerManager().SetTimer(
+			MainShowPollTimer,
+			FTimerDelegate::CreateWeakLambda(this, [this]() { PollMainShow(); }),
+			MainShowPollSeconds, true, MainShowPollSeconds);
 	}
 }
 
@@ -72,6 +87,7 @@ void UFF_AudioEventLink::Deinitialize()
 	{
 		World->GetTimerManager().ClearTimer(FrontendScreenPollTimer);
 		World->GetTimerManager().ClearTimer(PlaylistPlayerCreateTimer);
+		World->GetTimerManager().ClearTimer(MainShowPollTimer);
 	}
 	if (PlaylistPlayerWidget)
 	{
@@ -545,6 +561,19 @@ void UFF_AudioEventLink::RefreshAmbience()
 		return;
 	}
 
+	/* 메인 공연 동안은 그날 공연곡이 플레이리스트보다 먼저다.
+
+	   공연이 끝나면 아래에서 플레이리스트로 돌아가고, 플레이리스트는 듣던 자리부터 잇는다.
+	   공연 중에 밤낮이 바뀌어 여기로 와도 같은 곡 요청이라 끊기지 않는다.
+	*/
+	int32 ShowDay = 0;
+	float ShowSongSeconds = 0.f;
+	if (ResolveMainShowCue(*Audio, ShowDay, ShowSongSeconds))
+	{
+		Audio->PlayMainShowSong(ShowDay, ShowSongSeconds);
+		return;
+	}
+
 	const bool bHasClosingTrack = Audio->HasAmbienceTrack(EFF_AudioAmbience::Closing);
 	if (!bHasClosingTrack && !bWarnedMissingClosingTrack
 		&& (LastStage == EFF_FestivalStage::Closing || LastStage == EFF_FestivalStage::Report))
@@ -563,6 +592,68 @@ void UFF_AudioEventLink::RefreshAmbience()
 		Next = ResolveFinaleAmbience(*Audio);
 	}
 	Audio->SetAmbience(Next);
+}
+
+float UFF_AudioEventLink::ResolveMainShowSongStart(
+	const float ShowStartSeconds, const float ShowEndSeconds, const float SongSeconds, const float MaxLeadSeconds)
+{
+	const float ShowSeconds = FMath::Max(0.f, ShowEndSeconds - ShowStartSeconds);
+	const float Lead = FMath::Clamp(SongSeconds - ShowSeconds, 0.f, FMath::Max(0.f, MaxLeadSeconds));
+	return ShowStartSeconds - Lead;
+}
+
+bool UFF_AudioEventLink::ResolveMainShowCue(const UFF_AudioSubsystem& Audio, int32& OutDay, float& OutSongSeconds) const
+{
+	const UWorld* World = GetWorld();
+	const UFF_FestivalStageSubsystem* Stage = World
+		? UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(World->GetGameInstance())
+		: nullptr;
+	if (!Stage || Stage->CurrentStage != EFF_FestivalStage::Live)
+	{
+		return false;
+	}
+
+	const int32 Day = Stage->CurrentDay;
+	const float SongSeconds = Audio.GetMainShowSongLength(Day);
+	if (SongSeconds <= 0.f)
+	{
+		return false;
+	}
+
+	float ShowStart = 0.f;
+	float ShowEnd = 0.f;
+	if (!Stage->TryGetMainProgramShowWindow(MainShowMaxLeadSeconds, ShowStart, ShowEnd))
+	{
+		return false;
+	}
+
+	const float SongStart = ResolveMainShowSongStart(ShowStart, ShowEnd, SongSeconds, MainShowMaxLeadSeconds);
+	const float Elapsed = Stage->ElapsedLiveSeconds;
+	if (Elapsed < SongStart || Elapsed >= ShowEnd)
+	{
+		return false;
+	}
+
+	// 늦게 알아챘으면(주기 사이) 그만큼 곡 안에서 시작해 끝이 공연 끝과 어긋나지 않게 한다.
+	OutDay = Day;
+	OutSongSeconds = Elapsed - SongStart;
+	return true;
+}
+
+void UFF_AudioEventLink::PollMainShow()
+{
+	if (!bLinkEnabled)
+	{
+		return;
+	}
+
+	// 공연은 운영(Live) 중에만 있다. 공연곡이 흐르는 채로 단계가 바뀌었으면 한 번 더 보고 내린다.
+	const UFF_AudioSubsystem* Audio = GetAudio();
+	if (!Audio || (LastStage != EFF_FestivalStage::Live && Audio->GetCurrentAmbience() != EFF_AudioAmbience::MainShow))
+	{
+		return;
+	}
+	RefreshAmbience();
 }
 
 EFF_AudioAmbience UFF_AudioEventLink::ResolveStageAmbience(

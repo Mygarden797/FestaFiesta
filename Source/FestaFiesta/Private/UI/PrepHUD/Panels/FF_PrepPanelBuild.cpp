@@ -102,6 +102,7 @@ void UFF_PrepPanelBuild::NativeConstruct()
 			? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
 		{
 			RankingButton->OnClicked.AddUniqueDynamic(Ranking, &UFF_FacilityRevenueRankingSubsystem::Open);
+			Ranking->RegisterIntroductionHint(Cast<UBorder>(GetWidgetFromName(TEXT("Border_RevenueIntroductionHint"))));
 		}
 	}
 	LastResponsiveListWidth = -1.0f;
@@ -942,7 +943,9 @@ void UFF_PrepPanelBuild::RefreshRequiredFacilityGuide(const FFF_RequiredFaciliti
 		: Cast<UBorder>(GetWidgetFromName(TEXT("Border_CatalogRequiredGuide")));
 	if (Guide)
 	{
-		const bool bNeedsInstallation = !Status.Facilities.IsEmpty() && !Status.bCanProceed;
+		// 범례는 `필수 · 1일차 시작 전 설치` 라서 설치가 남았을 때만 띄운다.
+		// 설치를 마치고 스태프 배정만 남은 상태는 하단 바 사유와 시설 정보가 안내한다.
+		const bool bNeedsInstallation = Status.HasMissingInstallations();
 		Guide->SetVisibility(bNeedsInstallation
 			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}

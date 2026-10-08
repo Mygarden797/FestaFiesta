@@ -5,11 +5,16 @@
 #include "Components/Button.h"
 #include "Components/Slider.h"
 #include "Components/TextBlock.h"
+#include "Building/FF_BuildModeSubsystem.h"
+#include "Camera/FF_FestivalPlayerController.h"
+#include "Camera/FF_OverviewCameraPawn.h"
 #include "Economy/FF_EconomyDisplayTextLibrary.h"
 #include "Engine/GameInstance.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSFacilityActor.h"
 #include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "UI/FF_UILog.h"
+#include "UI/Facility/FF_FacilityInfoSubsystem.h"
 #include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
@@ -99,13 +104,36 @@ FText FFF_PrepCheckRules::FormatRequiredFacilities(const FFF_RequiredFacilitiesS
 				Name, Row.Guidance));
 			continue;
 		}
+		// 배정까지 요구하는 행은 설치 → 배정 순서로 무엇이 남았는지 한 줄에 적는다.
+		// 판정은 하지 않는다. 소유자가 준 부족 개수(MissingCount·MissingStaffCount)를 그대로 읽는다.
+		FText State;
+		if (Row.MissingCount > 0)
+		{
+			State = Row.RequiresStaffAssignment()
+				? FText::Format(LOCTEXT("PrepCheck_RequiredMissingThenStaff", "! 추가 설치 필요 · 설치 후 스태프 {0}명 배정"),
+					FText::AsNumber(Row.RequiredStaffCount))
+				: LOCTEXT("PrepCheck_RequiredMissing", "! 추가 설치 필요");
+		}
+		else if (Row.MissingStaffCount > 0)
+		{
+			State = FText::Format(LOCTEXT("PrepCheck_RequiredStaffMissing", "! 스태프 배정 필요 (배정 {0}/{1}명)"),
+				FText::AsNumber(Row.AssignedStaffCount), FText::AsNumber(Row.RequiredStaffCount));
+		}
+		else
+		{
+			State = Row.RequiresStaffAssignment()
+				? FText::Format(LOCTEXT("PrepCheck_RequiredStaffSatisfied", "✓ 설치·배정 완료 (스태프 {0}명)"),
+					FText::AsNumber(Row.AssignedStaffCount))
+				: LOCTEXT("PrepCheck_RequiredSatisfied", "✓ 설치 완료");
+		}
 		FFormatNamedArguments Args;
 		Args.Add(TEXT("Name"), Name);
 		Args.Add(TEXT("Installed"), FText::AsNumber(Row.InstalledCount));
 		Args.Add(TEXT("Required"), FText::AsNumber(Row.MinimumCount));
-		Args.Add(TEXT("State"), Row.MissingCount > 0
-			? LOCTEXT("PrepCheck_RequiredMissing", "! 추가 설치 필요")
-			: LOCTEXT("PrepCheck_RequiredSatisfied", "✓ 설치 완료"));
+		Args.Add(TEXT("State"), State);
+		// 문구를 바꾸는 WBP 가 배정 인원을 따로 놓을 수 있게 같이 넘긴다.
+		Args.Add(TEXT("AssignedStaff"), FText::AsNumber(Row.AssignedStaffCount));
+		Args.Add(TEXT("RequiredStaff"), FText::AsNumber(Row.RequiredStaffCount));
 		Lines.Add(FText::Format(RowFormat, Args));
 	}
 	return FText::Join(FText::FromString(TEXT("\n")), Lines);
@@ -128,7 +156,7 @@ UFF_PrepPanelCheck::UFF_PrepPanelCheck(const FObjectInitializer& ObjectInitializ
 	DailyGoalBonusFormat = LOCTEXT("PrepCheck_DailyGoalBonusFormat", "달성 시 +{Amount} Gold");
 	GoldValueFormat = LOCTEXT("PrepCheck_GoldValueFormat", "{Amount} Gold");
 	HeldGoldValueFormat = LOCTEXT("PrepCheck_HeldGoldValueFormat", "{Amount}");
-	RequiredFacilityFormat = LOCTEXT("PrepCheck_RequiredFacilityFormat", "{Name} · {Installed}/{Required} · {State}");
+	RequiredFacilityFormat = LOCTEXT("PrepCheck_RequiredFacilityFormat", "{Name} · {Required}개 설치 · {State}");
 	NoRequiredFacilitiesText = LOCTEXT("PrepCheck_NoRequiredFacilities", "필수 시설 조건 없음");
 	OpenGateReadyText = LOCTEXT("PrepCheck_OpenGateReady", "✓ 준비가 완료되었습니다.");
 	AdmissionValueFormat = LOCTEXT("AdmissionValue", "{Amount}");
@@ -164,6 +192,8 @@ void UFF_PrepPanelCheck::NativeOnInitialized()
 	Super::NativeOnInitialized();
 
 	CollectWeatherChoices();
+	if (Button_RequiredFacilities) Button_RequiredFacilities->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffAssignmentGuidanceClicked);
+	if (Button_OpenGateReason) Button_OpenGateReason->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffAssignmentGuidanceClicked);
 	if (Slider_AdmissionFee) Slider_AdmissionFee->OnValueChanged.AddUniqueDynamic(this, &ThisClass::HandleAdmissionValueChanged);
 	if (Button_AdmissionDecrease) Button_AdmissionDecrease->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAdmissionDecrease);
 	if (Button_AdmissionIncrease) Button_AdmissionIncrease->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAdmissionIncrease);
@@ -646,12 +676,22 @@ void UFF_PrepPanelCheck::RefreshSummary()
 	const int32 Base = ViewModel ? ViewModel->GetBaseStaffCount() : INDEX_NONE;
 	const int32 Temporary = ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE;
 
-	// 프로그램은 인원을 묶지 않으므로 전체 인원이 곧 사건에 쓸 수 있는 인원이다.
-	SetTextOrHide(Text_StaffSummary, (Total >= 0 && Base >= 0 && Temporary >= 0)
-		? FText::Format(
-			LOCTEXT("PrepCheck_Staff", "{0}명 (기본 {1} · 고용 {2})"),
-			FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary))
-		: LOCTEXT("PrepCheck_Unknown", "아직 알 수 없습니다"));
+	// 프로그램은 인원을 묶지 않는다. 다만 사건에 출동하는 것은 안내 시설에 배정된 인원뿐이라
+	// 배정 수를 함께 적는다 — 보유 인원만 보이면 배정이 필요하다는 것을 알 수 없다.
+	const int32 Unassigned = ViewModel ? ViewModel->GetUnassignedStaffCount() : INDEX_NONE;
+	FText StaffSummary = LOCTEXT("PrepCheck_Unknown", "아직 알 수 없습니다");
+	if (Total >= 0 && Base >= 0 && Temporary >= 0)
+	{
+		StaffSummary = (Unassigned >= 0 && Unassigned <= Total)
+			? FText::Format(
+				LOCTEXT("PrepCheck_StaffWithAssignment", "{0}명 (기본 {1} · 고용 {2}) · 배정 {3}명"),
+				FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary),
+				FText::AsNumber(Total - Unassigned))
+			: FText::Format(
+				LOCTEXT("PrepCheck_Staff", "{0}명 (기본 {1} · 고용 {2})"),
+				FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary));
+	}
+	SetTextOrHide(Text_StaffSummary, StaffSummary);
 
 	const int32 ProgramCount = GetProgramCount();
 	SetTextOrHide(Text_ProgramSummary, (ProgramCount != INDEX_NONE)
@@ -690,10 +730,37 @@ void UFF_PrepPanelCheck::RefreshRequiredFacilities()
 		? FFF_PrepCheckRules::FormatRequiredFacilities(Required->GetRequiredFacilitiesStatus(),
 			RequiredFacilityFormat, NoRequiredFacilitiesText)
 		: LOCTEXT("PrepCheck_RequiredUnknown", "필수 시설 상태를 확인할 수 없습니다."));
+	RefreshStaffAssignmentLinks();
+}
+
+void UFF_PrepPanelCheck::RefreshStaffAssignmentLinks()
+{
+	const UWorld* World = GetWorld();
+	const UFF_RequiredFacilitiesSubsystem* Required = World
+		? World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>() : nullptr;
+	const bool bHasTarget = Required && Required->FindStaffAssignmentTarget();
+	const FText Hint = LOCTEXT("PrepCheck_AssignStaffLink", "클릭하면 해당 시설의 스태프 탭으로 이동합니다.");
+	if (Button_RequiredFacilities)
+	{
+		Button_RequiredFacilities->SetIsEnabled(bHasTarget);
+		Button_RequiredFacilities->SetCursor(bHasTarget ? EMouseCursor::Hand : EMouseCursor::Default);
+		Button_RequiredFacilities->SetToolTipText(bHasTarget ? Hint : FText::GetEmpty());
+	}
+	if (Button_OpenGateReason)
+	{
+		const UFF_PrepHudBar* Bar = GetOwningBar();
+		const bool bCanFollow = bHasTarget && Bar && Bar->GetCtaState() != EFF_PrepCtaState::Hidden &&
+			!HasAdmissionDraft() && !bAdmissionRequestInFlight;
+		Button_OpenGateReason->SetIsEnabled(bCanFollow);
+		Button_OpenGateReason->SetVisibility(bCanFollow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		Button_OpenGateReason->SetCursor(bCanFollow ? EMouseCursor::Hand : EMouseCursor::Default);
+		Button_OpenGateReason->SetToolTipText(bCanFollow ? Hint : FText::GetEmpty());
+	}
 }
 
 void UFF_PrepPanelCheck::RefreshOpenGate()
 {
+	RefreshStaffAssignmentLinks();
 	const UFF_PrepHudBar* Bar = GetOwningBar();
 	if (!Bar)
 	{
@@ -802,6 +869,33 @@ void UFF_PrepPanelCheck::HandleContinueBuildClicked()
 		TEXT("[%s] 소유 바가 없어 배치 탭으로 갈 수 없다."), *GetName());
 }
 
+void UFF_PrepPanelCheck::HandleStaffAssignmentGuidanceClicked()
+{
+	UWorld* World = GetWorld();
+	UFF_RequiredFacilitiesSubsystem* Required = World
+		? World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>() : nullptr;
+	TWeakObjectPtr<AFFZSFacilityActor> Target = Required ? Required->FindStaffAssignmentTarget() : nullptr;
+	UFF_BuildModeSubsystem* Build = World ? World->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+	UFF_FacilityInfoSubsystem* Info = World ? World->GetSubsystem<UFF_FacilityInfoSubsystem>() : nullptr;
+	UFF_PrepHudBar* Bar = GetOwningBar();
+	if (!Target.IsValid() || !Build || !Info || !Bar)
+	{
+		RefreshRequiredFacilities();
+		RefreshOpenGate();
+		return;
+	}
+	// 기존 건축 선택 경로로 전환해야 선택 강조와 입력 소유권도 함께 정리된다.
+	Bar->SelectTab(EFF_PrepHudTab::Build);
+	if (!Target.IsValid() || !Build->InspectFacility(Target.Get()) || !Info->ShowSelectedStaffPage()) { return; }
+	if (const AFF_FestivalPlayerController* Controller = Cast<AFF_FestivalPlayerController>(GetOwningPlayer()))
+	{
+		if (AFF_OverviewCameraPawn* Camera = Controller->GetOverviewCameraPawn())
+		{
+			Camera->FocusOnLocation(Target->GetActorLocation());
+		}
+	}
+}
+
 void UFF_PrepPanelCheck::HandleOpenGateClicked()
 {
 	if (HasAdmissionDraft() || bAdmissionRequestInFlight) { RefreshOpenGate(); return; }
@@ -836,6 +930,8 @@ void UFF_PrepPanelCheck::HandleRequiredFacilitiesChanged()
 {
 	// 전체 설치/철거 이벤트이므로 필수 조건을 만족한 상태에서도 수용량이 바뀔 수 있다.
 	RefreshCapacity();
+	// 스태프 배정·해제도 이 신호로 온다. 인력 줄의 배정 수를 같이 갱신한다.
+	RefreshSummary();
 	RefreshRequiredFacilities();
 	RefreshOpenGate();
 }

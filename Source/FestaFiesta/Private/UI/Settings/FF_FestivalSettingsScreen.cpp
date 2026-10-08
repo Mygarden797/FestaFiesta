@@ -13,6 +13,7 @@
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/ScaleBox.h"
 #include "Components/ScaleBoxSlot.h"
+#include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -28,10 +29,10 @@
 #include "InputCoreTypes.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/App.h"
-#include "UI/Core/FF_PauseOptionsLightTealStyle.h"
 #include "UI/Core/FF_UIAccessibilitySubsystem.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/FF_UILog.h"
+#include "UI/Settings/FF_FestivalOptionsStyle.h"
 #include "UI/Settings/FF_FestivalSettingsPolicy.h"
 #include "UI/Settings/FF_FestivalSettingsSubsystem.h"
 #include "UI/Settings/FF_KeyBindingPanel.h"
@@ -63,10 +64,14 @@ namespace
 	const FName Setting_GraphicsPreset(TEXT("GraphicsPreset"));
 
 	const EFF_FestivalSettingsCategory AllCategories[] = {
+		EFF_FestivalSettingsCategory::Language,
+		EFF_FestivalSettingsCategory::Accessibility,
+		EFF_FestivalSettingsCategory::Sound,
+		EFF_FestivalSettingsCategory::Graphics,
+		EFF_FestivalSettingsCategory::Keyboard,
+		EFF_FestivalSettingsCategory::Credits,
 		EFF_FestivalSettingsCategory::Basic,
 		EFF_FestivalSettingsCategory::Account,
-		EFF_FestivalSettingsCategory::Keyboard,
-		EFF_FestivalSettingsCategory::Graphics,
 		EFF_FestivalSettingsCategory::ExitGame
 	};
 
@@ -115,27 +120,20 @@ namespace
 		return Brush;
 	}
 
-	FButtonStyle MakeCategoryTabStyle(const UFF_UIPalette& Palette, const bool bSelected)
+	FButtonStyle MakeCategoryTabStyle(const bool bSelected, const bool bFocused = false)
 	{
-		const FFPauseOptionsLightTeal::FTokens Tokens = FFPauseOptionsLightTeal::Get(Palette);
+		const FFFestivalOptionsStyle::FTokens Tokens = FFFestivalOptionsStyle::Get();
 		FButtonStyle Style;
-		Style.Normal = FFPauseOptionsLightTeal::MakeRectButtonBrush(
-			bSelected ? FFPauseOptionsLightTeal::RectNavSelectedPath
-				: FFPauseOptionsLightTeal::RectNavDefaultPath,
-			bSelected ? Tokens.Teal : Tokens.PaperStrong,
-			bSelected ? Tokens.TealDeep : Tokens.Line);
-		Style.Hovered = bSelected
-			? Style.Normal
-			: FFPauseOptionsLightTeal::MakeRectButtonBrush(
-				FFPauseOptionsLightTeal::RectNavHoverPath, Tokens.Hover, Tokens.TealSoft);
-		Style.Pressed = bSelected
-			? Style.Normal
-			: FFPauseOptionsLightTeal::MakeRectButtonBrush(
-				FFPauseOptionsLightTeal::RectNavPressedPath, Tokens.TealSoft, Tokens.TealDeep);
-		Style.Disabled = FFPauseOptionsLightTeal::MakeRectButtonBrush(
-			FFPauseOptionsLightTeal::RectNavDisabledPath, Tokens.PaperSunken, Tokens.Line);
-		Style.NormalPadding = FMargin(18.f, 10.f);
-		Style.PressedPadding = FMargin(18.f, 11.f, 18.f, 9.f);
+		Style.Normal = MakeOutlinedBrush(
+			bSelected ? Tokens.Selected : Tokens.Paper,
+			bFocused ? Tokens.GreenDeep : (bSelected ? Tokens.Green : Tokens.LineStrong),
+			12.f, bFocused ? 3.f : (bSelected ? 2.f : 1.f));
+		Style.Hovered = MakeOutlinedBrush(Tokens.Hover,
+			bFocused ? Tokens.GreenDeep : Tokens.Green, 12.f, bFocused ? 3.f : 2.f);
+		Style.Pressed = MakeOutlinedBrush(Tokens.Selected, Tokens.GreenDeep, 12.f, bFocused ? 3.f : 2.f);
+		Style.Disabled = MakeOutlinedBrush(Tokens.Disabled, Tokens.Line, 12.f);
+		Style.NormalPadding = FMargin(16.f, 6.f);
+		Style.PressedPadding = FMargin(16.f, 7.f, 16.f, 5.f);
 		return Style;
 	}
 
@@ -236,6 +234,14 @@ void UFF_FestivalSettingsScreen::NativeConstruct()
 				Button->OnClicked.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleGraphicsClicked); break;
 			case EFF_FestivalSettingsCategory::ExitGame:
 				Button->OnClicked.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleExitGameClicked); break;
+			case EFF_FestivalSettingsCategory::Language:
+				Button->OnClicked.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleLanguageClicked); break;
+			case EFF_FestivalSettingsCategory::Accessibility:
+				Button->OnClicked.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleAccessibilityClicked); break;
+			case EFF_FestivalSettingsCategory::Sound:
+				Button->OnClicked.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleSoundClicked); break;
+			case EFF_FestivalSettingsCategory::Credits:
+				Button->OnClicked.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleCreditsClicked); break;
 			}
 		}
 	}
@@ -536,9 +542,25 @@ void UFF_FestivalSettingsScreen::SelectCategory(const EFF_FestivalSettingsCatego
 	bHasSelectedCategory = true;
 	if (Text_Intro)
 	{
-		Text_Intro->SetText(Category == EFF_FestivalSettingsCategory::Keyboard
-			? LOCTEXT("KeyboardSaveIntro", "키 배치는 즉시 미리보기되며 저장을 눌러야 확정됩니다.")
-			: LOCTEXT("ManualSaveIntro", "변경 사항은 저장을 눌러야 적용됩니다."));
+		FText Intro = LOCTEXT("ManualSaveIntro", "변경 사항은 저장을 눌러야 적용됩니다.");
+		switch (Category)
+		{
+		case EFF_FestivalSettingsCategory::Keyboard:
+			Intro = LOCTEXT("KeyboardSaveIntro", "카메라는 저장 후 적용됩니다. 키 배치는 미리보기한 뒤 저장하세요.");
+			break;
+		case EFF_FestivalSettingsCategory::Language:
+			Intro = LOCTEXT("LanguageIntro", "게임에서 사용하는 표시 언어를 확인하세요.");
+			break;
+		case EFF_FestivalSettingsCategory::Credits:
+			Intro = LOCTEXT("CreditsIntro", "축제의 화면과 글꼴에 사용된 외부 에셋의 출처입니다.");
+			break;
+		case EFF_FestivalSettingsCategory::Account:
+			Intro = LOCTEXT("AccountIntro", "현재 플레이어와 이 기기의 설정 정보를 확인하세요.");
+			break;
+		default:
+			break;
+		}
+		Text_Intro->SetText(Intro);
 	}
 	if (Text_CategoryTitle)
 	{
@@ -546,30 +568,34 @@ void UFF_FestivalSettingsScreen::SelectCategory(const EFF_FestivalSettingsCatego
 	}
 	RefreshCategoryVisuals();
 	RebuildRows();
+	if (UScrollBox* RowsScroll = Cast<UScrollBox>(GetWidgetFromName(TEXT("ScrollBox_Rows"))))
+	{
+		RowsScroll->ScrollToStart();
+	}
 }
 
 void UFF_FestivalSettingsScreen::RefreshCategoryVisuals()
 {
+	const FFFestivalOptionsStyle::FTokens Tokens = FFFestivalOptionsStyle::Get();
 	const UFF_UIPalette* Palette = UFF_UIPalette::Get();
-	if (!Palette)
-	{
-		return;
-	}
 	for (const EFF_FestivalSettingsCategory Category : AllCategories)
 	{
 		const bool bSelected = Category == SelectedCategory;
 		if (UButton* Button = GetCategoryButton(Category))
 		{
-			Button->SetStyle(MakeCategoryTabStyle(*Palette, bSelected));
+			Button->SetStyle(MakeCategoryTabStyle(bSelected, Button->HasAnyUserFocus()));
 			Button->SetBackgroundColor(FLinearColor::White);
 		}
 		if (UTextBlock* Text = GetCategoryText(Category))
 		{
 			Text->SetText(GetCategoryLabel(Category));
-			const FLinearColor Color = Category == EFF_FestivalSettingsCategory::ExitGame && !bSelected
+			const FLinearColor Color = Palette && Category == EFF_FestivalSettingsCategory::ExitGame && !bSelected
 				? Palette->InGame.Danger
-				: (bSelected ? Palette->InGame.White : Palette->InGame.Ink);
+				: Tokens.Ink;
 			Text->SetColorAndOpacity(FSlateColor(Color));
+			FSlateFontInfo Font = Text->GetFont();
+			Font.TypefaceFontName = bSelected ? TEXT("Bold") : TEXT("Medium");
+			Text->SetFont(Font);
 		}
 	}
 }
@@ -598,6 +624,18 @@ void UFF_FestivalSettingsScreen::RebuildRows()
 	{
 	case EFF_FestivalSettingsCategory::Basic:
 		BuildBasicRows();
+		break;
+	case EFF_FestivalSettingsCategory::Language:
+		BuildLanguageRows();
+		break;
+	case EFF_FestivalSettingsCategory::Accessibility:
+		BuildAccessibilityRows();
+		break;
+	case EFF_FestivalSettingsCategory::Sound:
+		BuildSoundRows();
+		break;
+	case EFF_FestivalSettingsCategory::Credits:
+		BuildCreditsRows();
 		break;
 	case EFF_FestivalSettingsCategory::Account:
 		BuildAccountRows();
@@ -647,6 +685,21 @@ void UFF_FestivalSettingsScreen::RebuildRows()
 void UFF_FestivalSettingsScreen::BuildBasicRows()
 {
 	AddSectionHeader(LOCTEXT("BasicAudioSection", "오디오"));
+	BuildSoundRows();
+	AddSectionHeader(LOCTEXT("BasicCameraSection", "카메라 조작"));
+	BuildCameraRows();
+	AddSectionHeader(LOCTEXT("BasicAccessibilitySection", "접근성"));
+	BuildAccessibilityRows();
+}
+
+void UFF_FestivalSettingsScreen::BuildLanguageRows()
+{
+	AddInfoRow(LOCTEXT("LanguageLabel", "표시 언어"), LOCTEXT("LanguageValue", "한국어"),
+		LOCTEXT("LanguageDescription", "현재는 한국어만 지원합니다."));
+}
+
+void UFF_FestivalSettingsScreen::BuildSoundRows()
+{
 	if (UFF_SettingSliderRow* Row = AddSliderRow(
 		LOCTEXT("MasterVolume", "마스터 음량"),
 		LOCTEXT("MasterVolumeDesc", "게임 전체 소리의 크기를 조절합니다"),
@@ -682,7 +735,10 @@ void UFF_FestivalSettingsScreen::BuildBasicRows()
 	{
 		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleUiVolumeChanged);
 	}
-	AddSectionHeader(LOCTEXT("BasicCameraSection", "카메라 조작"));
+}
+
+void UFF_FestivalSettingsScreen::BuildCameraRows()
+{
 	if (UFF_SettingToggleRow* Row = AddToggleRow(
 		LOCTEXT("ZoomToCursor", "커서 기준 줌"),
 		LOCTEXT("ZoomToCursorDesc", "커서 아래 지점을 향해 확대합니다"), Draft.bZoomToCursor))
@@ -695,13 +751,45 @@ void UFF_FestivalSettingsScreen::BuildBasicRows()
 	{
 		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleEdgeScrollToggled);
 	}
-	AddSectionHeader(LOCTEXT("BasicAccessibilitySection", "접근성"));
+}
+
+void UFF_FestivalSettingsScreen::BuildAccessibilityRows()
+{
 	if (UFF_SettingToggleRow* Row = AddToggleRow(
 		LOCTEXT("ReduceMotion", "움직임 감소"),
 		LOCTEXT("ReduceMotionDesc", "화면 전환과 패널 애니메이션을 줄입니다"), Draft.bReduceMotion))
 	{
 		Row->OnValueChanged.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleReduceMotionToggled);
 	}
+}
+
+void UFF_FestivalSettingsScreen::BuildCreditsRows()
+{
+	// Keep the displayed entries aligned with the registered assets in THIRD_PARTY_NOTICES.md.
+	AddInfoRow(LOCTEXT("CreditNotice", "행성 텍스처 표기"),
+		LOCTEXT("CreditNoticeValue", "Solar System Scope(INOVE), CC BY 4.0. FestaFiesta용으로 수정됨."),
+		LOCTEXT("CreditNoticeDescription", "전체 출처와 라이선스 원문은 배포물의 THIRD_PARTY_NOTICES에 있습니다."));
+	AddInfoRow(LOCTEXT("CreditSolarSystemScope", "Solar System Scope Planet Textures"),
+		LOCTEXT("CreditCcBy40", "CC BY 4.0"),
+		LOCTEXT("CreditSolarSystemScopeUse", "지구·구름·노멀·스페큘러 텍스처 (FestaFiesta용 수정)"));
+	AddInfoRow(LOCTEXT("CreditPretendard", "Pretendard"),
+		LOCTEXT("CreditOfl11", "SIL OFL 1.1"),
+		LOCTEXT("CreditPretendardUse", "한국어·공통 UI 폰트"));
+	AddInfoRow(LOCTEXT("CreditMichroma", "Michroma"),
+		LOCTEXT("CreditOfl11", "SIL OFL 1.1"),
+		LOCTEXT("CreditMichromaUse", "영문 브랜드 워드마크 폰트"));
+	AddInfoRow(LOCTEXT("CreditDongle", "Dongle"),
+		LOCTEXT("CreditOfl11", "SIL OFL 1.1"),
+		LOCTEXT("CreditDongleUse", "영문 브랜드 워드마크 비교용 폰트"));
+	AddInfoRow(LOCTEXT("CreditCopernicus", "Copernicus DEM GLO-30"),
+		LOCTEXT("CreditCopernicusLicense", "Copernicus WorldDEM-30 User Licence"),
+		LOCTEXT("CreditCopernicusUse", "국가 지도 고도·산악 음영"));
+	AddInfoRow(LOCTEXT("CreditGeoBoundaries", "geoBoundaries KOR ADM1"),
+		LOCTEXT("CreditCcBy40", "CC BY 4.0"),
+		LOCTEXT("CreditGeoBoundariesUse", "행정구역 경계·권역 재구성"));
+	AddInfoRow(LOCTEXT("CreditNaturalEarth", "Natural Earth Admin 0 Countries 1:10m"),
+		LOCTEXT("CreditPublicDomain", "Public Domain"),
+		LOCTEXT("CreditNaturalEarthUse", "국가 선택 경계 · Made with Natural Earth. Modified for FestaFiesta."));
 }
 
 void UFF_FestivalSettingsScreen::BuildAccountRows()
@@ -735,6 +823,7 @@ void UFF_FestivalSettingsScreen::BuildAccountRows()
 
 void UFF_FestivalSettingsScreen::BuildKeyboardRows()
 {
+	BuildCameraRows();
 	const TSubclassOf<UFF_KeyBindingPanel> PanelClass = ResolveKeyBindingPanelClass();
 	if (PanelClass)
 	{
@@ -994,38 +1083,44 @@ void UFF_FestivalSettingsScreen::AddInfoRow(
 	{
 		return;
 	}
-	const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+	const FFFestivalOptionsStyle::FTokens Tokens = FFFestivalOptionsStyle::Get();
+	USizeBox* RowSize = WidgetTree->ConstructWidget<USizeBox>();
 	UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
 	UHorizontalBox* Content = WidgetTree->ConstructWidget<UHorizontalBox>();
 	UVerticalBox* Copy = WidgetTree->ConstructWidget<UVerticalBox>();
 	UTextBlock* LabelText = WidgetTree->ConstructWidget<UTextBlock>();
 	UTextBlock* DescriptionText = WidgetTree->ConstructWidget<UTextBlock>();
 	UTextBlock* ValueText = WidgetTree->ConstructWidget<UTextBlock>();
-	if (!Background || !Content || !Copy || !LabelText || !DescriptionText || !ValueText)
+	if (!RowSize || !Background || !Content || !Copy || !LabelText || !DescriptionText || !ValueText)
 	{
 		return;
 	}
 
-	Background->SetBrush(Palette
-		? MakeOutlinedBrush(Palette->InGame.PaperSunken, Palette->InGame.Line, 6.f)
-		: MakeSolidBrush(FLinearColor::Black));
-	Background->SetPadding(FMargin(22.f, 12.f));
+	RowSize->SetMinDesiredHeight(68.f);
+	RowSize->AddChild(Background);
+	Background->SetBrush(MakeOutlinedBrush(Tokens.White, Tokens.Line, 12.f));
+	Background->SetPadding(FMargin(18.f, 12.f));
 	Background->AddChild(Content);
 	LabelText->SetText(Label);
-	LabelText->SetFont(DeriveFont(Text_CategoryTitle, 18, TEXT("SemiBold")));
-	LabelText->SetColorAndOpacity(Palette ? Palette->InGame.Ink : FLinearColor::White);
+	LabelText->SetFont(DeriveFont(Text_CategoryTitle, 17, TEXT("SemiBold")));
+	LabelText->SetColorAndOpacity(Tokens.Ink);
+	LabelText->SetAutoWrapText(true);
 	DescriptionText->SetText(Description);
 	DescriptionText->SetFont(DeriveFont(Text_CategoryTitle, 13));
-	DescriptionText->SetColorAndOpacity(Palette ? Palette->InGame.InkMuted : FLinearColor::Gray);
+	DescriptionText->SetColorAndOpacity(Tokens.Muted);
+	DescriptionText->SetAutoWrapText(true);
 	DescriptionText->SetVisibility(Description.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	ValueText->SetText(Value);
 	ValueText->SetFont(DeriveFont(Text_CategoryTitle, 17, TEXT("SemiBold")));
-	ValueText->SetColorAndOpacity(Palette ? Palette->InGame.TealDeep : FLinearColor::White);
+	ValueText->SetColorAndOpacity(Tokens.Ink);
 	ValueText->SetJustification(ETextJustify::Right);
 	ValueText->SetAutoWrapText(true);
 
 	Copy->AddChildToVerticalBox(LabelText);
-	Copy->AddChildToVerticalBox(DescriptionText);
+	if (UVerticalBoxSlot* DescriptionLayout = Copy->AddChildToVerticalBox(DescriptionText))
+	{
+		DescriptionLayout->SetPadding(FMargin(0.f, 3.f, 0.f, 0.f));
+	}
 	if (UHorizontalBoxSlot* CopyLayout = Content->AddChildToHorizontalBox(Copy))
 	{
 		CopyLayout->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -1037,7 +1132,7 @@ void UFF_FestivalSettingsScreen::AddInfoRow(
 		ValueLayout->SetVerticalAlignment(VAlign_Center);
 		ValueLayout->SetPadding(FMargin(24.f, 0.f, 8.f, 0.f));
 	}
-	if (UVerticalBoxSlot* RowLayout = VerticalBox_Rows->AddChildToVerticalBox(Background))
+	if (UVerticalBoxSlot* RowLayout = VerticalBox_Rows->AddChildToVerticalBox(RowSize))
 	{
 		RowLayout->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
 	}
@@ -1054,13 +1149,15 @@ void UFF_FestivalSettingsScreen::AddSectionHeader(const FText& Label)
 	{
 		return;
 	}
-	const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+	const FFFestivalOptionsStyle::FTokens Tokens = FFFestivalOptionsStyle::Get();
 	Header->SetText(Label);
-	Header->SetFont(DeriveFont(Text_CategoryTitle, 18, TEXT("SemiBold")));
-	Header->SetColorAndOpacity(Palette ? Palette->InGame.TealDeep : FLinearColor::White);
+	Header->SetFont(DeriveFont(Text_CategoryTitle, 17, TEXT("Bold")));
+	Header->SetColorAndOpacity(Tokens.Ink);
+	Header->SetAutoWrapText(true);
+	const bool bFirstSection = VerticalBox_Rows->GetChildrenCount() == 0;
 	if (UVerticalBoxSlot* HeaderLayout = VerticalBox_Rows->AddChildToVerticalBox(Header))
 	{
-		HeaderLayout->SetPadding(FMargin(4.f, 12.f, 0.f, 8.f));
+		HeaderLayout->SetPadding(FMargin(2.f, bFirstSection ? 0.f : 14.f, 0.f, 10.f));
 	}
 }
 
@@ -1258,8 +1355,8 @@ void UFF_FestivalSettingsScreen::RefreshActionButtons()
 
 void UFF_FestivalSettingsScreen::RefreshButtonFocusPresentation()
 {
-	// 전역 RenderFocusRule=Never이므로 일반 UButton에도 직접 포커스 신호를 준다. 행 위젯은
-	// UFF_FocusableWidgetBase의 링을 사용하고, 화면 고정 버튼은 작은 스케일 변화로 위치를 알린다.
+	// 전역 RenderFocusRule=Never이므로 카테고리는 3px 테두리로 직접 포커스를 표시한다.
+	// 행 위젯은 UFF_FocusableWidgetBase의 링을, 하단 액션은 기존 크기 강조를 유지한다.
 	auto RefreshButton = [](UButton* Button)
 	{
 		if (Button)
@@ -1271,7 +1368,17 @@ void UFF_FestivalSettingsScreen::RefreshButtonFocusPresentation()
 	};
 	for (const EFF_FestivalSettingsCategory Category : AllCategories)
 	{
-		RefreshButton(GetCategoryButton(Category));
+		if (UButton* Button = GetCategoryButton(Category))
+		{
+			const bool bSelected = Category == SelectedCategory;
+			const bool bFocused = Button->HasAnyUserFocus();
+			const float OutlineWidth = bFocused ? 3.f : (bSelected ? 2.f : 1.f);
+			if (!FMath::IsNearlyEqual(Button->GetStyle().Normal.OutlineSettings.Width, OutlineWidth))
+			{
+				Button->SetStyle(MakeCategoryTabStyle(bSelected, bFocused));
+			}
+			Button->SetRenderScale(FVector2D(1.f, 1.f));
+		}
 	}
 	RefreshButton(Button_Close);
 	RefreshButton(GetBackButton());
@@ -1737,6 +1844,10 @@ void UFF_FestivalSettingsScreen::HandleAccountClicked() { SelectCategory(EFF_Fes
 void UFF_FestivalSettingsScreen::HandleKeyboardClicked() { SelectCategory(EFF_FestivalSettingsCategory::Keyboard); }
 void UFF_FestivalSettingsScreen::HandleGraphicsClicked() { SelectCategory(EFF_FestivalSettingsCategory::Graphics); }
 void UFF_FestivalSettingsScreen::HandleExitGameClicked() { SelectCategory(EFF_FestivalSettingsCategory::ExitGame); }
+void UFF_FestivalSettingsScreen::HandleLanguageClicked() { SelectCategory(EFF_FestivalSettingsCategory::Language); }
+void UFF_FestivalSettingsScreen::HandleAccessibilityClicked() { SelectCategory(EFF_FestivalSettingsCategory::Accessibility); }
+void UFF_FestivalSettingsScreen::HandleSoundClicked() { SelectCategory(EFF_FestivalSettingsCategory::Sound); }
+void UFF_FestivalSettingsScreen::HandleCreditsClicked() { SelectCategory(EFF_FestivalSettingsCategory::Credits); }
 void UFF_FestivalSettingsScreen::HandleBackClicked() { RequestNavigateBack(); }
 
 void UFF_FestivalSettingsScreen::EnsureExitCategoryButton()
@@ -1789,6 +1900,12 @@ UButton* UFF_FestivalSettingsScreen::GetCategoryButton(const EFF_FestivalSetting
 	case EFF_FestivalSettingsCategory::Keyboard: return Button_Keyboard;
 	case EFF_FestivalSettingsCategory::Graphics: return Button_Graphics;
 	case EFF_FestivalSettingsCategory::ExitGame: return Button_ExitGame;
+	case EFF_FestivalSettingsCategory::Language: return Button_Language;
+	case EFF_FestivalSettingsCategory::Accessibility:
+		// Legacy four-tab assets reuse their accessibility button for Graphics.
+		return Button_Accessibility != Button_Graphics ? Button_Accessibility.Get() : nullptr;
+	case EFF_FestivalSettingsCategory::Sound: return Button_Sound;
+	case EFF_FestivalSettingsCategory::Credits: return Button_Credits;
 	}
 	return nullptr;
 }
@@ -1802,6 +1919,11 @@ UTextBlock* UFF_FestivalSettingsScreen::GetCategoryText(const EFF_FestivalSettin
 	case EFF_FestivalSettingsCategory::Keyboard: return Text_KeyboardCategory;
 	case EFF_FestivalSettingsCategory::Graphics: return Text_GraphicsCategory;
 	case EFF_FestivalSettingsCategory::ExitGame: return Text_ExitGameCategory;
+	case EFF_FestivalSettingsCategory::Language: return Text_LanguageCategory;
+	case EFF_FestivalSettingsCategory::Accessibility:
+		return Button_Accessibility != Button_Graphics ? Text_AccessibilityCategory.Get() : nullptr;
+	case EFF_FestivalSettingsCategory::Sound: return Text_SoundCategory;
+	case EFF_FestivalSettingsCategory::Credits: return Text_CreditsCategory;
 	}
 	return nullptr;
 }
@@ -1822,9 +1944,13 @@ FText UFF_FestivalSettingsScreen::GetCategoryLabel(const EFF_FestivalSettingsCat
 	{
 	case EFF_FestivalSettingsCategory::Basic: return LOCTEXT("CategoryBasic", "기본설정");
 	case EFF_FestivalSettingsCategory::Account: return LOCTEXT("CategoryAccount", "계정정보");
-	case EFF_FestivalSettingsCategory::Keyboard: return LOCTEXT("CategoryKeyboard", "키보드 키 배치");
+	case EFF_FestivalSettingsCategory::Keyboard: return LOCTEXT("CategoryKeyboard", "조작");
 	case EFF_FestivalSettingsCategory::Graphics: return LOCTEXT("CategoryGraphics", "그래픽");
 	case EFF_FestivalSettingsCategory::ExitGame: return LOCTEXT("CategoryExitGame", "게임종료");
+	case EFF_FestivalSettingsCategory::Language: return LOCTEXT("CategoryLanguage", "언어");
+	case EFF_FestivalSettingsCategory::Accessibility: return LOCTEXT("CategoryAccessibility", "접근성");
+	case EFF_FestivalSettingsCategory::Sound: return LOCTEXT("CategorySound", "사운드");
+	case EFF_FestivalSettingsCategory::Credits: return LOCTEXT("CategoryCredits", "크레딧");
 	}
 	return FText::GetEmpty();
 }

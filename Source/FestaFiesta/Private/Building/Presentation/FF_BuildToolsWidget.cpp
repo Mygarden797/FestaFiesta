@@ -3,21 +3,27 @@
 
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSGridLibrary.h"
 
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
+#include "Building/Presentation/FF_BuildFeatureGuide.h"
+#include "Building/Presentation/FF_BuildingFeatureDiscoverySubsystem.h"
 #include "Building/Presentation/FF_BuildMultiSelectionWidget.h"
+#include "Building/Presentation/FF_BuildSynergyWidget.h"
 #include "Building/Presentation/FF_BuildFeedback.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Components/CanvasPanelSlot.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Components/Border.h"
+#include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
+#include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
@@ -27,18 +33,83 @@
 #include "InputCoreTypes.h"
 #include "Misc/DefaultValueHelper.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
+#include "UI/Settings/FF_FestivalSettingsSubsystem.h"
 #include "UI/Settings/FF_KeyBindingRuntimeSubsystem.h"
 #include "TimerManager.h"
 #include "UI/Settings/FF_RuntimeSettingsSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FFBuildTools"
 
-FVector2D FFBuildToolsModel::ResolveHelpVerticalBounds(const float ContentHeight, const float AvailableBottom)
+FVector2D FFBuildToolsModel::ResolveHelpVerticalBounds(const float ContentHeight, const float AvailableBottom,
+    const float PreferredTop, const float ReservedTop)
 {
     const float Bottom = FMath::Max(0.f, AvailableBottom);
-    const float MinimumTop = FMath::Min(104.f, Bottom);
+    const float MinimumTop = FMath::Clamp(ReservedTop, 0.f, Bottom);
     const float Height = FMath::Min(FMath::Max(0.f, ContentHeight), Bottom - MinimumTop);
-    return FVector2D(FMath::Max(MinimumTop, FMath::Min(525.f, Bottom - Height)), Height);
+    return FVector2D(FMath::Clamp(PreferredTop, MinimumTop, Bottom - Height), Height);
+}
+
+void FFBuildToolsModel::FormatRequiredSpace(const FFFZSFacilitySpec& Spec, FText& OutFootprint, FText& OutQueue)
+{
+    OutFootprint = FText::Format(LOCTEXT("RequiredFootprint", "시설 크기  {0} × {1} m"),
+        FText::AsNumber(Spec.FootprintSizeCells.X / 100.0), FText::AsNumber(Spec.FootprintSizeCells.Y / 100.0));
+    if (!Spec.UsesServiceQueue())
+    {
+        OutQueue = LOCTEXT("NoRequiredQueue", "대기열 공간 없음");
+        return;
+    }
+    // A local bounding box describes bent queues without claiming its empty interior
+    // is reserved. Include legacy 1cm cells without expanding modern rectangles.
+    bool bHasBounds = false;
+    int64 MinX = 0, MinY = 0, MaxX = 0, MaxY = 0;
+    auto Include = [&](int64 X0, int64 Y0, int64 X1, int64 Y1)
+    {
+        if (X0 >= X1 || Y0 >= Y1) return;
+        if (!bHasBounds) { MinX = X0; MinY = Y0; MaxX = X1; MaxY = Y1; bHasBounds = true; }
+        else { MinX = FMath::Min(MinX, X0); MinY = FMath::Min(MinY, Y0);
+            MaxX = FMath::Max(MaxX, X1); MaxY = FMath::Max(MaxY, Y1); }
+    };
+    for (const FFFZSCellRect& Rect : Spec.QueueReservedRects)
+        Include(Rect.Min.X, Rect.Min.Y, Rect.Max.X, Rect.Max.Y);
+    for (const FIntPoint Cell : Spec.QueueReservedCells)
+        Include(Cell.X, Cell.Y, static_cast<int64>(Cell.X) + 1, static_cast<int64>(Cell.Y) + 1);
+    if (!bHasBounds)
+    {
+        OutQueue = Spec.QueueRules.MaxWaitingAgents > 0
+            ? LOCTEXT("MissingQueueBounds", "대기열 범위 정보 없음") : LOCTEXT("NoRequiredQueue", "대기열 공간 없음");
+        return;
+    }
+    FText Shape = LOCTEXT("QueueAuthoredShape", "기본형");
+    switch (Spec.QueueLayout)
+    {
+    case EFFZSQueueLayout::Left: Shape = LOCTEXT("QueueLeftShape", "좌측형"); break;
+    case EFFZSQueueLayout::Right: Shape = LOCTEXT("QueueRightShape", "우측형"); break;
+    case EFFZSQueueLayout::UShape: Shape = LOCTEXT("QueueUShape", "U자형"); break;
+    default: break;
+    }
+    OutQueue = FText::Format(LOCTEXT("RequiredQueueBounds", "대기열 범위  {0} × {1} m\n{2} · 대기·이용 {3}팀"),
+        FText::AsNumber((MaxX - MinX) / 100.0), FText::AsNumber((MaxY - MinY) / 100.0),
+        Shape, FText::AsNumber(Spec.QueueRules.MaxWaitingAgents));
+}
+
+FText FFBuildToolsModel::FormatAudienceSpace(const FFFZSFacilitySpec& Spec)
+{
+    if (!Spec.Audience.bEnabled) return FText::GetEmpty();
+    FFFZSCellRect Bounds;
+    if (!UFFZSGridLibrary::TryGetAudienceReservedRect(Spec, Bounds))
+        return LOCTEXT("MissingAudienceBounds", "관객석 범위 정보 없음");
+    const FIntPoint Size = Bounds.Max - Bounds.Min;
+    return FText::Format(LOCTEXT("RequiredAudienceBounds", "관객석 범위  {0} × {1} m · 정원 {2}명"),
+        FText::AsNumber(Size.X / 100.0), FText::AsNumber(Size.Y / 100.0),
+        FText::AsNumber(Spec.Audience.GetCapacity()));
+}
+
+FText FFBuildToolsModel::FormatProblemStatus(const FText& Title, const int32 ProblemIndex, const int32 ProblemCount)
+{
+    return ProblemCount > 1
+        ? FText::Format(LOCTEXT("PlacementProblemCount", "{0}\n배치 문제 {1}개 · {2}번째"), Title,
+            FText::AsNumber(ProblemCount), FText::AsNumber(FMath::Clamp(ProblemIndex, 0, ProblemCount - 1) + 1))
+        : Title;
 }
 
 // 입력한 각도가 0~360의 유한한 숫자인지 확인한다. 잘못된 입력은 이전 값을 유지한다.
@@ -101,6 +172,25 @@ void UFF_BuildToolsActionButton::ApplySelection(const bool bSelected, UTextBlock
 void UFF_BuildToolsWidget::NativePreConstruct()
 {
     Super::NativePreConstruct();
+    // Older saved HUDs still contain the removed safety-margin legend.
+    for (const TCHAR* Name : {TEXT("Border_PlacementSpaceLegendClearance"), TEXT("Text_PlacementSpaceLegendClearance")})
+        if (auto* Widget = GetWidgetFromName(Name))
+        {
+            Widget->SetVisibility(ESlateVisibility::Collapsed);
+#if WITH_EDITOR
+            Widget->bHiddenInDesigner = true;
+#endif
+        }
+    if (Text_Footprint)
+    {
+        const FString Caption = Text_Footprint->GetText().ToString();
+        int32 SafetyLine = INDEX_NONE;
+        if (Caption.FindChar(TEXT('\n'), SafetyLine) && Caption.Mid(SafetyLine).Contains(TEXT("안전 여유")))
+            Text_Footprint->SetText(FText::FromString(Caption.Left(SafetyLine)));
+    }
+    if (auto* Legend = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_RangeLegend"))))
+        if (Legend->GetText().ToString().Contains(TEXT("안전 여유")))
+            Legend->SetText(LOCTEXT("FootprintQueueLegend", "실선 시설 · 청록 대기열"));
     if (!IsDesignTime() || !bPreviewDesignerPage) return;
     auto Show = [this](const TCHAR* Name, bool bVisible)
     {
@@ -121,6 +211,7 @@ void UFF_BuildToolsWidget::NativePreConstruct()
     Show(TEXT("Border_PlacementHelp"), bDesignerShowHelp && DesignerPage != EFF_BuildToolsDesignerPage::Settings);
     Show(TEXT("Row_BuildHelpQueue"), bPlacement);
     Show(TEXT("Border_BuildToolbarGold"), false);
+    Show(TEXT("Panel_FeatureGuide"), false);
 }
 
 void UFF_BuildToolsWidget::NativeConstruct()
@@ -143,6 +234,19 @@ void UFF_BuildToolsWidget::NativeConstruct()
     BuildMode = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
     Economy = GetGameInstance() ? GetGameInstance()->GetSubsystem<UFF_BuildCatalogEconomyReadModel>() : nullptr;
     CatalogModel = GetGameInstance() ? GetGameInstance()->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+    FeatureDiscovery = GetGameInstance() ? GetGameInstance()->GetSubsystem<UFF_BuildingFeatureDiscoverySubsystem>() : nullptr;
+    if (auto* Discovery = FeatureDiscovery.Get())
+        Discovery->OnFeatureSeen.AddUniqueDynamic(this, &ThisClass::HandleFeatureSeen);
+    if (Panel_FeatureGuide) Panel_FeatureGuide->SetVisibility(ESlateVisibility::Collapsed);
+    CurrentGuideFeature = PendingGuideAction = NAME_None;
+    if (Combo_FeatureGuideTopic)
+    {
+        TGuardValue<bool> Guard(bUpdatingGuideTopic, true);
+        Combo_FeatureGuideTopic->ClearOptions();
+        for (const auto& Topic : FFBuildFeatureGuide::Topics())
+            Combo_FeatureGuideTopic->AddOption(Topic.Title.ToString());
+        Combo_FeatureGuideTopic->OnSelectionChanged.AddUniqueDynamic(this, &ThisClass::HandleFeatureGuideTopicChanged);
+    }
     if (UFF_BuildCatalogSubsystem* Catalog = CatalogModel.Get())
     {
         Catalog->OnCatalogThumbnailsChanged.AddUniqueDynamic(this, &ThisClass::RefreshTools);
@@ -162,16 +266,19 @@ void UFF_BuildToolsWidget::NativeConstruct()
         System->OnBuildToolsChanged.AddUniqueDynamic(this, &ThisClass::RefreshTools);
     }
 #define FF_BIND_TOOL(Button, Handler) if (Button) { Button->OnClicked.AddUniqueDynamic(this, &ThisClass::Handler); }
-    FF_BIND_TOOL(Button_Grid, HandleGrid)
-    FF_BIND_TOOL(Button_MultiSelect, HandleMultiSelect)
-    FF_BIND_TOOL(Button_SnapCycle, HandleSnapCycle)
-    FF_BIND_TOOL(Button_ToolbarRanges, HandleFacilityRanges)
-    FF_BIND_TOOL(Button_ToolbarCatalog, ReturnToCatalog)
-    FF_BIND_TOOL(Button_ToolbarHelp, ToggleHelp)
+    FF_BIND_TOOL(Button_Grid, HandleGuidedGrid)
+    FF_BIND_TOOL(Button_MultiSelect, HandleGuidedMultiSelect)
+    FF_BIND_TOOL(Button_SnapCycle, HandleGuidedSnap)
+    FF_BIND_TOOL(Button_ToolbarRanges, HandleGuidedRanges)
+    FF_BIND_TOOL(Button_ToolbarCatalog, HandleGuidedCatalog)
+    FF_BIND_TOOL(Button_ToolbarHelp, HandleGuidedControls)
+    FF_BIND_TOOL(Button_FeatureGuide, OpenFeatureGuide)
+    FF_BIND_TOOL(Button_FeatureGuideConfirm, ConfirmFeatureGuide)
+    FF_BIND_TOOL(Button_FeatureGuideClose, CloseFeatureGuide)
     FF_BIND_TOOL(Button_Confirm, HandleConfirm)
     FF_BIND_TOOL(Button_Catalog, ReturnToCatalog)
     FF_BIND_TOOL(Button_Details, ToggleDetails)
-    FF_BIND_TOOL(Button_BuildSettings, ToggleBuildSettings)
+    FF_BIND_TOOL(Button_BuildSettings, HandleGuidedSettings)
     FF_BIND_TOOL(Button_BuildSettingsClose, ToggleBuildSettings)
     FF_BIND_TOOL(Button_BuildBack, HandleBuildBack)
     FF_BIND_TOOL(Button_SettingsGrid, HandleGrid)
@@ -225,6 +332,13 @@ void UFF_BuildToolsWidget::NativeConstruct()
 void UFF_BuildToolsWidget::NativeDestruct()
 {
     StopPointerFreeRotation();
+    if (auto* Discovery = FeatureDiscovery.Get()) Discovery->OnFeatureSeen.RemoveAll(this);
+    FeatureDiscovery.Reset();
+    if (Combo_FeatureGuideTopic) Combo_FeatureGuideTopic->OnSelectionChanged.RemoveAll(this);
+    for (const auto& Tooltip : AuthoredFeatureButtonTooltips)
+        if (UButton* Button = Tooltip.Key.Get()) Button->SetToolTipText(Tooltip.Value);
+    AuthoredFeatureButtonTooltips.Reset();
+    CurrentGuideFeature = PendingGuideAction = NAME_None;
     if (UFF_BuildCatalogEconomyReadModel* Model = Economy.Get()) { Model->OnGoldChanged.RemoveAll(this); }
     if (UFF_RuntimeSettingsSubsystem* Settings = GetGameInstance()
         ? GetGameInstance()->GetSubsystem<UFF_RuntimeSettingsSubsystem>() : nullptr)
@@ -253,6 +367,8 @@ bool UFF_BuildToolsWidget::IsPointerOverTools() const
     {
         return false;
     }
+    // Reading first-use help must never place/move a facility behind the guide.
+    if (IsFeatureGuideOpen()) return true;
     // Raw BuildMode input runs before Slate's button mouse-up. Geometry also covers that
     // first mouse-down, so clicking a tool never places a building underneath the toolbar.
     for (const UBorder* Panel : { Border_Tools.Get(), Border_PlacementInfo.Get(),
@@ -273,13 +389,159 @@ bool UFF_BuildToolsWidget::IsRadialMenuOpen() const
 bool UFF_BuildToolsWidget::IsAuxiliaryPanelOpen() const
 {
     return IsRadialMenuOpen() || (Panel_Details && Panel_Details->IsVisible()) ||
-        (Panel_BuildSettings && Panel_BuildSettings->IsVisible());
+        (Panel_BuildSettings && Panel_BuildSettings->IsVisible()) || IsFeatureGuideOpen();
 }
 
 bool UFF_BuildToolsWidget::IsBuildSettingsOpen() const
 {
     return Panel_BuildSettings && Panel_BuildSettings->IsVisible();
 }
+
+bool UFF_BuildToolsWidget::IsFeatureGuideOpen() const
+{
+    return Panel_FeatureGuide && Panel_FeatureGuide->IsVisible();
+}
+
+void UFF_BuildToolsWidget::RefreshFeatureHints()
+{
+    const auto* Discovery = FeatureDiscovery.Get();
+    for (const auto& Topic : FFBuildFeatureGuide::Topics())
+    {
+        if (Topic.ToolbarButton.IsNone()) continue;
+        UButton* Button = Cast<UButton>(GetWidgetFromName(Topic.ToolbarButton));
+        if (!Button) continue;
+        const TWeakObjectPtr<UButton> Key(Button);
+        if (!AuthoredFeatureButtonTooltips.Contains(Key))
+        {
+            AuthoredFeatureButtonTooltips.Add(Key, Button->GetToolTipText());
+        }
+        const bool bUnseen = Discovery && !Discovery->HasSeenFeature(Topic.Id);
+        // First-use guidance has its own mark; leave the authored icon and button states intact.
+        if (UWidget* Badge = GetWidgetFromName(FName(*FString::Printf(TEXT("Badge_%s"), *Topic.Id.ToString()))))
+            Badge->SetVisibility(bUnseen ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+        if (bUnseen) Button->SetToolTipText(FText::Format(
+            LOCTEXT("UnseenFeatureHint", "{0} · 처음 사용하는 기능입니다. 클릭해 사용법을 확인하세요."), Topic.Title));
+        else if (Button->GetToolTipText().ToString().Contains(TEXT("처음 사용하는 기능입니다")))
+            Button->SetToolTipText(AuthoredFeatureButtonTooltips[Key]);
+    }
+}
+
+void UFF_BuildToolsWidget::HandleFeatureSeen(FName FeatureId)
+{
+    RefreshTools();
+}
+
+bool UFF_BuildToolsWidget::ShowFeatureGuide(const FName FeatureId, const bool bRunAfterConfirm)
+{
+    const auto* Topic = FFBuildFeatureGuide::Find(FeatureId);
+    if (!Topic || !Panel_FeatureGuide || !Text_FeatureGuideTitle || !Text_FeatureGuideBody ||
+        !Button_FeatureGuideConfirm || !Button_FeatureGuideClose) return false;
+    StopPointerFreeRotation();
+    CurrentGuideFeature = FeatureId;
+    PendingGuideAction = bRunAfterConfirm ? FeatureId : NAME_None;
+    Text_FeatureGuideTitle->SetText(Topic->Title);
+    Text_FeatureGuideBody->SetText(Topic->Body);
+    if (auto* BodyScroll = Cast<UScrollBox>(GetWidgetFromName(TEXT("Scroll_FeatureGuideBody"))))
+        BodyScroll->ScrollToStart();
+    if (Text_FeatureGuideHint) Text_FeatureGuideHint->SetText(bRunAfterConfirm
+        ? LOCTEXT("FirstUseConfirm", "확인을 누르면 기능을 실행합니다. 확인한 설명은 자동으로 다시 나오지 않습니다.")
+        : LOCTEXT("GuideReviewHint", "항목을 선택해 사용법을 다시 확인하세요. 확인한 기능의 아이콘 강조가 사라집니다."));
+    if (Combo_FeatureGuideTopic)
+    {
+        TGuardValue<bool> Guard(bUpdatingGuideTopic, true);
+        Combo_FeatureGuideTopic->SetSelectedOption(Topic->Title.ToString());
+        // A first-use confirmation always applies to the button the player chose.
+        Combo_FeatureGuideTopic->SetIsEnabled(!bRunAfterConfirm);
+    }
+    Panel_FeatureGuide->SetVisibility(ESlateVisibility::Visible);
+    // Keep directional navigation within the guide, including when first-use locks the topic list.
+    UWidget* FirstControl = Combo_FeatureGuideTopic && !bRunAfterConfirm
+        ? static_cast<UWidget*>(Combo_FeatureGuideTopic.Get()) : Button_FeatureGuideConfirm.Get();
+    Button_FeatureGuideConfirm->SetNavigationRuleExplicit(EUINavigation::Up,
+        FirstControl == Button_FeatureGuideConfirm ? Button_FeatureGuideClose.Get() : FirstControl);
+    Button_FeatureGuideConfirm->SetNavigationRuleExplicit(EUINavigation::Down, Button_FeatureGuideClose);
+    Button_FeatureGuideClose->SetNavigationRuleExplicit(EUINavigation::Up, Button_FeatureGuideConfirm);
+    Button_FeatureGuideClose->SetNavigationRuleExplicit(EUINavigation::Down, FirstControl);
+    if (Combo_FeatureGuideTopic)
+    {
+        Combo_FeatureGuideTopic->SetNavigationRuleExplicit(EUINavigation::Up, Button_FeatureGuideClose);
+        Combo_FeatureGuideTopic->SetNavigationRuleExplicit(EUINavigation::Down, Button_FeatureGuideConfirm);
+    }
+    if (GetOwningPlayer()) Button_FeatureGuideConfirm->SetKeyboardFocus();
+    if (auto* System = BuildMode.Get())
+    {
+        System->NotifyBuildToolsInteraction();
+        System->RefreshBuildToolsOcclusion();
+    }
+    return true;
+}
+
+void UFF_BuildToolsWidget::OpenFeatureGuide()
+{
+    if (IsFeatureGuideOpen()) { CloseFeatureGuide(); return; }
+    if (const auto* System = BuildMode.Get())
+        if (!FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState())) return;
+    ShowFeatureGuide(CurrentGuideFeature.IsNone() ? FName(TEXT("LightingControls")) : CurrentGuideFeature, false);
+}
+
+bool UFF_BuildToolsWidget::OpenFeatureGuideTopic(const FName FeatureId)
+{
+    return ShowFeatureGuide(FeatureId, false);
+}
+
+void UFF_BuildToolsWidget::CloseFeatureGuide()
+{
+    if (Panel_FeatureGuide) Panel_FeatureGuide->SetVisibility(ESlateVisibility::Collapsed);
+    PendingGuideAction = NAME_None;
+    if (FSlateApplication::IsInitialized() && GetOwningPlayer())
+        FSlateApplication::Get().SetAllUserFocusToGameViewport();
+    if (auto* System = BuildMode.Get()) System->RefreshBuildToolsOcclusion();
+}
+
+void UFF_BuildToolsWidget::ConfirmFeatureGuide()
+{
+    if (!IsFeatureGuideOpen() || CurrentGuideFeature.IsNone()) return;
+    const FName Action = PendingGuideAction;
+    if (auto* Discovery = FeatureDiscovery.Get()) Discovery->MarkFeatureSeen(CurrentGuideFeature);
+    CloseFeatureGuide();
+    if (!Action.IsNone()) RunFeatureToolbarAction(Action);
+    RefreshTools();
+}
+
+void UFF_BuildToolsWidget::HandleFeatureGuideTopicChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+{
+    if (bUpdatingGuideTopic || !IsFeatureGuideOpen() || !PendingGuideAction.IsNone()) return;
+    const auto* Topic = FFBuildFeatureGuide::Topics().FindByPredicate(
+        [&SelectedItem](const FFBuildFeatureGuide::FTopic& Candidate) { return Candidate.Title.ToString() == SelectedItem; });
+    if (Topic) ShowFeatureGuide(Topic->Id, false);
+}
+
+void UFF_BuildToolsWidget::RequestFeatureToolbarAction(const FName FeatureId)
+{
+    if (const auto* Discovery = FeatureDiscovery.Get())
+        if (!Discovery->HasSeenFeature(FeatureId) && ShowFeatureGuide(FeatureId, true)) return;
+    CloseFeatureGuide();
+    RunFeatureToolbarAction(FeatureId);
+}
+
+void UFF_BuildToolsWidget::RunFeatureToolbarAction(const FName FeatureId)
+{
+    if (FeatureId == TEXT("MultiSelection")) HandleMultiSelect();
+    else if (FeatureId == TEXT("BuildGrid")) HandleGrid();
+    else if (FeatureId == TEXT("BuildSnap")) HandleSnapCycle();
+    else if (FeatureId == TEXT("FacilityRanges")) HandleFacilityRanges();
+    else if (FeatureId == TEXT("BuildSettings")) ToggleBuildSettings();
+    else if (FeatureId == TEXT("BuildCatalog")) ReturnToCatalog();
+    else if (FeatureId == TEXT("BuildControls")) ToggleHelp();
+}
+
+void UFF_BuildToolsWidget::HandleGuidedMultiSelect() { RequestFeatureToolbarAction(TEXT("MultiSelection")); }
+void UFF_BuildToolsWidget::HandleGuidedGrid() { RequestFeatureToolbarAction(TEXT("BuildGrid")); }
+void UFF_BuildToolsWidget::HandleGuidedSnap() { RequestFeatureToolbarAction(TEXT("BuildSnap")); }
+void UFF_BuildToolsWidget::HandleGuidedRanges() { RequestFeatureToolbarAction(TEXT("FacilityRanges")); }
+void UFF_BuildToolsWidget::HandleGuidedSettings() { RequestFeatureToolbarAction(TEXT("BuildSettings")); }
+void UFF_BuildToolsWidget::HandleGuidedCatalog() { RequestFeatureToolbarAction(TEXT("BuildCatalog")); }
+void UFF_BuildToolsWidget::HandleGuidedControls() { RequestFeatureToolbarAction(TEXT("BuildControls")); }
 
 void UFF_BuildToolsWidget::CloseRadialMenu()
 {
@@ -418,10 +680,40 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
                 : Size_BuildWorldHelp->GetDesiredSize().Y;
             // The Designer owns the preferred position. Only move upward/shrink when
             // another visible panel or the viewport would cover the guide.
-            const float MinimumTop = FMath::Min3(104.f, float(AuthoredHelpPosition.Y), FMath::Max(0.f, Bottom));
-            const float FittedHeight = FMath::Min(FMath::Max(0.f, ContentHeight), FMath::Max(0.f, Bottom - MinimumTop));
-            const FVector2D Placement(FMath::Clamp(float(AuthoredHelpPosition.Y), MinimumTop,
-                FMath::Max(MinimumTop, Bottom - FittedHeight)), FittedHeight);
+            float MinimumTop = FMath::Min3(104.f, float(AuthoredHelpPosition.Y), FMath::Max(0.f, Bottom));
+            if (ViewData.bPreviewActive)
+            {
+                const double Time = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+                if (!SynergyHelpAvoidanceSurface.IsValid() && Time >= NextSynergyHelpSearchTime)
+                {
+                    NextSynergyHelpSearchTime = Time + .5;
+                    TArray<UUserWidget*> Panels;
+                    UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Panels, UFF_BuildSynergyWidget::StaticClass(), false);
+                    for (UUserWidget* Panel : Panels)
+                        if (Panel && Panel->GetOwningPlayer() == GetOwningPlayer() && Panel->IsVisible())
+                        {
+                            // Cache the owning widget as its collapsed state is authoritative.
+                            SynergyHelpAvoidanceSurface = Panel;
+                            break;
+                        }
+                }
+                if (UUserWidget* Panel = Cast<UUserWidget>(SynergyHelpAvoidanceSurface.Get()); Panel && Panel->IsVisible())
+                    if (UWidget* Surface = Panel->GetWidgetFromName(TEXT("Border_Synergy")))
+                    {
+                        const FGeometry& Bounds = Surface->GetCachedGeometry();
+                        if (Bounds.GetLocalSize().Y > 0.f)
+                        {
+                            const FVector2D Min = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(FVector2D::ZeroVector));
+                            const FVector2D Max = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(Bounds.GetLocalSize()));
+                            if (Min.X < AuthoredHelpPosition.X + Size_BuildWorldHelp->GetDesiredSize().X && Max.X > AuthoredHelpPosition.X)
+                                MinimumTop = FMath::Min(Bottom, FMath::Max(MinimumTop, float(Max.Y) + 16.f));
+                        }
+                    }
+            }
+            // The existing help scrollbox keeps every shortcut reachable when the
+            // combination card and a long queue guide share the left column.
+            const FVector2D Placement = FFBuildToolsModel::ResolveHelpVerticalBounds(
+                ContentHeight, Bottom, AuthoredHelpPosition.Y, MinimumTop);
             const float HelpHeight = Placement.Y;
             if (!Size_BuildWorldHelp->IsHeightOverride() ||
                 !FMath::IsNearlyEqual(Size_BuildWorldHelp->GetHeightOverride(), HelpHeight, .5f))
@@ -468,8 +760,8 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
         const FVector2D Pos = Projected + Offset;
         if (Pos.X < 24 || Pos.Y < 40 || Pos.X + PingSize.X > Size.X - 24 || Pos.Y + PingSize.Y > Size.Y - 100) continue;
         const FSlateRect Candidate(Pos.X, Pos.Y, Pos.X + PingSize.X, Pos.Y + PingSize.Y);
-        // Reserve the top-right combination preview and the bottom HUD in every state.
-        if (Candidate.IntersectionWith(FSlateRect(Size.X - 490, 36, Size.X, 490)).GetArea() > 0) continue;
+        // Reserve the left combination card; the measured inspector and dock follow below.
+        if (Candidate.IntersectionWith(FSlateRect(20, 92, 490, 520)).GetArea() > 0) continue;
         bool bOccupied = false;
         for (const UBorder* Panel : { Border_Tools.Get(), Border_PlacementInfo.Get(),
             Border_BuildTopBar.Get(), Border_BuildBack.Get(), Border_BuildToolbarGold.Get(), Panel_BuildSettings.Get() })
@@ -569,6 +861,7 @@ void UFF_BuildToolsWidget::HandleSnapCycle()
 
 void UFF_BuildToolsWidget::HandleBuildBack()
 {
+    if (IsFeatureGuideOpen()) { CloseFeatureGuide(); return; }
     UFF_BuildModeSubsystem* System = BuildMode.Get();
     if (!System) return;
     if (Panel_BuildSettings && Panel_BuildSettings->IsVisible())
@@ -640,6 +933,49 @@ bool UFF_BuildToolsWidget::IsEditingAngle() const
 
 FReply UFF_BuildToolsWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
 {
+    const UFF_FestivalSettingsDeveloperSettings* PauseSettings = UFF_FestivalSettingsDeveloperSettings::Get();
+    const UFF_BuildModeSubsystem* BuildSystem = BuildMode.Get();
+    ULocalPlayer* OwningLocalPlayer = GetOwningLocalPlayer();
+    const UFF_KeyBindingRuntimeSubsystem* KeyRuntime = OwningLocalPlayer
+        ? OwningLocalPlayer->GetSubsystem<UFF_KeyBindingRuntimeSubsystem>() : nullptr;
+    if (BuildSystem && FFBuildModeModel::IsBuildSessionActive(BuildSystem->GetBuildModeState()) &&
+        !BuildSystem->IsInputSuspendedForPauseMenu() &&
+        (!KeyRuntime || !KeyRuntime->IsCaptureInProgress()) &&
+        PauseSettings && PauseSettings->OpenCloseKeys.Contains(KeyEvent.GetKey()))
+    {
+        // Pause keeps the open guide and construction preview intact for resume.
+        if (!KeyEvent.IsRepeat())
+        {
+            if (UFF_FestivalSettingsSubsystem* PauseSubsystem = UFF_FestivalSettingsSubsystem::Get(this))
+                PauseSubsystem->OpenPauseMenu(GetOwningPlayer());
+        }
+        return FReply::Handled();
+    }
+    if (IsFeatureGuideOpen())
+    {
+        if (KeyEvent.GetKey() == EKeys::Escape) { CloseFeatureGuide(); return FReply::Handled(); }
+        if (KeyEvent.GetKey() == EKeys::Tab)
+        {
+            TArray<UWidget*> Controls;
+            if (Combo_FeatureGuideTopic && Combo_FeatureGuideTopic->GetIsEnabled()) Controls.Add(Combo_FeatureGuideTopic);
+            if (Button_FeatureGuideConfirm) Controls.Add(Button_FeatureGuideConfirm);
+            if (Button_FeatureGuideClose) Controls.Add(Button_FeatureGuideClose);
+            if (!Controls.IsEmpty())
+            {
+                const int32 Current = Controls.IndexOfByPredicate([](const UWidget* Control)
+                    { return Control->HasKeyboardFocus() || Control->HasFocusedDescendants(); });
+                const int32 Next = Current == INDEX_NONE ? 0
+                    : (Current + (KeyEvent.IsShiftDown() ? -1 : 1) + Controls.Num()) % Controls.Num();
+                Controls[Next]->SetKeyboardFocus();
+            }
+            return FReply::Handled();
+        }
+        // Let focused guide controls handle navigation/confirmation, never construction shortcuts.
+        if (KeyEvent.GetKey() == EKeys::Enter ||
+            KeyEvent.GetKey() == EKeys::SpaceBar || KeyEvent.GetKey() == EKeys::Up ||
+            KeyEvent.GetKey() == EKeys::Down) return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
+        return FReply::Handled();
+    }
     if (UFF_BuildModeSubsystem* System = BuildMode.Get())
         if (System->HandleNearbyPlacementShortcut(KeyEvent.GetKey(),
             KeyEvent.IsControlDown() || KeyEvent.IsShiftDown() || KeyEvent.IsAltDown() || KeyEvent.IsCommandDown(),
@@ -655,6 +991,21 @@ FReply UFF_BuildToolsWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, c
         return FReply::Handled();
     }
     return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
+}
+
+FReply UFF_BuildToolsWidget::NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& MouseEvent)
+{
+    return IsFeatureGuideOpen() ? FReply::Handled() : Super::NativeOnMouseButtonDown(Geometry, MouseEvent);
+}
+
+FReply UFF_BuildToolsWidget::NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& MouseEvent)
+{
+    return IsFeatureGuideOpen() ? FReply::Handled() : Super::NativeOnMouseButtonUp(Geometry, MouseEvent);
+}
+
+FReply UFF_BuildToolsWidget::NativeOnMouseWheel(const FGeometry& Geometry, const FPointerEvent& MouseEvent)
+{
+    return IsFeatureGuideOpen() ? FReply::Handled() : Super::NativeOnMouseWheel(Geometry, MouseEvent);
 }
 
 void UFF_BuildToolsWidget::SetChoiceState(UButton* Button, UTextBlock* Label, const bool bSelected)
@@ -706,7 +1057,7 @@ bool UFF_BuildToolsWidget::ApplyPendingAngle()
 // 현재 시설·가격·잔액·배치 가능 여부를 한 번 읽어 버튼과 안내 문구에 반영한다.
 void UFF_BuildToolsWidget::RefreshTools()
 {
-    const UFF_BuildModeSubsystem* System = BuildMode.Get();
+    UFF_BuildModeSubsystem* System = BuildMode.Get();
     const EFF_BuildModeState State = System ? System->GetBuildModeState() : EFF_BuildModeState::Closed;
     const bool bPreview = FFBuildModeModel::IsPreviewActive(State);
     // Also retire the button for older, not-yet-migrated widget assets.
@@ -720,6 +1071,11 @@ void UFF_BuildToolsWidget::RefreshTools()
     // The compact top bar also serves catalog browsing. Placement summary and confirm
     // controls remain visible only while a world preview is active.
     const bool bSession = System && FFBuildModeModel::IsBuildSessionActive(State);
+    if (!bSession && Panel_FeatureGuide)
+    {
+        Panel_FeatureGuide->SetVisibility(ESlateVisibility::Collapsed);
+        CurrentGuideFeature = PendingGuideAction = NAME_None;
+    }
     SetVisibility(bSession && !System->IsInputSuspendedForPauseMenu()
         ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
     if (Label_BuildMode)
@@ -775,24 +1131,14 @@ void UFF_BuildToolsWidget::RefreshTools()
     ViewData.BalanceText = LOCTEXT("BalanceUnknown", "보유 골드 확인 중");
     ViewData.FootprintText = FText::GetEmpty();
     ViewData.QueueText = FText::GetEmpty();
+    ViewData.AudienceText = FText::GetEmpty();
     if (System && bPreview)
     {
         const FFFZSFacilitySpec& Spec = System->GetSelectedFacilitySpec();
-        if (Spec.UsesServiceQueue())
-        {
-            const FFFZSQueueRules Queue = System->GetSelectedFacilityQueueRules();
-            ViewData.FootprintText = FText::Format(LOCTEXT("FootprintInfo", "시설 크기  {0} × {1} m\n안전 여유  {2} m"),
-                FText::AsNumber(Spec.FootprintSizeCells.X / 100.0), FText::AsNumber(Spec.FootprintSizeCells.Y / 100.0),
-                FText::AsNumber(Spec.ClearanceCells / 100.0));
-            ViewData.QueueText = FText::Format(LOCTEXT("QueueInfo", "대기·이용 정원  {0}팀\n동시 이용  {1}팀  ·  팀당 이용  {2}초"),
-                FText::AsNumber(Queue.MaxWaitingAgents), FText::AsNumber(Queue.ServiceCapacity),
-                FText::AsNumber(Queue.ServiceDurationSeconds));
-        }
-        else
-        {
-            ViewData.FootprintText = FText::Format(LOCTEXT("FootprintOnlyInfo", "시설 크기  {0} × {1} m"),
-                FText::AsNumber(Spec.FootprintSizeCells.X / 100.0), FText::AsNumber(Spec.FootprintSizeCells.Y / 100.0));
-        }
+        FFBuildToolsModel::FormatRequiredSpace(Spec, ViewData.FootprintText, ViewData.QueueText);
+        ViewData.AudienceText = FFBuildToolsModel::FormatAudienceSpace(Spec);
+        if (System->CanChooseQueueLayout())
+            ViewData.QueueText = FText::Format(LOCTEXT("RequiredQueueWithKeys", "{0}\n7 기본 · 8 좌측 · 9 우측 · 0 U자"), ViewData.QueueText);
     }
     UFF_BuildCatalogSubsystem* Catalog = CatalogModel.Get();
     FFF_BuildCatalogEntry Entry;
@@ -815,16 +1161,36 @@ void UFF_BuildToolsWidget::RefreshTools()
     if (Text_FacilityName) { Text_FacilityName->SetText(ViewData.FacilityName); }
     if (Text_Cost) { Text_Cost->SetText(ViewData.CostText); }
     if (Text_Balance) Text_Balance->SetText(ViewData.BalanceText);
-    if (Text_Footprint) Text_Footprint->SetText(ViewData.FootprintText);
+    // Older saved WBP versions still expose audience requirements through the bound footprint label.
+    if (Text_Footprint) Text_Footprint->SetText(!Text_Audience && !ViewData.AudienceText.IsEmpty()
+        ? FText::Format(LOCTEXT("SpaceWithAudienceFallback", "{0}\n{1}"), ViewData.FootprintText, ViewData.AudienceText)
+        : ViewData.FootprintText);
+    if (Text_Audience)
+    {
+        Text_Audience->SetText(ViewData.AudienceText);
+        Text_Audience->SetVisibility(ViewData.AudienceText.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+        Text_Audience->SetToolTipText(LOCTEXT("AudienceSpaceTooltip", "보라색 관객석은 시설 본체와 별도로 확보하는 공간입니다. 가장자리 통로를 포함한 회전 전 가로 × 세로이며, 관객석 전체도 흰색 건축 경계 안에 들어가야 합니다."));
+    }
     if (Text_Queue)
     {
         Text_Queue->SetText(ViewData.QueueText);
-        Text_Queue->SetVisibility(ViewData.QueueText.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+        Text_Queue->SetVisibility(ViewData.QueueText.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+        const FFFZSQueueRules Queue = System ? System->GetSelectedFacilityQueueRules() : FFFZSQueueRules();
+        Text_Queue->SetToolTipText(System && bPreview && System->GetSelectedFacilitySpec().UsesServiceQueue()
+            ? FText::Format(LOCTEXT("RequiredQueueTooltip", "예약 영역 전체의 회전 전 가로 × 세로입니다. 실제 모양은 청록색 경로를 확인하세요.\n동시 이용 {0}팀 · 팀당 이용 {1}초\n대기열 모양은 배치를 확정할 때 적용돼요."),
+                FText::AsNumber(Queue.ServiceCapacity), FText::AsNumber(Queue.ServiceDurationSeconds)) : FText::GetEmpty());
     }
     // The saved WBP keeps this named legacy binding collapsed for older
     // Blueprint references. The visible guide pairs physical keycaps with actions.
     if (Text_ControlHelp) Text_ControlHelp->SetText(FText::GetEmpty());
     RefreshEditingHelp();
+    if (auto* HelpHint = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_BuildHelpKeyboardHint"))))
+    {
+        HelpHint->SetAutoWrapText(true);
+        HelpHint->SetText(bPreview && !ViewData.bMoving
+            ? LOCTEXT("PlacementReturnToBuildUiHint", "시설 설치 중 우클릭하면\n건축모드 UI가 다시 표시됩니다.")
+            : LOCTEXT("BuildKeyboardHelpHint", "표시된 키를 누르면 실행됩니다"));
+    }
     const bool bDirectHelp = System && System->IsDirectPlacementAdjustment();
     if (Text_BuildHelpPrimary)
         Text_BuildHelpPrimary->SetText(!bPreview
@@ -898,7 +1264,8 @@ void UFF_BuildToolsWidget::RefreshTools()
     {
         const FFF_BuildPlacementGuidance Guidance = System ? System->GetPlacementGuidance(PlacementProblemIndex) : FFF_BuildPlacementGuidance{};
         PlacementProblemIndex = Guidance.ProblemIndex;
-        FText Status = LOCTEXT("OverviewLegend", "시설 클릭: 정보 확인 · 격자: 빈 건축 공간");
+        if (System) System->SetPlacementDiagnosticIndex(PlacementProblemIndex);
+        FText Status = LOCTEXT("OverviewLegend", "격자: 후보 바닥 · 흰선: 건축 경계");
         FSlateColor Color = NeutralStatusColor;
         if (bPreview && !System->HasPlacementTarget())
         {
@@ -913,9 +1280,7 @@ void UFF_BuildToolsWidget::RefreshTools()
         }
         else if (bPreview)
         {
-            Status = Guidance.ProblemCount > 1
-                ? FText::Format(LOCTEXT("MultipleProblems", "{0}  ·  {1}/{2}"), Guidance.Title,
-                    FText::AsNumber(Guidance.ProblemIndex + 1), FText::AsNumber(Guidance.ProblemCount)) : Guidance.Title;
+            Status = FFBuildToolsModel::FormatProblemStatus(Guidance.Title, Guidance.ProblemIndex, Guidance.ProblemCount);
             Color = InvalidStatusColor;
         }
         ViewData.StatusText = Status;
@@ -985,6 +1350,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     Enable(Button_ToolbarRanges, bSession);
     Enable(Button_ToolbarCatalog, bSession);
     Enable(Button_ToolbarHelp, bSession);
+    Enable(Button_FeatureGuide, bSession);
     Enable(Button_BuildBack, bSession);
     Enable(Button_BuildSettings, bSession);
     Enable(Button_BuildSettingsClose, bSession);
@@ -1077,6 +1443,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     SetChoiceState(Button_SettingsSnapMeter, Text_SettingsSnapMeter, PreferredSnap == 100);
     SetChoiceState(Button_SettingsSnapPrecision, Text_SettingsSnapPrecision, PreferredSnap == 25);
     SetChoiceState(Button_SettingsSnapFree, Text_SettingsSnapFree, PreferredSnap == 1);
+    RefreshFeatureHints();
     if (!IsEditingAngle())
     {
         RefreshAngleText();

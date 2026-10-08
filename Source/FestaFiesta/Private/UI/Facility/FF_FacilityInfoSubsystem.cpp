@@ -22,6 +22,7 @@
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "FF_FFZSCollision.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSWorldSubsystem.h"
@@ -499,6 +500,14 @@ bool UFF_FacilityInfoSubsystem::SelectFacility(
 	return true;
 }
 
+bool UFF_FacilityInfoSubsystem::ShowSelectedStaffPage()
+{
+	if (bPauseMenuPresentationSuppressed || !Panel || !GetSelectedFacility() ||
+		!Panel->GetCurrentViewData().bShowStaffSection) { return false; }
+	Panel->SetInfoPage(EFF_FacilityInfoPage::Staff);
+	return Panel->GetInfoPage() == EFF_FacilityInfoPage::Staff;
+}
+
 bool UFF_FacilityInfoSubsystem::SelectFacilityAtWorldPoint(
 	APlayerController* InOwningController,
 	const FVector& WorldPoint,
@@ -793,6 +802,20 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 				FText::AsNumber(OutViewData.AssignedStaffCount), FText::AsNumber(OutViewData.StaffCapacity), FText::AsNumber(BusyCount));
 			OutViewData.StaffAssignmentHint = LOCTEXT("StaffFacilityHint",
 				"시설 설치는 정원만 늘립니다. 고용한 스태프를 +로 배정하세요. 출동 중에는 배정을 해제할 수 없습니다.");
+			// 개장 조건에 배정이 걸린 시설이면 툴팁이 아니라 본문에 바로 적는다. 버튼 바로 위라 할 일이 보인다.
+			// 판정은 다시 하지 않고 필수 시설 경계가 준 부족 인원을 그대로 쓴다.
+			FFF_RequiredFacilityRow RequiredRow;
+			const UFF_RequiredFacilitiesSubsystem* Required = World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>();
+			if (Required && Required->TryGetRequiredFacilityRow(Spec.FacilityDefinitionId, RequiredRow)
+				&& RequiredRow.bDefinitionValid && RequiredRow.RequiresStaffAssignment())
+			{
+				OutViewData.StaffSummaryText = FText::Format(RequiredRow.MissingStaffCount > 0
+						? LOCTEXT("StaffFacilityRequiredMissing",
+							"{0}\n! 필수 배정: 스태프를 {1}명 이상 배정해야 개장할 수 있습니다. 아래 `+ 배정`을 누르세요. (같은 시설 전체 {2}명)")
+						: LOCTEXT("StaffFacilityRequiredSatisfied", "{0}\n✓ 필수 배정 완료 (최소 {1}명 · 같은 시설 전체 {2}명)"),
+					OutViewData.StaffSummaryText, FText::AsNumber(RequiredRow.RequiredStaffCount),
+					FText::AsNumber(RequiredRow.AssignedStaffCount));
+			}
 		}
 	}
 	OutViewData.CurrentInstancesInWorld = Spec.FacilityDefinitionId.IsNone()
@@ -806,7 +829,7 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		OutViewData.MaxInstancesPerWorld,
 		OutViewData.bInstanceLimitReached);
 	OutViewData.FootprintText = FFFacilityInfoModel::FormatFootprint(Spec.FootprintSizeCells);
-	OutViewData.ClearanceText = FFFacilityInfoModel::FormatDistanceMeters(Spec.ClearanceCells);
+	OutViewData.ClearanceText = FText::GetEmpty();
 	OutViewData.QueueCapacityText = FText::Format(
 		LOCTEXT("QueueCapacityFormat", "대기 {0}팀 · 동시 이용 {1}팀"),
 		FText::AsNumber(Spec.QueueRules.MaxWaitingAgents),

@@ -171,11 +171,17 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
         !TestNotNull(TEXT("Synergy summary"), Summary) || !TestNotNull(TEXT("Existing shared detail scroll"), Scroll)) return false;
     UPanelWidget* TabRow = Overview->GetParent();
     if (!TestNotNull(TEXT("Authored tab row"), TabRow)) return false;
-    TestTrue(TEXT("Tab order is overview, synergy, operation, upgrade"),
-        Synergy->GetParent() == TabRow && Operation->GetParent() == TabRow && Upgrade->GetParent() == TabRow &&
+    TestTrue(TEXT("Primary tabs retain overview, synergy, operation order"),
+        Synergy->GetParent() == TabRow && Operation->GetParent() == TabRow &&
         TabRow->GetChildIndex(Synergy) == TabRow->GetChildIndex(Overview) + 1 &&
-        TabRow->GetChildIndex(Operation) == TabRow->GetChildIndex(Synergy) + 1 &&
-        TabRow->GetChildIndex(Upgrade) == TabRow->GetChildIndex(Operation) + 1);
+        TabRow->GetChildIndex(Operation) == TabRow->GetChildIndex(Synergy) + 1);
+    UWidget* Staff = Panel->GetWidgetFromName(TEXT("Button_TabStaff"));
+    if (TestNotNull(TEXT("Staff has its direct primary tab"), Staff))
+        TestTrue(TEXT("Staff follows operation without displacing the core tabs"),
+            Staff->GetParent() == TabRow && TabRow->GetChildIndex(Staff) == TabRow->GetChildIndex(Operation) + 1);
+    TestTrue(TEXT("Upgrade remains available in the secondary facility actions"),
+        Upgrade->GetParent() && Upgrade->GetParent() != TabRow &&
+        Upgrade->GetParent() == Panel->GetWidgetFromName(TEXT("Reference_AdditionalFacilityPages")));
 
     FFF_FacilityInfoViewData Data;
     Data.FacilityInstanceId = FGuid::NewGuid();

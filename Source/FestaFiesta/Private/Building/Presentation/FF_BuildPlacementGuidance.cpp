@@ -11,7 +11,7 @@ FText FFBuildPlacementAssistance::ReasonTitle(const EFFZSPlacementFailure Reason
     switch (Reason)
     {
     case EFFZSPlacementFailure::PlacementCollision: return LOCTEXT("Collision", "시설 또는 장애물과 겹쳐요");
-    case EFFZSPlacementFailure::InsufficientClearance: return LOCTEXT("Clearance", "시설 주변 여유 공간이 부족해요");
+    case EFFZSPlacementFailure::InsufficientClearance: return LOCTEXT("AudienceSpace", "관람 공간과 겹쳐요");
     case EFFZSPlacementFailure::QueueFootprintBlocked: return LOCTEXT("Queue", "대기 줄이 들어갈 공간이 없어요");
     case EFFZSPlacementFailure::OutsideZone:
     case EFFZSPlacementFailure::ZoneNotFound: return LOCTEXT("Outside", "건축 구역을 벗어났어요");

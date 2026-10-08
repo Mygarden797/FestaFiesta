@@ -238,6 +238,55 @@ bool FFFZSUnifiedConstructionLifecycleTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSUnifiedBoundaryExplanationTest,
+    "FF_ZoneSystem.Integration.UnifiedConstruction.NamedBoundaryFailures",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSUnifiedBoundaryExplanationTest::RunTest(const FString& Parameters)
+{
+    FScopedUnifiedConstructionSettings Settings;
+    FUnifiedConstructionWorld Fixture;
+    if (!Fixture.Initialize(*this) || !Fixture.EnableBuildArea(*this)) return false;
+    FFFZSCommand Command = UnifiedInstall(UnifiedRegionA, FIntPoint(2000, 2000));
+    Command.FacilitySpec.Category = EFFZSFacilityCategory::Performance;
+    Command.FacilitySpec.Audience.bEnabled = true;
+    Command.FacilitySpec.Audience.FirstSlotLocalCm = FVector(-760, 3000, 0);
+    Command.FacilitySpec.Audience.EntryLocalCm = FVector(-850, 4170, 0);
+    Command.FacilitySpec.Audience.ExitLocalCm = FVector(850, 4170, 0);
+    Command.FacilitySpec.Audience.FocusLocalCm = FVector::ZeroVector;
+    const int64 Revision = Fixture.System->GetWorldRevision();
+    const auto AudienceOnly = Fixture.System->ValidatePlacement(Command);
+    TestTrue(TEXT("Audience outside rejects a stage whose building and queue are inside"),
+        AudienceOnly.Reasons.Contains(EFFZSPlacementFailure::OutsideZone));
+    TestTrue(TEXT("Audience reservation has an explicit display group"), !AudienceOnly.AudienceOrientedRects.IsEmpty());
+    TestTrue(TEXT("The exact failing region is preserved"), !AudienceOnly.BoundaryIssues.IsEmpty());
+    for (const auto& Issue : AudienceOnly.BoundaryIssues)
+        TestTrue(TEXT("Inside building/queue must not be blamed for audience overflow"),
+            Issue.Region == EFFZSPlacementRegion::Audience);
+    TestTrue(TEXT("Both log and player explanation name the audience"),
+        AudienceOnly.Summary.ToString().Contains(TEXT("관객석")) &&
+        AudienceOnly.GetBoundaryFailureText().ToString().Contains(TEXT("관객석")));
+    TestEqual(TEXT("Explaining a failed preview does not mutate world authority"),
+        Fixture.System->GetWorldRevision(), Revision);
+
+    Command.Placement.OriginCell.Y = 300;
+    const auto Inside = Fixture.System->ValidatePlacement(Command);
+    TestTrue(TEXT("Moving all authored regions inside clears the boundary failure"), Inside.bIsValid);
+    TestTrue(TEXT("Valid previews retain no stale boundary diagnostics"), Inside.BoundaryIssues.IsEmpty());
+
+    Command.Placement.OriginCell = FIntPoint(2000, 4700);
+    const auto Multiple = Fixture.System->ValidatePlacement(Command);
+    TestTrue(TEXT("Both queue and audience failures retain their identity"),
+        Multiple.BoundaryIssues.ContainsByPredicate([](const auto& Issue)
+            { return Issue.Region == EFFZSPlacementRegion::Queue; }) &&
+        Multiple.BoundaryIssues.ContainsByPredicate([](const auto& Issue)
+            { return Issue.Region == EFFZSPlacementRegion::Audience; }));
+    TestFalse(TEXT("A footprint exactly on the inclusive outer edge is not outside"),
+        Multiple.BoundaryIssues.ContainsByPredicate([](const auto& Issue)
+            { return Issue.Region == EFFZSPlacementRegion::Footprint; }));
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSUnifiedConstructionBoundaryTest,
     "FF_ZoneSystem.Integration.UnifiedConstruction.LegacyBoundaryGridGapsAndProtection",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

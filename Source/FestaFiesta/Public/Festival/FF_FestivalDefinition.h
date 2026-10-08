@@ -49,7 +49,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival", meta = (ClampMin = "0"))
 	int32 BaseDailyVisitors = 1000;
 
-	// Setup 완료 및 운영 진입에 필요한 시설. 기본은 SunsetMainStage 1개. 빈 목록이면 조건 없음.
+	// Setup 완료 및 운영 진입에 필요한 시설. 빈 목록이면 조건 없음.
+	// 기본은 SunsetMainStage 1개 + 메인안내소 1개(스태프 1명 이상 배정까지). 안내소는 사건 대응 스태프가
+	// 출발하는 집이라, 설치만 하고 배정을 잊으면 사건에 아무도 출동하지 못한다 — 그래서 배정까지 요구한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Setup", meta = (TitleProperty = "FacilityDefinition"))
 	TArray<FFF_RequiredFacility> RequiredSetupFacilities;
 

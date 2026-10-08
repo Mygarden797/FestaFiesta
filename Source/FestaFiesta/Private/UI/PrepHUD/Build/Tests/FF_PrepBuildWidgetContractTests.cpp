@@ -62,15 +62,17 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 	TestFalse(TEXT("일반 버튼 포커스는 B 단축키를 막지 않는다"),
 		FFBuildModeModel::IsEditableSlateTextWidgetType(TEXT("SButton")));
 	const TArray<FKey> PauseKeys = { EKeys::Escape, EKeys::F5 };
-	TestTrue(TEXT("검색창 child보다 먼저 ESC를 Pause Hub 입력으로 처리한다"),
-		FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
-			EKeys::Escape, false, true, false, EFF_BuildModeState::CatalogOpen, PauseKeys));
-	TestFalse(TEXT("건축 중 F5는 Pause Hub 단축키로 처리하지 않는다"),
-		FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
-			EKeys::F5, false, true, false, EFF_BuildModeState::CatalogOpen, PauseKeys));
-	TestFalse(TEXT("키 반복은 Pause Hub를 중복 요청하지 않는다"),
-		FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
-			EKeys::Escape, true, true, false, EFF_BuildModeState::CatalogOpen, PauseKeys));
+	for (const FKey& PauseKey : PauseKeys)
+	{
+		TestTrue(*FString::Printf(TEXT("검색창 child보다 먼저 %s를 Pause Hub 입력으로 처리한다"),
+			*PauseKey.ToString()),
+			FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
+				PauseKey, false, true, false, EFF_BuildModeState::CatalogOpen, PauseKeys));
+		TestFalse(*FString::Printf(TEXT("%s 키 반복은 Pause Hub를 중복 요청하지 않는다"),
+			*PauseKey.ToString()),
+			FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
+				PauseKey, true, true, false, EFF_BuildModeState::CatalogOpen, PauseKeys));
+	}
 	TestFalse(TEXT("카탈로그가 아닌 건축 상태에서는 panel이 Pause 키를 가로채지 않는다"),
 		FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
 			EKeys::Escape, false, true, false, EFF_BuildModeState::BuildMode, PauseKeys));

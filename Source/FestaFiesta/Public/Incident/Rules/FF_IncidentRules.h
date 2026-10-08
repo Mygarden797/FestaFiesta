@@ -35,6 +35,9 @@ struct FESTAFIESTA_API FFF_IncidentRules
 	// 시간 초과로 닫힐 때의 최종 상태. Problem → Ignored, Opportunity → Missed.
 	static EFF_IncidentState LapseStateFor(EFF_IncidentTone Tone);
 
+	// 닫힌 사건을 토스트로 알릴지. 해소·방치·놓침은 항상, 자연 소멸은 스태프가 출동 중이던 사건만 알린다.
+	static bool ShouldToastClosed(const FFF_IncidentClosedInfo& Info);
+
 	// 같은 키가 다시 올라왔을 때 남길 Intensity. 평균이 아니라 최대다.
 	static float MergeIntensity(float ExistingPeak, float IncomingIntensity);
 

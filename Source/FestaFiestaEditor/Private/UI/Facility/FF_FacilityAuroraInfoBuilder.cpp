@@ -103,7 +103,6 @@ static bool Apply(UWidgetBlueprint& BP)
     Add(*Queue,*Label(BP,*Tree,TEXT("Aurora_QueueNotice"),TEXT("실시간 대기 현황은 운영 탭에서 확인하세요."),15),FMargin(0,6,0,0));
     auto* Facts=Card(BP,*Tree,*BuildBody,TEXT("Aurora_BuildFacts"),TEXT("배치 정보"));
     Pair(BP,*Tree,*Facts,TEXT("Text_Footprint"),TEXT("시설 크기"));
-    Pair(BP,*Tree,*Facts,TEXT("Text_Clearance"),TEXT("안전 여유"));
     Pair(BP,*Tree,*Facts,TEXT("Text_InstallCost"),TEXT("설치 비용"));
     Pair(BP,*Tree,*Facts,TEXT("Text_RecoveryCost"),TEXT("철거 회수액"));
     Pair(BP,*Tree,*Facts,TEXT("Text_InstanceLimit"),TEXT("건축 한도"));

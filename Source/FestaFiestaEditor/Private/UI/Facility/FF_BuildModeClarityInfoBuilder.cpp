@@ -163,7 +163,6 @@ static bool Apply(UWidgetBlueprint& BP)
     Pair(BP,*Tree,*Basics,TEXT("Text_ServiceCapacityValue"),TEXT("동시 이용"));
     Pair(BP,*Tree,*Basics,TEXT("Text_ServiceDuration"),TEXT("팀당 이용 시간"));
     Pair(BP,*Tree,*Basics,TEXT("Text_Footprint"),TEXT("시설 크기"));
-    Pair(BP,*Tree,*Basics,TEXT("Text_Clearance"),TEXT("안전 여유"));
     Pair(BP,*Tree,*Basics,TEXT("Text_InstallCost"),TEXT("설치 비용"));
     Pair(BP,*Tree,*Basics,TEXT("Text_RecoveryCost"),TEXT("철거 회수액"));
     Pair(BP,*Tree,*Basics,TEXT("Text_InstanceLimit"),TEXT("건축 한도"));

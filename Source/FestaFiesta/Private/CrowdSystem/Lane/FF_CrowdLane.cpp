@@ -426,7 +426,7 @@ bool AFF_CrowdLane::ValidateLaneData(TArray<FText>& OutErrors) const
 		{
 			for (const FVector& Point : Polyline)
 			{
-				if (!HeightField.IsWalkable(FVector2D(Point.X, Point.Y)))
+				if (!Sim->IsGroundWalkable(Point))
 				{
 					OutErrors.Add(LOCTEXT("LaneNotWalkable", "레인이 통행 불가 지형을 지납니다."));
 					break;

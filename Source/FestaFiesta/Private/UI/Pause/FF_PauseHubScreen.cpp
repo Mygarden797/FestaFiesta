@@ -63,6 +63,7 @@ void UFF_PauseHubScreen::NativeConstruct()
 	BindButton(Button_Settings, this, GET_FUNCTION_NAME_CHECKED(UFF_PauseHubScreen, HandleSettingsClicked));
 	BindButton(Button_Keyboard, this, GET_FUNCTION_NAME_CHECKED(UFF_PauseHubScreen, HandleKeyboardClicked));
 	BindButton(Button_Account, this, GET_FUNCTION_NAME_CHECKED(UFF_PauseHubScreen, HandleAccountClicked));
+	BindButton(Button_ReturnToAtlas, this, GET_FUNCTION_NAME_CHECKED(UFF_PauseHubScreen, HandleReturnToAtlasClicked));
 	BindButton(Button_Exit, this, GET_FUNCTION_NAME_CHECKED(UFF_PauseHubScreen, HandleExitClicked));
 
 	SetContextCopy(EFF_PauseHubAction::Resume);
@@ -77,6 +78,7 @@ void UFF_PauseHubScreen::NativeDestruct()
 	UnbindButton(Button_Settings, this);
 	UnbindButton(Button_Keyboard, this);
 	UnbindButton(Button_Account, this);
+	UnbindButton(Button_ReturnToAtlas, this);
 	UnbindButton(Button_Exit, this);
 	OnReleased.Broadcast();
 	Super::NativeDestruct();
@@ -129,7 +131,7 @@ void UFF_PauseHubScreen::RefreshOptionKeyHints()
 	const FText Header = FormatOptionKeyHint(
 		PresentedOpenCloseKeys, LOCTEXT("ResumeHintSuffix", "계속 플레이"));
 	const FText Footer = FormatOptionKeyHint(
-		PresentedOpenCloseKeys, LOCTEXT("BackHintSuffix", "계속 플레이 / 이전으로"));
+		PresentedOpenCloseKeys, LOCTEXT("BackHintSuffix", "계속 플레이"));
 	const FText Guide = FText::Format(
 		LOCTEXT("DynamicGuideFormat", "↑ ↓  메뉴 이동    Enter  선택\n{0}"), Footer);
 	if (Text_HeaderHint)
@@ -239,6 +241,7 @@ void UFF_PauseHubScreen::RefreshFocusPresentation()
 		{ Button_Settings, Image_FocusSettings, EFF_PauseHubAction::SystemSettings },
 		{ Button_Keyboard, Image_FocusKeyboard, EFF_PauseHubAction::KeyboardGuide },
 		{ Button_Account, Image_FocusAccount, EFF_PauseHubAction::Account },
+		{ Button_ReturnToAtlas, Image_FocusReturnToAtlas, EFF_PauseHubAction::ReturnToAtlas },
 		{ Button_Exit, Image_FocusExit, EFF_PauseHubAction::ExitGame }
 	};
 	TOptional<EFF_PauseHubAction> HoveredAction;
@@ -284,34 +287,40 @@ void UFF_PauseHubScreen::SetContextCopy(const EFF_PauseHubAction Action)
 	switch (Action)
 	{
 	case EFF_PauseHubAction::SystemSettings:
-		Eyebrow = LOCTEXT("SettingsEyebrow", "SYSTEM");
+		Eyebrow = LOCTEXT("SettingsEyebrow", "환경 설정");
 		Title = LOCTEXT("SettingsTitle", "시스템 설정");
 		Description = LOCTEXT("SettingsDescription",
-			"오디오·카메라·접근성·그래픽을 확인하고 저장 버튼으로 한 번에 적용합니다.");
+			"소리, 카메라 움직임과 화면 표시를 취향에 맞게 조절하세요.");
 		break;
 	case EFF_PauseHubAction::KeyboardGuide:
-		Eyebrow = LOCTEXT("KeyboardEyebrow", "CONTROLS");
+		Eyebrow = LOCTEXT("KeyboardEyebrow", "조작 안내");
 		Title = LOCTEXT("KeyboardTitle", "조작 가이드");
 		Description = LOCTEXT("KeyboardDescription",
-			"관찰 카메라, 건축, 캐릭터에서 사용하는 실제 키를 문맥별로 확인합니다.");
+			"카메라 이동부터 시설 건설까지, 플레이에 필요한 조작 키를 확인하세요.");
 		break;
 	case EFF_PauseHubAction::Account:
-		Eyebrow = LOCTEXT("AccountEyebrow", "PROFILE");
+		Eyebrow = LOCTEXT("AccountEyebrow", "내 정보");
 		Title = LOCTEXT("AccountTitle", "계정 정보");
 		Description = LOCTEXT("AccountDescription",
-			"로컬 프로필, 저장 방식과 현재 빌드 정보를 읽기 전용으로 확인합니다.");
+			"프로필과 저장 방식, 게임 버전을 확인하세요.");
+		break;
+	case EFF_PauseHubAction::ReturnToAtlas:
+		Eyebrow = LOCTEXT("ReturnToAtlasEyebrow", "축제 선택");
+		Title = LOCTEXT("ReturnToAtlasTitle", "축제 선택으로");
+		Description = LOCTEXT("ReturnToAtlasDescription",
+			"현재 플레이를 마치고 축제를 선택하는 화면으로 이동합니다.");
 		break;
 	case EFF_PauseHubAction::ExitGame:
-		Eyebrow = LOCTEXT("ExitEyebrow", "EXIT");
+		Eyebrow = LOCTEXT("ExitEyebrow", "종료 안내");
 		Title = LOCTEXT("ExitTitle", "게임 종료");
 		Description = LOCTEXT("ExitDescription",
-			"확인 단계를 거친 뒤 게임을 종료합니다. 저장되지 않은 설정은 적용되지 않습니다.");
+			"게임을 종료하기 전에 한 번 더 확인합니다.");
 		break;
 	case EFF_PauseHubAction::Resume:
 	default:
-		Eyebrow = LOCTEXT("ResumeEyebrow", "RESUME");
+		Eyebrow = LOCTEXT("ResumeEyebrow", "축제 운영");
 		Title = LOCTEXT("ResumeTitle", "계속하기");
-		Description = LOCTEXT("ResumeDescription", "일시정지 메뉴를 닫고 축제 운영 화면으로 돌아갑니다.");
+		Description = LOCTEXT("ResumeDescription", "메뉴를 닫고 진행 중인 축제로 돌아갑니다.");
 		break;
 	}
 	if (Text_SelectionEyebrow)
@@ -354,6 +363,11 @@ void UFF_PauseHubScreen::HandleAccountClicked()
 void UFF_PauseHubScreen::HandleExitClicked()
 {
 	RequestAction(EFF_PauseHubAction::ExitGame);
+}
+
+void UFF_PauseHubScreen::HandleReturnToAtlasClicked()
+{
+	RequestAction(EFF_PauseHubAction::ReturnToAtlas);
 }
 
 #undef LOCTEXT_NAMESPACE

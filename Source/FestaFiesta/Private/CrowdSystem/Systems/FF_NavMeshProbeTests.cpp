@@ -130,6 +130,37 @@ public:
         {
             return true;
         }
+        // A gate rejected during GatherCrowdGates must fail this release-map
+        // contract explicitly, not disappear from the path checks below.
+        const FArrayProperty* GatesProperty = CastField<FArrayProperty>(
+            AFF_SpawnActor::StaticClass()->FindPropertyByName(TEXT("CrowdGates")));
+        const FStructProperty* GateElementProperty = GatesProperty
+            ? CastField<FStructProperty>(GatesProperty->Inner) : nullptr;
+        if (!Test->TestTrue(TEXT("Authored production gates retain their crowd-gate array type"),
+            GateElementProperty && GateElementProperty->Struct == FFF_CrowdGate::StaticStruct()))
+        {
+            return true;
+        }
+        const TArray<FFF_CrowdGate>& AuthoredGates =
+            *GatesProperty->ContainerPtrToValuePtr<TArray<FFF_CrowdGate>>(Spawn);
+        const TArray<FFF_CrowdGate>& RuntimeGates = CrowdSim->GetValidGates();
+        Test->TestEqual(TEXT("Release map retains all four authored crowd gates"), AuthoredGates.Num(), 4);
+        Test->TestEqual(TEXT("All four authored crowd gates survive runtime validation"), RuntimeGates.Num(), 4);
+        Test->TestEqual(TEXT("All four release-map gates remain selectable for spawning"), CrowdSim->GetSpawnGateCount(), 4);
+        // Exact cardinality plus all four distinct identities also rejects a
+        // duplicate identity, an unexpected gate, or a synthesized fallback.
+        for (const TCHAR* GateName : { TEXT("1"), TEXT("2"), TEXT("3"), TEXT("4") })
+        {
+            const FName ExpectedId(GateName);
+            const FFF_CrowdGate* Authored = AuthoredGates.FindByPredicate(
+                [ExpectedId](const FFF_CrowdGate& Gate) { return Gate.GateId == ExpectedId; });
+            const FFF_CrowdGate* Runtime = RuntimeGates.FindByPredicate(
+                [ExpectedId](const FFF_CrowdGate& Gate) { return Gate.GateId == ExpectedId; });
+            Test->TestTrue(FString::Printf(TEXT("Authored release-map gate %s allows spawning"), GateName),
+                Authored && Authored->bAllowSpawn);
+            Test->TestTrue(FString::Printf(TEXT("Authored gate %s remains a valid runtime spawn gate"), GateName),
+                Runtime && Runtime->bAllowSpawn);
+        }
         const FStructProperty* OffsetProperty = CastField<FStructProperty>(
             AFF_SpawnActor::StaticClass()->FindPropertyByName(TEXT("Temp_ExitOffsetFromOrigin")));
         const FObjectPropertyBase* SpawnAnchorProperty = CastField<FObjectPropertyBase>(

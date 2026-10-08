@@ -9,6 +9,9 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/GameInstance.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
+#include "Components/StaticMeshComponent.h"
 #include "EngineUtils.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
@@ -45,6 +48,12 @@ namespace
 {
 	constexpr int32 NoSpawnGeneration = 0;
 	constexpr double RoadSupportBucketSizeCm = 400.0;
+	const FName GroundRefinementTag(TEXT("FF_CrowdGroundRefinement"));
+	constexpr double GroundRefinementSpacingCm = 25.0;
+	constexpr double GroundRefinementApronCm = 500.0;
+	constexpr double GroundRefinementCoreSpacingCm = 5.0;
+	constexpr double GroundRefinementCoreApronCm = 125.0;
+	constexpr double GroundRefinementMaxSurfaceSpanCm = 2000.0;
 
 	// 서비스를 마친 파티는 시설의 퇴장 지점으로 보내진다.
 	constexpr float QueueExitMatchToleranceUU = 50.f;
@@ -344,9 +353,8 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	{
 		return;
 	}
-	
+
 	// 조회 시점에만 쓰이는 값이라 재빌드 없이 콘솔에서 바로 듣는다
-	HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
 	ApplyWalkableCeiling();
 
 	// OnTimeScaleChange는 사용자가 고른 raw 배속만 알린다. 공연/미니게임 잠금은 매 프레임
@@ -1272,8 +1280,7 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 
 		CrowdSteering::StepAgent(Unit, StepParams, VelocityAlpha, FixedDt);
 
-		if (!HeightField.IsWalkable(FVector2D(Unit.Position.X, Unit.Position.Y))
-			&& HeightField.IsWalkable(FVector2D(PreStepPosition.X, PreStepPosition.Y)))
+		if (!IsGroundWalkable(Unit.Position) && IsGroundWalkable(PreStepPosition))
 		{
 			Unit.Position = PreStepPosition;
 			Unit.PrevPosition = PreStepPosition;
@@ -1576,26 +1583,32 @@ void UFF_CrowdSimulationSubsystem::RebuildAvoidanceWalls()
 	FacilityWallCount = AppendFacilityWalls();
 
 	bBuiltWithFacilityWalls = bAvoidanceUseFacilityWalls;
-	bBuiltWithClearance = bAvoidanceFacilityWallsIncludeClearance;
 }
 
 void UFF_CrowdSimulationSubsystem::ApplyWalkableCeiling()
 {
-	if (MaxWalkableHeightAboveOriginUU > 0.f)
+	const auto Apply = [this](FFF_CrowdHeightField& Field)
 	{
-		HeightField.SetWalkableCeilingCm(SimOrigin.Z + static_cast<double>(MaxWalkableHeightAboveOriginUU));
-	}
-	else
+		Field.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
+		if (MaxWalkableHeightAboveOriginUU > 0.f)
+			Field.SetWalkableCeilingCm(SimOrigin.Z + static_cast<double>(MaxWalkableHeightAboveOriginUU));
+		else
+			Field.ClearWalkableCeiling();
+		Field.SetBlockUnknownGround(bBlockUnknownGround);
+	};
+	Apply(HeightField);
+	for (FGroundRefinement& Refinement : GroundRefinements)
 	{
-		HeightField.ClearWalkableCeiling();
+		Apply(Refinement.Field);
+		Apply(Refinement.CoreField);
 	}
-
-	HeightField.SetBlockUnknownGround(bBlockUnknownGround);
 }
 
 void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 {
 	HeightField.Reset();
+	GroundRefinements.Reset();
+	GroundRefinementBuildSeconds = 0.0;
 	RoadSupportRevision = -1;
 
 	if (!bEnableHeightField)
@@ -1735,6 +1748,70 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		return;
 	}
 
+	int32 RefinementSamples = 0;
+	const double RefinementStartedAt = FPlatformTime::Seconds();
+	for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+	{
+		if (!It->ActorHasTag(GroundRefinementTag)) continue;
+		const UStaticMeshComponent* Surface = It->GetStaticMeshComponent();
+		const UStaticMesh* Mesh = Surface ? Surface->GetStaticMesh() : nullptr;
+		const FBox SurfaceBounds = Surface ? Surface->Bounds.GetBox() : FBox(ForceInit);
+		const FVector SurfaceScale = Surface ? Surface->GetComponentScale() : FVector::ZeroVector;
+		const bool bSupported = Surface && Mesh
+			&& Mesh->GetPathName() == TEXT("/Engine/BasicShapes/Cube.Cube")
+			&& Surface->Mobility == EComponentMobility::Static
+			&& Surface->IsQueryCollisionEnabled()
+			&& Surface->GetCollisionResponseToChannel(ECC_WorldStatic) == ECR_Block
+			&& !Surface->IsSimulatingPhysics() && !SurfaceScale.ContainsNaN() && SurfaceScale.GetMin() > 0.0
+			&& SurfaceBounds.IsValid && !SurfaceBounds.Min.ContainsNaN() && !SurfaceBounds.Max.ContainsNaN()
+			&& SurfaceBounds.GetSize().GetMax() <= GroundRefinementMaxSurfaceSpanCm
+			&& Surface->GetUpVector().Z >= FMath::Cos(FMath::DegreesToRadians(44.0));
+		if (!bSupported)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Crowd ground refinement rejected unsupported tagged surface: %s"), *It->GetPathName());
+			continue;
+		}
+		// Share a world-aligned 25 cm lattice, including in overlapping patches.
+		// Do not trace against the cube alone: the existing deck can be above it.
+		const FVector2D Minimum(
+			FMath::FloorToDouble((SurfaceBounds.Min.X - GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm,
+			FMath::FloorToDouble((SurfaceBounds.Min.Y - GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm);
+		const FVector2D Maximum(
+			FMath::CeilToDouble((SurfaceBounds.Max.X + GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm,
+			FMath::CeilToDouble((SurfaceBounds.Max.Y + GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm);
+		const double SideCm = FMath::Max(Maximum.X - Minimum.X, Maximum.Y - Minimum.Y);
+		FGroundRefinement Refinement;
+		Refinement.BoundsCm = FBox2D(Minimum, Minimum + FVector2D(SideCm));
+		if (Refinement.Field.Build(Minimum + FVector2D(SideCm * 0.5), SideCm * 0.5,
+			GroundRefinementSpacingCm, Sampler))
+		{
+			RefinementSamples += Refinement.Field.GetStats().SampleCount;
+			// Fine sampling is limited to the walkway and its immediate approaches.
+			// Keep the broad apron coarse; both tiers share fixed world lattices so
+			// authoring transforms cannot tune samples to a particular test point.
+			const FVector2D CoreMinimum(
+				FMath::FloorToDouble((SurfaceBounds.Min.X - GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm,
+				FMath::FloorToDouble((SurfaceBounds.Min.Y - GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm);
+			const FVector2D CoreMaximum(
+				FMath::CeilToDouble((SurfaceBounds.Max.X + GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm,
+				FMath::CeilToDouble((SurfaceBounds.Max.Y + GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm);
+			const double CoreSideCm = FMath::Max(CoreMaximum.X - CoreMinimum.X, CoreMaximum.Y - CoreMinimum.Y);
+			if (Refinement.CoreField.Build(CoreMinimum + FVector2D(CoreSideCm * 0.5), CoreSideCm * 0.5,
+				GroundRefinementCoreSpacingCm, Sampler))
+			{
+				Refinement.CoreBoundsCm = FBox2D(CoreMinimum, CoreMinimum + FVector2D(CoreSideCm));
+				RefinementSamples += Refinement.CoreField.GetStats().SampleCount;
+			}
+			GroundRefinements.Add(MoveTemp(Refinement));
+		}
+	}
+	ApplyWalkableCeiling();
+	GroundRefinementBuildSeconds = FPlatformTime::Seconds() - RefinementStartedAt;
+	if (!GroundRefinements.IsEmpty())
+		UE_LOG(LogTemp, Log, TEXT("Crowd ground refinements: %d explicit static walkways, %d cached samples, %.0f cm core / %.0f cm apron, %.2f ms build, %.1f KiB sample payload"),
+			GroundRefinements.Num(), RefinementSamples, GroundRefinementCoreSpacingCm, GroundRefinementSpacingCm,
+			GroundRefinementBuildSeconds * 1000.0, RefinementSamples * (sizeof(double) + sizeof(uint8)) / 1024.0);
+
 	UE_LOG(LogTemp, Log,
 		TEXT("높이 격자: %dx%d, 적중 %d/%d, 높이 %.0f~%.0f (기복 %.0fcm), 시설 %d개 제외"),
 		HeightField.GetNumX(), HeightField.GetNumY(),
@@ -1780,9 +1857,33 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 	}
 }
 
+const FFF_CrowdHeightField& UFF_CrowdSimulationSubsystem::GetHeightFieldAt(const FVector2D& WorldXYCm) const
+{
+	for (const FGroundRefinement& Refinement : GroundRefinements)
+		if (Refinement.CoreBoundsCm.bIsValid && Refinement.CoreBoundsCm.IsInsideOrOn(WorldXYCm)) return Refinement.CoreField;
+	for (const FGroundRefinement& Refinement : GroundRefinements)
+		if (Refinement.BoundsCm.IsInsideOrOn(WorldXYCm)) return Refinement.Field;
+	return HeightField;
+}
+
+int32 UFF_CrowdSimulationSubsystem::GetGroundRefinementSampleCount() const
+{
+	int32 Count = 0;
+	for (const FGroundRefinement& Refinement : GroundRefinements)
+		Count += Refinement.Field.GetStats().SampleCount + Refinement.CoreField.GetStats().SampleCount;
+	return Count;
+}
+
+bool UFF_CrowdSimulationSubsystem::IsGroundWalkable(const FVector& WorldLocation) const
+{
+	const FVector2D WorldXYCm(WorldLocation.X, WorldLocation.Y);
+	return GetHeightFieldAt(WorldXYCm).IsWalkable(WorldXYCm);
+}
+
 bool UFF_CrowdSimulationSubsystem::TryGetGroundZ(const FVector& WorldLocation, double& OutZ) const
 {
-	bool bHasGround = HeightField.TryGetHeightCm(FVector2D(WorldLocation.X, WorldLocation.Y), OutZ);
+	const FVector2D WorldXYCm(WorldLocation.X, WorldLocation.Y);
+	bool bHasGround = GetHeightFieldAt(WorldXYCm).TryGetHeightCm(WorldXYCm, OutZ);
 	if (!bEnableHeightField || WorldLocation.ContainsNaN()) return bHasGround;
 	EnsureRoadSupportCache();
 	const FIntPoint Bucket(FMath::FloorToInt(WorldLocation.X / RoadSupportBucketSizeCm),
@@ -1916,15 +2017,8 @@ int32 UFF_CrowdSimulationSubsystem::AppendFacilityWalls()
 		const FFFZSFacilitySpec Spec = Actor->GetFacilitySpec();
 		if (Spec.IsGroundSurface()) continue;
 
-		float HalfXCm = static_cast<float>(Spec.FootprintSizeCells.X) * 0.5f;
-		float HalfYCm = static_cast<float>(Spec.FootprintSizeCells.Y) * 0.5f;
-
-		if (bAvoidanceFacilityWallsIncludeClearance)
-		{
-			const float ClearanceCm = static_cast<float>(Spec.ClearanceCells);
-			HalfXCm += ClearanceCm;
-			HalfYCm += ClearanceCm;
-		}
+		const float HalfXCm = static_cast<float>(Spec.FootprintSizeCells.X) * 0.5f;
+		const float HalfYCm = static_cast<float>(Spec.FootprintSizeCells.Y) * 0.5f;
 
 		const FVector2f CenterMeters(
 			static_cast<float>(Facility.WorldLocation.X) * FFF_CrowdUnits::MetersPerUU,
@@ -1951,9 +2045,7 @@ int32 UFF_CrowdSimulationSubsystem::AppendFacilityWalls()
 
 void UFF_CrowdSimulationSubsystem::EnsureFacilityWalls()
 {
-	const bool bKnobsChanged =
-		(bBuiltWithFacilityWalls != bAvoidanceUseFacilityWalls) ||
-		(bBuiltWithClearance != bAvoidanceFacilityWallsIncludeClearance);
+	const bool bKnobsChanged = bBuiltWithFacilityWalls != bAvoidanceUseFacilityWalls;
 
 	if (!bAvoidanceUseFacilityWalls)
 	{
@@ -4262,7 +4354,7 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 
 		FVector Destination = Unit.Position + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
 
-		if (!HeightField.IsWalkable(FVector2D(Destination.X, Destination.Y)))
+		if (!IsGroundWalkable(Destination))
 		{
 			continue;
 		}
@@ -4388,7 +4480,7 @@ bool UFF_CrowdSimulationSubsystem::TryPickPatrolDestination(const int32 LeaderAg
 			continue;
 		}
 
-		if (!HeightField.IsWalkable(FVector2D(Destination.X, Destination.Y)))
+		if (!IsGroundWalkable(Destination))
 		{
 			continue;
 		}
@@ -4530,6 +4622,40 @@ void UFF_CrowdSimulationSubsystem::RebuildInTransitMemberCounts()
 
 		InTransitMemberCounts.FindOrAdd(State.CurrentDestinationId) += MemberCount;
 	}
+}
+
+void UFF_CrowdSimulationSubsystem::SetCrowdState(EFF_CrowdRunState NewState)
+{
+	for (AFF_BaseCrowd* Actor : CrowdPool)
+	{
+		if (IsValid(Actor))
+		{
+			Actor->SetState(NewState);
+		}
+	}
+}
+
+bool UFF_CrowdSimulationSubsystem::SetCrowdStateForAgent(int32 AgentIndex, EFF_CrowdRunState NewState)
+{
+	if (!UnitDatas.IsValidIndex(AgentIndex))
+	{
+		return false;
+	}
+
+	const int32 ActorSlot = PoolBinding.GetBoundSlot(AgentIndex);
+	if (ActorSlot == INDEX_NONE || !CrowdPool.IsValidIndex(ActorSlot))
+	{
+		return false;
+	}
+
+	AFF_BaseCrowd* Actor = CrowdPool[ActorSlot];
+	if (!IsValid(Actor))
+	{
+		return false;
+	}
+
+	Actor->SetState(NewState);
+	return true;
 }
 
 void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage)
@@ -6128,7 +6254,7 @@ void UFF_CrowdSimulationSubsystem::DrawDebugAgents() const
 
 		if (bIsLeader)
 		{
-			DrawDebugLine(World, Unit.Position, Unit.TargetLocation, FColor(60, 60, 60), false, -1.f, 0, 0.5f);
+			DrawDebugLine(World, Unit.Position, Unit.TargetLocation, FColor::White, false, -1.f, 0, 3.f);
 
 			if (PathFollowers.IsValidIndex(AgentIndex) && PathFollowers[AgentIndex].HasRemainingWaypoint())
 			{
@@ -6267,6 +6393,7 @@ void UFF_CrowdSimulationSubsystem::DespawnAllAgent()
 		}
 	}
 	PendingDespawnParty.Reset();
+	DensityGrid.Update(UnitDatas);
 }
 
 void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()

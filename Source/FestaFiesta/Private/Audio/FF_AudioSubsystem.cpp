@@ -261,7 +261,7 @@ void UFF_AudioSubsystem::SetAmbience(const EFF_AudioAmbience Ambience)
 	if (Bank && Ambience != EFF_AudioAmbience::Playlist && CurrentAmbience != EFF_AudioAmbience::Playlist)
 	{
 		const FFF_AudioAmbienceTrack* Playing = FindActiveTrack(Bank);
-		const FFF_AudioAmbienceTrack* Next = Bank->FindAmbience(Ambience);
+		const FFF_AudioAmbienceTrack* Next = FindTrack(Bank, Ambience);
 		if (Playing && Next && Playing->IsValid() && Next->Sound == Playing->Sound)
 		{
 			CurrentAmbience = Ambience;
@@ -300,7 +300,7 @@ void UFF_AudioSubsystem::SetAmbience(const EFF_AudioAmbience Ambience)
 		OnPlaylistChanged.Broadcast();
 	}
 
-	const FFF_AudioAmbienceTrack* Track = Bank ? Bank->FindAmbience(Ambience) : nullptr;
+	const FFF_AudioAmbienceTrack* Track = FindTrack(Bank, Ambience);
 	if (!Track || !Track->IsValid())
 	{
 		// 이 상황에 붙은 곡이 없다. 이전 곡만 끄고 끝낸다.
@@ -309,8 +309,51 @@ void UFF_AudioSubsystem::SetAmbience(const EFF_AudioAmbience Ambience)
 
 	if (USoundBase* Sound = Track->Sound.LoadSynchronous())
 	{
-		SpawnAmbienceComponent(Sound, *Track, 0.f);
+		// 메인 공연곡은 끝을 공연 끝에 맞추려고 중간부터 틀 수 있다(PlayMainShowSong).
+		const float StartSeconds = Ambience == EFF_AudioAmbience::MainShow ? MainShowStartSeconds : 0.f;
+		SpawnAmbienceComponent(Sound, *Track, StartSeconds);
 	}
+}
+
+void UFF_AudioSubsystem::PlayMainShowSong(const int32 Day, const float StartSeconds)
+{
+	if (CurrentAmbience == EFF_AudioAmbience::MainShow)
+	{
+		if (MainShowDay == Day)
+		{
+			return;
+		}
+
+		// 다른 날 곡이 흐르는 채로 날이 바뀌었다. 같은 요청으로 걸러지지 않게 먼저 내린다.
+		const FFF_AudioAmbienceTrack* Previous = FindActiveTrack(ResolveBank());
+		RetireAmbienceComponent(Previous ? FMath::Max(0.f, Previous->FadeOutSeconds) : 1.f);
+		CurrentAmbience = EFF_AudioAmbience::None;
+	}
+
+	MainShowDay = Day;
+	MainShowStartSeconds = FMath::Max(0.f, StartSeconds);
+
+	const UFF_AudioBankData* Bank = ResolveBank();
+	const FFF_AudioAmbienceTrack* Song = Bank ? Bank->FindMainShowSong(Day) : nullptr;
+	UE_LOG(LogFestaFiestaAudio, Log, TEXT("[사운드] %d일차 메인 공연곡 %s 을 %.1f초부터 튼다."),
+		Day, Song ? *Song->DisplayName.ToString() : TEXT("(없음)"), MainShowStartSeconds);
+
+	SetAmbience(EFF_AudioAmbience::MainShow);
+}
+
+float UFF_AudioSubsystem::GetMainShowSongLength(const int32 Day) const
+{
+	const UFF_AudioBankData* Bank = ResolveBank();
+	const FFF_AudioAmbienceTrack* Song = Bank ? Bank->FindMainShowSong(Day) : nullptr;
+	USoundBase* Sound = Song ? Song->Sound.LoadSynchronous() : nullptr;
+	if (!Sound)
+	{
+		return 0.f;
+	}
+
+	// 반복 곡은 GetDuration 이 "무한" 을 돌려준다. 파형이면 실제 길이를 읽는다(GetAmbienceTrackLength 와 같다).
+	const USoundWave* Wave = Cast<USoundWave>(Sound);
+	return Wave ? Wave->Duration : (Sound->IsLooping() ? 0.f : Sound->GetDuration());
 }
 
 void UFF_AudioSubsystem::RetireAmbienceComponent(const float FadeOutSeconds)
@@ -425,7 +468,21 @@ const FFF_AudioAmbienceTrack* UFF_AudioSubsystem::FindActiveTrack(const UFF_Audi
 		return Bank->FestivalPlaylist.IsValidIndex(TrackIndex) ? &Bank->FestivalPlaylist[TrackIndex] : nullptr;
 	}
 
-	return Bank->FindAmbience(CurrentAmbience);
+	return FindTrack(Bank, CurrentAmbience);
+}
+
+const FFF_AudioAmbienceTrack* UFF_AudioSubsystem::FindTrack(
+	const UFF_AudioBankData* Bank, const EFF_AudioAmbience Ambience) const
+{
+	if (!Bank || Ambience == EFF_AudioAmbience::Playlist)
+	{
+		return nullptr;
+	}
+	if (Ambience == EFF_AudioAmbience::MainShow)
+	{
+		return Bank->FindMainShowSong(MainShowDay);
+	}
+	return Bank->FindAmbience(Ambience);
 }
 
 bool UFF_AudioSubsystem::HasPlaylist() const
@@ -914,6 +971,14 @@ void UFF_AudioSubsystem::HandleAmbienceFinished(UAudioComponent* Component)
 	if (CurrentAmbience == EFF_AudioAmbience::Finale || CurrentAmbience == EFF_AudioAmbience::FinaleEnding)
 	{
 		UE_LOG(LogFestaFiestaAudio, Log, TEXT("[사운드] 피날레 곡 %s 이 끝났다. 되풀이하지 않는다."),
+			Component->Sound ? *Component->Sound->GetName() : TEXT("?"));
+		return;
+	}
+
+	// 메인 공연곡도 되풀이하지 않는다. 끝을 공연 끝에 맞춰 틀었으므로 곧 공연이 끝나 플레이리스트로 돌아간다.
+	if (CurrentAmbience == EFF_AudioAmbience::MainShow)
+	{
+		UE_LOG(LogFestaFiestaAudio, Log, TEXT("[사운드] 메인 공연곡 %s 이 끝났다. 공연이 끝나면 플레이리스트로 돌아간다."),
 			Component->Sound ? *Component->Sound->GetName() : TEXT("?"));
 		return;
 	}

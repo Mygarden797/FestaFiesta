@@ -59,7 +59,32 @@ public:
 	*/
 	static EFF_AudioAmbience ResolveShowAmbience(EFF_FinaleGrade Grade, bool bHasDedicatedTrack);
 
+	/* 메인 공연곡을 틀기 시작할 시각(Live 경과 초). 월드 없이 시험하려고 값만 받는다.
+
+	   곡이 공연보다 길면 끝을 공연 끝에 맞춰 그만큼 일찍 시작한다 — 곡의 마무리가 공연 끝과 겹치고, 앞쪽은
+	   관객이 무대로 모이는 동안(배속이 1배로 묶인 구간) 흐른다. 다만 MaxLeadSeconds 보다 일찍은 시작하지 않는다.
+	   짧거나 같으면 공연 시작이다.
+	*/
+	static float ResolveMainShowSongStart(float ShowStartSeconds, float ShowEndSeconds, float SongSeconds, float MaxLeadSeconds);
+
 private:
+	/* 지금 메인 공연곡을 틀 때인지. 그렇다면 그날(1부터)과 곡 안의 위치(초)를 낸다.
+
+	   공연 시각은 단계 시스템의 일정표에서 읽는다(TryGetMainProgramShowWindow — 관객이 앉는 공연 시작부터 다음 줄까지).
+	   공연 시작 신호(OnMainProgramStarted)는 배속을 묶는 순간(공연 60초 전)에 와서 곡을 틀 시각으로 쓰지 않는다.
+	   그날 곡이 없으면 false 라 플레이리스트가 그대로 흐른다.
+	*/
+	bool ResolveMainShowCue(const UFF_AudioSubsystem& Audio, int32& OutDay, float& OutSongSeconds) const;
+
+	/* 운영 중 메인 공연곡을 틀고 내릴 때인지 짧은 주기로 본다.
+
+	   공연 시작·끝을 알리는 신호가 곡을 틀 시각과 맞지 않아(위 주석) 일정표 시각과 비교한다. 배경음 요청은
+	   같은 것을 다시 해도 무시되므로(UFF_AudioSubsystem::SetAmbience) 주기적으로 다시 계산해도 곡이 끊기지 않는다.
+	*/
+	void PollMainShow();
+
+	FTimerHandle MainShowPollTimer;
+
 	UFUNCTION()
 	void HandleFinaleBurst(FVector WorldLocation, FLinearColor Color);
 

@@ -136,9 +136,41 @@ void AFF_BaseCrowd::PushPresentation(FVector NewPosition, FRotator NewRotator, f
 
 void AFF_BaseCrowd::SetAnimPlayRate(float PlayRate)
 {
+	RunningAnimPlayRate = PlayRate;
+	ApplyStateToAnimation();
+}
+
+void AFF_BaseCrowd::SetState(EFF_CrowdRunState NewState)
+{
+	CurrentState = NewState;
+	ApplyStateToAnimation();
+
+	// 제자리 상태에서 마지막 걷기 속도가 남으면 제자리 걷기가 되므로 Speed 를 0 으로 내린다
+	if (CrowdAnimInstance && (CurrentState == EFF_CrowdRunState::Holding || CurrentState == EFF_CrowdRunState::Dancing))
+	{
+		CrowdAnimInstance->SetSpeed(0.f);
+	}
+}
+
+void AFF_BaseCrowd::ApplyStateToAnimation()
+{
 	if (IsValid(SkeletalMeshComponent))
 	{
+		float PlayRate = 1.f;
+		if (CurrentState == EFF_CrowdRunState::Running)
+		{
+			PlayRate = RunningAnimPlayRate;
+		}
+		else if (CurrentState == EFF_CrowdRunState::Stopped)
+		{
+			PlayRate = 0.f;
+		}
 		SkeletalMeshComponent->GlobalAnimRateScale = PlayRate;
+	}
+
+	if (CrowdAnimInstance)
+	{
+		CrowdAnimInstance->SetState(CurrentState);
 	}
 }
 
@@ -161,6 +193,7 @@ void AFF_BaseCrowd::ApplyAppearance(USkeletalMesh* Mesh, UClass* AnimClass, floa
 	}
 
 	CrowdAnimInstance = Cast<UFF_CrowdAnimInstance>(SkeletalMeshComponent->GetAnimInstance());
+	ApplyStateToAnimation();
 
 	// 메시가 있는데 인스턴스가 없다면 AnimClass의 대상 Skeleton과 메시의 Skeleton이 다른 것이다.
 	// InitAnim은 이 경우 조용히 아무것도 만들지 않으므로 여기서 짚어 주지 않으면 원인을 찾을 수 없다.

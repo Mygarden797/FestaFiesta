@@ -5,6 +5,7 @@
 #include "CrowdSystem/FF_BaseCrowd.h"
 #include "Engine/EngineTypes.h"
 #include "Engine/HitResult.h"
+#include "CrowdSystem/Systems/FF_CrowdHeightField.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "DataTables/FF_ArrivalCurveRow.h"
@@ -369,9 +370,8 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	Ar.Logf(TEXT("대형 직선 막힘: 지금 %d명, 누적 %d회, 우회 경로 쿼리 %d건  <-- 건물에 가려 슬롯으로 직진할 수 없는 멤버"),
 		CrowdSim->GetFormationBlockedMemberCount(), CrowdSim->GetFormationBlockEvents(),
 		CrowdSim->GetFormationPathQueries());
-	Ar.Logf(TEXT("시설 벽       : %s%s"),
-		CrowdSim->bAvoidanceUseFacilityWalls ? TEXT("on") : TEXT("off"),
-		CrowdSim->bAvoidanceFacilityWallsIncludeClearance ? TEXT(" + 여유 1m 링") : TEXT(""));
+	Ar.Logf(TEXT("시설 벽       : %s"),
+		CrowdSim->bAvoidanceUseFacilityWalls ? TEXT("on") : TEXT("off"));
 	Ar.Logf(TEXT("벽 역방향 상한: %.2f  %s"),
 		CrowdSim->AvoidanceConfig.MaxWallOpposingAccelMps2,
 		(CrowdSim->AvoidanceConfig.MaxWallOpposingAccelMps2 < 0.f)
@@ -547,6 +547,79 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdStatsCommand(
 	TEXT("FF.Crowd.Stats"),
 	TEXT("현재 군중/혼잡도 수치를 출력한다"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdStatsCommand));
+
+// 막힌 개체가 서 있는 높이 격자 칸을 그대로 찍는 진단 명령.
+//
+// 통행 상한이 막았는지(네 꼭짓점 중 상한 초과가 있는가), 지면을 못 찾은 꼭짓점이 섞였는지,
+// 그 높이가 얼마인지를 한 번에 본다. 개체 위치와 목적지 쪽 50cm 앞 지점을 둘 다 판정한다.
+static void CrowdStuckProbeCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	if (!CrowdSim)
+	{
+		return;
+	}
+
+	const int32 MaxPrint = FMath::Max(1, FFCrowdConsole::ParseIntArg(Args, 0, 8));
+	const int32 MinStuck = FMath::Max(1, FFCrowdConsole::ParseIntArg(Args, 1, 10));
+	const double CeilingCm = CrowdSim->SimOrigin.Z + static_cast<double>(CrowdSim->MaxWalkableHeightAboveOriginUU);
+
+	Ar.Logf(TEXT("--- 막힘 진단 (StuckSteps >= %d, 최대 %d명) --- 통행 상한 Z %.0f%s, 막아 되돌린 스텝 %d회"),
+		MinStuck, MaxPrint, CeilingCm,
+		CrowdSim->MaxWalkableHeightAboveOriginUU > 0.f ? TEXT("") : TEXT(" (꺼짐)"),
+		CrowdSim->GetHeightBlockedSteps());
+
+	int32 Printed = 0;
+	int32 Matched = 0;
+	for (int32 Index = 0; Index < CrowdSim->GetAgentPoolSize(); ++Index)
+	{
+		if (!CrowdSim->IsAgentActive(Index) || CrowdSim->GetAgentStuckSteps(Index) < MinStuck)
+		{
+			continue;
+		}
+		++Matched;
+		if (Printed >= MaxPrint)
+		{
+			continue;
+		}
+		++Printed;
+
+		const FVector Pos = CrowdSim->GetAgentPosition(Index);
+		const FVector Dest = CrowdSim->GetAgentDestination(Index);
+		FVector Dir = Dest - Pos;
+		Dir.Z = 0.f;
+		const FVector Ahead = Pos + Dir.GetSafeNormal2D() * 50.f;
+
+		Ar.Logf(TEXT("[%d] 위치 (%.0f, %.0f, %.0f) 목적지까지 %.0fcm StuckSteps %d  현재 칸 %s / 50cm 앞 칸 %s"),
+			Index, Pos.X, Pos.Y, Pos.Z, Dir.Size2D(), CrowdSim->GetAgentStuckSteps(Index),
+			CrowdSim->IsGroundWalkable(Pos) ? TEXT("통행 가능") : TEXT("통행 불가"),
+			CrowdSim->IsGroundWalkable(Ahead) ? TEXT("통행 가능") : TEXT("통행 불가"));
+
+		FFF_CrowdHeightField::FCellProbe Probe;
+		const FFF_CrowdHeightField& Ground = CrowdSim->GetHeightFieldAt(FVector2D(Ahead.X, Ahead.Y));
+		if (!Ground.ProbeCell(FVector2D(Ahead.X, Ahead.Y), Probe))
+		{
+			Ar.Logf(TEXT("    높이 격자 없음"));
+			continue;
+		}
+		for (int32 Corner = 0; Corner < 4; ++Corner)
+		{
+			Ar.Logf(TEXT("    꼭짓점 %d (%.0f, %.0f): %s %.0f%s"),
+				Corner, Probe.CornerXYCm[Corner].X, Probe.CornerXYCm[Corner].Y,
+				Probe.bCornerValid[Corner] ? TEXT("높이") : TEXT("지면 없음"),
+				Probe.CornerHeightCm[Corner],
+				(Probe.bCornerValid[Corner] && Probe.CornerHeightCm[Corner] > CeilingCm) ? TEXT("  <-- 상한 초과") : TEXT(""));
+		}
+	}
+
+	Ar.Logf(TEXT("조건에 맞는 개체 %d명 중 %d명 출력. 50cm 앞 칸이 '통행 불가'이고 상한 초과 꼭짓점이 있으면 높이 격자가 원인이다"),
+		Matched, Printed);
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdStuckProbeCommand(
+	TEXT("FF.Crowd.StuckProbe"),
+	TEXT("막힌 개체가 서 있는 높이 격자 칸의 꼭짓점 높이를 출력한다. FF.Crowd.StuckProbe [최대 인원=8] [최소 StuckSteps=10]"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdStuckProbeCommand));
 
 // 레인이 실제로 먹었는지 보는 명령.
 //
@@ -1164,8 +1237,6 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 	const FSwitch Switches[] = {
 		{ TEXT("facilitywalls"), &CrowdSim->bAvoidanceUseFacilityWalls,
 		  TEXT("시설 footprint를 벽으로. 끄면 부스를 통과한다") },
-		{ TEXT("clearance"), &CrowdSim->bAvoidanceFacilityWallsIncludeClearance,
-		  TEXT("시설 벽에 여유 링 포함. 켜면 nav 구멍보다 벽이 커져 경로와 힘이 어긋난다") },
 		{ TEXT("pathfollow"), &CrowdSim->bEnablePathFollowing,
 		  TEXT("NavMesh 경로 우회. 끄면 최종 목적지로 직선 조향(벽에 붙어 미끄러진다)") },
 		{ TEXT("blockunknown"), &CrowdSim->bBlockUnknownGround,

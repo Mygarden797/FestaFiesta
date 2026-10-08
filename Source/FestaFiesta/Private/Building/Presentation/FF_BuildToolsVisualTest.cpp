@@ -7,6 +7,8 @@
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetTree.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
+#include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
@@ -114,8 +116,10 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
     Text(TEXT("Text_Legend"), TEXT("배치 가능 · 눌러서 설치"));
     Text(TEXT("Text_ActiveSnap"), TEXT("100 cm 맞춤"));
     Text(TEXT("Text_Confirm"), TEXT("배치 확정"));
-    Text(TEXT("Text_Footprint"), TEXT("시설 크기  3.2 × 1.97 m\n안전 여유  1 m"));
-    Text(TEXT("Text_Queue"), TEXT("대기·이용 정원  5팀\n동시 이용  1팀  ·  팀당 이용  6초"));
+    Text(TEXT("Text_Footprint"), TEXT("시설 크기  3.2 × 1.97 m"));
+    Text(TEXT("Text_Queue"), TEXT("대기열 범위  3.2 × 1.2 m\nU자형 · 대기·이용 5팀\n7 기본 · 8 좌측 · 9 우측 · 0 U자"));
+    if (auto* Queue = Widget->GetWidgetFromName(TEXT("Text_Queue")))
+        Queue->SetVisibility(ESlateVisibility::HitTestInvisible);
     Text(TEXT("Text_ControlHelp"), TEXT(""));
     auto* Dock = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_Tools")));
     auto* Info = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_PlacementInfo")));
@@ -226,6 +230,18 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
             const auto* HelpScroll = Cast<UScrollBox>(Widget->GetWidgetFromName(TEXT("Scroll_BuildHelp")));
             const FSlateRect HelpViewRect = HelpScroll ? Bounds(HelpScroll) : Bounds(Help);
             const bool bDock = IsRendered(Dock), bInfo = IsRendered(Info), bSettings = IsRendered(Settings);
+            if (bInfo)
+            {
+                UWidget* Space = Widget->GetWidgetFromName(TEXT("Border_PlacementSpace"));
+                TestTrue(ContextName + TEXT(": required space is visible without opening facility facts"),
+                    Space && IsRendered(Space) && Contains(InfoRect, Bounds(Space)));
+                for (const FName Name : {TEXT("Text_Footprint"), TEXT("Text_Queue"), TEXT("Text_RangeLegend")})
+                {
+                    UWidget* Label = Widget->GetWidgetFromName(Name);
+                    TestTrue(ContextName + TEXT(": space information remains visible: ") + Name.ToString(),
+                        Label && IsRendered(Label) && IsWithin(Label, Space));
+                }
+            }
             TestTrue(ContextName + TEXT(": top toolbar fits the viewport"),
                 IsRendered(TopBar) && Contains(Viewport, TopRect));
             TestTrue(ContextName + TEXT(": pictogram toolbar has comfortable targets"),
@@ -398,15 +414,48 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
                     TestFalse(ContextName + TEXT(": controls do not overlap: ") + VisibleControls[A]->GetName() + TEXT(" / ") + VisibleControls[B]->GetName(),
                         Overlaps(PaintedBounds(VisibleControls[A]), PaintedBounds(VisibleControls[B])));
                 }
-            for (FName Name : {TEXT("Text_ControlHelp"), TEXT("Text_Footprint"), TEXT("Text_Queue"), TEXT("Text_RangeLegend"),
+            for (FName Name : {TEXT("Text_ControlHelp"), TEXT("Text_Footprint"), TEXT("Text_Queue"), TEXT("Text_Audience"), TEXT("Text_RangeLegend"),
                 TEXT("Text_RotationHint"),
                 TEXT("Text_PlacementAdvice"), TEXT("Text_PlacementObstruction"), TEXT("Text_AssistanceMessage")})
             {
                 UWidget* Label = Widget->GetWidgetFromName(Name);
                 if (IsWithin(Label, Settings) && !Overlaps(Bounds(Label), SettingsViewRect)) continue;
+                // The current inspector has a scrollable body. Offscreen warning
+                // text must be reachable by scrolling, not squeezed into its hero.
+                UScrollBox* BodyScroll = nullptr;
+                for (UWidget* Parent = Label ? Label->GetParent() : nullptr; Parent && Parent != Info; Parent = Parent->GetParent())
+                    if (auto* Scroll = Cast<UScrollBox>(Parent)) { BodyScroll = Scroll; break; }
+                if (IsRendered(Label) && BodyScroll && IsWithin(Label, Info) && !Contains(Bounds(BodyScroll), Bounds(Label)))
+                {
+                    const float PreviousOffset = BodyScroll->GetScrollOffset();
+                    BodyScroll->ScrollWidgetIntoView(Label, false, EDescendantScrollDestination::IntoView);
+                    for (int32 Frame = 0; Frame < 4; ++Frame)
+                        Renderer.DrawWindow(Target.Get(), HitGrid, Window, 1.f, Size, .016f, false);
+                    TestTrue(ContextName + TEXT(": expanded information is fully reachable in its scroll viewport: ") + Name.ToString(),
+                        Contains(Bounds(BodyScroll), Bounds(Label)));
+                    BodyScroll->SetScrollOffset(PreviousOffset);
+                    for (int32 Frame = 0; Frame < 4; ++Frame)
+                        Renderer.DrawWindow(Target.Get(), HitGrid, Window, 1.f, Size, .016f, false);
+                    continue;
+                }
                 if (IsRendered(Label)) TestTrue(ContextName + TEXT(": expanded information stays inside its surface: ") + Name.ToString(),
                     IsWithin(Label, Settings) ? Overlaps(SettingsViewRect, Bounds(Label)) :
                     Contains(Name == TEXT("Text_ControlHelp") ? Bounds(Help) : InfoRect, Bounds(Label)));
+            }
+            if (FCString::Strcmp(State, TEXT("AudienceBoundaryProblem")) == 0)
+            {
+                TArray<FSlateRect> RequiredRows;
+                for (const FName Name : {TEXT("Text_Footprint"), TEXT("Text_Queue"), TEXT("Text_Audience"),
+                    TEXT("Row_PlacementSpaceLegend"), TEXT("Row_PlacementBoundaryLegend"), TEXT("Text_RangeLegend")})
+                {
+                    UWidget* Row = Widget->GetWidgetFromName(Name);
+                    if (!TestNotNull(ContextName + TEXT(": audience boundary row exists: ") + Name.ToString(), Row)) continue;
+                    TestTrue(ContextName + TEXT(": audience requirements fit the visible summary: ") + Name.ToString(),
+                        IsRendered(Row) && Contains(InfoRect, Bounds(Row)));
+                    for (const FSlateRect& Previous : RequiredRows)
+                        TestFalse(ContextName + TEXT(": audience requirements and legends do not overlap"), Overlaps(Previous, Bounds(Row)));
+                    RequiredRows.Add(Bounds(Row));
+                }
             }
             for (FName Name : {TEXT("Button_Radial"), TEXT("Panel_Radial"), TEXT("Panel_Details")})
                 TestNull(ContextName + TEXT(": removed tool menu has no render or hit-test surface: ") + Name.ToString(),
@@ -458,14 +507,43 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
         Click(TEXT("Button_Facts")); Capture(TEXT("FactsAndHelp"));
         Click(TEXT("Button_Help")); Capture(TEXT("Facts"));
         Click(TEXT("Button_Help")); Widget->ToggleRadialMenu(); Capture(TEXT("HelpAfterRemovedMenuEntry"));
-        Text(TEXT("Text_Legend"), TEXT("대기 줄이 들어갈 공간이 없어요 · 1/2"));
-        Text(TEXT("Text_PlacementAdvice"), TEXT("대기 줄 공간이 부족해요 · 입구 앞을 비워 주세요"));
+        Text(TEXT("Text_Legend"), TEXT("대기 줄이 들어갈 공간이 없어요\n배치 문제 2개 · 1번째"));
+        Text(TEXT("Text_PlacementAdvice"), TEXT("청록색 대기열의 붉은 사선을 확인하세요. 위치를 옮기거나 7·8·9·0으로 모양을 바꿔 보세요.\nN으로 가까운 빈자리로 이동할 수 있어요."));
         Text(TEXT("Text_PlacementObstruction"), TEXT("겹치는 대상: 구름 솜사탕 부스"));
         Text(TEXT("Text_AssistanceMessage"), TEXT("주변 6m의 후보 위치에서 자리를 찾지 못했어요. 회전하거나 T로 위치를 다시 선택해 주세요."));
         for (FName Name : {TEXT("Text_PlacementAdvice"), TEXT("Text_PlacementObstruction"), TEXT("Text_AssistanceMessage"),
             TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem")})
             if (UWidget* Panel = Widget->GetWidgetFromName(Name)) Panel->SetVisibility(ESlateVisibility::Visible);
         Capture(TEXT("PlacementProblemAndHelp"));
+        const auto* MainStage = LoadObject<UFFZSFacilityDefinition>(nullptr,
+            TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
+        if (TestNotNull(TEXT("Production main stage supplies real audience dimensions for visual QA"), MainStage))
+        {
+            FText FootprintText, QueueText;
+            FFBuildToolsModel::FormatRequiredSpace(MainStage->Spec, FootprintText, QueueText);
+            Text(TEXT("Text_FacilityName"), TEXT("메인공연장"));
+            Text(TEXT("Text_Footprint"), *FootprintText.ToString());
+            Text(TEXT("Text_Queue"), *QueueText.ToString());
+            const FText AudienceText = FFBuildToolsModel::FormatAudienceSpace(MainStage->Spec);
+            TestFalse(TEXT("Main stage audience requirements are available"), AudienceText.IsEmpty());
+            Text(TEXT("Text_Audience"), *AudienceText.ToString());
+            if (auto* Audience = Widget->GetWidgetFromName(TEXT("Text_Audience")))
+                Audience->SetVisibility(ESlateVisibility::HitTestInvisible);
+            FFFZSPlacementValidation Validation;
+            FFFZSPlacementBoundaryIssue AudienceIssue;
+            AudienceIssue.Region = EFFZSPlacementRegion::Audience;
+            Validation.BoundaryIssues.Add(AudienceIssue);
+            Text(TEXT("Text_Legend"), *FFBuildToolsModel::FormatProblemStatus(Validation.GetBoundaryFailureText(), 0, 4).ToString());
+            Text(TEXT("Text_PlacementAdvice"), *UFF_BuildPlacementFailureFeedback::MakeBoundaryAdvice().ToString());
+            for (FName Name : {TEXT("Panel_PlacementFacts"), TEXT("Text_PlacementObstruction"), TEXT("Text_AssistanceMessage")})
+                if (auto* Panel = Widget->GetWidgetFromName(Name)) Panel->SetVisibility(ESlateVisibility::Collapsed);
+            Capture(TEXT("AudienceBoundaryProblem"));
+        }
+        Text(TEXT("Text_FacilityName"), TEXT("구름 솜사탕 부스"));
+        Text(TEXT("Text_Footprint"), TEXT("시설 크기  3.2 × 1.97 m"));
+        Text(TEXT("Text_Queue"), TEXT("대기열 범위  3.2 × 1.2 m\nU자형 · 대기·이용 5팀\n7 기본 · 8 좌측 · 9 우측 · 0 U자"));
+        if (auto* Audience = Widget->GetWidgetFromName(TEXT("Text_Audience")))
+            Audience->SetVisibility(ESlateVisibility::Collapsed);
         Text(TEXT("Text_Legend"), TEXT("배치 가능 · 눌러서 설치"));
     }
     return bAllSaved;

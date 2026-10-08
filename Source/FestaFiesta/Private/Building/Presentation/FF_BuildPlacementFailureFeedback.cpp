@@ -59,6 +59,43 @@ FText UFF_BuildPlacementFailureFeedback::MakeFailureTitle(
 	}
 }
 
+FText UFF_BuildPlacementFailureFeedback::MakeBoundaryAdvice()
+{
+	return LOCTEXT("BoundaryAdvice", "붉은 사선 부분을 흰색 건축 경계 안으로 옮겨 주세요. 구역 사이 빈틈에도 놓을 수 없어요.");
+}
+
+FText UFF_BuildPlacementFailureFeedback::MakeValidationReason(const EFFZSPlacementFailure FailureReason,
+	const FFFZSPlacementValidation& Validation, const bool bIsMoving)
+{
+	if (const FFFZSPlacementObstruction* GroundIssue = Validation.Obstructions.FindByPredicate(
+		[FailureReason](const FFFZSPlacementObstruction& Issue)
+		{
+			return Issue.Reason == FailureReason && Issue.Kind == EFFZSPlacementObstructionKind::GroundSupport;
+		}))
+	{
+		const FText GroundAdvice = FText::Format(
+			LOCTEXT("GroundSupportAdvice", "{0}\n붉은 사선 영역의 바닥을 확인하고, 더 평평하고 빈틈없는 곳으로 옮겨 주세요."),
+			GroundIssue->Detail.IsEmpty() ? GroundIssue->DisplayName : GroundIssue->Detail);
+		const bool bAlsoBlocked = Validation.Obstructions.ContainsByPredicate(
+			[FailureReason](const FFFZSPlacementObstruction& Issue)
+			{
+				return Issue.Reason == FailureReason && Issue.Kind != EFFZSPlacementObstructionKind::GroundSupport;
+			});
+		return bAlsoBlocked ? FText::Format(
+			LOCTEXT("GroundAndObstacleAdvice", "{0}\n주황 선으로 표시한 장애물과도 겹쳐요."), GroundAdvice) : GroundAdvice;
+	}
+	if (FailureReason == EFFZSPlacementFailure::OutsideZone)
+	{
+		const FText BoundaryFailure = Validation.GetBoundaryFailureText();
+		if (!BoundaryFailure.IsEmpty())
+			return FText::Format(LOCTEXT("BoundaryFailureReason", "{0} · {1}"), BoundaryFailure, MakeBoundaryAdvice());
+	}
+	// Summary describes only the primary failure, never a later selected problem.
+	const FText Detail = !Validation.Reasons.IsEmpty() && Validation.Reasons[0] == FailureReason
+		? Validation.Summary : FText::GetEmpty();
+	return MakeUserFacingReason(FailureReason, Detail, bIsMoving);
+}
+
 FText UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
 	const EFFZSPlacementFailure FailureReason,
 	const FText& AuthoritativeDetail,
@@ -68,8 +105,11 @@ FText UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
 	switch (FailureReason)
 	{
 	case EFFZSPlacementFailure::ZoneNotFound:
+		return LOCTEXT("ChooseBuildableGroundReason", "건축 구역의 바닥을 가리켜 주세요 · 흰색 경계선 안쪽으로 옮겨 주세요");
 	case EFFZSPlacementFailure::OutsideZone:
-		return LOCTEXT("OutsideZoneReason", "건축 구역 밖이에요 · 경계선 안쪽으로 옮겨 주세요");
+		return AuthoritativeDetail.IsEmpty()
+			? LOCTEXT("OutsideZoneReason", "필요한 공간이 건축 구역을 벗어났어요 · 흰색 경계선 안쪽으로 모든 영역이 들어오게 옮겨 주세요")
+			: FText::Format(LOCTEXT("OutsideZoneAuthoritativeReason", "{0} · {1}"), AuthoritativeDetail, MakeBoundaryAdvice());
 	case EFFZSPlacementFailure::CategoryNotAllowed:
 		return LOCTEXT("CategoryNotAllowedReason", "이 시설은 이 구역에 놓을 수 없어요 · 다른 건축 구역을 선택해 주세요");
 	case EFFZSPlacementFailure::InvalidGround:
@@ -79,11 +119,11 @@ FText UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
 	case EFFZSPlacementFailure::HeightVarianceExceeded:
 		return LOCTEXT("HeightVarianceReason", "땅이 고르지 않아요 · 더 평평한 곳으로 옮겨 주세요");
 	case EFFZSPlacementFailure::PlacementCollision:
-		return LOCTEXT("PlacementCollisionReason", "시설이나 장애물과 겹쳐요 · 붉게 표시된 대상 밖으로 옮겨 주세요");
+		return LOCTEXT("PlacementCollisionReason", "주황 선은 장애물 판정 범위, 붉은 사선은 겹친 부분이에요. 사선이 사라지도록 옮겨 주세요.");
 	case EFFZSPlacementFailure::InsufficientClearance:
-		return LOCTEXT("InsufficientClearanceReason", "시설을 이용할 공간이 부족해요 · 주변을 조금 더 비워 주세요");
+		return LOCTEXT("AudienceSpaceReason", "관객석 공간과 겹쳐요 · 보라색 관객석의 붉은 사선이 사라지도록 옮겨 주세요");
 	case EFFZSPlacementFailure::QueueFootprintBlocked:
-		return LOCTEXT("QueueBlockedReason", "대기 줄 공간이 부족해요 · 입구 앞을 비워 주세요");
+		return LOCTEXT("QueueBlockedReason", "청록색 대기열의 붉은 사선을 확인하세요. 위치를 옮기거나 7·8·9·0으로 모양을 바꿔 보세요.");
 	case EFFZSPlacementFailure::ProtectedRouteBlocked:
 		return LOCTEXT("ProtectedRouteReason", "통행로를 막고 있어요 · 표시된 길 밖으로 옮겨 주세요");
 	case EFFZSPlacementFailure::AccessibilityRouteBlocked:

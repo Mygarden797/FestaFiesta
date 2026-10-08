@@ -9,6 +9,7 @@
 namespace
 {
 	constexpr const TCHAR* ProgressSection = TEXT("FestaFiesta.FacilityCodex");
+	constexpr const TCHAR* IntroductionSeenKey = TEXT("bHasSeenIntroduction");
 	constexpr const TCHAR* ProgressKey = TEXT("DiscoveredRuleIds");
 	constexpr const TCHAR* ClaimedRewardsKey = TEXT("ClaimedDiscoveryRewardRuleIds");
 	constexpr const TCHAR* ClaimedCollectionRewardsKey = TEXT("ClaimedCollectionRewardIds");
@@ -20,10 +21,13 @@ namespace
 void UFF_FacilityCodexProgressSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	bHasSeenIntroduction = false;
 	DiscoveredRuleIds.Reset();
 	ClaimedDiscoveryRewardRuleIds.Reset();
 	ClaimedCollectionRewardIds.Reset();
 	if (!GConfig || GGameUserSettingsIni.IsEmpty()) { return; }
+	// Read before the reward migration can save the profile, preserving its first-open history.
+	GConfig->GetBool(ProgressSection, IntroductionSeenKey, bHasSeenIntroduction, GGameUserSettingsIni);
 	TArray<FString> SavedIds;
 	GConfig->GetArray(ProgressSection, ProgressKey, SavedIds, GGameUserSettingsIni);
 	for (const FString& SavedId : SavedIds)
@@ -65,6 +69,15 @@ void UFF_FacilityCodexProgressSubsystem::Deinitialize()
 {
 	OnProgressChanged.Clear();
 	Super::Deinitialize();
+}
+
+bool UFF_FacilityCodexProgressSubsystem::MarkIntroductionSeen()
+{
+	if (bHasSeenIntroduction) { return false; }
+	bHasSeenIntroduction = true;
+	SaveProgress();
+	OnProgressChanged.Broadcast();
+	return true;
 }
 
 // 새 조합만 저장하고 실제 변화가 있을 때 화면에 알린다. 같은 발견을 여러 번 기록해도 보상은 늘지 않는다.
@@ -125,6 +138,7 @@ bool UFF_FacilityCodexProgressSubsystem::ClaimCollectionReward(const FName Miles
 void UFF_FacilityCodexProgressSubsystem::SaveProgress() const
 {
 	if (!GConfig || GGameUserSettingsIni.IsEmpty()) { return; }
+	GConfig->SetBool(ProgressSection, IntroductionSeenKey, bHasSeenIntroduction, GGameUserSettingsIni);
 	TArray<FString> SavedIds;
 	SavedIds.Reserve(DiscoveredRuleIds.Num());
 	for (const FName RuleId : DiscoveredRuleIds) { SavedIds.Add(RuleId.ToString()); }

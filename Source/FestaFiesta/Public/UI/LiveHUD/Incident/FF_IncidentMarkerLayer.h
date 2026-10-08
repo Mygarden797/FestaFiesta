@@ -57,6 +57,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Incident")
 	float ActorHeightOffset = 120.f;
 
+	// 화면 밖 사건 마커가 붙는 가장자리 여백. 아이콘 중심이 이 안쪽 사각형 안에 머문다. 화살표가 바깥으로 나오므로 아이콘 반지름보다 넉넉히 둔다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Incident")
+	FMargin EdgeSafeMargin = FMargin(40.f, 80.f, 40.f, 40.f);
+
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Incident")
 	TSoftObjectPtr<UTexture2D> QuestGlyph = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(
 		TEXT("/Game/FestaFiesta/UI/LiveHUD/Themes/LightTeal/Icons/Incident/T_FF_LH_Icon_IncidentQuest_White_256.T_FF_LH_Icon_IncidentQuest_White_256")));

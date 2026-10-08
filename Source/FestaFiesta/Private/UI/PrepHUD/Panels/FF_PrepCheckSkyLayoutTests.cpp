@@ -9,6 +9,7 @@
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Components/WrapBox.h"
+#include "Engine/UserInterfaceSettings.h"
 #include "Editor.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
@@ -23,8 +24,12 @@
 #include "TextureResource.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UObject/Package.h"
 #include "UObject/StrongObjectPtr.h"
+#include "UObject/UnrealType.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SDPIScaler.h"
 #include "Widgets/SOverlay.h"
 
 namespace FFPrepCheckSkyLayoutTest
@@ -333,6 +338,108 @@ bool FFF_PrepCheckSkyLayoutTest::RunTest(const FString& Parameters)
 		FSlateFontInfo Font = Text->GetFont(); Font.Size = Pair.Value; Text->SetFont(Font);
 	}
 	return CaptureAndCheck(*this, *Panel, Surface, FIntPoint(1140, 740), EFixture::Ready, TEXT("EditableFont"));
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepCheckStaffShortcutLayoutTest,
+	"FestaFiesta.UI.PrepCheck.StaffShortcutRenderedLayout",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter | EAutomationTestFlags::NonNullRHI)
+
+bool FFF_PrepCheckStaffShortcutLayoutTest::RunTest(const FString& Parameters)
+{
+	using namespace FFPrepCheckSkyLayoutTest;
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	auto* PanelClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepPanelCheck>(nullptr,
+		TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelCheck.WBP_FF_PrepPanelCheck_C")));
+	UClass* BarClass = LoadClass<UFF_PrepHudBar>(nullptr,
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepHudBar.WBP_FF_PrepHudBar_C"));
+	if (!TestNotNull(TEXT("검사용 에디터 월드"), World) || !TestNotNull(TEXT("저장 점검 WBP"), PanelClass) ||
+		!TestNotNull(TEXT("저장 준비 HUD"), BarClass)) return false;
+	const FMapProperty* LayoutProperty = FindFProperty<FMapProperty>(BarClass, TEXT("PanelLayouts"));
+	if (!TestNotNull(TEXT("실제 HUD의 패널 크기 설정"), LayoutProperty)) return false;
+	const auto* Layouts = LayoutProperty->ContainerPtrToValuePtr<TMap<EFF_PrepHudTab, FFF_PrepPanelLayout>>(BarClass->GetDefaultObject());
+	const FFF_PrepPanelLayout* Layout = Layouts->Find(EFF_PrepHudTab::Check);
+	if (!TestNotNull(TEXT("실제 점검 크기"), Layout)) return false;
+	const bool bPreviousPlayerless = PanelClass->bCanCallInitializedWithoutPlayerContext;
+	PanelClass->bCanCallInitializedWithoutPlayerContext = true;
+	ON_SCOPE_EXIT { PanelClass->bCanCallInitializedWithoutPlayerContext = bPreviousPlayerless; };
+	TStrongObjectPtr<UFF_PrepPanelCheck> Panel(CreateWidget<UFF_PrepPanelCheck>(World, PanelClass));
+	if (!TestNotNull(TEXT("저장 점검 인스턴스"), Panel.Get())) return false;
+	const TSharedRef<SWidget> PanelSlate = Panel->TakeWidget();
+	if (!SetFixture(*this, *Panel, EFixture::Blocked)) return false;
+	auto* Reason = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_OpenGateReason")));
+	auto* Action = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_OpenGateReason")));
+	auto* ActionLabel = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_OpenGateStaffLink")));
+	UWidget* Row = Panel->GetWidgetFromName(TEXT("HorizontalBox_OpenGateReason"));
+	UWidget* Footer = Panel->GetWidgetFromName(TEXT("Border_Footer"));
+	if (!TestNotNull(TEXT("배정 사유 문구"), Reason) || !TestNotNull(TEXT("오른쪽 배정 버튼"), Action) ||
+		!TestNotNull(TEXT("버튼 이름"), ActionLabel) || !TestNotNull(TEXT("사유와 버튼 행"), Row) ||
+		!TestNotNull(TEXT("고정 푸터"), Footer)) return false;
+	Action->SetVisibility(ESlateVisibility::Visible);
+	Action->SetIsEnabled(true);
+	FAssetCompilingManager::Get().FinishAllCompilation();
+	FlushRenderingCommands();
+	// Match both authoritative guidance branches, including the longer no-waiting-staff case.
+	const TCHAR* Reasons[] = {
+		TEXT("메인안내소: 스태프를 1명 더 배정해야 합니다. (배정 0/1) 설치한 시설의 `스태프` 탭에서 `+ 배정`을 누르세요."),
+		TEXT("메인안내소: 스태프를 1명 더 배정해야 합니다. (배정 0/1) 대기 중인 스태프가 없습니다. `인력` 탭에서 고용하거나 다른 안내 시설의 스태프를 `- 해제`한 뒤 배정하세요.")
+	};
+	for (const FIntPoint Resolution : { FIntPoint(1280, 720), FIntPoint(1920, 1080) })
+	{
+		const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Resolution);
+		const TSharedRef<SWidget> Surface = SNew(SDPIScaler).DPIScale(Dpi)
+		[
+			SNew(SOverlay)
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+			[
+				SNew(SBox).WidthOverride(Layout->Size.X).HeightOverride(Layout->Size.Y)[PanelSlate]
+			]
+		];
+		FWidgetRenderer Renderer(false, true);
+		TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(
+			FVector2D(Resolution.X, Resolution.Y), TF_Bilinear, true));
+		if (!TestNotNull(TEXT("배정 바로가기 렌더 타깃"), Target.Get())) return false;
+		for (int32 Variant = 0; Variant < UE_ARRAY_COUNT(Reasons); ++Variant)
+		{
+			Reason->SetText(FText::FromString(Reasons[Variant]));
+			for (int32 Frame = 0; Frame < 4; ++Frame)
+			{
+				Panel->ForceLayoutPrepass();
+				Renderer.DrawWidget(Target.Get(), Surface, FVector2D(Resolution.X, Resolution.Y), 1.f / 60.f, false);
+			}
+			FlushRenderingCommands();
+			const FString Context = FString::Printf(TEXT("Check_StaffShortcut_%s_%dx%d"),
+				Variant == 0 ? TEXT("Available") : TEXT("NoWaitingStaff"), Resolution.X, Resolution.Y);
+			const FSlateRect Screen(0.f, 0.f, Resolution.X, Resolution.Y);
+			const FSlateRect ReasonRect = Reason->GetCachedGeometry().GetLayoutBoundingRect();
+			const FSlateRect ActionRect = Action->GetCachedGeometry().GetLayoutBoundingRect();
+			const FSlateRect RowRect = Row->GetCachedGeometry().GetLayoutBoundingRect();
+			const FSlateRect FooterRect = Footer->GetCachedGeometry().GetLayoutBoundingRect();
+			TestTrue(Context + TEXT(" 안내 문구 바로 오른쪽에 버튼이 보인다"),
+				ActionRect.Left >= ReasonRect.Right + 8.f * Dpi &&
+				FMath::IsNearlyEqual((ReasonRect.Top + ReasonRect.Bottom) * .5f,
+					(ActionRect.Top + ActionRect.Bottom) * .5f, 1.f));
+			TestFalse(Context + TEXT(" 문구와 버튼이 겹치지 않는다"), Intersects(ReasonRect, ActionRect));
+			TestTrue(Context + TEXT(" 문구와 버튼이 같은 행과 화면 안에 전부 들어온다"),
+				Contains(RowRect, ReasonRect) && Contains(RowRect, ActionRect) &&
+				Contains(FooterRect, RowRect) && Contains(Screen, FooterRect));
+			for (UTextBlock* Text : { Reason, ActionLabel })
+			{
+				const FVector2D Allocated = Text->GetCachedGeometry().GetLocalSize();
+				const FVector2D Desired = Text->GetDesiredSize();
+				TestTrue(Context + TEXT(" / ") + Text->GetName() + TEXT(" 글자 크기·줄바꿈이 잘리지 않는다"),
+					Allocated.X + Tolerance >= Desired.X && Allocated.Y + Tolerance >= Desired.Y);
+			}
+			TestTrue(Context + TEXT(" 버튼 이름이 버튼 내부에 전부 들어온다"),
+				Contains(ActionRect, ActionLabel->GetCachedGeometry().GetLayoutBoundingRect()));
+			TestTrue(Context + TEXT(" 버튼 클릭 높이를 유지한다"), Action->GetCachedGeometry().GetLocalSize().Y >= 36.f);
+			if (Variant == 1)
+				TestTrue(Context + TEXT(" 긴 실제 배정 사유는 여러 줄로 읽힌다"),
+					Reason->GetDesiredSize().Y > ActionLabel->GetDesiredSize().Y * 1.5f);
+			if (!SaveTarget(*this, *Target, Resolution, Context)) return false;
+		}
+	}
+	Panel->ReleaseSlateResources(true);
+	return true;
 }
 
 #endif // WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS

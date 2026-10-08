@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1920" height="1800" viewBox="0 0 1920 1800" role="img" aria-labelledby="title desc">
+  <title id="title">FF_WBP_Building 건축 모드 · 승인용 레이아웃과 컴포넌트 치수</title>
+  <desc id="desc">1920×1080 논리 픽셀, DPI 1 기준의 네 화면과 편집 가능한 벡터 컴포넌트. 게임 에셋을 변경하지 않는 검토 자료. 하단 y984부터1080은 다른 팀원 HUD 보호 영역. FF_WBP_Building 안이라도 Shared/** 및 Catalog/Legacy/**는 제외하며 외부 참조 공유 아이콘·폰트·스타일은 수정하지 않는다. 런타임 검증 전 제안.</desc>
+  <defs>
+    <style>
+      text{font-family:'Malgun Gothic','Noto Sans KR',sans-serif;fill:#3D3C4F}
+      .page-title{font-size:38px;font-weight:700}.section{font-size:25px;font-weight:700}
+      .note{font-size:18px;fill:#626577}.small{font-size:16px;fill:#626577}
+      .label{font-size:20px;font-weight:700}.body{font-size:18px}.secondary{font-size:16px;fill:#626577}
+      .screen-title{font-size:28px;font-weight:700}.panel-title{font-size:24px;font-weight:700}
+      .on-dark{fill:#FFFFFF}.measure{fill:#286A79;font-size:22px;font-weight:700}
+      .price{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+      .panel{fill:#F9F9FF;stroke:#DBDEED;stroke-width:2}.divider{stroke:#DBDEED;stroke-width:2}
+      .dashed{fill:none;stroke:#286A79;stroke-width:3;stroke-dasharray:8 6}
+    </style>
+    <pattern id="hud-hatch" width="24" height="24" patternUnits="userSpaceOnUse"><rect width="24" height="24" fill="#E7E8EE"/><path d="M0 24L24 0M-6 6L6-6M18 30L30 18" stroke="#C7CAD7" stroke-width="2"/></pattern>
+    <symbol id="world" viewBox="0 0 1920 1080">
+      <rect width="1920" height="1080" fill="#E1ECE7"/>
+      <path d="M40 480L760 92L1592 390L916 880Z" fill="#CDDED5"/>
+      <path d="M356 500L900 220L1480 430L952 712Z" fill="#F3F0E9" stroke="#BECFC7" stroke-width="4"/>
+      <path d="M356 500V330L900 52V220Z" fill="#D5D8D8"/><path d="M900 52L1480 260V430L900 220Z" fill="#F0F0ED"/>
+      <path d="M400 476L945 692M448 451L991 666M496 426L1039 641M544 401L1087 617M592 376L1135 592M640 351L1183 567M688 326L1231 542M736 301L1279 517M784 277L1327 492M832 251L1375 467M880 227L1423 442" stroke="#DADFD9" stroke-width="2"/>
+      <path d="M464 542L1009 260M572 584L1117 301M680 626L1225 342M788 668L1333 383" stroke="#DADFD9" stroke-width="2"/>
+      <rect x="0" y="984" width="1920" height="96" fill="url(#hud-hatch)"/>
+      <text x="960" y="1042" text-anchor="middle" class="screen-title">다른 팀원 HUD 보호 영역 · y984–1080 · 편집 / 가림 금지</text>
+    </symbol>
+    <symbol id="tool-item" viewBox="0 0 80 56"><rect width="80" height="56" rx="8" fill="#F9F9FF"/><rect x="30" y="4" width="20" height="20" rx="5" fill="none" stroke="#626577" stroke-width="2"/></symbol>
+    <symbol id="chrome" viewBox="0 0 1920 1080">
+      <rect x="24" y="24" width="144" height="56" rx="8" class="panel"/><text x="96" y="59" text-anchor="middle" class="body">← 나가기</text>
+      <rect x="616" y="24" width="688" height="72" rx="16" class="panel"/>
+      <use xlink:href="#tool-item" x="656" y="32" width="80" height="56"/><text x="696" y="79" text-anchor="middle" class="secondary">다중 선택</text>
+      <rect x="744" y="32" width="80" height="56" rx="8" fill="#E5F6FC" stroke="#286A79" stroke-width="2"/><path d="M774 39H794V59H774ZM784 35V63M770 49H798" fill="none" stroke="#286A79" stroke-width="2"/><text x="784" y="79" text-anchor="middle" class="secondary" style="fill:#286A79">격자</text>
+      <use xlink:href="#tool-item" x="832" y="32" width="80" height="56"/><text x="872" y="79" text-anchor="middle" class="secondary">간격</text>
+      <use xlink:href="#tool-item" x="920" y="32" width="80" height="56"/><text x="960" y="79" text-anchor="middle" class="secondary">시설 범위</text>
+      <use xlink:href="#tool-item" x="1008" y="32" width="80" height="56"/><text x="1048" y="79" text-anchor="middle" class="secondary">건축 설정</text>
+      <use xlink:href="#tool-item" x="1096" y="32" width="80" height="56"/><text x="1136" y="79" text-anchor="middle" class="secondary">시설 목록</text>
+      <use xlink:href="#tool-item" x="1184" y="32" width="80" height="56"/><text x="1224" y="79" text-anchor="middle" class="secondary">조작 안내</text>
+      <rect x="1664" y="24" width="232" height="56" rx="8" class="panel"/><circle cx="1696" cy="52" r="12" fill="#A66D10"/><text x="1868" y="59" text-anchor="end" class="price">10,000 Gold</text>
+    </symbol>
+    <symbol id="catalog-card" viewBox="0 0 184 210">
+      <rect x="1" y="1" width="182" height="208" rx="12" fill="#F9F9FF" stroke="#DBDEED" stroke-width="2"/>
+      <rect x="11" y="10" width="162" height="104" rx="8" fill="#EBF0F2"/>
+      <path d="M61 41L94 28L126 45V89L94 103L61 85Z" fill="#CBBAA9"/><path d="M61 41L94 56L126 45M94 56V103" fill="none" stroke="#A48F7B" stroke-width="2"/>
+      <rect x="17" y="84" width="52" height="24" rx="6" fill="#3C3B4F"/><text x="43" y="101" text-anchor="middle" class="secondary on-dark">연계</text>
+      <text x="12" y="137" class="secondary" style="fill:#3D3C4F;font-weight:600"><tspan x="12" dy="0">구름 솜사탕</tspan><tspan x="12" dy="24">부스</tspan></text><text x="12" y="197" class="price">400 Gold</text>
+    </symbol>
+    <symbol id="codex-card" viewBox="0 0 232 280">
+      <rect x="1" y="1" width="230" height="278" rx="12" class="panel"/>
+      <rect x="16" y="16" width="200" height="160" rx="8" fill="#EBF0F2"/>
+      <path d="M70 70L119 49L163 68V131L119 151L70 129Z" fill="#C9B7A6"/><path d="M70 70L119 91L163 68M119 91V151" fill="none" stroke="#A48F7B" stroke-width="3"/>
+      <text x="16" y="211" class="panel-title">축제의 한입</text><text x="16" y="244" class="body">발견 완료</text>
+    </symbol>
+  </defs>
+  <rect width="1920" height="1800" fill="#F0F2F7"/>
+  <text x="64" y="66" class="page-title">건축 모드 · Pearl UI 디자인 치수표</text>
+  <text x="64" y="108" class="note">승인용 제안 v1 · FF_WBP_Building만 대상 · 좌상단 원점 / 논리 px / 1920×1080 / DPI 1.0</text>
+  <text x="1856" y="64" text-anchor="end" class="label" style="fill:#286A79">2026.10.07</text>
+  <text x="1856" y="104" text-anchor="end" class="small">벡터 · 텍스트 편집 가능 · Figma로 가져오기</text>
+
+  <!-- 01: 1920x1080 logical scene rendered at 40%. -->
+  <g id="layout-catalog" aria-label="01 카탈로그">
+    <rect x="48" y="144" width="888" height="552" rx="20" fill="#FFFFFF" stroke="#DBDEED"/>
+    <text x="80" y="182" class="section">01  카탈로그 · 탐색 흐름</text><text x="904" y="182" text-anchor="end" class="small">화면 미리보기 40%</text>
+    <g transform="translate(96 208) scale(0.4)">
+      <use xlink:href="#world" width="1920" height="1080"/><use xlink:href="#chrome" width="1920" height="1080"/>
+      <text x="64" y="144" class="measure">상단 도구 688×72 · x616 / y24</text>
+      <rect x="24" y="640" width="1872" height="336" rx="16" class="panel"/>
+      <rect x="40" y="656" width="144" height="40" rx="8" fill="#E5F6FC" stroke="#286A79" stroke-width="2"/><text x="112" y="683" text-anchor="middle" class="body" style="fill:#286A79">전체</text>
+      <text x="240" y="683" class="body">부스</text><text x="384" y="683" class="body">휴게</text><text x="512" y="683" class="body">공연</text><text x="640" y="683" class="body">조명</text><text x="1828" y="683" text-anchor="end" class="secondary">조합 도감 →</text>
+      <rect x="40" y="706" width="528" height="36" rx="8" fill="#ECEEF5"/><text x="56" y="731" class="secondary">이름으로 검색</text><text x="1848" y="732" text-anchor="end" class="secondary">즐겨찾기만</text>
+      <use xlink:href="#catalog-card" x="40" y="750" width="184" height="210"/><rect x="41" y="751" width="182" height="208" rx="12" fill="none" stroke="#286A79" stroke-width="4"/>
+      <use xlink:href="#catalog-card" x="234" y="750" width="184" height="210"/><use xlink:href="#catalog-card" x="428" y="750" width="184" height="210"/>
+      <use xlink:href="#catalog-card" x="622" y="750" width="184" height="210"/><use xlink:href="#catalog-card" x="816" y="750" width="184" height="210"/>
+      <use xlink:href="#catalog-card" x="1010" y="750" width="184" height="210"/><use xlink:href="#catalog-card" x="1204" y="750" width="184" height="210"/>
+      <use xlink:href="#catalog-card" x="1398" y="750" width="184" height="210"/><use xlink:href="#catalog-card" x="1592" y="750" width="184" height="210"/>
+      <path d="M24 616H1896M24 606V626M1896 606V626" stroke="#286A79" stroke-width="3"/><text x="960" y="598" text-anchor="middle" class="measure">카탈로그 x24 / y640 · 1872×336 · 안쪽 16</text>
+      <text x="1818" y="836" text-anchor="middle" class="secondary">가로</text><text x="1818" y="862" text-anchor="middle" class="secondary">스크롤</text>
+    </g>
+    <text x="80" y="664" class="small">카테고리40H / 검색36H · 클릭44H(겹침 없음) · 카드184×210 / 간격10 · 도크336H 제안</text>
+  </g>
+
+  <!-- 02: placement; the bottom HUD is preserved. -->
+  <g id="layout-placement" aria-label="02 배치">
+    <rect x="984" y="144" width="888" height="552" rx="20" fill="#FFFFFF" stroke="#DBDEED"/>
+    <text x="1016" y="182" class="section">02  배치 · 작업과 확인 분리</text><text x="1840" y="182" text-anchor="end" class="small">화면 미리보기 40%</text>
+    <g transform="translate(1032 208) scale(0.4)">
+      <use xlink:href="#world" width="1920" height="1080"/><use xlink:href="#chrome" width="1920" height="1080"/>
+      <rect x="24" y="176" width="296" height="352" rx="16" fill="#3C3B4F"/>
+      <text x="48" y="224" class="panel-title on-dark">배치 조작</text><text x="48" y="274" class="body on-dark">이동  ·  마우스</text><text x="48" y="320" class="body on-dark">회전  ·  Q / E</text><text x="48" y="366" class="body on-dark">일시정지  ·  Esc</text><path d="M48 394H296" stroke="#626577" stroke-width="2"/>
+      <text x="48" y="436" class="secondary on-dark">바닥에 맞춰 배치하세요</text><text x="48" y="478" class="secondary on-dark">조작키는 기존 매핑 유지</text>
+      <path d="M700 474L949 346L1186 431L939 564Z" fill="#91DFFF" fill-opacity="0.5" stroke="#286A79" stroke-width="5" stroke-dasharray="12 8"/>
+      <path d="M805 432V281L942 213L1068 259V409L937 478Z" fill="#D0B99F" stroke="#8B7967" stroke-width="3"/><path d="M805 281L938 329L1068 259M938 329V478" fill="none" stroke="#8B7967" stroke-width="3"/>
+      <rect x="786" y="604" width="328" height="56" rx="8" fill="#F9F9FF" stroke="#286A79" stroke-width="2"/><text x="950" y="640" text-anchor="middle" class="panel-title" style="fill:#286A79">✓ 배치 가능</text>
+      <rect x="1496" y="120" width="400" height="520" rx="16" class="panel"/>
+      <text x="1520" y="168" class="screen-title">구름 솜사탕</text><text x="1520" y="205" class="secondary">부스 · 선택한 시설</text><path d="M1520 232H1872" class="divider"/>
+      <rect x="1520" y="256" width="352" height="184" rx="12" fill="#EBF0F2"/><text x="1696" y="360" text-anchor="middle" class="secondary">선택 시설 미리보기</text>
+      <text x="1520" y="488" class="body">필요 골드</text><text x="1872" y="488" text-anchor="end" class="price">400 Gold</text><text x="1520" y="534" class="body">배치 상태</text><text x="1872" y="534" text-anchor="end" class="body" style="fill:#286A79">가능</text>
+      <rect x="1496" y="888" width="400" height="72" rx="16" class="panel"/><rect x="1508" y="900" width="120" height="48" rx="8" class="panel"/><text x="1568" y="931" text-anchor="middle" class="body">시설 목록</text>
+      <rect x="1636" y="900" width="248" height="48" rx="8" fill="#286A79"/><text x="1760" y="931" text-anchor="middle" class="body on-dark">배치 확정</text>
+      <text x="40" y="578" class="measure">도움말 296×352</text><text x="1496" y="684" class="measure">요약 400×520</text><text x="1496" y="854" class="measure">액션 400×72 / 버튼 48H</text>
+    </g>
+    <text x="1016" y="664" class="small">좌 x24 / y176 · 우 x1496 / y120 · 하단 액션 y888 · 상태는 아이콘과 문구 병기</text>
+  </g>
+
+  <!-- 03: current panel footprints; dashed outline is a measurement, not a simultaneous panel. -->
+  <g id="layout-details" aria-label="03 상세 및 조명 패널">
+    <rect x="48" y="736" width="888" height="552" rx="20" fill="#FFFFFF" stroke="#DBDEED"/>
+    <text x="80" y="774" class="section">03  상세 / 조명 · 현재 외곽 크기 유지</text><text x="904" y="774" text-anchor="end" class="small">화면 미리보기 40%</text>
+    <g transform="translate(96 800) scale(0.4)">
+      <use xlink:href="#world" width="1920" height="1080"/><use xlink:href="#chrome" width="1920" height="1080"/>
+      <rect x="1416" y="120" width="480" height="620" rx="16" class="dashed"/>
+      <rect x="1440" y="120" width="456" height="620" rx="16" class="panel"/>
+      <text x="1464" y="168" class="screen-title">시설 상세</text><rect x="1824" y="136" width="48" height="48" rx="8" fill="#ECEEF5"/><text x="1848" y="170" text-anchor="middle" class="panel-title">×</text>
+      <path d="M1464 200H1872" class="divider"/><rect x="1464" y="224" width="408" height="192" rx="12" fill="#EBF0F2"/><text x="1668" y="328" text-anchor="middle" class="secondary">기존 시설 이미지</text>
+      <text x="1464" y="462" class="panel-title">구름 솜사탕</text><text x="1464" y="498" class="body">시설 설명과 속성</text><text x="1464" y="542" class="secondary">내용이 길면 본문 영역 스크롤</text><text x="1464" y="596" class="body">가격</text><text x="1872" y="596" text-anchor="end" class="price">400 Gold</text>
+      <rect x="1464" y="668" width="408" height="48" rx="8" fill="#286A79"/><text x="1668" y="700" text-anchor="middle" class="body on-dark">선택</text>
+      <rect x="320" y="656" width="928" height="232" rx="16" fill="#F9F9FF" stroke="#DBDEED" stroke-width="2"/>
+      <text x="352" y="702" class="panel-title">치수 비교용 설명 · 게임 화면에는 미표시</text><text x="352" y="750" class="body">상세 456×620 : x1440 / y120 / 우측 여백24</text><text x="352" y="790" class="body">조명 480×620 : x1416 / y120 / 우측 여백24</text><text x="352" y="840" class="secondary">점선은 조명 외곽 기준. 실제 화면에서는 상태별 한 패널만 표시.</text>
+      <text x="1384" y="788" class="measure">고정 헤더 · 본문 스크롤</text>
+    </g>
+    <text x="80" y="1256" class="small">상세 456×620 / 조명 480×620 · 패딩 24 · 밝기·색상 등 기존 조명 컨트롤 48H 기준</text>
+  </g>
+
+  <!-- 04: collection overlay. -->
+  <g id="layout-codex" aria-label="04 조합 도감">
+    <rect x="984" y="736" width="888" height="552" rx="20" fill="#FFFFFF" stroke="#DBDEED"/>
+    <text x="1016" y="774" class="section">04  조합 도감 · 여섯 열의 고정 리듬</text><text x="1840" y="774" text-anchor="end" class="small">화면 미리보기 40%</text>
+    <g transform="translate(1032 800) scale(0.4)">
+      <use xlink:href="#world" width="1920" height="1080"/>
+      <rect width="1920" height="984" fill="#3C3B4F" fill-opacity="0.18"/>
+      <rect x="168" y="96" width="1584" height="864" rx="16" class="panel"/>
+      <text x="224" y="158" class="screen-title">조합 도감</text><text x="1616" y="158" text-anchor="end" class="price">12 / 48 · 25%</text><rect x="1664" y="120" width="48" height="48" rx="8" fill="#ECEEF5"/><text x="1688" y="154" text-anchor="middle" class="panel-title">×</text>
+      <rect x="224" y="176" width="1472" height="8" rx="4" fill="#DBDEED"/><rect x="224" y="176" width="368" height="8" rx="4" fill="#286A79"/>
+      <circle cx="530.666667" cy="180" r="6" fill="#286A79" stroke="#F9F9FF" stroke-width="2"/><text x="530.666667" y="170" text-anchor="middle" class="secondary" style="fill:#286A79">10</text>
+      <circle cx="990.666667" cy="180" r="6" fill="#F9F9FF" stroke="#626577" stroke-width="2"/><text x="990.666667" y="170" text-anchor="middle" class="secondary">25</text>
+      <rect x="224" y="192" width="192" height="48" rx="8" fill="#E5F6FC" stroke="#286A79" stroke-width="2"/><text x="320" y="224" text-anchor="middle" class="body">전체 조합</text><text x="464" y="224" class="body">보유 시설</text><text x="672" y="224" class="body">미발견</text><text x="1696" y="224" text-anchor="end" class="secondary">이름으로 검색</text>
+      <use xlink:href="#codex-card" x="224" y="264" width="232" height="280"/><use xlink:href="#codex-card" x="472" y="264" width="232" height="280"/><use xlink:href="#codex-card" x="720" y="264" width="232" height="280"/>
+      <use xlink:href="#codex-card" x="968" y="264" width="232" height="280"/><use xlink:href="#codex-card" x="1216" y="264" width="232" height="280"/><use xlink:href="#codex-card" x="1464" y="264" width="232" height="280"/>
+      <use xlink:href="#codex-card" x="224" y="568" width="232" height="280"/><use xlink:href="#codex-card" x="472" y="568" width="232" height="280"/><use xlink:href="#codex-card" x="720" y="568" width="232" height="280"/>
+      <use xlink:href="#codex-card" x="968" y="568" width="232" height="280"/><use xlink:href="#codex-card" x="1216" y="568" width="232" height="280"/><use xlink:href="#codex-card" x="1464" y="568" width="232" height="280"/>
+      <text x="224" y="928" class="secondary">미발견 상태는 라벨로 구분 · 시설 이름과 가격 우선</text><text x="1696" y="928" text-anchor="end" class="secondary">6열 × 232 + 간격 5 × 16</text>
+      <text x="960" y="64" text-anchor="middle" class="measure">x168 / y96 · 1584×864 · 좌우 패딩56 · 콘텐츠1472</text>
+    </g>
+    <text x="1016" y="1256" class="small">6열×2행 · 232×280 / 열16 / 행24 · 진행12/48=25% · 10단계 채움 안 / 25단계 밖</text>
+  </g>
+
+  <g id="component-sheet" aria-label="편집 가능한 컴포넌트와 상태">
+    <rect x="48" y="1328" width="1824" height="424" rx="20" fill="#FFFFFF" stroke="#DBDEED"/>
+    <text x="80" y="1374" class="section">컴포넌트 · 원본 크기와 상태</text><text x="1840" y="1374" text-anchor="end" class="small">기본 그리드8 · safe24 · 최소 클릭44H / 주요 버튼48H</text>
+    <g id="card-dimension-example" transform="translate(96 1432)">
+      <use xlink:href="#catalog-card" width="184" height="210"/>
+      <path d="M0-14H184M0-20V-8M184-20V-8" stroke="#286A79" stroke-width="2"/><text x="92" y="-25" text-anchor="middle" class="small" style="fill:#286A79">184</text>
+      <path d="M-18 0V210M-24 0H-12M-24 210H-12" stroke="#286A79" stroke-width="2"/><text x="-32" y="112" text-anchor="middle" transform="rotate(-90 -32 112)" class="small" style="fill:#286A79">210</text>
+      <text x="92" y="72" text-anchor="middle" class="small" style="fill:#3D3C4F;font-weight:700">162×104</text>
+      <text x="92" y="244" text-anchor="middle" class="small">이름16px · 24H×2줄</text><text x="92" y="270" text-anchor="middle" class="small">간격10 · 좌우 inset11</text>
+    </g>
+    <g id="button-states">
+      <text x="352" y="1446" class="small">기본 Normal</text><rect x="352" y="1464" width="216" height="48" rx="8" class="panel"/><text x="460" y="1495" text-anchor="middle" class="body">선택</text>
+      <text x="600" y="1446" class="small">마우스 Hover</text><rect x="600" y="1464" width="216" height="48" rx="8" fill="#E5F6FC" stroke="#286A79"/><text x="708" y="1495" text-anchor="middle" class="body">선택</text>
+      <text x="848" y="1446" class="small">포커스 Focus</text><rect x="844" y="1460" width="224" height="56" rx="11" fill="none" stroke="#286A79" stroke-width="3"/><rect x="848" y="1464" width="216" height="48" rx="8" class="panel"/><text x="956" y="1495" text-anchor="middle" class="body">선택</text>
+      <text x="1096" y="1446" class="small">선택 Selected</text><rect x="1096" y="1464" width="216" height="48" rx="8" fill="#E5F6FC" stroke="#286A79" stroke-width="2"/><text x="1204" y="1495" text-anchor="middle" class="body" style="fill:#286A79">✓ 선택됨</text>
+      <text x="1344" y="1446" class="small">비활성 Disabled</text><rect x="1344" y="1464" width="216" height="48" rx="8" fill="#ECEEF5" stroke="#DBDEED"/><text x="1452" y="1495" text-anchor="middle" class="body" style="fill:#626577">골드 부족</text>
+      <text x="1592" y="1446" class="small">오류 Error</text><rect x="1592" y="1464" width="216" height="48" rx="8" fill="#FFF2F4" stroke="#AD3F48" stroke-width="2"/><text x="1700" y="1495" text-anchor="middle" class="body" style="fill:#AD3F48">! 공간 부족</text>
+    </g>
+    <g id="palette">
+      <rect x="352" y="1560" width="152" height="32" rx="6" fill="#F9F9FF" stroke="#DBDEED"/><text x="352" y="1620" class="small">Pearl #F9F9FF</text>
+      <rect x="536" y="1560" width="152" height="32" rx="6" fill="#3D3C4F"/><text x="536" y="1620" class="small">글자 #3D3C4F</text>
+      <rect x="720" y="1560" width="152" height="32" rx="6" fill="#626577"/><text x="720" y="1620" class="small">보조 #626577</text>
+      <rect x="904" y="1560" width="152" height="32" rx="6" fill="#286A79"/><text x="904" y="1620" class="small">조작 #286A79</text>
+      <rect x="1088" y="1560" width="152" height="32" rx="6" fill="#E5F6FC" stroke="#DBDEED"/><text x="1088" y="1620" class="small">선택 #E5F6FC</text>
+      <rect x="1272" y="1560" width="152" height="32" rx="6" fill="#91DFFF"/><text x="1272" y="1620" class="small">강조 #91DFFF</text>
+      <rect x="1456" y="1560" width="152" height="32" rx="6" fill="#DBDEED"/><text x="1456" y="1620" class="small">선 #DBDEED</text>
+      <rect x="1640" y="1560" width="168" height="32" rx="6" fill="#3C3B4F"/><text x="1640" y="1620" class="small">도움말 #3C3B4F</text>
+    </g>
+    <text x="352" y="1678" style="font-size:28px;font-weight:700">제목 28 / 24</text><text x="664" y="1678" class="body">본문 18 · 줄높이26</text><text x="1032" y="1678" class="secondary">보조 16 · 줄높이24</text><text x="1376" y="1678" class="price">가격 20 · 10,000 Gold</text>
+    <text x="352" y="1718" class="small">모서리: 패널16 / 카드12 / 버튼8 · 선택선2 · 포커스3 · 텍스트 뒤 표면은 불투명 · 정보는 색상과 문구를 함께 표시</text>
+  </g>
+  <text x="64" y="1784" class="small">제외: Shared/** · Catalog/Legacy/** · 외부 공유 아이콘/폰트/스타일. 치수는 SVG/JSON 기준 · 생성형 이미지는 근사 시안 · 런타임/DPI 검수 전.</text>
+</svg>

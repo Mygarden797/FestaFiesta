@@ -311,6 +311,50 @@ bool FFF_PrepCheckRules_RequiredSummary::RunTest(const FString& Parameters)
 	return true;
 }
 
+// 배정까지 요구하는 필수 시설은 설치 → 배정 순서로 남은 일을 같은 줄에 알린다. 판정은 소유자 값 그대로다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepCheckRules_RequiredStaffSummary,
+	"FestaFiesta.UI.PrepCheck.RequiredStaffSummary",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_PrepCheckRules_RequiredStaffSummary::RunTest(const FString& Parameters)
+{
+	UFF_FestivalDefinition* Definition = NewObject<UFF_FestivalDefinition>();
+	UFFZSFacilityDefinition* Facility = NewObject<UFFZSFacilityDefinition>(Definition);
+	Facility->Spec.FacilityDefinitionId = TEXT("Info.MainInfo");
+	Facility->Spec.DisplayName = FText::FromString(TEXT("시험 안내소"));
+	Facility->Spec.Category = EFFZSFacilityCategory::Info;
+	Facility->Spec.StaffCapacity = 2;
+	Definition->RequiredSetupFacilities.Reset();
+	FFF_RequiredFacility& Requirement = Definition->RequiredSetupFacilities.AddDefaulted_GetRef();
+	Requirement.FacilityDefinition = Facility;
+	Requirement.MinimumCount = 1;
+	Requirement.MinimumAssignedStaff = 1;
+	FFFZSReadModel Model;
+	FFF_RequiredFacilityStaffing StaffingState;
+	StaffingState.bKnown = true;
+	StaffingState.UnassignedStaffCount = 6;
+	const FText Format = FText::FromString(TEXT("{Name} · {Installed}/{Required} · {State}"));
+	const FText Empty = FText::FromString(TEXT("필수 시설 조건 없음"));
+	const auto Display = [&]()
+	{
+		return FFF_PrepCheckRules::FormatRequiredFacilities(
+			UFF_RequiredFacilitiesSubsystem::EvaluateRequirements(Definition, Model, StaffingState), Format, Empty).ToString();
+	};
+	TestTrue(TEXT("설치 전에도 배정 단계가 남았음을 알림"),
+		Display().Contains(TEXT("시험 안내소 · 0/1 · ! 추가 설치 필요 · 설치 후 스태프 1명 배정")));
+	FFFZSFacilityReadModel& Installed = Model.Facilities.AddDefaulted_GetRef();
+	Installed.FacilityInstanceId = FGuid::NewGuid();
+	Installed.FacilityDefinitionId = Facility->Spec.FacilityDefinitionId;
+	Installed.Category = EFFZSFacilityCategory::Info;
+	Installed.State = EFFZSFacilityState::Active;
+	const FGuid InstalledId = Installed.FacilityInstanceId;
+	TestTrue(TEXT("설치만 끝나면 배정 부족을 표시"), Display().Contains(TEXT("1/1 · ! 스태프 배정 필요 (배정 0/1명)")));
+	StaffingState.AssignedStaffByFacility.Add(InstalledId, 2);
+	TestTrue(TEXT("배정까지 끝나면 완료 표시"), Display().Contains(TEXT("1/1 · ✓ 설치·배정 완료 (스태프 2명)")));
+	Requirement.MinimumAssignedStaff = 0;
+	TestTrue(TEXT("설치만 요구하는 행은 기존 문구 유지"), Display().Contains(TEXT("1/1 · ✓ 설치 완료")));
+	return true;
+}
+
 // 같은 차단 enum에서 설치 수가 바뀌어도 열린 패널의 사유가 갱신되어야 한다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepCheckRules_CtaReasonRefresh,
 	"FestaFiesta.UI.PrepCheck.CtaReasonRefresh",
@@ -327,6 +371,7 @@ bool FFF_PrepCheckRules_CtaReasonRefresh::RunTest(const FString& Parameters)
 	Panel->Text_OpenGateReason = NewObject<UTextBlock>(Panel.Get());
 	Panel->Text_OpenGateLabel = NewObject<UTextBlock>(Panel.Get());
 	Panel->Button_OpenGate = NewObject<UButton>(Panel.Get());
+	Panel->Button_OpenGateReason = NewObject<UButton>(Panel.Get());
 	Panel->InitializePanel(Bar.Get(), EFF_PrepHudTab::Check, FText::FromString(TEXT("점검")));
 	Bar->OnCtaStateChanged.AddUniqueDynamic(Panel.Get(), &UFF_PrepPanelCheck::HandleCtaStateChanged);
 
@@ -334,6 +379,7 @@ bool FFF_PrepCheckRules_CtaReasonRefresh::RunTest(const FString& Parameters)
 	const FText After = FText::FromString(TEXT("시험 공연장: 설치 1/2"));
 	Bar->SetCtaState(EFF_PrepCtaState::BlockedStageLocked, Before);
 	TestEqual(TEXT("첫 차단 사유"), Panel->Text_OpenGateReason->GetText().ToString(), Before.ToString());
+	TestEqual(TEXT("배정 대상이 없으면 오른쪽 스태프 버튼은 숨김"), Panel->Button_OpenGateReason->GetVisibility(), ESlateVisibility::Collapsed);
 	Bar->SetCtaState(EFF_PrepCtaState::BlockedStageLocked, After);
 	TestEqual(TEXT("동일 상태의 사유 변경도 구독자에 전달"), Panel->Text_OpenGateReason->GetText().ToString(), After.ToString());
 	TestEqual(TEXT("공개 사유가 화면과 일치"), Bar->GetCtaReason().ToString(), After.ToString());

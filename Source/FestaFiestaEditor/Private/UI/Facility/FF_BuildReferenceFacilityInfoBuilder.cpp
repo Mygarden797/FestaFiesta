@@ -274,7 +274,7 @@ static bool Apply(UWidgetBlueprint& Blueprint)
         FLinearColor::White, true);
 
     for (const TCHAR* Name : {TEXT("Text_QueueCapacityValue"), TEXT("Text_ServiceCapacityValue"),
-        TEXT("Text_ServiceDuration"), TEXT("Text_Footprint"), TEXT("Text_Clearance"),
+        TEXT("Text_ServiceDuration"), TEXT("Text_Footprint"),
         TEXT("Text_InstallCost"), TEXT("Text_RecoveryCost"), TEXT("Text_InstanceLimit"),
         TEXT("Text_Occupancy"), TEXT("Text_WaitingParties"), TEXT("Text_RemainingService"),
         TEXT("Text_ExpectedWait"), TEXT("Text_Throughput"),

@@ -36,7 +36,9 @@ enum class EFF_FacilityInfoPage : uint8
 	Lighting,
 	/** Separate pages keep planning and operation facts visible without scrolling. */
 	Revenue,
-	Programs
+	Programs,
+	/** Staff assignment is separate from the basic facility facts. Append to preserve serialized pages. */
+	Staff
 };
 
 /** One authored combination; repeated nearby instances are summarized in this row. */
@@ -134,6 +136,7 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText FootprintText;
 
+	/** Compatibility payload for older Blueprints; the removed safety margin is never presented. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText ClearanceText;
 

@@ -149,6 +149,21 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Audio")
 	FFF_OnPlaylistChanged OnPlaylistChanged;
 
+	// ── 메인 공연곡 ─────────────────────────────────────────────────────────
+
+	/* 그날(1부터) 메인 공연곡을 StartSeconds 부터 튼다. 이미 그날 곡이 흐르면 아무것도 안 한다.
+
+	   언제 틀고 언제 내릴지는 오디오 결선이 일정표를 보고 정한다(UFF_AudioEventLink). 공연이 끝나
+	   플레이리스트로 돌아가면 플레이리스트는 듣던 자리부터 잇는다. 그날 곡이 없으면 지금 곡만 꺼진다 —
+	   부르는 쪽이 GetMainShowSongLength 로 먼저 본다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Audio")
+	void PlayMainShowSong(int32 Day, float StartSeconds = 0.f);
+
+	// 그날 메인 공연곡 길이(초). 곡이 없으면 0.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Audio")
+	float GetMainShowSongLength(int32 Day) const;
+
 	/* 갈래별 개인 설정 비율(0~1). 마스터는 빠져 있다. 마스터는 엔진이 이미 곱한다.
 
 	   배경음·효과음·불꽃놀이·UI 는 설정 창의 같은 이름 슬라이더를 따른다.
@@ -246,6 +261,13 @@ private:
 
 	// 지금 걸린 배경음의 곡 설정. 플레이리스트면 지금 곡이다. 없으면 nullptr.
 	const FFF_AudioAmbienceTrack* FindActiveTrack(const UFF_AudioBankData* Bank) const;
+
+	// 이 상황에 틀 곡 설정. 메인 공연곡은 그날(MainShowDay) 곡이다. 플레이리스트는 곡 목록이라 nullptr.
+	const FFF_AudioAmbienceTrack* FindTrack(const UFF_AudioBankData* Bank, EFF_AudioAmbience Ambience) const;
+
+	// 지금 메인 공연곡의 날과 시작 위치. PlayMainShowSong 이 정하고 SetAmbience 가 곡을 틀 때 읽는다.
+	int32 MainShowDay = 0;
+	float MainShowStartSeconds = 0.f;
 
 	/* 플레이리스트의 지금 곡을 기억한 위치부터 튼다. 못 틀었으면 false.
 

@@ -150,6 +150,9 @@ private:
 	TObjectPtr<UTextBlock> Text_Cost;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> Text_CostStaff;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> Text_Reward;
 
 	UPROPERTY(Transient)

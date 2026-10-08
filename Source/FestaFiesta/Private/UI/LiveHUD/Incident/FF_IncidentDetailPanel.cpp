@@ -137,6 +137,7 @@ void UFF_IncidentDetailPanel::BuildTree()
 	Text_StaffRange = MakeText(*Box_Option, TEXT("Text_StaffRange"), TEXT("Regular"), 12, Tokens.InkMuted);
 	Text_WorkAmount = MakeText(*Box_Option, TEXT("Text_WorkAmount"), TEXT("Regular"), 12, Tokens.InkMuted);
 	Text_Cost = MakeText(*Box_Option, TEXT("Text_Cost"), TEXT("Regular"), 12, Tokens.InkMuted);
+	Text_CostStaff = MakeText(*Box_Option, TEXT("Text_CostStaff"), TEXT("Regular"), 12, Tokens.InkMuted);
 	Text_Reward = MakeText(*Box_Option, TEXT("Text_Reward"), TEXT("SemiBold"), 12, FFIncidentDetailLocal::GetAmber());
 
 	Row_Staff = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HBox_Staff"));
@@ -404,6 +405,9 @@ bool UFF_IncidentDetailPanel::Refresh()
 
 	Text_Cost->SetText(FText::Format(LOCTEXT("Cost", "비용: {0} G"), FText::AsNumber(CurrentOption.CostGold)));
 	Text_Cost->SetVisibility(CurrentOption.CostGold > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+
+	Text_CostStaff->SetText(FText::Format(LOCTEXT("CostStaff", "소모 인원: {0}명"), FText::AsNumber(CurrentOption.CostStaff)));
+	Text_CostStaff->SetVisibility(CurrentOption.CostStaff > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 
 	Text_Reward->SetText(FText::Format(LOCTEXT("Reward", "보상: {0}"), CurrentOption.RewardText));
 	Text_Reward->SetVisibility(CurrentOption.RewardText.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);

@@ -66,6 +66,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Program")
 	bool HasCompatiblePrograms() const { return Entry.CompatibleProgramCount > 0; }
 
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Lighting")
+	bool SupportsLighting() const { return Entry.bSupportsLighting; }
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Required")
 	int32 GetRequiredFacilityCurrentCount() const { return Entry.RequiredInstalledCount; }
 

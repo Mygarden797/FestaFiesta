@@ -187,8 +187,8 @@ bool FFF_CrowdHeightField_BuildIsDeterministic::RunTest(const FString& Parameter
 	return true;
 }
 
-// 통행 상한. 경사면(0.1 * x)이므로 상한 Z에 대응하는 x는 상한 / 0.1 이고, 판정이 네 꼭짓점의
-// 최댓값 기준이라 통행 경계는 그 x보다 한 칸(SpacingCm) 앞에 선다 — 그 보수성까지 같이 못박는다.
+// 통행 상한. 경사면(0.1 * x)이므로 상한 Z에 대응하는 x는 상한 / 0.1 이고, 판정이 칸의 가장 낮은
+// 꼭짓점 기준이라 통행 경계는 그 x보다 한 칸(SpacingCm) 뒤에 선다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdHeightField_WalkableCeilingBlocksHighGround, "FestaFiesta.Crowd.HeightField.WalkableCeilingBlocksHighGround", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdHeightField_WalkableCeilingBlocksHighGround::RunTest(const FString& Parameters)
 {
@@ -205,14 +205,36 @@ bool FFF_CrowdHeightField_WalkableCeilingBlocksHighGround::RunTest(const FString
 
 	TestTrue(TEXT("낮은 쪽은 통행 가능하다"), Field.IsWalkable(FVector2D(-9999.0, 0.0)));
 	TestTrue(TEXT("상한보다 한 칸 이상 낮으면 통행 가능하다"), Field.IsWalkable(FVector2D(4000.0, 0.0)));
-	TestTrue(TEXT("상한을 넘는 꼭짓점이 없는 마지막 칸까지는 통행 가능하다"),
-		Field.IsWalkable(FVector2D(4900.0, 0.0)));
-	TestFalse(TEXT("상한을 넘는 지형은 통행 불가다"), Field.IsWalkable(FVector2D(9999.0, 0.0)));
-	TestFalse(TEXT("상한 등고선이 든 칸은 지면이 상한 아래여도 통째로 막힌다"),
+	TestTrue(TEXT("상한 아래 꼭짓점이 하나라도 있는 칸은 통행 가능하다"),
 		Field.IsWalkable(FVector2D(5000.0, 0.0)));
+	TestFalse(TEXT("네 꼭짓점이 전부 상한 위인 칸은 통행 불가다"),
+		Field.IsWalkable(FVector2D(5200.0, 0.0)));
+	TestFalse(TEXT("상한을 넘는 지형은 통행 불가다"), Field.IsWalkable(FVector2D(9999.0, 0.0)));
 
 	Field.ClearWalkableCeiling();
 	TestTrue(TEXT("상한을 치우면 다시 통행 가능하다"), Field.IsWalkable(FVector2D(9999.0, 0.0)));
+
+	return true;
+}
+
+// 꼭짓점 하나만 상한을 넘는 칸(나무·화분 같은 물체)은 그 꼭짓점 바로 위여도 막지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdHeightField_SingleHighCornerDoesNotBlockCell, "FestaFiesta.Crowd.HeightField.SingleHighCornerDoesNotBlockCell", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdHeightField_SingleHighCornerDoesNotBlockCell::RunTest(const FString& Parameters)
+{
+	using namespace FFF_HeightFieldTestHelpers;
+
+	auto OneSpike = [](const FVector2D& QueryCm, double& OutHeightCm) -> bool
+	{
+		OutHeightCm = (FMath::Abs(QueryCm.X) < 1.0 && FMath::Abs(QueryCm.Y) < 1.0) ? 804.0 : 498.0;
+		return true;
+	};
+
+	FFF_CrowdHeightField Field;
+	Field.Build(FVector2D::ZeroVector, HalfSizeCm, SpacingCm, OneSpike);
+	Field.SetWalkableCeilingCm(800.0);
+
+	TestTrue(TEXT("높은 꼭짓점 바로 위도 통행 가능하다"), Field.IsWalkable(FVector2D(0.0, 0.0)));
+	TestTrue(TEXT("높은 꼭짓점 곁도 통행 가능하다"), Field.IsWalkable(FVector2D(-50.0, 50.0)));
 
 	return true;
 }
@@ -259,6 +281,96 @@ bool FFF_CrowdHeightField_WalkableCeilingIsInertWithoutGrid::RunTest(const FStri
 	TestFalse(TEXT("격자가 없다"), Field.IsValid());
 	TestTrue(TEXT("격자가 없으면 통행을 막지 않는다"), Field.IsWalkable(FVector2D::ZeroVector));
 
+	return true;
+}
+
+// The production Deck apron mixed two ground samples with a distant roof. Its
+// cell was walkable, but cliff-nearest selection previously snapped feet 65 m up.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdHeightField_CeilingExcludesProductionRoof,
+	"FestaFiesta.Crowd.HeightField.CeilingExcludesProductionRoof",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdHeightField_CeilingExcludesProductionRoof::RunTest(const FString& Parameters)
+{
+	const FVector2D Minimum(89278.28571428571, 37978.28571428572);
+	const double Side = 499.42857142858;
+	const FVector2D Center = Minimum + FVector2D(Side * 0.5);
+	FFF_CrowdHeightField Field;
+	TestTrue(TEXT("Measured production cell builds"), Field.Build(Center, Side * 0.5, 500.0,
+		[Center](const FVector2D& XY, double& Z)
+		{
+			Z = XY.X > Center.X ? 6958.5 : (XY.Y > Center.Y ? 426.5201242850926 : 431.66597270342027);
+			return true;
+		}));
+	Field.SetCliffStepCm(50.0);
+	const FVector2D Point(89577.1541111766, 38201.36939914421);
+	double Height = 0.0;
+	TestTrue(TEXT("Unfiltered legacy query reproduces the failure"), Field.TryGetHeightCm(Point, Height));
+	TestEqual(TEXT("The nearest sample was the 69.6 m roof"), Height, 6958.5);
+	Field.SetWalkableCeilingCm(800.0);
+	TestTrue(TEXT("Existing low-ground cell remains walkable"), Field.IsWalkable(Point));
+	TestTrue(TEXT("A permitted ground candidate remains available"), Field.TryGetHeightCm(Point, Height));
+	TestTrue(TEXT("Feet stay within the measured low ground range"), Height >= 426.5201242850926 && Height <= 431.66597270342027);
+	FFF_CrowdHeightField::FCellProbe Probe;
+	TestTrue(TEXT("Raw source samples remain available for diagnostics"), Field.ProbeCell(Point, Probe));
+	TestEqual(TEXT("Filtering does not rewrite the baked roof sample"), Probe.CornerHeightCm[1], 6958.5);
+	Field.ClearWalkableCeiling();
+	TestTrue(TEXT("Clearing the ceiling works without rebuilding"), Field.TryGetHeightCm(Point, Height));
+	TestEqual(TEXT("No-ceiling query preserves its original behavior"), Height, 6958.5);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdHeightField_CeilingExcludesZeroWeightSpike,
+	"FestaFiesta.Crowd.HeightField.CeilingExcludesZeroWeightSpike",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdHeightField_CeilingExcludesZeroWeightSpike::RunTest(const FString& Parameters)
+{
+	FFF_CrowdHeightField Field;
+	Field.Build(FVector2D::ZeroVector, 250.0, 500.0,
+		[](const FVector2D& XY, double& Z)
+		{
+			Z = XY.X > 0.0 && XY.Y > 0.0 ? 6958.5 : 498.0;
+			return true;
+		});
+	Field.SetWalkableCeilingCm(800.0);
+	for (const double Cliff : {0.0, 50.0})
+	{
+		Field.SetCliffStepCm(Cliff);
+		for (const FVector2D Point : {FVector2D(245.0, 245.0), FVector2D(250.0, 250.0)})
+		{
+			double Height = 0.0;
+			TestTrue(TEXT("An isolated high corner does not block surrounding ground"), Field.IsWalkable(Point));
+			TestTrue(TEXT("A low floor is returned even when its bilinear weight is zero"), Field.TryGetHeightCm(Point, Height));
+			TestTrue(TEXT("Neither interpolation nor fallback uses the excluded spike"), FMath::IsNearlyEqual(Height, 498.0, 0.0001));
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdHeightField_CeilingRejectsAllHighButPreservesCliffs,
+	"FestaFiesta.Crowd.HeightField.CeilingRejectsAllHighButPreservesCliffs",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdHeightField_CeilingRejectsAllHighButPreservesCliffs::RunTest(const FString& Parameters)
+{
+	FFF_CrowdHeightField Field;
+	Field.Build(FVector2D::ZeroVector, 250.0, 500.0,
+		[](const FVector2D&, double& Z) { Z = 900.0; return true; });
+	Field.SetCliffStepCm(50.0);
+	Field.SetWalkableCeilingCm(800.0);
+	double Height = 0.0;
+	TestFalse(TEXT("A wholly high cell is not walkable"), Field.IsWalkable(FVector2D::ZeroVector));
+	TestFalse(TEXT("A wholly high cell cannot supply an admitted floor"), Field.TryGetHeightCm(FVector2D::ZeroVector, Height));
+	Field.SetWalkableCeilingCm(900.0);
+	TestTrue(TEXT("The ceiling itself is included in the ground range"), Field.IsWalkable(FVector2D::ZeroVector));
+	TestTrue(TEXT("Changing the ceiling immediately makes the floor available"), Field.TryGetHeightCm(FVector2D::ZeroVector, Height));
+	TestEqual(TEXT("The included boundary height is retained"), Height, 900.0);
+
+	Field.Build(FVector2D::ZeroVector, 250.0, 500.0,
+		[](const FVector2D& XY, double& Z) { Z = XY.X > 0.0 ? 600.0 : 300.0; return true; });
+	for (const double X : {-1.0, 1.0})
+	{
+		TestTrue(TEXT("Permitted cliffs keep their valid height"), Field.TryGetHeightCm(FVector2D(X, 0.0), Height));
+		TestEqual(TEXT("A permitted cliff still chooses its nearest side instead of blending"), Height, X > 0.0 ? 600.0 : 300.0);
+	}
 	return true;
 }
 
