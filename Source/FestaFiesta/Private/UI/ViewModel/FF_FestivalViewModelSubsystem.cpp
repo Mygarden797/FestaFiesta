@@ -26,6 +26,7 @@
 #include "Save/FF_SaveSubsystem.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "UI/FF_UILog.h"
+#include "UI/ViewModel/FF_DailyReportComment.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 
@@ -508,6 +509,53 @@ bool UFF_FestivalViewModelSubsystem::IsDailyReportSurface() const
 	return IsReportStage() || GetCurrentStage() == EFF_FestivalStage::Closing;
 }
 
+void UFF_FestivalViewModelSubsystem::FillReportAssistantComment(FFF_DailyReportView& Report) const
+{
+	FFF_DailyReportCommentInputs Inputs;
+	const UGameInstance* GI = GetGameInstance();
+	const UWorld* World = GI ? GI->GetWorld() : nullptr;
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+
+	// 오늘 매출 1위 시설. 결산 단계는 아직 하루 경계를 넘기 전이라 TodayGold 가 오늘 값이다
+	const UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	if (Zones && Progression)
+	{
+		const UFF_BuildCatalogSubsystem* Catalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>();
+		for (const FFFZSFacilityReadModel& Facility : Zones->BuildReadModel().Facilities)
+		{
+			FFF_FacilityInstanceRevenue Revenue;
+			if (Facility.State == EFFZSFacilityState::Removed
+				|| !Progression->GetFacilityInstanceRevenue(Facility.FacilityInstanceId, Revenue)
+				|| Revenue.TodayGold <= Report.TopFacilityGold)
+			{
+				continue;
+			}
+			Report.TopFacilityGold = Revenue.TodayGold;
+			FFF_BuildCatalogEntry Entry;
+			Report.TopFacilityName = Catalog && Catalog->FindEntry(Facility.FacilityDefinitionId, Entry)
+				? Entry.DisplayName
+				: (Facility.DisplayName.IsEmpty() ? FText::FromName(Facility.FacilityDefinitionId) : Facility.DisplayName);
+		}
+	}
+	Inputs.TopFacilityName = Report.TopFacilityName;
+	Inputs.TopFacilityGold = Report.TopFacilityGold;
+
+	Inputs.bHasSatisfaction = Report.bHasSatisfaction;
+	Inputs.WaitScore = Report.WaitScore;
+	Inputs.DensityScore = Report.DensityScore;
+	Inputs.PreferenceScore = Report.PreferenceScore;
+	Inputs.NeedScore = Report.NeedScore;
+	if (const UFF_CrowdSimulationSubsystem* Crowd = World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr)
+	{
+		Inputs.HungerCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Hunger);
+		Inputs.RestroomCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Restroom);
+		Inputs.StimulationCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Stimulation);
+	}
+	Inputs.AdmittedVisitors = Report.AdmittedVisitors;
+	Inputs.DailyVisitorGoal = Report.DailyVisitorGoal;
+	Report.AssistantComment = FFF_DailyReportCommentRules::Build(Inputs);
+}
+
 void UFF_FestivalViewModelSubsystem::CaptureDailyReportIfReady()
 {
 	// 별도 Stage 타이머/정지 없이 기존 VM Tick을 사용한다. Stage의 동기 구독자 처리가
@@ -538,6 +586,7 @@ void UFF_FestivalViewModelSubsystem::CaptureDailyReportIfReady()
 	Report.TotalStaff = Progression->GetTotalStaffCount();
 	Report.HiredStaff = Progression->GetHiredStaffCount();
 	Report.Programs = Progression->GetScheduledPrograms().Num();
+	FillReportAssistantComment(Report);
 	DailyReport = MoveTemp(Report);
 	OnDailyReportReady.Broadcast(Day);
 }

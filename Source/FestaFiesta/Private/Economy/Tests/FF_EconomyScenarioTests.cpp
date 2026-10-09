@@ -259,10 +259,12 @@ private:
 			bInstallUnpaid = true;
 		}
 
+		// 1일차에 돈이 모자라면 플레이어처럼 다음 날 아침에 다시 산다(PrepareMorning)
 		if (Options.Promotion != EFF_PromotionGrade::None
 			&& Progression->TryPurchasePromotion(Options.Promotion) != EFF_PromotionPurchaseResult::Success)
 		{
-			Test->AddWarning(TEXT("홍보를 사지 못했다."));
+			Test->AddInfo(TEXT("1일차에 홍보를 사지 못했다. 다음 날 아침에 다시 산다."));
+			bPromotionPending = true;
 		}
 		if (Options.Fee != INDEX_NONE && Progression->TrySetAdmissionFee(Options.Fee) != EFF_AdmissionFeeResult::Success)
 		{
@@ -270,7 +272,8 @@ private:
 		}
 		if (Options.Hire > 0 && !Progression->TryHireStaff(Options.Hire))
 		{
-			Test->AddWarning(FString::Printf(TEXT("스태프 %d명을 고용하지 못했다."), Options.Hire));
+			Test->AddInfo(FString::Printf(TEXT("1일차에 스태프 %d명을 고용하지 못했다. 다음 날 아침에 다시 고용한다."), Options.Hire));
+			bHirePending = true;
 		}
 
 		ApplyCrowdExperiment(World);
@@ -389,6 +392,23 @@ private:
 
 	void PrepareMorning(UWorld* World, int32 Day)
 	{
+		if (Day >= 2 && bPromotionPending)
+		{
+			bPromotionPending = Progression->TryPurchasePromotion(Options.Promotion) != EFF_PromotionPurchaseResult::Success;
+			Test->AddInfo(FString::Printf(TEXT("Day %d 아침 홍보 재시도: %s (보유 %d)"),
+				Day, bPromotionPending ? TEXT("실패") : TEXT("구매"), Progression->GetGold()));
+		}
+		if (Day >= 2 && bHirePending)
+		{
+			bHirePending = !Progression->TryHireStaff(Options.Hire);
+			if (!bHirePending)
+			{
+				AssignStaff(World);
+			}
+			Test->AddInfo(FString::Printf(TEXT("Day %d 아침 고용 재시도: %s (보유 %d)"),
+				Day, bHirePending ? TEXT("실패") : TEXT("고용"), Progression->GetGold()));
+		}
+
 		if (Day == 3 && Options.Finale != EFF_FinaleGrade::None)
 		{
 			const EFF_FinalePurchaseResult Result = Progression->TryPurchaseFinale(Options.Finale);
@@ -610,6 +630,8 @@ private:
 	double StartedAt = -1.0;
 	bool bArranged = false;
 	bool bInstallUnpaid = false;
+	bool bPromotionPending = false;
+	bool bHirePending = false;
 	int32 PreparedDay = 0;
 	int32 FacilityCount = 0;
 	int32 InstallCost = 0;

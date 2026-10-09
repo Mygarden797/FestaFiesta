@@ -144,6 +144,17 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_MissingNote;
 
+	/**
+	 * 비서 한마디(매출 1위 시설 · 불만 1위와 고칠 방법 · 방문객 목표). 여러 줄이라 자동 줄바꿈을 켠다.
+	 * WBP 에 없으면 정산이 끝난 뒤 비는 Text_MissingNote 자리에 대신 쓴다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
+	TObjectPtr<UTextBlock> Text_AssistantComment;
+
+	/** {Comment}: 비서 한마디 본문(줄바꿈 포함). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Report|Text")
+	FText AssistantCommentFormat = NSLOCTEXT("FestaFiestaLiveReport", "AssistantComment", "비서 한마디\n{Comment}");
+
 	// === 다음 날로 (2026-09-02 이동) ===
 	//
 	// 🔴 하단 바가 아니라 **패널 안**에 둔다. 결과를 읽는 자리와 넘기는 자리를 붙여야

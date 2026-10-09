@@ -650,7 +650,7 @@ bool FFF_CrowdQueue_StartedServiceSurvivesWaitingImpatience::RunTest(const FStri
 	for (const int32 Leader : {UsingLeader, WaitingLeader})
 	{
 		// Their recorded queue wait now exceeds personal patience while the front team is using the booth.
-		Access::State(*Crowd, Leader).QueueEnteredSimTime = Crowd->GetSimTimeSeconds() - 2.f;
+		Access::State(*Crowd, Leader).QueueAtSlotSimTime = Crowd->GetSimTimeSeconds() - 2.f;
 	}
 	Access::Arrive(*Crowd, UsingLeader);
 	TestEqual(TEXT("Waiting impatience never cancels an already-started use"), Crowd->GetQueuePatienceAbandons(), 0);

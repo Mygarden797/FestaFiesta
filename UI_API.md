@@ -2379,13 +2379,46 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | `GetDailyVisitorGoal()` (ViewModel·Progression) | **오늘 목표**. Day N = 900 + 100 × (N−1) → 900 / 1000 / 1100 (`DailyVisitorGoalGrowthPerDay`, `GetDailyVisitorGoalForDay`) | 날이 바뀌면 다시 읽기. 고정값으로 캐시하지 않기 |
 | 재무 점수 (`FFF_FestivalEvaluation::FinanceScore`) | 100 × (최종 Gold − 시작 Gold) / `FinanceTargetProfitGold`(15,000, 잠정), 0~100. 본전·손해면 0 | 평가 화면 설명 문구가 "원금 대비"라면 "목표 이익 대비"로 |
 | 방문객 점수 | 분모가 날짜별 목표의 합(`VisitorGoalTotal`) | — |
-| 피날레 만족도 보너스 C/B/A/S | +3 / +6 / +10 / +15 (가격 2,000/4,000/6,000/8,000 그대로) | 숫자를 복제하지 말고 `GetFinaleTiers()` 로 읽기. 2차 조정에서 가격도 바뀔 예정 |
+| 피날레 만족도 보너스 C/B/A/S | +3 / +6 / +10 / +15. **가격은 2차 조정에서 1,000 / 1,800 / 2,600 / 3,500** | 숫자를 복제하지 말고 `GetFinaleTiers()` 로 읽기 |
 | 부스 수익 | `BoothCommissionRate` 0.12 → **1.0**. 부스 매출 전액이 축제 몫이고, `DT_FacilityRevenues` 모든 행이 행별 덮어쓰기 꺼짐 | 화면 문구 **"수수료" → "부스 매출"**. 남은 곳: `GetEarnReasonText(FacilityCommission)`("부스 수수료"), 준비 화면 예상 안내("부스 수수료와 미니게임 보상은…"), 시설 정보 예상 수익 툴팁("현재 수수료율…"), 매출 탭 빈 상태("…수수료가 들어옵니다"), 조합 보너스 표기("수수료 +N%") |
 | 기본 스태프 | `InitialStaffCount` 6 → **1** (메인안내소 필수 배정만, 사건 대응은 고용 450) | `최대 N명` 은 `기본 1 + 고용 상한` |
 | 입장료 기준값 | 5 → **3** (범위 0~15 그대로) | `GetAdmissionFeeRange` 로 읽기 |
 | 평판 배수 | ×0.75~1.25 | — |
 | 화제성 | SNS 글 1건 최대 0.3, 하루 감쇠 40% | — |
 | 대기열 | `UFF_QueueSubsystem` 이 축제 배속을 따름. 공연 휴지 구간은 줄 인내 판정에서 빠짐 | 예상 대기시간·처리량 표시는 배속과 무관하게 Stage 시간 기준 |
+
+### 10/9 2차 — 운영 알림 · 결산 비서 한마디 · 2차 밸런싱 (김시리)
+
+#### `UFF_OperationAlertPanel` — 이미 화면에 붙어 있습니다
+
+- **헤더**: `Public/UI/LiveHUD/OperationAlert/FF_OperationAlertPanel.h`
+- **상태**: `구현완료` — **`UFF_LiveHudScreen` 이 만들어 뷰포트(ZOrder 15)에 올립니다.** WBP 없이 C++ 로 트리를 만듭니다.
+- **비고**: 화면 **오른쪽 위**(오른쪽 24 · 위 132)에 "운영" 카드가 6초 떴다가 사라지고(최대 3장, 사건 알림과 같은 LightTeal 카드 · 주의색 `BandCaution` 띠), 그 위의 **「지난 알림 N」 버튼**으로 낸 알림을 최근 10개까지 다시 봅니다.
+  Live 단계에서만 보이고, 카드는 클릭을 막지 않습니다(버튼·펼친 목록만 받음). 위치는 `ScreenMargin`, 크기는 `CardWidth` · `DisplaySeconds` 로 조정합니다. 상단 상태 줄과 겹치면 `ScreenMargin.Y` 만 바꾸면 됩니다.
+  확인은 콘솔 `FF.Alert.Test <0~4>`(0 음식 · 1 화장실 · 2 즐길 거리 · 3 줄 이탈 · 4 갈 곳 없음).
+
+#### `UFF_OperationAlertSubsystem` (World)
+
+- **헤더**: `Public/UI/LiveHUD/OperationAlert/FF_OperationAlertSubsystem.h`
+- **시그니처**: `OnOperationAlertRaised(const FFF_OperationAlert&)` (`BlueprintAssignable`), `GetHistory()` (`BlueprintPure`). `FFF_OperationAlert` = `Kind` · `Message` · `Day`
+- **갱신 주기**: Live 경과 15초마다 판정. 시설 부족(음식·화장실·즐길 거리)은 같은 종류 120초, 줄 이탈·갈 곳 없음 퇴장은 60초 쿨다운
+- **상태**: `구현완료`. 다른 위젯이 같은 알림을 쓰고 싶으면 이 델리게이트를 구독하세요
+
+#### 결산 비서 한마디 — `FFF_DailyReportView::AssistantComment`
+
+- **헤더**: `Public/UI/ViewModel/FF_FestivalViewModelSubsystem.h` (`TopFacilityName` · `TopFacilityGold` 도 같이 추가)
+- **상태**: `구현완료` — 매출 1위 시설, 가장 낮은 만족도 항목(불만 1위)과 고칠 방법, 방문객 목표를 한 줄씩 씁니다(`FFF_DailyReportCommentRules`)
+- **화면**: `UFF_LivePanelReport` 에 `BindWidgetOptional` **`Text_AssistantComment`** 를 추가했습니다. **WBP 에 이 이름의 TextBlock 을 두시면 거기에** 나오고(자동 줄바꿈), 없으면 정산이 끝난 뒤 비는 `Text_MissingNote` 자리에 대신 나옵니다. 머리말은 `AssistantCommentFormat`("비서 한마디\n{Comment}")
+
+#### 바뀐 값 (2차)
+
+| 항목 | 지금 |
+|---|---|
+| 피날레 가격 C/B/A/S | 1,000 / 1,800 / 2,600 / 3,500 |
+| 재무 목표 `FinanceTargetProfitGold` | **13,000 확정** (재무 점수 = 100 × 이익 / 13,000) |
+| 부스 1회 매출 | 전 행 ×1.5 (`DT_FacilityRevenues`) |
+| 만족도 Need 충족 | 욕구별 운영 중 시설 수 / 목표(음식 3 · 화장실 2 · 즐길 거리 3, 메인 무대 제외), 하한 0.3 을 곱함. `UFF_CrowdSimulationSubsystem::GetNeedCoverage(EFF_NeedType)` 로 읽을 수 있음 |
+| SNS | 화제 27(어제 글 보고 왔다, 2일차 오전, 어제 매출 1위 시설 이름) 추가. 한산(11)은 붐비는 칸이 없을 때만, 붐빔(4)은 붐비는 칸이 있을 때만 나오고 일부 문장에 시설 이름이 들어감 |
 
 
 ---
@@ -2396,6 +2429,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 | 날짜         | 작성자 | 내용                                                                                             |
 | ---------- | --- | ---------------------------------------------------------------------------------------------- |
+| 2026-10-09 | 김시리 | 🆕 운영 알림(`UFF_OperationAlertPanel` 오른쪽 위 + 지난 알림 버튼, LiveHUD 가 만듦), 결산 비서 한마디(`FFF_DailyReportView::AssistantComment`, WBP 선택 슬롯 `Text_AssistantComment`), 2차 밸런싱 값("10/9 2차" 절) |
 | 2026-10-09 | 김시리 | 🆕 피날레 SNS 후기 계약(`ViewModel::OnFinaleSnsPostAdded`, `CrowdInsights::GetFinalePosts`, LiveHUD 가 만드는 `UFF_FinaleSnsOverlay`)과 1차 밸런싱 반영("10/9 추가" 절). `GetDailyVisitorGoal()` 은 오늘 목표(900/1000/1100), 재무 점수 = 100 × 이익 / `FinanceTargetProfitGold`, 피날레 보너스 +3/+6/+10/+15, 부스 수익 100%(화면 문구 "수수료" → "부스 매출"), 기본 스태프 1명, 입장료 기준 3, 평판 ×0.75~1.25, 화제성 감쇠 40% |
 | 2026-09-28 | 김시리 | 입장료·예보·화제성·일일 목표·축제 평가·스태프 승급을 **ViewModel 에 전부 중계**("✅ ViewModel 경로" 절). 입장료 변경 명령 `RequestSetAdmissionFee` 신설, 표시 문자열 4종 추가. SNS `{시설}` 문장은 화제 1·7·10·14 에서 실제 시설 이름으로 나옵니다(아래 9/16 기록의 전부 제외 서술은 지난 것) |
 | 2026-09-23 | 김시리 | 홍보 기획 결정 반영(4등급·홍보 없음 ×0.85). 매일 입장료 설정·예보 미리보기·화제성(Buzz)·축제 평가·일일 목표 진행도 API 와 필요한 화면 5가지를 "🆕 홍보 4등급 · 입장료 · 화제성 · 축제 평가" 절에 정리 |

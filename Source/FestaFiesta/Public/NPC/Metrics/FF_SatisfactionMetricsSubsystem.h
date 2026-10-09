@@ -58,6 +58,24 @@ struct FFF_SatisfactionCoefficients
 		return LOSGradeScore[FMath::Clamp<int32>(GradeIndex, 0, 5)];
 	}
 
+	// 시설 커버리지: 그 욕구를 해소하는 운영 중 시설 수가 목표에 못 미치면 Need 충족도에 비율을 곱한다.
+	// 체류가 짧아 개인 욕구가 한계까지 거의 차지 않으므로, 이게 없으면 시설이 모자란 배치도 충족도가 100 근처로 나온다
+	float NeedCoverageTargetHunger = 3.f;
+	float NeedCoverageTargetRestroom = 2.f;
+	float NeedCoverageTargetStimulation = 3.f;
+	float NeedCoverageFloor = 0.3f;
+
+	// 0이면 시설이 하나도 없어도 하한만큼은 남긴다. 목표가 0 이하이면 커버리지를 보지 않는다
+	float NeedCoverageMultiplier(int32 OpenFacilityCount, float Target) const
+	{
+		if (Target <= 0.f)
+		{
+			return 1.f;
+		}
+		const float Floor = FMath::Clamp(NeedCoverageFloor, 0.f, 1.f);
+		return FMath::Clamp(static_cast<float>(OpenFacilityCount) / Target, Floor, 1.f);
+	}
+
 	static FFF_SatisfactionCoefficients LoadFromTable(const UDataTable* UtilityCoefficientTable);
 };
 

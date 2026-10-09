@@ -27,6 +27,7 @@
 #include "UI/LiveHUD/Incident/FF_IncidentMarkerLayer.h"
 #include "UI/LiveHUD/Incident/FF_IncidentToast.h"
 #include "UI/LiveHUD/FF_FinaleSnsOverlay.h"
+#include "UI/LiveHUD/OperationAlert/FF_OperationAlertPanel.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 #include "UI/LiveHUD/FF_LiveUtilityDock.h"
@@ -324,7 +325,24 @@ void UFF_LiveHudScreen::NativeConstruct()
 	EnsureIncidentDetailPanel();
 	BindIncidentFinished();
 	EnsureFinaleSnsOverlay();
+	EnsureOperationAlertPanel();
 	TryShowDailyReport();
+}
+
+void UFF_LiveHudScreen::EnsureOperationAlertPanel()
+{
+	if (!OperationAlertPanel)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			OperationAlertPanel = CreateWidget<UFF_OperationAlertPanel>(PC, UFF_OperationAlertPanel::StaticClass());
+		}
+	}
+	// 사건 알림(20)보다 아래, 피날레 후기(15)와 같은 층. 자리가 달라 겹치지 않는다
+	if (OperationAlertPanel && !OperationAlertPanel->IsInViewport())
+	{
+		OperationAlertPanel->AddToViewport(15);
+	}
 }
 
 void UFF_LiveHudScreen::EnsureFinaleSnsOverlay()
@@ -364,6 +382,10 @@ void UFF_LiveHudScreen::NativeDestruct()
 	if (FinaleSnsOverlay)
 	{
 		FinaleSnsOverlay->RemoveFromParent();
+	}
+	if (OperationAlertPanel)
+	{
+		OperationAlertPanel->RemoveFromParent();
 	}
 	Super::NativeDestruct();
 }

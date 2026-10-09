@@ -4061,10 +4061,9 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 	// ★ 판정은 AtSlot 에서만 한다. Joined(배정 슬롯으로 걸어가는 중)에 이탈시키면 걸어가다
 	//   포기하는 것이 되고, 그 구간에서 진척이 없는 경우는 MoveFailed 가 이미 맡고 있다.
 	//
-	// ★ 기준점은 QueueEnteredSimTime = **줄에 가입한 시각**이라, 슬롯까지 걸어간 시간이
-	//   대기 시간에 포함된다. 슬롯 도착 시각을 따로 들지 않은 것은 의도다 — 손님 입장에서
-	//   "이 시설에 매인 시간"은 가입 시점부터이고, 필드를 하나 더 늘릴 값어치가 없다.
-	//   순수 슬롯 대기만 재야 할 이유가 생기면 그때 타임스탬프를 추가할 것.
+	// ★ 기준점은 QueueAtSlotSimTime = **파티 전원이 칸에 도착한 시각**이다. 가입 시각을 쓰면
+	//   칸까지 걸어간 시간이 대기에 들어가는데, 시설까지 수십 m 를 걷는 동안 인내(15분 = 실제 15초)를
+	//   다 써서 칸에 닿자마자 떠나는 파티가 줄 이탈의 대부분이었다(3일 경제 시나리오 2일차 수락 181 중 84).
 	//
 	// ★ ClearPartyQueueState 를 bLeaveQueue=true 로 먼저 부른다. 이 순서가 중요하다 —
 	//   RequestDecision 이 내부에서 부르는 것은 bLeaveQueue=false 라 큐에 통지하지 않고,
@@ -4086,8 +4085,8 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 	{
 		// 공연 휴지 구간에는 시설이 서비스를 멈춘다. 그 시간까지 기다린 것으로 치면 공연이 끝나기 전에
 		// 줄 선 손님이 거의 다 이탈했다(인내 15분 = 실제 15초, 휴지 구간 약 33초). 휴지 구간 시간은 뺀다.
-		const float PausedSeconds = FMath::Max(QueueBreakSimSeconds - State.QueueBreakSecondsAtEnter, 0.f);
-		const float WaitedMinutes = FMath::Max(SimTimeSeconds - State.QueueEnteredSimTime - PausedSeconds, 0.f)
+		const float PausedSeconds = FMath::Max(QueueBreakSimSeconds - State.QueueBreakSecondsAtSlot, 0.f);
+		const float WaitedMinutes = FMath::Max(SimTimeSeconds - State.QueueAtSlotSimTime - PausedSeconds, 0.f)
 			* Temp_FestivalMinutesPerRealSecond;
 
 		// 대기 항만 켜서 부른다. 밀집은 조정자의 Relocate 경로가 이미 판정하고 있고,
@@ -4195,6 +4194,8 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 		++QueueArrivalNotifies;
 
 		State.QueuePhase = EFF_PartyQueuePhase::AtSlot;
+		State.QueueAtSlotSimTime = SimTimeSeconds;
+		State.QueueBreakSecondsAtSlot = QueueBreakSimSeconds;
 		return true;
 	}
 
@@ -5903,6 +5904,12 @@ int32 UFF_CrowdSimulationSubsystem::ApplySatisfactionPenaltyInArea(
 	return AffectedCount;
 }
 
+float UFF_CrowdSimulationSubsystem::GetNeedCoverage(EFF_NeedType NeedType) const
+{
+	const int32 Index = static_cast<int32>(NeedType);
+	return (Index >= 0 && Index < static_cast<int32>(EFF_NeedType::Count)) ? NeedCoverage[Index] : 1.f;
+}
+
 void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Needs);
@@ -5994,10 +6001,15 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 
 		// 대기: Zone 시설 전수의 평균 완료 대기시간(초). 완료자가 없는 시설(0.0)은 뺀다 —
 		// "아직 모름"과 "대기 없음"을 섞지 않는다(ViewModel::GetLiveFacilities와 같은 판단).
+		// 같은 순회에서 욕구별로 해소 시설을 센다(시설 커버리지). 메인 무대는 필수 시설이라 배치 차이를 만들지 않으므로 뺀다.
+		// Zone 이 없으면(시설 정보 없음) 커버리지를 1로 둔다 — "시설 0개"와 "모름"을 섞지 않는다.
+		int32 ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Count)] = {};
+		bool bHasFacilityReadModel = false;
 		if (const UWorld* World = GetWorld())
 		{
 			if (const UFFZSWorldSubsystem* Zone = World->GetSubsystem<UFFZSWorldSubsystem>())
 			{
+				bHasFacilityReadModel = true;
 				const FFFZSReadModel ReadModel = Zone->BuildReadModel();
 				for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
 				{
@@ -6009,8 +6021,29 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 					{
 						Satisfaction->AddWaitSample(Facility.AverageCompletedWaitSeconds);
 					}
+
+					if (Facility.State != EFFZSFacilityState::Active
+						|| Facility.bNeedsRelocation
+						|| FFF_ZoneSystemBridge::IsMainStageFacility(Facility.Category, Facility.FacilityDefinitionId))
+					{
+						continue;
+					}
+					const FFF_NeedReliefFlags Relief =
+						FFF_ZoneSystemBridge::GetNeedReliefFlags(Facility.Category, Facility.FacilityDefinitionId);
+					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Hunger)] += Relief.bRelievesHunger ? 1 : 0;
+					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Restroom)] += Relief.bRelievesRestroom ? 1 : 0;
+					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Stimulation)] += Relief.bRelievesStimulation ? 1 : 0;
 				}
 			}
+		}
+		if (bHasFacilityReadModel)
+		{
+			NeedCoverage[static_cast<int32>(EFF_NeedType::Hunger)] = Coefficients.NeedCoverageMultiplier(
+				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Hunger)], Coefficients.NeedCoverageTargetHunger);
+			NeedCoverage[static_cast<int32>(EFF_NeedType::Restroom)] = Coefficients.NeedCoverageMultiplier(
+				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Restroom)], Coefficients.NeedCoverageTargetRestroom);
+			NeedCoverage[static_cast<int32>(EFF_NeedType::Stimulation)] = Coefficients.NeedCoverageMultiplier(
+				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Stimulation)], Coefficients.NeedCoverageTargetStimulation);
 		}
 
 		// 밀도: 점유 셀마다 LOS 등급 점수를 매겨 그 셀의 인원 수로 가중한다 — "사람이 몇 명이나
@@ -6059,7 +6092,8 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 			};
 			for (const EFF_NeedType NeedType : ActiveNeedTypes)
 			{
-				Satisfaction->AddNeedFulfillmentSample(100.f - NeedMetrics->GetNeedUnmetRatio(NeedType));
+				Satisfaction->AddNeedFulfillmentSample(
+					(100.f - NeedMetrics->GetNeedUnmetRatio(NeedType)) * GetNeedCoverage(NeedType));
 			}
 		}
 

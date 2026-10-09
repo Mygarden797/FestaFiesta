@@ -137,6 +137,38 @@ bool FFF_SnsFeedGenerator_GatedTopicsRespectEligibility::RunTest(const FString& 
 	Day2.CurrentDay = 2;
 	TestFalse(TEXT("2일차면 화제12는 자격이 없다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(12, Day2));
 
+	// 화제27(어제 글 보고 왔다): 2일차 오전 + 어제 매출 1위가 있을 때만
+	FFF_SnsFeedSignals Inflow;
+	Inflow.CurrentDay = 2;
+	Inflow.LiveElapsedFraction = 0.1f;
+	TestFalse(TEXT("어제 매출 1위가 없으면 화제27은 자격이 없다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(27, Inflow));
+	Inflow.YesterdayTopFacilityDisplayName = TEXT("피자 부스");
+	TestTrue(TEXT("2일차 오전이면 화제27은 자격이 있다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(27, Inflow));
+	Inflow.LiveElapsedFraction = 0.5f;
+	TestFalse(TEXT("오후에는 화제27이 나오지 않는다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(27, Inflow));
+	// 한산(11)은 붐비는 칸이 없고 밀도 점수가 높을 때만, 붐빔(4)은 붐비는 칸이 있을 때만
+	FFF_SnsFeedSignals Calm;
+	Calm.bFacilityUsedToday = true;
+	Calm.DensityScore0To100 = FFF_SnsFeedGenerator::CalmDensityScoreAtLeast;
+	TestTrue(TEXT("한산하면 화제11"), FFF_SnsFeedGenerator::IsTopicEligibleNow(11, Calm));
+	TestFalse(TEXT("붐비는 칸이 없으면 화제4는 없다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(4, Calm));
+	Calm.CongestedCellCount = 1;
+	TestFalse(TEXT("붐비는 칸이 있으면 한산 글은 없다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(11, Calm));
+	TestTrue(TEXT("붐비는 칸이 있으면 화제4"), FFF_SnsFeedGenerator::IsTopicEligibleNow(4, Calm));
+
+	Inflow.LiveElapsedFraction = 0.1f;
+	Inflow.CurrentDay = 1;
+	TestFalse(TEXT("1일차에는 화제27이 나오지 않는다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(27, Inflow));
+
+	FFF_SnsPostTemplateRow InflowRow;
+	InflowRow.TopicId = 27;
+	InflowRow.bUsesFacilityPlaceholder = true;
+	InflowRow.Text = FText::FromString(TEXT("어제 SNS 보니까 {시설} 있어서 왔어요"));
+	Inflow.CurrentDay = 2;
+	TestTrue(TEXT("화제27의 {시설} 행은 쓴다"), FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(InflowRow));
+	TestEqual(TEXT("{시설}은 어제 매출 1위로 바뀐다"),
+		FFF_SnsFeedGenerator::ResolveBodyText(InflowRow, Inflow).ToString(), FString(TEXT("어제 SNS 보니까 피자 부스 있어서 왔어요")));
+
 	return true;
 }
 
@@ -208,11 +240,11 @@ bool FFF_SnsFeedGenerator_SalienceReflectsChosenTopicScore::RunTest(const FStrin
 	return true;
 }
 
-// {시설} 자리표시자는 가리킬 시설이 신호로 분명한 화제(1·7·10·14)만 통과한다
+// {시설} 자리표시자는 가리킬 시설이 신호로 분명한 화제(1·4·7·10·14·27)만 통과한다
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForSignaledTopics, "FestaFiesta.NPC.SnsFeedGenerator.FacilityPlaceholderOnlyForSignaledTopics", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForSignaledTopics::RunTest(const FString& Parameters)
 {
-	for (const int32 TopicId : {7, 14})
+	for (const int32 TopicId : {4, 7, 14})
 	{
 		FFF_SnsPostTemplateRow Row;
 		Row.TopicId = TopicId;
