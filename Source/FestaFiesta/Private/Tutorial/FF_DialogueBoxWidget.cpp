@@ -228,6 +228,16 @@ void UFF_DialogueBoxWidget::HandleSkipClicked()
 	// 확인 창을 여기서 띄우는 이유는, BP 그래프에 로직을 두면 깃에서 병합도
 	// 리뷰도 안 되기 때문이다. BP 는 배치와 모양만 맡는다.
 
+	// 비서 브리핑은 되돌릴 것이 없다. 묻지 않고 그 브리핑만 닫는다(튜토리얼 안내는 그대로).
+	if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
+	{
+		if (Tutorial->IsBriefingActive())
+		{
+			Tutorial->StopScript();
+			return;
+		}
+	}
+
 	// 이미 떠 있으면 또 만들지 않는다. 겹친 창은 하나를 닫아도 뒤에 하나가 남는다.
 	if (const UFF_SkipConfirmWidget* Existing = OpenSkipConfirm.Get())
 	{
