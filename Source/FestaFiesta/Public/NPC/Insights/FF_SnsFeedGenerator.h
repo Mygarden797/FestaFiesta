@@ -55,6 +55,9 @@ struct FFF_SnsFeedSignals
 	FString MostQueuedFacilityDisplayName;
 	int32 MaxWaitingCount = 0;
 
+	// 화제27(어제 글 보고 왔다)의 {시설} 치환용 — 어제 매출이 가장 많았던 시설 종류의 이름. 1일차·어제 매출 없음이면 빈 문자열
+	FString YesterdayTopFacilityDisplayName;
+
 	// 화제15(입장료 비쌈)·16(입장료 가성비) 점수용. 기준값보다 비쌀수록 15, 쌀수록 16 이 높다.
 	// 셋 다 0 이면(축제 전) 두 화제 점수가 0 이다
 	int32 AdmissionFeeGold = 0;
@@ -92,6 +95,9 @@ public:
 	static constexpr int32 FinaleHypeTopicId = 17;
 	static constexpr int32 FinaleTopicIdMin = 17;
 	static constexpr int32 FinaleTopicIdMax = 22;
+
+	// 한산(11) 글은 밀도 점수가 이 값 이상이고 붐비는 칸이 없을 때만 나간다
+	static constexpr int32 CalmDensityScoreAtLeast = 85;
 
 	// 미구매 18 · C 19 · B 20 · A 21 · S 22
 	static int32 GetFinaleVerdictTopicId(EFF_FinaleGrade Grade);

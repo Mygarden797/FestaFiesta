@@ -214,6 +214,10 @@ void UFF_TutorialSubsystem::RecordScopeCompleted()
 		Save->MarkFestivalTutorialSeen(ActiveScopeFestivalId);
 		break;
 
+	case EFF_TutorialScope::Briefing:
+		// 비서 브리핑은 매일 새로 짓는 대사라 봤다는 기록이 필요 없다.
+		break;
+
 	default:
 		/* 범위를 모르는 재생이다. 콘솔이나 UI 가 직접 부른 경우라 여기서 기록하면
 		   플레이어가 보지도 않은 튜토리얼이 봤다고 남는다. 로그만 남긴다.
@@ -275,6 +279,23 @@ bool UFF_TutorialSubsystem::PlayTable(UDataTable* Table)
 	// 표에는 이어지는 씬 개념이 없다. 필요하면 호출부가 다음 표를 부른다.
 	PendingNextScript = nullptr;
 	return StartLines(Lines, FName(*Table->GetName()));
+}
+
+bool UFF_TutorialSubsystem::PlayLines(const TArray<FFF_DialogueLine>& Lines, const FName ScriptId, const EFF_TutorialScope Scope)
+{
+	if (bDialogueActive || Lines.Num() == 0)
+	{
+		return false;
+	}
+
+	PendingNextScript = nullptr;
+	SetPlaybackScope(Scope, NAME_None);
+	if (!StartLines(Lines, ScriptId))
+	{
+		SetPlaybackScope(EFF_TutorialScope::None, NAME_None);
+		return false;
+	}
+	return true;
 }
 
 bool UFF_TutorialSubsystem::PlayScript(UFF_DialogueScriptData* Script)
@@ -1448,6 +1469,13 @@ void UFF_TutorialSubsystem::RequestSkipConfirm()
 		return;
 	}
 
+	// 비서 브리핑은 되돌릴 것이 없다. 묻지 않고 그 브리핑만 닫는다.
+	if (IsBriefingActive())
+	{
+		StopScript();
+		return;
+	}
+
 	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
 	if (!Settings)
 	{
@@ -1504,6 +1532,13 @@ void UFF_TutorialSubsystem::SkipTutorial()
 	{
 		UE_LOG(LogFestaFiestaTutorial, Log,
 			TEXT("[튜토리얼] 진행 중인 대사가 없어 건너뛰기를 무시한다."));
+		return;
+	}
+
+	// 비서 브리핑을 닫는 건 튜토리얼 건너뛰기가 아니다. 안내를 끄거나 레벨을 떠나지 않는다.
+	if (IsBriefingActive())
+	{
+		StopScript();
 		return;
 	}
 

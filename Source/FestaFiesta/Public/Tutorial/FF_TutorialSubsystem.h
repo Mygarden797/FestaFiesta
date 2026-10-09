@@ -60,6 +60,13 @@ enum class EFF_TutorialScope : uint8
 
 	// 축제 레벨의 튜토리얼. 축제마다 배울 것이 달라 축제별로 남긴다.
 	Festival,
+
+	/* 비서 브리핑(FF_SecretarySubsystem). 그날그날 만든 대사라 기록하지 않는다.
+
+	   건너뛰기는 안내 전체 끄기가 아니라 이 브리핑만 닫는다. 튜토리얼 건너뛰기("안내 없이 운영만")와
+	   섞이면 아침 브리핑을 닫았을 뿐인데 튜토리얼까지 꺼진다.
+	*/
+	Briefing,
 };
 
 // 튜토리얼 대사를 굴리고 조작을 기다린다.
@@ -101,6 +108,16 @@ public:
 	// 긴 대사는 표가 편해서다. 재생 뒤로는 둘이 같은 길을 탄다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
 	bool PlayTable(UDataTable* Table);
+
+	/* 그때그때 만든 줄을 표 없이 바로 재생한다. 비서 브리핑처럼 그날 값으로 문장을 짓는 경우에 쓴다.
+
+	   이미 다른 대사가 진행 중이면 끼어들지 않고 false 를 돌려준다. 튜토리얼 도중에 브리핑이 겹치면
+	   튜토리얼이 기다리던 조작을 잃는다.
+	*/
+	bool PlayLines(const TArray<FFF_DialogueLine>& Lines, FName ScriptId, EFF_TutorialScope Scope);
+
+	// 지금 비서 브리핑을 재생 중인가. 건너뛰기가 브리핑만 닫게 하는 데 쓴다.
+	bool IsBriefingActive() const { return bDialogueActive && ActiveScope == EFF_TutorialScope::Briefing; }
 
 	// 다음 줄로. 대사창에서 클릭했을 때 부른다.
 	//

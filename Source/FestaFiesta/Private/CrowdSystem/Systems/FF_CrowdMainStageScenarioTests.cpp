@@ -46,7 +46,13 @@ namespace FFMainStageScenario
 	// 시작하고, 여기서 재는 값은 전부 시설 위치에 달렸다 — 코드로 심은 배치를 재면 의미가 없다.
 	// 배치에는 축제 필수 시설(선셋 메인공연장·메인안내소)이 들어 있어야 Live 로 넘어간다.
 	// 메인안내소 스태프 배정은 슬롯에 저장되지 않으므로 AssignRequiredStaff 가 대신 한다.
-	const TCHAR* LayoutSlot = TEXT("day1");
+	// -FFScenarioLayout=econ_std 처럼 다른 슬롯을 고를 수 있다
+	FString GetLayoutSlot()
+	{
+		FString Slot = TEXT("day1");
+		FParse::Value(FCommandLine::Get(), TEXT("FFScenarioLayout="), Slot);
+		return Slot;
+	}
 
 	// Live 는 그날 마지막 이벤트 시각까지다. Day1 은 240초이고 공연은 180~210 이다.
 	constexpr float ObserveUntilLiveSeconds = 215.f;
@@ -99,15 +105,16 @@ public:
 		}
 
 		// 저장해 둔 배치를 먼저 붓는다.
+		const FString LayoutSlot = FFMainStageScenario::GetLayoutSlot();
 		if (UFF_ZoneLayoutSaveGame* Layout = Cast<UFF_ZoneLayoutSaveGame>(
-			UGameplayStatics::LoadGameFromSlot(FFMainStageScenario::LayoutSlot, 0)))
+			UGameplayStatics::LoadGameFromSlot(LayoutSlot, 0)))
 		{
 			UFFZSWorldSubsystem* MutableZones = World->GetSubsystem<UFFZSWorldSubsystem>();
 			TArray<FText> RestoreErrors;
 			if (MutableZones && MutableZones->RestoreWorldSnapshot(Layout->Snapshot, RestoreErrors))
 			{
 				Test->AddInfo(FString::Printf(TEXT("배치 슬롯 '%s' 복원 — 시설 %d개"),
-					FFMainStageScenario::LayoutSlot, Layout->Snapshot.Facilities.Num()));
+					*LayoutSlot, Layout->Snapshot.Facilities.Num()));
 			}
 			else
 			{
@@ -121,7 +128,7 @@ public:
 		{
 			Test->AddError(FString::Printf(
 				TEXT("배치 슬롯 '%s' 이 없다. PIE 에서 축제장을 짓고 `FF.Zone.SaveLayout %s` 를 한 번 실행할 것."),
-				FFMainStageScenario::LayoutSlot, FFMainStageScenario::LayoutSlot));
+				*LayoutSlot, *LayoutSlot));
 			return true;
 		}
 

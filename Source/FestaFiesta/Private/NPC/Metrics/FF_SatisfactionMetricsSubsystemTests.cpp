@@ -368,4 +368,19 @@ bool FFF_SatisfactionMetrics_PenaltyDoesNotStackOnEmptyWindow::RunTest(const FSt
 	return true;
 }
 
+// 시설 커버리지 배수: 목표 대비 비율, 하한과 1 사이로 자른다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SatisfactionMetrics_NeedCoverageMultiplierClampsToFloor, "FestaFiesta.NPC.SatisfactionMetrics.NeedCoverageMultiplierClampsToFloor", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SatisfactionMetrics_NeedCoverageMultiplierClampsToFloor::RunTest(const FString& Parameters)
+{
+	FFF_SatisfactionCoefficients Coefficients;
+	Coefficients.NeedCoverageFloor = 0.3f;
+
+	TestEqual(TEXT("시설이 없으면 하한"), Coefficients.NeedCoverageMultiplier(0, 3.f), 0.3f);
+	TestEqual(TEXT("하한보다 큰 비율은 그대로"), Coefficients.NeedCoverageMultiplier(1, 2.f), 0.5f);
+	TestEqual(TEXT("목표를 채우면 1"), Coefficients.NeedCoverageMultiplier(3, 3.f), 1.f);
+	TestEqual(TEXT("목표를 넘어도 1"), Coefficients.NeedCoverageMultiplier(7, 3.f), 1.f);
+	TestEqual(TEXT("목표가 0이면 보지 않는다"), Coefficients.NeedCoverageMultiplier(0, 0.f), 1.f);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

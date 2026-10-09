@@ -192,7 +192,22 @@ void UFF_LivePanelReport::RefreshAll()
 	const FFormatNamedArguments DayArgs{{TEXT("Day"), Day > 0 ? FText::AsNumber(Day) : UnknownValueText}};
 	SetTextOrHide(Text_PanelTitle, FText::Format(DayTitleFormat, DayArgs));
 	SetTextOrHide(Text_DayLabel, FText::Format(DayLabelFormat, DayArgs));
-	SetTextOrHide(Text_MissingNote, Report ? FText::GetEmpty() : PendingReportText);
+	const FText Comment = Report && !Report->AssistantComment.IsEmpty()
+		? FText::FormatNamed(AssistantCommentFormat, TEXT("Comment"), Report->AssistantComment) : FText::GetEmpty();
+	if (Text_AssistantComment)
+	{
+		Text_AssistantComment->SetAutoWrapText(true);
+		SetTextOrHide(Text_AssistantComment, Comment);
+		SetTextOrHide(Text_MissingNote, Report ? FText::GetEmpty() : PendingReportText);
+	}
+	else
+	{
+		if (Text_MissingNote && Report)
+		{
+			Text_MissingNote->SetAutoWrapText(true);
+		}
+		SetTextOrHide(Text_MissingNote, Report ? Comment : PendingReportText);
+	}
 
 	SetTextOrHide(Text_TodayRevenue, Report ? FText::AsNumber(Report->Revenue) : UnknownValueText);
 	SetTextOrHide(Text_TodayExpense, Report ? FText::AsNumber(Report->Expense) : UnknownValueText);

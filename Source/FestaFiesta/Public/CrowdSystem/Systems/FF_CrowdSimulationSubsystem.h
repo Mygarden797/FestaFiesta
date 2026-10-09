@@ -381,6 +381,9 @@ public:
 	int32 LastWindowQueueJoinRejected = 0;
 	int32 LastWindowQueuePatienceAbandons = 0;
 
+	// GetNeedCoverage 가 돌려주는 값. EFF_NeedType 순서
+	float NeedCoverage[static_cast<int32>(EFF_NeedType::Count)] = { 1.f, 1.f, 1.f, 1.f, 1.f };
+
 	void DespawnParty(int32 PartyID);
 
 	// 조정자가 여기에 물어 목적지를 내려준다. 비어 있으면 Crowd가 배회로 폴백한다
@@ -748,6 +751,11 @@ public:
 	// 인내심 한계로 줄에서 이탈한 파티 수(patience_multiplier 결선 지점).
 	UFUNCTION(BlueprintPure, Category = "Crowd|Queue")
 	int32 GetQueuePatienceAbandons() const { return QueuePatienceAbandons; }
+
+	// 마지막 만족도 창의 시설 커버리지(하한~1). 그 욕구를 해소하는 운영 중 시설 수 / 목표.
+	// Hunger·Restroom·Stimulation 만 계산하고 나머지는 1. 1 미만이면 그 시설이 모자란다는 뜻이다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Metrics")
+	float GetNeedCoverage(EFF_NeedType NeedType) const;
 
 	// 걷는 도중 개인 주기가 차면 목적지를 다시 고른다(jockeying).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim")

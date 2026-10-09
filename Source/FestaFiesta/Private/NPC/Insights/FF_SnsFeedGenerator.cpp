@@ -12,7 +12,7 @@ namespace
 	{
 		// 9(피날레)는 뺀다 — 주기 선택 대상이 아니라 축제 종료 시점에 ForcedTopicId로만 나간다
 		// 17~22(피날레 연출)도 뺀다 — 피날레 단계에서 따로 돈다
-		static const int32 AllTopicIds[] = { 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26 };
+		static const int32 AllTopicIds[] = { 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27 };
 		for (int32 Id : AllTopicIds)
 		{
 			if (FFF_SnsFeedGenerator::GetTopicPolarity(Id) == Polarity)
@@ -29,7 +29,7 @@ EFF_SnsSentiment FFF_SnsFeedGenerator::GetTopicPolarity(int32 TopicId)
 	{
 	case 7: case 8: case 9: case 10: case 11: case 14: case 16:
 	case 17: case 20: case 21: case 22:
-	case 23: case 24: case 26:
+	case 23: case 24: case 26: case 27:
 		return EFF_SnsSentiment::Positive;
 	default:
 		return EFF_SnsSentiment::Negative;
@@ -99,8 +99,12 @@ bool FFF_SnsFeedGenerator::IsTopicEligibleNow(int32 TopicId, const FFF_SnsFeedSi
 		return !Signals.WorstWaitFacilityDisplayName.IsEmpty();
 	case 3: // 취향 불일치 — 무언가를 해 봐야 취향에 안 맞는다고 쓴다
 	case 7: // 시설 이용 후 만족
-	case 11: // 한산해서 쾌적함 — 문장이 "즐겼다"처럼 과거형이다
 		return Signals.bFacilityUsedToday;
+	case 11: // 한산해서 쾌적함 — 문장이 "즐겼다"처럼 과거형이다. 붐비는 칸이 하나라도 있으면 한산하다고 쓰지 않는다
+		return Signals.bFacilityUsedToday && Signals.CongestedCellCount == 0
+			&& Signals.DensityScore0To100 >= CalmDensityScoreAtLeast;
+	case 4: // 붐빔 — 실제로 붐비는 칸이 있을 때만
+		return Signals.CongestedCellCount > 0;
 	case 8: // 공연 직전 기대감 — 공연 락 구간에서, 공연이 시작되기 전까지만
 		return Signals.bMainProgramLocked && !Signals.bMainShowRunning;
 	case 10: // 인기 시설 — 실제로 줄이 있어야 한다
@@ -114,6 +118,9 @@ bool FFF_SnsFeedGenerator::IsTopicEligibleNow(int32 TopicId, const FFF_SnsFeedSi
 		return Signals.bMainShowJustEnded;
 	case 26: // 개장 기대감 — 하루 시작 직후
 		return Signals.LiveElapsedFraction < 0.15f;
+	case 27: // 어제 글 보고 왔다 — 2일차부터 오전에, 어제 돈을 번 시설이 있을 때
+		return Signals.CurrentDay >= 2 && Signals.LiveElapsedFraction < 0.3f
+			&& !Signals.YesterdayTopFacilityDisplayName.IsEmpty();
 	case 12: // 축제 초반 시설 부족 — 1일차에서만
 		return Signals.CurrentDay == 1;
 	case 15: // 입장료 비쌈 — 기준값보다 비쌀 때만
@@ -168,6 +175,8 @@ float FFF_SnsFeedGenerator::ComputeTopicScore(int32 TopicId, const FFF_SnsFeedSi
 		return 100.f - Signals.DensityScore0To100;
 	case 26: // 개장 기대감 — 아직 겪은 게 없으니 이 화제가 대부분이다
 		return 80.f;
+	case 27: // 어제 글 보고 왔다 — 개장 기대감과 섞여 나오도록 조금 낮게
+		return 70.f;
 	default:
 		return 0.f;
 	}
@@ -327,7 +336,9 @@ bool FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(const FFF_SnsPostTemplateRow
 	// 화제1(최장 대기)·10(최다 대기줄)·7(만족)·14(재방문)만 어떤 시설을 가리켜야 하는지가 분명하다.
 	// 7·14 는 "줄이 가장 긴 곳 = 사람들이 좋아하는 곳" 으로 10 과 같은 신호를 쓴다.
 	// 나머지 화제는 가리킬 시설을 정할 신호가 없어 계속 뺀다
-	return Row.TopicId == 1 || Row.TopicId == 10 || Row.TopicId == 7 || Row.TopicId == 14;
+	// 4(붐빔)도 줄이 가장 긴 곳을 붐비는 곳으로 가리킨다. 27 은 어제 매출 1위 시설을 가리킨다
+	return Row.TopicId == 1 || Row.TopicId == 4 || Row.TopicId == 10 || Row.TopicId == 7 || Row.TopicId == 14
+		|| Row.TopicId == 27;
 }
 
 FText FFF_SnsFeedGenerator::ResolveBodyText(const FFF_SnsPostTemplateRow& Row, const FFF_SnsFeedSignals& Signals)
@@ -342,9 +353,13 @@ FText FFF_SnsFeedGenerator::ResolveBodyText(const FFF_SnsPostTemplateRow& Row, c
 	{
 		FacilityName = Signals.WorstWaitFacilityDisplayName;
 	}
-	else if (Row.TopicId == 10 || Row.TopicId == 7 || Row.TopicId == 14)
+	else if (Row.TopicId == 4 || Row.TopicId == 10 || Row.TopicId == 7 || Row.TopicId == 14)
 	{
 		FacilityName = Signals.MostQueuedFacilityDisplayName;
+	}
+	else if (Row.TopicId == 27)
+	{
+		FacilityName = Signals.YesterdayTopFacilityDisplayName;
 	}
 
 	if (FacilityName.IsEmpty())

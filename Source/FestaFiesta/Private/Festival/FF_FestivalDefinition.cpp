@@ -34,10 +34,10 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 
 	// 등급이 올라갈수록 비용과 보너스가 함께 커진다.
 	FinaleTiers = {
-		{ EFF_FinaleGrade::C, 2000,  3 },
-		{ EFF_FinaleGrade::B, 4000,  6 },
-		{ EFF_FinaleGrade::A, 6000, 10 },
-		{ EFF_FinaleGrade::S, 8000, 15 }
+		{ EFF_FinaleGrade::C, 1000,  3 },
+		{ EFF_FinaleGrade::B, 1800,  6 },
+		{ EFF_FinaleGrade::A, 2600, 10 },
+		{ EFF_FinaleGrade::S, 3500, 15 }
 	};
 	
 	RevenuePerUseByMinorToken = {

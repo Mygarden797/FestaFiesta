@@ -47,6 +47,11 @@ struct FESTAFIESTA_API FFF_DailyReportView
 	int32 TotalStaff = INDEX_NONE;
 	int32 HiredStaff = INDEX_NONE;
 	int32 Programs = INDEX_NONE;
+	// 오늘 매출 1위 시설(배치된 시설 하나 단위). 매출이 없으면 이름이 비어 있다
+	FText TopFacilityName;
+	int32 TopFacilityGold = 0;
+	// 비서 한마디. FFF_DailyReportCommentRules 가 위 값으로 만든다
+	FText AssistantComment;
 };
 
 /** 종료된 축제의 날짜별 표시값. 원장이 없는 날과 수입이 0인 날을 구분한다. */
@@ -1245,6 +1250,8 @@ private:
 	void CaptureDailySatisfaction();
 	bool IsDailyReportSurface() const;
 	void CaptureDailyReportIfReady();
+	// 매출 1위 시설과 비서 한마디. 결산을 확정할 때 한 번 읽는다
+	void FillReportAssistantComment(FFF_DailyReportView& Report) const;
 	FFF_DailyReportView DailyReport;
 	FFF_DailyReportView LastDailySatisfaction;
 	TSet<int32> AutoShownReportDays;
@@ -1254,6 +1261,9 @@ private:
 	 * 축제 도중 불러온 경우 그 이전 날짜는 미기록(—)으로 남는다.
 	 */
 	TMap<int32, int32> AdmittedVisitorsByDay;
+	// 날짜별 관객 만족도와 방문객 목표 달성. 마지막 날 비서 한마디(축제 돌아보기)가 쓴다. 저장하지 않는 것도 위와 같다
+	TMap<int32, int32> SatisfactionByDay;
+	TMap<int32, bool> GoalMetByDay;
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_SaveSubsystem> ReportSaveSubsystem;
 	void TryBindStaffFacilitySubsystem();
