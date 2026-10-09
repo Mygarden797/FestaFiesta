@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "경제 시나리오 많음 배치: 보통 배치에 음식 4, 나이트라이프 2, 굿즈·공방·게임 4, 화장실 2, 쉼터 2, 포토스팟 2, 버스킹 1 을 더했다.",
+  "description": "경제 시나리오 많음 배치: 보통 배치에 음식 1, 나이트라이프 2, 굿즈·공방·게임 3, 버스킹 1 을 더했다. 설치비가 시작 자금 10,000 안에 들도록 매출 없는 시설은 늘리지 않았다.",
   "map": "/Game/FestaFiesta/Maps/Test_Main",
   "slot": "econ_full",
   "facilities": [
@@ -78,40 +78,13 @@
       "yaw_centidegrees": 0
     },
     {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Taco",
-      "zone_id": "GZ_TestMain_05",
-      "origin_cm": [
-        5100,
-        5100
-      ],
-      "yaw_centidegrees": 0
-    },
-    {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_SeedHotteokStall",
-      "zone_id": "GZ_TestMain_05",
-      "origin_cm": [
-        4800,
-        5100
-      ],
-      "yaw_centidegrees": 9000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_IceCream",
       "zone_id": "GZ_TestMain_06",
       "origin_cm": [
         5400,
         2700
       ],
       "yaw_centidegrees": 27000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
-      "zone_id": "GZ_TestMain_02",
-      "origin_cm": [
-        5620,
-        5290
-      ],
-      "yaw_centidegrees": 0
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_MarketGoods_LocalSouvenirShop",
@@ -124,19 +97,19 @@
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_MarketGoods_GlowCheeringGoodsShop",
-      "zone_id": "GZ_TestMain_01",
+      "zone_id": "GZ_TestMain_27",
       "origin_cm": [
-        4500,
-        5100
+        5100,
+        2100
       ],
-      "yaw_centidegrees": 18000
+      "yaw_centidegrees": 9000
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_CraftExperience_SandArt",
-      "zone_id": "GZ_DadaPocha",
+      "zone_id": "GZ_TestMain_01",
       "origin_cm": [
-        4200,
-        4200
+        5100,
+        5400
       ],
       "yaw_centidegrees": 9000
     },
@@ -145,9 +118,9 @@
       "zone_id": "GZ_TestMain_05",
       "origin_cm": [
         5100,
-        4800
+        5100
       ],
-      "yaw_centidegrees": 18000
+      "yaw_centidegrees": 0
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_ActivityGame_BalloonDartStall",
@@ -187,12 +160,21 @@
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_Nightlife_SunsetMocktailBar",
-      "zone_id": "GZ_TestMain_27",
+      "zone_id": "GZ_DadaPocha",
       "origin_cm": [
-        5100,
-        2100
+        4200,
+        4200
       ],
       "yaw_centidegrees": 9000
+    },
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Standard_Standard",
+      "zone_id": "GZ_TestMain_01",
+      "origin_cm": [
+        4500,
+        5100
+      ],
+      "yaw_centidegrees": 18000
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Standard_Standard",
@@ -204,38 +186,20 @@
       "yaw_centidegrees": 18000
     },
     {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Standard_Standard",
-      "zone_id": "GZ_TestMain_01",
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Temporary_PortableRestroomCabin",
+      "zone_id": "GZ_TestMain_05",
       "origin_cm": [
-        5100,
-        5400
+        4800,
+        5100
       ],
       "yaw_centidegrees": 9000
     },
     {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Temporary_PortableRestroomCabin",
-      "zone_id": "GZ_TestMain_02",
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Seating_Seating",
+      "zone_id": "GZ_TestMain_06",
       "origin_cm": [
-        4120,
-        5290
-      ],
-      "yaw_centidegrees": 18000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Family_Family",
-      "zone_id": "GZ_TestMain_10",
-      "origin_cm": [
-        3880,
-        5100
-      ],
-      "yaw_centidegrees": 18000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Standard_BeachWoodRestroom",
-      "zone_id": "GZ_TestMain_05",
-      "origin_cm": [
-        4500,
-        5100
+        5100,
+        2100
       ],
       "yaw_centidegrees": 18000
     },
@@ -249,67 +213,22 @@
       "yaw_centidegrees": 9000
     },
     {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Seating_Seating",
-      "zone_id": "GZ_TestMain_06",
-      "origin_cm": [
-        5700,
-        3000
-      ],
-      "yaw_centidegrees": 27000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Cooling_BeachFootbathShelter",
-      "zone_id": "GZ_TestMain_05",
-      "origin_cm": [
-        5100,
-        5700
-      ],
-      "yaw_centidegrees": 9000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Shade_Shade",
-      "zone_id": "GZ_TestMain_02",
-      "origin_cm": [
-        4120,
-        5590
-      ],
-      "yaw_centidegrees": 9000
-    },
-    {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/PhotoSpot/PDA_FFZS_PhotoSpot_Landmark_WhaleTailSculpture",
       "zone_id": "GZ_TestMain_06",
       "origin_cm": [
         4800,
-        2400
+        2100
       ],
-      "yaw_centidegrees": 27000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/PhotoSpot/PDA_FFZS_PhotoSpot_Interactive_FourCutPhotoBooth",
-      "zone_id": "GZ_TestMain_01",
-      "origin_cm": [
-        5100,
-        6000
-      ],
-      "yaw_centidegrees": 9000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/PhotoSpot/PDA_FFZS_PhotoSpot_Scenic_SunsetFrameOverlook",
-      "zone_id": "GZ_TestMain_07",
-      "origin_cm": [
-        5400,
-        4760
-      ],
-      "yaw_centidegrees": 27000
+      "yaw_centidegrees": 18000
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_Busking_AcousticBuskingDeck",
       "zone_id": "GZ_TestMain_05",
       "origin_cm": [
-        5700,
-        5100
+        5100,
+        4800
       ],
-      "yaw_centidegrees": 0
+      "yaw_centidegrees": 18000
     }
   ]
 }

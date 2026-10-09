@@ -18,6 +18,7 @@ class UFF_IncidentDetailPanel;
 class UFF_IncidentMarkerLayer;
 class UFF_IncidentToast;
 class UFF_FinaleSnsOverlay;
+class UFF_OperationAlertPanel;
 class UFF_LivePanelBase;
 class UFF_LivePlaceholderPanel;
 class UFF_LiveTabButton;
@@ -535,6 +536,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_FinaleSnsOverlay> FinaleSnsOverlay;
+
+	/** 운영 알림(시설 부족·줄 이탈)을 오른쪽 위에 띄우고 지난 알림을 다시 보여 준다. Live 에서만 보인다. */
+	void EnsureOperationAlertPanel();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_OperationAlertPanel> OperationAlertPanel;
 
 	void RefreshTabs();
 	void RefreshStatusRow();

@@ -30,6 +30,15 @@ FFF_SatisfactionCoefficients FFF_SatisfactionCoefficients::LoadFromTable(const U
 	Coefficients.PreferenceTermRef = FFF_UtilityCoefficientHelpers::GetCoefficient(
 		UtilityCoefficientTable, TEXT("satisfaction_preference_term_ref"), Coefficients.PreferenceTermRef);
 
+	Coefficients.NeedCoverageTargetHunger = FFF_UtilityCoefficientHelpers::GetCoefficient(
+		UtilityCoefficientTable, TEXT("need_coverage_target_hunger"), Coefficients.NeedCoverageTargetHunger);
+	Coefficients.NeedCoverageTargetRestroom = FFF_UtilityCoefficientHelpers::GetCoefficient(
+		UtilityCoefficientTable, TEXT("need_coverage_target_restroom"), Coefficients.NeedCoverageTargetRestroom);
+	Coefficients.NeedCoverageTargetStimulation = FFF_UtilityCoefficientHelpers::GetCoefficient(
+		UtilityCoefficientTable, TEXT("need_coverage_target_stimulation"), Coefficients.NeedCoverageTargetStimulation);
+	Coefficients.NeedCoverageFloor = FFF_UtilityCoefficientHelpers::GetCoefficient(
+		UtilityCoefficientTable, TEXT("need_coverage_floor"), Coefficients.NeedCoverageFloor);
+
 	static const TCHAR* LOSGradeCoefficientIds[6] =
 	{
 		TEXT("satisfaction_los_a_score"), TEXT("satisfaction_los_b_score"), TEXT("satisfaction_los_c_score"),

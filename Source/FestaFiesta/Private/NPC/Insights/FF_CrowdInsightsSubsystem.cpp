@@ -460,6 +460,26 @@ void UFF_CrowdInsightsSubsystem::FillFacilitySignals(FFF_SnsFeedSignals& Signals
 
 	const FFFZSReadModel ReadModel = ZoneSystem->BuildReadModel();
 
+	// 어제 매출 1위 종류. 원장은 종류(FacilityDefinitionId)로 남으므로 같은 종류의 배치된 시설에서 이름을 읽는다
+	FName YesterdayTopDefinitionId;
+	if (Signals.CurrentDay >= 2)
+	{
+		const UFF_FestivalProgressionSubsystem* Progression = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+		if (Progression && Progression->HasLedgerForDay(Signals.CurrentDay - 1))
+		{
+			int32 TopAmount = 0;
+			for (const FFF_FacilityRevenueRow& Row : Progression->GetRevenueByFacilityRowsForDay(Signals.CurrentDay - 1))
+			{
+				if (Row.Amount > TopAmount)
+				{
+					TopAmount = Row.Amount;
+					YesterdayTopDefinitionId = Row.FacilityId;
+				}
+			}
+		}
+	}
+
 	float WorstWaitSeconds = 0.f;
 	int32 MaxWaiting = 0;
 	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
@@ -471,6 +491,12 @@ void UFF_CrowdInsightsSubsystem::FillFacilitySignals(FFF_SnsFeedSignals& Signals
 		}
 		// 길·타일·조명·안내소까지 세면 "시설이 적다"는 글이 절대 안 나온다
 		++Signals.FacilityCount;
+
+		if (!YesterdayTopDefinitionId.IsNone() && Facility.FacilityDefinitionId == YesterdayTopDefinitionId
+			&& Signals.YesterdayTopFacilityDisplayName.IsEmpty())
+		{
+			Signals.YesterdayTopFacilityDisplayName = Facility.DisplayName.ToString();
+		}
 
 		int32 Waiting = Facility.WaitingCount;
 		int32 Active = Facility.ActiveServiceCount;

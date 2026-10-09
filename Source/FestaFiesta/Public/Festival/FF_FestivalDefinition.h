@@ -207,9 +207,9 @@ public:
 	float EvaluationWeightBuzz = 0.15f;
 
 	// 재무 만점 이익(Gold). 재무 점수 = 100 × (최종 - 시작) / 이 값. 본전이면 0점. [밸런스]
-	// 3일 경제 시나리오(FestaFiesta.Scenario.Economy.ThreeDays)로 배치별 이익을 보고 맞춘다.
+	// 3일 경제 시나리오(FestaFiesta.Scenario.Economy.ThreeDays)로 맞췄다: 최소 배치는 B, 시설 25개 + 인플루언서 + 피날레 S 는 S 에 닿는다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Evaluation", meta = (ClampMin = "0"))
-	int32 FinanceTargetProfitGold = 15000;
+	int32 FinanceTargetProfitGold = 13000;
 
 	// --- 뒷정리 -----------------------------------------------------------
 

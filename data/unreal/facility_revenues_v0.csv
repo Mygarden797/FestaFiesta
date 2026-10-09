@@ -1,35 +1,35 @@
 ﻿Name,DisplayName,RevenuePerUseGold,bOverrideCommissionRate,CommissionRate,RevenueMultiplierByLevel,ProgramFeesPerPerson,bOverrideMinigameRewardGold,MinigameRewardAtMaxScoreGold
-Booth_ActivityGame_BalloonDartStall,풍선 다트 부스,30,False,0.12,"((1,1.000000))",(),False,0
-Booth_ActivityGame_BasketballShotChallenge,농구 슛 챌린지,32,False,0.12,"((1,1.000000))",(),False,0
-Booth_ActivityGame_BoardGameTent,보드게임 텐트,34,False,0.12,"((1,1.000000))",(),False,0
-Booth_ActivityGame_Game,게임장,28,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
-Booth_ActivityGame_MiniArcheryRange,미니 양궁장,36,False,0.12,"((1,1.000000))",(),False,0
-Booth_ActivityGame_RhythmGameStall,리듬 게임 부스,32,False,0.12,"((1,1.000000))",(),False,0
-Booth_ActivityGame_SurfBalanceExperience,서핑 밸런스 체험장,32,False,0.12,"((1,1.000000))",(),False,0
-Booth_CraftExperience_PersonalFanWorkshop,나만의 부채 공방,26,False,0.12,"((1,1.000000))","((Program_SandArtWorkshop,30))",False,0
-Booth_CraftExperience_SandArt,모래공방,24,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000),(4,3.375000))","((Program_SandArtWorkshop,30))",False,0
-Booth_CraftExperience_ShellBraceletWorkshop,조개 팔찌 공방,28,False,0.12,"((1,1.000000))","((Program_SandArtWorkshop,30))",False,0
-Booth_CraftExperience_WaveResinKeyringWorkshop,파도 레진 키링 공방,26,False,0.12,"((1,1.000000))","((Program_SandArtWorkshop,30))",False,0
-Booth_FoodStall_Burger,햄버거 가게,24,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
-Booth_FoodStall_BusanFishCakeCart,부산 어묵 포장마차,32,False,0.12,"((1,1.000000))",(),False,0
-Booth_FoodStall_CafeTruck,카페 트럭,34,False,0.12,"((1,1.000000))",(),False,0
-Booth_FoodStall_CharcoalChickenSkewerStall,숯불 닭꼬치 부스,32,False,0.12,"((1,1.000000))",(),False,0
-Booth_FoodStall_CloudCottonCandyStall,구름 솜사탕 부스,30,False,0.12,"((1,1.000000))",(),False,0
-Booth_FoodStall_FruitAdeBar,과일 에이드 바,34,False,0.12,"((1,1.000000))",(),False,0
-Booth_FoodStall_IceCream,아이스크림 가게,22,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
-Booth_FoodStall_MainFood,메인음식 가게,28,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
-Booth_FoodStall_Pizza,피자 가게,26,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
-Booth_FoodStall_SeedHotteokStall,씨앗호떡 부스,32,False,0.12,"((1,1.000000))",(),False,0
-Booth_FoodStall_Taco,타코 가게,24,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
-Booth_FoodStall_VeganSandwichTruck,비건 샌드위치 트럭,36,False,0.12,"((1,1.000000))",(),False,0
-Booth_MarketGoods_FestivalClothingShop,페스티벌 의류숍,34,False,0.12,"((1,1.000000))",(),False,0
-Booth_MarketGoods_GlowCheeringGoodsShop,야광 응원용품점,38,False,0.12,"((1,1.000000))",(),False,0
-Booth_MarketGoods_LocalSouvenirShop,로컬 기념품 편집숍,36,False,0.12,"((1,1.000000))",(),False,0
-Booth_MarketGoods_Market,굿즈 상점,32,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
-Booth_Nightlife_CraftBeerTaproom,수제맥주 탭룸,38,False,0.12,"((1,1.000000))",(),False,0
-Booth_Nightlife_EdmBar,EDM 바,34,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
-Booth_Nightlife_SilentDiscoClub,사일런트 디스코 클럽,40,False,0.12,"((1,1.000000))",(),False,0
-Booth_Nightlife_SunsetMocktailBar,선셋 모크테일 바,36,False,0.12,"((1,1.000000))",(),False,0
+Booth_ActivityGame_BalloonDartStall,풍선 다트 부스,45,False,0.12,"((1,1.000000))",(),False,0
+Booth_ActivityGame_BasketballShotChallenge,농구 슛 챌린지,48,False,0.12,"((1,1.000000))",(),False,0
+Booth_ActivityGame_BoardGameTent,보드게임 텐트,51,False,0.12,"((1,1.000000))",(),False,0
+Booth_ActivityGame_Game,게임장,42,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_ActivityGame_MiniArcheryRange,미니 양궁장,54,False,0.12,"((1,1.000000))",(),False,0
+Booth_ActivityGame_RhythmGameStall,리듬 게임 부스,48,False,0.12,"((1,1.000000))",(),False,0
+Booth_ActivityGame_SurfBalanceExperience,서핑 밸런스 체험장,48,False,0.12,"((1,1.000000))",(),False,0
+Booth_CraftExperience_PersonalFanWorkshop,나만의 부채 공방,39,False,0.12,"((1,1.000000))","((Program_SandArtWorkshop,30))",False,0
+Booth_CraftExperience_SandArt,모래공방,36,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000),(4,3.375000))","((Program_SandArtWorkshop,30))",False,0
+Booth_CraftExperience_ShellBraceletWorkshop,조개 팔찌 공방,42,False,0.12,"((1,1.000000))","((Program_SandArtWorkshop,30))",False,0
+Booth_CraftExperience_WaveResinKeyringWorkshop,파도 레진 키링 공방,39,False,0.12,"((1,1.000000))","((Program_SandArtWorkshop,30))",False,0
+Booth_FoodStall_Burger,햄버거 가게,36,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_FoodStall_BusanFishCakeCart,부산 어묵 포장마차,48,False,0.12,"((1,1.000000))",(),False,0
+Booth_FoodStall_CafeTruck,카페 트럭,51,False,0.12,"((1,1.000000))",(),False,0
+Booth_FoodStall_CharcoalChickenSkewerStall,숯불 닭꼬치 부스,48,False,0.12,"((1,1.000000))",(),False,0
+Booth_FoodStall_CloudCottonCandyStall,구름 솜사탕 부스,45,False,0.12,"((1,1.000000))",(),False,0
+Booth_FoodStall_FruitAdeBar,과일 에이드 바,51,False,0.12,"((1,1.000000))",(),False,0
+Booth_FoodStall_IceCream,아이스크림 가게,33,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_FoodStall_MainFood,메인음식 가게,42,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_FoodStall_Pizza,피자 가게,39,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_FoodStall_SeedHotteokStall,씨앗호떡 부스,48,False,0.12,"((1,1.000000))",(),False,0
+Booth_FoodStall_Taco,타코 가게,36,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_FoodStall_VeganSandwichTruck,비건 샌드위치 트럭,54,False,0.12,"((1,1.000000))",(),False,0
+Booth_MarketGoods_FestivalClothingShop,페스티벌 의류숍,51,False,0.12,"((1,1.000000))",(),False,0
+Booth_MarketGoods_GlowCheeringGoodsShop,야광 응원용품점,57,False,0.12,"((1,1.000000))",(),False,0
+Booth_MarketGoods_LocalSouvenirShop,로컬 기념품 편집숍,54,False,0.12,"((1,1.000000))",(),False,0
+Booth_MarketGoods_Market,굿즈 상점,48,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_Nightlife_CraftBeerTaproom,수제맥주 탭룸,57,False,0.12,"((1,1.000000))",(),False,0
+Booth_Nightlife_EdmBar,EDM 바,51,False,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_Nightlife_SilentDiscoClub,사일런트 디스코 클럽,60,False,0.12,"((1,1.000000))",(),False,0
+Booth_Nightlife_SunsetMocktailBar,선셋 모크테일 바,54,False,0.12,"((1,1.000000))",(),False,0
 Info_GeneralInfo_DoubleSidedMapKiosk,양면 지도 키오스크,0,False,0.12,"((1,1.000000))",(),False,0
 Info_GeneralInfo_General,메인안내소,0,False,0.12,"((1,1.000000))",(),False,0
 Info_GeneralInfo_LighthouseInformation,등대형 종합안내소,0,False,0.12,"((1,1.000000))",(),False,0
