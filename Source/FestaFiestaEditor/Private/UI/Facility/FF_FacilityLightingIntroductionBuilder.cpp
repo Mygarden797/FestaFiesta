@@ -25,6 +25,7 @@ namespace FFFacilityLightingIntroduction
 {
 using namespace FFUIWbpBuilder;
 constexpr const TCHAR* Version = TEXT("FF.FacilityLighting.Introduction20261007.1");
+constexpr const TCHAR* BadgeVersion = TEXT("FF.FacilityLighting.IntroductionBadge20261009.1");
 constexpr const TCHAR* Prefix = TEXT("FF_LIGHTING_INTRODUCTION");
 
 const TCHAR* const WidgetNames[] = {
@@ -98,6 +99,31 @@ void Collapsed(UWidget& Widget)
     Widget.bHiddenInDesigner = true;
 }
 
+void StyleHint(UBorder& Hint, UTextBlock& Mark)
+{
+    Hint.SetBrush(FFBuildPearl::Rounded(FLinearColor::Red, 12.f,
+        FLinearColor::Transparent, 0.f));
+    Hint.SetBrushColor(FLinearColor::White);
+    Mark.SetText(FText::GetEmpty());
+    Collapsed(Mark);
+}
+
+bool UpgradeHint(UWidgetBlueprint& BP)
+{
+    auto& Metadata = BP.GetOutermost()->GetMetaData();
+    if (Metadata.GetValue(&BP, BadgeVersion) == TEXT("1")) return true;
+    auto* Hint = Get<UBorder>(*BP.WidgetTree, TEXT("Border_LightingIntroductionHint"));
+    auto* Mark = Get<UTextBlock>(*BP.WidgetTree, TEXT("Text_LightingIntroductionHint"));
+    if (!Hint || !Mark) return false;
+    BP.Modify(); BP.WidgetTree->Modify(); Hint->Modify(); Mark->Modify();
+    // Update only the badge paint; authored widgets, slots and first-use state remain intact.
+    StyleHint(*Hint, *Mark);
+    Metadata.SetValue(&BP, BadgeVersion, TEXT("1"));
+    if (SaveNewBlueprint(Prefix, BP)) return true;
+    Metadata.RemoveValue(&BP, BadgeVersion);
+    return false;
+}
+
 UButton* Button(UWidgetBlueprint& BP, const TCHAR* Name, const TCHAR* LabelName,
     const FText& Caption)
 {
@@ -147,18 +173,16 @@ UBorder* MakeHelp(UWidgetBlueprint& BP)
     HintSlot->SetVerticalAlignment(VAlign_Center);
     HintSlot->SetPadding(FMargin(0.f, 0.f, 14.f, 0.f));
     auto* Hint = MakeWidget<UBorder>(BP, Tree, TEXT("Border_LightingIntroductionHint"), true);
-    Hint->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(222, 54, 70), 12.f,
-        FLinearColor::White, 1.f));
-    Hint->SetBrushColor(FLinearColor::White);
     Hint->SetPadding(FMargin(0.f));
     Hint->SetHorizontalAlignment(HAlign_Center);
     Hint->SetVerticalAlignment(VAlign_Center);
     Collapsed(*Hint);
     Bounds->AddChild(Hint);
-    auto* Mark = Text(BP, TEXT("Text_LightingIntroductionHint"), FText::FromString(TEXT("!")),
+    auto* Mark = Text(BP, TEXT("Text_LightingIntroductionHint"), FText::GetEmpty(),
         FFBuildTypography::ERole::Heading, 16, FLinearColor::White);
     Mark->SetJustification(ETextJustify::Center);
     Hint->AddChild(Mark);
+    StyleHint(*Hint, *Mark);
     return Help;
 }
 
@@ -204,7 +228,7 @@ UBorder* MakeIntroduction(UWidgetBlueprint& BP)
 
 bool AddIntroduction(UWidgetBlueprint& BP)
 {
-    if (Applied(BP)) return true;
+    if (Applied(BP)) return UpgradeHint(BP);
     auto& Tree = *BP.WidgetTree;
     auto* Content = Get<UVerticalBox>(Tree, TEXT("Panel_Content"));
     const TArray<UWidget*> OriginalChildren = Content->GetAllChildren();
@@ -224,8 +248,10 @@ bool AddIntroduction(UWidgetBlueprint& BP)
             OriginalChildren[Index]->Slot != OriginalSlots[Index]) return false;
     auto& Metadata = BP.GetOutermost()->GetMetaData();
     Metadata.SetValue(&BP, Version, TEXT("1"));
+    Metadata.SetValue(&BP, BadgeVersion, TEXT("1"));
     if (Contract(BP) && SaveNewBlueprint(Prefix, BP)) return true;
     Metadata.RemoveValue(&BP, Version);
+    Metadata.RemoveValue(&BP, BadgeVersion);
     return false;
 }
 

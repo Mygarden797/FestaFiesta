@@ -33,7 +33,7 @@ bool FFFAuroraColorPickerLifetimeTest::RunTest(const FString&)
         {
             const TSharedRef<SWidget> Slate=Copy->TakeWidget();
             Copy->SetColor(FLinearColor::Red);
-            TestEqual(TEXT("A duplicated WBP leaf builds its own Slate color wheel"),Slate->GetType(),FName(TEXT("SColorWheel")));
+            TestEqual(TEXT("A duplicated WBP leaf builds its own facility color wheel"),Slate->GetType(),FName(TEXT("SFFFacilityColorPicker")));
             Copy->ReleaseSlateResources(true);
         }
         TestFalse(TEXT("Leaf resources are released with their last external reference"),Copy->GetCachedWidget().IsValid());

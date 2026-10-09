@@ -1,10 +1,10 @@
 // 에디터 전용 모듈: 이 제작 도구의 변경은 게임 실행 모듈과 별도로 컴파일된다.
 // FF_BuildPlacementFailureFeedbackWbpBuilder.cpp
 
-// 배치 실패 토스트 WBP가 없을 때 기준 WidgetTree를 생성하는 에디터 전용 콘솔 도구를 구현한다.
-// 흐름: 에셋 존재 확인 -> Blueprint 생성 -> 제목/상세 BindWidget 구성 -> 컴파일·저장.
+// 배치 실패 토스트의 Pearl 카드와 경고 아이콘을 디자이너 편집 가능한 WBP로 만든다.
+// 흐름: 최초 생성 또는 명시적 스타일 적용 -> 기존 위젯 재사용 -> 컴파일·저장.
 // 불변식: 제목과 상세 위젯 이름·타입은 네이티브 BindWidget 계약과 일치해야 한다.
-// 실패/수명: 기존 에셋은 덮어쓰지 않고 생성 실패 단계마다 중단해 부분 저장을 피한다.
+// 실패/수명: 생성 명령은 기존 에셋을 보존하고 스타일 적용은 이 팝업 한 개만 저장한다.
 
 #include "CoreMinimal.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
@@ -13,16 +13,23 @@
 
 #include "Blueprint/WidgetTree.h"
 #include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
+#include "Building/Presentation/FF_BuildTypography.h"
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/Image.h"
 #include "Components/SizeBox.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Editor.h"
+#include "Engine/Texture2D.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/PackageName.h"
 #include "WidgetBlueprint.h"
+#include "UI/Core/FF_BuildPearlStyle.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFFBuildPlacementFailureWbpBuilder, Log, All);
@@ -33,71 +40,142 @@ namespace FFBuildPlacementFailureFeedbackWbpBuilder
 	const FString FeedbackPackage(
 		FFBuildUIAssetPaths::PlacementFailureFeedbackPackage);
 
+	template <typename TWidget>
+	TWidget* GetWidget(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, FName Name, bool bVariable = false)
+	{
+		if (UWidget* Existing = Tree.FindWidget(Name))
+		{
+			TWidget* Typed = Cast<TWidget>(Existing);
+			if (Typed) Typed->Modify();
+			return Typed;
+		}
+		return MakeWidget<TWidget>(Blueprint, Tree, Name, bVariable);
+	}
+
 	void StyleText(
 		UCommonTextBlock& Text,
+		const FFBuildTypography::ERole Role,
 		const int32 FontSize,
-		const FLinearColor& Color,
-		const ETextJustify::Type Justification = ETextJustify::Center)
+		const FLinearColor& Color)
 	{
-		FSlateFontInfo Font = Text.GetFont();
-		Font.Size = FontSize;
-		Text.SetFont(Font);
+		Text.SetStyle(nullptr);
+		Text.SetFont(FFBuildTypography::Make(Role, FontSize));
 		Text.SetColorAndOpacity(FSlateColor(Color));
-		Text.SetJustification(Justification);
+		Text.SetJustification(ETextJustify::Left);
+		Text.SetAutoWrapText(true);
+		Text.SetLineHeightPercentage(1.15f);
+		Text.SetShadowOffset(FVector2D::ZeroVector);
 	}
 
 	bool BuildLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
-		UCanvasPanel* Root = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("Root_Canvas"));
-		USizeBox* ToastSize = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("Failure_Size"));
-		UBorder* Background = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Failure_Background"));
-		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Failure_Content"));
-		UCommonTextBlock* Title = MakeWidget<UCommonTextBlock>(
+		UTexture2D* WarningTexture = LoadObject<UTexture2D>(nullptr,
+			TEXT("/Game/FestaFiesta/UI/LiveHUD/Themes/LightTeal/Icons/Status/T_FF_LH_Icon_StatusWarning_White_256.T_FF_LH_Icon_StatusWarning_White_256"));
+		if (!WarningTexture || !FFBuildTypography::Font(FFBuildTypography::ERole::Heading) ||
+			!FFBuildTypography::Font(FFBuildTypography::ERole::Body)) return false;
+
+		UCanvasPanel* Root = GetWidget<UCanvasPanel>(Blueprint, Tree, TEXT("Root_Canvas"));
+		USizeBox* ToastSize = GetWidget<USizeBox>(Blueprint, Tree, TEXT("Failure_Size"));
+		UBorder* Background = GetWidget<UBorder>(Blueprint, Tree, TEXT("Failure_Background"));
+		UHorizontalBox* Row = GetWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Failure_Row"));
+		USizeBox* IconSize = GetWidget<USizeBox>(Blueprint, Tree, TEXT("Failure_IconSize"));
+		UBorder* IconBackground = GetWidget<UBorder>(Blueprint, Tree, TEXT("Failure_IconBackground"));
+		UImage* Icon = GetWidget<UImage>(Blueprint, Tree, TEXT("Failure_Icon"));
+		UVerticalBox* Content = GetWidget<UVerticalBox>(Blueprint, Tree, TEXT("Failure_Content"));
+		UCommonTextBlock* Title = GetWidget<UCommonTextBlock>(
 			Blueprint, Tree, TEXT("TXT_FailureTitle"), true);
-		UCommonTextBlock* Reason = MakeWidget<UCommonTextBlock>(
+		UCommonTextBlock* Reason = GetWidget<UCommonTextBlock>(
 			Blueprint, Tree, TEXT("TXT_FailureReason"), true);
-		if (!Root || !ToastSize || !Background || !Content || !Title || !Reason)
+		if (!Root || !ToastSize || !Background || !Row || !IconSize || !IconBackground || !Icon ||
+			!Content || !Title || !Reason)
 		{
 			return false;
 		}
 
 		Root->SetVisibility(ESlateVisibility::HitTestInvisible);
 		ToastSize->SetWidthOverride(620.0f);
-		ToastSize->SetMinDesiredHeight(86.0f);
+		ToastSize->SetMinDesiredHeight(112.0f);
 		ToastSize->SetVisibility(ESlateVisibility::HitTestInvisible);
-		Background->SetBrushColor(FLinearColor(0.018f, 0.025f, 0.038f, 0.94f));
-		Background->SetPadding(FMargin(28.0f, 14.0f));
+		Background->SetBrush(FFBuildPearl::Rounded(
+			FFBuildPearl::Color(250, 250, 255, 0.98f), 18.0f, FFBuildPearl::Line, 1.0f));
+		Background->SetBrushColor(FLinearColor::White);
+		Background->SetPadding(FMargin(22.0f, 18.0f));
 		Background->SetHorizontalAlignment(HAlign_Fill);
-		Background->SetVerticalAlignment(VAlign_Fill);
+		Background->SetVerticalAlignment(VAlign_Center);
+		IconSize->SetWidthOverride(42.0f);
+		IconSize->SetHeightOverride(42.0f);
+		IconBackground->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(255, 237, 232), 13.0f));
+		IconBackground->SetBrushColor(FLinearColor::White);
+		IconBackground->SetPadding(FMargin(10.0f));
+		Icon->SetBrushFromTexture(WarningTexture);
+		Icon->SetColorAndOpacity(FFBuildPearl::Color(168, 75, 64));
 
-		Title->SetText(FText::FromString(TEXT("골드 부족")));
-		Title->SetAutoWrapText(true);
-		StyleText(*Title, 20, FLinearColor(1.0f, 0.38f, 0.20f, 1.0f));
+		Title->SetText(UFF_BuildPlacementFailureFeedback::MakeFailureTitle(
+			EFFZSPlacementFailure::PlacementCollision, false));
+		StyleText(*Title, FFBuildTypography::ERole::Heading, 21, FFBuildPearl::Ink);
 		Reason->SetText(FText::FromString(
-			TEXT("시설 설치비 400 Gold가 필요하지만 현재 잔액은 0 Gold입니다.")));
-		Reason->SetAutoWrapText(true);
-		StyleText(*Reason, 15, FLinearColor(0.94f, 0.95f, 0.98f, 1.0f));
+			TEXT("붉은 사선으로 표시된 겹친 부분이 사라지도록 시설을 옮겨 주세요.")));
+		StyleText(*Reason, FFBuildTypography::ERole::Body, 16, FFBuildPearl::Color(94, 96, 115));
 
+		Title->RemoveFromParent();
 		if (UVerticalBoxSlot* TitleSlot = Content->AddChildToVerticalBox(Title))
 		{
 			TitleSlot->SetHorizontalAlignment(HAlign_Fill);
-			TitleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 5.0f));
+			TitleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 7.0f));
 		}
+		Reason->RemoveFromParent();
 		if (UVerticalBoxSlot* ReasonSlot = Content->AddChildToVerticalBox(Reason))
 		{
 			ReasonSlot->SetHorizontalAlignment(HAlign_Fill);
 		}
-		Background->AddChild(Content);
-		ToastSize->AddChild(Background);
-		if (UCanvasPanelSlot* ToastSlot = Root->AddChildToCanvas(ToastSize))
+		Content->RemoveFromParent();
+		IconSize->RemoveFromParent();
+		IconBackground->SetContent(Icon);
+		IconSize->SetContent(IconBackground);
+		UHorizontalBoxSlot* IconSlot = Row->AddChildToHorizontalBox(IconSize);
+		IconSlot->SetVerticalAlignment(VAlign_Top);
+		IconSlot->SetPadding(FMargin(0.0f, 2.0f, 16.0f, 0.0f));
+		UHorizontalBoxSlot* ContentSlot = Row->AddChildToHorizontalBox(Content);
+		ContentSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		ContentSlot->SetVerticalAlignment(VAlign_Center);
+		Background->SetContent(Row);
+		ToastSize->SetContent(Background);
+		// Keep the existing Designer placement when applying the style to a saved toast.
+		if (ToastSize->GetParent() != Root)
 		{
+			ToastSize->RemoveFromParent();
+			UCanvasPanelSlot* ToastSlot = Root->AddChildToCanvas(ToastSize);
 			ToastSlot->SetAnchors(FAnchors(0.5f, 0.0f));
 			ToastSlot->SetAlignment(FVector2D(0.5f, 0.0f));
-			ToastSlot->SetPosition(FVector2D(0.0f, 54.0f));
+			ToastSlot->SetPosition(FVector2D(0.0f, 120.0f));
 			ToastSlot->SetAutoSize(true);
 		}
 		Tree.RootWidget = Root;
 		return true;
+	}
+
+	void ApplyPlacementFailureFeedbackStyle()
+	{
+		if (!GEditor || GEditor->PlayWorld)
+		{
+			UE_LOG(LogFFBuildPlacementFailureWbpBuilder, Error,
+				TEXT("FF_BUILD_FAILURE_STYLE_FAIL: requires an idle editor."));
+			return;
+		}
+		UWidgetBlueprint* Blueprint = FFUIWbpBuilder::LoadExistingBlueprint(FeedbackPackage);
+		if (!Blueprint || !Blueprint->GeneratedClass || !Blueprint->WidgetTree ||
+			!Blueprint->GeneratedClass->IsChildOf(UFF_BuildPlacementFailureFeedback::StaticClass()))
+		{
+			UE_LOG(LogFFBuildPlacementFailureWbpBuilder, Error,
+				TEXT("FF_BUILD_FAILURE_STYLE_FAIL: invalid feedback WBP."));
+			return;
+		}
+		Blueprint->Modify();
+		Blueprint->WidgetTree->Modify();
+		const bool bSaved = BuildLayout(*Blueprint, *Blueprint->WidgetTree) &&
+			FFUIWbpBuilder::SaveNewBlueprint(TEXT("FF_BUILD_FAILURE_STYLE"), *Blueprint);
+		UE_LOG(LogFFBuildPlacementFailureWbpBuilder, Display,
+			TEXT("FF_BUILD_FAILURE_STYLE_%s: %s"), bSaved ? TEXT("PASS") : TEXT("FAIL"), *FeedbackPackage);
 	}
 
 	void BuildPlacementFailureFeedbackUmg()
@@ -141,6 +219,11 @@ namespace FFBuildPlacementFailureFeedbackWbpBuilder
 		TEXT("FF.BuildPlacementFailureFeedbackUMG"),
 		TEXT("Creates the editable build placement failure toast without modifying team UI assets."),
 		FConsoleCommandDelegate::CreateStatic(&BuildPlacementFailureFeedbackUmg));
+
+	FAutoConsoleCommand ApplyPlacementFailureFeedbackStyleCommand(
+		TEXT("FF.ApplyBuildPlacementFailureFeedbackStyle"),
+		TEXT("Restyles only the saved placement failure toast using the shared Pearl palette and construction fonts."),
+		FConsoleCommandDelegate::CreateStatic(&ApplyPlacementFailureFeedbackStyle));
 }
 
 #endif // WITH_EDITOR
