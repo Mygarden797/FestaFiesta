@@ -1,0 +1,39 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "1.0.0",
+  "FriendlyName": "FF_ZoneAuthoring",
+  "Description": "Designer-friendly zone authoring layer on top of FF_ZoneSystem: Zone Definition assets, auto-normalized zone actors, Plot/District layers, build-mode floor overlay, zone cell map and layout tools. Does not modify FF_ZoneSystem.",
+  "Category": "Festa Fiesta",
+  "CreatedBy": "Festa Fiesta Team",
+  "CanContainContent": true,
+  "IsBetaVersion": false,
+  "Installed": false,
+  "EnabledByDefault": true,
+  "Modules": [
+    {
+      "Name": "FF_ZoneAuthoring",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "FF_ZoneAuthoringEditor",
+      "Type": "Editor",
+      "LoadingPhase": "PostEngineInit"
+    }
+  ],
+  "Plugins": [
+    {
+      "Name": "FF_ZoneSystem",
+      "Enabled": true
+    },
+    {
+      "Name": "ProceduralMeshComponent",
+      "Enabled": true
+    },
+    {
+      "Name": "DataValidation",
+      "Enabled": true
+    }
+  ]
+}
