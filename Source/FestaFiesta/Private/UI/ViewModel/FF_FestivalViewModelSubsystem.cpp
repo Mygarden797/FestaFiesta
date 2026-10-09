@@ -455,6 +455,8 @@ void UFF_FestivalViewModelSubsystem::ResetDailyReports()
 	LastDailySatisfaction = FFF_DailyReportView();
 	AutoShownReportDays.Reset();
 	AdmittedVisitorsByDay.Reset();
+	SatisfactionByDay.Reset();
+	GoalMetByDay.Reset();
 }
 
 void UFF_FestivalViewModelSubsystem::HandleReportSaveLoaded(FName SlotId)
@@ -553,6 +555,40 @@ void UFF_FestivalViewModelSubsystem::FillReportAssistantComment(FFF_DailyReportV
 	}
 	Inputs.AdmittedVisitors = Report.AdmittedVisitors;
 	Inputs.DailyVisitorGoal = Report.DailyVisitorGoal;
+
+	// 마지막 날은 "내일"이 없다. 축제 전체를 돌아보는 값을 채운다
+	if (IsFinalDay())
+	{
+		Inputs.bFinalDay = true;
+		Inputs.DaysPlayed = Report.Day;
+		if (Progression)
+		{
+			FName TopDefinitionId;
+			for (const FFF_FacilityRevenueRow& Row : Progression->GetRevenueByFacilityRowsForFestival())
+			{
+				if (Row.Amount > Inputs.FestivalTopFacilityGold)
+				{
+					Inputs.FestivalTopFacilityGold = Row.Amount;
+					TopDefinitionId = Row.FacilityId;
+				}
+			}
+			if (!TopDefinitionId.IsNone())
+			{
+				const UFF_BuildCatalogSubsystem* Catalog = GI ? GI->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+				FFF_BuildCatalogEntry Entry;
+				Inputs.FestivalTopFacilityName = Catalog && Catalog->FindEntry(TopDefinitionId, Entry)
+					? Entry.DisplayName : FText::FromName(TopDefinitionId);
+			}
+		}
+		if (const int32* First = SatisfactionByDay.Find(1)) Inputs.FirstDaySatisfaction = *First;
+		if (const int32* Last = SatisfactionByDay.Find(Report.Day)) Inputs.FinalDaySatisfaction = *Last;
+		// 축제 도중 불러와 빠진 날이 있으면 일수를 말하지 않는다
+		if (GoalMetByDay.Num() == Report.Day)
+		{
+			Inputs.GoalDaysMet = 0;
+			for (const TPair<int32, bool>& Pair : GoalMetByDay) Inputs.GoalDaysMet += Pair.Value ? 1 : 0;
+		}
+	}
 	Report.AssistantComment = FFF_DailyReportCommentRules::Build(Inputs);
 }
 
@@ -586,6 +622,8 @@ void UFF_FestivalViewModelSubsystem::CaptureDailyReportIfReady()
 	Report.TotalStaff = Progression->GetTotalStaffCount();
 	Report.HiredStaff = Progression->GetHiredStaffCount();
 	Report.Programs = Progression->GetScheduledPrograms().Num();
+	if (Report.bHasSatisfaction && Report.SimSatisfaction >= 0) SatisfactionByDay.Add(Day, Report.SimSatisfaction);
+	if (Report.DailyVisitorGoal > 0) GoalMetByDay.Add(Day, Report.bDailyGoalAchieved);
 	FillReportAssistantComment(Report);
 	DailyReport = MoveTemp(Report);
 	OnDailyReportReady.Broadcast(Day);

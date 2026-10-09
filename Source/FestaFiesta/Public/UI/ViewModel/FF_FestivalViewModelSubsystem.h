@@ -1261,6 +1261,9 @@ private:
 	 * 축제 도중 불러온 경우 그 이전 날짜는 미기록(—)으로 남는다.
 	 */
 	TMap<int32, int32> AdmittedVisitorsByDay;
+	// 날짜별 관객 만족도와 방문객 목표 달성. 마지막 날 비서 한마디(축제 돌아보기)가 쓴다. 저장하지 않는 것도 위와 같다
+	TMap<int32, int32> SatisfactionByDay;
+	TMap<int32, bool> GoalMetByDay;
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_SaveSubsystem> ReportSaveSubsystem;
 	void TryBindStaffFacilitySubsystem();

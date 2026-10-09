@@ -43,4 +43,39 @@ bool FFF_DailyReportComment_PicksWorstAxisAndShortFacility::RunTest(const FStrin
 	return true;
 }
 
+// 마지막 날: "내일" 이야기를 하지 않고 축제 전체를 돌아본다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DailyReportComment_FinalDayLooksBack,
+	"FestaFiesta.UI.DailyReportComment.FinalDayLooksBack",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DailyReportComment_FinalDayLooksBack::RunTest(const FString& Parameters)
+{
+	FFF_DailyReportCommentInputs Inputs;
+	Inputs.bFinalDay = true;
+	Inputs.DaysPlayed = 3;
+	Inputs.TopFacilityName = FText::FromString(TEXT("오늘 1위"));
+	Inputs.TopFacilityGold = 300;
+	Inputs.FestivalTopFacilityName = FText::FromString(TEXT("피자 부스"));
+	Inputs.FestivalTopFacilityGold = 1500;
+	Inputs.FirstDaySatisfaction = 52;
+	Inputs.FinalDaySatisfaction = 61;
+	Inputs.GoalDaysMet = 2;
+	Inputs.bHasSatisfaction = true;
+	Inputs.WaitScore = 50;
+	Inputs.DensityScore = 80;
+	Inputs.PreferenceScore = 80;
+	Inputs.NeedScore = 80;
+	Inputs.AdmittedVisitors = 1200;
+	Inputs.DailyVisitorGoal = 1100;
+
+	const FString Text = FFF_DailyReportCommentRules::Build(Inputs).ToString();
+	TestFalse(TEXT("마지막 날은 내일을 말하지 않는다"), Text.Contains(TEXT("내일")));
+	TestTrue(TEXT("축제 전체 매출 1위를 말한다"), Text.Contains(TEXT("피자 부스"))
+		&& (Text.Contains(TEXT("1,500")) || Text.Contains(TEXT("1500"))));
+	TestFalse(TEXT("오늘 1위는 말하지 않는다"), Text.Contains(TEXT("오늘 1위")));
+	TestTrue(TEXT("만족도 흐름"), Text.Contains(TEXT("52")) && Text.Contains(TEXT("61")) && Text.Contains(TEXT("올랐어요")));
+	TestTrue(TEXT("목표 달성 일수"), Text.Contains(TEXT("3일 중 2일")));
+	TestTrue(TEXT("가장 낮은 항목은 다음 축제 조언으로"), Text.Contains(TEXT("다음 축제")) && Text.Contains(TEXT("줄")));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

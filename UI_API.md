@@ -2407,7 +2407,8 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 #### 결산 비서 한마디 — `FFF_DailyReportView::AssistantComment`
 
 - **헤더**: `Public/UI/ViewModel/FF_FestivalViewModelSubsystem.h` (`TopFacilityName` · `TopFacilityGold` 도 같이 추가)
-- **상태**: `구현완료` — 매출 1위 시설, 가장 낮은 만족도 항목(불만 1위)과 고칠 방법, 방문객 목표를 한 줄씩 씁니다(`FFF_DailyReportCommentRules`)
+- **상태**: `구현완료` — 매출 1위 시설, 가장 낮은 만족도 항목(불만 1위)과 고칠 방법, 방문객 목표를 한 줄씩 씁니다(`FFF_DailyReportCommentRules`).
+  **마지막 날**은 "내일" 대신 축제 전체를 돌아봅니다 — 축제 내내 매출 1위, 만족도 첫날 → 마지막 날, 목표 달성 일수, 다음 축제 조언
 - **화면**: `UFF_LivePanelReport` 에 `BindWidgetOptional` **`Text_AssistantComment`** 를 추가했습니다. **WBP 에 이 이름의 TextBlock 을 두시면 거기에** 나오고(자동 줄바꿈), 없으면 정산이 끝난 뒤 비는 `Text_MissingNote` 자리에 대신 나옵니다. 머리말은 `AssistantCommentFormat`("비서 한마디\n{Comment}")
 
 #### 바뀐 값 (2차)
