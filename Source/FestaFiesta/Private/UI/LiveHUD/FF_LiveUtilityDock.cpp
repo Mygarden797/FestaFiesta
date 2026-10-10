@@ -14,6 +14,8 @@
 #include "Tutorial/FF_TutorialSubsystem.h"
 #include "UI/Audio/FF_PlaylistPlayerWidget.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
+#include "UI/Core/FF_UIRootLayout.h"
+#include "UI/Core/FF_OutsideClickDismiss.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelSNS.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 #include "UObject/UObjectIterator.h"
@@ -32,6 +34,11 @@ UFF_LiveUtilityDock* UFF_LiveUtilityDock::FindForPlayer(const APlayerController*
 		if (!It->IsTemplate() && It->GetOwningPlayer() == Player && It->IsInViewport()) return *It;
 	}
 	return nullptr;
+}
+
+bool UFF_LiveUtilityDock::HasUnifiedNews() const
+{
+	return SnsPanel && SnsPanel->bUnifiedNews;
 }
 
 void UFF_LiveUtilityDock::NativePreConstruct()
@@ -53,19 +60,25 @@ void UFF_LiveUtilityDock::NativeConstruct()
 	Panel_Dock->SetVisibility(ESlateVisibility::Collapsed);
 	SizeBox_SNS->SetVisibility(ESlateVisibility::Collapsed);
 	bDockAvailable = false;
+	bDockPresented = false;
 	bSnsAvailable = false;
 	if (!SnsPanel)
 	{
 		if (UClass* PanelClass = SnsPanelClass.LoadSynchronous()) SnsPanel = CreateWidget<UFF_LivePanelSNS>(GetOwningPlayer(), PanelClass);
 		if (SnsPanel)
 		{
-			SnsPanel->InitializePanel(nullptr, EFF_LiveTab::SNS, NSLOCTEXT("FFUtilityDock", "SNS", "SNS"));
+			SnsPanel->InitializePanel(nullptr, EFF_LiveTab::SNS, SnsPanel->bUnifiedNews ? NSLOCTEXT("FFUtilityDock", "News", "소식") : NSLOCTEXT("FFUtilityDock", "SNS", "SNS"));
 			SnsPanel->OnCloseRequested.BindUObject(this, &ThisClass::CloseFlyout);
 			PendingPostsHandle = SnsPanel->OnPendingPostsChanged.AddUObject(this, &ThisClass::RefreshUnread);
 			UOverlaySlot* ContentSlot = Panel_Flyout->AddChildToOverlay(SnsPanel);
 			ContentSlot->SetHorizontalAlignment(HAlign_Fill); ContentSlot->SetVerticalAlignment(VAlign_Fill);
 			SnsPanel->SetVisibility(ESlateVisibility::Collapsed);
 		}
+	}
+	if (HasUnifiedNews())
+	{
+		Button_SNS->SetToolTipText(NSLOCTEXT("FFUtilityDock", "NewsTooltip", "소식 · 관객 이야기와 운영 알림"));
+		if (Text_SNSLabel) { Text_SNSLabel->SetText(NSLOCTEXT("FFUtilityDock", "News", "소식")); }
 	}
 	if (!MusicPanel)
 	{
@@ -81,10 +94,19 @@ void UFF_LiveUtilityDock::NativeConstruct()
 	RefreshUnread(SnsPanel ? SnsPanel->GetPendingPostCount() : 0);
 	RefreshAvailability();
 	RefreshSelection();
+	FFOutsideClickDismiss::Register(this,
+		[this] { return bDockPresented && OpenPanel != 0; },
+		[this](FVector2D Position)
+		{
+			return FFOutsideClickDismiss::IsInside(Panel_Flyout, Position)
+				|| FFOutsideClickDismiss::IsInside(SizeBox_SNS, Position)
+				|| FFOutsideClickDismiss::IsInside(SizeBox_Music, Position);
+		}, FSimpleDelegate::CreateUObject(this, &ThisClass::CloseFlyout));
 }
 
 void UFF_LiveUtilityDock::NativeDestruct()
 {
+	FFOutsideClickDismiss::Unregister(this);
 	CloseFlyout();
 	Button_SNS->OnClicked.RemoveDynamic(this, &ThisClass::ToggleSNS);
 	Button_Music->OnClicked.RemoveDynamic(this, &ThisClass::ToggleMusic);
@@ -119,10 +141,15 @@ void UFF_LiveUtilityDock::RefreshAvailability()
 	const UFF_FestivalViewModelSubsystem* VM = GI ? GI->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
 	const bool bShowSNS = bAvailable && SnsPanel && VM && FFF_LiveHudRules::IsTabVisible(EFF_LiveTab::SNS, VM->GetCurrentStage(), false);
 	if ((!bAvailable && OpenPanel != 0) || (!bShowSNS && OpenPanel == 1)) CloseFlyout();
-	if (bAvailable != bDockAvailable)
+	bDockAvailable = bAvailable;
+	const UFF_UIRootLayout* Root = Flow ? Flow->GetRootLayout() : nullptr;
+	const bool bPresentDock = bAvailable && (!Root || !Root->HasForegroundStackContent());
+	if (bPresentDock != bDockPresented)
 	{
-		bDockAvailable = bAvailable;
-		Panel_Dock->SetVisibility(bDockAvailable ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+		bDockPresented = bPresentDock;
+		// 도크는 일반 창/월드 라벨보다 앞 레이어지만 확인창·ESC에는 표시/입력을 양보한다.
+		// 위젯을 내렸다 다시 만들지 않으므로 재생 상태와 SNS 읽던 위치는 유지된다.
+		Panel_Dock->SetVisibility(bDockPresented ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	}
 	if (bShowSNS != bSnsAvailable)
 	{
@@ -135,7 +162,8 @@ void UFF_LiveUtilityDock::RefreshAvailability()
 
 void UFF_LiveUtilityDock::ToggleSNS()
 {
-	if (!bSnsAvailable || !SnsPanel) return;
+	RefreshAvailability();
+	if (!bDockPresented || !bSnsAvailable || !SnsPanel) return;
 	const bool bWasOpen = OpenPanel == 1;
 	CloseFlyout();
 	if (!bWasOpen)
@@ -149,7 +177,8 @@ void UFF_LiveUtilityDock::ToggleSNS()
 
 void UFF_LiveUtilityDock::ToggleMusic()
 {
-	if (!bDockAvailable || !MusicPanel) return;
+	RefreshAvailability();
+	if (!bDockPresented || !bDockAvailable || !MusicPanel) return;
 	const bool bWasOpen = OpenPanel == 2;
 	CloseFlyout();
 	if (!bWasOpen)

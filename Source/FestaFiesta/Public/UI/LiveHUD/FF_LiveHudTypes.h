@@ -26,7 +26,7 @@ enum class EFF_LiveTab : uint8
 {
 	Operations	UMETA(DisplayName = "운영"),
 	Facilities	UMETA(DisplayName = "시설"),
-	Guests		UMETA(DisplayName = "관객"),
+	Guests		UMETA(DisplayName = "현황"),
 	Queues		UMETA(DisplayName = "대기열"),
 	SNS			UMETA(DisplayName = "SNS"),
 	Staff		UMETA(DisplayName = "스태프"),
@@ -38,7 +38,10 @@ enum class EFF_LiveTab : uint8
 	// 실제로 볼 곳(마감)이 따로 있는데 탭이 둘이 되면 어디서 보는 것인지 헷갈린다.
 
 	Report		UMETA(DisplayName = "리포트"),
-	Finale		UMETA(DisplayName = "피날레")
+	Finale		UMETA(DisplayName = "피날레"),
+
+	// 기존 WBP에 저장된 enum 값을 보존하기 위해 끝에 추가한다. 실제 배치는 시설 탭 다음이다.
+	RevenueRanking UMETA(DisplayName = "매출 순위")
 };
 
 /**

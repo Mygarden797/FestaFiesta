@@ -6,12 +6,16 @@
 #include "Festival/FF_RequiredFacilityTypes.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
+#include "UI/PrepHUD/Panels/FF_PrepRecommendedFacilities.h"
 #include "FF_PrepPanelCheck.generated.h"
 
 class UButton;
 class USlider;
 class UTextBlock;
 class UWidget;
+class UVerticalBox;
+class UFF_BuildCatalogSubsystem;
+class UFF_PrepRecommendedFacilityRow;
 class UFF_FestivalViewModelSubsystem;
 class UFF_PrepChoiceButton;
 class UFF_RequiredFacilitiesSubsystem;
@@ -198,7 +202,36 @@ protected:
 	UFUNCTION()
 	void HandleScheduledProgramsChanged();
 
+	UFUNCTION() void HandleRecommendedCatalogChanged();
+	void HandleRecommendedPlaceRequested(EFF_PrepRecommendedFacilityKind Kind);
+
 protected:
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
+	TObjectPtr<UWidget> Border_RecommendedFacilities;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
+	TObjectPtr<UVerticalBox> VerticalBox_RecommendedRows;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
+	TObjectPtr<UTextBlock> Text_RecommendedCount;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
+	TObjectPtr<UTextBlock> Text_RecommendedSummary;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities")
+	FFF_PrepRecommendedFacilityRules RecommendedFacilityRules;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText RecommendedCountFormat = NSLOCTEXT("FestaFiestaPrepCheck", "RecommendedCount", "권장 시설 {Count}종 없음");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText RecommendedSummaryFormat = NSLOCTEXT("FestaFiestaPrepCheck", "RecommendedSummary", "⚠ 권장 시설 {Count}종이 없습니다");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText RecommendedUnknownText = NSLOCTEXT("FestaFiestaPrepCheck", "RecommendedUnknown", "권장 시설 상태를 확인하고 있습니다.");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText RequiredReadyWithWarningsText = NSLOCTEXT("FestaFiestaPrepCheck", "RequiredReadyWithWarnings", "✓ 필수 시설 준비 완료");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText OpenWithWarningsFormat = NSLOCTEXT("FestaFiestaPrepCheck", "OpenWithWarnings", "이대로 Day {Day} 시작");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText RecommendedCatalogUnavailableText = NSLOCTEXT("FestaFiestaPrepCheck", "RecommendedCatalogUnavailable", "배치 가능한 시설 목록을 확인할 수 없습니다.");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText RecommendedNavigationFailedText = NSLOCTEXT("FestaFiestaPrepCheck", "RecommendedNavigationFailed", "지금은 건축목록을 열 수 없습니다. 준비 단계에서 다시 시도해 주세요.");
+
 	// 입장료 초안과 적용값은 구분한다. 슬라이더 변경만으로 경제 명령을 호출하지 않는다.
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
 	TObjectPtr<USlider> Slider_AdmissionFee;
@@ -418,6 +451,8 @@ private:
 	void RefreshEstimate();
 	void RefreshRequiredFacilities();
 	void RefreshStaffAssignmentLinks();
+	void RefreshRecommendedFacilities();
+	FName FindRecommendedCatalogTarget(EFF_PrepRecommendedFacilityKind Kind) const;
 
 	/**
 	 * 개장 버튼의 문구와 활성 상태를 바의 판정으로 맞춘다.
@@ -447,6 +482,8 @@ private:
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
 
 	TWeakObjectPtr<UFF_RequiredFacilitiesSubsystem> BoundRequiredFacilities;
+	TWeakObjectPtr<UFF_BuildCatalogSubsystem> BoundRecommendedCatalog;
+	int32 MissingRecommendedCount = 0;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UFF_PrepChoiceButton>> WeatherChoices;

@@ -5,6 +5,8 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "UI/LiveHUD/OperationAlert/FF_OperationAlertSubsystem.h"
 #include "UI/LiveHUD/Panels/FF_LiveSnsPostEntry.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
@@ -22,6 +24,8 @@ bool FFF_LiveSnsFeedState::Matches(const FFF_LiveSocialPost& Post, EFF_LiveSnsFi
 {
 	const EFF_LiveSnsSentiment Direction = ResolveSentiment(Post);
 	return InFilter == EFF_LiveSnsFilter::All
+		|| (InFilter == EFF_LiveSnsFilter::Social && !Post.bOperationAlert)
+		|| (InFilter == EFF_LiveSnsFilter::Operation && Post.bOperationAlert)
 		|| (InFilter == EFF_LiveSnsFilter::Positive && Direction == EFF_LiveSnsSentiment::Positive)
 		|| (InFilter == EFF_LiveSnsFilter::Negative && Direction == EFF_LiveSnsSentiment::Negative);
 }
@@ -91,6 +95,22 @@ void UFF_LivePanelSNS::ConfigureFlyoutDefaults(TSubclassOf<UFF_LiveSnsPostEntry>
 	bAllowDragToMove = false;
 }
 
+void UFF_LivePanelSNS::ConfigureUnifiedNewsDefaults()
+{
+	bUnifiedNews = true;
+	bPreserveFeedWhileClosed = true;
+	bTintFilterBackground = true;
+	SelectedFilterTextColor = FLinearColor::White;
+	UnselectedFilterTextColor = FLinearColor::FromSRGBColor(FColor(24, 70, 58));
+	DisplayLimit = 80;
+	FilterLabels.Add(EFF_LiveSnsFilter::Social, LOCTEXT("Social", "SNS"));
+	FilterLabels.Add(EFF_LiveSnsFilter::Operation, LOCTEXT("Operation", "운영 알림"));
+	NewPostsTextFormat = LOCTEXT("NewNews", "↑ 새 소식 {Count}개 보기");
+	NoPostsText = LOCTEXT("NoNews", "아직 도착한 소식이 없습니다.");
+	FilterEmptyText = LOCTEXT("NoFilteredNews", "이 종류의 소식이 아직 없습니다.");
+	SourceUnavailableText = LOCTEXT("NewsUnavailable", "소식을 아직 읽을 수 없습니다.");
+}
+
 void UFF_LivePanelSNS::ConfigureTabFilterDefaults(const FLinearColor& SelectedText, const FLinearColor& UnselectedText)
 {
 	bTintFilterBackground = false;
@@ -110,7 +130,7 @@ void UFF_LivePanelSNS::NativeOnPanelOpened()
 	bPanelOpen = true;
 	// 자동 표시: 닫혀 있는 동안 지금 필터에 맞는 글이 왔으면 다시 읽어 맨 위부터 보인다.
 	// 온 글이 없으면 목록과 읽던 위치를 그대로 둔다.
-	const bool bArrivedWhileClosed = bAutoShowNewPosts && Feed.PendingCount > 0;
+	const bool bArrivedWhileClosed = bAutoShowNewPosts && GetPendingPostCount() > 0;
 	if (!bPreserveFeedWhileClosed || !bFeedInitialized || bArrivedWhileClosed) { SyncFromViewModel(); }
 	else { RefreshPending(); }
 }
@@ -144,6 +164,10 @@ void UFF_LivePanelSNS::NativeDestruct()
 	ScrollAnchor = FScrollAnchor();
 	NewMarkShownAt.Reset();
 	PostEntries.Reset();
+	RecentNews.Reset();
+	UnreadNewsSerials.Reset();
+	NewNewsSerials.Reset();
+	bNewsInitialized = false;
 	Super::NativeDestruct();
 }
 
@@ -160,6 +184,38 @@ void UFF_LivePanelSNS::BindViewModel()
 		Feed.ResetArrivals();
 	}
 	if (CachedViewModel) { CachedViewModel->OnSnsPostAdded.AddUniqueDynamic(this, &ThisClass::HandlePostAdded); }
+	if (bUnifiedNews)
+	{
+		UFF_OperationAlertSubsystem* Alerts = GetWorld() ? GetWorld()->GetSubsystem<UFF_OperationAlertSubsystem>() : nullptr;
+		if (CachedOperationAlerts != Alerts)
+		{
+			if (CachedOperationAlerts) { CachedOperationAlerts->OnOperationAlertRaised.RemoveDynamic(this, &ThisClass::HandleOperationAlert); }
+			CachedOperationAlerts = Alerts;
+			bNewsInitialized = false;
+		}
+		if (CachedOperationAlerts) { CachedOperationAlerts->OnOperationAlertRaised.AddUniqueDynamic(this, &ThisClass::HandleOperationAlert); }
+		if (!bNewsInitialized && (CachedViewModel || CachedOperationAlerts))
+		{
+			RecentNews.Reset();
+			Feed.ResetArrivals();
+			UnreadNewsSerials.Reset(); NewNewsSerials.Reset();
+			// 늦게 열린 도크도 기존 기록을 잃지 않는다. 공통 시각이 없는 과거 기록은 수신 전 기록으로만 복원한다.
+			if (CachedViewModel) { RecentNews = CachedViewModel->GetRecentSnsPosts(); }
+			if (CachedOperationAlerts)
+			{
+				const auto& History = CachedOperationAlerts->GetHistory();
+				// SNS가 원본 한도(80건)를 채웠어도 운영 기록이 통째로 잘리지 않게 양쪽 자리를 확보한다.
+				const int32 OperationCount = FMath::Min(History.Num(), 80 - FMath::Min(RecentNews.Num(), 40));
+				if (RecentNews.Num() > 80 - OperationCount) { RecentNews.SetNum(80 - OperationCount); }
+				for (int32 Index = History.Num() - 1; Index >= History.Num() - OperationCount; --Index)
+				{
+					RecentNews.Add(MakeOperationPost(History[Index]));
+				}
+			}
+			if (RecentNews.Num() > 80) { RecentNews.SetNum(80); }
+			bNewsInitialized = true;
+		}
+	}
 }
 
 void UFF_LivePanelSNS::BindControls()
@@ -174,6 +230,8 @@ void UFF_LivePanelSNS::Unbind()
 {
 	if (CachedViewModel) { CachedViewModel->OnSnsPostAdded.RemoveDynamic(this, &ThisClass::HandlePostAdded); }
 	CachedViewModel = nullptr;
+	if (CachedOperationAlerts) { CachedOperationAlerts->OnOperationAlertRaised.RemoveDynamic(this, &ThisClass::HandleOperationAlert); }
+	CachedOperationAlerts = nullptr;
 	if (Button_FilterAll) { Button_FilterAll->OnClicked.RemoveDynamic(this, &ThisClass::HandleFilterAll); }
 	if (Button_FilterPositive) { Button_FilterPositive->OnClicked.RemoveDynamic(this, &ThisClass::HandleFilterPositive); }
 	if (Button_FilterNegative) { Button_FilterNegative->OnClicked.RemoveDynamic(this, &ThisClass::HandleFilterNegative); }
@@ -182,11 +240,13 @@ void UFF_LivePanelSNS::Unbind()
 
 void UFF_LivePanelSNS::SyncFromViewModel()
 {
-	bSourceAvailable = IsValid(CachedViewModel);
+	bSourceAvailable = IsValid(CachedViewModel) || (bUnifiedNews && IsValid(CachedOperationAlerts));
 	const TArray<FFF_LiveSocialPost> NoPosts;
-	const TArray<FFF_LiveSocialPost>& RecentPosts = bSourceAvailable ? CachedViewModel->GetRecentSnsPosts() : NoPosts;
+	const TArray<FFF_LiveSocialPost>& RecentPosts = bUnifiedNews ? RecentNews
+		: CachedViewModel ? CachedViewModel->GetRecentSnsPosts() : NoPosts;
 	bHasSourcePosts = !RecentPosts.IsEmpty();
 	Feed.Sync(RecentPosts, DisplayLimit);
+	if (bUnifiedNews) { AcknowledgeNewsFilter(); }
 	bFeedInitialized = bSourceAvailable;
 	RefreshAll();
 	if (Scroll_Posts)
@@ -199,6 +259,7 @@ void UFF_LivePanelSNS::SyncFromViewModel()
 
 void UFF_LivePanelSNS::HandlePostAdded(FFF_LiveSocialPost NewPost)
 {
+	if (bUnifiedNews) { RecordNews(NewPost); return; }
 	Feed.NoteArrival();
 	if (bAutoShowNewPosts && bPanelOpen && bFeedInitialized)
 	{
@@ -208,6 +269,61 @@ void UFF_LivePanelSNS::HandlePostAdded(FFF_LiveSocialPost NewPost)
 	// 닫혀 있는 동안은 도크 배지로 센다. 열 때 한 번에 반영한다.
 	Feed.RecordArrival(NewPost);
 	RefreshPending();
+}
+
+FFF_LiveSocialPost UFF_LivePanelSNS::MakeOperationPost(const FFF_OperationAlert& Alert)
+{
+	FFF_LiveSocialPost Post;
+	Post.bOperationAlert = true;
+	Post.OperationDay = Alert.Day;
+	FString Headline, Detail;
+	if (Alert.Message.ToString().Split(TEXT(". "), &Headline, &Detail))
+	{
+		Post.Author = FText::FromString(Headline);
+		Post.Body = FText::FromString(Detail);
+	}
+	else
+	{
+		Post.Author = FText::Format(LOCTEXT("OperationDay", "운영 알림 · {0}일차"), FText::AsNumber(Alert.Day));
+		Post.Body = Alert.Message;
+	}
+	return Post;
+}
+
+void UFF_LivePanelSNS::HandleOperationAlert(const FFF_OperationAlert& Alert)
+{
+	if (bUnifiedNews) { RecordNews(MakeOperationPost(Alert)); }
+}
+
+void UFF_LivePanelSNS::RecordNews(const FFF_LiveSocialPost& Post)
+{
+	Feed.NoteArrival();
+	RecentNews.Insert(Post, 0);
+	if (RecentNews.Num() > 80) { RecentNews.SetNum(80); }
+	NewNewsSerials.Add(Feed.TotalArrivals);
+	const bool bShownNow = bPanelOpen && bFeedInitialized && bAutoShowNewPosts && FFF_LiveSnsFeedState::Matches(Post, Feed.Filter);
+	if (!bShownNow) { UnreadNewsSerials.Add(Feed.TotalArrivals); }
+	const int64 Oldest = Feed.TotalArrivals - RecentNews.Num() + 1;
+	for (auto It = UnreadNewsSerials.CreateIterator(); It; ++It) { if (*It < Oldest) { It.RemoveCurrent(); } }
+	for (auto It = NewNewsSerials.CreateIterator(); It; ++It) { if (*It < Oldest) { It.RemoveCurrent(); } }
+	if (bShownNow) { InsertLivePost(Post); }
+	RefreshPending();
+	RefreshFilters();
+}
+
+void UFF_LivePanelSNS::AcknowledgeNewsFilter()
+{
+	for (int64 Serial : Feed.DisplayedSerials) { UnreadNewsSerials.Remove(Serial); }
+}
+
+int32 UFF_LivePanelSNS::CountUnreadNews(bool bOperation) const
+{
+	int32 Count = 0;
+	for (int32 Index = 0; Index < RecentNews.Num(); ++Index)
+	{
+		if (RecentNews[Index].bOperationAlert == bOperation && UnreadNewsSerials.Contains(Feed.TotalArrivals - Index)) { ++Count; }
+	}
+	return Count;
 }
 
 void UFF_LivePanelSNS::InsertLivePost(const FFF_LiveSocialPost& Post)
@@ -243,8 +359,8 @@ void UFF_LivePanelSNS::SetFilter(EFF_LiveSnsFilter Filter)
 }
 
 void UFF_LivePanelSNS::HandleFilterAll() { SetFilter(EFF_LiveSnsFilter::All); }
-void UFF_LivePanelSNS::HandleFilterPositive() { SetFilter(EFF_LiveSnsFilter::Positive); }
-void UFF_LivePanelSNS::HandleFilterNegative() { SetFilter(EFF_LiveSnsFilter::Negative); }
+void UFF_LivePanelSNS::HandleFilterPositive() { SetFilter(bUnifiedNews ? EFF_LiveSnsFilter::Social : EFF_LiveSnsFilter::Positive); }
+void UFF_LivePanelSNS::HandleFilterNegative() { SetFilter(bUnifiedNews ? EFF_LiveSnsFilter::Operation : EFF_LiveSnsFilter::Negative); }
 void UFF_LivePanelSNS::HandleNewPosts() { SyncFromViewModel(); }
 
 void UFF_LivePanelSNS::Debug_SetPosts(const TArray<FFF_LiveSocialPost>& InPosts)
@@ -294,13 +410,15 @@ void UFF_LivePanelSNS::RefreshNewMarks()
 {
 	for (int32 Index = 0; Index < PostEntries.Num(); ++Index)
 	{
-		if (PostEntries[Index]) { PostEntries[Index]->SetNewMark(Feed.IsNew(Index)); }
+		if (PostEntries[Index]) { PostEntries[Index]->SetNewMark(bUnifiedNews
+			? NewNewsSerials.Contains(Feed.DisplayedSerials[Index]) : Feed.IsNew(Index)); }
 	}
 }
 
 void UFF_LivePanelSNS::ClearNewMarks()
 {
 	Feed.MarkAllSeen();
+	if (bUnifiedNews) { for (int64 Serial : Feed.DisplayedSerials) { NewNewsSerials.Remove(Serial); } }
 	NewMarkShownAt.Reset();
 	RefreshNewMarks();
 }
@@ -313,10 +431,14 @@ void UFF_LivePanelSNS::TickNewMarks()
 	int64 ExpiredUpTo = Feed.SeenSerial;
 	for (int32 Index = 0; Index < Feed.DisplayedSerials.Num(); ++Index)
 	{
-		if (!Feed.IsNew(Index)) { continue; }
+		if (bUnifiedNews ? !NewNewsSerials.Contains(Feed.DisplayedSerials[Index]) : !Feed.IsNew(Index)) { continue; }
 		const int64 Serial = Feed.DisplayedSerials[Index];
 		const double ShownAt = NewMarkShownAt.FindOrAdd(Serial, Now);
-		if (Now - ShownAt >= NewMarkSeconds) { ExpiredUpTo = FMath::Max(ExpiredUpTo, Serial); }
+		if (Now - ShownAt >= NewMarkSeconds)
+		{
+			ExpiredUpTo = FMath::Max(ExpiredUpTo, Serial);
+			if (bUnifiedNews) { NewNewsSerials.Remove(Serial); }
+		}
 	}
 	if (ExpiredUpTo > Feed.SeenSerial)
 	{
@@ -325,6 +447,7 @@ void UFF_LivePanelSNS::TickNewMarks()
 		for (auto It = NewMarkShownAt.CreateIterator(); It; ++It) { if (It.Key() <= ExpiredUpTo) { It.RemoveCurrent(); } }
 		RefreshNewMarks();
 	}
+	if (bUnifiedNews) { RefreshNewMarks(); }
 }
 
 void UFF_LivePanelSNS::TickScrollAnchor()
@@ -344,16 +467,17 @@ void UFF_LivePanelSNS::TickScrollAnchor()
 
 void UFF_LivePanelSNS::RefreshPending()
 {
-	OnPendingPostsChanged.Broadcast(Feed.PendingCount);
+	const int32 Pending = GetPendingPostCount();
+	OnPendingPostsChanged.Broadcast(Pending);
 	if (Button_NewPosts)
 	{
 		// 자동 표시면 버튼이 필요 없다. 접어서 자리까지 없앤다(감싼 SizeBox 도 0 이 된다).
 		// 버튼 방식이면 높이를 예약해 새 글 버튼이 나타날 때 목록을 밀어내지 않는다.
 		Button_NewPosts->SetVisibility(bAutoShowNewPosts ? ESlateVisibility::Collapsed
-			: Feed.PendingCount > 0 ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
+			: Pending > 0 ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
 	}
 	SetTextOrHide(Text_NewPosts, FText::Format(NewPostsTextFormat,
-		FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Feed.PendingCount)}}));
+		FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Pending)}}));
 }
 
 void UFF_LivePanelSNS::RefreshFilters()
@@ -369,12 +493,18 @@ void UFF_LivePanelSNS::RefreshFilters()
 		if (Underline)
 		{
 			// 숨겨도 자리를 지켜 탭 높이가 흔들리지 않는다.
-			Underline->SetVisibility(bSelected ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+			Underline->SetVisibility(bTintFilterBackground ? ESlateVisibility::Collapsed
+				: bSelected ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 		}
 		if (Label)
 		{
 			const FText* ConfiguredText = FilterLabels.Find(Filter);
-			const FText Text = ConfiguredText ? *ConfiguredText : FText::GetEmpty();
+			FText Text = ConfiguredText ? *ConfiguredText : FText::GetEmpty();
+			if (bUnifiedNews && Filter != EFF_LiveSnsFilter::All)
+			{
+				const int32 Unread = CountUnreadNews(Filter == EFF_LiveSnsFilter::Operation);
+				if (Unread > 0) { Text = FText::Format(LOCTEXT("SourceUnread", "{0}  {1}"), Text, FText::AsNumber(Unread)); }
+			}
 			Label->SetText(bSelected ? FText::Format(SelectedFilterTextFormat,
 				FFormatNamedArguments{{TEXT("Label"), Text}}) : Text);
 			Label->SetColorAndOpacity(FSlateColor(bSelected ? SelectedFilterTextColor : UnselectedFilterTextColor));
@@ -392,8 +522,8 @@ void UFF_LivePanelSNS::RefreshFilters()
 		}
 	};
 	Apply(Button_FilterAll, Text_FilterAll, Underline_FilterAll, EFF_LiveSnsFilter::All);
-	Apply(Button_FilterPositive, Text_FilterPositive, Underline_FilterPositive, EFF_LiveSnsFilter::Positive);
-	Apply(Button_FilterNegative, Text_FilterNegative, Underline_FilterNegative, EFF_LiveSnsFilter::Negative);
+	Apply(Button_FilterPositive, Text_FilterPositive, Underline_FilterPositive, bUnifiedNews ? EFF_LiveSnsFilter::Social : EFF_LiveSnsFilter::Positive);
+	Apply(Button_FilterNegative, Text_FilterNegative, Underline_FilterNegative, bUnifiedNews ? EFF_LiveSnsFilter::Operation : EFF_LiveSnsFilter::Negative);
 }
 
 void UFF_LivePanelSNS::RefreshSummary()

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
+#include "Incident/FF_IncidentTypes.h"
 #include "FF_LivePanelStaff.generated.h"
 
 class UFF_FestivalViewModelSubsystem;
@@ -15,6 +16,7 @@ class UImage;
 class UTexture2D;
 class UWidgetSwitcher;
 class UFF_StaffTrainingWidget;
+class UFF_StaffManagementWidget;
 
 /**
  * 인력이 남아도는 정도.
@@ -92,19 +94,10 @@ struct FESTAFIESTA_API FFF_LiveStaffRules
 /**
  * 라이브 `스태프` 패널.
  *
- * === 🔴 읽기 전용이다 ===
- * 인원 고용은 **셋업·개장 준비 전용**이고 축제 끝까지 남는다. 라이브 중에 늘릴 수 있게 하면
- * "부족하면 그때 사면 된다" 가 되어 준비 단계의 결정이 의미를 잃는다.
- * 그래서 여기에는 명령 버튼이 없고, **대신 언제 늘릴 수 있는지 적는다** —
- * 못 하는 것을 흐려 놓기만 하면 왜 못 하는지 알 수 없다 (AT-011 과 같은 이유).
- *
- * === 그럼 왜 필요한가 ===
- * **사건에 대응 중인 인원과 남는 인원**을 보여주는 것이 이 패널의 값어치다.
- * 사건이 몰릴 때 사람이 모자란지가 여기서만 보인다.
- *
- * [주의] 유료 프로그램은 인원을 쓰지 않는다. 배치는 사건 대응 전용이다.
- *
- * 시설별 배정은 안내 시설 정보 패널에서 조절한다. 이 패널은 보유·정원·미배정·출동 인원을 읽는다.
+ * 공통 관리 위젯에서 안내시설 배정·해제, 빈자리 채우기, 직원 승급을 요청한다.
+ * 고용은 셋업·아침 점검 전용이며 여기서는 출동·복귀 상태와 사건 바로가기를 제공한다.
+ * 출동 중인 인원은 원본 배정 API가 해제를 거부한다. 라이브 시뮬레이션은 계속 흐른다.
+ * 기존 요약 바인딩은 이전 WBP 호환용으로 남겨 둔다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Live Panel - Staff"))
 class FESTAFIESTA_API UFF_LivePanelStaff : public UFF_LivePanelBase
@@ -189,6 +182,10 @@ public:
 	TObjectPtr<UTexture2D> ResponseUnknownIcon;
 
 protected:
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UFF_StaffManagementWidget> Widget_StaffManagement;
+	void HandleManagementIncident(FFF_IncidentHandle Handle);
+
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;

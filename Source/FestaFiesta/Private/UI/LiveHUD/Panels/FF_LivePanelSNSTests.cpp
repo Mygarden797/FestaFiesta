@@ -136,4 +136,33 @@ bool FFF_SnsAutoInsertTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("한도에서도 새 글이 위"), State.DisplayedPosts[0].Body.ToString(), FString(TEXT("새4")));
 	return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UnifiedNewsSourceTest, "FestaFiesta.UI.SNS.UnifiedNewsSources",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UnifiedNewsSourceTest::RunTest(const FString& Parameters)
+{
+	using namespace FFSnsTests;
+	FFF_LiveSocialPost Operation = Post(TEXT("음식 부스 부족"), INDEX_NONE);
+	Operation.bOperationAlert = true;
+	Operation.OperationDay = 2;
+	const TArray<FFF_LiveSocialPost> Source = { Post(TEXT("관객 최신 글"), 20), Operation, Post(TEXT("관객 이전 글"), -20) };
+	FFF_LiveSnsFeedState State;
+	State.TotalArrivals = 3;
+	State.Sync(Source, 80);
+	TestEqual(TEXT("전체는 도착 순서대로 두 원본 포함"), State.DisplayedPosts.Num(), 3);
+	State.Filter = EFF_LiveSnsFilter::Social;
+	State.Sync(Source, 80);
+	TestEqual(TEXT("SNS는 긍정과 아쉬움을 모두 포함"), State.DisplayedPosts.Num(), 2);
+	TestEqual(TEXT("종류 필터 후에도 원래 도착 번호 유지"), State.DisplayedSerials[1], int64(1));
+	State.Filter = EFF_LiveSnsFilter::Operation;
+	State.Sync(Source, 80);
+	TestEqual(TEXT("운영 알림만 따로 조회"), State.DisplayedPosts.Num(), 1);
+	TestTrue(TEXT("운영 종류 보존"), State.DisplayedPosts[0].bOperationAlert);
+	TestEqual(TEXT("운영 일차 보존"), State.DisplayedPosts[0].OperationDay, 2);
+	TestEqual(TEXT("운영 도착 번호 보존"), State.DisplayedSerials[0], int64(2));
+	State.NoteArrival();
+	TestFalse(TEXT("운영 필터에서 SNS 실시간 삽입 제외"), State.InsertArrival(Source[0], 80));
+	State.NoteArrival();
+	TestTrue(TEXT("운영 필터에서 운영 실시간 삽입"), State.InsertArrival(Operation, 80));
+	return true;
+}
 #endif

@@ -746,7 +746,7 @@ namespace FFLiveHudWbpBuilder
 
 		// --- 헤더 ---
 		StyleText(*Title, 18, Palette->InGame.Ink, TEXT("SemiBold"));
-		Title->SetText(LOCTEXT("LiveFac_TitlePreview", "시설"));
+		Title->SetText(LOCTEXT("LiveFac_TitlePreview", "시설 상태"));
 		if (UHorizontalBoxSlot* Slot_Title = Header->AddChildToHorizontalBox(Title))
 		{
 			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -1075,7 +1075,7 @@ namespace FFLiveHudWbpBuilder
 
 		// --- 헤더 ---
 		StyleText(*Title, 18, Palette->InGame.Ink, TEXT("SemiBold"));
-		Title->SetText(LOCTEXT("LiveGuests_TitlePreview", "관객"));
+		Title->SetText(LOCTEXT("LiveGuests_TitlePreview", "현황"));
 		if (UHorizontalBoxSlot* Slot_Title = Header->AddChildToHorizontalBox(Title))
 		{
 			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -1913,7 +1913,7 @@ namespace FFLiveHudWbpBuilder
 		//
 		// ★ 이름이 계약이다. `UFF_LiveHudScreen` 의 `BindWidgetOptional` 과 같아야 붙는다.
 		const TCHAR* TabWidgetNames[] = {
-			TEXT("Tab_Operations"), TEXT("Tab_Facilities"), TEXT("Tab_Guests"),
+			TEXT("Tab_Operations"), TEXT("Tab_Facilities"), TEXT("Tab_RevenueRanking"), TEXT("Tab_Guests"),
 			TEXT("Tab_Queues"), TEXT("Tab_SNS"), TEXT("Tab_Staff"), TEXT("Tab_Density"),
 			// 결산 탭. 마감·리포트에서만 보인다 (2026-09-02 통합).
 			TEXT("Tab_Report"), TEXT("Tab_Finale") };

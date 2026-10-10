@@ -19,6 +19,7 @@
 #include "Incident/FF_IncidentSubsystem.h"
 #include "Staff/FF_StaffFacilitySubsystem.h"
 #include "UI/Data/FF_UIPalette.h"
+#include "UI/Core/FF_OutsideClickDismiss.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/FF_UILog.h"
 #include "UI/LiveHUD/Incident/FF_IncidentUiStyle.h"
@@ -251,6 +252,10 @@ void UFF_IncidentDetailPanel::SetButtonEnabled(UButton* Button, UTextBlock* Labe
 void UFF_IncidentDetailPanel::NativeConstruct()
 {
 	Super::NativeConstruct();
+	FFOutsideClickDismiss::Register(this,
+		[this] { return IsOpen(); },
+		[this](FVector2D Position) { return FFOutsideClickDismiss::IsInside(Card, Position); },
+		FSimpleDelegate::CreateUObject(this, &ThisClass::Close));
 
 	BindIncidents();
 	if (!IsOpen())
@@ -261,6 +266,7 @@ void UFF_IncidentDetailPanel::NativeConstruct()
 
 void UFF_IncidentDetailPanel::NativeDestruct()
 {
+	FFOutsideClickDismiss::Unregister(this);
 	UnbindIncidents();
 	CurrentHandle = FFF_IncidentHandle();
 	Super::NativeDestruct();

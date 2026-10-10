@@ -59,6 +59,9 @@ class FESTAFIESTA_API UFF_LiveHudScreen : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	/** 스태프 관리 등 HUD 내부 바로가기에서도 기존 사건 상세 창을 재사용한다. */
+	void RequestOpenIncident(FFF_IncidentHandle Handle);
+
 	/** 탭을 눌렀을 때와 같은 경로. 콘솔·디버그에서도 쓴다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Live")
 	void ToggleTab(EFF_LiveTab Tab);
@@ -154,6 +157,10 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Tabs")
 	TObjectPtr<UFF_LiveTabButton> Tab_Facilities;
+
+	/** 시설을 먼저 선택하지 않고 기존 시설 매출 순위 화면을 연다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UFF_LiveTabButton> Tab_RevenueRanking;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Tabs")
 	TObjectPtr<UFF_LiveTabButton> Tab_Guests;

@@ -23,6 +23,7 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "UI/Core/FF_UIAccessibilitySubsystem.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
+#include "UI/Core/FF_OutsideClickDismiss.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/FF_UILog.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
@@ -256,10 +257,19 @@ void UFF_PrepHudBar::NativeConstruct()
 	// 두 번째 진입부터 아무 값도 안 들어온다 (2026-08-24에 화면 5종에서 실제로 발생).
 	BindSources();
 	RefreshAll();
+	FFOutsideClickDismiss::Register(this,
+		[this] { return Selection.bHasSelection && Selection.Tab != EFF_PrepHudTab::Build; },
+		[this](FVector2D Position)
+		{
+			return FFOutsideClickDismiss::IsInside(Panel_PanelHost, Position)
+				|| FFOutsideClickDismiss::IsInside(Border_MenuRow, Position)
+				|| FFOutsideClickDismiss::IsInside(Border_StatusRow, Position);
+		}, FSimpleDelegate::CreateUObject(this, &ThisClass::CloseCurrentPanel));
 }
 
 void UFF_PrepHudBar::NativeDestruct()
 {
+	FFOutsideClickDismiss::Unregister(this);
 #if !UE_BUILD_SHIPPING
 	// 다음 바가 이미 등록됐을 수 있으므로 내가 등록한 것만 지운다.
 	if (ActiveBar.Get() == this)
@@ -321,6 +331,7 @@ void UFF_PrepHudBar::BindSources()
 		CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleGoldChanged);
 		CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStageViewChanged);
+		CachedViewModel->OnPurchasedFinaleGradeChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandlePurchasedFinaleGradeChanged);
 
 		// 🔴 초마다 온다 (`ApplyIntMetric` 이 값이 바뀔 때만 쏜다). CTA 사유에 적은
 		// 남은 시간이 실제로 줄어들려면 이 구독이 필요하다.
@@ -371,6 +382,7 @@ void UFF_PrepHudBar::UnbindSources()
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleGoldChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStageViewChanged);
+		CachedViewModel->OnPurchasedFinaleGradeChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandlePurchasedFinaleGradeChanged);
 		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleRemainingSecondsChanged);
 	}
 	CachedViewModel = nullptr;
@@ -1071,6 +1083,21 @@ void UFF_PrepHudBar::RefreshTabVisibility()
 
 	// 사라진 탭의 패널이 남아 있으면 닫을 수단이 화면에서 없어진다.
 	ApplySelection(FFF_PrepHudRules::ClampSelectionToVisible(Selection, Stage, bIsFinalDay));
+	RefreshFinaleAttention();
+}
+
+void UFF_PrepHudBar::RefreshFinaleAttention()
+{
+	if (Tab_Finale)
+	{
+		const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+		Tab_Finale->SetFinaleAttention(ViewModel && ViewModel->CanPurchaseFinaleNow());
+	}
+}
+
+void UFF_PrepHudBar::HandlePurchasedFinaleGradeChanged(EFF_FinaleGrade NewGrade)
+{
+	RefreshFinaleAttention();
 }
 
 void UFF_PrepHudBar::RefreshStatusRow()
@@ -1185,7 +1212,15 @@ void UFF_PrepHudBar::RefreshCta()
 			if (!RequiredReason.IsEmpty()) { Reason = RequiredReason; }
 		}
 	}
-	SetGroupTextOrHide(nullptr, Text_CtaReason, Reason);
+	// 하단 배지는 한 줄 높이이므로 여러 필수 시설의 개행 사유를 그대로 그리지 않는다.
+	// 전문은 툴팁과 GetCtaReason()에 남겨 점검 패널에서 모두 확인할 수 있게 한다.
+	TArray<FString> ReasonLines;
+	Reason.ToString().ParseIntoArrayLines(ReasonLines, true);
+	const FText BadgeReason = ReasonLines.Num() > 1
+		? FText::Format(LOCTEXT("PrepCta_MultipleReasonSummary", "{0} 외 {1}건"),
+			FText::FromString(ReasonLines[0]), FText::AsNumber(ReasonLines.Num() - 1))
+		: Reason;
+	SetGroupTextOrHide(nullptr, Text_CtaReason, BadgeReason);
 	if (Text_CtaReason)
 	{
 		Text_CtaReason->SetToolTipText(Reason);

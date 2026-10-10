@@ -30,7 +30,7 @@ FText UFF_UIDisplayTextLibrary::GetPrepTabText(EFF_PrepHudTab Tab)
 	{
 	case EFF_PrepHudTab::Build:		return LOCTEXT("PrepTab_Build", "배치");
 	case EFF_PrepHudTab::Program:	return LOCTEXT("PrepTab_Program", "프로그램");
-	case EFF_PrepHudTab::Staff:		return LOCTEXT("PrepTab_Staff", "인력");
+	case EFF_PrepHudTab::Staff:		return LOCTEXT("PrepTab_Staff", "스태프");
 	case EFF_PrepHudTab::Promotion:	return LOCTEXT("PrepTab_Promotion", "홍보");
 	case EFF_PrepHudTab::Finale:	return LOCTEXT("PrepTab_Finale", "피날레");
 	case EFF_PrepHudTab::Check:		return LOCTEXT("PrepTab_Check", "점검");
@@ -45,7 +45,8 @@ FText UFF_UIDisplayTextLibrary::GetLiveTabText(EFF_LiveTab Tab)
 	{
 	case EFF_LiveTab::Operations:	return LOCTEXT("LiveTab_Operations", "운영");
 	case EFF_LiveTab::Facilities:	return LOCTEXT("LiveTab_Facilities", "시설");
-	case EFF_LiveTab::Guests:		return LOCTEXT("LiveTab_Guests", "관객");
+	case EFF_LiveTab::Guests:		return LOCTEXT("LiveTab_Guests", "현황");
+	case EFF_LiveTab::RevenueRanking: return LOCTEXT("LiveTab_RevenueRanking", "매출 순위");
 	case EFF_LiveTab::Queues:		return LOCTEXT("LiveTab_Queues", "대기열");
 	case EFF_LiveTab::SNS:			return LOCTEXT("LiveTab_SNS", "SNS");
 	case EFF_LiveTab::Report:		return LOCTEXT("LiveTab_Report", "리포트");

@@ -2,6 +2,7 @@
 
 #include "UI/Staff/FF_StaffTrainingWidget.h"
 
+#include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -34,6 +35,15 @@ void UFF_StaffTrainingWidget::ConfigureStaffRowDefaults(TSubclassOf<UFF_StaffPro
 void UFF_StaffTrainingWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (Button_AllStaff)
+	{
+		Button_AllStaff->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAllStaffClicked);
+	}
+	if (Button_UnassignedStaff)
+	{
+		Button_UnassignedStaff->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUnassignedStaffClicked);
+	}
+	RefreshFilterLabels();
 	// 생성만으로는 구독하지 않는다. 소유 패널이 먼저 활성화한 경우에만 현재 표시를 맞춘다.
 	if (bRosterActive) { SyncRoster(); }
 }
@@ -41,7 +51,23 @@ void UFF_StaffTrainingWidget::NativeConstruct()
 void UFF_StaffTrainingWidget::NativeDestruct()
 {
 	DeactivateRoster();
+	if (Button_AllStaff)
+	{
+		Button_AllStaff->OnClicked.RemoveDynamic(this, &ThisClass::HandleAllStaffClicked);
+	}
+	if (Button_UnassignedStaff)
+	{
+		Button_UnassignedStaff->OnClicked.RemoveDynamic(this, &ThisClass::HandleUnassignedStaffClicked);
+	}
 	Super::NativeDestruct();
+}
+
+void UFF_StaffTrainingWidget::ApplyManagementSnapshot(const FFF_StaffManagementSnapshot& Snapshot)
+{
+	ManagementSnapshot = Snapshot;
+	bHasManagementSnapshot = true;
+	SyncRoster();
+	RefreshFilterLabels();
 }
 
 void UFF_StaffTrainingWidget::ActivateRoster()
@@ -64,6 +90,7 @@ void UFF_StaffTrainingWidget::DeactivateRoster()
 	{
 		if (Pair.Value) { Pair.Value->OnPromoteRequested.Unbind(); }
 	}
+	RefreshFilterLabels();
 	// 목록·ScrollBox는 남겨 두어 패널을 다시 열어도 같은 위치를 유지한다.
 }
 
@@ -111,6 +138,7 @@ void UFF_StaffTrainingWidget::SyncRoster()
 	SetStaffTrainingText(Text_BaseStaff, FormatCount(ViewModel ? ViewModel->GetBaseStaffCount() : INDEX_NONE));
 	SetStaffTrainingText(Text_HiredStaff, FormatCount(ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE));
 	SetOptionalStaffTrainingText(Text_RosterNote, RosterNoteText);
+	RefreshFilterLabels();
 
 	TArray<FFF_StaffMember> Roster = ViewModel ? ViewModel->GetStaffRoster() : TArray<FFF_StaffMember>();
 	Roster.Sort([](const FFF_StaffMember& Left, const FFF_StaffMember& Right) { return Left.StaffId < Right.StaffId; });
@@ -130,6 +158,7 @@ void UFF_StaffTrainingWidget::SyncRoster()
 	}
 
 	bool bMissingRows = false;
+	int32 VisibleRowCount = 0;
 	for (const FFF_StaffMember& Member : Roster)
 	{
 		UFF_StaffPromotionRowWidget* Row = RowsByStaffId.FindRef(Member.StaffId);
@@ -150,6 +179,23 @@ void UFF_StaffTrainingWidget::SyncRoster()
 		{
 			Row->OnPromoteRequested.BindUObject(this, &ThisClass::HandlePromoteRequested);
 			Row->SetStaffMember(Member, ViewModel->GetStaffPromotionState(Member.StaffId));
+			const FFF_StaffMemberManagementView* Management = bHasManagementSnapshot && ManagementSnapshot.bAvailable
+				? ManagementSnapshot.Members.FindByPredicate([&Member](const FFF_StaffMemberManagementView& Candidate)
+				{
+					return Candidate.StaffId == Member.StaffId;
+				}) : nullptr;
+			if (Management)
+			{
+				Row->SetAssignmentStatus(Management->FacilityLabel, Management->DutyLabel);
+			}
+			else if (bHasManagementSnapshot)
+			{
+				Row->SetAssignmentStatus(UnknownValueText,
+					NSLOCTEXT("FestaFiestaStaffTraining", "AssignmentUnknown", "확인 중"));
+			}
+			const bool bShowRow = !bOnlyUnassigned || (Management && Management->bUnassigned);
+			Row->SetVisibility(bShowRow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+			VisibleRowCount += bShowRow ? 1 : 0;
 		}
 		else
 		{
@@ -158,8 +204,40 @@ void UFF_StaffTrainingWidget::SyncRoster()
 	}
 
 	const bool bRosterKnown = ViewModel && ViewModel->GetTotalStaffCount() >= 0;
-	SetOptionalStaffTrainingText(Text_RosterEmpty, bMissingRows || !bRosterKnown
-		? RosterUnavailableText : Roster.IsEmpty() ? RosterEmptyText : FText::GetEmpty());
+	const bool bFilterKnown = !bOnlyUnassigned || (bHasManagementSnapshot && ManagementSnapshot.bAvailable);
+	SetOptionalStaffTrainingText(Text_RosterEmpty, bMissingRows || !bRosterKnown || !bFilterKnown
+		? RosterUnavailableText : Roster.IsEmpty() ? RosterEmptyText
+		: VisibleRowCount == 0 && bOnlyUnassigned ? UnassignedEmptyText : FText::GetEmpty());
+}
+
+void UFF_StaffTrainingWidget::RefreshFilterLabels()
+{
+	const bool bKnown = bHasManagementSnapshot && ManagementSnapshot.bAvailable;
+	const FText Total = bKnown ? FText::AsNumber(ManagementSnapshot.Total) : UnknownValueText;
+	const FText Unassigned = bKnown ? FText::AsNumber(ManagementSnapshot.Unassigned) : UnknownValueText;
+	SetStaffTrainingText(Text_AllStaffFilter, FText::Format(bOnlyUnassigned
+		? NSLOCTEXT("FestaFiestaStaffTraining", "AllFilter", "전체 {0}")
+		: NSLOCTEXT("FestaFiestaStaffTraining", "AllFilterSelected", "✓ 전체 {0}"), Total));
+	SetStaffTrainingText(Text_UnassignedStaffFilter, FText::Format(bOnlyUnassigned
+		? NSLOCTEXT("FestaFiestaStaffTraining", "UnassignedFilterSelected", "✓ 미배정 {0}")
+		: NSLOCTEXT("FestaFiestaStaffTraining", "UnassignedFilter", "미배정 {0}"), Unassigned));
+	if (Button_AllStaff) { Button_AllStaff->SetIsEnabled(bRosterActive && !bRequestInFlight); }
+	if (Button_UnassignedStaff) { Button_UnassignedStaff->SetIsEnabled(bRosterActive && bKnown && !bRequestInFlight); }
+}
+
+void UFF_StaffTrainingWidget::HandleAllStaffClicked()
+{
+	if (!bRosterActive || bRequestInFlight || !bOnlyUnassigned) { return; }
+	bOnlyUnassigned = false;
+	SyncRoster();
+}
+
+void UFF_StaffTrainingWidget::HandleUnassignedStaffClicked()
+{
+	if (!bRosterActive || bRequestInFlight || bOnlyUnassigned
+		|| !bHasManagementSnapshot || !ManagementSnapshot.bAvailable) { return; }
+	bOnlyUnassigned = true;
+	SyncRoster();
 }
 
 void UFF_StaffTrainingWidget::HandleRosterChanged()
@@ -205,6 +283,7 @@ void UFF_StaffTrainingWidget::SetRowsPending(bool bPending)
 	{
 		if (Pair.Value) { Pair.Value->SetRequestPending(bPending); }
 	}
+	RefreshFilterLabels();
 }
 
 FText UFF_StaffTrainingWidget::GetFailureReason(int32 StaffId) const

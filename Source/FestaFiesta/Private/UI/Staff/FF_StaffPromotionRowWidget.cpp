@@ -3,6 +3,7 @@
 #include "UI/Staff/FF_StaffPromotionRowWidget.h"
 
 #include "Components/Button.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 
 UFF_StaffPromotionRowWidget::UFF_StaffPromotionRowWidget(const FObjectInitializer& ObjectInitializer)
@@ -55,6 +56,29 @@ void UFF_StaffPromotionRowWidget::SetRequestPending(bool bPending)
 	RefreshRow();
 }
 
+void UFF_StaffPromotionRowWidget::SetAssignmentStatus(const FText& Facility, const FText& Duty)
+{
+	AssignmentFacility = Facility;
+	AssignmentDuty = Duty;
+	bHasAssignmentStatus = true;
+	RefreshAssignmentStatus();
+}
+
+void UFF_StaffPromotionRowWidget::RefreshAssignmentStatus()
+{
+	if (!bHasAssignmentStatus) { return; }
+	if (Text_AssignmentFacility)
+	{
+		Text_AssignmentFacility->SetText(AssignmentFacility);
+		Text_AssignmentFacility->SetToolTipText(AssignmentFacility);
+	}
+	if (Text_AssignmentStatus)
+	{
+		Text_AssignmentStatus->SetText(AssignmentDuty);
+		Text_AssignmentStatus->SetToolTipText(AssignmentDuty);
+	}
+}
+
 FText UFF_StaffPromotionRowWidget::GetStaffDisplayName() const
 {
 	return FText::Format(StaffNameFormat,
@@ -76,10 +100,32 @@ FText UFF_StaffPromotionRowWidget::GetPromotionStatusText(EFF_StaffPromotionStat
 	}
 }
 
+FText UFF_StaffPromotionRowWidget::GetCompactPromotionStatusText(EFF_StaffPromotionState State) const
+{
+	switch (State)
+	{
+	case EFF_StaffPromotionState::Ready: return PromoteLabelText;
+	case EFF_StaffPromotionState::NotStarted:
+		return NSLOCTEXT("FestaFiestaStaffTraining", "CompactNotStarted", "축제 시작 전");
+	case EFF_StaffPromotionState::NotFound:
+		return NSLOCTEXT("FestaFiestaStaffTraining", "CompactNotFound", "명단 확인 필요");
+	case EFF_StaffPromotionState::MaxLevel:
+		return NSLOCTEXT("FestaFiestaStaffTraining", "CompactMaxLevel", "최대 레벨");
+	case EFF_StaffPromotionState::HiredToday:
+		return NSLOCTEXT("FestaFiestaStaffTraining", "CompactHiredToday", "오늘 고용");
+	case EFF_StaffPromotionState::AlreadyPromotedToday:
+		return NSLOCTEXT("FestaFiestaStaffTraining", "CompactAlreadyPromoted", "오늘 승급 완료");
+	case EFF_StaffPromotionState::Unavailable:
+	default:
+		return NSLOCTEXT("FestaFiestaStaffTraining", "CompactUnavailable", "승급 불가");
+	}
+}
+
 void UFF_StaffPromotionRowWidget::RefreshRow()
 {
 	// 데이터가 없을 때는 Designer에서 만든 미리보기를 보존한다.
 	if (!bHasMember) { return; }
+	RefreshAssignmentStatus();
 	if (Text_StaffName) { Text_StaffName->SetText(GetStaffDisplayName()); }
 	if (Text_StaffKind) { Text_StaffKind->SetText(CurrentMember.bIsBaseStaff ? BaseStaffText : HiredStaffText); }
 	if (Text_StaffLevel)
@@ -87,9 +133,16 @@ void UFF_StaffPromotionRowWidget::RefreshRow()
 		Text_StaffLevel->SetText(FText::Format(StaffLevelFormat,
 			FFormatNamedArguments{{TEXT("Level"), FText::AsNumber(CurrentMember.TrainingLevel)}}));
 	}
+	const FText FullStatus = bRequestPending ? PendingStatusText : GetPromotionStatusText(CurrentState);
+	const bool bShowPromoteButton = !bCompactManagementRow || CurrentState == EFF_StaffPromotionState::Ready;
+	if (bCompactManagementRow) { SetToolTipText(FullStatus); }
 	if (Text_PromotionStatus)
 	{
-		Text_PromotionStatus->SetText(bRequestPending ? PendingStatusText : GetPromotionStatusText(CurrentState));
+		const FText CompactStatus = bRequestPending ? PendingLabelText : GetCompactPromotionStatusText(CurrentState);
+		Text_PromotionStatus->SetText(bCompactManagementRow ? CompactStatus : FullStatus);
+		Text_PromotionStatus->SetToolTipText(bCompactManagementRow ? FullStatus : FText::GetEmpty());
+		Text_PromotionStatus->SetVisibility(bCompactManagementRow && bShowPromoteButton
+			? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
 	if (Text_Promote) { Text_Promote->SetText(bRequestPending ? PendingLabelText : PromoteLabelText); }
 	if (Button_Promote)
@@ -97,6 +150,8 @@ void UFF_StaffPromotionRowWidget::RefreshRow()
 		const bool bCanPromote = CurrentState == EFF_StaffPromotionState::Ready && !bRequestPending;
 		const bool bHadButtonFocus = Button_Promote->HasAnyUserFocus();
 		Button_Promote->SetIsEnabled(bCanPromote);
+		Button_Promote->SetVisibility(bShowPromoteButton ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		Button_Promote->SetToolTipText(bCompactManagementRow ? FullStatus : FText::GetEmpty());
 		if (!bCanPromote && bHadButtonFocus)
 		{
 			bRestoreButtonFocus = true;
@@ -108,6 +163,11 @@ void UFF_StaffPromotionRowWidget::RefreshRow()
 			if (bCanPromote && HasAnyUserFocus()) { Button_Promote->SetFocus(); }
 			bRestoreButtonFocus = false;
 		}
+	}
+	if (bCompactManagementRow && SizeBox_Promote)
+	{
+		SizeBox_Promote->SetVisibility(bShowPromoteButton
+			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	}
 }
 

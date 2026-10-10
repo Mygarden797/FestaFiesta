@@ -10,9 +10,7 @@
 /**
  * 준비 단계 하단 바의 탭 버튼 하나.
  *
- * 시각 처리는 전부 `UFF_HudTabButtonBase` 에 있다. 여기는 **탭 종류를 `EFF_PrepHudTab` 으로
- * 다루는 얇은 껍데기**다. 베이스가 `int32` 로만 들고 있어서 바가 캐스팅을 하게 두면
- * 캐스팅이 호출부마다 흩어진다.
+	 * 공통 선택 처리는 베이스가 담당한다. 피날레 구매 기회는 금색·오늘 배지로 추가 표시한다.
  *
  * WBP 는 `WBP_FF_PrepHudTabButton` 하나만 만들고 바에 6개를 놓는다.
  * **탭을 런타임에 생성하지 않는다** — 디자이너에서 안 보여 위치·크기를 손으로 못 만진다
@@ -32,6 +30,9 @@ public:
 
 	EFF_PrepHudTab GetTab() const { return static_cast<EFF_PrepHudTab>(GetTabId()); }
 
+	/** 구매 가능 여부는 부모 바가 ViewModel에서 읽어 전달한다. */
+	void SetFinaleAttention(bool bEnabled);
+
 	/** 부모 HUD Designer에서 탭별 문구를 바꾼다. 비워 두면 공통 번역 문구를 사용한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Text")
 	FText DisplayLabelOverride;
@@ -40,6 +41,41 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Appearance")
 	FSlateBrush DesignerIcon;
 
+	/** Designer에서 효과를 확인할 때만 사용한다. 런타임은 실제 구매 가능 상태를 따른다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Finale")
+	bool bPreviewFinaleAttention = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Finale")
+	FLinearColor FinaleFillColor = FLinearColor::FromSRGBColor(FColor(0xE8, 0xC4, 0x70));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Finale")
+	FLinearColor FinaleOutlineColor = FLinearColor::FromSRGBColor(FColor(0xB2, 0x85, 0x30));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Finale")
+	FLinearColor FinaleContentColor = FLinearColor::FromSRGBColor(FColor(0x55, 0x3B, 0x16));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Finale", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float FinaleSheenOpacity = 0.16f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Finale", meta = (ClampMin = "2.0"))
+	float FinaleSheenPeriod = 4.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Finale")
+	bool bAnimateFinaleSheen = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Finale")
+	FText FinaleBadgeText = NSLOCTEXT("FF_PrepHud", "FinaleTodayBadge", "오늘");
+
 protected:
 	virtual void NativePreConstruct() override;
+	virtual void RefreshVisualState() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
+		const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId,
+		const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
+
+private:
+	bool HasFinaleAttention() const;
+	bool bFinaleAttention = false;
+	float FinaleSheenElapsed = 0.f;
 };

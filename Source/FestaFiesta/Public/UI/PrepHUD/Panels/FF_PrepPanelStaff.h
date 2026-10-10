@@ -13,6 +13,7 @@ class UWidget;
 class UFF_FestivalViewModelSubsystem;
 class UWidgetSwitcher;
 class UFF_StaffTrainingWidget;
+class UFF_StaffManagementWidget;
 
 /**
  * 인원을 더 고용할 수 없는 이유.
@@ -140,6 +141,11 @@ public:
 	FFF_PrepHireQuote GetQuote() const { return Quote; }
 
 protected:
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UFF_StaffManagementWidget> Widget_StaffManagement;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_CurrentGold;
+
 	virtual void NativePreConstruct() override;
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnPanelOpened() override;

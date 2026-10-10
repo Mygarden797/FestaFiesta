@@ -16,6 +16,8 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "UI/Data/FF_UIPalette.h"
+#include "UI/Core/FF_OutsideClickDismiss.h"
+#include "UI/LiveHUD/FF_LiveUtilityDock.h"
 #include "UI/LiveHUD/Incident/FF_IncidentUiStyle.h"
 #include "UI/LiveHUD/OperationAlert/FF_OperationAlertSubsystem.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
@@ -102,10 +104,18 @@ void UFF_OperationAlertPanel::NativeConstruct()
 	Super::NativeConstruct();
 	Bind();
 	ApplyVisibility();
+	FFOutsideClickDismiss::Register(this,
+		[this] { return bHistoryOpen; },
+		[this](FVector2D Position)
+		{
+			return FFOutsideClickDismiss::IsInside(HistoryPanel, Position)
+				|| FFOutsideClickDismiss::IsInside(HistoryButton, Position);
+		}, FSimpleDelegate::CreateWeakLambda(this, [this] { if (bHistoryOpen) ToggleHistory(); }));
 }
 
 void UFF_OperationAlertPanel::NativeDestruct()
 {
+	FFOutsideClickDismiss::Unregister(this);
 	if (BoundAlerts)
 	{
 		BoundAlerts->OnOperationAlertRaised.RemoveDynamic(this, &UFF_OperationAlertPanel::HandleAlertRaised);
@@ -303,6 +313,11 @@ void UFF_OperationAlertPanel::AdvanceTime(float DeltaSeconds)
 
 void UFF_OperationAlertPanel::ToggleHistory()
 {
+	if (UsesUnifiedNews())
+	{
+		CachedNewsDock->ToggleSNS();
+		return;
+	}
 	BuildTree();
 	bHistoryOpen = !bHistoryOpen;
 	if (bHistoryOpen)
@@ -369,8 +384,25 @@ bool UFF_OperationAlertPanel::ShouldShow() const
 	return bForceVisible || (BoundViewModel && BoundViewModel->GetCurrentStage() == EFF_FestivalStage::Live);
 }
 
+bool UFF_OperationAlertPanel::UsesUnifiedNews()
+{
+	if (!CachedNewsDock.IsValid()) { CachedNewsDock = UFF_LiveUtilityDock::FindForPlayer(GetOwningPlayer()); }
+	return CachedNewsDock.IsValid() && CachedNewsDock->HasUnifiedNews();
+}
+
 void UFF_OperationAlertPanel::ApplyVisibility()
 {
+	// 운영 기록은 왼쪽 소식으로 통합한다. 기존 도크가 없는 화면에서는 예전 진입점을 보존한다.
+	const bool bUnified = UsesUnifiedNews();
+	if (HistoryButton && HistoryButton->GetParent())
+	{
+		HistoryButton->GetParent()->SetVisibility(bUnified ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+	}
+	if (bUnified)
+	{
+		bHistoryOpen = false;
+		if (HistoryPanel) { HistoryPanel->SetVisibility(ESlateVisibility::Collapsed); }
+	}
 	const bool bShow = ShouldShow();
 	// Live 를 벗어나면 남은 카드와 펼친 목록을 치운다. 결산 화면 위에 운영 알림이 얹혀 있으면 안 된다
 	if (bWasShown && !bShow)

@@ -4,17 +4,25 @@
 
 #include "Building/FF_FacilityNamingLibrary.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
+#include "Building/FF_BuildModeSubsystem.h"
+#include "Camera/FF_FestivalPlayerController.h"
+#include "Camera/FF_OverviewCameraPawn.h"
 #include "Economy/FF_StageEconomyBridgeSubsystem.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
 #include "Engine/GameInstance.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "Framework/Application/SlateApplication.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSZoneActor.h"
 #include "Economy/Rules/FF_StaffEventRules.h"
 #include "Staff/FF_StaffFacilitySubsystem.h"
 #include "Festival/FF_FestivalBuzzSubsystem.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "NPC/Insights/FF_CrowdInsightsSubsystem.h"
@@ -29,6 +37,8 @@
 #include "UI/ViewModel/FF_DailyReportComment.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
+#include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Widgets/SViewport.h"
 
 void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -47,6 +57,7 @@ void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collec
 
 void UFF_FestivalViewModelSubsystem::Deinitialize()
 {
+	ResetProgramFacilityPresentation();
 	if (ReportSaveSubsystem) ReportSaveSubsystem->OnSaveLoaded.RemoveDynamic(this, &ThisClass::HandleReportSaveLoaded);
 	ReportSaveSubsystem = nullptr;
 	ResetDailyReports();
@@ -437,6 +448,7 @@ void UFF_FestivalViewModelSubsystem::TryBindInsightsSubsystem()
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerFestivalStarted()
 {
+	ResetProgramFacilityPresentation();
 	RecentSnsPosts.Reset();
 	ResetDailyReports();
 }
@@ -461,6 +473,7 @@ void UFF_FestivalViewModelSubsystem::ResetDailyReports()
 
 void UFF_FestivalViewModelSubsystem::HandleReportSaveLoaded(FName SlotId)
 {
+	ResetProgramFacilityPresentation();
 	// 같은 슬롯을 다시 읽어도 별도 플레이 흐름이다. 복원 완료 후 다음 Tick에서 원본을 읽는다.
 	ResetDailyReports();
 }
@@ -1105,7 +1118,7 @@ TArray<FFF_PrepFacilityOption> UFF_FestivalViewModelSubsystem::GetEligibleFacili
 
 	// Zone 은 월드 서브시스템이라 GameInstance 에서 바로 못 꺼낸다.
 	const UGameInstance* GI = GetGameInstance();
-	const UWorld* World = GI ? GI->GetWorld() : nullptr;
+	UWorld* World = GI ? GI->GetWorld() : nullptr;
 	const UFFZSWorldSubsystem* Zone = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
 	if (!Zone)
 	{
@@ -1117,6 +1130,23 @@ TArray<FFF_PrepFacilityOption> UFF_FestivalViewModelSubsystem::GetEligibleFacili
 	}
 
 	const FFFZSReadModel ReadModel = Zone->BuildReadModel();
+	// 원본에는 표시용 일련번호가 없다. GUID를 UI 캐시에만 대응시키고 이동/철거로 재번호하지 않는다.
+	// 같은 정의의 미편성 시설까지 먼저 번호를 잡아 선택한 프로그램에 따라 번호가 달라지지 않게 한다.
+	if (ProgramFacilityIdentityWorld.Get() != World)
+	{
+		ProgramFacilityIdentityWorld = World;
+		ProgramFacilityInstanceNumbers.Reset();
+		ProgramFacilityNextNumbers.Reset();
+	}
+	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+	{
+		if (Facility.FacilityInstanceId.IsValid() && !ProgramFacilityInstanceNumbers.Contains(Facility.FacilityInstanceId))
+		{
+			int32& LastNumber = ProgramFacilityNextNumbers.FindOrAdd(Facility.FacilityDefinitionId);
+			ProgramFacilityInstanceNumbers.Add(Facility.FacilityInstanceId, ++LastNumber);
+		}
+	}
+	const UFF_BuildCatalogSubsystem* BuildCatalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>();
 	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
 	{
 		FFF_FacilityNameParts Parts;
@@ -1137,16 +1167,110 @@ TArray<FFF_PrepFacilityOption> UFF_FestivalViewModelSubsystem::GetEligibleFacili
 
 		FFF_PrepFacilityOption& Option = Options.AddDefaulted_GetRef();
 		Option.FacilityInstanceId = Facility.FacilityInstanceId;
+		Option.FacilityDefinitionId = Facility.FacilityDefinitionId;
 		Option.ZoneId = Facility.ZoneId;
 
-		// Use the same authored name as the guide and construction catalog.
-		const UFF_BuildCatalogSubsystem* BuildCatalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>();
+		// 안내 및 건축목록과 같은 저작 이름을 유지하고 번호를 별도 레이블에 붙인다.
 		Option.DisplayName = BuildCatalog
 			? BuildCatalog->ResolveFacilityDisplayName(Facility.FacilityDefinitionId)
-			: NSLOCTEXT("FestaFiestaPrepProgram", "FacilityNameUnavailable", "프로그램 시설");
+			: (!Facility.DisplayName.IsEmpty() ? Facility.DisplayName
+				: NSLOCTEXT("FestaFiestaPrepProgram", "FacilityNameUnavailable", "프로그램 시설"));
+		Option.InstanceNumber = ProgramFacilityInstanceNumbers.FindRef(Facility.FacilityInstanceId);
+		FNumberFormattingOptions NumberFormat;
+		NumberFormat.SetMinimumIntegralDigits(2).SetUseGrouping(false);
+		Option.InstanceLabel = FText::Format(
+			NSLOCTEXT("FestaFiestaPrepProgram", "FacilityInstanceLabel", "{0} #{1}"),
+			Option.DisplayName, FText::AsNumber(Option.InstanceNumber, &NumberFormat));
+
+		const AFFZSGameplayZone* GameplayZone = Zone->FindZone(Facility.ZoneId);
+		// 목록에는 읽기 쉬운 구역명만 표시한다. 세부 위치는 위치 보기로 확인한다.
+		Option.LocationText = GameplayZone
+			? (!GameplayZone->DisplayName.IsEmpty() ? GameplayZone->DisplayName : FText::FromName(Facility.ZoneId))
+			: FText::FromName(Facility.ZoneId);
 	}
+	Options.Sort([](const FFF_PrepFacilityOption& A, const FFF_PrepFacilityOption& B)
+	{
+		return A.FacilityDefinitionId == B.FacilityDefinitionId
+			? A.InstanceNumber < B.InstanceNumber
+			: A.FacilityDefinitionId.LexicalLess(B.FacilityDefinitionId);
+	});
 
 	return Options;
+}
+
+bool UFF_FestivalViewModelSubsystem::RequestLocateProgramFacility(FGuid FacilityInstanceId)
+{
+	UGameInstance* GI = GetGameInstance();
+	UWorld* World = GI ? GI->GetWorld() : nullptr;
+	UFFZSWorldSubsystem* Zone = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	AFFZSFacilityActor* Facility = Zone ? Zone->FindFacility(FacilityInstanceId) : nullptr;
+	AFF_FestivalPlayerController* Controller = GI
+		? Cast<AFF_FestivalPlayerController>(GI->GetFirstLocalPlayerController(World)) : nullptr;
+	AFF_OverviewCameraPawn* Camera = Controller ? Controller->GetOverviewCameraPawn() : nullptr;
+	if (!IsValid(Facility) || !IsValid(Camera) || Camera->GetWorld() != World ||
+		Controller->GetViewMode() != EFF_CameraViewMode::Overview ||
+		Controller->GetInputBlockReason() == EFF_CameraInputBlock::ModalUi ||
+		Controller->GetInputBlockReason() == EFF_CameraInputBlock::Scripted ||
+		Facility->GetFacilityState() == EFFZSFacilityState::Removed)
+	{
+		return false;
+	}
+
+	// 버튼에 남은 키보드 포커스는 Controller가 비활성 뷰포트로 판정한다.
+	// 그 상태에서 FocusOnLocation만 호출하면 다음 PlayerTick이 이동을 취소하므로,
+	// 이 플레이어의 게임 화면으로 포커스를 먼저 돌리고 소유자의 입력 정책을 따른다.
+	if (FSlateApplication::IsInitialized())
+	{
+		if (const UGameViewportClient* ViewportClient = GI->GetGameViewportClient())
+		{
+			if (const TSharedPtr<SViewport> ViewportWidget = ViewportClient->GetGameViewportWidget())
+			{
+				FSlateApplication::Get().SetAllUserFocus(ViewportWidget);
+			}
+		}
+	}
+	if (!Controller->IsCameraMovementAllowed())
+	{
+		return false;
+	}
+
+	ClearProgramFacilityHighlight();
+	Camera->FocusOnLocation(Facility->GetActorLocation());
+	// 배치/정보 패널 선택 명령은 사용하지 않는다. 기존 프로그램 선택을 보존하는 표현만 요청한다.
+	// 이미 다른 UI가 선택한 강조는 소유하지 않으므로 종료 시에도 지우지 않는다.
+	if (Facility->GetSelectionIndicatorState() == EFFZSFacilitySelectionIndicatorState::Hidden)
+	{
+		Facility->SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Selected);
+		LocatedProgramFacility = Facility;
+		ProgramFacilityHighlightUntil = FPlatformTime::Seconds() + FMath::Max(0.1f, ProgramFacilityLocateSeconds);
+	}
+	return true;
+}
+
+void UFF_FestivalViewModelSubsystem::ClearProgramFacilityHighlight()
+{
+	if (AFFZSFacilityActor* Facility = LocatedProgramFacility.Get())
+	{
+		UWorld* World = Facility->GetWorld();
+		const UFF_FacilityInfoSubsystem* Info = World ? World->GetSubsystem<UFF_FacilityInfoSubsystem>() : nullptr;
+		const UFF_BuildModeSubsystem* Build = World ? World->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+		const bool bSelectedElsewhere = (Info && Info->GetSelectedFacilityId() == Facility->GetFacilityInstanceId()) ||
+			(Build && Build->GetMultiSelectedFacilities().Contains(Facility));
+		if (!bSelectedElsewhere && Facility->GetSelectionIndicatorState() == EFFZSFacilitySelectionIndicatorState::Selected)
+		{
+			Facility->SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Hidden);
+		}
+	}
+	LocatedProgramFacility.Reset();
+	ProgramFacilityHighlightUntil = 0.;
+}
+
+void UFF_FestivalViewModelSubsystem::ResetProgramFacilityPresentation()
+{
+	ClearProgramFacilityHighlight();
+	ProgramFacilityIdentityWorld.Reset();
+	ProgramFacilityInstanceNumbers.Reset();
+	ProgramFacilityNextNumbers.Reset();
 }
 
 TArray<FFF_LiveNeedView> UFF_FestivalViewModelSubsystem::GetNeedMetrics() const
@@ -1238,6 +1362,16 @@ namespace FFViewModelFacilityLocal
 		default:						return EFF_LiveFacilityQueueState::Unknown;
 		}
 	}
+}
+
+FFF_PrepRecommendedFacilitiesView UFF_FestivalViewModelSubsystem::GetPrepRecommendedFacilities(
+	const FFF_PrepRecommendedFacilityRules& Rules) const
+{
+	const UWorld* World = GetWorld();
+	const UFFZSWorldSubsystem* Zone = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	if (!Zone) return {};
+	const FFFZSReadModel Model = Zone->BuildReadModel();
+	return FFPrepRecommendedFacilities::Evaluate(Model, Rules, !Model.Zones.IsEmpty());
 }
 
 TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities() const
@@ -1915,6 +2049,12 @@ void UFF_FestivalViewModelSubsystem::PollMetricsFromSources()
 
 void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
 {
+	if (LocatedProgramFacility.IsValid() &&
+		(LocatedProgramFacility->GetWorld() != GetWorld() ||
+		 FPlatformTime::Seconds() >= ProgramFacilityHighlightUntil || !CanScheduleProgramNow()))
+	{
+		ClearProgramFacilityHighlight();
+	}
 	TryBindReportSaveSubsystem();
 	// Rebind across map travel; actual staffing data is refreshed only by owner events.
 	TryBindStaffFacilitySubsystem();

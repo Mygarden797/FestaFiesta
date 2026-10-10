@@ -5,9 +5,11 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Time/FF_FestivalStage.h"
+#include "UI/Staff/FF_StaffManagementTypes.h"
 #include "UI/Staff/FF_StaffPromotionTypes.h"
 #include "FF_StaffTrainingWidget.generated.h"
 
+class UButton;
 class UTextBlock;
 class UVerticalBox;
 class UFF_FestivalViewModelSubsystem;
@@ -25,6 +27,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|StaffTraining")
 	void DeactivateRoster();
 	void ConfigureStaffRowDefaults(TSubclassOf<UFF_StaffPromotionRowWidget> InRowClass);
+	/** 소유 관리 패널이 읽은 동일 스냅샷으로 배정·업무 상태를 표시한다. */
+	void ApplyManagementSnapshot(const FFF_StaffManagementSnapshot& Snapshot);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Rows")
 	TSubclassOf<UFF_StaffPromotionRowWidget> StaffRowClass;
@@ -41,6 +45,8 @@ public:
 	FText RosterEmptyText = NSLOCTEXT("FestaFiestaStaffTraining", "RosterEmpty", "현재 보유한 스태프가 없습니다.");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Text")
 	FText RosterUnavailableText = NSLOCTEXT("FestaFiestaStaffTraining", "RosterUnavailable", "스태프 명단을 확인할 수 없습니다.");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Text")
+	FText UnassignedEmptyText = NSLOCTEXT("FestaFiestaStaffTraining", "UnassignedEmpty", "미배정 스태프가 없습니다.");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Text")
 	FText PendingResultText = NSLOCTEXT("FestaFiestaStaffTraining", "PendingResult", "승급 요청을 확인하고 있습니다.");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Text", meta = (ToolTip = "{Name}: 직원 이름, {Level}: 원본에서 확인한 현재 레벨"))
@@ -61,6 +67,19 @@ protected:
 	void HandleRosterChanged();
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage NewStage, int32 NewDay);
+	UFUNCTION()
+	void HandleAllStaffClicked();
+	UFUNCTION()
+	void HandleUnassignedStaffClicked();
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
+	TObjectPtr<UButton> Button_AllStaff;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
+	TObjectPtr<UButton> Button_UnassignedStaff;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
+	TObjectPtr<UTextBlock> Text_AllStaffFilter;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
+	TObjectPtr<UTextBlock> Text_UnassignedStaffFilter;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
 	TObjectPtr<UTextBlock> Text_TotalStaff;
@@ -81,6 +100,7 @@ private:
 	void BindViewModel();
 	void UnbindViewModel();
 	void SyncRoster();
+	void RefreshFilterLabels();
 	void HandlePromoteRequested(int32 StaffId);
 	void SetRowsPending(bool bPending);
 	void SetResult(const FText& Result);
@@ -91,6 +111,10 @@ private:
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
 	UPROPERTY(Transient)
 	TMap<int32, TObjectPtr<UFF_StaffPromotionRowWidget>> RowsByStaffId;
+	UPROPERTY(Transient)
+	FFF_StaffManagementSnapshot ManagementSnapshot;
+	bool bHasManagementSnapshot = false;
+	bool bOnlyUnassigned = false;
 	bool bRosterActive = false;
 	bool bRequestInFlight = false;
 	bool bRosterDirty = false;
