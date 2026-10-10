@@ -29,11 +29,26 @@ struct FESTAFIESTA_API FFF_CrowdHeightField
 		int32 HitCount = 0;			// 지면을 찾은 수
 		double MinHeightCm = 0.0;
 		double MaxHeightCm = 0.0;
+		int32 BoundaryProbeCount = 0; // Additional sampler calls, including rejected attempts.
+		int32 BoundaryCellCount = 0;
+		int32 UnknownBoundaryCellCount = 0;
 
 		double HeightSpanCm() const { return MaxHeightCm - MinHeightCm; }
 	};
 
 	bool Build(const FVector2D& CenterCm, double HalfSizeCm, double SpacingCm, FHeightSampler Sampler);
+
+	// Opt-in for small edge grids only. A discontinuity stores two height classes
+	// and a sampled boundary instead of interpolating a fictitious ramp between
+	// them. Unsupported/missing geometry and exhausted budgets remain unknown.
+	// The returned count includes every additional sampler attempt. A straight
+	// local boundary is validated at independent interior points; features hidden
+	// between all samples are outside this representation's spatial contract.
+	int32 RefineDiscontinuities(double MinimumHeightGapCm, double SpatialToleranceCm,
+		int32 MaximumAdditionalProbes, FHeightSampler Sampler);
+	// Compact rejection marker when a caller cannot afford an edge subgrid.
+	// Its bitset is bounded by the existing grid, with no additional sampling.
+	void MarkCellUnknown(const FVector2D& WorldXYCm);
 
 	void Reset();
 
@@ -78,6 +93,13 @@ struct FESTAFIESTA_API FFF_CrowdHeightField
 		double CornerHeightCm[4] = { 0.0, 0.0, 0.0, 0.0 };	// 좌하, 우하, 좌상, 우상
 		bool bCornerValid[4] = { false, false, false, false };
 		FVector2D CornerXYCm[4] = { FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector };
+		bool bHasDiscontinuity = false;
+		bool bBoundaryResolved = false;
+		bool bQueryOnHighSide = false;
+		uint8 HighCornerMask = 0;
+		FVector2D BoundaryStartCm = FVector2D::ZeroVector;
+		FVector2D BoundaryEndCm = FVector2D::ZeroVector;
+		double BoundaryToleranceCm = 0.0;
 	};
 
 	// 진단용. IsWalkable이 보는 네 꼭짓점의 좌표·높이·유효 여부를 그대로 낸다. 격자가 없으면 false.
@@ -87,6 +109,7 @@ struct FESTAFIESTA_API FFF_CrowdHeightField
 
 	int32 GetNumX() const { return NumX; }
 	int32 GetNumY() const { return NumY; }
+	SIZE_T GetAllocatedSizeBytes() const { return Heights.GetAllocatedSize() + Valid.GetAllocatedSize() + Discontinuities.GetAllocatedSize() + UnknownCells.GetAllocatedSize(); }
 
 private:
 	// WorldXY가 속한 셀의 좌하단 꼭짓점 인덱스와 셀 안의 보간 계수를 낸다. 격자가 없으면 false.
@@ -100,6 +123,19 @@ private:
 
 	// 지면을 못 찾은 꼭짓점 표시. NaN을 센티넬로 쓰지 않는 이유는 NaN이 보간에 섞이면 결과가 조용히 NaN이 되어 개체가 사라지기 때문이다
 	TArray<uint8> Valid;
+
+	struct FDiscontinuityCell
+	{
+		FVector2D StartCm = FVector2D::ZeroVector;
+		FVector2D EndCm = FVector2D::ZeroVector;
+		FVector2D HighNormal = FVector2D::ZeroVector;
+		double ToleranceCm = 0.0;
+		uint8 HighCornerMask = 0;
+		bool bResolved = false;
+	};
+	// Keys use the lower-left vertex index. Empty for ordinary height fields.
+	TMap<int32, FDiscontinuityCell> Discontinuities;
+	TBitArray<> UnknownCells;
 
 	FVector2D MinCornerCm = FVector2D::ZeroVector;
 	double SpacingCm = 0.0;

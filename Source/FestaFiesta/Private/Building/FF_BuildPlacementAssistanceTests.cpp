@@ -17,8 +17,10 @@
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
 #include "Tests/AutomationCommon.h"
@@ -149,7 +151,7 @@ bool FFF_BuildPlacementAssistanceIntegrationTest::RunTest(const FString& Paramet
     Festival->InitialGold = 10000;
     Economy->StartFestival(Festival.Get());
     Zones->SetChangePhase(EFFZSChangePhase::InitialSetup);
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    const FName ZoneId(FFProjectZoneTest::ZoneId());
     auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
     if (!TestNotNull(TEXT("Real construction zone"), Zone) ||
         !TestTrue(TEXT("Zone accepts the existing project preset"), Zone->ApplyAcceptedZonePreset(ZoneId))) return false;
@@ -250,6 +252,34 @@ bool FFF_BuildPlacementAssistanceIntegrationTest::RunTest(const FString& Paramet
             Build->GetPlacementGuidance(0).Title.EqualTo(Terrain.DisplayName));
         Build->LastValidation = Original;
     }
+    // The isolated world has no game viewport to take focus from an editor text
+    // field. Preserve the real typing guard, but give this shortcut fixture an
+    // explicit neutral focus state just like the drag/inspection input fixtures.
+    const TSharedPtr<SWidget> PreviousKeyboardFocus = FSlateApplication::IsInitialized()
+        ? FSlateApplication::Get().GetKeyboardFocusedWidget() : nullptr;
+    ON_SCOPE_EXIT
+    {
+        if (FSlateApplication::IsInitialized())
+        {
+            if (PreviousKeyboardFocus.IsValid())
+                FSlateApplication::Get().SetKeyboardFocus(PreviousKeyboardFocus);
+            else
+                FSlateApplication::Get().ClearKeyboardFocus();
+            const TSharedPtr<SWidget> RestoredFocus = FSlateApplication::Get().GetKeyboardFocusedWidget();
+            AddInfo(FString::Printf(TEXT("Nearby shortcut fixture restored external Slate focus: %s"),
+                RestoredFocus.IsValid() ? *RestoredFocus->ToString() : TEXT("None")));
+        }
+    };
+    if (FSlateApplication::IsInitialized())
+    {
+        AddInfo(FString::Printf(TEXT("Nearby shortcut fixture inherited Slate focus: type=%s tag=%s widget=%s"),
+            PreviousKeyboardFocus.IsValid() ? *PreviousKeyboardFocus->GetTypeAsString() : TEXT("None"),
+            PreviousKeyboardFocus.IsValid() ? *PreviousKeyboardFocus->GetTag().ToString() : TEXT("None"),
+            PreviousKeyboardFocus.IsValid() ? *PreviousKeyboardFocus->ToString() : TEXT("None")));
+        FSlateApplication::Get().ClearKeyboardFocus();
+        if (!TestFalse(TEXT("Isolated shortcut fixture has no external editor keyboard focus"),
+            FSlateApplication::Get().GetKeyboardFocusedWidget().IsValid())) return false;
+    }
     for (const auto State : {EFF_BuildModeState::Closed, EFF_BuildModeState::BuildMode, EFF_BuildModeState::CatalogOpen})
     {
         TGuardValue<EFF_BuildModeState> InactivePreview(Build->State, State);
@@ -275,6 +305,8 @@ bool FFF_BuildPlacementAssistanceIntegrationTest::RunTest(const FString& Paramet
     TestFalse(TEXT("A different key cannot start nearby assistance"), Build->HandleNearbyPlacementShortcut(EKeys::M));
     TestFalse(TEXT("Modified N does not steal another shortcut"), Build->HandleNearbyPlacementShortcut(EKeys::N, true));
     TestFalse(TEXT("Holding N does not start repeated searches"), Build->HandleNearbyPlacementShortcut(EKeys::N, false, true));
+    if (!TestTrue(TEXT("Shortcut search retains a real spatial rejection"), Build->GetPlacementGuidance().bCanFindNearby) ||
+        !TestFalse(TEXT("Input guard checks do not start a search"), Build->IsFindingNearbyPlacement())) return false;
     if (!TestTrue(TEXT("N starts the real bounded nearby search"), Build->HandleNearbyPlacementShortcut(EKeys::N))) return false;
     TestTrue(TEXT("Searching pins the destination for later confirmation"), Build->IsDirectPlacementAdjustment());
     for (int32 Pass = 0; Pass < 128 && Build->IsFindingNearbyPlacement(); ++Pass) Build->TickPlacementAssistance();

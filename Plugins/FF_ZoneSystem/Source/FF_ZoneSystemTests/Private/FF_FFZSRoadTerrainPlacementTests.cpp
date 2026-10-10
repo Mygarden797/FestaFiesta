@@ -2,6 +2,8 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include "Tests/FF_FFZSTestFixtures.h"
+#include "FF_FFZSProjectZoneTestFixture.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Components/BoxComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -34,14 +36,14 @@ namespace
         TGuardValue<float> TileVariance{Settings->MaxTileGroundHeightVarianceCm, 2000.0f};
     };
 
-    UFFZSWorldSubsystem* PrepareTerrainWorld(UWorld& World)
+    UFFZSWorldSubsystem* PrepareTerrainWorld(FAutomationTestBase& Test, UWorld& World)
     {
         UFFZSWorldSubsystem* System = World.GetSubsystem<UFFZSWorldSubsystem>();
         AFFZSGameplayZone* Zone = World.SpawnActor<AFFZSGameplayZone>();
-        if (!System || !Zone) return nullptr;
-        Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha"));
+        if (!Test.TestNotNull(TEXT("Terrain fixture subsystem"), System) ||
+            !FFZSTest::ApplyZonePreset(Test, Zone)) return nullptr;
         Zone->bAllowAllFacilityCategories = true;
-        return System->RegisterZone(Zone) ? System : nullptr;
+        return Test.TestTrue(TEXT("Terrain fixture zone registers"), System->RegisterZone(Zone)) ? System : nullptr;
     }
 
     FFFZSCommand MakeTerrainPaving(const EFFZSFacilityCategory Category)
@@ -77,7 +79,7 @@ namespace
         }
         FFFZSGridPlacement Placement;
         Placement.OriginCell = FIntPoint(1000, 1000);
-        return UFFZSGridLibrary::MakeInstallCommand(Spec, TEXT("GZ_DadaPocha"), Placement);
+        return UFFZSGridLibrary::MakeInstallCommand(Spec, FFZSTest::ProjectZoneId(), Placement);
     }
 
     UBoxComponent* AddTerrainBox(AActor& Actor, const FVector& Location, const FVector& Extent)
@@ -104,7 +106,7 @@ namespace
         Command.TransactionId = FGuid::NewGuid();
         Command.Type = Type;
         Command.FacilityInstanceId = FacilityId;
-        Command.ZoneId = TEXT("GZ_DadaPocha");
+        Command.ZoneId = FFZSTest::ProjectZoneId();
         Command.Placement.OriginCell = Origin;
         return Command;
     }
@@ -118,7 +120,7 @@ bool FFFZSTileFoundationHeightTest::RunTest(const FString& Parameters)
 {
     FScopedTerrainPlacementSettings Settings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Foundation height world"), System)) return false;
     AActor* Terrain = World->SpawnActor<AActor>();
     if (!TestNotNull(TEXT("Foundation terrain"), Terrain)) return false;
@@ -182,7 +184,7 @@ bool FFFZSTileFoundationBoundariesTest::RunTest(const FString& Parameters)
 {
     FScopedTerrainPlacementSettings Settings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Tile boundary world"), System)) return false;
     const FFFZSCommand Tile = MakeTerrainPaving(EFFZSFacilityCategory::Tile);
     const FFFZSPlacementValidation Empty = System->ValidatePlacement(Tile);
@@ -232,7 +234,7 @@ bool FFFZSTileTraceBandTest::RunTest(const FString& Parameters)
     TGuardValue<float> TraceAbove(Settings.Settings->GroundTraceAboveCm, 1000.0f);
     TGuardValue<float> TraceBelow(Settings.Settings->GroundTraceBelowCm, 1000.0f);
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Tile trace-band world"), System)) return false;
     AActor* Terrain = World->SpawnActor<AActor>();
     if (!TestNotNull(TEXT("Tile trace-band terrain"), Terrain)) return false;
@@ -259,7 +261,7 @@ bool FFFZSTileAuthoredTerrainTest::RunTest(const FString& Parameters)
 {
     FScopedTerrainPlacementSettings Settings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Authored modular terrain world"), System)) return false;
     AActor* Terrain = World->SpawnActor<AActor>();
     if (!TestNotNull(TEXT("Authored modular terrain actor"), Terrain)) return false;
@@ -320,7 +322,7 @@ bool FFFZSTileAnalyticalFoundationTest::RunTest(const FString& Parameters)
 {
     FScopedTerrainPlacementSettings Settings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Analytical tile world"), System)) return false;
     AActor* Terrain = World->SpawnActor<AActor>();
     if (!TestNotNull(TEXT("Analytical tile terrain"), Terrain)) return false;
@@ -383,7 +385,7 @@ bool FFFZSRoadTerrainSupportTest::RunTest(const FString& Parameters)
     {
         const FString Label = Category == EFFZSFacilityCategory::Road ? TEXT("Road: ") : TEXT("Tile: ");
         UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-        UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*World) : nullptr;
+        UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*this, *World) : nullptr;
         if (!TestNotNull(Label + TEXT("terrain world"), System)) return false;
         AActor* Terrain = World->SpawnActor<AActor>();
         if (!TestNotNull(Label + TEXT("terrain actor"), Terrain)) return false;
@@ -451,7 +453,7 @@ bool FFFZSRoadTerrainInstanceTest::RunTest(const FString& Parameters)
     TArray<UStaticMesh*> MeshesToFinish{Cube};
     FStaticMeshCompilingManager::Get().FinishCompilation(MeshesToFinish);
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Instanced terrain world"), System)) return false;
     AActor* Terrain = World->SpawnActor<AActor>();
     if (!TestNotNull(TEXT("Instanced terrain actor"), Terrain)) return false;
@@ -492,7 +494,7 @@ bool FFFZSRoadMergedTerrainObstacleTest::RunTest(const FString& Parameters)
     TArray<UStaticMesh*> MeshesToFinish{Cube};
     FStaticMeshCompilingManager::Get().FinishCompilation(MeshesToFinish);
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Merged terrain world"), System)) return false;
     UStaticMesh* MergedMesh = DuplicateObject<UStaticMesh>(Cube, GetTransientPackage());
     UBodySetup* Body = MergedMesh ? MergedMesh->GetBodySetup() : nullptr;
@@ -666,7 +668,7 @@ bool FFFZSRoadSampledPropTest::RunTest(const FString& Parameters)
     {
         const FString Label = bInstanced ? TEXT("Instanced sampled prop: ") : TEXT("Separate sampled prop: ");
         UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-        UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*World) : nullptr;
+        UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*this, *World) : nullptr;
         if (!TestNotNull(Label + TEXT("world"), System)) return false;
         AActor* Terrain = World->SpawnActor<AActor>();
         if (!TestNotNull(Label + TEXT("floor actor"), Terrain)) return false;
@@ -744,7 +746,7 @@ bool FFFZSOrdinaryTerrainSupportTest::RunTest(const FString& Parameters)
     for (const EFFZSFacilityCategory Category : {EFFZSFacilityCategory::Performance, EFFZSFacilityCategory::Lighting})
     {
         UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-        UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*World) : nullptr;
+        UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*this, *World) : nullptr;
         if (!TestNotNull(TEXT("Ordinary facility terrain world"), System)) return false;
         AActor* Terrain = World->SpawnActor<AActor>();
         if (!TestNotNull(TEXT("Ordinary facility terrain actor"), Terrain)) return false;
@@ -809,7 +811,7 @@ bool FFFZSAudienceTerrainSupportTest::RunTest(const FString& Parameters)
 {
     FScopedTerrainPlacementSettings Settings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareTerrainWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Audience terrain world"), System)) return false;
     AActor* Terrain = World->SpawnActor<AActor>();
     if (!TestNotNull(TEXT("Audience terrain actor"), Terrain)) return false;

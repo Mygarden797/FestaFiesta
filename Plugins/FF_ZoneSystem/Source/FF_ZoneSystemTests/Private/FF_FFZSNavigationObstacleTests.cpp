@@ -18,6 +18,7 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "Tests/FF_FFZSTestFixtures.h"
+#include "FF_FFZSProjectZoneTestFixture.h"
 
 namespace
 {
@@ -95,12 +96,12 @@ bool FFFZSFacilityNavigationObstacleLifecycleTest::RunTest(const FString& Parame
     SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
     AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>(
         AFFZSGameplayZone::StaticClass(), FTransform::Identity, SpawnParameters);
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    const FName ZoneId(FFZSTest::ProjectZoneId());
     if (!TestNotNull(TEXT("시험 Zone"), Zone))
     {
         return false;
     }
-    Zone->ApplyAcceptedZonePreset(ZoneId);
+    if (!FFZSTest::ApplyZonePreset(*this, Zone, ZoneId)) return false;
     if (!TestTrue(TEXT("시험 Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
     {
         return false;

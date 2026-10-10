@@ -21,6 +21,7 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "Tests/FF_FFZSTestFixtures.h"
+#include "FF_FFZSProjectZoneTestFixture.h"
 
 namespace
 {
@@ -84,9 +85,9 @@ bool FFFZSFacilityPlayerCollisionLifecycleTest::RunTest(const FString& Parameter
     SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
     AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>(
         AFFZSGameplayZone::StaticClass(), FTransform::Identity, SpawnParameters);
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    const FName ZoneId(FFZSTest::ProjectZoneId());
     if (!TestNotNull(TEXT("Test zone exists"), Zone)) return false;
-    Zone->ApplyAcceptedZonePreset(ZoneId);
+    if (!FFZSTest::ApplyZonePreset(*this, Zone, ZoneId)) return false;
     if (!TestTrue(TEXT("Test zone registers"), Subsystem->RegisterZone(Zone))) return false;
 
     FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
@@ -217,8 +218,8 @@ bool FFFZSTilePlanarSupportLifecycleTest::RunTest(const FString& Parameters)
 
     AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
     if (!TestNotNull(TEXT("Test zone exists"), Zone)) return false;
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    Zone->ApplyAcceptedZonePreset(ZoneId);
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    if (!FFZSTest::ApplyZonePreset(*this, Zone, ZoneId)) return false;
     Zone->bAllowAllFacilityCategories = true;
     if (!TestTrue(TEXT("Test zone registers"), Subsystem->RegisterZone(Zone))) return false;
 

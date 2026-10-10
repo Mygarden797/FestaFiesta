@@ -54,6 +54,14 @@ namespace
 	constexpr double GroundRefinementCoreSpacingCm = 5.0;
 	constexpr double GroundRefinementCoreApronCm = 125.0;
 	constexpr double GroundRefinementMaxSurfaceSpanCm = 2000.0;
+	constexpr double GateGroundMinimumRadiusCm = 500.0;
+	constexpr double GateGroundMaximumCoreRadiusCm = 1000.0;
+	constexpr int32 GateGroundMaximumPatches = 16;
+	constexpr int32 GateGroundMaximumSamples = 1600000;
+	constexpr double GateGroundEdgeSpacingCm = 1.0;
+	constexpr double GateGroundEdgeHeightSpanCm = 5.0;
+	constexpr double GateGroundBoundaryToleranceCm = .01;
+	constexpr int32 GateGroundMaximumEdgeCells = 4096;
 
 	// 서비스를 마친 파티는 시설의 퇴장 지점으로 보내진다.
 	constexpr float QueueExitMatchToleranceUU = 50.f;
@@ -665,6 +673,7 @@ int32 UFF_CrowdSimulationSubsystem::PickSpawnGate(int32 InVisitorCursor) const
 void UFF_CrowdSimulationSubsystem::GatherCrowdGates(const TArray<FFF_CrowdGate>& InGates)
 {
 	ValidGates.Reset();
+	ValidatedAuthoredGateCount = 0;
 	RejectedGateCount = 0;
 	UnverifiedGateCount = 0;
 
@@ -698,6 +707,10 @@ void UFF_CrowdSimulationSubsystem::GatherCrowdGates(const TArray<FFF_CrowdGate>&
 
 	RebuildSpawnGateCdf();
 	bGatesGathered = true;
+	ValidatedAuthoredGateCount = ValidGates.Num();
+	// Initialization already baked the global field before gates were known.
+	// Only rebuild entrance patches here, including clearing removed gates.
+	RebuildHeightField(true);
 
 	// 폴백 합성은 BeginArrivalSchedule 이 한다. ArrivalSpawnCenter 가 아직 안 채워져 있다.
 	UE_LOG(LogTemp, Log,
@@ -1620,16 +1633,29 @@ void UFF_CrowdSimulationSubsystem::ApplyWalkableCeiling()
 		Apply(Refinement.Field);
 		Apply(Refinement.CoreField);
 	}
+	for (FGroundRefinement& Refinement : GateGroundRefinements)
+	{
+		Apply(Refinement.Field);
+		Apply(Refinement.CoreField);
+	}
+	for (TPair<FIntPoint, FFF_CrowdHeightField>& Edge : GateGroundEdgeFields) Apply(Edge.Value);
 }
 
-void UFF_CrowdSimulationSubsystem::RebuildHeightField()
+void UFF_CrowdSimulationSubsystem::RebuildHeightField(const bool bOnlyGateRefinements)
 {
-	HeightField.Reset();
-	GroundRefinements.Reset();
-	GroundRefinementBuildSeconds = 0.0;
-	RoadSupportRevision = -1;
+	if (!bOnlyGateRefinements)
+	{
+		HeightField.Reset();
+		GroundRefinements.Reset();
+		GroundRefinementBuildSeconds = 0.0;
+		RoadSupportRevision = -1;
+	}
+	GateGroundRefinements.Reset();
+	GateGroundEdgeFields.Reset();
+	GateGroundRefinementProbeCount = 0;
+	GateGroundRefinementBuildSeconds = 0.0;
 
-	if (!bEnableHeightField)
+	if (!bEnableHeightField || (bOnlyGateRefinements && !HeightField.IsValid()))
 	{
 		return;
 	}
@@ -1751,84 +1777,205 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 
 	const double SpacingCm = FMath::Max(static_cast<double>(HeightFieldSpacingUU), 10.0);
 
-	HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
-	ApplyWalkableCeiling();
-
-	const bool bBuilt = HeightField.Build(CenterCm, HalfSizeCm, SpacingCm, Sampler);
-
-	const FFF_CrowdHeightField::FBuildStats& Stats = HeightField.GetStats();
-
-	if (!bBuilt)
+	if (!bOnlyGateRefinements)
 	{
-		UE_LOG(LogTemp, Log,
-			TEXT("높이 격자: 지면을 찾지 못했다(트레이스 %d회) — 개체 Z는 스폰 값 그대로 유지된다"),
-			TraceCount);
-		return;
+		HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
+		ApplyWalkableCeiling();
+
+		const bool bBuilt = HeightField.Build(CenterCm, HalfSizeCm, SpacingCm, Sampler);
+
+		if (!bBuilt)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("높이 격자: 지면을 찾지 못했다(트레이스 %d회) — 개체 Z는 스폰 값 그대로 유지된다"),
+				TraceCount);
+			return;
+		}
+
+		int32 RefinementSamples = 0;
+		const double RefinementStartedAt = FPlatformTime::Seconds();
+		for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+		{
+			if (!It->ActorHasTag(GroundRefinementTag)) continue;
+			const UStaticMeshComponent* Surface = It->GetStaticMeshComponent();
+			const UStaticMesh* Mesh = Surface ? Surface->GetStaticMesh() : nullptr;
+			const FBox SurfaceBounds = Surface ? Surface->Bounds.GetBox() : FBox(ForceInit);
+			const FVector SurfaceScale = Surface ? Surface->GetComponentScale() : FVector::ZeroVector;
+			const bool bSupported = Surface && Mesh
+				&& Mesh->GetPathName() == TEXT("/Engine/BasicShapes/Cube.Cube")
+				&& Surface->Mobility == EComponentMobility::Static
+				&& Surface->IsQueryCollisionEnabled()
+				&& Surface->GetCollisionResponseToChannel(ECC_WorldStatic) == ECR_Block
+				&& !Surface->IsSimulatingPhysics() && !SurfaceScale.ContainsNaN() && SurfaceScale.GetMin() > 0.0
+				&& SurfaceBounds.IsValid && !SurfaceBounds.Min.ContainsNaN() && !SurfaceBounds.Max.ContainsNaN()
+				&& SurfaceBounds.GetSize().GetMax() <= GroundRefinementMaxSurfaceSpanCm
+				&& Surface->GetUpVector().Z >= FMath::Cos(FMath::DegreesToRadians(44.0));
+			if (!bSupported)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Crowd ground refinement rejected unsupported tagged surface: %s"), *It->GetPathName());
+				continue;
+			}
+			// Share a world-aligned 25 cm lattice, including in overlapping patches.
+			// Do not trace against the cube alone: the existing deck can be above it.
+			const FVector2D Minimum(
+				FMath::FloorToDouble((SurfaceBounds.Min.X - GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm,
+				FMath::FloorToDouble((SurfaceBounds.Min.Y - GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm);
+			const FVector2D Maximum(
+				FMath::CeilToDouble((SurfaceBounds.Max.X + GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm,
+				FMath::CeilToDouble((SurfaceBounds.Max.Y + GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm);
+			const double SideCm = FMath::Max(Maximum.X - Minimum.X, Maximum.Y - Minimum.Y);
+			FGroundRefinement Refinement;
+			Refinement.BoundsCm = FBox2D(Minimum, Minimum + FVector2D(SideCm));
+			if (Refinement.Field.Build(Minimum + FVector2D(SideCm * 0.5), SideCm * 0.5,
+				GroundRefinementSpacingCm, Sampler))
+			{
+				RefinementSamples += Refinement.Field.GetStats().SampleCount;
+				// Fine sampling is limited to the walkway and its immediate approaches.
+				// Keep the broad apron coarse; both tiers share fixed world lattices so
+				// authoring transforms cannot tune samples to a particular test point.
+				const FVector2D CoreMinimum(
+					FMath::FloorToDouble((SurfaceBounds.Min.X - GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm,
+					FMath::FloorToDouble((SurfaceBounds.Min.Y - GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm);
+				const FVector2D CoreMaximum(
+					FMath::CeilToDouble((SurfaceBounds.Max.X + GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm,
+					FMath::CeilToDouble((SurfaceBounds.Max.Y + GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm);
+				const double CoreSideCm = FMath::Max(CoreMaximum.X - CoreMinimum.X, CoreMaximum.Y - CoreMinimum.Y);
+				if (Refinement.CoreField.Build(CoreMinimum + FVector2D(CoreSideCm * 0.5), CoreSideCm * 0.5,
+					GroundRefinementCoreSpacingCm, Sampler))
+				{
+					Refinement.CoreBoundsCm = FBox2D(CoreMinimum, CoreMinimum + FVector2D(CoreSideCm));
+					RefinementSamples += Refinement.CoreField.GetStats().SampleCount;
+				}
+				GroundRefinements.Add(MoveTemp(Refinement));
+			}
+		}
+		ApplyWalkableCeiling();
+		GroundRefinementBuildSeconds = FPlatformTime::Seconds() - RefinementStartedAt;
+		if (!GroundRefinements.IsEmpty())
+			UE_LOG(LogTemp, Log, TEXT("Crowd ground refinements: %d explicit static walkways, %d cached samples, %.0f cm core / %.0f cm apron, %.2f ms build, %.1f KiB sample payload"),
+				GroundRefinements.Num(), RefinementSamples, GroundRefinementCoreSpacingCm, GroundRefinementSpacingCm,
+				GroundRefinementBuildSeconds * 1000.0, RefinementSamples * (sizeof(double) + sizeof(uint8)) / 1024.0);
 	}
 
-	int32 RefinementSamples = 0;
-	const double RefinementStartedAt = FPlatformTime::Seconds();
-	for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+	const double GateBuildStartedAt = FPlatformTime::Seconds();
+	int32 GateSamples = 0;
+	// Emergency fallback gates are appended after the authored prefix. Keep
+	// their global-ground policy stable across subsequent explicit rebuilds.
+	for (int32 GateIndex = 0; GateIndex < FMath::Min(ValidatedAuthoredGateCount, ValidGates.Num()); ++GateIndex)
 	{
-		if (!It->ActorHasTag(GroundRefinementTag)) continue;
-		const UStaticMeshComponent* Surface = It->GetStaticMeshComponent();
-		const UStaticMesh* Mesh = Surface ? Surface->GetStaticMesh() : nullptr;
-		const FBox SurfaceBounds = Surface ? Surface->Bounds.GetBox() : FBox(ForceInit);
-		const FVector SurfaceScale = Surface ? Surface->GetComponentScale() : FVector::ZeroVector;
-		const bool bSupported = Surface && Mesh
-			&& Mesh->GetPathName() == TEXT("/Engine/BasicShapes/Cube.Cube")
-			&& Surface->Mobility == EComponentMobility::Static
-			&& Surface->IsQueryCollisionEnabled()
-			&& Surface->GetCollisionResponseToChannel(ECC_WorldStatic) == ECR_Block
-			&& !Surface->IsSimulatingPhysics() && !SurfaceScale.ContainsNaN() && SurfaceScale.GetMin() > 0.0
-			&& SurfaceBounds.IsValid && !SurfaceBounds.Min.ContainsNaN() && !SurfaceBounds.Max.ContainsNaN()
-			&& SurfaceBounds.GetSize().GetMax() <= GroundRefinementMaxSurfaceSpanCm
-			&& Surface->GetUpVector().Z >= FMath::Cos(FMath::DegreesToRadians(44.0));
-		if (!bSupported)
+		const FFF_CrowdGate& Gate = ValidGates[GateIndex];
+		if ((!Gate.bAllowSpawn && !Gate.bAllowExit) || Gate.GateLocation.ContainsNaN()
+			|| !FMath::IsFinite(Gate.GateRadiusUU) || Gate.GateRadiusUU <= 0.f) continue;
+		// Same six-member formation envelope used by gate validation, plus a
+		// physical-foot/cache margin. No paths, audit coordinates or actor names.
+		const double Radius = FMath::Max(GateGroundMinimumRadiusCm,
+			static_cast<double>(Gate.GateRadiusUU) + GetPartyFormationOffset(5).Size2D())
+			+ GroundRefinementCoreApronCm;
+		if (!FMath::IsFinite(Radius) || Radius > GateGroundMaximumCoreRadiusCm
+			|| GateGroundRefinements.Num() >= GateGroundMaximumPatches)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Crowd ground refinement rejected unsupported tagged surface: %s"), *It->GetPathName());
+			UE_LOG(LogTemp, Warning, TEXT("Gate ground refinement exceeds bounded entrance budget: %s radius=%.1f cm"),
+				*Gate.GateId.ToString(), Radius);
 			continue;
 		}
-		// Share a world-aligned 25 cm lattice, including in overlapping patches.
-		// Do not trace against the cube alone: the existing deck can be above it.
-		const FVector2D Minimum(
-			FMath::FloorToDouble((SurfaceBounds.Min.X - GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm,
-			FMath::FloorToDouble((SurfaceBounds.Min.Y - GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm);
-		const FVector2D Maximum(
-			FMath::CeilToDouble((SurfaceBounds.Max.X + GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm,
-			FMath::CeilToDouble((SurfaceBounds.Max.Y + GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm);
-		const double SideCm = FMath::Max(Maximum.X - Minimum.X, Maximum.Y - Minimum.Y);
-		FGroundRefinement Refinement;
-		Refinement.BoundsCm = FBox2D(Minimum, Minimum + FVector2D(SideCm));
-		if (Refinement.Field.Build(Minimum + FVector2D(SideCm * 0.5), SideCm * 0.5,
-			GroundRefinementSpacingCm, Sampler))
+		const FVector2D Center(Gate.GateLocation.X, Gate.GateLocation.Y);
+		const auto AlignedBounds = [&Center](const double HalfSize, const double CellSize)
 		{
-			RefinementSamples += Refinement.Field.GetStats().SampleCount;
-			// Fine sampling is limited to the walkway and its immediate approaches.
-			// Keep the broad apron coarse; both tiers share fixed world lattices so
-			// authoring transforms cannot tune samples to a particular test point.
-			const FVector2D CoreMinimum(
-				FMath::FloorToDouble((SurfaceBounds.Min.X - GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm,
-				FMath::FloorToDouble((SurfaceBounds.Min.Y - GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm);
-			const FVector2D CoreMaximum(
-				FMath::CeilToDouble((SurfaceBounds.Max.X + GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm,
-				FMath::CeilToDouble((SurfaceBounds.Max.Y + GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm);
-			const double CoreSideCm = FMath::Max(CoreMaximum.X - CoreMinimum.X, CoreMaximum.Y - CoreMinimum.Y);
-			if (Refinement.CoreField.Build(CoreMinimum + FVector2D(CoreSideCm * 0.5), CoreSideCm * 0.5,
-				GroundRefinementCoreSpacingCm, Sampler))
-			{
-				Refinement.CoreBoundsCm = FBox2D(CoreMinimum, CoreMinimum + FVector2D(CoreSideCm));
-				RefinementSamples += Refinement.CoreField.GetStats().SampleCount;
-			}
-			GroundRefinements.Add(MoveTemp(Refinement));
+			const FVector2D Minimum(FMath::FloorToDouble((Center.X - HalfSize) / CellSize) * CellSize,
+				FMath::FloorToDouble((Center.Y - HalfSize) / CellSize) * CellSize);
+			const FVector2D Maximum(FMath::CeilToDouble((Center.X + HalfSize) / CellSize) * CellSize,
+				FMath::CeilToDouble((Center.Y + HalfSize) / CellSize) * CellSize);
+			return FBox2D(Minimum, Minimum + FVector2D(FMath::Max(Maximum.X - Minimum.X, Maximum.Y - Minimum.Y)));
+		};
+		FGroundRefinement Refinement;
+		Refinement.CoreBoundsCm = AlignedBounds(Radius, GroundRefinementCoreSpacingCm);
+		Refinement.BoundsCm = AlignedBounds(Radius + GroundRefinementApronCm, GroundRefinementSpacingCm);
+		const auto SampleCount = [](const FBox2D& Bounds, const double CellSize)
+		{
+			const int32 Side = FMath::CeilToInt(Bounds.GetSize().X / CellSize) + 1;
+			return Side * Side;
+		};
+		const int32 RequiredSamples = SampleCount(Refinement.CoreBoundsCm, GroundRefinementCoreSpacingCm)
+			+ SampleCount(Refinement.BoundsCm, GroundRefinementSpacingCm);
+		if (RequiredSamples > GateGroundMaximumSamples - GateSamples)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Gate ground refinement sample budget exhausted before gate %s (%d/%d)"),
+				*Gate.GateId.ToString(), GateSamples, GateGroundMaximumSamples);
+			continue;
+		}
+		// Failed/empty bakes still consume the work budget; missing ground must
+		// not permit an unbounded number of expensive allocation/trace attempts.
+		GateSamples += RequiredSamples;
+		const bool bCoreBuilt = Refinement.CoreField.Build(Refinement.CoreBoundsCm.GetCenter(),
+			Refinement.CoreBoundsCm.GetSize().X * .5, GroundRefinementCoreSpacingCm, Sampler);
+		const bool bApronBuilt = Refinement.Field.Build(Refinement.BoundsCm.GetCenter(),
+			Refinement.BoundsCm.GetSize().X * .5, GroundRefinementSpacingCm, Sampler);
+		if (bCoreBuilt && bApronBuilt)
+		{
+			GateGroundRefinements.Add(MoveTemp(Refinement));
 		}
 	}
+	// A shallow curb can still be blended into a fake slope inside a 5 cm cell.
+	// Refine only those physical discontinuities, using a fixed world lattice.
+	// Smooth terrain keeps the original 5 cm cache, and unknown samples remain
+	// unknown instead of being replaced by an invented analytic floor.
+	bool bEdgeBudgetExhausted = false;
+	for (FGroundRefinement& Refinement : GateGroundRefinements)
+	{
+		const int32 CellsX = Refinement.CoreField.GetNumX() - 1;
+		const int32 CellsY = Refinement.CoreField.GetNumY() - 1;
+		for (int32 Y = 0; Y < CellsY; ++Y)
+		{
+			for (int32 X = 0; X < CellsX; ++X)
+			{
+				const FVector2D Minimum = Refinement.CoreBoundsCm.Min
+					+ FVector2D(X * GroundRefinementCoreSpacingCm, Y * GroundRefinementCoreSpacingCm);
+				FFF_CrowdHeightField::FCellProbe Probe;
+				if (!Refinement.CoreField.ProbeCell(Minimum + FVector2D(GroundRefinementCoreSpacingCm * .5), Probe)) continue;
+				int32 ValidCorners = 0;
+				double MinimumHeight = TNumericLimits<double>::Max(), MaximumHeight = TNumericLimits<double>::Lowest();
+				for (int32 Corner = 0; Corner < 4; ++Corner)
+				{
+					if (!Probe.bCornerValid[Corner]) continue;
+					++ValidCorners;
+					MinimumHeight = FMath::Min(MinimumHeight, Probe.CornerHeightCm[Corner]);
+					MaximumHeight = FMath::Max(MaximumHeight, Probe.CornerHeightCm[Corner]);
+				}
+				if (ValidCorners == 0 || (ValidCorners == 4 && MaximumHeight - MinimumHeight <= GateGroundEdgeHeightSpanCm)) continue;
+				const FIntPoint Key(FMath::RoundToInt(Minimum.X / GroundRefinementCoreSpacingCm),
+					FMath::RoundToInt(Minimum.Y / GroundRefinementCoreSpacingCm));
+				if (GateGroundEdgeFields.Contains(Key)) continue;
+				constexpr int32 EdgeSamples = 36; // A 5 cm cell sampled every 1 cm has 6 x 6 vertices.
+				if (bEdgeBudgetExhausted || GateGroundEdgeFields.Num() >= GateGroundMaximumEdgeCells
+					|| EdgeSamples > GateGroundMaximumSamples - GateSamples)
+				{
+					if (!bEdgeBudgetExhausted)
+						UE_LOG(LogTemp, Warning, TEXT("Gate ground edge refinement budget exhausted (%d cells, %d probes); remaining discontinuities are unknown"),
+							GateGroundEdgeFields.Num(), GateSamples);
+					bEdgeBudgetExhausted = true;
+					Refinement.CoreField.MarkCellUnknown(Minimum + FVector2D(GroundRefinementCoreSpacingCm * .5));
+					continue;
+				}
+				GateSamples += EdgeSamples;
+				FFF_CrowdHeightField& Edge = GateGroundEdgeFields.Add(Key);
+				// Preserve even an empty bake so a missing floor cannot fall back to
+				// the less accurate parent cell and silently fabricate support.
+				Edge.Build(Minimum + FVector2D(GroundRefinementCoreSpacingCm * .5),
+					GroundRefinementCoreSpacingCm * .5, GateGroundEdgeSpacingCm, Sampler);
+				GateSamples += Edge.RefineDiscontinuities(GateGroundEdgeHeightSpanCm,
+					GateGroundBoundaryToleranceCm, GateGroundMaximumSamples - GateSamples, Sampler);
+			}
+		}
+	}
+	GateGroundRefinementProbeCount = GateSamples;
+	GateGroundRefinementBuildSeconds = FPlatformTime::Seconds() - GateBuildStartedAt;
 	ApplyWalkableCeiling();
-	GroundRefinementBuildSeconds = FPlatformTime::Seconds() - RefinementStartedAt;
-	if (!GroundRefinements.IsEmpty())
-		UE_LOG(LogTemp, Log, TEXT("Crowd ground refinements: %d explicit static walkways, %d cached samples, %.0f cm core / %.0f cm apron, %.2f ms build, %.1f KiB sample payload"),
-			GroundRefinements.Num(), RefinementSamples, GroundRefinementCoreSpacingCm, GroundRefinementSpacingCm,
-			GroundRefinementBuildSeconds * 1000.0, RefinementSamples * (sizeof(double) + sizeof(uint8)) / 1024.0);
+	if (!GateGroundRefinements.IsEmpty())
+		UE_LOG(LogTemp, Log, TEXT("Crowd gate ground refinements: %d entrances, %d probes (including boundary attempts), %.2f ms build, %.1f KiB cache payload"),
+			GateGroundRefinements.Num(), GateSamples, GateGroundRefinementBuildSeconds * 1000.0,
+			GetGateGroundRefinementAllocatedBytes() / 1024.0);
+	if (bOnlyGateRefinements) return;
+	const FFF_CrowdHeightField::FBuildStats& Stats = HeightField.GetStats();
 
 	UE_LOG(LogTemp, Log,
 		TEXT("높이 격자: %dx%d, 적중 %d/%d, 높이 %.0f~%.0f (기복 %.0fcm), 시설 %d개 제외"),
@@ -1877,9 +2024,20 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 
 const FFF_CrowdHeightField& UFF_CrowdSimulationSubsystem::GetHeightFieldAt(const FVector2D& WorldXYCm) const
 {
+	for (const FGroundRefinement& Refinement : GateGroundRefinements)
+	{
+		if (!Refinement.CoreBoundsCm.IsInsideOrOn(WorldXYCm)) continue;
+		const FIntPoint Key(FMath::FloorToInt(WorldXYCm.X / GroundRefinementCoreSpacingCm),
+			FMath::FloorToInt(WorldXYCm.Y / GroundRefinementCoreSpacingCm));
+		if (const FFF_CrowdHeightField* Edge = GateGroundEdgeFields.Find(Key)) return *Edge;
+	}
 	for (const FGroundRefinement& Refinement : GroundRefinements)
 		if (Refinement.CoreBoundsCm.bIsValid && Refinement.CoreBoundsCm.IsInsideOrOn(WorldXYCm)) return Refinement.CoreField;
+	for (const FGroundRefinement& Refinement : GateGroundRefinements)
+		if (Refinement.CoreBoundsCm.IsInsideOrOn(WorldXYCm)) return Refinement.CoreField;
 	for (const FGroundRefinement& Refinement : GroundRefinements)
+		if (Refinement.BoundsCm.IsInsideOrOn(WorldXYCm)) return Refinement.Field;
+	for (const FGroundRefinement& Refinement : GateGroundRefinements)
 		if (Refinement.BoundsCm.IsInsideOrOn(WorldXYCm)) return Refinement.Field;
 	return HeightField;
 }
@@ -1890,6 +2048,21 @@ int32 UFF_CrowdSimulationSubsystem::GetGroundRefinementSampleCount() const
 	for (const FGroundRefinement& Refinement : GroundRefinements)
 		Count += Refinement.Field.GetStats().SampleCount + Refinement.CoreField.GetStats().SampleCount;
 	return Count;
+}
+
+int32 UFF_CrowdSimulationSubsystem::GetGateGroundRefinementSampleCount() const
+{
+	return GateGroundRefinementProbeCount;
+}
+
+SIZE_T UFF_CrowdSimulationSubsystem::GetGateGroundRefinementAllocatedBytes() const
+{
+	SIZE_T Bytes = GateGroundRefinements.GetAllocatedSize() + GateGroundEdgeFields.GetAllocatedSize();
+	for (const FGroundRefinement& Refinement : GateGroundRefinements)
+		Bytes += Refinement.Field.GetAllocatedSizeBytes() + Refinement.CoreField.GetAllocatedSizeBytes();
+	for (const TPair<FIntPoint, FFF_CrowdHeightField>& Edge : GateGroundEdgeFields)
+		Bytes += Edge.Value.GetAllocatedSizeBytes();
+	return Bytes;
 }
 
 bool UFF_CrowdSimulationSubsystem::IsGroundWalkable(const FVector& WorldLocation) const

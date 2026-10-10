@@ -37,6 +37,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera")
 	bool bApplyInitialFraming = true;
 
+	// 저장된 초기 초점 높이에서 시작하고, 최초 지면 대비 높이를 유지하며 이동한다.
+	// 끄면 기존처럼 지면 + CameraSettings.GroundFocusOffset으로 초점을 맞춘다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera", meta = (EditCondition = "bApplyInitialFraming"))
+	bool bPreserveInitialCameraHeight = true;
+
 	// 이 레벨에서 쓸 피날레 연출 수치.
 	//
 	// 비워두면 Project Settings 의 기본값을 쓴다. 연등축제처럼 연출이 다른 레벨에서만

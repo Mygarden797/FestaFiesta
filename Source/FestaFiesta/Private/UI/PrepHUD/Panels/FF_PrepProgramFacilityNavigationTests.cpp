@@ -28,6 +28,7 @@
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "GameFramework/PlayerController.h"
@@ -268,7 +269,7 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	World->AddController(Controller);
 	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
 	if (!TestNotNull(TEXT("Construction zone"), Zone) ||
-		!TestTrue(TEXT("Zone uses the accepted preset"), Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha"))) ||
+		!TestTrue(TEXT("Zone uses the accepted preset"), Zone->ApplyAcceptedZonePreset(FFProjectZoneTest::ZoneId())) ||
 		!TestTrue(TEXT("Construction zone registers"), Zones->RegisterZone(Zone))) { return false; }
 	Zones->SetChangePhase(EFFZSChangePhase::InitialSetup);
 	Build->SetExternalCatalogPresentationActive(true);
@@ -288,7 +289,7 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	FFFZSGridPlacement YogaPlacement;
 	YogaPlacement.OriginCell = FIntPoint(1000, 1000);
 	const FFFZSCommand InstallYoga = UFFZSGridLibrary::MakeInstallCommand(
-		YogaFacility->Spec, TEXT("GZ_DadaPocha"), YogaPlacement, Zones->GetWorldRevision());
+		YogaFacility->Spec, FFProjectZoneTest::ZoneId(), YogaPlacement, Zones->GetWorldRevision());
 	const FFFZSCommandResult InstallResult = Zones->ExecuteCommand(InstallYoga);
 	if (!TestTrue(*FString::Printf(TEXT("The quote's real facility installs: %s"), *InstallResult.Message.ToString()), InstallResult.bSucceeded)) return false;
 	const FGuid InstalledYogaId = InstallYoga.FacilityInstanceId;
@@ -359,7 +360,7 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 		UFFZSGridLibrary::DoCellRectSetsOverlap(FirstReservedRects,
 			UFFZSGridLibrary::GetReservedRects(YogaFacility->Spec, SecondYogaPlacement)))) return false;
 	const FFFZSCommand InstallSecondYoga = UFFZSGridLibrary::MakeInstallCommand(
-		YogaFacility->Spec, TEXT("GZ_DadaPocha"), SecondYogaPlacement, Zones->GetWorldRevision());
+		YogaFacility->Spec, FFProjectZoneTest::ZoneId(), SecondYogaPlacement, Zones->GetWorldRevision());
 	const FFFZSCommandResult SecondInstallResult = Zones->ExecuteCommand(InstallSecondYoga);
 	if (!TestTrue(*FString::Printf(TEXT("A second facility with the same authored name installs: %s"),
 		*SecondInstallResult.Message.ToString()), SecondInstallResult.bSucceeded)) return false;

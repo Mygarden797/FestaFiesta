@@ -11,6 +11,7 @@
 #include "FF_FFZSZoneActor.h"
 #include "Kismet/GameplayStatics.h"
 #include "Tests/FF_FFZSTestFixtures.h"
+#include "FF_FFZSProjectZoneTestFixture.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSQueueLayoutWorldTest,
     "FF_ZoneSystem.Integration.QueueLayout.SaveHistoryAndObstruction",
@@ -28,8 +29,7 @@ bool FFFZSQueueLayoutWorldTest::RunTest(const FString& Parameters)
     UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
     if (!TestNotNull(TEXT("World subsystem"), Zones)) return false;
     AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
-    if (!TestNotNull(TEXT("Test zone"), Zone)) return false;
-    Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha"));
+    if (!FFZSTest::ApplyZonePreset(*this, Zone)) return false;
     Zone->bAllowAllFacilityCategories = true;
     if (!TestTrue(TEXT("Zone registers"), Zones->RegisterZone(Zone))) return false;
     FFFZSGridPlacement Placement;

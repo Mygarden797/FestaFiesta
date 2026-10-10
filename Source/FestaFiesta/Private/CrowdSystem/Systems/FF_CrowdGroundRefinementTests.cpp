@@ -248,6 +248,266 @@ bool FFF_CrowdGroundRefinementCurbTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdGateGroundRefinementTest,
+    "FestaFiesta.Crowd.Ground.GateRefinementSlopeAndLifecycle",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFF_CrowdGateGroundRefinementTest::RunTest(const FString& Parameters)
+{
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("Independent gate-ground fixture world"), World)) return false;
+    AddGroundBox(*World, FVector(0, 0, -1010), FVector(5000, 5000, 10));
+    AActor* Slope = AddGroundBox(*World, FVector::ZeroVector, FVector(2500, 2500, 20), FRotator(8, 0, 0));
+    Slope->GetRootComponent()->SetMobility(EComponentMobility::Movable);
+    UFF_CrowdSimulationSubsystem* Crowd = NewObject<UFF_CrowdSimulationSubsystem>(World);
+    Crowd->bHeightFieldRequireNavMesh = false;
+    Crowd->HeightFieldSpacingUU = 500.f;
+    Crowd->HeightFieldCliffStepUU = 50.f;
+    Bake(*Crowd);
+    TestEqual(TEXT("No entrance patch is baked before gates are gathered"), Crowd->GetGateGroundRefinementCount(), 0);
+    const int32 GlobalSamples = Crowd->GetHeightField().GetStats().SampleCount;
+    FFF_CrowdGate Gate;
+    Gate.GateId = TEXT("GroundFixture");
+    Gate.GateLocation = FVector(137, 173, 0);
+    Gate.GateRadiusUU = 250.f;
+    Gate.GateWeight = 1.f;
+    Gate.bAllowSpawn = true;
+    Gate.bAllowExit = true;
+    // Navigation is covered by the production test. This test deliberately has
+    // no NavData so only static-physics caching and lifecycle are exercised.
+    AddExpectedMessage(TEXT("NavMesh 검증 생략"), ELogVerbosity::Warning,
+        EAutomationExpectedMessageFlags::Contains, 3);
+    Crowd->GatherCrowdGates({Gate});
+    TestEqual(TEXT("A validated entrance receives one ground patch"), Crowd->GetGateGroundRefinementCount(), 1);
+    TestEqual(TEXT("Gate patches do not masquerade as tagged walkway patches"), Crowd->GetGroundRefinementCount(), 0);
+    TestEqual(TEXT("Gathering gates preserves the coarse global sample count"), Crowd->GetHeightField().GetStats().SampleCount, GlobalSamples);
+    TestTrue(TEXT("The local entrance has a bounded sample payload"),
+        Crowd->GetGateGroundRefinementSampleCount() > 0 && Crowd->GetGateGroundRefinementSampleCount() < 100000);
+    bool bReproducedCoarseSlopeError = false;
+    for (const double X : {-313.0, -123.0, 137.0, 327.0, 567.0})
+    {
+        for (const double Y : {23.0, 173.0, 323.0})
+        {
+            const FVector Point(X, Y, 0);
+            FHitResult Hit;
+            if (!TestTrue(TEXT("Real tilted static ground exists"), PhysicalFloor(*World, Point, Hit))) continue;
+            double Fine = 0, Coarse = 0;
+            TestTrue(TEXT("The entrance cache provides a floor"), Crowd->TryGetGroundZ(Point, Fine));
+            TestTrue(TEXT("The original coarse field provides a comparison"), Crowd->GetHeightField().TryGetHeightCm(FVector2D(X, Y), Coarse));
+            bReproducedCoarseSlopeError |= FMath::Abs(Coarse - Hit.ImpactPoint.Z) > 10.0;
+            TestTrue(TEXT("A gentle slope no longer snaps feet to a distant coarse corner"), FMath::Abs(Fine - Hit.ImpactPoint.Z) <= 5.0);
+        }
+    }
+    TestTrue(TEXT("The fixture exposes the coarse grid's false cliff classification"), bReproducedCoarseSlopeError);
+    const FVector2D Core(137, 173), Apron(1037, 173), Outside(2237, 173);
+    FFF_CrowdHeightField::FCellProbe Probe;
+    TestTrue(TEXT("Entrance core is queryable"), Crowd->GetHeightFieldAt(Core).ProbeCell(Core, Probe));
+    TestEqual(TEXT("Entrance core uses a fixed world-aligned 5 cm lattice"), Probe.CornerXYCm[1].X - Probe.CornerXYCm[0].X, 5.0);
+    TestTrue(TEXT("Entrance apron is queryable"), Crowd->GetHeightFieldAt(Apron).ProbeCell(Apron, Probe));
+    TestEqual(TEXT("The entrance apron retains 25 cm samples"), Probe.CornerXYCm[1].X - Probe.CornerXYCm[0].X, 25.0);
+    TestTrue(TEXT("Beyond the entrance apron uses the unchanged global field"), &Crowd->GetHeightFieldAt(Outside) == &Crowd->GetHeightField());
+    double Before = 0, Cached = 0, Rebuilt = 0;
+    Crowd->TryGetGroundZ(FVector(Core, 0), Before);
+    Slope->SetActorLocation(FVector(0, 0, 100));
+    Crowd->TryGetGroundZ(FVector(Core, 0), Cached);
+    TestEqual(TEXT("A ground query performs no new physics trace"), Cached, Before);
+    Bake(*Crowd);
+    Crowd->TryGetGroundZ(FVector(Core, 0), Rebuilt);
+    TestEqual(TEXT("Explicit height-field rebuild refreshes existing entrance patches"), Rebuilt - Before, 100.0, .01);
+    Crowd->GatherCrowdGates({});
+    TestEqual(TEXT("Removing gates releases their cached patches"), Crowd->GetGateGroundRefinementCount(), 0);
+    TestEqual(TEXT("Removing gates releases the entire sample payload"), Crowd->GetGateGroundRefinementSampleCount(), 0);
+    TestTrue(TEXT("Removed gate location returns to coarse ground"), &Crowd->GetHeightFieldAt(Core) == &Crowd->GetHeightField());
+    Gate.GateRadiusUU = 10000.f;
+    AddExpectedMessage(TEXT("Gate ground refinement exceeds bounded entrance budget"), ELogVerbosity::Warning);
+    Crowd->GatherCrowdGates({Gate});
+    TestEqual(TEXT("An oversized entrance cannot allocate an unbounded fine grid"), Crowd->GetGateGroundRefinementCount(), 0);
+    TestEqual(TEXT("Budget rejection leaves the global field intact"), Crowd->GetHeightField().GetStats().SampleCount, GlobalSamples);
+    Crowd->GatherCrowdGates({});
+    // Exercise the actual emergency fallback path without creating visitors.
+    AddExpectedMessage(TEXT("방문객 분포가 비었다"), ELogVerbosity::Error);
+    Crowd->BeginArrivalSchedule(0, FVector(Core, 0), 250.f);
+    TestTrue(TEXT("An empty authored list activates the real emergency fallback"), Crowd->IsUsingFallbackGate());
+    TestEqual(TEXT("The emergency fallback remains available for spawning"), Crowd->GetSpawnGateCount(), 1);
+    Bake(*Crowd);
+    TestEqual(TEXT("A full rebuild does not promote the synthetic fallback to authored precision"), Crowd->GetGateGroundRefinementCount(), 0);
+    TestTrue(TEXT("Emergency fallback continues to use global ground"), &Crowd->GetHeightFieldAt(Core) == &Crowd->GetHeightField());
+    Gate.GateRadiusUU = 250.f;
+    Crowd->GatherCrowdGates({Gate});
+    TestEqual(TEXT("Regathering a real authored gate restores its precision patch"), Crowd->GetGateGroundRefinementCount(), 1);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdGateGroundEdgeTest,
+    "FestaFiesta.Crowd.Ground.GateRefinementRotatedCurbEdges",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFF_CrowdGateGroundEdgeTest::RunTest(const FString& Parameters)
+{
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("Independent rotated-curb fixture world"), World)) return false;
+    AddGroundBox(*World, FVector(0, 0, 90), FVector(5000, 5000, 10));
+    const FRotator Rotation(0, 31, 0);
+    const FVector Along = Rotation.RotateVector(FVector(1, 0, 0));
+    const FVector Across = Rotation.RotateVector(FVector(0, 1, 0));
+    AActor* Curb = AddGroundBox(*World, Along * -500.0 + FVector(0, 0, 106), FVector(500, 200, 6), Rotation);
+    Curb->GetRootComponent()->SetMobility(EComponentMobility::Movable);
+    UFF_CrowdSimulationSubsystem* Crowd = NewObject<UFF_CrowdSimulationSubsystem>(World);
+    Crowd->bHeightFieldRequireNavMesh = false;
+    Bake(*Crowd);
+    FFF_CrowdGate Gate;
+    Gate.GateId = TEXT("RotatedCurb");
+    Gate.GateLocation = FVector::ZeroVector;
+    Gate.GateRadiusUU = 250.f;
+    Gate.GateWeight = 1.f;
+    Gate.bAllowSpawn = true;
+    Gate.bAllowExit = true;
+    AddExpectedMessage(TEXT("NavMesh 검증 생략"), ELogVerbosity::Warning);
+    Crowd->GatherCrowdGates({Gate});
+    bool bSawResolvedBoundary = false;
+    for (const double Phase : {.37, 1.61, 3.23})
+    {
+        Curb->SetActorLocation(Along * (-500.0 + Phase) + FVector(0, 0, 106));
+        Bake(*Crowd);
+        TestTrue(TEXT("Physical height discontinuities create bounded edge subcells"),
+            Crowd->GetGateGroundEdgeRefinementCount() > 0 && Crowd->GetGateGroundEdgeRefinementCount() <= 4096);
+        TestTrue(TEXT("Edge subcells are included in the total sample budget"), Crowd->GetGateGroundRefinementSampleCount() <= 1600000);
+        FFF_CrowdHeightField Reference5;
+        Reference5.Build(FVector2D::ZeroVector, 250.0, 5.0,
+            [World](const FVector2D& XY, double& Z)
+            {
+                FHitResult Hit;
+                if (!PhysicalFloor(*World, FVector(XY, 0), Hit)) return false;
+                Z = Hit.ImpactPoint.Z;
+                return true;
+            });
+        int32 FineErrors = 0, ReferenceErrors = 0;
+        for (const double Lateral : {-17.0, 17.0})
+        {
+            for (int32 Step = -40; Step <= 40; ++Step)
+            {
+                const double DistanceFromEdge = Step * .25;
+                const FVector Point = Along * (Phase + DistanceFromEdge) + Across * Lateral;
+                FHitResult Hit;
+                double Fine = 0, Reference = 0;
+                if (!TestTrue(TEXT("Independent physics finds the rotated curb or its surrounding floor"), PhysicalFloor(*World, Point, Hit))) continue;
+                TestTrue(TEXT("The adaptive cache contains a real floor sample"), Crowd->TryGetGroundZ(Point, Fine));
+                FFF_CrowdHeightField::FCellProbe Boundary;
+                Crowd->GetHeightFieldAt(FVector2D(Point.X, Point.Y)).ProbeCell(FVector2D(Point.X, Point.Y), Boundary);
+                bSawResolvedBoundary |= Boundary.bHasDiscontinuity && Boundary.bBoundaryResolved;
+                TestTrue(TEXT("The original 5 cm grid contains a comparison sample"), Reference5.TryGetHeightCm(FVector2D(Point.X, Point.Y), Reference));
+                if (FMath::Abs(Fine - Hit.ImpactPoint.Z) > 5.0)
+                {
+                    ++FineErrors;
+                    // Two classes cannot form a fictitious ramp. Only the
+                    // fixed 0.01 cm boundary-location tolerance remains; this
+                    // does not relax the production route's 5 cm requirement.
+                    TestTrue(TEXT("Remaining edge uncertainty is within the sampled boundary tolerance"), FMath::Abs(DistanceFromEdge) <= .01);
+                }
+                ReferenceErrors += FMath::Abs(Reference - Hit.ImpactPoint.Z) > 5.0;
+            }
+        }
+        TestTrue(TEXT("Each independent rotated curb phase reduces the extent of false ramp heights"), FineErrors < ReferenceErrors);
+    }
+    TestTrue(TEXT("The regression actually queries reconstructed boundaries"), bSawResolvedBoundary);
+    Curb->SetActorEnableCollision(false);
+    Bake(*Crowd);
+    TestEqual(TEXT("A rebuild removes obsolete edge cells when the physical step disappears"), Crowd->GetGateGroundEdgeRefinementCount(), 0);
+    Crowd->GatherCrowdGates({});
+    TestEqual(TEXT("Removing gates releases both their parent and edge samples"), Crowd->GetGateGroundRefinementSampleCount(), 0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdGroundBoundaryRepresentationTest,
+    "FestaFiesta.Crowd.Ground.DiscontinuityRepresentation",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFF_CrowdGroundBoundaryRepresentationTest::RunTest(const FString& Parameters)
+{
+    FFF_CrowdHeightField Field;
+    int32 SamplerCalls = 0;
+    const auto Diagonal = [&SamplerCalls](const FVector2D& XY, double& Z)
+    {
+        ++SamplerCalls;
+        Z = XY.X + XY.Y > .45 ? 112.0 : 100.0;
+        return true;
+    };
+    Field.Build(FVector2D(.5), .5, 1.0, Diagonal);
+    const int32 Attempts = Field.RefineDiscontinuities(5.0, .01, 100, Diagonal);
+    TestEqual(TEXT("Every boundary sampler attempt is counted"), SamplerCalls, 4 + Attempts);
+    TestEqual(TEXT("A two-class diagonal resolves one boundary"), Field.GetStats().BoundaryCellCount, 1);
+    TestEqual(TEXT("A supported diagonal remains known"), Field.GetStats().UnknownBoundaryCellCount, 0);
+    const int32 CallsAfterBake = SamplerCalls;
+    for (int32 X = 0; X < 11; ++X)
+        for (int32 Y = 0; Y < 11; ++Y)
+        {
+            const FVector2D XY(.03 + X * .09, .02 + Y * .09);
+            if (FMath::Abs(XY.X + XY.Y - .45) / FMath::Sqrt(2.0) <= .01) continue;
+            double Z = 0.0;
+            TestTrue(TEXT("Resolved class has a cached height"), Field.TryGetHeightCm(XY, Z));
+            TestEqual(TEXT("No intermediate ramp height crosses the physical step"), Z, XY.X + XY.Y > .45 ? 112.0 : 100.0, .001);
+        }
+    TestEqual(TEXT("Boundary queries never call the sampler"), SamplerCalls, CallsAfterBake);
+    double Z = 0.0;
+    TestTrue(TEXT("Refined fields retain clamped outside queries"), Field.TryGetHeightCm(FVector2D(-100, 1), Z));
+    TestEqual(TEXT("Outside query classifies its clamped position"), Z, 112.0);
+    FFF_CrowdHeightField::FCellProbe Probe;
+    Field.ProbeCell(FVector2D(-100, 1), Probe);
+    TestTrue(TEXT("Diagnostic boundary reports the same clamped high class"), Probe.bBoundaryResolved && Probe.bQueryOnHighSide);
+    Field.SetWalkableCeilingCm(105.0);
+    TestFalse(TEXT("A high class above the ceiling cannot borrow low-class support"), Field.TryGetHeightCm(FVector2D(.8), Z));
+    TestFalse(TEXT("The same excluded high class is not walkable"), Field.IsWalkable(FVector2D(.8)));
+    TestTrue(TEXT("The low class retains valid support below the ceiling"), Field.TryGetHeightCm(FVector2D(.05), Z));
+    Field.ClearWalkableCeiling();
+    Field.SetBlockUnknownGround(true);
+    Field.RefineDiscontinuities(5.0, .01, 1, Diagonal);
+    TestEqual(TEXT("Exhausted refinement uses exactly its allowed attempts"), Field.GetStats().BoundaryProbeCount, 1);
+    TestEqual(TEXT("Exhausted candidate remains explicitly unresolved"), Field.GetStats().UnknownBoundaryCellCount, 1);
+    TestFalse(TEXT("Budget exhaustion never falls back to scalar blending"), Field.TryGetHeightCm(FVector2D(.8), Z));
+    TestFalse(TEXT("Configured unknown-ground blocking applies to an unresolved boundary"), Field.IsWalkable(FVector2D(.8)));
+    const auto Checkerboard = [](const FVector2D& XY, double& Height)
+    {
+        Height = ((XY.X < .5) == (XY.Y < .5)) ? 112.0 : 100.0;
+        return true;
+    };
+    Field.Build(FVector2D(.5), .5, 1.0, Checkerboard);
+    Field.RefineDiscontinuities(5.0, .01, 100, Checkerboard);
+    TestEqual(TEXT("An ambiguous checkerboard is not guessed as one line"), Field.GetStats().UnknownBoundaryCellCount, 1);
+    TestFalse(TEXT("Checkerboard produces no invented support"), Field.TryGetHeightCm(FVector2D(.2), Z));
+    const auto Missing = [](const FVector2D& XY, double& Height)
+    {
+        Height = 100.0;
+        return XY.X < .5 || XY.Y < .5;
+    };
+    Field.Build(FVector2D(.5), .5, 1.0, Missing);
+    Field.RefineDiscontinuities(5.0, .01, 100, Missing);
+    TestFalse(TEXT("Mixed missing geometry does not fill the hole from other corners"), Field.TryGetHeightCm(FVector2D(.8), Z));
+    const auto ThirdFloor = [](const FVector2D& XY, double& Height)
+    {
+        Height = FMath::Abs(XY.X - .5) < .1 && FMath::Abs(XY.Y - .5) < .1
+            ? 106.0 : (XY.X + XY.Y > .45 ? 112.0 : 100.0);
+        return true;
+    };
+    Field.Build(FVector2D(.5), .5, 1.0, ThirdFloor);
+    Field.RefineDiscontinuities(5.0, .01, 100, ThirdFloor);
+    TestFalse(TEXT("Interior validation rejects an observed third floor"), Field.TryGetHeightCm(FVector2D(.5), Z));
+    Field.Build(FVector2D(.5), .5, 1.0, [](const FVector2D&, double& Height) { Height = 100.0; return true; });
+    TestEqual(TEXT("Rebuild clears all obsolete boundary work counters"), Field.GetStats().BoundaryProbeCount, 0);
+    Field.ProbeCell(FVector2D(.5), Probe);
+    TestFalse(TEXT("Rebuild clears boundary classification"), Probe.bHasDiscontinuity);
+    TestTrue(TEXT("Rebuilt continuous ground is available again"), Field.TryGetHeightCm(FVector2D(.5), Z));
+    Field.MarkCellUnknown(FVector2D(.5));
+    Field.MarkCellUnknown(FVector2D(.5));
+    TestEqual(TEXT("Repeated budget rejection stores only one compact marker"), Field.GetStats().UnknownBoundaryCellCount, 1);
+    TestFalse(TEXT("A rejected parent cell cannot fabricate support without an edge grid"), Field.TryGetHeightCm(FVector2D(.5), Z));
+    TestFalse(TEXT("A rejected parent cell obeys unknown-ground blocking"), Field.IsWalkable(FVector2D(.5)));
+    Field.ProbeCell(FVector2D(.5), Probe);
+    TestTrue(TEXT("Parent rejection is visible in diagnostic evidence"), Probe.bHasDiscontinuity && !Probe.bBoundaryResolved);
+    Field.Build(FVector2D(.5), .5, 1.0, [](const FVector2D&, double& Height) { Height = 100.0; return true; });
+    TestTrue(TEXT("A later rebuild clears compact rejection markers"), Field.TryGetHeightCm(FVector2D(.5), Z));
+    return true;
+}
+
 namespace
 {
 TArray<TSharedPtr<FJsonValue>> GroundVectorJson(const FVector& Value)
@@ -263,6 +523,16 @@ TSharedRef<FJsonObject> GroundCellJson(const FFF_CrowdHeightField& Field, const 
     Result->SetBoolField(TEXT("valid"), bValid);
     if (bValid)
     {
+        Result->SetBoolField(TEXT("has_discontinuity"), Probe.bHasDiscontinuity);
+        if (Probe.bHasDiscontinuity)
+        {
+            Result->SetBoolField(TEXT("boundary_resolved"), Probe.bBoundaryResolved);
+            Result->SetBoolField(TEXT("query_on_high_side"), Probe.bQueryOnHighSide);
+            Result->SetNumberField(TEXT("high_corner_mask"), Probe.HighCornerMask);
+            Result->SetNumberField(TEXT("boundary_tolerance_cm"), Probe.BoundaryToleranceCm);
+            Result->SetArrayField(TEXT("boundary_start"), GroundVectorJson(FVector(Probe.BoundaryStartCm, 0)));
+            Result->SetArrayField(TEXT("boundary_end"), GroundVectorJson(FVector(Probe.BoundaryEndCm, 0)));
+        }
         Result->SetNumberField(TEXT("spacing_cm"), FVector2D::Distance(Probe.CornerXYCm[0], Probe.CornerXYCm[1]));
         TArray<TSharedPtr<FJsonValue>> Corners;
         for (int32 Index = 0; Index < 4; ++Index)
@@ -301,16 +571,22 @@ public:
 
         const TSharedRef<FJsonObject> Report = MakeShared<FJsonObject>();
         Report->SetStringField(TEXT("world"), World->GetPathName());
-        Report->SetStringField(TEXT("scope"), TEXT("Read-only queries against production PIE ground caches and independent WorldStatic physics; no map or settings changes."));
+        Report->SetStringField(TEXT("scope"), TEXT("Read-only audit of all four current entrance approaches and any authored local refinement surfaces against production PIE ground caches and independent WorldStatic physics; no map or settings changes."));
         Report->SetNumberField(TEXT("configured_global_spacing_cm"), Crowd->HeightFieldSpacingUU);
         Report->SetNumberField(TEXT("cliff_step_cm"), Crowd->HeightFieldCliffStepUU);
         Report->SetNumberField(TEXT("refinement_count"), Crowd->GetGroundRefinementCount());
         Report->SetNumberField(TEXT("refinement_sample_count"), Crowd->GetGroundRefinementSampleCount());
         Report->SetNumberField(TEXT("refinement_sample_payload_bytes"), Crowd->GetGroundRefinementSampleCount() * (sizeof(double) + sizeof(uint8)));
         Report->SetNumberField(TEXT("refinement_build_ms"), Crowd->GetGroundRefinementBuildSeconds() * 1000.0);
+        Report->SetNumberField(TEXT("gate_refinement_count"), Crowd->GetGateGroundRefinementCount());
+        Report->SetNumberField(TEXT("gate_refinement_sample_count"), Crowd->GetGateGroundRefinementSampleCount());
+        Report->SetStringField(TEXT("gate_refinement_sample_count_definition"), TEXT("Grid vertices plus every boundary sampler attempt, including rejected cells."));
+        Report->SetNumberField(TEXT("gate_refinement_cache_allocated_bytes"), static_cast<double>(Crowd->GetGateGroundRefinementAllocatedBytes()));
+        Report->SetNumberField(TEXT("gate_refinement_edge_cell_count"), Crowd->GetGateGroundEdgeRefinementCount());
+        Report->SetNumberField(TEXT("gate_refinement_build_ms"), Crowd->GetGateGroundRefinementBuildSeconds() * 1000.0);
+        Test->TestEqual(TEXT("All four production entrances have bounded ground refinements"), Crowd->GetGateGroundRefinementCount(), 4);
         Report->SetNumberField(TEXT("surface_error_limit_cm"), 5.0);
         Test->TestEqual(TEXT("Production keeps its 500 cm global sampling setting"), Crowd->HeightFieldSpacingUU, 500.f);
-        Test->TestEqual(TEXT("Both explicit walkways have cached ground refinements"), Crowd->GetGroundRefinementCount(), 2);
 
         // Match RebuildHeightField's channel, ignored actors, trace span and
         // navigation rejection. This traces anew only in the automation audit.
@@ -342,7 +618,130 @@ public:
             return false;
         };
 
-        TSet<FString> ExpectedLabels {TEXT("FF_CrowdWalkway_DeckDescent"), TEXT("FF_CrowdWalkway_ParkingGate3")};
+        // The October layout replaces the legacy deck/parking repair cubes.
+        // Audit the actual four entrance approaches independently of refinement
+        // tags so an empty tag collection can never turn this into a vacuous pass.
+        TArray<TSharedPtr<FJsonValue>> GateApproaches;
+        constexpr double ApproachLengthCm = 500.0;
+        const TCHAR* const ExpectedGateNames[] = {TEXT("1"), TEXT("2"), TEXT("3"), TEXT("4")};
+        FNavLocation CenterNav;
+        const bool bCenterProjects = Test->TestTrue(TEXT("Production simulation center projects to navigation"),
+            Navigation->ProjectPointToNavigation(Crowd->SimOrigin, CenterNav, FVector(300, 300, 2000), Data));
+        for (const TCHAR* GateName : ExpectedGateNames)
+        {
+            const FString Label = FString::Printf(TEXT("Gate %s approach"), GateName);
+            const FName GateId(GateName);
+            const FFF_CrowdGate* Gate = Crowd->GetValidGates().FindByPredicate(
+                [GateId](const FFF_CrowdGate& Candidate) { return Candidate.GateId == GateId; });
+            const TSharedRef<FJsonObject> Approach = MakeShared<FJsonObject>();
+            Approach->SetStringField(TEXT("gate"), GateName);
+            GateApproaches.Add(MakeShared<FJsonValueObject>(Approach));
+            if (!Test->TestTrue(Label + TEXT(": the authored entrance survives runtime validation"),
+                Gate && Gate->bAllowSpawn) || !bCenterProjects) continue;
+
+            FPathFindingQuery Query(nullptr, *Data, Gate->GateLocation, CenterNav.Location);
+            Query.SetAllowPartialPaths(false);
+            const FPathFindingResult Forward = Navigation->FindPathSync(Query);
+            FPathFindingQuery ReverseQuery(nullptr, *Data, CenterNav.Location, Gate->GateLocation);
+            ReverseQuery.SetAllowPartialPaths(false);
+            const FPathFindingResult Reverse = Navigation->FindPathSync(ReverseQuery);
+            const auto IsComplete = [](const FPathFindingResult& Result)
+            {
+                return Result.IsSuccessful() && !Result.IsPartial() && Result.Path.IsValid()
+                    && Result.Path->GetPathPoints().Num() >= 2;
+            };
+            Approach->SetBoolField(TEXT("forward_complete"), IsComplete(Forward));
+            Approach->SetBoolField(TEXT("reverse_complete"), IsComplete(Reverse));
+            Test->TestTrue(Label + TEXT(": return route to the entrance is complete"), IsComplete(Reverse));
+            if (!Test->TestTrue(Label + TEXT(": route into the festival is complete"), IsComplete(Forward))) continue;
+
+            TArray<TSharedPtr<FJsonValue>> Samples;
+            int32 MissingSamples = 0, BlockedSamples = 0;
+            double MaxError = 0, MaxExcessJump = 0, AuditedDistance = 0;
+            const TArray<FNavPathPoint>& PathPoints = Forward.Path->GetPathPoints();
+            for (const double Side : {-50.0, 0.0, 50.0})
+            {
+                double Distance = 0, PreviousGround = 0, PreviousPhysical = 0;
+                bool bHasPrevious = false;
+                for (int32 Segment = 1; Segment < PathPoints.Num() && Distance < ApproachLengthCm; ++Segment)
+                {
+                    const FVector Start = PathPoints[Segment - 1].Location;
+                    const FVector End = PathPoints[Segment].Location;
+                    const double SegmentLength = FVector::Dist2D(Start, End);
+                    if (SegmentLength <= UE_SMALL_NUMBER) continue;
+                    const double Length = FMath::Min(SegmentLength, ApproachLengthCm - Distance);
+                    const FVector Along = (End - Start).GetSafeNormal2D();
+                    const FVector Across(-Along.Y, Along.X, 0);
+                    // A turn rotates the offset lane. Its two corner samples
+                    // are not adjacent 10 cm steps, so do not compare them as
+                    // a vertical jump. Both retain the independent 5 cm floor gate.
+                    bHasPrevious = false;
+                    const int32 Steps = FMath::Max(1, FMath::CeilToInt(Length / 10.0));
+                    for (int32 Index = 0; Index <= Steps; ++Index)
+                    {
+                        const double AlongDistance = Length * static_cast<double>(Index) / Steps;
+                        const FVector Point = FMath::Lerp(Start, End, AlongDistance / SegmentLength) + Across * Side;
+                        FHitResult Hit, ComplexHit;
+                        FVector Projected, ComplexProjected;
+                        double GroundZ = 0;
+                        const bool bFloor = TraceFloor(Point, false, Hit, Projected);
+                        const bool bComplex = TraceFloor(Point, true, ComplexHit, ComplexProjected);
+                        const bool bGround = Crowd->TryGetGroundZ(Point, GroundZ);
+                        const bool bWalkable = Crowd->IsGroundWalkable(Point);
+                        const TSharedRef<FJsonObject> Sample = MakeShared<FJsonObject>();
+                        Sample->SetNumberField(TEXT("path_segment"), Segment);
+                        Sample->SetNumberField(TEXT("distance_from_gate_cm"), Distance + AlongDistance);
+                        Sample->SetNumberField(TEXT("side_cm"), Side);
+                        Sample->SetArrayField(TEXT("requested"), GroundVectorJson(Point));
+                        Sample->SetBoolField(TEXT("physical_floor_found"), bFloor);
+                        Sample->SetBoolField(TEXT("ground_query_succeeded"), bGround);
+                        Sample->SetBoolField(TEXT("walkable"), bWalkable);
+                        Sample->SetObjectField(TEXT("selected_cell"),
+                            GroundCellJson(Crowd->GetHeightFieldAt(FVector2D(Point.X, Point.Y)), FVector2D(Point.X, Point.Y)));
+                        if (bGround) Sample->SetNumberField(TEXT("ground_z"), GroundZ);
+                        if (bFloor)
+                        {
+                            Sample->SetArrayField(TEXT("physical_floor"), GroundVectorJson(Hit.ImpactPoint));
+                            Sample->SetStringField(TEXT("physical_actor"), Hit.GetActor() ? Hit.GetActor()->GetActorLabel() : FString());
+                        }
+                        if (bComplex) Sample->SetArrayField(TEXT("complex_floor"), GroundVectorJson(ComplexHit.ImpactPoint));
+                        if (bGround && bFloor)
+                        {
+                            const double Error = FMath::Abs(GroundZ - Hit.ImpactPoint.Z);
+                            Sample->SetNumberField(TEXT("absolute_error_cm"), Error);
+                            MaxError = FMath::Max(MaxError, Error);
+                            if (bHasPrevious) MaxExcessJump = FMath::Max(MaxExcessJump,
+                                FMath::Abs(GroundZ - PreviousGround) - FMath::Abs(Hit.ImpactPoint.Z - PreviousPhysical));
+                            PreviousGround = GroundZ;
+                            PreviousPhysical = Hit.ImpactPoint.Z;
+                            bHasPrevious = true;
+                        }
+                        else { ++MissingSamples; bHasPrevious = false; }
+                        BlockedSamples += !bWalkable;
+                        Samples.Add(MakeShared<FJsonValueObject>(Sample));
+                    }
+                    Distance += Length;
+                }
+                AuditedDistance = Distance;
+                Test->TestTrue(Label + TEXT(": every lane covers the full 500 cm entrance approach"),
+                    FMath::IsNearlyEqual(Distance, ApproachLengthCm, .01));
+            }
+            Approach->SetNumberField(TEXT("audited_distance_cm"), AuditedDistance);
+            Approach->SetNumberField(TEXT("missing_samples"), MissingSamples);
+            Approach->SetNumberField(TEXT("blocked_samples"), BlockedSamples);
+            Approach->SetNumberField(TEXT("max_ground_error_cm"), MaxError);
+            Approach->SetNumberField(TEXT("max_excess_height_jump_cm"), MaxExcessJump);
+            Approach->SetArrayField(TEXT("samples"), Samples);
+            Test->TestTrue(Label + TEXT(": all three lanes contain dense physical samples"), Samples.Num() >= 153);
+            Test->TestEqual(Label + TEXT(": every physical floor and cached ground query exists"), MissingSamples, 0);
+            Test->TestEqual(Label + TEXT(": audited entrance lanes are walkable"), BlockedSamples, 0);
+            Test->TestTrue(Label + TEXT(": feet stay within 5 cm of actual physics"), MaxError <= 5.0);
+            Test->TestTrue(Label + TEXT(": no extra vertical jump above 5 cm"), MaxExcessJump <= 5.0);
+            Test->AddInfo(FString::Printf(TEXT("%s: samples=%d maxError=%.3f cm excessJump=%.3f cm"),
+                *Label, Samples.Num(), MaxError, MaxExcessJump));
+        }
+        Report->SetArrayField(TEXT("gate_approaches"), GateApproaches);
+
         TArray<TSharedPtr<FJsonValue>> Walkways;
         int32 TaggedActors = 0;
         for (TActorIterator<AActor> It(World); It; ++It)
@@ -354,7 +753,6 @@ public:
             Walkway->SetStringField(TEXT("label"), Label);
             Walkway->SetStringField(TEXT("actor"), It->GetPathName());
             Walkways.Add(MakeShared<FJsonValueObject>(Walkway));
-            Test->TestTrue(TEXT("Each tagged walkway has its expected unique production label"), ExpectedLabels.Remove(Label) == 1);
             const AStaticMeshActor* Actor = Cast<AStaticMeshActor>(*It);
             const UStaticMeshComponent* Component = Actor ? Actor->GetStaticMeshComponent() : nullptr;
             if (!Test->TestTrue(TEXT("Production refinement is a static cube with query collision"),
@@ -543,8 +941,8 @@ public:
         }
         Report->SetArrayField(TEXT("walkways"), Walkways);
         Report->SetNumberField(TEXT("tagged_actor_count"), TaggedActors);
-        Test->TestEqual(TEXT("Exactly the two authored production walkways are tagged"), TaggedActors, 2);
-        Test->TestTrue(TEXT("Both named production walkways were audited"), ExpectedLabels.IsEmpty());
+        Test->TestEqual(TEXT("Every authored tagged surface has a cached refinement"),
+            Crowd->GetGroundRefinementCount(), TaggedActors);
         const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation/CrowdGroundRefinement"));
         IFileManager::Get().MakeDirectory(*Directory, true);
         const FString Path = FPaths::Combine(Directory,

@@ -28,6 +28,7 @@
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Framework/Application/SlateApplication.h"
@@ -165,7 +166,7 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     Festival->InitialGold = 100000;
     Economy->StartFestival(Festival.Get());
 
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    const FName ZoneId(FFProjectZoneTest::ZoneId());
     AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
     if (!TestNotNull(TEXT("Fixture zone"), Zone) ||
         !TestTrue(TEXT("Accepted zone preset"), Zone->ApplyAcceptedZonePreset(ZoneId)) ||

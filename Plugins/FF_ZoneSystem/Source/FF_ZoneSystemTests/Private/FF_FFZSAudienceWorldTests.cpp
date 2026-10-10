@@ -13,6 +13,7 @@
 #include "FF_FFZSSaveGameTestObject.h"
 #include "Kismet/GameplayStatics.h"
 #include "Tests/FF_FFZSTestFixtures.h"
+#include "FF_FFZSProjectZoneTestFixture.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSAudienceWorldTest, "FF_ZoneSystem.Audience.InstanceLookupAndSaveGame",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -22,9 +23,8 @@ bool FFFZSAudienceWorldTest::RunTest(const FString& Parameters)
     UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
     if (!TestNotNull(TEXT("World exists"), World) || !TestNotNull(TEXT("Facility registry exists"), Zones)) return false;
     AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
-    if (!Zone) return false;
-    Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha"));
-    if (!Zones->RegisterZone(Zone)) return false;
+    if (!FFZSTest::ApplyZonePreset(*this, Zone) ||
+        !TestTrue(TEXT("Audience fixture zone registers"), Zones->RegisterZone(Zone))) return false;
     FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec();
     Spec.Audience.bEnabled = true;
     Spec.Audience.FirstSlotLocalCm = FVector(-760, 3000, 0);

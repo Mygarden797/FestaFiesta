@@ -27,6 +27,12 @@ enum class EFFZSTestFacilityVariant : uint8
 
 namespace FFZSTest
 {
+    // Project Settings의 허용 목록을 실제로 통과시키는 합성 월드용 ID다.
+    // 지면·시설 모양은 각 테스트가 만들며, 운영 맵의 Zone Definition은 로드하지 않는다.
+    // 구역 개편 시 이 두 계약만 갱신한다. 테스트를 위해 ID 제한을 해제하지 않는다.
+    inline FName ProjectZoneId() { return FName(TEXT("GZ_Beach01")); }
+    inline FName SecondaryProjectZoneId() { return FName(TEXT("GZ_Beach02")); }
+
     /** 다른 테스트의 변경이 섞이지 않도록 새로운 정상 시설 데이터를 만들어 반환한다. */
     FF_ZONESYSTEM_API FFFZSFacilitySpec MakeValidFacilitySpec(
         EFFZSTestFacilityVariant Variant = EFFZSTestFacilityVariant::FoodTruck);
