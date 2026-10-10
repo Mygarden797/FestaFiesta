@@ -14,6 +14,7 @@
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Misc/AutomationTest.h"
@@ -95,7 +96,7 @@ bool FFF_BuildQueueLayoutDraftTest::RunTest(const FString& Parameters)
     Economy->StartFestival(Festival.Get());
     Zones->SetChangePhase(EFFZSChangePhase::InitialSetup);
     AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
-    if (!Zone || !Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+    if (!FFProjectZoneTest::RegisterZone(*this, Zone, Zones)) return false;
     ON_SCOPE_EXIT
     {
         Build->EndDragPlacement();

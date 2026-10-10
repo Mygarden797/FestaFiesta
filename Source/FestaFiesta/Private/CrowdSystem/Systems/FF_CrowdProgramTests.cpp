@@ -6,6 +6,7 @@
 #include "CrowdSystem/Systems/FF_CrowdDecisionSubsystem.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSAudienceLibrary.h"
 #include "FF_FFZSDeveloperSettings.h"
@@ -211,7 +212,7 @@ bool FFF_CrowdProgramNoCandidates::RunTest(const FString& Parameters)
 	UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
 	if (!TestNotNull(TEXT("Decision subsystem"), Decision) || !TestNotNull(TEXT("Zone"), Zone)) return false;
-	if (!TestTrue(TEXT("Zone preset"), Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")))
+	if (!TestTrue(TEXT("Zone preset"), Zone->ApplyAcceptedZonePreset(FFProjectZoneTest::ZoneId()))
 		|| !TestTrue(TEXT("Zone registration"), Zones->RegisterZone(Zone))) return false;
 	FVector2D Center = FVector2D::ZeroVector;
 	const TArray<FVector2D> Polygon = Zone->GetBoundaryPolygonLocalCm();
@@ -436,7 +437,7 @@ bool FFF_CrowdAudienceLifecycle::RunTest(const FString& Parameters)
 	auto* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
 	if (!TestNotNull(TEXT("Zones"), Zones) || !TestNotNull(TEXT("Zone"), Zone)) return false;
-	if (!Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+	if (!FFProjectZoneTest::RegisterZone(*this, Zone, Zones)) return false;
 
 	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::Performance);
 	Spec.FacilityDefinitionId = TEXT("Performance_MainStage_SunsetMainStage");
@@ -801,7 +802,7 @@ bool FFF_CrowdWanderZoneConfinement::RunTest(const FString& Parameters)
 	UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
 	if (!TestNotNull(TEXT("Zone subsystem"), Zones) || !TestNotNull(TEXT("Zone"), Zone)) { return false; }
-	if (!TestTrue(TEXT("Zone preset"), Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")))
+	if (!TestTrue(TEXT("Zone preset"), Zone->ApplyAcceptedZonePreset(FFProjectZoneTest::ZoneId()))
 		|| !TestTrue(TEXT("Zone registration"), Zones->RegisterZone(Zone))) { return false; }
 
 	const TArray<FVector2D> Polygon = Zone->GetBoundaryPolygonLocalCm();

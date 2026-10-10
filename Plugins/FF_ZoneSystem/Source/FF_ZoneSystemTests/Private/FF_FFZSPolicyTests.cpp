@@ -25,6 +25,7 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "Tests/FF_FFZSTestFixtures.h"
+#include "FF_FFZSProjectZoneTestFixture.h"
 #include "Tests/AutomationEditorCommon.h"
 
 namespace
@@ -55,15 +56,12 @@ namespace
         }
     };
 
-    AFFZSGameplayZone* AddTestZone(UWorld& World, UFFZSWorldSubsystem& Subsystem)
+    AFFZSGameplayZone* AddTestZone(FAutomationTestBase& Test, UWorld& World, UFFZSWorldSubsystem& Subsystem)
     {
         AFFZSGameplayZone* Zone = World.SpawnActor<AFFZSGameplayZone>();
-        if (Zone)
-        {
-            Zone->ZoneId = TEXT("GZ_DadaPocha");
-            Zone->DisplayName = FText::FromString(TEXT("Policy Test Zone"));
-            Subsystem.RegisterZone(Zone);
-        }
+        if (!FFZSTest::ApplyZonePreset(Test, Zone)) return nullptr;
+        Zone->DisplayName = FText::FromString(TEXT("Policy Test Zone"));
+        if (!Test.TestTrue(TEXT("Policy fixture zone registers"), Subsystem.RegisterZone(Zone))) return nullptr;
         return Zone;
     }
 }
@@ -86,7 +84,7 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
 
     UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
     if (!TestNotNull(TEXT("FF_ZoneSystem 서브시스템이 존재한다"), Subsystem) ||
-        !TestNotNull(TEXT("게임플레이 구역이 존재한다"), AddTestZone(*World, *Subsystem)))
+        !TestNotNull(TEXT("게임플레이 구역이 존재한다"), AddTestZone(*this, *World, *Subsystem)))
     {
         return false;
     }
@@ -112,7 +110,7 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
     // q0, 1 Cell=1 cm: 기존 (10,10) 100 cm Cell 위치인 월드 (10 m,10 m)를 (1000,1000)으로 보존한다.
     FFFZSCommand Rejected = UFFZSGridLibrary::MakeInstallCommand(
         Spec,
-        TEXT("GZ_DadaPocha"),
+        FFZSTest::ProjectZoneId(),
         FFFZSGridPlacement{FIntPoint(1000, 1000), 0},
         Subsystem->GetWorldRevision());
 
@@ -134,7 +132,7 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
     // q0, 1 Cell=1 cm: 기존 (30,10)은 같은 물리 위치를 뜻하는 (3000,1000) Cell로 이관한다.
     FFFZSCommand Accepted = UFFZSGridLibrary::MakeInstallCommand(
         Spec,
-        TEXT("GZ_DadaPocha"),
+        FFZSTest::ProjectZoneId(),
         FFFZSGridPlacement{FIntPoint(3000, 1000), 0},
         Subsystem->GetWorldRevision());
 
@@ -161,10 +159,10 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
         return false;
     }
     RegisteredArea->ProtectedAreaId = TEXT("PA_PolicyRegistered");
-    RegisteredArea->LinkedZoneId = TEXT("GZ_DadaPocha");
+    RegisteredArea->LinkedZoneId = FFZSTest::ProjectZoneId();
     RegisteredArea->SetActorLocation(FVector(200000.0, 200000.0, 0.0));
     CandidateArea->ProtectedAreaId = TEXT("PA_PolicyCandidate");
-    CandidateArea->LinkedZoneId = TEXT("GZ_DadaPocha");
+    CandidateArea->LinkedZoneId = FFZSTest::ProjectZoneId();
     CandidateArea->SetActorLocation(FVector(210000.0, 210000.0, 0.0));
     TestTrue(TEXT("기준 보호 구역이 등록된다"), Subsystem->RegisterProtectedArea(RegisteredArea));
 
@@ -177,7 +175,7 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
     Mutator->bAttemptAuthorityMutationsOnPreValidate = true;
     Mutator->MutationSubsystem = Subsystem;
     Mutator->ZoneToRegister = CandidateZone;
-    Mutator->ZoneToUnregister = Subsystem->FindZone(TEXT("GZ_DadaPocha"));
+    Mutator->ZoneToUnregister = Subsystem->FindZone(FFZSTest::ProjectZoneId());
     Mutator->ProtectedAreaToRegister = CandidateArea;
     Mutator->ProtectedAreaToUnregister = RegisteredArea;
     Mutator->PolicyToRegister = CandidatePolicy;
@@ -188,7 +186,7 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
     // q0, 1 Cell=1 cm: 기존 (50,10)은 같은 물리 위치를 뜻하는 (5000,1000) Cell로 이관한다.
     FFFZSCommand Guarded = UFFZSGridLibrary::MakeInstallCommand(
         Spec,
-        TEXT("GZ_DadaPocha"),
+        FFZSTest::ProjectZoneId(),
         FFFZSGridPlacement{FIntPoint(5000, 1000), 0},
         Subsystem->GetWorldRevision());
     const FFFZSCommandResult GuardedResult = Subsystem->ExecuteCommand(Guarded);
@@ -201,7 +199,7 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("정책 콜백은 다른 정책을 등록할 수 없다"), Mutator->bRegisterPolicyAttemptSucceeded);
     TestFalse(TEXT("정책 콜백은 다른 정책의 등록을 해제할 수 없다"), Mutator->bUnregisterPolicyAttemptSucceeded);
     TestEqual(TEXT("워크플로 단계가 변경되지 않는다"), Subsystem->GetChangePhase(), EFFZSChangePhase::InitialSetup);
-    TestNotNull(TEXT("등록된 구역이 권위 레지스트리에 유지된다"), Subsystem->FindZone(TEXT("GZ_DadaPocha")));
+    TestNotNull(TEXT("등록된 구역이 권위 레지스트리에 유지된다"), Subsystem->FindZone(FFZSTest::ProjectZoneId()));
     TestNull(TEXT("후보 구역이 삽입되지 않는다"), Subsystem->FindZone(TEXT("GZ_Operations")));
     TestTrue(TEXT("등록된 보호 구역이 계속 등록되어 있다"), Subsystem->UnregisterProtectedArea(RegisteredArea));
     TestFalse(TEXT("후보 보호 구역이 삽입되지 않는다"), Subsystem->UnregisterProtectedArea(CandidateArea));

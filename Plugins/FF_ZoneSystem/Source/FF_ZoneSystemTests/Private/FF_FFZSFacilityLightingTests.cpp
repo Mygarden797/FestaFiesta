@@ -41,7 +41,7 @@ bool FFFZSFacilityLightingLifecycleTest::RunTest(const FString& Parameters)
     Spec.LightingSettings.BrightnessMultiplier = 1.5f;
     AFFZSFacilityActor* Actor = World->SpawnActor<AFFZSFacilityActor>();
     if (!TestTrue(TEXT("Initialize lit facility"), Actor && Actor->InitializeFacility(
-        FGuid::NewGuid(), Spec, TEXT("GZ_DadaPocha"), FFFZSGridPlacement(), FTransform::Identity))) return false;
+        FGuid::NewGuid(), Spec, FFZSTest::ProjectZoneId(), FFFZSGridPlacement(), FTransform::Identity))) return false;
     AFFZSLightingTestRig* Rig = Cast<AFFZSLightingTestRig>(Actor->GetLightingRig());
     if (!TestNotNull(TEXT("Configured child rig is created"), Rig)) return false;
     TestTrue(TEXT("Lighting child attaches to mesh"), Actor->FacilityLightingComponent->GetAttachParent() == Actor->VisualMesh);
@@ -75,7 +75,7 @@ bool FFFZSFacilityLightingLifecycleTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Range scales from authored radius"), Rig->TestLight->AttenuationRadius, 800.f);
     TestTrue(TEXT("Scaled light remains on matching fixture"), Rig->TestLight->GetComponentLocation().Equals(
         Actor->VisualMesh->GetComponentTransform().TransformPosition(FVector(17, -31, 93)), 0.01));
-    TestTrue(TEXT("Move succeeds"), Actor->ApplyPlacement(TEXT("GZ_DadaPocha"), FFFZSGridPlacement(),
+    TestTrue(TEXT("Move succeeds"), Actor->ApplyPlacement(FFZSTest::ProjectZoneId(), FFFZSGridPlacement(),
         FTransform(FRotator(0, 38, 0), FVector(500, 250, 0))));
     TestTrue(TEXT("Move reuses one rig"), Actor->GetLightingRig() == Rig);
     TestEqual(TEXT("Move does not double attenuation"), Rig->TestLight->AttenuationRadius, 800.f);
@@ -127,7 +127,7 @@ bool FFFZSFacilityLightingValidationTest::RunTest(const FString& Parameters)
     State.Color.R = std::numeric_limits<float>::infinity();
     TestFalse(TEXT("Nonfinite color rejected"), State.IsValid());
     FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommand(FFZSTest::MakeValidFacilitySpec(),
-        TEXT("GZ_DadaPocha"), FFFZSGridPlacement(), 0);
+        FFZSTest::ProjectZoneId(), FFFZSGridPlacement(), 0);
     const FString DefaultFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
     TestFalse(TEXT("Legacy default fingerprint has no lighting extension"), DefaultFingerprint.Contains(TEXT("spec.lighting.")));
     Command.FacilitySpec.LightingSettings.LightingRigClass = AFFZSLightingTestRig::StaticClass();

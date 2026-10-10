@@ -22,6 +22,7 @@
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerInput.h"
 #include "HAL/FileManager.h"
@@ -168,7 +169,7 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 		}
 	}
 	if (!TestFalse(TEXT("Authored data has a facility matching only part of the collection"), SelectedDefinitionId.IsNone())) return false;
-	const FName ZoneId(TEXT("GZ_DadaPocha"));
+	const FName ZoneId(FFProjectZoneTest::ZoneId());
 	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
 	if (!TestNotNull(TEXT("Launcher fixture zone"), Zone) ||
 		!TestTrue(TEXT("Launcher fixture zone preset"), Zone->ApplyAcceptedZonePreset(ZoneId)) ||

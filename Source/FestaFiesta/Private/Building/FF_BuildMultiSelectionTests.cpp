@@ -20,6 +20,7 @@
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "GameFramework/PlayerInput.h"
@@ -159,7 +160,7 @@ bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 	Festival->InitialGold = 10000;
 	Progression->StartFestival(Festival);
 
-	const FName ZoneId(TEXT("GZ_DadaPocha"));
+	const FName ZoneId(FFProjectZoneTest::ZoneId());
 	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
 	if (!TestNotNull(TEXT("Build zone"), Zone) ||
 		!TestTrue(TEXT("Zone preset"), Zone->ApplyAcceptedZonePreset(ZoneId)) ||

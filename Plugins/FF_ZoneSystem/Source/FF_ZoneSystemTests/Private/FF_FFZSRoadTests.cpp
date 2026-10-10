@@ -21,6 +21,7 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "StaticMeshCompiler.h"
 #include "Tests/FF_FFZSTestFixtures.h"
+#include "FF_FFZSProjectZoneTestFixture.h"
 
 namespace
 {
@@ -64,7 +65,7 @@ namespace
     {
         FFFZSGridPlacement Placement;
         Placement.OriginCell = Origin;
-        return UFFZSGridLibrary::MakeInstallCommand(Spec, TEXT("GZ_DadaPocha"), Placement);
+        return UFFZSGridLibrary::MakeInstallCommand(Spec, FFZSTest::ProjectZoneId(), Placement);
     }
 
     FFFZSCommand MoveTo(const FGuid Id, const FIntPoint Origin)
@@ -74,19 +75,19 @@ namespace
         Command.TransactionId = FGuid::NewGuid();
         Command.Type = EFFZSCommandType::Move;
         Command.FacilityInstanceId = Id;
-        Command.ZoneId = TEXT("GZ_DadaPocha");
+        Command.ZoneId = FFZSTest::ProjectZoneId();
         Command.Placement.OriginCell = Origin;
         return Command;
     }
 
-    UFFZSWorldSubsystem* PrepareRoadWorld(UWorld& World)
+    UFFZSWorldSubsystem* PrepareRoadWorld(FAutomationTestBase& Test, UWorld& World)
     {
         UFFZSWorldSubsystem* System = World.GetSubsystem<UFFZSWorldSubsystem>();
         AFFZSGameplayZone* Zone = World.SpawnActor<AFFZSGameplayZone>();
-        if (!System || !Zone) return nullptr;
-        Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha"));
+        if (!Test.TestNotNull(TEXT("Road fixture subsystem"), System) ||
+            !FFZSTest::ApplyZonePreset(Test, Zone)) return nullptr;
         Zone->bAllowAllFacilityCategories = true;
-        return System->RegisterZone(Zone) ? System : nullptr;
+        return Test.TestTrue(TEXT("Road fixture zone registers"), System->RegisterZone(Zone)) ? System : nullptr;
     }
 
     AActor* SpawnRoadTestBox(UWorld& World, const FVector& Location, const FVector& Extent)
@@ -115,7 +116,7 @@ bool FFFZSPassiveFootprintTest::RunTest(const FString& Parameters)
 {
     FScopedRoadSettings Settings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Passive placement world"), System)) return false;
     int32 Row = 0;
     for (const EFFZSFacilityCategory Category : {
@@ -222,7 +223,7 @@ bool FFFZSRoadLayerLifecycleTest::RunTest(const FString& Parameters)
 {
     FScopedRoadSettings Settings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Tile test world registers"), System)) return false;
     const FFFZSFacilitySpec TileSpec = MakeTileSpec();
     const FFFZSCommand Tile = InstallAt(TileSpec, FIntPoint(1000, 1000));
@@ -317,7 +318,7 @@ bool FFFZSRoadLayerLifecycleTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("Restored Road still blocks upper facilities"), System->ValidatePlacement(BlockedFacility).bIsValid);
     TestTrue(TEXT("Road install receipt survives restore"), System->ExecuteCommand(Road).bWasDuplicateReplay);
     TestTrue(TEXT("Tile install receipt survives restore"), System->ExecuteCommand(Tile).bWasDuplicateReplay);
-    TestEqual(TEXT("Revalidation preserves a valid layered world"), System->RevalidateFacilitiesInZone(TEXT("GZ_DadaPocha")), 0);
+    TestEqual(TEXT("Revalidation preserves a valid layered world"), System->RevalidateFacilitiesInZone(FFZSTest::ProjectZoneId()), 0);
     FFFZSCommand CloseTile = MoveTo(Tile.FacilityInstanceId, FIntPoint(1000, 1000));
     CloseTile.Type = EFFZSCommandType::Close;
     TestTrue(TEXT("Restored tile closes"), System->ExecuteCommand(CloseTile).bSucceeded);
@@ -364,7 +365,7 @@ bool FFFZSLegacyRoadMigrationTest::RunTest(const FString& Parameters)
 {
     FScopedRoadSettings Settings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Migration world"), System)) return false;
     FFFZSFacilitySpec BuiltInSpec = MakeTileSpec();
     BuiltInSpec.FacilityDefinitionId = TEXT("Tile_Surface_Sand");
@@ -517,7 +518,7 @@ bool FFFZSRoadPhysicalSurfaceTest::RunTest(const FString& Parameters)
         const bool bIsTile = Category == EFFZSFacilityCategory::Tile;
         const FString Label = bIsTile ? TEXT("Tile: ") : TEXT("Road: ");
         UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-        UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
+        UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*this, *World) : nullptr;
         if (!TestNotNull(Label + TEXT("world"), System)) return false;
         if (!TestNotNull(Label + TEXT("physical terrain"), SpawnRoadTestBox(*World,
             FVector(5000, 5000, -10), FVector(6000, 6000, 10)))) return false;
@@ -592,7 +593,7 @@ bool FFFZSRoadSpatialGroundTest::RunTest(const FString& Parameters)
     TArray<UStaticMesh*> MeshesToFinish{Cube};
     FStaticMeshCompilingManager::Get().FinishCompilation(MeshesToFinish);
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Ground sampling world"), System) ||
         !TestNotNull(TEXT("Terrain under both zones"), SpawnRoadTestBox(*World,
             FVector(10000, 5000, -10), FVector(20000, 6000, 10)))) return false;
@@ -620,8 +621,7 @@ bool FFFZSRoadSpatialGroundTest::RunTest(const FString& Parameters)
     CheckTerrainHeight(TEXT("Touching spatial candidate"));
 
     AFFZSGameplayZone* RemoteZone = World->SpawnActor<AFFZSGameplayZone>();
-    if (!TestNotNull(TEXT("Second zone"), RemoteZone) ||
-        !TestTrue(TEXT("Second accepted zone"), RemoteZone->ApplyAcceptedZonePreset(TEXT("GZ_SunsetBeachClub")))) return false;
+    if (!FFZSTest::ApplyZonePreset(*this, RemoteZone, FFZSTest::SecondaryProjectZoneId())) return false;
     RemoteZone->SetActorLocation(FVector(20000, 0, 0));
     RemoteZone->bAllowAllFacilityCategories = true;
     if (!TestTrue(TEXT("Second zone registers"), System->RegisterZone(RemoteZone))) return false;
@@ -724,7 +724,7 @@ bool FFFZSPlacedFacilityCountTest::RunTest(const FString& Parameters)
 {
     FScopedRoadSettings Settings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Facility count world"), System)) return false;
     TestEqual(TEXT("Empty registry has no placed facilities"), System->GetPlacedFacilityCount(), 0);
     const FFFZSCommand Road = InstallAt(MakeRoadSpec(), FIntPoint(1000, 1000));
@@ -753,7 +753,7 @@ bool FFFZSRoadProductionCollisionTest::RunTest(const FString& Parameters)
     FScopedRoadSettings Settings;
     Settings.Settings->bEnableGroundChecks = true;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
+    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*this, *World) : nullptr;
     if (!TestNotNull(TEXT("Production road world"), System)) return false;
     if (!TestNotNull(TEXT("Physical terrain"), SpawnRoadTestBox(*World,
         FVector(5000, 5000, -10), FVector(6000, 6000, 10)))) return false;

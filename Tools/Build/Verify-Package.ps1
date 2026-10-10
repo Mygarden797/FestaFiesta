@@ -96,6 +96,53 @@ function Assert-NoRuntimeSavedDirectories {
         -Message "Runtime Saved directories must not be included in a release payload: $($savedPaths -join ', ')"
 }
 
+function Assert-PresentationRuntimeFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Root
+    )
+
+    # These are loose runtime files, so the IoStore asset list cannot prove their
+    # presence. The intro deliberately skips a missing movie and the catalogue
+    # can fall back to native Slate; startup success would hide either omission.
+    $requiredPaths = @(
+        'FestaFiesta/Content/Movies/FF_Intro_SpaceFireworks.mp4',
+        'Engine/Binaries/Win64/EpicWebHelper.exe'
+    )
+    $cefRoot = Join-Path $Root 'Engine/Binaries/ThirdParty/CEF3/Win64'
+    $cefLibraries = @()
+    if (Test-Path -LiteralPath $cefRoot -PathType Container) {
+        $cefLibraries = @(Get-ChildItem -LiteralPath $cefRoot -Recurse -File -Filter 'libcef.dll')
+    }
+    Assert-Condition -Condition ($cefLibraries.Count -eq 1) `
+        -Message "Expected one Win64 CEF runtime for the building catalogue; found $($cefLibraries.Count) libcef.dll files below: $cefRoot"
+
+    # UE 5.7.4 CEF3.Build.cs declares these runtime dependencies. Discover the
+    # version directory rather than embedding a Chromium version in our tool.
+    # Every companion must belong to that same runtime, not another CEF copy.
+    $cefRelativeRoot = $cefLibraries[0].Directory.FullName.Substring(
+        ([System.IO.Path]::GetFullPath($Root)).TrimEnd([char[]]'\/').Length + 1).Replace('\', '/')
+    $cefCompanions = @(
+        'libcef.dll', 'chrome_elf.dll', 'd3dcompiler_47.dll', 'libEGL.dll', 'libGLESv2.dll',
+        'dxcompiler.dll', 'dxil.dll', 'vk_swiftshader.dll', 'vulkan-1.dll', 'icudtl.dat',
+        'chrome_100_percent.pak', 'chrome_200_percent.pak', 'resources.pak',
+        'snapshot_blob.bin', 'v8_context_snapshot.bin',
+        'Resources/locales/en-US.pak', 'Resources/locales/ko.pak'
+    )
+    $requiredPaths += @($cefCompanions | ForEach-Object { "$cefRelativeRoot/$_" })
+    foreach ($relativePath in $requiredPaths) {
+        $fullPath = Join-Path $Root $relativePath
+        Assert-Condition -Condition (Test-Path -LiteralPath $fullPath -PathType Leaf) `
+            -Message "Required presentation runtime file is missing: $relativePath"
+        Assert-Condition -Condition ((Get-Item -LiteralPath $fullPath).Length -gt 0) `
+            -Message "Required presentation runtime file is empty: $relativePath"
+    }
+
+    # Existence checks do not prove video decoding or a rendered browser. Keep
+    # the title intro and building catalogue in the packaged manual QA route.
+    return $requiredPaths
+}
+
 function Invoke-StartupSmokeTest {
     param(
         [Parameter(Mandatory = $true)]
@@ -296,6 +343,7 @@ Assert-Condition -Condition (Test-Path -LiteralPath $mainUcasPath -PathType Leaf
     -Message "The main IoStore content container is missing: $mainUcasPath"
 Assert-Condition -Condition (Test-Path -LiteralPath $globalUtocPath -PathType Leaf) `
     -Message "The global IoStore table of contents is missing: $globalUtocPath"
+$presentationRuntimeFiles = @(Assert-PresentationRuntimeFiles -Root $payloadRoot)
 
 $unrealPak = Join-Path $resolvedEngineRoot 'Engine\Binaries\Win64\UnrealPak.exe'
 Assert-Condition -Condition (Test-Path -LiteralPath $unrealPak -PathType Leaf) `
@@ -449,6 +497,7 @@ $summary = [ordered]@{
     ucasCount      = $ucasFiles.Count
     pakCount       = $pakFiles.Count
     requiredAssetCount = $requiredAssets.Count
+    presentationRuntimeFiles = $presentationRuntimeFiles
     unrealPakTested = $true
     ioStoreInspected = $true
     shaderFormats = $requiredShaderFormats

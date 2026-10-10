@@ -37,8 +37,13 @@ public:
 
 	// 축제장 중심과 전체가 들어오는 거리를 받아 첫 구도를 잡는다.
 	// 레벨 크기를 아는 쪽(GameMode 나 Zone 시스템)이 불러준다.
+	// 높이 보존을 켜면 최초 유효 지면 대비 초기 초점 높이를 이후 지형 추종의 기준으로 쓴다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
-	void InitializeOverview(const FVector& FocusLocation, float SuggestedArmLength);
+	void InitializeOverview(const FVector& FocusLocation, float SuggestedArmLength, bool bPreserveGroundClearance = false);
+
+	// Zone 배치가 바뀌었을 때 이동 경계를 다시 계산한다. 초기 높이 기준은 유지한다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
+	void RefreshZoneBounds();
 
 	// 아래 넷은 PlayerController 가 입력을 해석해서 불러준다.
 	// Pawn 이 직접 키를 읽지 않는 이유는 입력 차단 판단이 Controller 쪽 책임이기 때문이다.
@@ -143,12 +148,19 @@ private:
 	// 입력 프레임에서만 새 지면을 측정한다. 일회성 명령은 이 표본을 향해 보간한다.
 	void UpdateGroundHeight(float DeltaSeconds, bool bRefreshSample);
 	bool SampleGroundHeight(float& OutGroundZ) const;
+	FFF_OverviewCameraSettings GetRuntimeCameraSettings() const;
+	FVector ResolveGroundFocus(const FVector& WorldLocation) const;
 
 
 	FFF_OverviewCameraRig Rig;
 	EFF_OverviewCameraMotionState MotionState = EFF_OverviewCameraMotionState::Idle;
 	EFF_CameraMotionChannel TransitionChannels = EFF_CameraMotionChannel::None;
 	TOptional<float> GroundHeightSample;
+	// 저작 설정을 바꾸지 않는 인스턴스별 지면 기준. Reset/Stop/경계 갱신은 보존하며
+	// InitializeOverview만 지운다. 첫 표본이 늦어도 Focus/Follow의 Z를 초기값으로 오인하지 않는다.
+	TOptional<float> PreservedGroundFocusOffset;
+	double InitialGroundReferenceZ = 0.0;
+	bool bPreserveInitialGroundClearance = false;
 	bool bRefreshGroundRequested = false;
 	bool bNeedsInitialPlacement = false;
 

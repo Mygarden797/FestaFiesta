@@ -19,6 +19,7 @@
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Misc/AutomationTest.h"
@@ -124,7 +125,7 @@ bool FFF_AuroraCatalogSelectionTest::RunTest(const FString& Parameters)
 
     // Seed a pre-existing facility in this isolated world; count projection still
     // reads the real authority registry instead of a stale catalog snapshot.
-    const FName FixtureZoneId(TEXT("GZ_DadaPocha"));
+    const FName FixtureZoneId(FFProjectZoneTest::ZoneId());
     auto* FixtureZone = World->SpawnActor<AFFZSGameplayZone>();
     if (!TestNotNull(TEXT("Existing facility's real zone"), FixtureZone) ||
         !TestTrue(TEXT("Fixture zone uses a valid accepted preset"), FixtureZone->ApplyAcceptedZonePreset(FixtureZoneId)) ||

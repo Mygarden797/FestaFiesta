@@ -54,7 +54,7 @@ bool FFFZSFacilityLevelPresentationTest::RunTest(const FString& Parameters)
     AFFZSFacilityActor* Actor = World->SpawnActor<AFFZSFacilityActor>();
     if (!TestNotNull(TEXT("Facility actor is created"), Actor)
         || !TestTrue(TEXT("Base specification initializes"), Actor->InitializeFacility(
-            FGuid::NewGuid(), Base, TEXT("GZ_DadaPocha"), Placement, FTransform::Identity)))
+            FGuid::NewGuid(), Base, FFZSTest::ProjectZoneId(), Placement, FTransform::Identity)))
     {
         return false;
     }

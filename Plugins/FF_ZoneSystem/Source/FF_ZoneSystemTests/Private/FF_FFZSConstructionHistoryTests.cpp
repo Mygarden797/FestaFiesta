@@ -9,6 +9,7 @@
 #include "FF_FFZSZoneActor.h"
 #include "FF_FFZSTestExternalPolicy.h"
 #include "Tests/FF_FFZSTestFixtures.h"
+#include "FF_FFZSProjectZoneTestFixture.h"
 
 namespace
 {
@@ -20,15 +21,15 @@ namespace
         TGuardValue<bool> Navigation{Settings->bEnableNavigationProjectionChecks, false};
         TGuardValue<bool> Policies{Settings->bRequireProductionPolicyDomains, false};
     };
-    UFFZSWorldSubsystem* CreateConstructionWorld()
+    UFFZSWorldSubsystem* CreateConstructionWorld(FAutomationTestBase& Test)
     {
         UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-        if (!World) return nullptr;
+        if (!Test.TestNotNull(TEXT("Construction fixture world"), World)) return nullptr;
         UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
         AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
-        if (!Zones || !Zone) return nullptr;
-        Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha"));
-        if (!Zones->RegisterZone(Zone)) return nullptr;
+        if (!Test.TestNotNull(TEXT("Construction fixture subsystem"), Zones) ||
+            !FFZSTest::ApplyZonePreset(Test, Zone) ||
+            !Test.TestTrue(TEXT("Construction fixture zone registers"), Zones->RegisterZone(Zone))) return nullptr;
         Zones->SetChangePhase(EFFZSChangePhase::InitialSetup);
         return Zones;
     }
@@ -36,7 +37,7 @@ namespace
     {
         FFFZSGridPlacement Placement;
         Placement.OriginCell = Position;
-        return UFFZSGridLibrary::MakeInstallCommand(FFZSTest::MakeValidFacilitySpec(), TEXT("GZ_DadaPocha"), Placement, -1);
+        return UFFZSGridLibrary::MakeInstallCommand(FFZSTest::MakeValidFacilitySpec(), FFZSTest::ProjectZoneId(), Placement, -1);
     }
     FFFZSCommand Edit(const FFFZSCommand& Install, EFFZSCommandType Type, FIntPoint Position, int32 Yaw = 0)
     {
@@ -58,7 +59,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSConstructionUndoRedoTest,
 bool FFFZSConstructionUndoRedoTest::RunTest(const FString& Parameters)
 {
     FConstructionTestSettings Settings;
-    UFFZSWorldSubsystem* Zones = CreateConstructionWorld();
+    UFFZSWorldSubsystem* Zones = CreateConstructionWorld(*this);
     if (!TestNotNull(TEXT("Construction world"), Zones)) return false;
     const FFFZSCommand Install = InstallAt(FIntPoint(1000, 1000));
     if (!TestTrue(TEXT("Install"), Zones->ExecuteCommand(Install).bSucceeded)) return false;
@@ -110,7 +111,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSConstructionBatchAtomicTest,
 bool FFFZSConstructionBatchAtomicTest::RunTest(const FString& Parameters)
 {
     FConstructionTestSettings Settings;
-    UFFZSWorldSubsystem* Zones = CreateConstructionWorld();
+    UFFZSWorldSubsystem* Zones = CreateConstructionWorld(*this);
     if (!TestNotNull(TEXT("Construction world"), Zones)) return false;
     const FFFZSCommand A = InstallAt(FIntPoint(1000, 1000));
     const FFFZSCommand B = InstallAt(FIntPoint(4000, 1000));

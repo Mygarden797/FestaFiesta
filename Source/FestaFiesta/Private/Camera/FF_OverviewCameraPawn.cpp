@@ -57,9 +57,13 @@ void AFF_OverviewCameraPawn::BeginPlay()
 	}
 }
 
-void AFF_OverviewCameraPawn::InitializeOverview(const FVector& FocusLocation, float SuggestedArmLength)
+void AFF_OverviewCameraPawn::InitializeOverview(const FVector& FocusLocation, float SuggestedArmLength,
+	const bool bPreserveGroundClearance)
 {
+	PreservedGroundFocusOffset.Reset();
+	bPreserveInitialGroundClearance = bPreserveGroundClearance;
 	Rig.Initialize(CameraSettings, FocusLocation, SuggestedArmLength);
+	InitialGroundReferenceZ = Rig.GetTargetState().FocusLocation.Z;
 	StopCameraMotion();
 	bHasValidFocus = false;
 	LastZoneId = NAME_None;
@@ -154,7 +158,7 @@ void AFF_OverviewCameraPawn::SnapRotate(int32 Direction)
 void AFF_OverviewCameraPawn::FocusOnLocation(const FVector& WorldLocation)
 {
 	SetFollowTarget(nullptr);
-	Rig.FocusOn(WorldLocation);
+	Rig.FocusOn(ResolveGroundFocus(WorldLocation));
 	RequestTransition(EFF_CameraMotionChannel::Focus);
 }
 
@@ -229,7 +233,8 @@ void AFF_OverviewCameraPawn::Tick(float DeltaSeconds)
 		return;
 	}
 
-	// 최초 배치는 입력을 기다리지 않는다. 로드 직후 한 번만 지면에 맞춘다.
+	// 최초 배치는 입력을 기다리지 않는다. 높이 보존 모드는 첫 지면으로 초기 높이의
+	// 상대 기준을 정하고, 일반 모드는 기존 지면 + offset으로 한 번 배치한다.
 	if (bNeedsInitialPlacement)
 	{
 		ApplyZoneBoundsIfNeeded(DeltaSeconds);
@@ -278,7 +283,7 @@ void AFF_OverviewCameraPawn::Tick(float DeltaSeconds)
 	PendingEdgeScrollInput = FVector2D::ZeroVector;
 	if (FollowActor)
 	{
-		Rig.FocusOn(FollowActor->GetActorLocation());
+		Rig.FocusOn(ResolveGroundFocus(FollowActor->GetActorLocation()));
 	}
 
 	ApplyZoneBoundsIfNeeded(DeltaSeconds);
@@ -437,7 +442,7 @@ void AFF_OverviewCameraPawn::ApplyZoneBoundsIfNeeded(const float DeltaSeconds)
 	Combined.Max.Z = HALF_WORLD_MAX;
 
 	CameraSettings.FocusBounds = Combined;
-	Rig.UpdateSettings(CameraSettings);
+	Rig.UpdateSettings(GetRuntimeCameraSettings());
 	bZoneBoundsApplied = true;
 
 	UE_LOG(LogFestaFiestaCamera, Log,
@@ -484,6 +489,14 @@ void AFF_OverviewCameraPawn::UpdateGroundHeight(const float DeltaSeconds, const 
 		float GroundZ = 0.f;
 		if (SampleGroundHeight(GroundZ))
 		{
+			if (bPreserveInitialGroundClearance && !PreservedGroundFocusOffset.IsSet())
+			{
+				// 초기 지면을 못 찾았으면 이 계산도 미룬다. 명시적 Focus/Follow가 먼저 와도
+				// 그 액터의 낮은 Z가 아니라 InitializeOverview에서 받은 높이를 기준으로 삼는다.
+				PreservedGroundFocusOffset = FMath::Max(
+					static_cast<float>(InitialGroundReferenceZ - GroundZ), CameraSettings.GroundFocusOffset);
+				Rig.UpdateSettings(GetRuntimeCameraSettings());
+			}
 			GroundHeightSample = GroundZ;
 		}
 		else
@@ -499,6 +512,28 @@ void AFF_OverviewCameraPawn::UpdateGroundHeight(const float DeltaSeconds, const 
 	{
 		Rig.OnGroundHeightUnavailable();
 	}
+}
+
+FFF_OverviewCameraSettings AFF_OverviewCameraPawn::GetRuntimeCameraSettings() const
+{
+	FFF_OverviewCameraSettings RuntimeSettings = CameraSettings;
+	if (PreservedGroundFocusOffset.IsSet())
+	{
+		RuntimeSettings.GroundFocusOffset = PreservedGroundFocusOffset.GetValue();
+	}
+	return RuntimeSettings;
+}
+
+FVector AFF_OverviewCameraPawn::ResolveGroundFocus(const FVector& WorldLocation) const
+{
+	FVector Focus = WorldLocation;
+	if (bPreserveInitialGroundClearance && CameraSettings.bFollowGroundHeight)
+	{
+		// 이 모드에서 Focus/Follow는 XY를 정하고 지형 추종이 Z를 소유한다.
+		// 매 프레임 대상 Z로 덮으면 지형 보간의 속도 제한 때문에 초기 높이에 도달하지 못한다.
+		Focus.Z = Rig.GetTargetState().FocusLocation.Z;
+	}
+	return Focus;
 }
 
 bool AFF_OverviewCameraPawn::SampleGroundHeight(float& OutGroundZ) const
@@ -597,15 +632,20 @@ void AFF_OverviewCameraPawn::RegisterDebugConsoleCommands()
 		TEXT("Zone 을 다시 훑어 카메라 이동 범위를 재계산한다."),
 		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
 		{
-			// Zone 이 나중에 추가됐거나 처음에 못 잡은 경우를 위해 다시 시도한다.
-			bZoneBoundsApplied = false;
-			bZoneBoundsWarned = false;
-			ZoneBoundsWaitSeconds = 0.f;
-			// 경계 적용도 명시적인 명령으로 보낸다. Idle 중 Rig의 Display만 바꾸면
-			// 실제 컴포넌트와 상태가 어긋나므로 다음 활성 Tick에서 함께 반영한다.
-			RequestTransition(EFF_CameraMotionChannel::All);
-			UE_LOG(LogFestaFiestaCamera, Log, TEXT("[카메라] 다음 카메라 갱신에서 Zone 경계를 다시 계산한다."));
+			RefreshZoneBounds();
 		}));
+}
+
+void AFF_OverviewCameraPawn::RefreshZoneBounds()
+{
+	// Zone 이 나중에 추가됐거나 처음에 못 잡은 경우를 위해 다시 시도한다.
+	bZoneBoundsApplied = false;
+	bZoneBoundsWarned = false;
+	ZoneBoundsWaitSeconds = 0.f;
+	// 경계 적용도 명시적인 명령으로 보낸다. Idle 중 Rig의 Display만 바꾸면
+	// 실제 컴포넌트와 상태가 어긋나므로 다음 활성 Tick에서 함께 반영한다.
+	RequestTransition(EFF_CameraMotionChannel::All);
+	UE_LOG(LogFestaFiestaCamera, Log, TEXT("[카메라] 다음 카메라 갱신에서 Zone 경계를 다시 계산한다."));
 }
 
 void AFF_OverviewCameraPawn::UnregisterDebugConsoleCommands()

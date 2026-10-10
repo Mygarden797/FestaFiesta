@@ -13,6 +13,7 @@
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
@@ -39,7 +40,7 @@ bool FFF_BuildSynergyCatalogContextTest::RunTest(const FString& Parameters)
 	UFF_BuildModeSubsystem* Build = World->GetSubsystem<UFF_BuildModeSubsystem>();
 	UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	if (!TestNotNull(TEXT("Real build context owner"), Build) || !TestNotNull(TEXT("Real zone registry"), Zones)) return false;
-	const FName ZoneId(TEXT("GZ_DadaPocha"));
+	const FName ZoneId(FFProjectZoneTest::ZoneId());
 	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
 	if (!TestNotNull(TEXT("Fixture zone"), Zone) || !TestTrue(TEXT("Preset applied"), Zone->ApplyAcceptedZonePreset(ZoneId)) ||
 		!TestTrue(TEXT("Zone registered"), Zones->RegisterZone(Zone))) return false;
