@@ -15,6 +15,7 @@ class UTextBlock;
 class UVerticalBox;
 class UFF_FestivalViewModelSubsystem;
 class UFF_OperationAlertSubsystem;
+class UFF_LiveUtilityDock;
 
 /**
  * 운영 알림을 화면 오른쪽 위에 잠깐 띄우고, "지난 알림" 버튼으로 낸 알림을 다시 보여 준다. WBP 없이 C++ 로 트리를 만든다.
@@ -92,6 +93,7 @@ private:
 	void RefreshButtonLabel();
 	void ApplyVisibility();
 	bool ShouldShow() const;
+	bool UsesUnifiedNews();
 
 	UFUNCTION()
 	void HandleAlertRaised(const FFF_OperationAlert& Alert);
@@ -131,4 +133,5 @@ private:
 	bool bHistoryOpen = false;
 	bool bForceVisible = false;
 	bool bWasShown = false;
+	TWeakObjectPtr<UFF_LiveUtilityDock> CachedNewsDock;
 };

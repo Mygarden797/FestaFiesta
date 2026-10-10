@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
+#include "UI/LiveHUD/OperationAlert/FF_OperationAlertTypes.h"
 #include "FF_LivePanelSNS.generated.h"
 
 class UTextBlock;
@@ -13,6 +14,7 @@ class UWidget;
 class UScrollBox;
 class UFF_FestivalViewModelSubsystem;
 class UFF_LiveSnsPostEntry;
+class UFF_OperationAlertSubsystem;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnLiveSnsPendingPostsChanged, int32);
 
@@ -21,7 +23,7 @@ UENUM(BlueprintType)
 enum class EFF_LiveSnsSentiment : uint8 { Unknown, Positive, Negative, Neutral };
 
 UENUM(BlueprintType)
-enum class EFF_LiveSnsFilter : uint8 { All, Positive, Negative };
+enum class EFF_LiveSnsFilter : uint8 { All, Positive, Negative, Social, Operation };
 
 /** 새 글 빨간 점을 언제 지우는지. */
 UENUM(BlueprintType)
@@ -64,6 +66,12 @@ struct FESTAFIESTA_API FFF_LiveSocialPost
 	/** 원본 방향이 있으면 점수 부호보다 우선한다. 예전 호출자는 점수로 호환한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	EFF_LiveSnsSentiment Sentiment = EFF_LiveSnsSentiment::Unknown;
+
+	/** 통합 소식의 표시 종류. 원본 SNS/운영 시스템은 서로 수정하지 않는다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
+	bool bOperationAlert = false;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
+	int32 OperationDay = 0;
 };
 
 /**
@@ -117,11 +125,15 @@ public:
 	/** 도크 모드에서는 닫혀 있어도 새 글을 받고 재열기 시 읽던 목록·위치를 보존한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS")
 	bool bPreserveFeedWhileClosed = false;
+	/** 왼쪽 소식 도크 전용. 기존 하단 SNS 패널의 긍정/아쉬움 필터는 유지한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS")
+	bool bUnifiedNews = false;
+	void ConfigureUnifiedNewsDefaults();
 
 	/** 첫 열기·필터 변경·새 글 보기에서 실제 목록을 동기화했을 때 알린다. */
 	FSimpleMulticastDelegate OnFeedAcknowledged;
 	FOnLiveSnsPendingPostsChanged OnPendingPostsChanged;
-	int32 GetPendingPostCount() const { return Feed.PendingCount; }
+	int32 GetPendingPostCount() const { return bUnifiedNews ? UnreadNewsSerials.Num() : Feed.PendingCount; }
 
 	/** 새 플라이아웃 최초 제작용. 기존 WBP에는 호출하지 않는다. */
 	void ConfigureFlyoutDefaults(TSubclassOf<UFF_LiveSnsPostEntry> InEntryClass);
@@ -140,6 +152,8 @@ protected:
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	UFUNCTION()
 	void HandlePostAdded(FFF_LiveSocialPost NewPost);
+	UFUNCTION()
+	void HandleOperationAlert(const FFF_OperationAlert& Alert);
 	UFUNCTION()
 	void HandleFilterAll();
 	UFUNCTION()
@@ -279,6 +293,10 @@ private:
 	void ClearNewMarks();
 	void TickNewMarks();
 	void TickScrollAnchor();
+	void RecordNews(const FFF_LiveSocialPost& Post);
+	void AcknowledgeNewsFilter();
+	int32 CountUnreadNews(bool bOperation) const;
+	static FFF_LiveSocialPost MakeOperationPost(const FFF_OperationAlert& Alert);
 
 	FFF_LiveSnsFeedState Feed;
 	UPROPERTY(Transient)
@@ -304,4 +322,11 @@ private:
 	bool bFeedInitialized = false;
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_OperationAlertSubsystem> CachedOperationAlerts;
+	// 도크가 처음 만들어진 뒤 두 원본의 도착 순서를 보존한다. 원본에는 공통 시각/ID가 없다.
+	TArray<FFF_LiveSocialPost> RecentNews;
+	TSet<int64> UnreadNewsSerials;
+	TSet<int64> NewNewsSerials;
+	bool bNewsInitialized = false;
 };

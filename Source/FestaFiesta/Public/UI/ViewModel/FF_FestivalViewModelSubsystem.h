@@ -13,6 +13,8 @@
 #include "NPC/Insights/FF_SnsTypes.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelSNS.h"
 #include "UI/Staff/FF_StaffPromotionTypes.h"
+#include "UI/Staff/FF_StaffManagementTypes.h"
+#include "UI/PrepHUD/Panels/FF_PrepRecommendedFacilities.h"
 
 #include "FF_FestivalViewModelSubsystem.generated.h"
 
@@ -21,6 +23,7 @@ class UFF_FestivalProgressionSubsystem;
 class UFF_StageEconomyBridgeSubsystem;
 class UFF_SatisfactionMetricsSubsystem;
 class UFF_SaveSubsystem;
+class AFFZSFacilityActor;
 
 /** Report 진입 후 원본을 한 번 읽은 일일 표시 모델. UI 재생성/닫기로 숫자를 다시 계산하지 않는다. */
 struct FESTAFIESTA_API FFF_DailyReportView
@@ -295,14 +298,24 @@ struct FESTAFIESTA_API FFF_PrepFacilityOption
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
 	FGuid FacilityInstanceId;
 
-	/**
-	 * 화면에 쓸 이름. 지금은 시설 식별자의 **고유 토큰**이다.
-	 *
-	 * ⚠️ 시설에 사람이 읽을 이름(`FText`)을 가진 필드가 아직 없다 — `UFFZSFacilityDefinition` 에는
-	 * 썸네일만 있다. 진짜 표시 이름이 생기면 여기만 바꾼다.
-	 */
+	/** 카탈로그에 저작된 시설 종류 이름. 인스턴스 번호는 InstanceLabel에만 붙인다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
 	FText DisplayName;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
+	FName FacilityDefinitionId = NAME_None;
+
+	/** 같은 월드 세션에서 유지하는 종류별 표시 번호. 철거된 번호는 재사용하지 않는다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
+	int32 InstanceNumber = 0;
+
+	/** 예: 모래공방 #01. 편성 명령의 실제 식별자는 위 FacilityInstanceId다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
+	FText InstanceLabel;
+
+	/** 저작된 구역명. 세부 위치는 좌표 대신 위치 보기로 확인한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
+	FText LocationText;
 
 	/** 어느 구역인지. 같은 종류 부스가 여러 개일 때 구분에 쓴다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
@@ -555,6 +568,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	TArray<FFF_StaffMember> GetStaffRoster() const;
 
+	/** 설치 시설을 개별 클릭하지 않고 배정/출동/숙련도를 읽는 공통 화면용 스냅샷. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	FFF_StaffManagementSnapshot GetStaffManagementSnapshot() const;
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	bool RequestAssignAvailableStaff(FGuid FacilityId);
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	bool RequestUnassignAvailableStaff(FGuid FacilityId);
+	/** 필수 배정 시설부터 빈자리를 채운다. 자동 고용·기존 배정 이동은 하지 않는다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	FFF_StaffAssignmentResult RequestFillStaffVacancies();
+
 	/**
 	 * 이 사람을 지금 승급시킬 수 있는지. 이미 Lv3 · 고용 당일 · 오늘 이미 승급했으면 false.
 	 * 행마다 승급 버튼 활성 판정에 쓴다.
@@ -804,6 +828,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
 	TArray<FFF_PrepFacilityOption> GetEligibleFacilitiesForProgram(FName ProgramId) const;
 
+	/** 프로그램 선택을 유지한 채 카메라를 옮기고 기존 시설 선택 테두리로 잠깐 표시한다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Program")
+	bool RequestLocateProgramFacility(FGuid FacilityInstanceId);
+
+	/** 시설 위치 표시 유지 시간. 시뮬레이션 배속과 무관한 실제 초다. */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|ViewModel|Program", meta = (ClampMin = "0.1", ClampMax = "10.0"))
+	float ProgramFacilityLocateSeconds = 3.f;
+
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Program")
 	FFF_OnProgramScheduleViewChanged OnScheduledProgramsChanged;
 
@@ -871,6 +903,10 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Facility")
 	TArray<FFF_LiveFacilityView> GetLiveFacilities() const;
+
+	/** 개장 전 권장 시설. 읽기 실패는 미설치와 구분하며 개장 조건을 변경하지 않는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Facility")
+	FFF_PrepRecommendedFacilitiesView GetPrepRecommendedFacilities(const FFF_PrepRecommendedFacilityRules& Rules) const;
 
 	// --- 홍보 (2026-08-27 추가 — U5 홍보 패널) ---
 	//
@@ -1235,6 +1271,15 @@ protected:
 private:
 	UFF_FestivalStageSubsystem* GetStageSubsystem() const;
 	UFF_FestivalProgressionSubsystem* GetProgressionSubsystem() const;
+
+	/** UI 표시용 캐시이며 저장/경제/배치 데이터에는 쓰지 않는다. */
+	mutable TWeakObjectPtr<UWorld> ProgramFacilityIdentityWorld;
+	mutable TMap<FGuid, int32> ProgramFacilityInstanceNumbers;
+	mutable TMap<FName, int32> ProgramFacilityNextNumbers;
+	void ResetProgramFacilityPresentation();
+	void ClearProgramFacilityHighlight();
+	TWeakObjectPtr<AFFZSFacilityActor> LocatedProgramFacility;
+	double ProgramFacilityHighlightUntil = 0.;
 
 	/** 피날레 구매 시점 판정의 소유자. Stage 와 경제를 함께 봐야 해서 브리지가 갖고 있다. */
 	UFF_StageEconomyBridgeSubsystem* GetStageEconomyBridgeSubsystem() const;

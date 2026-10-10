@@ -19,7 +19,7 @@ enum class EFF_PrepHudTab : uint8
 {
 	Build		UMETA(DisplayName = "배치"),
 	Program		UMETA(DisplayName = "프로그램"),
-	Staff		UMETA(DisplayName = "인력"),
+	Staff		UMETA(DisplayName = "스태프"),
 	Promotion	UMETA(DisplayName = "홍보"),
 	Finale		UMETA(DisplayName = "피날레"),
 	Check		UMETA(DisplayName = "점검")

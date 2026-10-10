@@ -6,17 +6,22 @@
 #include "Components/ComboBoxString.h"
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
+#include "FF_FFZSTypes.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
 #include "UI/PrepHUD/Panels/FF_PrepProgramCard.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 #include "FF_PrepPanelProgram.generated.h"
 
 class UButton;
+class UBorder;
 class UPanelWidget;
 class UTextBlock;
 class UWidget;
 class UDataTable;
 class UFF_FestivalProgressionSubsystem;
+class UFF_PrepProgramCatalogChoice;
+class UFF_PrepProgramFacilityRow;
+class UFFZSWorldSubsystem;
 
 /**
  * 프로그램을 편성할 수 없는 이유.
@@ -41,7 +46,7 @@ enum class EFF_PrepProgramBlockReason : uint8
 	/** 카드를 아직 안 골랐다. 막힌 것이 아니라 다음 행동을 안내하는 상태다. */
 	NoCardSelected		UMETA(DisplayName = "카드 미선택"),
 
-	/** 오늘 이미 편성했다. 카드는 하루에 하나씩만 열린다. */
+	/** 선택한 시설에 오늘 이미 편성했다. 다른 시설에는 별도로 편성할 수 있다. */
 	AlreadyScheduled	UMETA(DisplayName = "오늘 이미 편성"),
 
 	/** 이 카드를 열 수 있는 시설이 하나도 없다. 부스를 먼저 지어야 한다. */
@@ -184,17 +189,25 @@ protected:
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	// --- 버튼 ---
 
 	UFUNCTION()
 	void HandleScheduleClicked();
 
+	UFUNCTION()
+	void HandleDismissScheduleToast();
+
 	/** 카드 클릭. `ChoiceId` 는 카탈로그 순번이다. */
 	void HandleCardClicked(int32 ChoiceId);
 
 	/** 시설 클릭. `ChoiceId` 는 시설 목록 순번이다. */
 	void HandleFacilityClicked(int32 ChoiceId);
+	void HandleLocateFacilityClicked(int32 ChoiceId);
+
+	UFUNCTION()
+	void HandleFacilityWorldChanged(const FFFZSWorldChangeEvent& Event);
 
 	UFUNCTION()
 	void HandleFacilitySelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
@@ -212,7 +225,7 @@ protected:
 	UFUNCTION()
 	void HandleGoldChanged(int32 NewValue);
 
-	/** 편성 목록이 바뀌었다. 카드 잠금이 따라 바뀐다. */
+	/** 편성 목록이 바뀌었다. 시설별 완료 표시가 따라 바뀐다. */
 	UFUNCTION()
 	void HandleScheduledProgramsChanged();
 
@@ -241,6 +254,11 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UWidget> Box_FacilityRow;
 
+	/** 같은 종류의 설치 시설도 번호와 위치로 구분하는 목록. */
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UPanelWidget> VerticalBox_FacilityInstances;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_FacilityLabel;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_FacilityEmpty;
+
 	/** `열 수 있는 시설이 없습니다. 배치 탭에서 먼저 지으세요.` */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_FacilityNotice;
@@ -248,6 +266,34 @@ protected:
 	/** Compatible facilities: each button opens its exact construction catalog entry. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UPanelWidget> Box_CatalogChoices;
+
+	/** 없는 시설을 안내하는 영역. 디자이너에서 배경·테두리·여백을 편집한다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UBorder> Border_FacilityGuide;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UTextBlock> Text_FacilityGuideTitle;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UWidget> Border_ScheduleToast;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UTextBlock> Text_ScheduleToastTitle;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UTextBlock> Text_ScheduleToastDetail;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UButton> Button_DismissScheduleToast;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UTextBlock> Text_ProgramCompletion;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UTextBlock> Text_SummaryStatus;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UTextBlock> Text_ScheduleAction;
 
 	// --- 견적 ---
 
@@ -307,6 +353,62 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program")
 	FString FacilityChoiceFallbackPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepChoiceButton");
 
+	/** 설치된 시설 선택과 건축 바로가기는 서로 다른 위젯이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|FacilityGuide")
+	TSubclassOf<UFF_PrepProgramCatalogChoice> CatalogChoiceClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|FacilityGuide")
+	FString CatalogChoiceFallbackPath = TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepProgramCatalogChoice");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|FacilityGuide", meta = (ClampMin = "1", ClampMax = "4"))
+	int32 CatalogChoiceColumns = 2;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|FacilityGuide")
+	FText MissingFacilityTitleText = NSLOCTEXT("FestaFiestaPrepProgram", "MissingFacilityTitle", "먼저 운영할 시설을 설치해 주세요");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|FacilityGuide")
+	FText MissingFacilityDescriptionText = NSLOCTEXT("FestaFiestaPrepProgram", "MissingFacilityDescription", "아래 시설 중 한 곳을 선택하면 건축목록으로 이동합니다.");
+
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program|FacilityGuide")
+	FText AvailableFacilityTitleText = NSLOCTEXT("FestaFiestaPrepProgram", "AvailableFacilityTitle", "프로그램 운영 가능 시설");
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program|FacilityGuide")
+	FText AvailableFacilityDescriptionText = NSLOCTEXT("FestaFiestaPrepProgram", "AvailableFacilityDescription", "설치 현황을 확인하고, 시설을 더 지으려면 건축목록에서 선택하세요.");
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program|FacilityGuide")
+	FLinearColor MissingGuideBackgroundColor = FLinearColor::FromSRGBColor(FColor(255, 249, 237));
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program|FacilityGuide")
+	FLinearColor MissingGuideOutlineColor = FLinearColor::FromSRGBColor(FColor(231, 178, 102));
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program|FacilityGuide")
+	FLinearColor MissingGuideTitleColor = FLinearColor::FromSRGBColor(FColor(183, 106, 15));
+
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program|FacilityGuide")
+	TSubclassOf<UFF_PrepProgramFacilityRow> FacilityRowClass;
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program|FacilityGuide")
+	FString FacilityRowFallbackPath = TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepProgramFacilityRow");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Feedback", meta = (ClampMin = "0.5", ClampMax = "30.0"))
+	float ScheduleToastDuration = 3.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Feedback")
+	FText ScheduleToastTitleFormat = NSLOCTEXT("FestaFiestaPrepProgram", "ScheduleToastTitle", "✓ {Program} 편성 완료");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Feedback")
+	FText ScheduleToastDetailFormat = NSLOCTEXT("FestaFiestaPrepProgram", "ScheduleToastDetail", "{Facility} · {Time}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Feedback")
+	FText ProgramCompletionFormat = NSLOCTEXT("FestaFiestaPrepProgram", "ProgramCompletion", "✓ {Program} · {Facility} 오늘 편성 완료");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Feedback")
+	FText SummaryScheduledText = NSLOCTEXT("FestaFiestaPrepProgram", "SummaryScheduled", "✓ 오늘 편성 완료");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Feedback")
+	FText ScheduleActionText = NSLOCTEXT("FestaFiestaPrepProgram", "ScheduleAction", "편성하기");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Feedback")
+	FText ScheduledActionText = NSLOCTEXT("FestaFiestaPrepProgram", "ScheduledAction", "편성 완료");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program|Feedback")
+	FText CurrentGoldFormat = NSLOCTEXT("FestaFiestaPrepProgram", "CurrentGold", "현재 잔액 {0}");
+
 	/** ★ 비우지 않는다. 안 쓰면 다음 날 편성이 사라진 이유를 알 수 없다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program")
 	FText DailyNoticeText;
@@ -349,6 +451,8 @@ private:
 
 	void EnsureCatalogChoices();
 	void RebuildCatalogChoices();
+	void RefreshFacilityGuide();
+	void ShowScheduleToast(const FText& ProgramName, const FText& FacilityName, const FText& TimeRange);
 
 	/** 견적을 다시 만들고 화면 전체를 다시 그린다. 부분 갱신하지 않는다. */
 	void RefreshAll();
@@ -370,12 +474,16 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UDataTable> BoundRevenueTable;
+	UPROPERTY(Transient) TObjectPtr<UFFZSWorldSubsystem> BoundFacilityWorld;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UFF_PrepProgramCard>> CardWidgets;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UFF_PrepChoiceButton>> FacilityWidgets;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UFF_PrepProgramFacilityRow>> FacilityRowWidgets;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UFF_PrepChoiceButton>> CatalogChoiceWidgets;
@@ -398,4 +506,11 @@ private:
 	bool bRefreshingFacilityCombo = false;
 
 	FFF_PrepProgramQuote Quote;
+	FName AttentionProgramId;
+	double ScheduleToastExpiresAt = 0.0;
+	FSlateBrush NormalFacilityGuideBrush;
+	FSlateColor NormalFacilityGuideTitleColor;
+	/** 위치를 보기 위해 접은 경우에만 다음 열기에 복원한다. */
+	FName ResumeProgramId;
+	FGuid ResumeFacilityId;
 };

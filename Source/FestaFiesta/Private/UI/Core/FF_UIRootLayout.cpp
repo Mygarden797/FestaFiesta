@@ -392,6 +392,18 @@ UFF_ActivatableScreenBase* UFF_UIRootLayout::PushScreen(TSubclassOf<UFF_Activata
 	return PushToStack(ScreenStack, ScreenClass, TEXT("ScreenStack"));
 }
 
+bool UFF_UIRootLayout::HasForegroundStackContent() const
+{
+	// HUDLayer의 셋업·라이브 패널은 포함하지 않는다. 스택에서 빠지는 전환 중에도
+	// 표시 중인 위젯을 기준으로 하여 도크가 확인창의 페이드 위로 먼저 나타나지 않게 한다.
+	const auto HasContent = [](const UCommonActivatableWidgetStack* Stack)
+	{
+		// 처음 열리는 전환은 아직 ActiveWidget이 없을 수 있다.
+		return Stack && (Stack->GetNumWidgets() > 0 || Stack->GetActiveWidget());
+	};
+	return HasContent(ScreenStack) || HasContent(PanelStack) || bScreenStackTransitioning;
+}
+
 UFF_ActivatableScreenBase* UFF_UIRootLayout::PushScreenWithoutTransition(TSubclassOf<UFF_ActivatableScreenBase> ScreenClass)
 {
 	/* 암전 전환의 교체 단계와 같은 방식이다. 스위처는 밀어 넣는 순간의 전환 시간으로

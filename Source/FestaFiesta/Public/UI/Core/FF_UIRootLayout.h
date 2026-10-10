@@ -72,6 +72,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
 	UPanelWidget* GetToastLayer() const { return ToastLayer; }
 
+	/** ESC·옵션·구매 확인처럼 일반 HUD 위를 덮는 화면이 현재 표시 중인지. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	bool HasForegroundStackContent() const;
+
 	/** 불투명 프레임 뒤 한 번만 교체한다. 비활성 설정/준비 실패면 false로 즉시 전환을 허용한다. */
 	bool BeginAtlasTransition(FSimpleDelegate SwapUnderCover, TFunction<bool()> IsReady);
 

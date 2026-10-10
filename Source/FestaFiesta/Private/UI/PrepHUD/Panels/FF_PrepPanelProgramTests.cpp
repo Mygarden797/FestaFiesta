@@ -138,6 +138,13 @@ bool FFF_PrepProgramRules_Quote::RunTest(const FString& Parameters)
 	}
 
 	{
+		const FFF_PrepProgramQuote Quote = FFF_PrepProgramRules::BuildQuote(
+			&Yoga, EFF_ProgramPurchaseResult::AlreadyScheduled, true, 1, 7350);
+		TestEqual(TEXT("완료된 편성 확인 시 비용을 다시 빼지 않는다"), Quote.GoldAfterSchedule, 7350);
+		TestFalse(TEXT("같은 시설의 완료된 편성을 다시 요청하지 않는다"), Quote.CanSchedule());
+	}
+
+	{
 		// 카드를 안 골랐을 때 금액 칸이 0 이 되면 "공짜 프로그램"이 화면에 뜬다.
 		const FFF_PrepProgramQuote Quote = FFF_PrepProgramRules::BuildQuote(
 			nullptr, EFF_ProgramPurchaseResult::Success, true, 1, 7600);

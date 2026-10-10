@@ -72,6 +72,7 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankRow : public UUserWidget, public IU
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_Location;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_Amount;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Share;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SelectionMark;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_ThumbnailFallback;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UFF_FacilityCodexImage> Image_Thumbnail;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UProgressBar> Bar_Revenue;
@@ -139,7 +140,8 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 	void UpdatePeriod();
 	UPROPERTY(Transient) TMap<FName, FButtonStyle> AuthoredPeriodStyles;
 	void UpdateFrameSize(const FVector2D& Viewport);
-	float DesiredFrameHeight = 600.f;
+	FVector2D AuthoredFrameSize = FVector2D(1060.f, 690.f);
+	bool bCapturedFrameSize = false;
 	bool bCumulative = false;
 };
 UCLASS()

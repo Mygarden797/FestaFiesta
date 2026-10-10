@@ -67,7 +67,7 @@ protected:
 	void HandleClicked();
 
 	/** 상태 표현을 한 곳에서 전체 재선언한다. 어떤 순서로 불려도 결과가 같다(멱등). */
-	void RefreshVisualState();
+	virtual void RefreshVisualState();
 
 protected:
 	// --- 위젯 바인딩 ---

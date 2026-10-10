@@ -5,11 +5,15 @@
 #include "Blueprint/WidgetTree.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/PanelWidget.h"
 #include "Components/ScrollBoxSlot.h"
 #include "Components/TextBlock.h"
+#include "Components/UniformGridPanel.h"
+#include "Components/UniformGridSlot.h"
 #include "Components/WrapBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Economy/FF_EconomyDisplayTextLibrary.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
 #include "Engine/DataTable.h"
@@ -17,8 +21,11 @@
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "FF_FFZSWorldSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/PrepHUD/Panels/FF_ProgramFacilityGuide.h"
+#include "UI/PrepHUD/Panels/FF_PrepProgramCatalogChoice.h"
+#include "UI/PrepHUD/Panels/FF_PrepProgramFacilityRow.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaPrepProgram"
 
@@ -120,7 +127,9 @@ FFF_PrepProgramQuote FFF_PrepProgramRules::BuildQuote(
 	if (CurrentGold != INDEX_NONE)
 	{
 		// 음수가 될 수 있다. 그대로 둔다 — "얼마나 모자란지" 가 화면에 필요한 정보다.
-		Result.GoldAfterSchedule = CurrentGold - Card->CostGold;
+		// 완료된 시설을 다시 확인할 때 비용을 한 번 더 차감한 견적을 보여 주지 않는다.
+		Result.GoldAfterSchedule = OwnerResult == EFF_ProgramPurchaseResult::AlreadyScheduled
+			? CurrentGold : CurrentGold - Card->CostGold;
 		Result.bHasGoldAfterSchedule = true;
 	}
 
@@ -135,6 +144,13 @@ void UFF_PrepPanelProgram::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 	EnsureCatalogChoices();
+	if (Border_FacilityGuide) NormalFacilityGuideBrush = Border_FacilityGuide->Background;
+	if (Text_FacilityGuideTitle) NormalFacilityGuideTitleColor = Text_FacilityGuideTitle->GetColorAndOpacity();
+	HandleDismissScheduleToast();
+	if (Button_DismissScheduleToast)
+	{
+		Button_DismissScheduleToast->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDismissScheduleToast);
+	}
 
 	if (DailyNoticeText.IsEmpty())
 	{
@@ -176,27 +192,57 @@ void UFF_PrepPanelProgram::NativeOnPanelOpened()
 {
 	Super::NativeOnPanelOpened();
 
-	// 열 때마다 선택을 비우고 시작한다. 이전 선택을 남기면 그 사이에 편성됐거나 시설이
-	// 철거됐을 수 있어 "왜 이게 골라져 있는지" 설명되지 않는다.
+	// 위치 확인으로 접었다가 돌아올 때만 선택을 복원한다. 시설은 최신 GUID 목록에서 찾는다.
 	SelectedCardIndex = INDEX_NONE;
 	SelectedFacilityIndex = INDEX_NONE;
+	AttentionProgramId = NAME_None;
+	HandleDismissScheduleToast();
 
 	BindViewModel();
 	RebuildCards();
+	if (!ResumeProgramId.IsNone())
+	{
+		SelectedCardIndex = Catalog.IndexOfByPredicate([this](const FFF_ProgramCard& Card)
+		{
+			return Card.ProgramId == ResumeProgramId;
+		});
+	}
 	RebuildFacilityChoices();
+	if (ResumeFacilityId.IsValid())
+	{
+		SelectedFacilityIndex = FacilityOptions.IndexOfByPredicate([this](const FFF_PrepFacilityOption& Facility)
+		{
+			return Facility.FacilityInstanceId == ResumeFacilityId;
+		});
+		RefreshFacilityCombo();
+	}
+	ResumeProgramId = NAME_None;
+	ResumeFacilityId.Invalidate();
 	RefreshAll();
 }
 
 void UFF_PrepPanelProgram::NativeOnPanelClosed()
 {
+	HandleDismissScheduleToast();
 	UnbindViewModel();
 	Super::NativeOnPanelClosed();
 }
 
 void UFF_PrepPanelProgram::NativeDestruct()
 {
+	HandleDismissScheduleToast();
 	UnbindViewModel();
 	Super::NativeDestruct();
+}
+
+void UFF_PrepPanelProgram::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	// 게임 배속·셋업 시간 정지와 무관하게 실제 표시 시간으로 닫는다.
+	if (ScheduleToastExpiresAt > 0.0 && FPlatformTime::Seconds() >= ScheduleToastExpiresAt)
+	{
+		HandleDismissScheduleToast();
+	}
 }
 
 // =============================================================================
@@ -245,10 +291,22 @@ void UFF_PrepPanelProgram::BindViewModel()
 
 	// 단계가 바뀌면 편성 자체가 막히거나 풀린다 (셋업·개장 준비에서만 된다).
 	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_PrepPanelProgram::HandleStageViewChanged);
+	BoundFacilityWorld = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	if (BoundFacilityWorld)
+	{
+		BoundFacilityWorld->OnWorldChanged.AddUniqueDynamic(this, &ThisClass::HandleFacilityWorldChanged);
+		BoundFacilityWorld->OnWorldSnapshotRestored.AddUniqueDynamic(this, &ThisClass::HandleBuildCatalogChanged);
+	}
 }
 
 void UFF_PrepPanelProgram::UnbindViewModel()
 {
+	if (BoundFacilityWorld)
+	{
+		BoundFacilityWorld->OnWorldChanged.RemoveAll(this);
+		BoundFacilityWorld->OnWorldSnapshotRestored.RemoveAll(this);
+		BoundFacilityWorld = nullptr;
+	}
 	if (BoundRevenueTable)
 	{
 		BoundRevenueTable->OnDataTableChanged().RemoveAll(this);
@@ -301,6 +359,8 @@ void UFF_PrepPanelProgram::HandleRevenueTableChanged()
 
 void UFF_PrepPanelProgram::HandleFestivalDefinitionChanged()
 {
+	HandleDismissScheduleToast();
+	AttentionProgramId = NAME_None;
 	BindRevenueTable();
 	SelectedCardIndex = INDEX_NONE;
 	SelectedFacilityIndex = INDEX_NONE;
@@ -380,6 +440,8 @@ void UFF_PrepPanelProgram::RebuildFacilityChoices()
 		? FacilityOptions[SelectedFacilityIndex].FacilityInstanceId : FGuid();
 	RebuildCatalogChoices();
 	FacilityWidgets.Reset();
+	FacilityRowWidgets.Reset();
+	if (VerticalBox_FacilityInstances) VerticalBox_FacilityInstances->ClearChildren();
 	if (Box_FacilityChoices)
 	{
 		Box_FacilityChoices->ClearChildren();
@@ -410,7 +472,25 @@ void UFF_PrepPanelProgram::RebuildFacilityChoices()
 	FacilityOptions = ViewModel->GetEligibleFacilitiesForProgram(Card->ProgramId);
 
 	UClass* ResolvedChoiceClass = ResolveWidgetClass(FacilityChoiceClass, FacilityChoiceFallbackPath);
-	if (!Combo_Facilities && Box_FacilityChoices && ResolvedChoiceClass)
+	UClass* ResolvedRowClass = VerticalBox_FacilityInstances ? ResolveWidgetClass(FacilityRowClass, FacilityRowFallbackPath) : nullptr;
+	if (VerticalBox_FacilityInstances && ResolvedRowClass)
+	{
+		for (int32 Index = 0; Index < FacilityOptions.Num(); ++Index)
+		{
+			UFF_PrepProgramFacilityRow* Row = CreateWidget<UFF_PrepProgramFacilityRow>(this, ResolvedRowClass);
+			if (!Row) continue;
+			Row->ConfigureFacility(Index, FacilityOptions[Index]);
+			Row->OnFacilitySelected.BindUObject(this, &ThisClass::HandleFacilityClicked);
+			Row->OnLocateRequested.BindUObject(this, &ThisClass::HandleLocateFacilityClicked);
+			if (UVerticalBoxSlot* RowSlot = Cast<UVerticalBoxSlot>(VerticalBox_FacilityInstances->AddChild(Row)))
+			{
+				RowSlot->SetHorizontalAlignment(HAlign_Fill);
+				RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+			}
+			FacilityRowWidgets.Add(Row);
+		}
+	}
+	else if (!Combo_Facilities && Box_FacilityChoices && ResolvedChoiceClass)
 	{
 		for (int32 Index = 0; Index < FacilityOptions.Num(); ++Index)
 		{
@@ -420,7 +500,7 @@ void UFF_PrepPanelProgram::RebuildFacilityChoices()
 				continue;
 			}
 
-			Choice->ConfigureChoice(Index, FacilityOptions[Index].DisplayName);
+			Choice->ConfigureChoice(Index, FacilityOptions[Index].InstanceLabel);
 			Choice->OnHudTabButtonClicked.BindUObject(this, &UFF_PrepPanelProgram::HandleFacilityClicked);
 
 			Box_FacilityChoices->AddChild(Choice);
@@ -435,6 +515,11 @@ void UFF_PrepPanelProgram::RebuildFacilityChoices()
 	}
 
 	// 한 곳뿐이면 골라 준다. 선택지가 하나인데 누르게 하는 것은 일만 늘린다.
+	if (Combo_Facilities && VerticalBox_FacilityInstances)
+	{
+		// 새 행 에셋을 못 읽은 경우에도 기존 선택 상자로 편성할 수 있게 한다.
+		Combo_Facilities->SetVisibility(ResolvedRowClass ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	}
 	// **여러 곳이면 고르게 둔다** — 어디서 여는지가 대기열과 동선에 영향을 준다.
 	SelectedFacilityIndex = FacilityOptions.IndexOfByPredicate([&PreviousFacility](const FFF_PrepFacilityOption& Option)
 	{
@@ -457,8 +542,8 @@ void UFF_PrepPanelProgram::RefreshFacilityCombo()
 	{
 		// 같은 이름의 부스도 별개 선택지다. 표시 문자열은 고유하게 만들고 실제 요청은 GUID를 쓴다.
 		Combo_Facilities->AddOption(FText::Format(
-			LOCTEXT("FacilityOptionNumbered", "{0}. {1}"),
-			FText::AsNumber(Index + 1), FacilityOptions[Index].DisplayName).ToString());
+			LOCTEXT("FacilityOptionLocated", "{0} · {1}"),
+			FacilityOptions[Index].InstanceLabel, FacilityOptions[Index].LocationText).ToString());
 	}
 	Combo_Facilities->SetSelectedIndex(FacilityOptions.IsValidIndex(SelectedFacilityIndex) ? SelectedFacilityIndex + 1 : 0);
 	Combo_Facilities->SetIsEnabled(!FacilityOptions.IsEmpty());
@@ -511,19 +596,127 @@ void UFF_PrepPanelProgram::RebuildCatalogChoices()
 	if (!Box_CatalogChoices) { return; }
 	Box_CatalogChoices->SetVisibility(CompatibleCatalogEntries.IsEmpty()
 		? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
-	UClass* ChoiceClass = ResolveWidgetClass(FacilityChoiceClass, FacilityChoiceFallbackPath);
+	UClass* ChoiceClass = ResolveWidgetClass(CatalogChoiceClass, CatalogChoiceFallbackPath);
+	if (!ChoiceClass)
+	{
+		// 이전 에셋을 아직 사용 중인 프로젝트도 기존 바로가기는 계속 동작한다.
+		ChoiceClass = ResolveWidgetClass(FacilityChoiceClass, FacilityChoiceFallbackPath);
+	}
 	if (!ChoiceClass) { return; }
 	for (int32 Index = 0; Index < CompatibleCatalogEntries.Num(); ++Index)
 	{
 		UFF_PrepChoiceButton* Choice = CreateWidget<UFF_PrepChoiceButton>(this, ChoiceClass);
 		if (!Choice) { continue; }
 		const FFF_BuildCatalogEntry& Entry = CompatibleCatalogEntries[Index];
-		Choice->ConfigureChoice(Index, FText::Format(
-			LOCTEXT("PrepProgram_FindInCatalog", "{0} · 건축목록에서 보기"), Entry.DisplayName));
+		if (UFF_PrepProgramCatalogChoice* CatalogChoice = Cast<UFF_PrepProgramCatalogChoice>(Choice))
+		{
+			CatalogChoice->ConfigureCatalogChoice(Index, Entry.DisplayName);
+		}
+		else
+		{
+			Choice->ConfigureChoice(Index, FText::Format(
+				LOCTEXT("PrepProgram_FindInCatalog", "{0} · 건축목록에서 보기"), Entry.DisplayName));
+		}
 		Choice->SetToolTipText(FFF_ProgramFacilityGuide::GetCatalogPath(Entry));
 		Choice->OnHudTabButtonClicked.BindUObject(this, &ThisClass::HandleCatalogFacilityClicked);
-		Box_CatalogChoices->AddChild(Choice);
+		if (UUniformGridPanel* Grid = Cast<UUniformGridPanel>(Box_CatalogChoices))
+		{
+			const int32 Columns = FMath::Clamp(CatalogChoiceColumns, 1, 4);
+			UUniformGridSlot* GridSlot = Grid->AddChildToUniformGrid(Choice, Index / Columns, Index % Columns);
+			GridSlot->SetHorizontalAlignment(HAlign_Fill);
+			GridSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+		else
+		{
+			Box_CatalogChoices->AddChild(Choice);
+		}
 		CatalogChoiceWidgets.Add(Choice);
+	}
+}
+
+void UFF_PrepPanelProgram::RefreshFacilityGuide()
+{
+	const FFF_ProgramCard* Card = FindSelectedCard();
+	const bool bNeedsFacility = Card && FacilityOptions.IsEmpty();
+	const UGameInstance* GI = GetGameInstance();
+	const UFF_BuildCatalogSubsystem* BuildCatalog = GI ? GI->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+	const bool bCatalogReady = BuildCatalog && BuildCatalog->IsCatalogReady();
+	FText Title = Card ? AvailableFacilityTitleText : FText::GetEmpty();
+	FText Description = Card ? AvailableFacilityDescriptionText : FText::GetEmpty();
+	if (bNeedsFacility)
+	{
+		if (!BuildCatalog || BuildCatalog->GetLoadState() == EFF_BuildCatalogLoadState::Failed)
+		{
+			Title = LOCTEXT("PrepProgram_FacilityCatalogFailedTitle", "시설 목록을 확인할 수 없습니다");
+			Description = LOCTEXT("PrepProgram_FacilityCatalogFailed", "시설 목록을 불러오지 못했습니다. 배치 탭에서 건축목록을 다시 열어 주세요.");
+		}
+		else if (!bCatalogReady)
+		{
+			Title = LOCTEXT("PrepProgram_FacilityCatalogLoadingTitle", "시설 목록 확인 중");
+			Description = LOCTEXT("PrepProgram_LoadingFacilities", "프로그램을 열 수 있는 시설 목록을 불러오는 중입니다.");
+		}
+		else
+		{
+			Title = MissingFacilityTitleText;
+			Description = CompatibleCatalogEntries.IsEmpty()
+				? LOCTEXT("PrepProgram_NoCompatibleCatalog", "이 프로그램에 맞는 시설을 건축목록에서 찾지 못했습니다.")
+				: MissingFacilityDescriptionText;
+		}
+	}
+	if (Border_FacilityGuide)
+	{
+		Border_FacilityGuide->SetVisibility(Card ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+		FSlateBrush Brush = NormalFacilityGuideBrush;
+		if (bNeedsFacility)
+		{
+			Brush.TintColor = MissingGuideBackgroundColor;
+			Brush.OutlineSettings.Color = MissingGuideOutlineColor;
+		}
+		Border_FacilityGuide->SetBrush(Brush);
+	}
+	SetTextOrHide(Text_FacilityGuideTitle, Title);
+	if (Text_FacilityGuideTitle)
+	{
+		Text_FacilityGuideTitle->SetColorAndOpacity(bNeedsFacility ? FSlateColor(MissingGuideTitleColor) : NormalFacilityGuideTitleColor);
+	}
+	SetTextOrHide(Text_FacilityNotice, Description);
+	if (Box_CatalogChoices)
+	{
+		Box_CatalogChoices->SetVisibility(Card && bCatalogReady && !CompatibleCatalogEntries.IsEmpty()
+			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	for (UFF_PrepChoiceButton* Choice : CatalogChoiceWidgets)
+	{
+		UFF_PrepProgramCatalogChoice* CatalogChoice = Cast<UFF_PrepProgramCatalogChoice>(Choice);
+		if (!CatalogChoice || !CompatibleCatalogEntries.IsValidIndex(Choice->GetChoiceId())) continue;
+		const FName DefinitionId = CompatibleCatalogEntries[Choice->GetChoiceId()].FacilityDefinitionId;
+		const int32 InstalledCount = FacilityOptions.FilterByPredicate([DefinitionId](const FFF_PrepFacilityOption& Facility)
+		{
+			return Facility.FacilityDefinitionId == DefinitionId;
+		}).Num();
+		CatalogChoice->SetInstalledCount(InstalledCount);
+	}
+	if (!bNeedsFacility)
+	{
+		AttentionProgramId = NAME_None;
+		for (UFF_PrepChoiceButton* Choice : CatalogChoiceWidgets)
+		{
+			if (UFF_PrepProgramCatalogChoice* CatalogChoice = Cast<UFF_PrepProgramCatalogChoice>(Choice))
+			{
+				CatalogChoice->SetAttention(false);
+			}
+		}
+	}
+	else if (bCatalogReady && !CompatibleCatalogEntries.IsEmpty() && AttentionProgramId != Card->ProgramId)
+	{
+		AttentionProgramId = Card->ProgramId;
+		for (UFF_PrepChoiceButton* Choice : CatalogChoiceWidgets)
+		{
+			if (UFF_PrepProgramCatalogChoice* CatalogChoice = Cast<UFF_PrepProgramCatalogChoice>(Choice))
+			{
+				CatalogChoice->SetAttention(true);
+			}
+		}
 	}
 }
 
@@ -581,6 +774,13 @@ void UFF_PrepPanelProgram::RefreshAll()
 	const TArray<FName> ScheduledIds = (ViewModel && bHasFacility)
 		? ViewModel->GetScheduledProgramIdsAtFacility(FacilityOptions[SelectedFacilityIndex].FacilityInstanceId)
 		: TArray<FName>();
+	const TArray<FName> AllScheduledIds = ViewModel ? ViewModel->GetScheduledProgramIds() : TArray<FName>();
+	const bool bSelectedScheduled = SelectedCard && ScheduledIds.Contains(SelectedCard->ProgramId);
+	if (bSelectedScheduled && Gold != INDEX_NONE)
+	{
+		Quote.GoldAfterSchedule = Gold;
+		Quote.bHasGoldAfterSchedule = true;
+	}
 
 	for (int32 Index = 0; Index < CardWidgets.Num(); ++Index)
 	{
@@ -592,17 +792,20 @@ void UFF_PrepPanelProgram::RefreshAll()
 
 		const FFF_ProgramCard& Card = Catalog[Index];
 		CardWidget->SetRevenuePreview(Index == SelectedCardIndex ? FacilityCard : nullptr);
-
-		// 상태를 매번 전부 다시 정한다. 부분 갱신하면 편성 뒤에도 선택 표시가 남는다.
-		if (ScheduledIds.Contains(Card.ProgramId))
+		CardWidget->SetScheduledFacilityCount(AllScheduledIds.FilterByPredicate([&Card](FName ProgramId)
 		{
-			CardWidget->ApplyCardState(EFF_PrepCardState::Committed,
-				LOCTEXT("PrepProgram_BadgeScheduled", "✓ 편성함"));
-		}
-		else if (!bCanScheduleNow)
+			return ProgramId == Card.ProgramId;
+		}).Num());
+
+		// 단계 제한만 카드를 잠근다. 완료 카드는 읽고 다른 시설을 고를 수 있다.
+		if (!bCanScheduleNow)
 		{
 			CardWidget->ApplyCardState(EFF_PrepCardState::Locked,
 				LOCTEXT("PrepProgram_BadgeNotStage", "지금은 편성 불가"));
+		}
+		else if (ScheduledIds.Contains(Card.ProgramId))
+		{
+			CardWidget->ApplyCardState(EFF_PrepCardState::Committed, FText::GetEmpty());
 		}
 		else if (Index == SelectedCardIndex)
 		{
@@ -623,22 +826,31 @@ void UFF_PrepPanelProgram::RefreshAll()
 			Choice->SetSelected(Index == SelectedFacilityIndex);
 		}
 	}
-
-	const bool bShowFacilityNotice = (SelectedCard && FacilityOptions.Num() == 0);
-	FText FacilityNotice;
-	if (SelectedCard)
+	for (int32 Index = 0; Index < FacilityRowWidgets.Num(); ++Index)
 	{
-		const UGameInstance* GI = GetGameInstance();
-		const UFF_BuildCatalogSubsystem* BuildCatalog = GI ? GI->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
-		FacilityNotice = BuildCatalog && BuildCatalog->IsCatalogReady()
-			? FFF_ProgramFacilityGuide::BuildFacilityNotice(*SelectedCard, CompatibleCatalogEntries, FacilityCount)
-			: LOCTEXT("PrepProgram_LoadingFacilities", "프로그램을 열 수 있는 시설 목록을 불러오는 중입니다.");
-		if (!BuildCatalog || BuildCatalog->GetLoadState() == EFF_BuildCatalogLoadState::Failed)
+		if (UFF_PrepProgramFacilityRow* Row = FacilityRowWidgets[Index]; Row && FacilityOptions.IsValidIndex(Index))
 		{
-			FacilityNotice = LOCTEXT("PrepProgram_FacilityCatalogFailed", "시설 목록을 불러오지 못했습니다. 배치 탭에서 건축목록을 다시 열어 주세요.");
+			const bool bScheduled = ViewModel && SelectedCard
+				&& ViewModel->GetScheduledProgramIdsAtFacility(FacilityOptions[Index].FacilityInstanceId).Contains(SelectedCard->ProgramId);
+			Row->SetFacilityState(Index == SelectedFacilityIndex, bScheduled);
 		}
 	}
-	SetTextOrHide(Text_FacilityNotice, FacilityNotice);
+	SetTextOrHide(Text_FacilityLabel, SelectedCard ? FText::Format(
+		LOCTEXT("FacilityListHeading", "운영 시설 · 설치 {0}곳"), FText::AsNumber(FacilityOptions.Num())) : FText::GetEmpty());
+	SetTextOrHide(Text_FacilityEmpty, SelectedCard && FacilityOptions.IsEmpty() ? NoFacilityText : FText::GetEmpty());
+
+	const bool bShowFacilityNotice = (SelectedCard && FacilityOptions.Num() == 0);
+	RefreshFacilityGuide();
+	FText CompletionText;
+	if (bSelectedScheduled)
+	{
+		FFormatNamedArguments CompletionArgs;
+		CompletionArgs.Add(TEXT("Program"), SelectedCard->DisplayName);
+		CompletionArgs.Add(TEXT("Facility"), FacilityOptions[SelectedFacilityIndex].InstanceLabel);
+		CompletionText = FText::Format(ProgramCompletionFormat, CompletionArgs);
+	}
+	SetTextOrHide(Text_ProgramCompletion, CompletionText);
+	SetTextOrHide(Text_SummaryStatus, bSelectedScheduled ? SummaryScheduledText : FText::GetEmpty());
 
 	// --- 견적 ---
 	SetTextOrHide(Text_CostPreview, (Quote.CostGold != INDEX_NONE)
@@ -651,7 +863,7 @@ void UFF_PrepPanelProgram::RefreshAll()
 	// 그때 줄이 사라지면 **얼마나 모자란지 보여주려던 의도가 그 지점에서만 뒤집힌다.**
 	SetTextOrHide(Text_GoldAfter, Quote.bHasGoldAfterSchedule
 		? FText::Format(
-			LOCTEXT("PrepProgram_GoldAfter", "편성 후 잔액 {0}"),
+			bSelectedScheduled ? CurrentGoldFormat : LOCTEXT("PrepProgram_GoldAfter", "편성 후 잔액 {0}"),
 			FText::AsNumber(Quote.GoldAfterSchedule))
 		: FText::GetEmpty());
 
@@ -665,10 +877,15 @@ void UFF_PrepPanelProgram::RefreshAll()
 	// 시설을 골랐는지는 규칙 struct 가 모른다 — 그건 화면의 상태이지 경제 판정이 아니다.
 	if (Button_Schedule)
 	{
-		Button_Schedule->SetIsEnabled(Quote.CanSchedule() && bHasFacility);
+		Button_Schedule->SetIsEnabled(Quote.CanSchedule() && bHasFacility && !bSelectedScheduled);
 	}
+	SetTextOrHide(Text_ScheduleAction, bSelectedScheduled ? ScheduledActionText : ScheduleActionText);
 
 	FText BlockReason = BuildBlockReasonText();
+	if (bSelectedScheduled && bCanScheduleNow && Text_ProgramCompletion)
+	{
+		BlockReason = FText::GetEmpty();
+	}
 	if (BlockReason.IsEmpty() && !bHasFacility && FacilityOptions.Num() > 1)
 	{
 		BlockReason = LOCTEXT("PrepProgram_PickFacility", "프로그램을 열 시설을 고르세요.");
@@ -706,7 +923,7 @@ FText UFF_PrepPanelProgram::BuildBlockReasonText() const
 		return LOCTEXT("PrepProgram_NoCard", "편성할 프로그램을 고르세요.");
 
 	case EFF_PrepProgramBlockReason::AlreadyScheduled:
-		return LOCTEXT("PrepProgram_Already", "오늘 이미 편성한 프로그램입니다. 내일 다시 편성할 수 있습니다.");
+		return LOCTEXT("PrepProgram_AlreadyAtFacility", "이 시설에는 오늘 이미 편성했습니다. 다른 시설을 선택하면 추가로 편성할 수 있습니다.");
 
 	case EFF_PrepProgramBlockReason::NoEligibleFacility:
 		return LOCTEXT("PrepProgram_NoFacilityReason", "이 프로그램을 열 수 있는 시설이 없습니다. `배치` 탭에서 먼저 지으세요.");
@@ -743,6 +960,7 @@ void UFF_PrepPanelProgram::HandleCardClicked(int32 ChoiceId)
 	// 같은 카드를 다시 누르면 선택을 푼다. 날씨와 달리 "아무것도 안 고른 상태"가 유효하다.
 	SelectedCardIndex = (SelectedCardIndex == ChoiceId) ? INDEX_NONE : ChoiceId;
 	SelectedFacilityIndex = INDEX_NONE;
+	AttentionProgramId = NAME_None;
 
 	// 카드가 바뀌면 열 수 있는 시설도 바뀐다. 목록을 먼저 새로 만든 뒤 그린다.
 	RebuildFacilityChoices();
@@ -759,6 +977,32 @@ void UFF_PrepPanelProgram::HandleFacilityClicked(int32 ChoiceId)
 	}
 
 	SelectedFacilityIndex = ChoiceId;
+	RefreshFacilityCombo();
+	RefreshAll();
+}
+
+void UFF_PrepPanelProgram::HandleLocateFacilityClicked(int32 ChoiceId)
+{
+	UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+	const FFF_ProgramCard* Card = FindSelectedCard();
+	if (!ViewModel || !Card || !FacilityOptions.IsValidIndex(ChoiceId)) return;
+	if (!ViewModel->RequestLocateProgramFacility(FacilityOptions[ChoiceId].FacilityInstanceId))
+	{
+		RebuildFacilityChoices();
+		RefreshAll();
+		SetTextOrHide(Text_BlockReason, LOCTEXT("LocateFacilityFailed", "시설 위치를 확인할 수 없습니다. 시설 목록에서 다시 선택해 주세요."));
+		return;
+	}
+	// 위치 보기는 편성 대상을 바꾸지 않는다. 중앙 패널을 접어 월드가 보이게 하고 복귀 선택을 보관한다.
+	ResumeProgramId = Card->ProgramId;
+	ResumeFacilityId = FacilityOptions.IsValidIndex(SelectedFacilityIndex)
+		? FacilityOptions[SelectedFacilityIndex].FacilityInstanceId : FGuid();
+	RequestClose();
+}
+
+void UFF_PrepPanelProgram::HandleFacilityWorldChanged(const FFFZSWorldChangeEvent& Event)
+{
+	RebuildFacilityChoices();
 	RefreshAll();
 }
 
@@ -804,10 +1048,18 @@ void UFF_PrepPanelProgram::HandleScheduleClicked()
 		return;
 	}
 
-	// !! 낙관적 갱신을 하지 않는다 !!
-	// 실패하면 아무것도 바뀌지 않는다. 화면은 결과 이벤트로만 갱신된다.
+	// 요청 중에 잔액·편성 이벤트가 동기적으로 발생한다. 알림에 쓸 값은 먼저 복사한다.
+	const FName RequestedProgramId = Card->ProgramId;
+	const FText RequestedProgramName = Card->DisplayName;
+	const FGuid RequestedFacilityId = FacilityOptions[SelectedFacilityIndex].FacilityInstanceId;
+	const FText RequestedFacilityName = FacilityOptions[SelectedFacilityIndex].InstanceLabel;
+	const FText TimeRange = FText::Format(LOCTEXT("PrepProgram_TimeRange", "{0} ~ {1}"),
+		ViewModel->GetLiveClockTextAtMinutes(FMath::RoundToInt(Card->StartMinutes)),
+		ViewModel->GetLiveClockTextAtMinutes(FMath::RoundToInt(Card->EndMinutes)));
+	HandleDismissScheduleToast();
+	// 성공 결과가 오기 전에는 완료 표시를 만들지 않는다.
 	const EFF_ProgramPurchaseResult Result = ViewModel->RequestScheduleProgram(
-		Card->ProgramId, FacilityOptions[SelectedFacilityIndex].FacilityInstanceId);
+		RequestedProgramId, RequestedFacilityId);
 
 	if (Result != EFF_ProgramPurchaseResult::Success)
 	{
@@ -822,8 +1074,45 @@ void UFF_PrepPanelProgram::HandleScheduleClicked()
 		return;
 	}
 
-	// 성공하면 `OnScheduledProgramsChanged` 가 카드 잠금까지 끌고 온다.
-	// 선택은 거기서 비운다 — 편성한 카드가 골라진 채로 남으면 두 번 누르기 쉽다.
+	// 결과를 확인할 수 있도록 프로그램과 시설 선택을 유지한다. 재요청만 비활성화한다.
+	SelectedCardIndex = Catalog.IndexOfByPredicate([RequestedProgramId](const FFF_ProgramCard& Entry)
+	{
+		return Entry.ProgramId == RequestedProgramId;
+	});
+	RebuildFacilityChoices();
+	SelectedFacilityIndex = FacilityOptions.IndexOfByPredicate([RequestedFacilityId](const FFF_PrepFacilityOption& Option)
+	{
+		return Option.FacilityInstanceId == RequestedFacilityId;
+	});
+	RefreshFacilityCombo();
+	RefreshAll();
+	ShowScheduleToast(RequestedProgramName, RequestedFacilityName, TimeRange);
+}
+
+void UFF_PrepPanelProgram::ShowScheduleToast(const FText& ProgramName, const FText& FacilityName, const FText& TimeRange)
+{
+	FFormatNamedArguments Args;
+	Args.Add(TEXT("Program"), ProgramName);
+	Args.Add(TEXT("Facility"), FacilityName);
+	Args.Add(TEXT("Time"), TimeRange);
+	SetTextOrHide(Text_ScheduleToastTitle, FText::Format(ScheduleToastTitleFormat, Args));
+	SetTextOrHide(Text_ScheduleToastDetail, FText::Format(ScheduleToastDetailFormat, Args));
+	if (Border_ScheduleToast)
+	{
+		Border_ScheduleToast->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+	ScheduleToastExpiresAt = FPlatformTime::Seconds() + FMath::Max(0.5f, ScheduleToastDuration);
+}
+
+void UFF_PrepPanelProgram::HandleDismissScheduleToast()
+{
+	ScheduleToastExpiresAt = 0.0;
+	if (Border_ScheduleToast)
+	{
+		Border_ScheduleToast->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	SetTextOrHide(Text_ScheduleToastTitle, FText::GetEmpty());
+	SetTextOrHide(Text_ScheduleToastDetail, FText::GetEmpty());
 }
 
 // =============================================================================
@@ -837,17 +1126,15 @@ void UFF_PrepPanelProgram::HandleGoldChanged(int32 NewValue)
 
 void UFF_PrepPanelProgram::HandleScheduledProgramsChanged()
 {
-	// 편성이 성사됐으면 그 카드는 이제 못 고른다. 선택을 비우지 않으면 잠긴 카드가
-	// 골라진 채로 남아 견적이 그 카드 기준으로 계속 그려진다.
-	SelectedCardIndex = INDEX_NONE;
-	SelectedFacilityIndex = INDEX_NONE;
-
+	// 완료된 시설을 그대로 보여 준다. 다른 카드·시설을 선택하는 흐름은 유지한다.
 	RebuildFacilityChoices();
 	RefreshAll();
 }
 
 void UFF_PrepPanelProgram::HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay)
 {
+	HandleDismissScheduleToast();
+	AttentionProgramId = NAME_None;
 	// 날이 바뀌면 편성 목록이 비워지고 카탈로그 잠금도 풀린다. 목록째 다시 만든다.
 	SelectedCardIndex = INDEX_NONE;
 	SelectedFacilityIndex = INDEX_NONE;

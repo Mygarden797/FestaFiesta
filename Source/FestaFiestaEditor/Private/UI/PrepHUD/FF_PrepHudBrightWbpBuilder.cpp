@@ -179,7 +179,7 @@ namespace FFPrepHudBrightBuilder
 		SetBorderContent(*Menu, *MenuSize);
 		AddRow(*Rows, *Menu, HAlign_Center);
 		const TCHAR* Names[] = { TEXT("Build"), TEXT("Program"), TEXT("Staff"), TEXT("Promotion"), TEXT("Finale"), TEXT("Check") };
-		const TCHAR* Labels[] = { TEXT("배치"), TEXT("프로그램"), TEXT("인력"), TEXT("홍보"), TEXT("피날레"), TEXT("점검") };
+		const TCHAR* Labels[] = { TEXT("배치"), TEXT("프로그램"), TEXT("스태프"), TEXT("홍보"), TEXT("피날레"), TEXT("점검") };
 		const TCHAR* Icons[] = { TEXT("Navigation/T_FF_LH_Icon_Facilities_White_256"), TEXT("Navigation/T_FF_LH_Icon_Events_White_256"),
 			TEXT("Navigation/T_FF_LH_Icon_Staff_White_256"), TEXT("Navigation/T_FF_LH_Icon_SNS_White_256"),
 			TEXT("Navigation/T_FF_LH_Icon_Events_White_256"), TEXT("Status/T_FF_LH_Icon_StatusCheck_White_256") };

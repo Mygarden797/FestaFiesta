@@ -29,6 +29,7 @@ public:
 	/** 구분선형 행 최초 제작용. 이후 아이콘·색은 Class Defaults 에서 고친다. */
 	void ConfigureIconRowDefaults(const TMap<EFF_LiveSnsSentiment, UTexture2D*>& Icons,
 		const FLinearColor& Positive, const FLinearColor& Negative, const FLinearColor& Other);
+	void ConfigureNewsRowDefaults(UTexture2D* InSocialIcon, UTexture2D* InOperationIcon);
 protected:
 	virtual void NativePreConstruct() override;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI|Live|SNS")
@@ -49,6 +50,11 @@ protected:
 	/** 이름 옆 새 글 점. 크기·색은 Designer 에서 고친다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|SNS")
 	TObjectPtr<UWidget> Image_NewDot;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UImage> Image_Avatar;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_Avatar;
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Live|News") bool bShowSourceLabel = false;
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Live|News") TObjectPtr<UTexture2D> SocialIcon;
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Live|News") TObjectPtr<UTexture2D> OperationIcon;
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Live|SNS|Style")
 	FLinearColor PositiveColor = FLinearColor(0.075f, 0.28f, 0.21f, 1.f);
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Live|SNS|Style")

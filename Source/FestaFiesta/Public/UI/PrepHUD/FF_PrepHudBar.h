@@ -6,6 +6,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Time/FF_FestivalStage.h"
 #include "UI/PrepHUD/FF_PrepHudTypes.h"
+#include "Economy/FF_FestivalEconomyTypes.h"
 
 // !! 전방 선언으로는 안 된다 !!
 // `HandleWorldChanged` 가 `UFUNCTION` 이고 인자가 `const FFFZSWorldChangeEvent&` 라
@@ -208,6 +209,9 @@ protected:
 
 	UFUNCTION()
 	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
+
+	UFUNCTION()
+	void HandlePurchasedFinaleGradeChanged(EFF_FinaleGrade NewGrade);
 
 	/** CTA 사유의 남은 시간을 초마다 갱신한다. */
 	UFUNCTION()
@@ -564,6 +568,7 @@ private:
 	FSlateBrush ResolveTabIcon(EFF_PrepHudTab Tab, const FString& EnumName) const;
 
 	void RefreshTabVisibility();
+	void RefreshFinaleAttention();
 	void RefreshStatusRow();
 
 	/**

@@ -11,6 +11,8 @@
 #include "Engine/GameInstance.h"
 #include "UI/FF_UILog.h"
 #include "UI/Staff/FF_StaffTrainingWidget.h"
+#include "UI/Staff/FF_StaffManagementWidget.h"
+#include "UI/LiveHUD/FF_LiveHudScreen.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaLiveStaff"
@@ -68,6 +70,17 @@ void UFF_LivePanelStaff::NativeOnInitialized()
 
 void UFF_LivePanelStaff::SelectStaffTab(bool bTraining)
 {
+	if (Widget_StaffManagement)
+	{
+		if (Widget_StaffTraining) Widget_StaffTraining->DeactivateRoster();
+		if (bStaffPanelOpen)
+		{
+			Widget_StaffManagement->OnRevealWorldRequested.BindUObject(this, &ThisClass::RequestClose);
+			Widget_StaffManagement->OnIncidentRequested.BindUObject(this, &ThisClass::HandleManagementIncident);
+			Widget_StaffManagement->ActivateManagement(true);
+		}
+		return;
+	}
 	bTrainingSelected = bTraining && Widget_StaffTraining && Switcher_StaffContent;
 	if (Switcher_StaffContent) Switcher_StaffContent->SetActiveWidgetIndex(bTrainingSelected ? 1 : 0);
 	if (Indicator_StaffOverview) Indicator_StaffOverview->SetVisibility(bTrainingSelected ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
@@ -95,6 +108,7 @@ void UFF_LivePanelStaff::NativeOnPanelOpened()
 void UFF_LivePanelStaff::NativeOnPanelClosed()
 {
 	bStaffPanelOpen = false;
+	if (Widget_StaffManagement) Widget_StaffManagement->DeactivateManagement();
 	if (Widget_StaffTraining) Widget_StaffTraining->DeactivateRoster();
 	UnbindViewModel();
 	Super::NativeOnPanelClosed();
@@ -103,9 +117,18 @@ void UFF_LivePanelStaff::NativeOnPanelClosed()
 void UFF_LivePanelStaff::NativeDestruct()
 {
 	bStaffPanelOpen = false;
+	if (Widget_StaffManagement) Widget_StaffManagement->DeactivateManagement();
 	if (Widget_StaffTraining) Widget_StaffTraining->DeactivateRoster();
 	UnbindViewModel();
 	Super::NativeDestruct();
+}
+
+void UFF_LivePanelStaff::HandleManagementIncident(FFF_IncidentHandle Handle)
+{
+	UFF_LiveHudScreen* Screen = GetOwningScreen();
+	if (!Screen) return;
+	RequestClose();
+	Screen->RequestOpenIncident(Handle);
 }
 
 UFF_FestivalViewModelSubsystem* UFF_LivePanelStaff::GetViewModel() const

@@ -54,7 +54,7 @@ public:
 	 * @param InBadgeText 배지 문구. 비어 있으면 배지를 접는다.
 	 *                    **`Locked` 인데 비어 있으면 안 된다** — 흐려짐만으로는 이유를 알 수 없다
 	 */
-	void ApplyCardState(EFF_PrepCardState InState, const FText& InBadgeText);
+	virtual void ApplyCardState(EFF_PrepCardState InState, const FText& InBadgeText);
 
 	EFF_PrepCardState GetCardState() const { return CardState; }
 

@@ -5,6 +5,8 @@
 #include "Components/Button.h"
 #include "Components/Slider.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Camera/FF_OverviewCameraPawn.h"
@@ -17,6 +19,7 @@
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
 #include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
+#include "UI/PrepHUD/Panels/FF_PrepRecommendedFacilityRow.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaPrepCheck"
@@ -192,6 +195,16 @@ void UFF_PrepPanelCheck::NativeOnInitialized()
 	Super::NativeOnInitialized();
 
 	CollectWeatherChoices();
+	if (VerticalBox_RecommendedRows)
+	{
+		for (UWidget* Child : VerticalBox_RecommendedRows->GetAllChildren())
+		{
+			if (auto* Row = Cast<UFF_PrepRecommendedFacilityRow>(Child))
+			{
+				Row->OnPlaceRequested.AddUObject(this, &ThisClass::HandleRecommendedPlaceRequested);
+			}
+		}
+	}
 	if (Button_RequiredFacilities) Button_RequiredFacilities->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffAssignmentGuidanceClicked);
 	if (Button_OpenGateReason) Button_OpenGateReason->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffAssignmentGuidanceClicked);
 	if (Slider_AdmissionFee) Slider_AdmissionFee->OnValueChanged.AddUniqueDynamic(this, &ThisClass::HandleAdmissionValueChanged);
@@ -285,6 +298,11 @@ void UFF_PrepPanelCheck::BindViewModel()
 	}
 
 	UGameInstance* GI = GetGameInstance();
+	BoundRecommendedCatalog = GI ? GI->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+	if (auto* Catalog = BoundRecommendedCatalog.Get())
+	{
+		Catalog->OnCatalogChanged.AddUniqueDynamic(this, &ThisClass::HandleRecommendedCatalogChanged);
+	}
 	CachedViewModel = GI ? GI->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
 
 	if (!CachedViewModel)
@@ -311,6 +329,11 @@ void UFF_PrepPanelCheck::BindViewModel()
 
 void UFF_PrepPanelCheck::UnbindViewModel()
 {
+	if (auto* Catalog = BoundRecommendedCatalog.Get())
+	{
+		Catalog->OnCatalogChanged.RemoveDynamic(this, &ThisClass::HandleRecommendedCatalogChanged);
+	}
+	BoundRecommendedCatalog.Reset();
 	// 해제는 조건부, 정리는 무조건.
 	if (CachedViewModel)
 	{
@@ -579,6 +602,7 @@ void UFF_PrepPanelCheck::RefreshAll()
 	RefreshSummary();
 	RefreshRequiredFacilities();
 	RefreshEstimate();
+	RefreshRecommendedFacilities();
 	RefreshOpenGate();
 
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
@@ -775,10 +799,13 @@ void UFF_PrepPanelCheck::RefreshOpenGate()
 	const EFF_PrepCtaState State = Bar->GetCtaState();
 	const bool bDraftBlocks = HasAdmissionDraft() || bAdmissionRequestInFlight;
 	SetTextOrHide(Text_OpenGateReason, bDraftBlocks ? AdmissionGateDraftText : (State == EFF_PrepCtaState::Ready
-		? OpenGateReadyText : Bar->GetCtaReason()));
+		? (MissingRecommendedCount > 0 ? RequiredReadyWithWarningsText : OpenGateReadyText) : Bar->GetCtaReason()));
 
 	// 문구는 단계마다 다르다. 셋업에서 `개장하기` 를 띄우면 하루를 건너뛰는 것처럼 읽힌다.
-	const FText Label = Bar->GetCtaLabelText();
+	const FText Label = State == EFF_PrepCtaState::Ready && !bDraftBlocks && MissingRecommendedCount > 0
+		? FText::Format(OpenWithWarningsFormat, FFormatNamedArguments{
+			{ TEXT("Day"), FText::AsNumber(GetViewModel() ? GetViewModel()->GetCurrentDay() : 1) } })
+		: Bar->GetCtaLabelText();
 	if (Text_OpenGateLabel && !Label.IsEmpty())
 	{
 		Text_OpenGateLabel->SetText(Label);
@@ -808,6 +835,66 @@ void UFF_PrepPanelCheck::RefreshEstimate()
 	SetTextOrHide(Text_StaffWageCost, FormatGoldOrUnknown(Estimate.StaffHireCost));
 	SetTextOrHide(Text_ExpectedAdmission, FormatGoldOrUnknown(Estimate.ExpectedAdmissionRevenue));
 	SetTextOrHide(Text_ExpectedGoalBonus, FormatGoldOrUnknown(Estimate.ExpectedGoalBonus));
+}
+
+void UFF_PrepPanelCheck::RefreshRecommendedFacilities()
+{
+	MissingRecommendedCount = 0;
+	// 기존 WBP를 사용할 때는 보이지 않는 경고가 개장 문구에만 나타나지 않게 한다.
+	if (!VerticalBox_RecommendedRows || !Border_RecommendedFacilities) return;
+	const auto* VM = GetViewModel();
+	const auto View = VM ? VM->GetPrepRecommendedFacilities(RecommendedFacilityRules) : FFF_PrepRecommendedFacilitiesView();
+	TSet<EFF_PrepRecommendedFacilityKind> VisibleKinds;
+	for (UWidget* Child : VerticalBox_RecommendedRows->GetAllChildren())
+	{
+		auto* Row = Cast<UFF_PrepRecommendedFacilityRow>(Child);
+		if (!Row) continue;
+		const bool bMissing = Row->bEnabled && View.bAvailable && View.MissingKinds.Contains(Row->Kind);
+		Row->SetVisibility(bMissing ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+		if (bMissing)
+		{
+			VisibleKinds.Add(Row->Kind);
+			const bool bCanPlace = !FindRecommendedCatalogTarget(Row->Kind).IsNone();
+			Row->SetPlacementEnabled(bCanPlace, bCanPlace ? FText::GetEmpty() : RecommendedCatalogUnavailableText);
+		}
+	}
+	MissingRecommendedCount = VisibleKinds.Num();
+	Border_RecommendedFacilities->SetVisibility(MissingRecommendedCount > 0
+		? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	FFormatNamedArguments Args{{TEXT("Count"), FText::AsNumber(MissingRecommendedCount)}};
+	SetTextOrHide(Text_RecommendedCount, FText::Format(RecommendedCountFormat, Args));
+	SetTextOrHide(Text_RecommendedSummary, !View.bAvailable ? RecommendedUnknownText
+		: MissingRecommendedCount > 0 ? FText::Format(RecommendedSummaryFormat, Args) : FText::GetEmpty());
+}
+
+FName UFF_PrepPanelCheck::FindRecommendedCatalogTarget(EFF_PrepRecommendedFacilityKind Kind) const
+{
+	const auto* Catalog = BoundRecommendedCatalog.Get();
+	if (!Catalog || !Catalog->IsCatalogReady()) return NAME_None;
+	const FFF_BuildCatalogEntry* Target = nullptr;
+	for (const auto& Entry : Catalog->GetEntriesView())
+	{
+		if (!RecommendedFacilityRules.Matches(Kind, Entry.Category, Entry.FacilityDefinitionId)) continue;
+		// 기존 카탈로그에서 후보를 보여 주기만 한다. 자동 구매·설치는 하지 않는다.
+		if (!Target || (Entry.HasValidInstallCost() && (!Target->HasValidInstallCost() || Entry.InstallCost < Target->InstallCost)))
+			Target = &Entry;
+	}
+	return Target ? Target->FacilityDefinitionId : NAME_None;
+}
+
+void UFF_PrepPanelCheck::HandleRecommendedCatalogChanged()
+{
+	RefreshRecommendedFacilities();
+	RefreshOpenGate();
+}
+
+void UFF_PrepPanelCheck::HandleRecommendedPlaceRequested(EFF_PrepRecommendedFacilityKind Kind)
+{
+	const FName Target = FindRecommendedCatalogTarget(Kind);
+	auto* Build = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+	// 프로그램의 시설 바로가기와 같은 입력 브리지를 사용한다. 성공하면 HUD가 배치 탭으로 전환한다.
+	if (!Build || Target.IsNone() || !Build->OpenCatalogForFacility(Target))
+		SetTextOrHide(Text_RecommendedSummary, RecommendedNavigationFailedText);
 }
 
 // =============================================================================
@@ -933,6 +1020,7 @@ void UFF_PrepPanelCheck::HandleRequiredFacilitiesChanged()
 	// 스태프 배정·해제도 이 신호로 온다. 인력 줄의 배정 수를 같이 갱신한다.
 	RefreshSummary();
 	RefreshRequiredFacilities();
+	RefreshRecommendedFacilities();
 	RefreshOpenGate();
 }
 

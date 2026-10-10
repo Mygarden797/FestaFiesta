@@ -213,9 +213,9 @@ namespace FFLiveHudBrightBuilder
 		MenuSize->AddChild(Tabs);
 		SetBorderContent(*Menu, *MenuSize);
 		AddRow(*Rows, *Menu, HAlign_Center);
-		const TCHAR* Names[] = { TEXT("Operations"), TEXT("Facilities"), TEXT("Guests"), TEXT("Queues"),
+		const TCHAR* Names[] = { TEXT("Operations"), TEXT("Facilities"), TEXT("RevenueRanking"), TEXT("Guests"), TEXT("Queues"),
 			TEXT("SNS"), TEXT("Report"), TEXT("Staff"), TEXT("Density"), TEXT("Finale") };
-		const TCHAR* Labels[] = { TEXT("운영"), TEXT("시설"), TEXT("관객"), TEXT("대기열"), TEXT("SNS"),
+		const TCHAR* Labels[] = { TEXT("운영"), TEXT("시설"), TEXT("매출 순위"), TEXT("현황"), TEXT("대기열"), TEXT("SNS"),
 			TEXT("결산"), TEXT("스태프"), TEXT("밀집"), TEXT("피날레") };
 		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Names); ++Index)
 		{
@@ -223,12 +223,15 @@ namespace FFLiveHudBrightBuilder
 				FName(FString(TEXT("Tab_")) + Names[Index]), &TabClass));
 			if (!Tab) { return false; }
 			Tab->DisplayLabelOverride = FText::FromString(Labels[Index]);
-			const FString IconName = Index == 8 ? TEXT("Events") : Names[Index];
-			Tab->DesignerIcon = IconBrush(TEXT("Navigation/T_FF_LH_Icon_") + IconName + TEXT("_White_256"), 17.f);
+			const FString Name = Names[Index];
+			const FString IconName = Name == TEXT("Finale") ? TEXT("Events") : Name;
+			Tab->DesignerIcon = IconBrush(Name == TEXT("RevenueRanking")
+				? TEXT("Metrics/T_FF_LH_Icon_Revenue_White_256")
+				: TEXT("Navigation/T_FF_LH_Icon_") + IconName + TEXT("_White_256"), 17.f);
 			UHorizontalBoxSlot* Slot = Tabs->AddChildToHorizontalBox(Tab);
 			Slot->SetVerticalAlignment(VAlign_Fill);
 			Slot->SetPadding(FMargin(1.f, 1.f, 1.f, 0.f));
-			if (Index == 5 || Index == 8) { Tab->SetVisibility(ESlateVisibility::Collapsed); }
+			if (Name == TEXT("Report") || Name == TEXT("Finale")) { Tab->SetVisibility(ESlateVisibility::Collapsed); }
 		}
 
 		USizeBox* StatusSize = MakeWidget<USizeBox>(BP, Tree, TEXT("SizeBox_StatusRow"), true);

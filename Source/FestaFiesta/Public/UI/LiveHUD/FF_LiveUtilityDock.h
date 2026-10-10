@@ -23,6 +23,7 @@ public:
 	/** 기존 오디오 위젯 생성 설정이 이 도크를 사용하는지. 하단 SNS 중복 진입을 막는다. */
 	static bool IsConfigured();
 	static UFF_LiveUtilityDock* FindForPlayer(const APlayerController* Player);
+	bool HasUnifiedNews() const;
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Utility")
 	void ToggleSNS();
@@ -111,4 +112,6 @@ private:
 	uint8 OpenPanel = 0;
 	bool bSnsAvailable = false;
 	bool bDockAvailable = false;
+	// 확인창·ESC가 닫히면 같은 패널/스크롤 위치로 복원한다. 닫기 동작과 별개다.
+	bool bDockPresented = false;
 };

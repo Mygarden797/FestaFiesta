@@ -9,6 +9,7 @@
 #include "FF_StaffPromotionRowWidget.generated.h"
 
 class UButton;
+class USizeBox;
 class UTextBlock;
 
 DECLARE_DELEGATE_OneParam(FFF_OnStaffPromoteRequested, int32 /* StaffId */);
@@ -24,11 +25,16 @@ public:
 
 	void SetStaffMember(const FFF_StaffMember& Member, EFF_StaffPromotionState State, bool bPending = false);
 	void SetRequestPending(bool bPending);
+	void SetAssignmentStatus(const FText& Facility, const FText& Duty);
 	FText GetStaffDisplayName() const;
 	FText GetPromotionStatusText(EFF_StaffPromotionState State) const;
 	int32 GetTrainingLevel() const { return CurrentMember.TrainingLevel; }
 
 	FFF_OnStaffPromoteRequested OnPromoteRequested;
+
+	/** 관리 목록은 가능한 동작 하나 또는 짧은 불가 사유만 표시한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining")
+	bool bCompactManagementRow = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Text")
 	FText StaffNameFormat = NSLOCTEXT("FestaFiestaStaffTraining", "StaffName", "스태프 {Id}");
@@ -74,15 +80,26 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
 	TObjectPtr<UTextBlock> Text_StaffLevel;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
+	TObjectPtr<UTextBlock> Text_AssignmentFacility;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
+	TObjectPtr<UTextBlock> Text_AssignmentStatus;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
 	TObjectPtr<UTextBlock> Text_PromotionStatus;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
 	TObjectPtr<UTextBlock> Text_Promote;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
 	TObjectPtr<UButton> Button_Promote;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
+	TObjectPtr<USizeBox> SizeBox_Promote;
 
 private:
 	void RefreshRow();
+	void RefreshAssignmentStatus();
+	FText GetCompactPromotionStatusText(EFF_StaffPromotionState State) const;
 	FFF_StaffMember CurrentMember;
+	FText AssignmentFacility;
+	FText AssignmentDuty;
+	bool bHasAssignmentStatus = false;
 	EFF_StaffPromotionState CurrentState = EFF_StaffPromotionState::Unavailable;
 	bool bHasMember = false;
 	bool bRequestPending = false;

@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/LiveHUD/FF_LiveHudScreen.h"
+#include "UI/Core/FF_OutsideClickDismiss.h"
 
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
@@ -19,6 +20,7 @@
 #include "GameFramework/PlayerController.h"
 #include "UI/FF_UILog.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
+#include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
 #include "Incident/FF_IncidentSubsystem.h"
@@ -215,6 +217,11 @@ void UFF_LiveHudScreen::EnsureIncidentDetailPanel()
 	}
 }
 
+void UFF_LiveHudScreen::RequestOpenIncident(FFF_IncidentHandle Handle)
+{
+	HandleIncidentMarkerClicked(Handle);
+}
+
 void UFF_LiveHudScreen::HandleIncidentMarkerClicked(FFF_IncidentHandle Handle)
 {
 	EnsureIncidentDetailPanel();
@@ -314,6 +321,15 @@ void UFF_LiveHudScreen::HandleIncidentFinished(const FFF_IncidentClosedInfo& Inf
 void UFF_LiveHudScreen::NativeConstruct()
 {
 	Super::NativeConstruct();
+	FFOutsideClickDismiss::Register(this,
+		[this] { return Selection.bHasSelection && !Selection.IsSelected(EFF_LiveTab::RevenueRanking); },
+		[this](FVector2D Position)
+		{
+			return FFOutsideClickDismiss::IsInside(Panel_PanelHost, Position)
+				|| FFOutsideClickDismiss::IsInside(Border_MenuRow, Position)
+				|| FFOutsideClickDismiss::IsInside(Border_StatusRow, Position);
+		},
+		FSimpleDelegate::CreateUObject(this, &ThisClass::CloseCurrentPanel));
 
 	// 🔴 전체 화면을 덮는 HUD 가 `Visible` 이면 월드 클릭을 전부 먹는다.
 	// 준비 단계 바에서 실제로 건축 배치가 죽었다 — 라이브는 월드 조작이 더 잦아 더 치명적이다.
@@ -362,6 +378,14 @@ void UFF_LiveHudScreen::EnsureFinaleSnsOverlay()
 
 void UFF_LiveHudScreen::NativeDestruct()
 {
+	FFOutsideClickDismiss::Unregister(this);
+	if (Selection.IsSelected(EFF_LiveTab::RevenueRanking))
+	{
+		if (UWorld* World = GetWorld())
+		{
+			if (auto* Ranking = World->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>()) { Ranking->Close(); }
+		}
+	}
 	UnbindViewModel();
 	UnbindIncidentFinished();
 	if (IncidentMarkerLayer)
@@ -393,6 +417,12 @@ void UFF_LiveHudScreen::NativeDestruct()
 void UFF_LiveHudScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	// 기존 순위 화면의 닫기/ESC/시설 정보 이동도 하단 탭 선택에 반영한다.
+	if (Selection.IsSelected(EFF_LiveTab::RevenueRanking))
+	{
+		const auto* Ranking = GetWorld() ? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr;
+		if (!Ranking || !Ranking->IsOpen()) { ApplySelection(FFF_LiveTabSelection::None()); }
+	}
 	if (Selection.bHasSelection)
 	{
 		const FFF_LivePanelLayout Layout = ResolveLayout(Selection.Tab);
@@ -489,6 +519,7 @@ void UFF_LiveHudScreen::ForEachTabButton(TFunctionRef<void(EFF_LiveTab, UFF_Live
 	const TPair<EFF_LiveTab, UFF_LiveTabButton*> Bindings[] = {
 		{ EFF_LiveTab::Operations,	Tab_Operations },
 		{ EFF_LiveTab::Facilities,	Tab_Facilities },
+		{ EFF_LiveTab::RevenueRanking, Tab_RevenueRanking },
 		{ EFF_LiveTab::Guests,		Tab_Guests },
 		{ EFF_LiveTab::Queues,		Tab_Queues },
 		{ EFF_LiveTab::SNS,			Tab_SNS },
@@ -553,6 +584,13 @@ void UFF_LiveHudScreen::ApplySelection(const FFF_LiveTabSelection& NewSelection)
 	// 1) 열려 있던 것을 닫는다. **패널이 스스로 닫지 않는다** — 여기가 유일한 경로다.
 	if (Selection.bHasSelection)
 	{
+		if (Selection.IsSelected(EFF_LiveTab::RevenueRanking))
+		{
+			if (auto* Ranking = GetWorld() ? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
+			{
+				Ranking->Close();
+			}
+		}
 		if (TObjectPtr<UFF_LivePanelBase>* Previous = PanelWidgets.Find(Selection.Tab))
 		{
 			if (*Previous)
@@ -566,7 +604,14 @@ void UFF_LiveHudScreen::ApplySelection(const FFF_LiveTabSelection& NewSelection)
 	Selection = NewSelection;
 
 	// 2) 새 패널을 연다. 만들지 못하면 닫힌 상태로 되돌린다 — 탭만 눌린 채로 두지 않는다.
-	if (Selection.bHasSelection)
+	if (Selection.IsSelected(EFF_LiveTab::RevenueRanking))
+	{
+		// 순위/경제를 다시 계산하지 않고 시설 정보에서도 사용하는 같은 화면을 연다.
+		auto* Ranking = GetWorld() ? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr;
+		if (Ranking) { Ranking->Open(); }
+		if (!Ranking || !Ranking->IsOpen()) { Selection = FFF_LiveTabSelection::None(); }
+	}
+	else if (Selection.bHasSelection)
 	{
 		// 자리를 먼저 맞춘 뒤 패널을 넣는다. 순서가 반대면 이전 탭의 자리로 한 프레임 그려진다.
 		ApplyPanelLayout(ResolveLayout(Selection.Tab));
@@ -692,7 +737,8 @@ UFF_LivePanelBase* UFF_LiveHudScreen::EnsurePanel(EFF_LiveTab Tab)
 	}
 
 	// 제목과 탭을 함께 넣는다. 따로 두면 제목만 바뀌고 탭이 남는다.
-	Panel->InitializePanel(this, Tab, DisplayName);
+	Panel->InitializePanel(this, Tab, Tab == EFF_LiveTab::Facilities
+		? LOCTEXT("LiveFacilities_PanelTitle", "시설 상태") : DisplayName);
 
 	if (bIsPlaceholder)
 	{
@@ -803,7 +849,7 @@ void UFF_LiveHudScreen::LogPanelGeometryNextTick(UFF_LivePanelBase& Panel)
 
 bool UFF_LiveHudScreen::IsPanelDragAllowed() const
 {
-	if (!bAllowPanelDrag || !Panel_PanelHost || !Selection.bHasSelection)
+	if (!bAllowPanelDrag || !Panel_PanelHost || !Selection.bHasSelection || Selection.IsSelected(EFF_LiveTab::RevenueRanking))
 	{
 		return false;
 	}
@@ -867,7 +913,7 @@ void UFF_LiveHudScreen::RefreshPanelHostVisibility()
 {
 	if (Panel_PanelHost)
 	{
-		Panel_PanelHost->SetVisibility(!Selection.bHasSelection ? ESlateVisibility::Collapsed
+		Panel_PanelHost->SetVisibility(!Selection.bHasSelection || Selection.IsSelected(EFF_LiveTab::RevenueRanking) ? ESlateVisibility::Collapsed
 			: bAwaitingCenteredLayout ? ESlateVisibility::Hidden : ESlateVisibility::SelfHitTestInvisible);
 	}
 }

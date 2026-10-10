@@ -437,7 +437,7 @@ namespace FFPrepHudWbpBuilder
 		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
 		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
 		UHorizontalBox* Header = MakePanelHeader(
-			Blueprint, Tree, *Palette, LOCTEXT("PrepStaff_TitlePreview", "인력"));
+			Blueprint, Tree, *Palette, LOCTEXT("PrepStaff_TitlePreview", "스태프"));
 
 		UTextBlock* CurrentStaff = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CurrentStaff"), true);
 		UTextBlock* MaxStaff = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_MaxStaff"), true);

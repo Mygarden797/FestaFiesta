@@ -77,7 +77,7 @@ bool FFF_LiveHudRules_LiveStageOnly::RunTest(const FString& Parameters)
 	// 남겨 두면 이미 끝난 줄을 보게 된다. 볼 수 있는 시점에만 띄운다.
 	for (const EFF_LiveTab Tab : {
 		EFF_LiveTab::Operations, EFF_LiveTab::Facilities, EFF_LiveTab::Guests,
-		EFF_LiveTab::Queues, EFF_LiveTab::SNS, EFF_LiveTab::Staff })
+		EFF_LiveTab::Queues, EFF_LiveTab::SNS, EFF_LiveTab::Staff, EFF_LiveTab::RevenueRanking })
 	{
 		TestTrue(TEXT("라이브에서는 운영 탭이 보인다"),
 			FFF_LiveHudRules::IsTabVisible(Tab, EFF_FestivalStage::Live, true));
