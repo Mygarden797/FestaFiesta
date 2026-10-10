@@ -14,6 +14,7 @@
 #include "FF_FFZSProtectedArea.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ConfigCacheIni.h"
 #include "NavigationSystem.h"
@@ -76,7 +77,7 @@ bool FFFBuildNoRoadPlacementTest::RunTest(const FString& Parameters)
         return false;
     }
 
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    const FName ZoneId(FFProjectZoneTest::ZoneId());
     AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
     if (!TestNotNull(TEXT("Construction zone"), Zone) ||
         !TestTrue(TEXT("An accepted production zone ID is used"), Zone->ApplyAcceptedZonePreset(ZoneId)) ||

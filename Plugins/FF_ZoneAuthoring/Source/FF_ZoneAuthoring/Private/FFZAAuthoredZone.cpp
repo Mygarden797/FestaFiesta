@@ -2,6 +2,7 @@
 // 역할: 정의 에셋 → Zone 값 복사, 편집 후 Transform 자동 정리, 실시간 검증 표시.
 #include "FFZAAuthoredZone.h"
 
+#include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -215,6 +216,29 @@ void AFFZAAuthoredZone::CollectAuthoringIssues(TArray<FText>& OutIssues) const
             }
         }
     }
+
+#if WITH_EDITOR
+    // 4) Cook에서 제거되는 조상에 의존하면 런타임 Zone의 월드 경계가 달라질 수 있다.
+    // Actor 부모만 보지 않고 중간 SceneComponent까지 전체 attachment 체인을 검사한다.
+    if (!IsEditorOnly())
+    {
+        const USceneComponent* ZoneRoot = GetRootComponent();
+        for (const USceneComponent* Parent = ZoneRoot ? ZoneRoot->GetAttachParent() : nullptr;
+            Parent; Parent = Parent->GetAttachParent())
+        {
+            const AActor* ParentOwner = Parent->GetOwner();
+            if (Parent->IsEditorOnly() || (ParentOwner && ParentOwner->IsEditorOnly()))
+            {
+                OutIssues.Add(FText::Format(LOCTEXT("EditorOnlyAttachmentParent",
+                    "런타임 Zone이 에디터 전용 부모 컴포넌트 또는 액터에 연결되어 있습니다: {0}. "
+                    "패키징 시 부모가 제거되면 Zone의 월드 위치와 이동 경계가 달라질 수 있습니다. "
+                    "Zone을 'Keep World'로 연결 해제하여 월드 Transform을 보존하고, 정리에는 Outliner 폴더를 사용하세요."),
+                    FText::FromString(Parent->GetPathName())));
+                break;
+            }
+        }
+    }
+#endif
 }
 
 void AFFZAAuthoredZone::UpdateEditorPresentation()

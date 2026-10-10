@@ -32,6 +32,7 @@
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Framework/Application/SlateApplication.h"
@@ -322,12 +323,11 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	Controller->SetPlayer(Player);
 	Controller->PlayerInput = NewObject<UPlayerInput>(Controller);
 	World->AddController(Controller);
-	// 2026-10-10 건축 구역 개편(c3d4a54b)으로 DadaPocha가 ProjectZoneIds에서 제외됐다.
-	// 현재 승인된 해변 건축 구역을 사용하고, 기존 구역 제한·시설 허용 검증은 그대로 통과시킨다.
-	const FName FixtureZoneId(TEXT("GZ_Beach01"));
+	// Dev의 공통 테스트 구역을 사용하고, 기존 구역 제한·시설 허용 검증은 유지한다.
+	const FName FixtureZoneId = FFProjectZoneTest::ZoneId();
 	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
 	if (!TestNotNull(TEXT("Construction zone"), Zone) ||
-		!TestTrue(TEXT("Zone uses the current accepted beach preset"), Zone->ApplyAcceptedZonePreset(FixtureZoneId)) ||
+		!TestTrue(TEXT("Zone uses the accepted preset"), Zone->ApplyAcceptedZonePreset(FixtureZoneId)) ||
 		!TestTrue(TEXT("Construction zone registers"), Zones->RegisterZone(Zone))) { return false; }
 	Zones->SetChangePhase(EFFZSChangePhase::InitialSetup);
 	Build->SetExternalCatalogPresentationActive(true);

@@ -1,4 +1,4 @@
-﻿#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
+#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
 
@@ -13,6 +13,7 @@
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 
 IMPLEMENT_COMPLEX_AUTOMATION_TEST(FFF_CrowdRoadSurfaceTest,
     "FestaFiesta.Crowd.Road.SupportUpdatesAndAvoidance",
@@ -38,9 +39,8 @@ bool FFF_CrowdRoadSurfaceTest::RunTest(const FString& Parameters)
     UFFZSWorldSubsystem* System = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
     if (!TestNotNull(TEXT("Road world subsystem"), System)) return false;
     AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
-    Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha"));
+    if (!FFProjectZoneTest::RegisterZone(*this, Zone, System)) return false;
     Zone->bAllowAllFacilityCategories = true;
-    if (!TestTrue(TEXT("Road zone registers"), System->RegisterZone(Zone))) return false;
 
     AActor* Terrain = World->SpawnActor<AActor>();
     UBoxComponent* Box = NewObject<UBoxComponent>(Terrain);

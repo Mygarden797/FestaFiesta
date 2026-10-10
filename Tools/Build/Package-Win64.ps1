@@ -285,6 +285,7 @@ $cookPathAudit = Assert-FFCookPathBudget
 $projectDescriptor = Get-Content -LiteralPath $projectFile -Raw | ConvertFrom-Json
 $resolvedEngineRoot = Resolve-FFEngineRoot -EngineRoot $EngineRoot
 $engineVersion = Get-FFEngineVersion -EngineRoot $resolvedEngineRoot
+$buildDdc = Get-FFBuildDdcConfiguration
 $engineAssociation = [string]$projectDescriptor.EngineAssociation
 $engineBuildFile = Join-Path $resolvedEngineRoot 'Engine\Build\Build.version'
 $engineBuild = Get-Content -LiteralPath $engineBuildFile -Raw | ConvertFrom-Json
@@ -313,13 +314,8 @@ if (-not (Test-Path -LiteralPath $lockedSdkPath -PathType Container)) {
     throw "Locked Windows SDK $($toolchainLock.windows.sdk) is not installed: $lockedSdkPath"
 }
 
-$visualStudioRoot = Join-Path $env:ProgramFiles 'Microsoft Visual Studio\2022'
-$lockedMsvcPaths = @(Get-ChildItem -LiteralPath $visualStudioRoot -Directory -ErrorAction SilentlyContinue |
-    ForEach-Object { Join-Path $_.FullName "VC\Tools\MSVC\$($toolchainLock.windows.msvcInstall)" } |
-    Where-Object { Test-Path -LiteralPath $_ -PathType Container })
-if ($lockedMsvcPaths.Count -eq 0) {
-    throw "Locked MSVC toolchain $($toolchainLock.windows.msvcToolchain) is not installed below: $visualStudioRoot"
-}
+$lockedMsvcInstallation = Resolve-FFMsvcInstallation -InstallVersion ([string]$toolchainLock.windows.msvcInstall)
+Write-Verbose "Locked MSVC installation: $lockedMsvcInstallation"
 
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $projectRoot 'Artifacts\Releases'
@@ -395,6 +391,7 @@ try {
     Write-Host "Release: $BuildLabel"
     Write-Host "Engine:  $resolvedEngineRoot ($engineVersion)"
     Write-Host "Configuration: $Configuration"
+    Write-Host "Build DDC: $($buildDdc.Graph) ($($buildDdc.LocalPath))"
     Write-Host "Output:  $releaseRoot"
     Write-Host ('Mode:    {0}' -f $(if ($Incremental) { 'incremental' } else { 'clean release' }))
 
@@ -452,6 +449,14 @@ try {
     $uatArguments = @(
         'BuildCookRun',
         "-project=$projectFile",
+        $buildDdc.Argument,
+        # UAT forwards -ddc to the cooker, but container compression has its
+        # own UnrealPak process and requires explicit additional options.
+        # Each child must also forward Log-level DDC selection evidence to
+        # BuildCookRun.log; default Display-only stdout hides a valid backend.
+        '-AdditionalCookerOptions=-FullStdOutLogOutput',
+        "-AdditionalPakOptions=$($buildDdc.Argument) -FullStdOutLogOutput",
+        "-AdditionalIoStoreOptions=$($buildDdc.Argument) -FullStdOutLogOutput",
         '-target=FestaFiesta',
         '-noP4',
         '-utf8output',
@@ -492,6 +497,7 @@ try {
     if ($uatExitCode -ne 0) {
         throw "BuildCookRun failed with exit code $uatExitCode. See: $uatLog"
     }
+    $selectedDdcPath = Assert-FFBuildDdcSelection -LogPath $uatLog
 
     # The cooker still succeeds when a cooked package hard-references content
     # it did not cook (NeverCook rules, editor-only targets). The player would
@@ -612,6 +618,13 @@ try {
             defaultRhi    = 'D3D12'
         }
         packaging     = [ordered]@{
+            derivedDataCache = [ordered]@{
+                graph = $buildDdc.Graph
+                backend = 'FileSystem'
+                projectRelativePath = 'DerivedDataCache/BuildFileSystem'
+                selectedPath = $selectedDdcPath
+                selectionEvidence = 'Logs/BuildCookRun.log'
+            }
             pak            = $true
             ioStore        = $true
             compressed     = $true

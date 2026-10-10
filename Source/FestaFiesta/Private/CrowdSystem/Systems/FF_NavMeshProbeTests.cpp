@@ -11,6 +11,7 @@
 #include "Editor.h"
 #include "EngineUtils.h"
 #include "FileHelpers.h"
+#include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "NavigationSystem.h"
@@ -88,12 +89,42 @@ public:
             return true;
         }
         const FFFZSReadModel ReadModel = Zones->BuildReadModel();
-        Test->TestEqual(TEXT("All 31 authored release-map zones are registered"), ReadModel.Zones.Num(), 31);
+        // The October 10 layout (c3d4a54b) replaces the old numbered 31-zone
+        // layout. Keep the approved identities independent of both configuration
+        // and runtime discovery so a shared deletion cannot silently pass.
+        const TCHAR* const ExpectedZoneNames[] = {
+            TEXT("GZ_Beach01"), TEXT("GZ_Beach02"), TEXT("GZ_Beach03"),
+            TEXT("GZ_Beach04"), TEXT("GZ_Beach05"), TEXT("GZ_DadaYajang"),
+            TEXT("GZ_DadaepoForest"), TEXT("GZ_FountainPirates"), TEXT("GZ_FleaMarket"),
+            TEXT("GZ_PublicParkingWest"), TEXT("GZ_TemporaryParkingEast"),
+            TEXT("GZ_Operations"), TEXT("GZ_Tutorial")
+        };
+        constexpr int32 ExpectedZoneCount = UE_ARRAY_COUNT(ExpectedZoneNames);
+        TSet<FName> ExpectedZoneIds;
+        const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+        if (!Test->TestNotNull(TEXT("Production zone settings exist"), Settings)) return true;
+        Test->TestTrue(TEXT("Release-map zone identities remain restricted to project presets"),
+            Settings->bRestrictZoneIdsToProjectPresets);
+        Test->TestEqual(TEXT("Project configuration retains the approved release-map zone count"),
+            Settings->ProjectZoneIds.Num(), ExpectedZoneCount);
+        for (const TCHAR* ZoneName : ExpectedZoneNames)
+        {
+            const FName ZoneId(ZoneName);
+            ExpectedZoneIds.Add(ZoneId);
+            Test->TestTrue(FString::Printf(TEXT("Approved release-map zone %s is configured"), ZoneName),
+                Settings->ProjectZoneIds.Contains(ZoneId));
+            Test->TestNotNull(FString::Printf(TEXT("Approved release-map zone %s is registered"), ZoneName),
+                Zones->FindZone(ZoneId));
+        }
+        Test->TestEqual(TEXT("All approved release-map zones are registered"),
+            ReadModel.Zones.Num(), ExpectedZoneCount);
         TSet<FName> UniqueIds;
         TArray<FVector> Points;
         TArray<FName> Ids;
         for (const FFFZSZoneReadModel& Zone : ReadModel.Zones)
         {
+            Test->TestTrue(FString::Printf(TEXT("Registered zone %s belongs to the approved layout"),
+                *Zone.ZoneId.ToString()), ExpectedZoneIds.Contains(Zone.ZoneId));
             Test->TestFalse(FString::Printf(TEXT("%s has a unique identity"), *Zone.ZoneId.ToString()),
                 UniqueIds.Contains(Zone.ZoneId));
             UniqueIds.Add(Zone.ZoneId);
@@ -145,8 +176,9 @@ public:
             *GatesProperty->ContainerPtrToValuePtr<TArray<FFF_CrowdGate>>(Spawn);
         const TArray<FFF_CrowdGate>& RuntimeGates = CrowdSim->GetValidGates();
         // Keep the authored release-map contract independent of runtime discovery.
-        // Gate 5 is the sea-side entrance added to Test_Main in af3223d6.
-        const TCHAR* const ExpectedGateNames[] = { TEXT("1"), TEXT("2"), TEXT("3"), TEXT("4"), TEXT("5") };
+        // The redesigned Test_Main (158cad95) authors four entrances. Every
+        // entrance must survive validation; a disconnected one is still a fault.
+        const TCHAR* const ExpectedGateNames[] = { TEXT("1"), TEXT("2"), TEXT("3"), TEXT("4") };
         constexpr int32 ExpectedGateCount = UE_ARRAY_COUNT(ExpectedGateNames);
         Test->TestEqual(TEXT("Release map retains all expected authored crowd gates"), AuthoredGates.Num(), ExpectedGateCount);
         Test->TestEqual(TEXT("All expected authored crowd gates survive runtime validation"), RuntimeGates.Num(), ExpectedGateCount);

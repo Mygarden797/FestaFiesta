@@ -23,6 +23,7 @@ Set-FFProjectFileOverride -ProjectFile $ProjectFile
 $projectRoot = Get-FFProjectRoot
 $projectFile = Get-FFProjectFile
 $resolvedEngineRoot = Resolve-FFEngineRoot -EngineRoot $EngineRoot
+$buildDdc = Get-FFBuildDdcConfiguration
 $editorCommandlet = Join-Path $resolvedEngineRoot 'Engine\Binaries\Win64\UnrealEditor-Cmd.exe'
 $buildBatch = Join-Path $resolvedEngineRoot 'Engine\Build\BatchFiles\Build.bat'
 
@@ -34,6 +35,7 @@ $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 [System.IO.Directory]::CreateDirectory($OutputRoot) | Out-Null
 
 Assert-FFAssetsMaterialized
+Write-Host "Validation DDC: $($buildDdc.Graph) ($($buildDdc.LocalPath))"
 
 $editorBuildLog = Join-Path $OutputRoot 'EditorBuild.log'
 $editorBuildArguments = @(
@@ -84,6 +86,7 @@ foreach ($filter in $TestFilter) {
 
     $arguments = @(
         $projectFile,
+        $buildDdc.Argument,
         '-unattended',
         '-nop4',
         '-nosplash',
@@ -91,6 +94,12 @@ foreach ($filter in $TestFilter) {
         # the real project RHI without a visible editor window; NullRHI can
         # fail required previews or silently skip pixel validation.
         '-RenderOffscreen',
+        # UE 5.7's CEF shared-texture support rechecks GIsAutomationTesting:
+        # it can be enabled at browser creation, then assert during a test.
+        # Freeze only CEF paint transport at startup (native
+        # FCEFWebBrowserWindow::CanSupportAcceleratedPaint); browser HTML/JS
+        # and the real-RHI widget/pixel tests remain enabled.
+        '-nocefaccelpaint',
         '-nosound',
         '-stdout',
         '-FullStdOutLogOutput',
@@ -111,6 +120,15 @@ foreach ($filter in $TestFilter) {
     }
     finally {
         $ErrorActionPreference = $savedErrorActionPreference
+    }
+
+    $ddcPassed = $false
+    try {
+        $null = Assert-FFBuildDdcSelection -LogPath $logPath
+        $ddcPassed = $true
+    }
+    catch {
+        Write-Warning $_.Exception.Message
     }
 
     $failureLines = @(Select-String -LiteralPath $logPath -Pattern @(
@@ -134,7 +152,7 @@ foreach ($filter in $TestFilter) {
         Write-Warning "Automation did not export a valid current report: $reportIndex"
     }
 
-    if ($exitCode -ne 0 -or $failureLines.Count -gt 0 -or -not $reportPassed) {
+    if ($exitCode -ne 0 -or $failureLines.Count -gt 0 -or -not $reportPassed -or -not $ddcPassed) {
         $failedFilters.Add($filter)
         Write-Error "Automation test filter '$filter' failed. See: $logPath" -ErrorAction Continue
     }
@@ -154,6 +172,7 @@ if (-not $SkipDataValidation) {
 
     $dataValidationArguments = @(
         $projectFile,
+        $buildDdc.Argument,
         '-run=DataValidation',
         '-ProjectOnly',
         '-IncludeOnlyOnDiskAssets',
@@ -176,6 +195,7 @@ if (-not $SkipDataValidation) {
     finally {
         $ErrorActionPreference = $savedErrorActionPreference
     }
+    $null = Assert-FFBuildDdcSelection -LogPath $dataValidationLog
     $validationFailures = @(Select-String -LiteralPath $dataValidationLog -Pattern @(
         'LogContentValidation: Error:',
         'AssetCheck:\s+Error:',

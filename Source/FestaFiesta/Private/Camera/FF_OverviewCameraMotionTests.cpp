@@ -8,7 +8,10 @@
 #include "CollisionQueryParams.h"
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/SplineComponent.h"
 #include "Engine/World.h"
+#include "FF_FFZSZoneActor.h"
+#include "Tests/FF_FFZSTestFixtures.h"
 
 // 실제 Pawn과 충돌 바닥을 함께 검사한다. 리그의 수학 테스트만으로는 입력 종료 후
 // Pawn Tick이 다시 지면을 추종하거나 오래된 목표를 되살리는 회귀를 발견할 수 없다.
@@ -92,6 +95,18 @@ namespace FFOverviewCameraMotionTests
 			return World->LineTraceSingleByChannel(Hit, FVector(0.0, 0.0, 10000.0),
 				FVector(0.0, 0.0, -10000.0), ECC_Visibility, FCollisionQueryParams())
 				&& FMath::IsNearlyEqual(Hit.ImpactPoint.Z, Height, 0.01);
+		}
+
+		bool FindFloorHeightAt(const FVector2D& Location, double& OutHeight) const
+		{
+			FHitResult Hit;
+			if (!World->LineTraceSingleByChannel(Hit, FVector(Location.X, Location.Y, 10000.0),
+				FVector(Location.X, Location.Y, -10000.0), ECC_Visibility, FCollisionQueryParams()))
+			{
+				return false;
+			}
+			OutHeight = Hit.ImpactPoint.Z;
+			return true;
 		}
 
 		AActor* SpawnFollowTarget() const
@@ -379,6 +394,191 @@ bool FFF_OverviewCameraFollowTest::RunTest(const FString& Parameters)
 	TestNull(TEXT("Explicit stop releases follow"), Camera.GetFollowTarget());
 	Target->SetActorLocation(FVector(-3000.0, 0.0, 100.0));
 	TestTrue(TEXT("Stopped follow cannot resume because the actor moved"), RemainsFrozen(Camera));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraAuthoredHeightMotionTest,
+	"FestaFiesta.Camera.Motion.AuthoredHeightSurvivesIdlePanAndEdgeScroll",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_OverviewCameraAuthoredHeightMotionTest::RunTest(const FString& Parameters)
+{
+	for (const int32 FrameRate : { 30, 60, 144 })
+	{
+		FTestScene Scene;
+		if (!TestNotNull(TEXT("Camera is created"), Scene.Camera)) return false;
+		AFF_OverviewCameraPawn& Camera = *Scene.Camera;
+		Scene.SetFloorHeight(450.0);
+		TestTrue(TEXT("Physical ground exists below the authored high view"), Scene.HasFloorAt(450.0));
+		Camera.InitializeOverview(FVector(0.0, 0.0, 4540.0), 4000.f, true);
+		const FFF_OverviewCameraState Authored = Camera.GetCameraState();
+		const float DeltaSeconds = 1.f / FrameRate;
+		Camera.Tick(DeltaSeconds);
+		TestTrue(TEXT("First ground placement preserves the complete authored view"),
+			IsExactlyEqual(Camera.GetCameraState(), Authored));
+		TestTrue(TEXT("The authored view stays exactly fixed while idle"),
+			RemainsFrozen(Camera, FrameRate * 2, DeltaSeconds));
+		bool bPanKeptHeight = true;
+		for (int32 Frame = 0; Frame < FrameRate; ++Frame)
+		{
+			Camera.AddPanInput(FVector2D(0.0, 1.0));
+			Camera.Tick(DeltaSeconds);
+			bPanKeptHeight &= Camera.GetCameraState().FocusLocation.Z == Authored.FocusLocation.Z;
+		}
+		TestTrue(TEXT("Held pan moves across the physical floor"), Camera.GetCameraState().FocusLocation.X > 100.0);
+		TestTrue(*FString::Printf(TEXT("%d FPS pan preserves authored height on flat ground"), FrameRate), bPanKeptHeight);
+		const double BeforeEdgeY = Camera.GetCameraState().FocusLocation.Y;
+		bool bEdgeKeptHeight = true;
+		for (int32 Frame = 0; Frame < FrameRate; ++Frame)
+		{
+			Camera.AddEdgeScrollInput(FVector2D(1.0, 0.0));
+			Camera.Tick(DeltaSeconds);
+			bEdgeKeptHeight &= Camera.GetCameraState().FocusLocation.Z == Authored.FocusLocation.Z;
+		}
+		TestTrue(TEXT("Held edge scroll moves across the physical floor"), Camera.GetCameraState().FocusLocation.Y > BeforeEdgeY + 100.0);
+		TestTrue(*FString::Printf(TEXT("%d FPS edge scroll preserves authored height"), FrameRate), bEdgeKeptHeight);
+		Camera.Tick(DeltaSeconds);
+		TestTrue(TEXT("Release keeps the high view fixed"), RemainsFrozen(Camera, FrameRate, DeltaSeconds));
+		TestEqual(TEXT("Runtime clearance does not rewrite authored settings"), Camera.CameraSettings.GroundFocusOffset, 100.f);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraAuthoredHeightLifecycleTest,
+	"FestaFiesta.Camera.Motion.AuthoredHeightSlopeResetBoundsAndReinitialize",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_OverviewCameraAuthoredHeightLifecycleTest::RunTest(const FString& Parameters)
+{
+	FTestScene Scene;
+	if (!TestNotNull(TEXT("Camera is created"), Scene.Camera)) return false;
+	AFF_OverviewCameraPawn& Camera = *Scene.Camera;
+	Scene.SetFloorHeight(450.0);
+	Camera.InitializeOverview(FVector(0.0, 0.0, 4540.0), 4000.f, true);
+	Camera.Tick(1.f / 60.f);
+	constexpr double Clearance = 4540.0 - 450.0;
+
+	// 실제 경사진 콜리전을 독립적으로 측정한다. 명시적 focus의 대상 Z는 지면 기준을 바꾸지 않는다.
+	Scene.Floor->SetActorRotation(FRotator(5.0, 0.0, 0.0));
+	const FVector Destination(1500.0, 600.0, -200.0);
+	double DestinationGround = 0.0;
+	if (!TestTrue(TEXT("Sloped destination has physical ground"),
+		Scene.FindFloorHeightAt(FVector2D(Destination.X, Destination.Y), DestinationGround))) return false;
+	TestTrue(TEXT("Fixture slope differs from its original flat floor"), FMath::Abs(DestinationGround - 450.0) > 50.0);
+	Camera.FocusOnLocation(Destination);
+	TestTrue(TEXT("High focus command over a slope completes"), Settle(Camera));
+	TestEqual(TEXT("Slope keeps the original ground clearance"), Camera.GetCameraState().FocusLocation.Z,
+		DestinationGround + Clearance, 0.12);
+	Camera.ResetView();
+	TestTrue(TEXT("Reset completes without recalibrating clearance"), Settle(Camera));
+	double OriginGround = 0.0;
+	if (!TestTrue(TEXT("Reset position has physical ground"), Scene.FindFloorHeightAt(FVector2D::ZeroVector, OriginGround))) return false;
+	TestEqual(TEXT("Reset retains clearance above the changed ground at the initial XY"),
+		Camera.GetCameraState().FocusLocation.Z, OriginGround + Clearance, 0.12);
+	TestTrue(TEXT("Reset restores initial XY and arm"),
+		FVector2D(Camera.GetCameraState().FocusLocation).IsNearlyZero(0.1)
+		&& FMath::IsNearlyEqual(Camera.GetCameraState().ArmLength, 4000.f, 0.01f));
+
+	AFFZSGameplayZone* Zone = Scene.World->SpawnActor<AFFZSGameplayZone>();
+	if (!TestNotNull(TEXT("Bounds fixture zone exists"), Zone)
+		|| !TestTrue(TEXT("Bounds fixture uses an accepted project zone"), Zone->ApplyAcceptedZonePreset(FFZSTest::ProjectZoneId()))
+		|| !TestNotNull(TEXT("Bounds fixture has a spline"), Zone->BoundarySpline.Get())) return false;
+	Zone->BoundarySpline->ClearSplinePoints(false);
+	for (const FVector Corner : { FVector(-10000.0, -10000.0, 0.0), FVector(10000.0, -10000.0, 0.0),
+		FVector(10000.0, 10000.0, 0.0), FVector(-10000.0, 10000.0, 0.0) })
+	{
+		const int32 Index = Zone->BoundarySpline->GetNumberOfSplinePoints();
+		Zone->BoundarySpline->AddSplinePoint(Corner, ESplineCoordinateSpace::Local, false);
+		Zone->BoundarySpline->SetSplinePointType(Index, ESplinePointType::Linear, false);
+	}
+	Zone->BoundarySpline->SetClosedLoop(true, true);
+	Camera.CameraSettings.bUseZoneBounds = true;
+	Camera.RefreshZoneBounds();
+	TestTrue(TEXT("First late bounds application completes"), Settle(Camera));
+	const double FirstMinX = Camera.CameraSettings.FocusBounds.Min.X;
+	Zone->SetActorLocation(FVector(1000.0, 0.0, 0.0));
+	Camera.RefreshZoneBounds();
+	TestTrue(TEXT("Explicit bounds refresh completes"), Settle(Camera));
+	TestEqual(TEXT("Refresh really applied the changed zone bounds"), Camera.CameraSettings.FocusBounds.Min.X, FirstMinX + 1000.0, 0.01);
+	TestEqual(TEXT("Both bounds settings updates retain runtime clearance"),
+		Camera.GetCameraState().FocusLocation.Z, OriginGround + Clearance, 0.12);
+	TestEqual(TEXT("Bounds refresh does not serialize the runtime ground offset"), Camera.CameraSettings.GroundFocusOffset, 100.f);
+
+	const FVector NewInitial(2000.0, 400.0, 3200.0);
+	double NewInitialGround = 0.0;
+	if (!TestTrue(TEXT("Reinitialization position has physical ground"),
+		Scene.FindFloorHeightAt(FVector2D(NewInitial.X, NewInitial.Y), NewInitialGround))) return false;
+	Camera.InitializeOverview(NewInitial, 5000.f, true);
+	Camera.Tick(1.f / 60.f);
+	TestEqual(TEXT("Reinitialization establishes the new authored height"), Camera.GetCameraState().FocusLocation.Z, NewInitial.Z, 0.001);
+	Camera.FocusOnLocation(Destination);
+	TestTrue(TEXT("Movement after reinitialization completes"), Settle(Camera));
+	TestEqual(TEXT("Reinitialization replaces the previous clearance"), Camera.GetCameraState().FocusLocation.Z,
+		DestinationGround + NewInitial.Z - NewInitialGround, 0.12);
+
+	Scene.Floor->SetActorRotation(FRotator::ZeroRotator);
+	Scene.SetFloorHeight(450.0);
+	Camera.InitializeOverview(FVector(0.0, 0.0, 4540.0), 4000.f);
+	Camera.Tick(1.f / 60.f);
+	TestEqual(TEXT("Default opt-out retains the original ground plus offset contract"), Camera.GetCameraState().FocusLocation.Z, 550.0, 0.01);
+	Camera.InitializeOverview(FVector(0.0, 0.0, 400.0), 4000.f, true);
+	Camera.Tick(1.f / 60.f);
+	TestEqual(TEXT("Authored height below ground retains the existing minimum clearance"), Camera.GetCameraState().FocusLocation.Z, 550.0, 0.01);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraAuthoredHeightDelayedGroundTest,
+	"FestaFiesta.Camera.Motion.AuthoredHeightWaitsForGroundDuringFocusAndFollow",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_OverviewCameraAuthoredHeightDelayedGroundTest::RunTest(const FString& Parameters)
+{
+	for (const bool bFollow : { false, true })
+	{
+		FTestScene Scene;
+		if (!TestNotNull(TEXT("Camera is created"), Scene.Camera)) return false;
+		AFF_OverviewCameraPawn& Camera = *Scene.Camera;
+		UBoxComponent* FloorBox = Cast<UBoxComponent>(Scene.Floor->GetRootComponent());
+		if (!TestNotNull(TEXT("Fixture owns physical floor collision"), FloorBox)) return false;
+		Scene.SetFloorHeight(450.0);
+		FloorBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Camera.InitializeOverview(FVector(0.0, 0.0, 4540.0), 4000.f, true);
+		Camera.Tick(1.f / 60.f);
+		TestTrue(TEXT("Missing startup ground keeps the authored view idle"), RemainsFrozen(Camera));
+		AActor* Target = Scene.SpawnFollowTarget();
+		if (!TestNotNull(TEXT("Low focus or follow target exists"), Target)) return false;
+		Target->SetActorLocation(FVector(1000.0, 500.0, -1000.0));
+		if (bFollow) Camera.SetFollowTarget(Target);
+		else Camera.FocusOnLocation(Target->GetActorLocation());
+		for (int32 Frame = 0; Frame < 10; ++Frame) Camera.Tick(1.f / 60.f);
+		TestTrue(TEXT("Explicit focus or follow moves horizontally while ground is unavailable"), Camera.GetCameraState().FocusLocation.X > 0.0);
+		TestEqual(TEXT("Low target Z cannot replace the authored height before the first ground sample"),
+			Camera.GetCameraState().FocusLocation.Z, 4540.0, 0.001);
+		FloorBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		TestTrue(TEXT("Delayed physical ground becomes available"), Scene.HasFloorAt(450.0));
+		if (bFollow)
+		{
+			for (int32 Frame = 0; Frame < 120; ++Frame) Camera.Tick(1.f / 60.f);
+		}
+		else
+		{
+			Camera.FocusOnLocation(Target->GetActorLocation());
+			TestTrue(TEXT("Focus refreshes its sample on the next explicit command"), Settle(Camera));
+		}
+		TestEqual(TEXT("First valid ground sample calibrates against the authored initial height"),
+			Camera.GetCameraState().FocusLocation.Z, 4540.0, 0.001);
+		Scene.SetFloorHeight(650.0);
+		Camera.FocusOnLocation(Target->GetActorLocation());
+		TestTrue(TEXT("A later height change completes normally"), Settle(Camera));
+		TestEqual(TEXT("Later ground changes use the first valid baseline rather than recalibrating"),
+			Camera.GetCameraState().FocusLocation.Z, 4740.0, 0.12);
+		Camera.CameraSettings.bFollowGroundHeight = false;
+		Camera.InitializeOverview(FVector(0.0, 0.0, 4540.0), 4000.f, true);
+		Camera.FocusOnLocation(FVector(200.0, 300.0, 1500.0));
+		TestTrue(TEXT("Focus without ground following completes"), Settle(Camera));
+		TestEqual(TEXT("Disabling ground following keeps the original explicit XYZ focus contract"),
+			Camera.GetCameraState().FocusLocation.Z, 1500.0, 0.01);
+	}
 	return true;
 }
 

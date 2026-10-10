@@ -1253,6 +1253,12 @@ public:
 	int32 GetGroundRefinementCount() const { return GroundRefinements.Num(); }
 	int32 GetGroundRefinementSampleCount() const;
 	double GetGroundRefinementBuildSeconds() const { return GroundRefinementBuildSeconds; }
+	int32 GetGateGroundRefinementCount() const { return GateGroundRefinements.Num(); }
+	// Grid samples plus all boundary probe attempts, including rejected cells.
+	int32 GetGateGroundRefinementSampleCount() const;
+	SIZE_T GetGateGroundRefinementAllocatedBytes() const;
+	int32 GetGateGroundEdgeRefinementCount() const { return GateGroundEdgeFields.Num(); }
+	double GetGateGroundRefinementBuildSeconds() const { return GateGroundRefinementBuildSeconds; }
 	bool IsGroundWalkable(const FVector& WorldLocation) const;
 
 	bool TryGetGroundZ(const FVector& WorldLocation, double& OutZ) const;
@@ -1269,7 +1275,7 @@ private:
 	void ApplySimArea(FVector NewOrigin, const FBox& AreaBoundsCm);
 
 	void RebuildDensityGrid();
-	void RebuildHeightField();
+	void RebuildHeightField(bool bOnlyGateRefinements = false);
 	void RebuildAvoidanceWalls();
 
 	void EnsureFacilityWalls();
@@ -1409,6 +1415,9 @@ private:
 	//게이트 관련 변수
 	// GateLocation 은 NavMesh 투영 좌표로 덮여 있다. 저작 좌표를 그대로 쓰면 지면에서 뜬 곳에 사람이 나온다.
 	TArray<FFF_CrowdGate> ValidGates;
+	// Validated authored gates occupy this prefix. EnsureFallbackGate may append
+	// an emergency entry, which must not acquire an authored precision patch.
+	int32 ValidatedAuthoredGateCount = 0;
 
 	TArray<int32> SpawnGateIndices;
 
@@ -1600,6 +1609,15 @@ private:
 	};
 	TArray<FGroundRefinement> GroundRefinements;
 	double GroundRefinementBuildSeconds = 0.0;
+	// Entrances need fine ground before visitors spread into the coarse world
+	// grid. Built once from validated gate disks, independently of map labels.
+	TArray<FGroundRefinement> GateGroundRefinements;
+	// Only discontinuous 5 cm gate-core cells receive a cached 1 cm subgrid.
+	// Mixed subcells store a sampled boundary and interpolate within one class.
+	// Keys are world-aligned 5 cm cell coordinates, shared by overlapping gates.
+	TMap<FIntPoint, FFF_CrowdHeightField> GateGroundEdgeFields;
+	int32 GateGroundRefinementProbeCount = 0;
+	double GateGroundRefinementBuildSeconds = 0.0;
 
 	// Roads overlay the coarse terrain height without rebuilding its physics samples.
 	// Buckets refresh once per layout revision; each NPC only inspects its local bucket.

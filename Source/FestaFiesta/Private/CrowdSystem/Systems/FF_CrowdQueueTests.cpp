@@ -16,6 +16,7 @@
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
@@ -153,7 +154,7 @@ bool FFF_CrowdQueue_ArrivalAndAdvanceLifecycle::RunTest(const FString& Parameter
 	if (!Fixture.BeginPlayInTestWorld()) { Fixture.ForwardErrorMessages(this); return false; }
 	auto* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
-	if (!Zone || !Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+	if (!FFProjectZoneTest::RegisterZone(*this, Zone, Zones)) return false;
 	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
 	Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_Taco");
 	Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall.Taco");
@@ -335,7 +336,7 @@ bool FFF_CrowdQueue_ShortBlockedApproachStillQueriesPath::RunTest(const FString&
 	// the wall cache. A hand-injected wall would disappear during that rebuild.
 	auto* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
-	if (!Zone || !Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+	if (!FFProjectZoneTest::RegisterZone(*this, Zone, Zones)) return false;
 	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
 	Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_Taco");
 	Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall.Taco");
@@ -453,7 +454,7 @@ bool FFF_CrowdQueue_ValidSlotsBesideFacilityWall::RunTest(const FString& Paramet
 	if (!Fixture.BeginPlayInTestWorld()) { Fixture.ForwardErrorMessages(this); return false; }
 	auto* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
-	if (!Zone || !Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+	if (!FFProjectZoneTest::RegisterZone(*this, Zone, Zones)) return false;
 	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
 	Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_Taco");
 	Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall.Taco");
@@ -596,7 +597,7 @@ bool FFF_CrowdQueue_StartedServiceSurvivesWaitingImpatience::RunTest(const FStri
 	Queue->SetPaused(true);
 	Queue->SimulationStepSeconds = .05f;
 	auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
-	if (!Zone || !Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+	if (!FFProjectZoneTest::RegisterZone(*this, Zone, Zones)) return false;
 	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
 	Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_PatienceTest");
 	Spec.InstallCostKey = CostKey;
