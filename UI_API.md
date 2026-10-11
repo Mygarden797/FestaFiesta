@@ -2410,15 +2410,16 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 - **상태**: `구현완료` — 매출 1위 시설, 가장 낮은 만족도 항목(불만 1위)과 고칠 방법, 방문객 목표를 한 줄씩 씁니다(`FFF_DailyReportCommentRules`).
   **마지막 날**은 "내일" 대신 축제 전체를 돌아봅니다 — 축제 내내 매출 1위, 만족도 첫날 → 마지막 날, 목표 달성 일수, 다음 축제 조언
 - **화면**: `UFF_LivePanelReport` 에 `BindWidgetOptional` **`Text_AssistantComment`** 를 추가했습니다. **WBP 에 이 이름의 TextBlock 을 두시면 거기에** 나오고(자동 줄바꿈), 없으면 정산이 끝난 뒤 비는 `Text_MissingNote` 자리에 대신 나옵니다. 머리말은 `AssistantCommentFormat`("비서 한마디\n{Comment}")
+- **아침 비서와 같은 판정**: 불만 1위 판정은 `FFF_DailyReportCommentRules::FindComplaint` 한 곳에서만 하고, 결과를 `FFF_DailyReportView::Complaint` 에 남깁니다. 다음 날 아침 비서 브리핑은 `UFF_FestivalViewModelSubsystem::GetPreviousDailyReport()`(어제 결산, 못 봤으면 nullptr)로 이 판정과 매출 1위를 그대로 읽습니다. 매출 1위는 오늘 · 축제 전체 모두 **배치된 시설 하나 단위**(매출 순위 패널과 같은 기준)입니다
 
 #### 바뀐 값 (2차)
 
 | 항목 | 지금 |
 |---|---|
 | 피날레 가격 C/B/A/S | 1,000 / 1,800 / 2,600 / 3,500 |
-| 재무 목표 `FinanceTargetProfitGold` | **13,000 확정** (재무 점수 = 100 × 이익 / 13,000) |
+| 재무 목표 `FinanceTargetProfitGold` | **17,000** (10/11 새 맵 기준, 재무 점수 = 100 × 이익 / 17,000. 10/9 에는 13,000) |
 | 부스 1회 매출 | 전 행 ×1.5 (`DT_FacilityRevenues`) |
-| 만족도 Need 충족 | 욕구별 운영 중 시설 수 / 목표(음식 3 · 화장실 2 · 즐길 거리 3, 메인 무대 제외), 하한 0.3 을 곱함. `UFF_CrowdSimulationSubsystem::GetNeedCoverage(EFF_NeedType)` 로 읽을 수 있음 |
+| 만족도 Need 충족 | 욕구별 운영 중 시설 수 / 목표(10/11부터 음식 **7** · 화장실 2 · 즐길 거리 **10**, 메인 무대 제외. 운영 알림의 시설 부족은 커버리지 0.5 미만일 때만), 하한 0.3 을 곱함. `UFF_CrowdSimulationSubsystem::GetNeedCoverage(EFF_NeedType)` 로 읽을 수 있음 |
 | SNS | 화제 27(어제 글 보고 왔다, 2일차 오전, 어제 매출 1위 시설 이름) 추가. 한산(11)은 붐비는 칸이 없을 때만, 붐빔(4)은 붐비는 칸이 있을 때만 나오고 일부 문장에 시설 이름이 들어감 |
 
 
@@ -2430,6 +2431,8 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 | 날짜         | 작성자 | 내용                                                                                             |
 | ---------- | --- | ---------------------------------------------------------------------------------------------- |
+| 2026-10-11 | 김시리 | 재무 목표 17,000, 시설 커버리지 목표 음식 7 · 즐길 거리 10, 운영 알림 시설 부족 기준 커버리지 0.5 미만 |
+| 2026-10-11 | 김시리 | 결산 한마디 ↔ 아침 비서 브리핑 판정 통일(`FindComplaint`, `FFF_DailyReportView::Complaint`, `GetPreviousDailyReport()`). 마지막 날 축제 전체 매출 1위를 시설 하나 단위로 변경 |
 | 2026-10-09 | 김시리 | 🆕 운영 알림(`UFF_OperationAlertPanel` 오른쪽 위 + 지난 알림 버튼, LiveHUD 가 만듦), 결산 비서 한마디(`FFF_DailyReportView::AssistantComment`, WBP 선택 슬롯 `Text_AssistantComment`), 2차 밸런싱 값("10/9 2차" 절) |
 | 2026-10-09 | 김시리 | 🆕 피날레 SNS 후기 계약(`ViewModel::OnFinaleSnsPostAdded`, `CrowdInsights::GetFinalePosts`, LiveHUD 가 만드는 `UFF_FinaleSnsOverlay`)과 1차 밸런싱 반영("10/9 추가" 절). `GetDailyVisitorGoal()` 은 오늘 목표(900/1000/1100), 재무 점수 = 100 × 이익 / `FinanceTargetProfitGold`, 피날레 보너스 +3/+6/+10/+15, 부스 수익 100%(화면 문구 "수수료" → "부스 매출"), 기본 스태프 1명, 입장료 기준 3, 평판 ×0.75~1.25, 화제성 감쇠 40% |
 | 2026-09-28 | 김시리 | 입장료·예보·화제성·일일 목표·축제 평가·스태프 승급을 **ViewModel 에 전부 중계**("✅ ViewModel 경로" 절). 입장료 변경 명령 `RequestSetAdmissionFee` 신설, 표시 문자열 4종 추가. SNS `{시설}` 문장은 화제 1·7·10·14 에서 실제 시설 이름으로 나옵니다(아래 9/16 기록의 전부 제외 서술은 지난 것) |

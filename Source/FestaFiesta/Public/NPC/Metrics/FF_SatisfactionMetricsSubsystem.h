@@ -60,9 +60,9 @@ struct FFF_SatisfactionCoefficients
 
 	// 시설 커버리지: 그 욕구를 해소하는 운영 중 시설 수가 목표에 못 미치면 Need 충족도에 비율을 곱한다.
 	// 체류가 짧아 개인 욕구가 한계까지 거의 차지 않으므로, 이게 없으면 시설이 모자란 배치도 충족도가 100 근처로 나온다
-	float NeedCoverageTargetHunger = 3.f;
+	float NeedCoverageTargetHunger = 7.f;
 	float NeedCoverageTargetRestroom = 2.f;
-	float NeedCoverageTargetStimulation = 3.f;
+	float NeedCoverageTargetStimulation = 10.f;
 	float NeedCoverageFloor = 0.3f;
 
 	// 0이면 시설이 하나도 없어도 하한만큼은 남긴다. 목표가 0 이하이면 커버리지를 보지 않는다
