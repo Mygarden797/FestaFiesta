@@ -1,7 +1,7 @@
 # Win64 패키징 운영 안내
 
 팀의 공식 진입점은 [`Package-Win64.ps1`](./Package-Win64.ps1)이다.
-전체 절차·설치·QA·문제 해결·과거 실행 이력은 [`PACKAGING_GUIDE_KO.md`](./PACKAGING_GUIDE_KO.md)를 참고한다.
+빌드·검증·재빌드 절차는 이 문서에서 관리한다. 플레이어용 설치·실행·문제 보고는 [`배포본 실행 안내`](../../Distribution/README_KO.md)를 참고한다.
 이 문서는 운영 절차이며, 현재 소스의 패키징이나 QA 통과를 미리 보장하지 않는다.
 
 ## 실행 전 준비

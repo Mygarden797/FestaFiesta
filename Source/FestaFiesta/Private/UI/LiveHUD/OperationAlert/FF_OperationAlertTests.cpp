@@ -48,7 +48,7 @@ bool FFF_OperationAlert_SubsystemCooldown::RunTest(const FString& Parameters)
 	Alerts->ShortageCooldownLiveSeconds = 120.f;
 
 	FFF_OperationAlertInputs Shortages;
-	Shortages.HungerCoverage = 0.5f;
+	Shortages.HungerCoverage = 0.4f;
 	Shortages.RestroomCoverage = 0.3f;
 	Shortages.StimulationCoverage = 0.3f;
 

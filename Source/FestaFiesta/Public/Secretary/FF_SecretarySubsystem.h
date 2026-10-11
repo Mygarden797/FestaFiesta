@@ -103,8 +103,6 @@ private:
 	int32 NextGeneralTip = 0;
 
 	// 하루 모음(운영 중). 운영이 다시 시작될 때 비운다.
-	double NeedUnmetSum[static_cast<int32>(EFF_NeedType::Count)] = {};
-	int32 NeedSampleCount = 0;
 	FText DayWorstWaitFacility;
 	float DayWorstWaitSeconds = 0.f;
 

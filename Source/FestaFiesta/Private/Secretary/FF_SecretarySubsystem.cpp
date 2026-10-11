@@ -2,26 +2,23 @@
 
 #include "Secretary/FF_SecretarySubsystem.h"
 
-#include "Building/FF_BuildCatalogSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSWorldSubsystem.h"
-#include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "HAL/IConsoleManager.h"
 #include "Incident/FF_IncidentSubsystem.h"
 #include "Incident/FF_IncidentTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
-#include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "Secretary/FF_SecretarySettings.h"
 #include "Secretary/FF_SecretaryTipWidget.h"
 #include "Staff/FF_StaffFacilitySubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Tutorial/FF_TutorialSubsystem.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
+#include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFestaFiestaSecretary, Log, All);
 
@@ -37,6 +34,18 @@ namespace
 	// 대사창이 다른 대사를 재생 중이면 기다릴 최대 횟수(2초씩). 그 뒤로는 그날 브리핑을 접는다.
 	constexpr int32 MaxSecretaryBriefingRetries = 30;
 	constexpr float SecretaryBriefingRetrySeconds = 2.f;
+
+	EFF_SecretaryWeakness ToSecretaryWeakness(const EFF_DailyComplaintAxis Axis)
+	{
+		switch (Axis)
+		{
+		case EFF_DailyComplaintAxis::Need: return EFF_SecretaryWeakness::Need;
+		case EFF_DailyComplaintAxis::Wait: return EFF_SecretaryWeakness::Wait;
+		case EFF_DailyComplaintAxis::Density: return EFF_SecretaryWeakness::Density;
+		case EFF_DailyComplaintAxis::Preference: return EFF_SecretaryWeakness::Preference;
+		default: return EFF_SecretaryWeakness::None;
+		}
+	}
 }
 
 bool UFF_SecretarySubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
@@ -267,62 +276,33 @@ FFF_SecretaryBriefingInputs UFF_SecretarySubsystem::GatherBriefingInputs() const
 	FFF_SecretaryBriefingInputs Inputs;
 	const UWorld* World = GetWorld();
 	UGameInstance* Game = World ? World->GetGameInstance() : nullptr;
-	const UFF_SecretarySettings* Settings = UFF_SecretarySettings::Get();
 	if (!World || !Game)
 	{
 		return Inputs;
-	}
-	if (Settings)
-	{
-		Inputs.GoodScore = Settings->GoodScore;
 	}
 	if (const UFF_FestivalStageSubsystem* Stage = BoundStage.Get())
 	{
 		Inputs.Day = Stage->CurrentDay;
 	}
-	const int32 Yesterday = Inputs.Day - 1;
-
-	// 어제 만족도(날짜별 기록은 1일차부터 쌓인다).
-	const UFF_FestivalProgressionSubsystem* Progression = Game->GetSubsystem<UFF_FestivalProgressionSubsystem>();
-	if (Progression && Yesterday >= 1)
+	// 어제 만족도 · 아쉬운 점 · 매출 1등은 어제 결산이 이미 정했다. 결산 화면과 다른 말을 하지 않도록 그대로 옮긴다.
+	// 이어하기로 아침에 들어와 어제 결산을 못 봤으면 비워 둔다(브리핑이 그 줄들을 빼고 말한다).
+	const UFF_FestivalViewModelSubsystem* ViewModel = Game->GetSubsystem<UFF_FestivalViewModelSubsystem>();
+	if (const FFF_DailyReportView* Report = ViewModel ? ViewModel->GetPreviousDailyReport() : nullptr)
 	{
-		const TArray<int32> History = Progression->GetDailySatisfactionHistory();
-		if (History.IsValidIndex(Yesterday - 1))
+		if (Report->bHasSatisfaction)
 		{
-			Inputs.YesterdaySatisfaction = History[Yesterday - 1];
+			Inputs.YesterdaySatisfaction = Report->ScoreSatisfaction;
 		}
-	}
-
-	// 만족도 항목. 아침에도 어제 마지막 값이 남아 있다. 이 판에서 운영을 본 적이 없으면 기본값(50)이라 쓰지 않는다.
-	if (const UFF_SatisfactionMetricsSubsystem* Satisfaction = Game->GetSubsystem<UFF_SatisfactionMetricsSubsystem>())
-	{
-		if (NeedSampleCount > 0)
-		{
-			Inputs.WaitScore = Satisfaction->GetWaitScore();
-			Inputs.DensityScore = Satisfaction->GetDensityScore();
-			Inputs.PreferenceScore = Satisfaction->GetPreferenceScore();
-			Inputs.NeedFulfillmentScore = Satisfaction->GetNeedFulfillmentScore();
-		}
-	}
-
-	// 어제 하루 동안 가장 많이 못 채운 필요(평균).
-	if (NeedSampleCount > 0)
-	{
-		double WorstAverage = 0.0;
-		for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
-		{
-			const double Average = NeedUnmetSum[Index] / NeedSampleCount;
-			if (Average > WorstAverage)
-			{
-				WorstAverage = Average;
-				Inputs.WorstNeed = static_cast<EFF_NeedType>(Index);
-				Inputs.bHasWorstNeed = true;
-			}
-		}
+		Inputs.bJudgedYesterday = Report->Complaint.bJudged;
+		Inputs.Weakness = ToSecretaryWeakness(Report->Complaint.Axis);
+		Inputs.bHasWorstNeed = Report->Complaint.bHasNeedShortage;
+		Inputs.WorstNeed = Report->Complaint.NeedShortage;
+		Inputs.TopRevenueFacility = Report->TopFacilityName;
+		Inputs.TopRevenueGold = Report->TopFacilityGold;
 	}
 	Inputs.WorstWaitFacility = DayWorstWaitFacility;
 
-	// 시설: 화장실 수 · 한 번도 안 놓아 본 분류 · 매출 1등 이름 찾기.
+	// 시설: 화장실 수 · 한 번도 안 놓아 본 분류.
 	const UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	const FFFZSReadModel Model = Zones ? Zones->BuildReadModel() : FFFZSReadModel();
 	TSet<EFFZSFacilityCategory> Built = BuiltCategories;
@@ -347,40 +327,6 @@ FFF_SecretaryBriefingInputs UFF_SecretarySubsystem::GatherBriefingInputs() const
 			}
 		}
 	}
-
-	// 어제 매출 1등(시설 종류별 장부).
-	if (Progression && Yesterday >= 1 && Progression->HasLedgerForDay(Yesterday))
-	{
-		FName TopId;
-		for (const FFF_FacilityRevenueRow& Row : Progression->GetRevenueByFacilityRowsForDay(Yesterday))
-		{
-			if (Row.Amount > Inputs.TopRevenueGold)
-			{
-				Inputs.TopRevenueGold = Row.Amount;
-				TopId = Row.FacilityId;
-			}
-		}
-		if (!TopId.IsNone())
-		{
-			for (const FFFZSFacilityReadModel& Facility : Model.Facilities)
-			{
-				if (Facility.FacilityDefinitionId == TopId && !Facility.DisplayName.IsEmpty())
-				{
-					Inputs.TopRevenueFacility = Facility.DisplayName;
-					break;
-				}
-			}
-			// 그 시설을 오늘 아침 치웠으면 목록에서 이름을 찾는다.
-			if (Inputs.TopRevenueFacility.IsEmpty())
-			{
-				const UFF_BuildCatalogSubsystem* Catalog = Game->GetSubsystem<UFF_BuildCatalogSubsystem>();
-				if (const UFFZSFacilityDefinition* Definition = Catalog ? Catalog->FindDefinition(TopId) : nullptr)
-				{
-					Inputs.TopRevenueFacility = Definition->Spec.DisplayName;
-				}
-			}
-		}
-	}
 	return Inputs;
 }
 
@@ -388,11 +334,6 @@ FFF_SecretaryBriefingInputs UFF_SecretarySubsystem::GatherBriefingInputs() const
 
 void UFF_SecretarySubsystem::ResetDaySamples()
 {
-	for (double& Sum : NeedUnmetSum)
-	{
-		Sum = 0.0;
-	}
-	NeedSampleCount = 0;
 	DayWorstWaitFacility = FText::GetEmpty();
 	DayWorstWaitSeconds = 0.f;
 }
@@ -417,26 +358,7 @@ void UFF_SecretarySubsystem::RememberBuiltCategories()
 void UFF_SecretarySubsystem::SampleDay()
 {
 	const UWorld* World = GetWorld();
-	UGameInstance* Game = World ? World->GetGameInstance() : nullptr;
-	if (!World || !Game)
-	{
-		return;
-	}
-
-	if (const UFF_NpcNeedMetricsSubsystem* Needs = Game->GetSubsystem<UFF_NpcNeedMetricsSubsystem>())
-	{
-		// 손님 표본이 없는 순간은 0 이 나와 평균을 끌어내린다. 세지 않는다.
-		if (Needs->GetSampleCount() > 0)
-		{
-			for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
-			{
-				NeedUnmetSum[Index] += Needs->GetNeedUnmetRatio(static_cast<EFF_NeedType>(Index));
-			}
-			++NeedSampleCount;
-		}
-	}
-
-	if (const UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>())
+	if (const UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr)
 	{
 		for (const FFFZSFacilityReadModel& Facility : Zones->BuildReadModel().Facilities)
 		{

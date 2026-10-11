@@ -20,7 +20,8 @@ import unreal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from prepare_zone_layout import (  # noqa: E402
-    navigation_portals, register_authored_regions, require, validate_service_navigation)
+    navigation_portals, register_authored_regions, require, validate_open_facilities,
+    validate_service_navigation)
 
 YAWS = (0, 9000, 18000, 27000)
 
@@ -137,12 +138,22 @@ def main():
                             continue
                         # 겹침 검사만으로는 대기열 칸이 물 위나 절벽 끝에 걸릴 수 있다. 저장 단계(prepare)가
                         # 보는 대기열·서비스 지점과 입구 경로를 여기서도 보고, 안 되면 되돌리고 다음 자리로 간다.
-                        if not row.get('expected_audience_capacity'):
-                            try:
+                        # 관람석 시설은 저장 단계처럼 NavMesh 를 다시 굽고 잠시 개장해 입구·좌석·출구 경로를 본다.
+                        try:
+                            if row.get('expected_audience_capacity'):
+                                require(unreal.FFZSNavigationEditorLibrary.prepare_world_for_navigation(world),
+                                        'Facility geometry is not ready')
+                                unreal.SystemLibrary.execute_console_command(world, 'RebuildNavigation')
+                                validate_open_facilities(
+                                    world, zones, [(definition, dict(row, zone_id=zone_id), command.facility_instance_id)],
+                                    navigation_portals(world, actors))
+                            else:
                                 validate_service_navigation(world, executed.facility_actor, portals)
-                            except RuntimeError:
-                                require(zones.restore_world_snapshot(before) is not None, 'Could not undo a rejected spot')
-                                continue
+                        except RuntimeError as error:
+                            if row.get('expected_audience_capacity'):
+                                unreal.log(f'FF_AUTO_LAYOUT_REJECTED {zone_id} {origin} {yaw}: {error}')
+                            require(zones.restore_world_snapshot(before) is not None, 'Could not undo a rejected spot')
+                            continue
                         entry = {'definition': row['definition'], 'zone_id': zone_id,
                                  'origin_cm': list(origin), 'yaw_centidegrees': yaw}
                         if row.get('expected_audience_capacity'):

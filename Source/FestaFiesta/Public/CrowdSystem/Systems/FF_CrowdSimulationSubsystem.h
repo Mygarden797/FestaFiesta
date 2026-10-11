@@ -383,6 +383,8 @@ public:
 
 	// GetNeedCoverage 가 돌려주는 값. EFF_NeedType 순서
 	float NeedCoverage[static_cast<int32>(EFF_NeedType::Count)] = { 1.f, 1.f, 1.f, 1.f, 1.f };
+	// GetNeedReliefFacilityCount 가 돌려주는 값. EFF_NeedType 순서
+	int32 NeedReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Count)] = { INDEX_NONE, INDEX_NONE, INDEX_NONE, INDEX_NONE, INDEX_NONE };
 
 	void DespawnParty(int32 PartyID);
 
@@ -756,6 +758,9 @@ public:
 	// Hunger·Restroom·Stimulation 만 계산하고 나머지는 1. 1 미만이면 그 시설이 모자란다는 뜻이다
 	UFUNCTION(BlueprintPure, Category = "Crowd|Metrics")
 	float GetNeedCoverage(EFF_NeedType NeedType) const;
+
+	// 커버리지를 낸 해소 시설 수(운영 중 · 메인 무대 제외). 시설 정보가 없어 세지 못했으면 INDEX_NONE
+	int32 GetNeedReliefFacilityCount(EFF_NeedType NeedType) const;
 
 	// 걷는 도중 개인 주기가 차면 목적지를 다시 고른다(jockeying).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim")

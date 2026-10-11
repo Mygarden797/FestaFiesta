@@ -6,166 +6,166 @@
   "facilities": [
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage",
-      "zone_id": "GZ_DadaPocha",
+      "zone_id": "GZ_TemporaryParkingEast",
       "origin_cm": [
-        2500,
-        4025
+        6670,
+        12380
       ],
-      "yaw_centidegrees": 27000,
+      "yaw_centidegrees": 0,
       "expected_audience_capacity": 500
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Info/PDA_FFZS_Info_GeneralInfo_General",
-      "zone_id": "GZ_TestMain_01",
+      "zone_id": "GZ_Tutorial",
       "origin_cm": [
-        5100,
-        5100
-      ],
-      "yaw_centidegrees": 9000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_BusanFishCakeCart",
-      "zone_id": "GZ_TestMain_01",
-      "origin_cm": [
-        5100,
-        4800
-      ],
-      "yaw_centidegrees": 18000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_CharcoalChickenSkewerStall",
-      "zone_id": "GZ_TestMain_07",
-      "origin_cm": [
-        5100,
-        5060
+        6360,
+        3540
       ],
       "yaw_centidegrees": 0
     },
     {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger",
-      "zone_id": "GZ_TestMain_02",
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_BusanFishCakeCart",
+      "zone_id": "GZ_Tutorial",
       "origin_cm": [
-        5020,
-        4990
+        6660,
+        3540
+      ],
+      "yaw_centidegrees": 27000
+    },
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_CharcoalChickenSkewerStall",
+      "zone_id": "GZ_TemporaryParkingEast",
+      "origin_cm": [
+        3370,
+        12380
+      ],
+      "yaw_centidegrees": 27000
+    },
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger",
+      "zone_id": "GZ_PublicParkingWest",
+      "origin_cm": [
+        6900,
+        4773
       ],
       "yaw_centidegrees": 0
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_CafeTruck",
-      "zone_id": "GZ_TestMain_26",
+      "zone_id": "GZ_DadaepoForest",
       "origin_cm": [
-        5100,
-        2070
+        6470,
+        6320
       ],
       "yaw_centidegrees": 0
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_FruitAdeBar",
-      "zone_id": "GZ_TestMain_10",
+      "zone_id": "GZ_TemporaryParkingEast",
       "origin_cm": [
-        4780,
-        5400
+        3370,
+        11780
       ],
-      "yaw_centidegrees": 9000
+      "yaw_centidegrees": 18000
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Pizza",
-      "zone_id": "GZ_TestMain_02",
+      "zone_id": "GZ_PublicParkingWest",
       "origin_cm": [
-        4420,
-        4990
+        6900,
+        4473
       ],
-      "yaw_centidegrees": 0
+      "yaw_centidegrees": 27000
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_MarketGoods_LocalSouvenirShop",
-      "zone_id": "GZ_TestMain_26",
+      "zone_id": "GZ_DadaepoForest",
       "origin_cm": [
-        4800,
-        2070
+        6770,
+        6020
       ],
-      "yaw_centidegrees": 9000
+      "yaw_centidegrees": 27000
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_CraftExperience_SandArt",
-      "zone_id": "GZ_TestMain_01",
+      "zone_id": "GZ_Tutorial",
       "origin_cm": [
-        5100,
-        5400
+        6060,
+        3540
       ],
       "yaw_centidegrees": 9000
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_ActivityGame_BalloonDartStall",
-      "zone_id": "GZ_TestMain_07",
+      "zone_id": "GZ_TemporaryParkingEast",
       "origin_cm": [
-        4800,
-        5060
+        3970,
+        12380
+      ],
+      "yaw_centidegrees": 0
+    },
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_Nightlife_EdmBar",
+      "zone_id": "GZ_TemporaryParkingEast",
+      "origin_cm": [
+        3070,
+        12680
+      ],
+      "yaw_centidegrees": 0
+    },
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Standard_Standard",
+      "zone_id": "GZ_Tutorial",
+      "origin_cm": [
+        6360,
+        3240
+      ],
+      "yaw_centidegrees": 18000
+    },
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Standard_Standard",
+      "zone_id": "GZ_TemporaryParkingEast",
+      "origin_cm": [
+        3670,
+        11780
+      ],
+      "yaw_centidegrees": 27000
+    },
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Temporary_PortableRestroomCabin",
+      "zone_id": "GZ_PublicParkingWest",
+      "origin_cm": [
+        6600,
+        4773
       ],
       "yaw_centidegrees": 9000
     },
     {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_Nightlife_EdmBar",
-      "zone_id": "GZ_TestMain_10",
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Seating_Seating",
+      "zone_id": "GZ_Tutorial",
       "origin_cm": [
-        4480,
-        5100
-      ],
-      "yaw_centidegrees": 18000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Standard_Standard",
-      "zone_id": "GZ_TestMain_01",
-      "origin_cm": [
-        4500,
-        5100
-      ],
-      "yaw_centidegrees": 18000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Standard_Standard",
-      "zone_id": "GZ_TestMain_07",
-      "origin_cm": [
-        5100,
-        4760
-      ],
-      "yaw_centidegrees": 18000
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Toilet/PDA_FFZS_Toilet_Temporary_PortableRestroomCabin",
-      "zone_id": "GZ_TestMain_05",
-      "origin_cm": [
-        5100,
-        5100
+        6060,
+        3840
       ],
       "yaw_centidegrees": 0
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Seating_Seating",
-      "zone_id": "GZ_TestMain_01",
+      "zone_id": "GZ_DadaepoForest",
       "origin_cm": [
-        4800,
-        5700
+        6170,
+        6320
       ],
       "yaw_centidegrees": 0
-    },
-    {
-      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Seating_Seating",
-      "zone_id": "GZ_TestMain_26",
-      "origin_cm": [
-        5100,
-        1770
-      ],
-      "yaw_centidegrees": 27000
     },
     {
       "definition": "/Game/FestaFiesta/Building/FF_Data_Building/PhotoSpot/PDA_FFZS_PhotoSpot_Landmark_WhaleTailSculpture",
-      "zone_id": "GZ_TestMain_06",
+      "zone_id": "GZ_FleaMarket",
       "origin_cm": [
-        5100,
-        2700
+        1176,
+        6710
       ],
-      "yaw_centidegrees": 27000
+      "yaw_centidegrees": 0
     }
   ]
 }

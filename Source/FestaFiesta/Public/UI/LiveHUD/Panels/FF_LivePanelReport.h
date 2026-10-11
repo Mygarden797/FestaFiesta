@@ -8,6 +8,7 @@
 #include "FF_LivePanelReport.generated.h"
 
 class UButton;
+class UFF_SatisfactionBreakdownWidget;
 class UFF_FestivalViewModelSubsystem;
 class UTextBlock;
 class UProgressBar;
@@ -49,6 +50,7 @@ public:
 	void ConfigureLedgerRowDefaults(TSubclassOf<UFF_DailyReportLedgerRowWidget> InRowClass);
 
 protected:
+	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
 	virtual void NativeDestruct() override;
@@ -127,6 +129,13 @@ protected:
 	TObjectPtr<UProgressBar> Progress_PreferenceScore;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UProgressBar> Progress_NeedScore;
+
+	/**
+	 * 점수가 깎인 이유(항목별 감점 · 근거 · 줄이는 방법). WBP 에 이 이름의 위젯이 없으면
+	 * 만족도 카드(Report_SatisfactionBody) 안 평가 만족도 줄 위에 C++ 로 끼워 넣는다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
+	TObjectPtr<UFF_SatisfactionBreakdownWidget> Widget_SatisfactionBreakdown;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_DailyGoal;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
@@ -238,6 +247,7 @@ private:
 	void RefreshLedgerRows(UVerticalBox* Box, const TArray<FFF_LedgerRow>& Rows,
 		const TMap<FName, FText>& LabelOverrides, const FText& EmptyText, bool bExpense);
 	void RefreshScore(UTextBlock* Label, UProgressBar* Bar, int32 Score, bool bAvailable);
+	void EnsureSatisfactionBreakdown();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
