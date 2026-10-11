@@ -138,7 +138,7 @@ void UFF_LivePanelReport::RefreshScore(UTextBlock* Label, UProgressBar* Bar, int
 }
 
 void UFF_LivePanelReport::RefreshLedgerRows(UVerticalBox* Box, const TArray<FFF_LedgerRow>& Rows,
-	const TMap<FName, FText>& LabelOverrides, const FText& EmptyText)
+	const TMap<FName, FText>& LabelOverrides, const FText& EmptyText, const bool bExpense)
 {
 	if (!Box) { return; }
 	Box->ClearChildren();
@@ -176,7 +176,9 @@ void UFF_LivePanelReport::RefreshLedgerRows(UVerticalBox* Box, const TArray<FFF_
 	for (const FFF_LedgerRow& Row : Rows)
 	{
 		const FText* Override = LabelOverrides.Find(Row.ReasonId);
-		AddRow(Override ? *Override : Row.DisplayName, FText::AsNumber(Row.Amount));
+		AddRow(Override ? *Override : Row.DisplayName, bExpense
+			? FFF_SignedAmountStyle::FormatExpense(Row.Amount)
+			: FFF_SignedAmountStyle::Format(Row.Amount, PositiveAmountFormat));
 	}
 	if (Rows.IsEmpty() && !EmptyText.IsEmpty()) { AddRow(EmptyText, FText::GetEmpty()); }
 }
@@ -209,18 +211,18 @@ void UFF_LivePanelReport::RefreshAll()
 		SetTextOrHide(Text_MissingNote, Report ? Comment : PendingReportText);
 	}
 
-	SetTextOrHide(Text_TodayRevenue, Report ? FText::AsNumber(Report->Revenue) : UnknownValueText);
-	SetTextOrHide(Text_TodayExpense, Report ? FText::AsNumber(Report->Expense) : UnknownValueText);
+	SetTextOrHide(Text_TodayRevenue, Report ? FFF_SignedAmountStyle::Format(Report->Revenue, PositiveAmountFormat) : UnknownValueText);
+	SetTextOrHide(Text_TodayExpense, Report ? FFF_SignedAmountStyle::FormatExpense(Report->Expense) : UnknownValueText);
 	// 순이익의 음수는 결측값이 아니다. ReadModel의 부호를 그대로 표시한다.
 	SetTextOrHide(Text_TodayNetProfit, Report ? FFF_SignedAmountStyle::Format(Report->NetProfit, PositiveAmountFormat) : UnknownValueText);
 	NetProfitStyle.ApplyColor(Text_TodayNetProfit, Report ? TOptional<int64>(Report->NetProfit) : TOptional<int64>());
-	SetTextOrHide(Text_Refund, Report ? FText::AsNumber(Report->Refund) : UnknownValueText);
+	SetTextOrHide(Text_Refund, Report ? FFF_SignedAmountStyle::Format(Report->Refund, PositiveAmountFormat) : UnknownValueText);
 	SetTextOrHide(Text_Gold, Report ? FText::AsNumber(Report->Gold) : UnknownValueText);
-	SetTextOrHide(Text_TotalRevenue, Report ? FText::AsNumber(Report->TotalRevenue) : UnknownValueText);
+	SetTextOrHide(Text_TotalRevenue, Report ? FFF_SignedAmountStyle::Format(Report->TotalRevenue, PositiveAmountFormat) : UnknownValueText);
 	SetTextOrHide(Text_LedgerNote, LedgerNoteText);
 	const TArray<FFF_LedgerRow> NoRows;
-	RefreshLedgerRows(Box_EarnRows, Report ? Report->EarnRows : NoRows, EarnLabelOverrides, Report ? NoIncomeText : FText::GetEmpty());
-	RefreshLedgerRows(Box_SpendRows, Report ? Report->SpendRows : NoRows, SpendLabelOverrides, Report ? NoExpenseText : FText::GetEmpty());
+	RefreshLedgerRows(Box_EarnRows, Report ? Report->EarnRows : NoRows, EarnLabelOverrides, Report ? NoIncomeText : FText::GetEmpty(), false);
+	RefreshLedgerRows(Box_SpendRows, Report ? Report->SpendRows : NoRows, SpendLabelOverrides, Report ? NoExpenseText : FText::GetEmpty(), true);
 
 	const bool bHasSatisfaction = Report && Report->bHasSatisfaction;
 	RefreshScore(Text_SimSatisfaction, nullptr, Report ? Report->SimSatisfaction : INDEX_NONE, bHasSatisfaction);

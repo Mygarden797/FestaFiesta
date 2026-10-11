@@ -137,8 +137,6 @@ void UFF_IncidentDetailPanel::BuildTree()
 	Text_OptionLabel = MakeText(*Box_Option, TEXT("Text_OptionLabel"), TEXT("SemiBold"), 13, Tokens.Ink);
 	Text_StaffRange = MakeText(*Box_Option, TEXT("Text_StaffRange"), TEXT("Regular"), 12, Tokens.InkMuted);
 	Text_WorkAmount = MakeText(*Box_Option, TEXT("Text_WorkAmount"), TEXT("Regular"), 12, Tokens.InkMuted);
-	Text_Cost = MakeText(*Box_Option, TEXT("Text_Cost"), TEXT("Regular"), 12, Tokens.InkMuted);
-	Text_CostStaff = MakeText(*Box_Option, TEXT("Text_CostStaff"), TEXT("Regular"), 12, Tokens.InkMuted);
 	Text_Reward = MakeText(*Box_Option, TEXT("Text_Reward"), TEXT("SemiBold"), 12, FFIncidentDetailLocal::GetAmber());
 
 	Row_Staff = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HBox_Staff"));
@@ -148,7 +146,7 @@ void UFF_IncidentDetailPanel::BuildTree()
 	}
 
 	UTextBlock* StaffCaption = MakeText(*Row_Staff, TEXT("Text_StaffCaption"), TEXT("Regular"), 12, Tokens.Ink);
-	StaffCaption->SetText(LOCTEXT("StaffCaption", "작업 인원"));
+	StaffCaption->SetText(LOCTEXT("StaffCaption", "출동 인원"));
 
 	UTextBlock* MinusLabel = nullptr;
 	Button_Minus = MakeButton(*Row_Staff, TEXT("Button_Minus"), LOCTEXT("Minus", "-"), false, MinusLabel);
@@ -409,12 +407,6 @@ bool UFF_IncidentDetailPanel::Refresh()
 	Text_OptionLabel->SetText(CurrentOption.Label);
 	Text_OptionLabel->SetVisibility(CurrentOption.Label.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
-	Text_Cost->SetText(FText::Format(LOCTEXT("Cost", "비용: {0} G"), FText::AsNumber(CurrentOption.CostGold)));
-	Text_Cost->SetVisibility(CurrentOption.CostGold > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-
-	Text_CostStaff->SetText(FText::Format(LOCTEXT("CostStaff", "소모 인원: {0}명"), FText::AsNumber(CurrentOption.CostStaff)));
-	Text_CostStaff->SetVisibility(CurrentOption.CostStaff > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-
 	Text_Reward->SetText(FText::Format(LOCTEXT("Reward", "보상: {0}"), CurrentOption.RewardText));
 	Text_Reward->SetVisibility(CurrentOption.RewardText.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
@@ -430,7 +422,7 @@ void UFF_IncidentDetailPanel::RefreshStaff()
 		? CurrentOption.MinStaff
 		: FMath::Clamp(SelectedStaff, CurrentOption.MinStaff, MaxSelectable);
 
-	Text_StaffRange->SetText(FText::Format(LOCTEXT("StaffRange", "필요 인원: 최소 {0}명 · 가용 {1}명"),
+	Text_StaffRange->SetText(FText::Format(LOCTEXT("StaffRange", "최소 {0}명 · 출동 가능 {1}명"),
 		FText::AsNumber(CurrentOption.MinStaff), FText::AsNumber(Available)));
 	Text_StaffRange->SetVisibility(IsResponding() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 

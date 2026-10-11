@@ -349,7 +349,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_ExpectedGoalBonus;
 
-	/** 부스 수수료처럼 운영 결과에 달린 값은 예측하지 않는다는 안내. */
+	/** 부스 매출처럼 운영 결과에 달린 값은 예측하지 않는다는 안내. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_EstimateNotice;
 

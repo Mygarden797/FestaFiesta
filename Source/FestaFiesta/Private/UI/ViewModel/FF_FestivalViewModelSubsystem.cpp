@@ -615,10 +615,16 @@ void UFF_FestivalViewModelSubsystem::CaptureDailyReportIfReady()
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	if (!Progression || !Progression->IsFestivalStarted() || Progression->GetLastProcessedDay() != Day
 		|| !Progression->HasLedgerForDay(Day)) return;
-	// 마감 중 늦게 들어온 정산이 있으면 보유 금화가 바뀐다. 그때만 같은 날 결산을 다시 읽는다.
-	if (DailyReport.Day == Day && DailyReport.Gold == Progression->GetGold()) return;
+	int32 RecordedSatisfaction = INDEX_NONE;
+	const bool bHasRecordedSatisfaction = TryGetRecordedDailySatisfaction(Day, RecordedSatisfaction);
+	// 마감 중 늦은 정산 또는 축제 종료의 만족도 확정이 있을 때 같은 날 결산을 다시 읽는다.
+	if (DailyReport.Day == Day && DailyReport.Gold == Progression->GetGold()
+		&& DailyReport.bHasDailySatisfaction == bHasRecordedSatisfaction
+		&& DailyReport.DailySatisfaction == RecordedSatisfaction) return;
 	FFF_DailyReportView Report = LastDailySatisfaction.Day == Day ? LastDailySatisfaction : FFF_DailyReportView();
 	Report.Day = Day;
+	Report.bHasDailySatisfaction = bHasRecordedSatisfaction;
+	Report.DailySatisfaction = RecordedSatisfaction;
 	// EndedDayLedger는 Report 안에서 어제 값이다. 반드시 표시 날짜로 원본을 요청한다.
 	Report.EarnRows = Progression->GetEarnRowsForDay(Day);
 	Report.SpendRows = Progression->GetSpendRowsForDay(Day);
@@ -950,6 +956,7 @@ bool UFF_FestivalViewModelSubsystem::GetFinalReport(FFF_FinalReportView& OutRepo
 	{
 		FFF_FinalReportDayView& Row = OutReport.Days.AddDefaulted_GetRef();
 		Row.Day = Day;
+		Row.bHasDailySatisfaction = TryGetRecordedDailySatisfaction(Day, Row.DailySatisfaction);
 		Row.bHasLedger = Progression->HasLedgerForDay(Day);
 		if (Row.bHasLedger)
 		{
@@ -970,6 +977,40 @@ TArray<int32> UFF_FestivalViewModelSubsystem::GetDailySatisfactionHistory() cons
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	return Progression ? Progression->GetDailySatisfactionHistory() : TArray<int32>();
+}
+
+bool UFF_FestivalViewModelSubsystem::TryGetRecordedDailySatisfaction(int32 Day, int32& OutSatisfaction) const
+{
+	OutSatisfaction = INDEX_NONE;
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted()
+		|| (ReportSaveSubsystem && ReportSaveSubsystem->IsRestoring())) return false;
+	const int32 CurrentDay = Progression->GetLastProcessedDay();
+	if (Day <= 0 || Day > CurrentDay) return false;
+
+	// TryProcessNewDay는 단조 증가한 실제 처리일마다 만족도와 그날 원장을 함께 저장한다.
+	// 예를 들어 1→3→4로 건너뛰면 배열의 두 번째 값은 3일차다. Day-1로 읽으면 안 된다.
+	const TArray<int32> History = Progression->GetDailySatisfactionHistory();
+	int32 RecordedDays = 0;
+	int32 RecordIndex = INDEX_NONE;
+	for (int32 RecordedDay = 1; RecordedDay < CurrentDay; ++RecordedDay)
+	{
+		if (!Progression->HasLedgerForDay(RecordedDay)) continue;
+		if (RecordedDay == Day) RecordIndex = RecordedDays;
+		++RecordedDays;
+	}
+	// 마지막 날은 하루 경계를 넘지 않는다. 원본 평가가 동결된 후에만 마지막 기록을 쓴다.
+	if (Progression->IsFestivalEvaluationFrozen() && Progression->HasLedgerForDay(CurrentDay))
+	{
+		if (Day == CurrentDay) RecordIndex = RecordedDays;
+		++RecordedDays;
+	}
+	// 과거 원장이 빠진 저장 등으로 대응이 불명확하면 순서를 추측하거나 현재 실측값으로 채우지 않는다.
+	if (RecordedDays != History.Num() || !History.IsValidIndex(RecordIndex)) return false;
+	const int32 RecordedValue = History[RecordIndex];
+	if (RecordedValue < 0 || RecordedValue > MetricMax) return false;
+	OutSatisfaction = RecordedValue;
+	return true;
 }
 
 EFF_FinaleGrade UFF_FestivalViewModelSubsystem::GetPurchasedFinaleGrade() const
@@ -1528,8 +1569,9 @@ TArray<FFF_PromotionOptionView> UFF_FestivalViewModelSubsystem::GetPromotionOpti
 		return Options;
 	}
 
-	// 비용·배수는 경제의 GetPromotionTier 가 준다. `홍보 없음` 도 거기서 0 Gold · NoPromotionVisitorMultiplier(1.0 미만) 로 온다 —
-	// 숫자를 여기서 만들면 "안 사면 손해" 가 화면에 안 드러난다.
+	// 비용·배수·화제성은 경제의 GetPromotionTier가 준다. 홍보 없음도 원본 값을 그대로 전달한다.
+	// 방문객은 현재 입장료와 후보 등급을 원본 예측 API에 넘겨 읽는다.
+	const int32 AdmissionFeeGold = Progression->GetAdmissionFee();
 	const EFF_PromotionChoice Choices[] = {
 		EFF_PromotionChoice::None, EFF_PromotionChoice::Basic,
 		EFF_PromotionChoice::Focused, EFF_PromotionChoice::Influencer };
@@ -1540,6 +1582,13 @@ TArray<FFF_PromotionOptionView> UFF_FestivalViewModelSubsystem::GetPromotionOpti
 		Option.Choice = Choice;
 		Option.CostGold = Tier.CostGold;
 		Option.VisitorMultiplier = Tier.VisitorMultiplier;
+		Option.StartingBuzz = Tier.StartingBuzz;
+		if (AdmissionFeeGold != INDEX_NONE)
+		{
+			const FFF_VisitorForecast Forecast = PreviewVisitorForecast(Choice, AdmissionFeeGold);
+			Option.ExpectedVisitors = Forecast.ExpectedVisitors;
+			Option.ForecastAdmissionFeeGold = Forecast.AdmissionFeeGold;
+		}
 	}
 
 	return Options;

@@ -202,7 +202,7 @@ void UFF_FacilityCodexCard::RefreshPresentation()
 	const FFF_FacilityCodexEntry& Entry = Item->Entry;
 	if (Text_Name) Text_Name->SetText(Entry.DisplayName);
 	if (Text_Recipe) Text_Recipe->SetText(FText::Format(LOCTEXT("Recipe", "{0} + {1}"), Entry.TargetName, Entry.PartnerName));
-	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("Bonus", "수수료 +{0}%"), Number(Entry.ConfiguredBonusPercent)));
+	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("Bonus", "부스 매출 +{0}%"), Number(Entry.ConfiguredBonusPercent)));
 	if (Text_State)
 	{
 		const bool bClaimed = Entry.bDiscovered && Entry.bDiscoveryRewardClaimed;

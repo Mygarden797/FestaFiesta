@@ -43,7 +43,7 @@ namespace FFPrepPromotionSkyBuilder
 	bool BuildCard(UWidgetBlueprint& BP, UWidgetTree& Tree)
 	{
 		USizeBox* Size = MakeWidget<USizeBox>(BP, Tree, TEXT("SizeBox_Card"));
-		Size->SetWidthOverride(240.f); Size->SetMinDesiredHeight(240.f);
+		Size->SetWidthOverride(240.f); Size->SetMinDesiredHeight(320.f);
 		Tree.RootWidget = Size;
 		UOverlay* Layers = MakeWidget<UOverlay>(BP, Tree, TEXT("Overlay_Card"));
 		Size->AddChild(Layers);
@@ -77,6 +77,11 @@ namespace FFPrepPromotionSkyBuilder
 		Cost->SetJustification(ETextJustify::Center); Row(*Content, *Cost, FMargin(0.f, 0.f, 0.f, 6.f));
 		UTextBlock* Effect = Wrapped(BP, Tree, TEXT("Text_Effect"), LOCTEXT("Effect", "예상 방문객 ×1.12"), 15);
 		Effect->SetJustification(ETextJustify::Center); Row(*Content, *Effect, FMargin(0.f, 0.f, 0.f, 12.f));
+		UTextBlock* Buzz = Wrapped(BP, Tree, TEXT("Text_Buzz"), LOCTEXT("Buzz", "화제성 +0"), 15);
+		Buzz->SetJustification(ETextJustify::Center); Row(*Content, *Buzz, FMargin(0.f, 0.f, 0.f, 8.f));
+		UTextBlock* Forecast = Wrapped(BP, Tree, TEXT("Text_Forecast"),
+			LOCTEXT("Forecast", "예상 방문객 확인 중\n현재 입장료 기준"), 15);
+		Forecast->SetJustification(ETextJustify::Center); Row(*Content, *Forecast, FMargin(0.f, 0.f, 0.f, 12.f));
 		UTextBlock* Badge = Wrapped(BP, Tree, TEXT("Text_Badge"), FText::GetEmpty(), 15);
 		Badge->SetJustification(ETextJustify::Center); Badge->SetVisibility(ESlateVisibility::Collapsed);
 		Row(*Content, *Badge);
@@ -90,7 +95,7 @@ namespace FFPrepPromotionSkyBuilder
 		Row(*Frame.Body, *Wrapped(BP, Tree, TEXT("Text_OnceNotice"),
 			LOCTEXT("Once", "축제당 한 번 구매하며 3일 전체에 적용됩니다. 셋업 중에 선택하세요."), 15, Muted), FMargin(0.f, 0.f, 0.f, 6.f));
 		Row(*Frame.Body, *Wrapped(BP, Tree, TEXT("Text_NotAppliedNotice"),
-			LOCTEXT("Expected", "예상 방문객에는 반영되며, 실제 입장 인원 연동은 준비 중입니다."), 14, Muted), FMargin(0.f, 0.f, 0.f, 16.f));
+			LOCTEXT("Expected", "홍보 효과는 예상 방문객에 반영됩니다. 실제 입장 인원은 운영 상황에 따라 달라집니다."), 14, Muted), FMargin(0.f, 0.f, 0.f, 16.f));
 		UWrapBox* Cards = MakeWidget<UWrapBox>(BP, Tree, TEXT("Box_PromotionCards"), true);
 		Cards->SetInnerSlotPadding(FVector2D(12.f, 12.f)); Row(*Frame.Body, *Cards);
 
@@ -150,6 +155,23 @@ namespace FFPrepPromotionSkyBuilder
 	FAutoConsoleCommand Command(TEXT("FF.ApplyPrepPromotionSkyDesign"),
 		TEXT("P4 홍보 등급 비교 카드와 구매 요약 디자인을 최초 한 번 적용한다."),
 		FConsoleCommandDelegate::CreateStatic(&Apply));
+
+	// UE 5.7 Python에는 OnVariableAdded가 노출되지 않는다. 추가한 두 행만 등록하고 기존 GUID는 보존한다.
+	void RegisterEffectWidgets()
+	{
+		UWidgetBlueprint* BP = LoadExistingBlueprint(CardPackage);
+		if (!BP || !BP->WidgetTree) return;
+		for (const FName Name : { FName(TEXT("Text_Buzz")), FName(TEXT("Text_Forecast")) })
+		{
+			if (BP->WidgetTree->FindWidget(Name) && !BP->WidgetVariableNameToGuidMap.Contains(Name))
+			{
+				BP->OnVariableAdded(Name);
+			}
+		}
+	}
+	FAutoConsoleCommand RegisterEffectsCommand(TEXT("FF.RegisterPrepPromotionEffectWidgets"),
+		TEXT("홍보 카드에 추가한 화제성·예측 행의 편집기 GUID만 등록한다. 기존 레이아웃을 보존한다."),
+		FConsoleCommandDelegate::CreateStatic(&RegisterEffectWidgets));
 }
 
 #undef LOCTEXT_NAMESPACE

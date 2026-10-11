@@ -382,7 +382,7 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
     };
     // Capture the shipped Burger rule alone; the second fixture row only exercises pooling.
     Data.SynergyEntries.SetNum(1);
-    Data.SynergySummaryText = FText::FromString(TEXT("조합 1개 · 적용 중 1개\n이 시설의 이용 수수료 보너스 +10%"));
+    Data.SynergySummaryText = FText::FromString(TEXT("조합 1개 · 적용 중 1개\n이 시설의 부스 매출 보너스 +10%"));
     Panel->ApplyViewData(Data);
     bool bSaved = Capture(TEXT("FacilitySynergyTab720.png"));
     const FFF_FacilitySynergyPreview EmptyPreview;

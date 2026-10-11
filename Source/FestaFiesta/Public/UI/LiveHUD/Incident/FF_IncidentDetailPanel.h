@@ -24,9 +24,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FFF_OnIncidentDispatchRequested,
 /**
  * 사건 아이콘을 눌렀을 때 뜨는 상세 패널. WBP 없이 C++ 만으로 트리를 만든다.
  *
- * 허브의 FFF_IncidentView 만 읽어 제목·본문과 첫 번째 유효 선택지의 비용·작업량·보상을 보여 주고,
+ * 허브의 FFF_IncidentView 만 읽어 제목·본문과 첫 번째 유효 선택지의 작업량·보상을 보여 주고,
  * 작업 인원을 MinStaff 이상, 지금 출동 가능한 스태프 수 이하에서 고르게 하고 예상 작업 시간(작업량 ÷ 인원)을 보여 준다.
  * 가능 인원은 StaffFacility 가 알려 주고, 출동·복귀로 바뀌면(OnStaffingChanged) 다시 계산한다.
+ * CostGold·CostStaff 는 현재 출동 경로에서 차감하지 않으므로 비용으로 표시하지 않는다.
  *
  * 출동 중(View.ResponseStage != None)이면 인원 고르기 줄을 숨기고 상태 줄(현장으로 가는 중 / 현장 작업 중 · 남은 시간)을 보여 주며
  * [보내기]를 끈다. 틱에서 다시 읽지 않는다 — 출동 담당(UFF_StaffDispatchSubsystem)이 단계가 바뀌거나 남은 시간이
@@ -145,12 +146,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> Text_WorkAmount;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UTextBlock> Text_Cost;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UTextBlock> Text_CostStaff;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> Text_Reward;

@@ -190,7 +190,7 @@ protected:
 	FText UnknownValueText = NSLOCTEXT("FestaFiestaLiveReport", "UnknownValue", "—");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Report|Text")
 	FText NotMeasuredText = NSLOCTEXT("FestaFiestaLiveReport", "NotMeasured", "아직 측정하지 않음");
-	/** 순이익이 양수일 때. {Amount}: 금액. */
+	/** 수입·환급·순이익이 양수일 때. {Amount}: 금액. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Report|Text")
 	FText PositiveAmountFormat = NSLOCTEXT("FestaFiestaLiveReport", "PositiveAmount", "+{Amount}");
 	/** 순이익의 양수·음수·0 색. Designer 글자색 대신 이 값이 적용된다. */
@@ -236,7 +236,7 @@ private:
 	void RefreshAll();
 	void RefreshAdvance();
 	void RefreshLedgerRows(UVerticalBox* Box, const TArray<FFF_LedgerRow>& Rows,
-		const TMap<FName, FText>& LabelOverrides, const FText& EmptyText);
+		const TMap<FName, FText>& LabelOverrides, const FText& EmptyText, bool bExpense);
 	void RefreshScore(UTextBlock* Label, UProgressBar* Bar, int32 Score, bool bAvailable);
 
 	UPROPERTY(Transient)

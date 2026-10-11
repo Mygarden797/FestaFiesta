@@ -200,13 +200,13 @@ void UFF_ReportScreen::ApplyReport(const FFF_FinalReportView& Report)
 	VisitorArgs.Add(TEXT("Count"), FText::AsNumber(Report.TotalAdmittedVisitors));
 	SetReportText(Text_TotalAdmittedVisitors, Report.TotalAdmittedVisitors >= 0
 		? FText::Format(VisitorCountFormat, VisitorArgs) : UnknownValueText);
-	SetReportText(Text_TotalRevenue, FText::AsNumber(Report.Revenue));
-	SetReportText(Text_TotalExpense, FText::AsNumber(Report.Expense));
+	SetReportText(Text_TotalRevenue, FFF_SignedAmountStyle::Format(Report.Revenue, PositiveAmountFormat));
+	SetReportText(Text_TotalExpense, FFF_SignedAmountStyle::FormatExpense(Report.Expense));
 	SetReportText(Text_NetProfit, FFF_SignedAmountStyle::Format(Report.NetProfit, PositiveAmountFormat));
 	NetProfitStyle.ApplyColor(Text_NetProfit, Report.NetProfit);
 	// 보유액은 날짜별 잔액을 더하지 않는다. 환급도 매출·순이익에 다시 더하지 않는다.
 	SetReportText(Text_Gold, FText::AsNumber(Report.Gold));
-	SetReportText(Text_Refund, FText::AsNumber(Report.Refund));
+	SetReportText(Text_Refund, FFF_SignedAmountStyle::Format(Report.Refund, PositiveAmountFormat));
 
 	const bool bMissingVisitorHistory = Report.Days.ContainsByPredicate([](const FFF_FinalReportDayView& Day)
 	{

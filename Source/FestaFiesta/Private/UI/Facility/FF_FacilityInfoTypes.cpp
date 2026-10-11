@@ -111,7 +111,7 @@ namespace FFFacilityInfoModel
 				: FText::Format(LOCTEXT("SynergyBeneficiary", "수익을 받는 시설: {0}"), Name(Source.TargetFacilityId));
 			const float MinApplied = Group.NearbyCount > 0 ? Group.MinApplied : 0.f;
 			const float MaxApplied = Group.NearbyCount > 0 ? Group.MaxApplied : 0.f;
-			Entry.EffectText = FText::Format(LOCTEXT("SynergyRuleEffect", "{0} 이용 수수료\n설정 +{1}% · 현재 적용 +{2}%"),
+			Entry.EffectText = FText::Format(LOCTEXT("SynergyRuleEffect", "{0} 부스 매출\n설정 +{1}% · 현재 적용 +{2}%"),
 				Name(Source.TargetFacilityId), Number(Source.ConfiguredBonusPercent), Range(MinApplied, MaxApplied));
 			if (Group.bHasPartnerRole && Group.NearbyCount > 0)
 			{
@@ -132,7 +132,7 @@ namespace FFFacilityInfoModel
 			if (Entry.bActive) ++ActiveRules;
 		}
 		ViewData.SynergySummaryText = bSelectionEligible
-			? FText::Format(LOCTEXT("SynergySummary", "조합 {0}개 · 적용 중 {1}개\n이 시설의 이용 수수료 보너스 +{2}%"),
+			? FText::Format(LOCTEXT("SynergySummary", "조합 {0}개 · 적용 중 {1}개\n이 시설의 부스 매출 보너스 +{2}%"),
 				FText::AsNumber(ViewData.SynergyEntries.Num()), FText::AsNumber(ActiveRules), Number(SelectedBonusPercent))
 			: LOCTEXT("SynergySelectionIneligible", "현재 시설은 조합 효과를 받을 수 없습니다.\n유효한 위치에 배치한 뒤 다시 확인해 주세요.");
 	}
