@@ -3,7 +3,76 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
+#include "Styling/CoreStyle.h"
+#include "Widgets/Input/SButton.h"
+#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
+#include "Framework/Application/SlateApplication.h"
+#include "Input/Events.h"
+#include "InputCoreTypes.h"
+#include "Layout/Geometry.h"
+#include "Misc/AutomationTest.h"
+#include "UObject/StrongObjectPtr.h"
+#endif
 #define LOCTEXT_NAMESPACE "FestaFiestaLiveSnsEntry"
+
+/** 기존 WBP의 내용과 여백을 그대로 감싸는 입력 전용 버튼. */
+class SFF_LiveSnsReadButton : public SButton
+{
+public:
+	SLATE_BEGIN_ARGS(SFF_LiveSnsReadButton) {}
+		SLATE_DEFAULT_SLOT(FArguments, Content)
+		SLATE_EVENT(FSimpleDelegate, OnPressed)
+		SLATE_EVENT(FOnClicked, OnClicked)
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs)
+	{
+		SButton::Construct(SButton::FArguments()
+			.ButtonStyle(&FCoreStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder"))
+			.ContentPadding(FMargin(0.f))
+			.NormalPaddingOverride(FMargin(0.f))
+			.PressedPaddingOverride(FMargin(0.f))
+			.ForegroundColor(FSlateColor::UseForeground())
+			.ClickMethod(EButtonClickMethod::PreciseClick)
+			.TouchMethod(EButtonTouchMethod::PreciseTap)
+			.PressMethod(EButtonPressMethod::DownAndUp)
+			.OnPressed(InArgs._OnPressed)
+			.OnClicked(InArgs._OnClicked)
+			[InArgs._Content.Widget]);
+	}
+
+	void SetReadInteractionEnabled(bool bEnabled)
+	{
+		bReadInteractionEnabled = bEnabled;
+		SetIsFocusable(bEnabled);
+		if (!bEnabled) { Release(); }
+		// 읽음 기능을 쓰지 않는 기존 SNS 행도 색과 내용은 원래대로 표시한다.
+		SetVisibility(bEnabled ? EVisibility::Visible : EVisibility::SelfHitTestInvisible);
+	}
+
+	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		return bReadInteractionEnabled ? SButton::OnMouseButtonDown(MyGeometry, MouseEvent) : FReply::Unhandled();
+	}
+
+	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		return bReadInteractionEnabled ? SButton::OnMouseButtonUp(MyGeometry, MouseEvent) : FReply::Unhandled();
+	}
+
+	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override
+	{
+		return bReadInteractionEnabled ? SButton::OnKeyDown(MyGeometry, InKeyEvent) : FReply::Unhandled();
+	}
+
+	virtual FReply OnKeyUp(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override
+	{
+		return bReadInteractionEnabled ? SButton::OnKeyUp(MyGeometry, InKeyEvent) : FReply::Unhandled();
+	}
+
+private:
+	bool bReadInteractionEnabled = false;
+};
 
 UFF_LiveSnsPostEntry::UFF_LiveSnsPostEntry(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -25,6 +94,60 @@ UFF_LiveSnsPostEntry::UFF_LiveSnsPostEntry(const FObjectInitializer& ObjectIniti
 		{EFF_LiveSnsSentiment::Unknown, FLinearColor::FromSRGBColor(FColor(238, 242, 243))}};
 }
 
+TSharedRef<SWidget> UFF_LiveSnsPostEntry::RebuildWidget()
+{
+	bReadPressValid = false;
+	const TSharedRef<SWidget> Content = Super::RebuildWidget();
+	if (IsDesignTime()) { return Content; }
+	SAssignNew(ReadButton, SFF_LiveSnsReadButton)
+		.OnPressed(FSimpleDelegate::CreateUObject(this, &ThisClass::HandleReadPressed))
+		.OnClicked(FOnClicked::CreateUObject(this, &ThisClass::HandleReadClicked))
+		[Content];
+	ReadButton->SetReadInteractionEnabled(bReadInteractionEnabled);
+	return ReadButton.ToSharedRef();
+}
+
+void UFF_LiveSnsPostEntry::ReleaseSlateResources(bool bReleaseChildren)
+{
+	bReadPressValid = false;
+	ReadButton.Reset();
+	Super::ReleaseSlateResources(bReleaseChildren);
+}
+
+void UFF_LiveSnsPostEntry::NativeDestruct()
+{
+	bReadPressValid = false;
+	Super::NativeDestruct();
+}
+
+void UFF_LiveSnsPostEntry::ConfigureReadInteraction(int64 InSerial, bool bEnabled)
+{
+	// 누르는 사이 새 글이 들어와 행이 재사용되면 그 입력 전체를 취소한다.
+	if (PostSerial != InSerial || bReadInteractionEnabled != bEnabled) { bReadPressValid = false; }
+	PostSerial = InSerial;
+	bReadInteractionEnabled = bEnabled;
+	// 기존 표시 전용 WBP에서도 바깥 UserWidget이 내부 버튼의 입력을 막지 않게 한다.
+	if (bEnabled && GetVisibility() == ESlateVisibility::HitTestInvisible) { SetVisibility(ESlateVisibility::SelfHitTestInvisible); }
+	if (ReadButton) { ReadButton->SetReadInteractionEnabled(bEnabled); }
+	RefreshReadToolTip();
+}
+
+void UFF_LiveSnsPostEntry::HandleReadPressed()
+{
+	PressedPostSerial = PostSerial;
+	bReadPressValid = bReadInteractionEnabled && bHasPost;
+}
+
+FReply UFF_LiveSnsPostEntry::HandleReadClicked()
+{
+	// PreciseClick/PreciseTap은 드래그 시 클릭을 취소하고, 키보드는 누름·해제가 모두 있어야 도착한다.
+	const bool bActivate = bReadPressValid && bReadInteractionEnabled && bHasPost && PressedPostSerial == PostSerial;
+	const int64 ActivatedSerial = PressedPostSerial;
+	bReadPressValid = false;
+	if (bActivate) { OnPostActivated.Broadcast(ActivatedSerial); }
+	return FReply::Handled();
+}
+
 void UFF_LiveSnsPostEntry::ConfigureIconRowDefaults(const TMap<EFF_LiveSnsSentiment, UTexture2D*>& Icons,
 	const FLinearColor& Positive, const FLinearColor& Negative, const FLinearColor& Other)
 {
@@ -41,6 +164,19 @@ void UFF_LiveSnsPostEntry::SetNewMark(bool bNew)
 	bNewMark = bNew;
 	// 점은 이름 바로 뒤에 붙는다. 없을 때는 자리도 없앤다(뒤 칸이 남은 폭을 채운다).
 	if (Image_NewDot) { Image_NewDot->SetVisibility(bNew ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed); }
+	RefreshReadToolTip();
+}
+
+void UFF_LiveSnsPostEntry::RefreshReadToolTip()
+{
+	const FText OperationDay = CurrentPost.bOperationAlert && CurrentPost.OperationDay > 0
+		? FText::Format(LOCTEXT("OperationDay", "{0}일차 운영 알림"), FText::AsNumber(CurrentPost.OperationDay)) : FText::GetEmpty();
+	if (!bReadInteractionEnabled) { SetToolTipText(OperationDay); return; }
+	const FText ReadState = bNewMark
+		? LOCTEXT("UnreadNewsHint", "읽지 않은 소식 · 클릭하면 읽음 처리됩니다.")
+		: LOCTEXT("ReadNewsHint", "읽은 소식");
+	SetToolTipText(OperationDay.IsEmpty() ? ReadState
+		: FText::Format(LOCTEXT("OperationReadHint", "{0}\n{1}"), OperationDay, ReadState));
 }
 
 void UFF_LiveSnsPostEntry::ConfigureNewsRowDefaults(UTexture2D* InSocialIcon, UTexture2D* InOperationIcon)
@@ -65,8 +201,7 @@ void UFF_LiveSnsPostEntry::RefreshPost()
 {
 	if (Text_Author) { Text_Author->SetText(CurrentPost.Author); }
 	if (Text_Body) { Text_Body->SetText(CurrentPost.Body); }
-	SetToolTipText(CurrentPost.bOperationAlert && CurrentPost.OperationDay > 0
-		? FText::Format(LOCTEXT("OperationDay", "{0}일차 운영 알림"), FText::AsNumber(CurrentPost.OperationDay)) : FText::GetEmpty());
+	RefreshReadToolTip();
 	const EFF_LiveSnsSentiment Sentiment = FFF_LiveSnsFeedState::ResolveSentiment(CurrentPost);
 	FLinearColor Color = UnknownColor;
 	switch (Sentiment)
@@ -126,3 +261,101 @@ void UFF_LiveSnsPostEntry::RefreshPost()
 	}
 }
 #undef LOCTEXT_NAMESPACE
+
+#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_LiveSnsPostReadInteractionTest, "FestaFiesta.UI.SNS.PostReadInteraction",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+bool FFF_LiveSnsPostReadInteractionTest::RunTest(const FString& Parameters)
+{
+	if (!TestTrue(TEXT("Slate 앱 초기화"), FSlateApplication::IsInitialized())) { return false; }
+	UClass* EntryClass = LoadClass<UFF_LiveSnsPostEntry>(nullptr,
+		TEXT("/Game/FestaFiesta/UI/LiveHUD/Panels/WBP_FF_LiveSnsFlyoutPostRow.WBP_FF_LiveSnsFlyoutPostRow_C"));
+	if (!TestNotNull(TEXT("실제 도크 소식 행 WBP"), EntryClass)) { return false; }
+	TStrongObjectPtr<UFF_LiveSnsPostEntry> Entry(NewObject<UFF_LiveSnsPostEntry>(GetTransientPackage(), EntryClass));
+	if (!TestTrue(TEXT("행 WBP 바인딩 초기화"), Entry->Initialize())) { return false; }
+	FFF_LiveSocialPost Post;
+	Post.Author = FText::FromString(TEXT("입력 검증"));
+	Post.Body = FText::FromString(TEXT("소식 본문"));
+	Post.bOperationAlert = true;
+	Post.OperationDay = 2;
+	Entry->ConfigurePost(Post);
+	Entry->ConfigureReadInteraction(101, true);
+	const TSharedRef<SWidget> SlateRoot = Entry->TakeWidget();
+	const TSharedPtr<SFF_LiveSnsReadButton> Button = Entry->ReadButton;
+	if (!TestTrue(TEXT("실제 RebuildWidget의 입력 래퍼"), Button.IsValid())) { return false; }
+	TestTrue(TEXT("UserWidget이 자식 입력을 허용"), Entry->GetVisibility() == ESlateVisibility::Visible
+		|| Entry->GetVisibility() == ESlateVisibility::SelfHitTestInvisible);
+	TestTrue(TEXT("TakeWidget 바깥 래퍼가 자식 입력을 허용"), SlateRoot->GetVisibility().AreChildrenHitTestVisible());
+	TestTrue(TEXT("입력 버튼이 히트 테스트와 키보드 포커스를 허용"),
+		Button->GetVisibility().IsHitTestVisible() && Button->SupportsKeyboardFocus());
+	Entry->SetNewMark(true);
+	TestTrue(TEXT("운영 일차와 읽지 않음 문구"), Entry->GetToolTipText().ToString().Contains(TEXT("2일차"))
+		&& Entry->GetToolTipText().ToString().Contains(TEXT("읽지 않은 소식")));
+	Entry->SetNewMark(false);
+	TestTrue(TEXT("읽음 문구 갱신"), Entry->GetToolTipText().ToString().Contains(TEXT("읽은 소식")));
+
+	TArray<int64> ActivatedSerials;
+	const FDelegateHandle Handle = Entry->OnPostActivated.AddLambda([&ActivatedSerials](int64 Serial) { ActivatedSerials.Add(Serial); });
+	const float DragDistance = FSlateApplication::Get().GetDragTriggerDistance() + 32.f;
+	const FGeometry Geometry = FGeometry::MakeRoot(FVector2D(FMath::Max(512.f, DragDistance + 40.f), 128.f), FSlateLayoutTransform());
+	const FVector2D Point(10.f, 10.f);
+	const TSet<FKey> PressedButtons{EKeys::LeftMouseButton};
+	const TSet<FKey> NoButtons;
+	const FModifierKeysState Modifiers;
+	const FPointerEvent Down(0, Point, Point, PressedButtons, EKeys::LeftMouseButton, 0.f, Modifiers);
+	const FPointerEvent Up(0, Point, Point, NoButtons, EKeys::LeftMouseButton, 0.f, Modifiers);
+	Button->OnMouseEnter(Geometry, Down);
+	const FReply DownReply = Button->OnMouseButtonDown(Geometry, Down);
+	TestTrue(TEXT("누름은 처리하되 포인터는 캡처하지 않음"), DownReply.IsEventHandled() && !DownReply.GetMouseCaptor().IsValid());
+	TestEqual(TEXT("누르는 중에는 읽지 않음"), ActivatedSerials.Num(), 0);
+	TestTrue(TEXT("놓음은 처리함"), Button->OnMouseButtonUp(Geometry, Up).IsEventHandled());
+	TestTrue(TEXT("클릭한 도착 번호를 한 번 전달"), ActivatedSerials == TArray<int64>{101});
+	Button->OnMouseButtonUp(Geometry, Up);
+	TestEqual(TEXT("추가 놓음은 중복 전달하지 않음"), ActivatedSerials.Num(), 1);
+
+	Button->OnMouseButtonDown(Geometry, Down);
+	Entry->ConfigureReadInteraction(102, true);
+	Entry->ConfigureReadInteraction(101, true);
+	Button->OnMouseButtonUp(Geometry, Up);
+	TestEqual(TEXT("누른 중 행이 바뀌었다 되돌아와도 취소"), ActivatedSerials.Num(), 1);
+	Button->OnMouseButtonDown(Geometry, Down);
+	const FPointerEvent Drag(0, Point + FVector2D(DragDistance, 0.f), Point, PressedButtons, EKeys::Invalid, 0.f, Modifiers);
+	TestFalse(TEXT("이동은 부모 스크롤에 전달"), Button->OnMouseMove(Geometry, Drag).IsEventHandled());
+	TestFalse(TEXT("드래그 임계치를 넘으면 누름 해제"), Button->IsPressed());
+	Button->OnMouseButtonUp(Geometry, Up);
+	TestEqual(TEXT("드래그 뒤 놓음은 읽지 않음"), ActivatedSerials.Num(), 1);
+
+	const FKeyEvent Accept(EKeys::Enter, Modifiers, 0, false, 0, 0);
+	const FKeyEvent RepeatAccept(EKeys::Enter, Modifiers, 0, true, 0, 0);
+	Entry->ConfigureReadInteraction(103, true);
+	TestTrue(TEXT("키보드 확인 누름 처리"), Button->OnKeyDown(Geometry, Accept).IsEventHandled());
+	Button->OnKeyDown(Geometry, RepeatAccept);
+	TestEqual(TEXT("키 반복도 놓기 전에는 읽지 않음"), ActivatedSerials.Num(), 1);
+	TestTrue(TEXT("키보드 확인 놓음 처리"), Button->OnKeyUp(Geometry, Accept).IsEventHandled());
+	TestTrue(TEXT("키보드로 현재 도착 번호를 한 번 전달"), ActivatedSerials == TArray<int64>({101, 103}));
+	Button->OnKeyUp(Geometry, Accept);
+	TestEqual(TEXT("키보드 추가 놓음은 중복 전달하지 않음"), ActivatedSerials.Num(), 2);
+	Button->OnKeyDown(Geometry, Accept);
+	Entry->ConfigureReadInteraction(104, true);
+	Button->OnKeyDown(Geometry, RepeatAccept);
+	Button->OnKeyUp(Geometry, Accept);
+	TestEqual(TEXT("키를 누른 중 행 교체도 반복 키로 재활성화되지 않음"), ActivatedSerials.Num(), 2);
+	Entry->SetVisibility(ESlateVisibility::HitTestInvisible);
+	Entry->ConfigureReadInteraction(104, true);
+	TestTrue(TEXT("표시 전용 외부 가시성도 자식 입력 허용으로 복구"), SlateRoot->GetVisibility().AreChildrenHitTestVisible());
+
+	Entry->ConfigureReadInteraction(105, false);
+	TestFalse(TEXT("기존 표시 전용 모드는 버튼 포커스 제외"), Button->SupportsKeyboardFocus());
+	TestFalse(TEXT("기존 표시 전용 모드는 버튼 히트 테스트 제외"), Button->GetVisibility().IsHitTestVisible());
+	TestFalse(TEXT("기존 표시 전용 모드는 누름 미처리"), Button->OnMouseButtonDown(Geometry, Down).IsEventHandled());
+	Button->OnMouseButtonUp(Geometry, Up);
+	Button->OnKeyDown(Geometry, Accept);
+	Button->OnKeyUp(Geometry, Accept);
+	TestEqual(TEXT("기존 표시 전용 모드는 읽음 요청 없음"), ActivatedSerials.Num(), 2);
+	Button->OnMouseLeave(Up);
+	Entry->OnPostActivated.Remove(Handle);
+	Entry->ReleaseSlateResources(true);
+	// 앱의 히트 테스트 경로·실제 스크롤 이동은 건드리지 않고, 실제 래퍼의 입력 처리만 검증한다.
+	return true;
+}
+#endif

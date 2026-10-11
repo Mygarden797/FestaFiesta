@@ -128,18 +128,24 @@ void UFF_LivePanelSNS::NativeOnPanelOpened()
 	BindControls();
 	BindViewModel();
 	bPanelOpen = true;
-	// 자동 표시: 닫혀 있는 동안 지금 필터에 맞는 글이 왔으면 다시 읽어 맨 위부터 보인다.
-	// 온 글이 없으면 목록과 읽던 위치를 그대로 둔다.
-	const bool bArrivedWhileClosed = bAutoShowNewPosts && GetPendingPostCount() > 0;
+	// 미읽음이 남아 있다는 이유만으로 목록·스크롤을 초기화하지 않는다.
+	const bool bArrivedWhileClosed = bAutoShowNewPosts && (bUnifiedNews
+		? Feed.TotalArrivals != NewsSyncedArrival : Feed.PendingCount > 0);
 	if (!bPreserveFeedWhileClosed || !bFeedInitialized || bArrivedWhileClosed) { SyncFromViewModel(); }
-	else { RefreshPending(); }
+	else
+	{
+		if (bUnifiedNews && NewsReadingPositions.Contains(Feed.Filter)) { NewsRestoreFrames = 2; }
+		RefreshPending();
+	}
 }
 
 void UFF_LivePanelSNS::NativeOnPanelClosed()
 {
+	if (bUnifiedNews) { SaveNewsReadingPosition(); }
 	bPanelOpen = false;
 	ScrollAnchor.FramesLeft = 0;
-	if (NewMarkClear == EFF_LiveSnsNewMarkClear::OnPanelClose) { ClearNewMarks(); }
+	NewsRestoreFrames = 0;
+	if (!bUnifiedNews && NewMarkClear == EFF_LiveSnsNewMarkClear::OnPanelClose) { ClearNewMarks(); }
 	else
 	{
 		// 시간으로 지우는 방식이면 다음에 열었을 때 다시 그 시간만큼 보인다.
@@ -153,6 +159,7 @@ void UFF_LivePanelSNS::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	TickScrollAnchor();
+	RestoreNewsReadingPosition();
 	TickNewMarks();
 }
 
@@ -168,6 +175,9 @@ void UFF_LivePanelSNS::NativeDestruct()
 	UnreadNewsSerials.Reset();
 	NewNewsSerials.Reset();
 	bNewsInitialized = false;
+	NewsReadingPositions.Reset();
+	NewsRestoreFrames = 0;
+	NewsSyncedArrival = 0;
 	Super::NativeDestruct();
 }
 
@@ -182,6 +192,7 @@ void UFF_LivePanelSNS::BindViewModel()
 		bFeedInitialized = false;
 		// 도착 번호는 구독한 원본 기준이다. 원본이 바뀌면 새로 센다.
 		Feed.ResetArrivals();
+		bNewsInitialized = false;
 	}
 	if (CachedViewModel) { CachedViewModel->OnSnsPostAdded.AddUniqueDynamic(this, &ThisClass::HandlePostAdded); }
 	if (bUnifiedNews)
@@ -198,6 +209,10 @@ void UFF_LivePanelSNS::BindViewModel()
 		{
 			RecentNews.Reset();
 			Feed.ResetArrivals();
+			bFeedInitialized = false;
+			NewsSyncedArrival = 0;
+			NewsRestoreFrames = 0;
+			NewsReadingPositions.Reset();
 			UnreadNewsSerials.Reset(); NewNewsSerials.Reset();
 			// 늦게 열린 도크도 기존 기록을 잃지 않는다. 공통 시각이 없는 과거 기록은 수신 전 기록으로만 복원한다.
 			if (CachedViewModel) { RecentNews = CachedViewModel->GetRecentSnsPosts(); }
@@ -246,13 +261,19 @@ void UFF_LivePanelSNS::SyncFromViewModel()
 		: CachedViewModel ? CachedViewModel->GetRecentSnsPosts() : NoPosts;
 	bHasSourcePosts = !RecentPosts.IsEmpty();
 	Feed.Sync(RecentPosts, DisplayLimit);
-	if (bUnifiedNews) { AcknowledgeNewsFilter(); }
+	if (bUnifiedNews) { NewsSyncedArrival = Feed.TotalArrivals; }
 	bFeedInitialized = bSourceAvailable;
 	RefreshAll();
 	if (Scroll_Posts)
 	{
 		Scroll_Posts->EndInertialScrolling();
-		Scroll_Posts->ScrollToStart();
+		if (bUnifiedNews && NewsReadingPositions.Contains(Feed.Filter))
+		{
+			// 행의 새 높이가 계산된 뒤 같은 글·글 안의 위치로 복원한다.
+			NewsRestoreFrames = 2;
+			Scroll_Posts->SetScrollOffset(NewsReadingPositions[Feed.Filter].Offset);
+		}
+		else { Scroll_Posts->ScrollToStart(); }
 	}
 	OnFeedAcknowledged.Broadcast();
 }
@@ -301,19 +322,37 @@ void UFF_LivePanelSNS::RecordNews(const FFF_LiveSocialPost& Post)
 	RecentNews.Insert(Post, 0);
 	if (RecentNews.Num() > 80) { RecentNews.SetNum(80); }
 	NewNewsSerials.Add(Feed.TotalArrivals);
+	UnreadNewsSerials.Add(Feed.TotalArrivals);
 	const bool bShownNow = bPanelOpen && bFeedInitialized && bAutoShowNewPosts && FFF_LiveSnsFeedState::Matches(Post, Feed.Filter);
-	if (!bShownNow) { UnreadNewsSerials.Add(Feed.TotalArrivals); }
 	const int64 Oldest = Feed.TotalArrivals - RecentNews.Num() + 1;
 	for (auto It = UnreadNewsSerials.CreateIterator(); It; ++It) { if (*It < Oldest) { It.RemoveCurrent(); } }
 	for (auto It = NewNewsSerials.CreateIterator(); It; ++It) { if (*It < Oldest) { It.RemoveCurrent(); } }
+	// 다른 종류의 글이 들어와도 보관 한도 밖의 행·점은 함께 제거한다.
+	bool bRowsExpired = false;
+	for (int32 Index = Feed.DisplayedSerials.Num() - 1; Index >= 0; --Index)
+	{
+		if (Feed.DisplayedSerials[Index] < Oldest)
+		{
+			Feed.DisplayedSerials.RemoveAt(Index);
+			Feed.DisplayedPosts.RemoveAt(Index);
+			bRowsExpired = true;
+		}
+	}
 	if (bShownNow) { InsertLivePost(Post); }
+	else if (bRowsExpired) { BindRows(); RefreshSummary(); }
+	if (bPanelOpen && bFeedInitialized && bAutoShowNewPosts) { NewsSyncedArrival = Feed.TotalArrivals; }
 	RefreshPending();
 	RefreshFilters();
 }
 
-void UFF_LivePanelSNS::AcknowledgeNewsFilter()
+void UFF_LivePanelSNS::HandleNewsRead(int64 Serial)
 {
-	for (int64 Serial : Feed.DisplayedSerials) { UnreadNewsSerials.Remove(Serial); }
+	if (!bUnifiedNews || !Feed.DisplayedSerials.Contains(Serial) || !UnreadNewsSerials.Remove(Serial)) { return; }
+	NewNewsSerials.Remove(Serial);
+	// 행 재생성이나 목록 동기화를 하지 않아 클릭한 위치가 움직이지 않는다.
+	RefreshNewMarks();
+	RefreshFilters();
+	RefreshPending();
 }
 
 int32 UFF_LivePanelSNS::CountUnreadNews(bool bOperation) const
@@ -354,6 +393,8 @@ void UFF_LivePanelSNS::InsertLivePost(const FFF_LiveSocialPost& Post)
 
 void UFF_LivePanelSNS::SetFilter(EFF_LiveSnsFilter Filter)
 {
+	if (Feed.Filter == Filter) { return; }
+	if (bUnifiedNews) { SaveNewsReadingPosition(); }
 	Feed.Filter = Filter;
 	SyncFromViewModel();
 }
@@ -361,7 +402,11 @@ void UFF_LivePanelSNS::SetFilter(EFF_LiveSnsFilter Filter)
 void UFF_LivePanelSNS::HandleFilterAll() { SetFilter(EFF_LiveSnsFilter::All); }
 void UFF_LivePanelSNS::HandleFilterPositive() { SetFilter(bUnifiedNews ? EFF_LiveSnsFilter::Social : EFF_LiveSnsFilter::Positive); }
 void UFF_LivePanelSNS::HandleFilterNegative() { SetFilter(bUnifiedNews ? EFF_LiveSnsFilter::Operation : EFF_LiveSnsFilter::Negative); }
-void UFF_LivePanelSNS::HandleNewPosts() { SyncFromViewModel(); }
+void UFF_LivePanelSNS::HandleNewPosts()
+{
+	if (bUnifiedNews) { NewsReadingPositions.Remove(Feed.Filter); }
+	SyncFromViewModel();
+}
 
 void UFF_LivePanelSNS::Debug_SetPosts(const TArray<FFF_LiveSocialPost>& InPosts)
 {
@@ -382,7 +427,11 @@ bool UFF_LivePanelSNS::BindRows()
 	const int32 Wanted = Feed.DisplayedPosts.Num();
 	while (PostEntries.Num() > Wanted)
 	{
-		if (UFF_LiveSnsPostEntry* Extra = PostEntries.Pop()) { Extra->RemoveFromParent(); }
+		if (UFF_LiveSnsPostEntry* Extra = PostEntries.Pop())
+		{
+			Extra->OnPostActivated.RemoveAll(this);
+			Extra->RemoveFromParent();
+		}
 	}
 	bool bOk = true;
 	while (PostEntries.Num() < Wanted)
@@ -396,10 +445,15 @@ bool UFF_LivePanelSNS::BindRows()
 			EntrySlot->SetPadding(FMargin(0.f, 0.f, 0.f, FMath::Max(0.f, PostSpacing)));
 		}
 		PostEntries.Add(Entry);
+		Entry->OnPostActivated.AddUObject(this, &ThisClass::HandleNewsRead);
 	}
 	for (int32 Index = 0; Index < PostEntries.Num(); ++Index)
 	{
-		if (PostEntries[Index]) { PostEntries[Index]->ConfigurePost(Feed.DisplayedPosts[Index]); }
+		if (PostEntries[Index])
+		{
+			PostEntries[Index]->ConfigureReadInteraction(Feed.DisplayedSerials[Index], bUnifiedNews);
+			PostEntries[Index]->ConfigurePost(Feed.DisplayedPosts[Index]);
+		}
 	}
 	RefreshNewMarks();
 	Box_Posts->SetVisibility(PostEntries.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
@@ -417,27 +471,26 @@ void UFF_LivePanelSNS::RefreshNewMarks()
 
 void UFF_LivePanelSNS::ClearNewMarks()
 {
+	if (bUnifiedNews) { return; }
 	Feed.MarkAllSeen();
-	if (bUnifiedNews) { for (int64 Serial : Feed.DisplayedSerials) { NewNewsSerials.Remove(Serial); } }
 	NewMarkShownAt.Reset();
 	RefreshNewMarks();
 }
 
 void UFF_LivePanelSNS::TickNewMarks()
 {
-	if (NewMarkClear != EFF_LiveSnsNewMarkClear::AfterSeconds || !bPanelOpen) { return; }
+	if (bUnifiedNews || NewMarkClear != EFF_LiveSnsNewMarkClear::AfterSeconds || !bPanelOpen) { return; }
 	// 화면 시간(실시간)으로 센다. 게임 배속과 무관하게 읽을 시간을 준다.
 	const double Now = FPlatformTime::Seconds();
 	int64 ExpiredUpTo = Feed.SeenSerial;
 	for (int32 Index = 0; Index < Feed.DisplayedSerials.Num(); ++Index)
 	{
-		if (bUnifiedNews ? !NewNewsSerials.Contains(Feed.DisplayedSerials[Index]) : !Feed.IsNew(Index)) { continue; }
+		if (!Feed.IsNew(Index)) { continue; }
 		const int64 Serial = Feed.DisplayedSerials[Index];
 		const double ShownAt = NewMarkShownAt.FindOrAdd(Serial, Now);
 		if (Now - ShownAt >= NewMarkSeconds)
 		{
 			ExpiredUpTo = FMath::Max(ExpiredUpTo, Serial);
-			if (bUnifiedNews) { NewNewsSerials.Remove(Serial); }
 		}
 	}
 	if (ExpiredUpTo > Feed.SeenSerial)
@@ -447,7 +500,6 @@ void UFF_LivePanelSNS::TickNewMarks()
 		for (auto It = NewMarkShownAt.CreateIterator(); It; ++It) { if (It.Key() <= ExpiredUpTo) { It.RemoveCurrent(); } }
 		RefreshNewMarks();
 	}
-	if (bUnifiedNews) { RefreshNewMarks(); }
 }
 
 void UFF_LivePanelSNS::TickScrollAnchor()
@@ -465,10 +517,64 @@ void UFF_LivePanelSNS::TickScrollAnchor()
 	Scroll_Posts->SetScrollOffset(ScrollAnchor.OffsetBefore + Shift);
 }
 
+void UFF_LivePanelSNS::SaveNewsReadingPosition()
+{
+	if (!Scroll_Posts || !bFeedInitialized) { return; }
+	// 필터를 빠르게 연속 전환해도 아직 복원 중인 위치를 덮어쓰지 않는다.
+	if (NewsRestoreFrames > 0) { return; }
+	FNewsReadingPosition Position;
+	Position.Offset = Scroll_Posts->GetScrollOffset();
+	float RowTop = 0.f;
+	for (int32 Index = 0; Index < PostEntries.Num(); ++Index)
+	{
+		const float Height = PostEntries[Index] ? PostEntries[Index]->GetDesiredSize().Y : 0.f;
+		if (Height <= 0.f) { break; }
+		const float RowExtent = Height + FMath::Max(0.f, PostSpacing);
+		if (Position.Offset < RowTop + RowExtent)
+		{
+			Position.Serial = Feed.DisplayedSerials[Index];
+			Position.OffsetInRow = Position.Offset - RowTop;
+			Position.bHasRow = true;
+			break;
+		}
+		RowTop += RowExtent;
+	}
+	NewsReadingPositions.Add(Feed.Filter, Position);
+}
+
+void UFF_LivePanelSNS::RestoreNewsReadingPosition()
+{
+	if (NewsRestoreFrames <= 0 || !Scroll_Posts) { return; }
+	--NewsRestoreFrames;
+	const FNewsReadingPosition* Position = NewsReadingPositions.Find(Feed.Filter);
+	if (!Position) { return; }
+	float Offset = Position->Offset;
+	const int32 RowIndex = Position->bHasRow ? Feed.DisplayedSerials.Find(Position->Serial) : INDEX_NONE;
+	if (RowIndex != INDEX_NONE)
+	{
+		Offset = Position->OffsetInRow;
+		for (int32 Index = 0; Index < RowIndex; ++Index)
+		{
+			if (PostEntries[Index]) { Offset += PostEntries[Index]->GetDesiredSize().Y + FMath::Max(0.f, PostSpacing); }
+		}
+	}
+	Scroll_Posts->SetScrollOffset(Offset);
+}
+
 void UFF_LivePanelSNS::RefreshPending()
 {
-	const int32 Pending = GetPendingPostCount();
-	OnPendingPostsChanged.Broadcast(Pending);
+	OnPendingPostsChanged.Broadcast(GetPendingPostCount());
+	// 수동 '새 글 보기'는 아직 목록에 없는 글 수다. 이미 보이는 미읽음 글과 구분한다.
+	int32 Pending = Feed.PendingCount;
+	if (bUnifiedNews)
+	{
+		Pending = 0;
+		for (int32 Index = 0; Index < RecentNews.Num(); ++Index)
+		{
+			if (FFF_LiveSnsFeedState::Matches(RecentNews[Index], Feed.Filter)
+				&& Feed.TotalArrivals - Index > NewsSyncedArrival) { ++Pending; }
+		}
+	}
 	if (Button_NewPosts)
 	{
 		// 자동 표시면 버튼이 필요 없다. 접어서 자리까지 없앤다(감싼 SizeBox 도 0 이 된다).
@@ -500,9 +606,10 @@ void UFF_LivePanelSNS::RefreshFilters()
 		{
 			const FText* ConfiguredText = FilterLabels.Find(Filter);
 			FText Text = ConfiguredText ? *ConfiguredText : FText::GetEmpty();
-			if (bUnifiedNews && Filter != EFF_LiveSnsFilter::All)
+			if (bUnifiedNews)
 			{
-				const int32 Unread = CountUnreadNews(Filter == EFF_LiveSnsFilter::Operation);
+				const int32 Unread = Filter == EFF_LiveSnsFilter::All ? GetPendingPostCount()
+					: CountUnreadNews(Filter == EFF_LiveSnsFilter::Operation);
 				if (Unread > 0) { Text = FText::Format(LOCTEXT("SourceUnread", "{0}  {1}"), Text, FText::AsNumber(Unread)); }
 			}
 			Label->SetText(bSelected ? FText::Format(SelectedFilterTextFormat,
@@ -543,6 +650,7 @@ void UFF_LivePanelSNS::RefreshAll()
 	SetTextOrHide(Text_MissingNote, FText::GetEmpty());
 	RefreshPending();
 	ScrollAnchor.FramesLeft = 0;
+	NewsRestoreFrames = 0;
 	// 행 위젯은 다시 쓰고 내용만 바꾼다.
 	if (!BindRows()) { SetTextOrHide(Text_MissingNote, EntryUnavailableText); }
 }
