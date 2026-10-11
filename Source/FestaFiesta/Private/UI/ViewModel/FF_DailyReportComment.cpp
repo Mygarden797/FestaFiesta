@@ -18,72 +18,62 @@ namespace
 		return bFinalDay ? Advice.Final : Advice.Today;
 	}
 
-	bool NeedShortageAdvice(const FFF_DailyReportCommentInputs& Inputs, FAdvice& OutAdvice)
+	FAdvice NeedAdvice(const FFF_DailyComplaint& Complaint)
 	{
-		// 가장 모자란 시설을 짚는다. 커버리지가 같으면 화장실 → 음식 → 즐길 거리 순
-		float Lowest = 1.f;
-		auto Consider = [&Lowest, &OutAdvice](float Coverage, const FAdvice& Advice)
+		if (Complaint.bHasNeedShortage)
 		{
-			if (Coverage < Lowest)
+			switch (Complaint.NeedShortage)
 			{
-				Lowest = Coverage;
-				OutAdvice = Advice;
+			case EFF_NeedType::Restroom:
+				return {
+					LOCTEXT("NeedRestroom", "화장실이 모자랐어요. 내일은 화장실을 더 지어 보세요."),
+					LOCTEXT("NeedRestroomFinal", "가장 아쉬운 점은 화장실이 모자랐던 거예요. 다음 축제에서는 화장실부터 넉넉히 지어 보세요.") };
+			case EFF_NeedType::Hunger:
+				return {
+					LOCTEXT("NeedFood", "먹을 곳이 모자랐어요. 음식 부스를 더 지어 보세요."),
+					LOCTEXT("NeedFoodFinal", "가장 아쉬운 점은 먹을 곳이 모자랐던 거예요. 다음 축제에서는 음식 부스를 더 지어 보세요.") };
+			case EFF_NeedType::Stimulation:
+				return {
+					LOCTEXT("NeedFun", "즐길 거리가 모자랐어요. 체험 부스나 포토존을 더해 보세요."),
+					LOCTEXT("NeedFunFinal", "가장 아쉬운 점은 즐길 거리가 모자랐던 거예요. 다음 축제에서는 체험 부스나 포토존을 더해 보세요.") };
+			default:
+				break;
 			}
-		};
-		Consider(Inputs.RestroomCoverage, {
-			LOCTEXT("NeedRestroom", "화장실이 모자랐어요. 내일은 화장실을 더 지어 보세요."),
-			LOCTEXT("NeedRestroomFinal", "가장 아쉬운 점은 화장실이 모자랐던 거예요. 다음 축제에서는 화장실부터 넉넉히 지어 보세요.") });
-		Consider(Inputs.HungerCoverage, {
-			LOCTEXT("NeedFood", "먹을 곳이 모자랐어요. 음식 부스를 더 지어 보세요."),
-			LOCTEXT("NeedFoodFinal", "가장 아쉬운 점은 먹을 곳이 모자랐던 거예요. 다음 축제에서는 음식 부스를 더 지어 보세요.") });
-		Consider(Inputs.StimulationCoverage, {
-			LOCTEXT("NeedFun", "즐길 거리가 모자랐어요. 체험 부스나 포토존을 더해 보세요."),
-			LOCTEXT("NeedFunFinal", "가장 아쉬운 점은 즐길 거리가 모자랐던 거예요. 다음 축제에서는 체험 부스나 포토존을 더해 보세요.") });
-		return Lowest < 1.f;
+		}
+		return {
+			LOCTEXT("NeedGeneric", "필요한 시설을 제때 못 찾은 손님이 많았어요. 시설을 고루 지어 보세요."),
+			LOCTEXT("NeedGenericFinal", "가장 아쉬운 점은 필요한 시설을 제때 못 찾은 손님이 많았던 거예요. 다음 축제에서는 시설을 고루 지어 보세요.") };
 	}
 
 	FText ComplaintLine(const FFF_DailyReportCommentInputs& Inputs)
 	{
-		if (!Inputs.bHasSatisfaction)
+		const FFF_DailyComplaint Complaint = FFF_DailyReportCommentRules::FindComplaint(Inputs);
+		if (!Complaint.bJudged)
 		{
 			return FText::GetEmpty();
 		}
 
-		struct FAxis { int32 Score; FAdvice Advice; };
-		FAdvice NeedAdvice{
-			LOCTEXT("NeedGeneric", "필요한 시설을 제때 못 찾은 손님이 많았어요. 시설을 고루 지어 보세요."),
-			LOCTEXT("NeedGenericFinal", "가장 아쉬운 점은 필요한 시설을 제때 못 찾은 손님이 많았던 거예요. 다음 축제에서는 시설을 고루 지어 보세요.") };
-		NeedShortageAdvice(Inputs, NeedAdvice);
-		const FAxis Axes[] =
+		switch (Complaint.Axis)
 		{
-			{ Inputs.NeedScore, NeedAdvice },
-			{ Inputs.WaitScore, {
-				LOCTEXT("Wait", "줄이 길다는 불만이 가장 컸어요. 인기 시설 옆에 같은 종류를 하나 더 지어 보세요."),
-				LOCTEXT("WaitFinal", "가장 아쉬운 점은 긴 줄이었어요. 다음 축제에서는 인기 시설을 하나 더 지어 줄을 나눠 보세요.") } },
-			{ Inputs.DensityScore, {
-				LOCTEXT("Density", "너무 붐빈다는 불만이 가장 컸어요. 시설을 넓게 떨어뜨려 지어 보세요."),
-				LOCTEXT("DensityFinal", "가장 아쉬운 점은 붐빔이었어요. 다음 축제에서는 시설을 넓게 떨어뜨려 지어 보세요.") } },
-			{ Inputs.PreferenceScore, {
-				LOCTEXT("Preference", "취향에 맞는 곳이 없다는 손님이 많았어요. 다른 종류의 시설을 더해 보세요."),
-				LOCTEXT("PreferenceFinal", "가장 아쉬운 점은 취향에 맞는 곳이 적었던 거예요. 다음 축제에서는 여러 종류의 시설을 섞어 보세요.") } },
-		};
-
-		const FAxis* Worst = nullptr;
-		for (const FAxis& Axis : Axes)
-		{
-			if (Axis.Score >= 0 && Axis.Score < FFF_DailyReportCommentRules::ComplaintScoreBelow
-				&& (!Worst || Axis.Score < Worst->Score))
-			{
-				Worst = &Axis;
-			}
+		case EFF_DailyComplaintAxis::Need:
+			return Pick(NeedAdvice(Complaint), Inputs.bFinalDay);
+		case EFF_DailyComplaintAxis::Wait:
+			return Inputs.bFinalDay
+				? LOCTEXT("WaitFinal", "가장 아쉬운 점은 긴 줄이었어요. 다음 축제에서는 인기 시설을 하나 더 지어 줄을 나눠 보세요.")
+				: LOCTEXT("Wait", "줄이 길다는 불만이 가장 컸어요. 인기 시설 옆에 같은 종류를 하나 더 지어 보세요.");
+		case EFF_DailyComplaintAxis::Density:
+			return Inputs.bFinalDay
+				? LOCTEXT("DensityFinal", "가장 아쉬운 점은 붐빔이었어요. 다음 축제에서는 시설을 넓게 떨어뜨려 지어 보세요.")
+				: LOCTEXT("Density", "너무 붐빈다는 불만이 가장 컸어요. 시설을 넓게 떨어뜨려 지어 보세요.");
+		case EFF_DailyComplaintAxis::Preference:
+			return Inputs.bFinalDay
+				? LOCTEXT("PreferenceFinal", "가장 아쉬운 점은 취향에 맞는 곳이 적었던 거예요. 다음 축제에서는 여러 종류의 시설을 섞어 보세요.")
+				: LOCTEXT("Preference", "취향에 맞는 곳이 없다는 손님이 많았어요. 다른 종류의 시설을 더해 보세요.");
+		default:
+			return Inputs.bFinalDay
+				? LOCTEXT("NoComplaintFinal", "손님들이 대체로 만족한 축제였어요. 정말 수고하셨어요!")
+				: LOCTEXT("NoComplaint", "손님들이 대체로 만족했어요. 이대로만 가면 돼요!");
 		}
-		if (Worst)
-		{
-			return Pick(Worst->Advice, Inputs.bFinalDay);
-		}
-		return Inputs.bFinalDay
-			? LOCTEXT("NoComplaintFinal", "손님들이 대체로 만족한 축제였어요. 정말 수고하셨어요!")
-			: LOCTEXT("NoComplaint", "손님들이 대체로 만족했어요. 이대로만 가면 돼요!");
 	}
 
 	FText GoalLine(const FFF_DailyReportCommentInputs& Inputs)
@@ -134,6 +124,53 @@ namespace
 					FText::AsNumber(Inputs.DaysPlayed), FText::AsNumber(Inputs.GoalDaysMet)));
 		}
 	}
+}
+
+FFF_DailyComplaint FFF_DailyReportCommentRules::FindComplaint(const FFF_DailyReportCommentInputs& Inputs)
+{
+	FFF_DailyComplaint Complaint;
+
+	// 가장 모자란 시설. 커버리지가 같으면 화장실 → 음식 → 즐길 거리 순
+	float Lowest = 1.f;
+	const TPair<EFF_NeedType, float> Coverages[] =
+	{
+		{ EFF_NeedType::Restroom, Inputs.RestroomCoverage },
+		{ EFF_NeedType::Hunger, Inputs.HungerCoverage },
+		{ EFF_NeedType::Stimulation, Inputs.StimulationCoverage },
+	};
+	for (const TPair<EFF_NeedType, float>& Coverage : Coverages)
+	{
+		if (Coverage.Value < Lowest)
+		{
+			Lowest = Coverage.Value;
+			Complaint.bHasNeedShortage = true;
+			Complaint.NeedShortage = Coverage.Key;
+		}
+	}
+
+	if (!Inputs.bHasSatisfaction)
+	{
+		return Complaint;
+	}
+	Complaint.bJudged = true;
+
+	const TPair<EFF_DailyComplaintAxis, int32> Axes[] =
+	{
+		{ EFF_DailyComplaintAxis::Need, Inputs.NeedScore },
+		{ EFF_DailyComplaintAxis::Wait, Inputs.WaitScore },
+		{ EFF_DailyComplaintAxis::Density, Inputs.DensityScore },
+		{ EFF_DailyComplaintAxis::Preference, Inputs.PreferenceScore },
+	};
+	int32 WorstScore = ComplaintScoreBelow;
+	for (const TPair<EFF_DailyComplaintAxis, int32>& Axis : Axes)
+	{
+		if (Axis.Value >= 0 && Axis.Value < WorstScore)
+		{
+			WorstScore = Axis.Value;
+			Complaint.Axis = Axis.Key;
+		}
+	}
+	return Complaint;
 }
 
 FText FFF_DailyReportCommentRules::Build(const FFF_DailyReportCommentInputs& Inputs)

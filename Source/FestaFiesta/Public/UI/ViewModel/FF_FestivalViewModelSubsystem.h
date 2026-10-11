@@ -15,6 +15,7 @@
 #include "UI/Staff/FF_StaffPromotionTypes.h"
 #include "UI/Staff/FF_StaffManagementTypes.h"
 #include "UI/PrepHUD/Panels/FF_PrepRecommendedFacilities.h"
+#include "UI/ViewModel/FF_DailyReportComment.h"
 
 #include "FF_FestivalViewModelSubsystem.generated.h"
 
@@ -55,6 +56,8 @@ struct FESTAFIESTA_API FFF_DailyReportView
 	int32 TopFacilityGold = 0;
 	// 비서 한마디. FFF_DailyReportCommentRules 가 위 값으로 만든다
 	FText AssistantComment;
+	// 한마디가 고른 불만 1위. 다음 날 아침 비서 브리핑이 같은 판정을 말한다
+	FFF_DailyComplaint Complaint;
 };
 
 /** 종료된 축제의 날짜별 표시값. 원장이 없는 날과 수입이 0인 날을 구분한다. */
@@ -481,6 +484,8 @@ public:
 
 	/** 마감·결산 단계에서 오늘 날짜와 일치하는 확정 표시값. 원본 정산/저장 복원 중에는 nullptr. */
 	const FFF_DailyReportView* GetDailyReport() const;
+	/** 어제 결산 값. 아침 비서 브리핑이 결산과 같은 말을 하도록 읽는다. 어제 결산을 못 봤으면(이어하기 등) nullptr. */
+	const FFF_DailyReportView* GetPreviousDailyReport() const;
 	bool WasDailyReportAutoShown(int32 Day) const;
 	void MarkDailyReportAutoShown(int32 Day);
 

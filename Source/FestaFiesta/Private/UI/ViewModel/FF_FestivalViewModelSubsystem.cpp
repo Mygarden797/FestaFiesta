@@ -484,6 +484,12 @@ const FFF_DailyReportView* UFF_FestivalViewModelSubsystem::GetDailyReport() cons
 	return IsDailyReportSurface() && DailyReport.Day == GetCurrentDay() ? &DailyReport : nullptr;
 }
 
+const FFF_DailyReportView* UFF_FestivalViewModelSubsystem::GetPreviousDailyReport() const
+{
+	if (ReportSaveSubsystem && ReportSaveSubsystem->IsRestoring()) return nullptr;
+	return DailyReport.Day > 0 && DailyReport.Day == GetCurrentDay() - 1 ? &DailyReport : nullptr;
+}
+
 bool UFF_FestivalViewModelSubsystem::WasDailyReportAutoShown(int32 Day) const
 {
 	return AutoShownReportDays.Contains(Day);
@@ -574,23 +580,24 @@ void UFF_FestivalViewModelSubsystem::FillReportAssistantComment(FFF_DailyReportV
 	{
 		Inputs.bFinalDay = true;
 		Inputs.DaysPlayed = Report.Day;
-		if (Progression)
+		// 축제 전체 1위도 오늘 1위 · 매출 순위 패널처럼 배치된 시설 하나 단위로 센다
+		if (Zones && Progression)
 		{
-			FName TopDefinitionId;
-			for (const FFF_FacilityRevenueRow& Row : Progression->GetRevenueByFacilityRowsForFestival())
+			const UFF_BuildCatalogSubsystem* Catalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>();
+			for (const FFFZSFacilityReadModel& Facility : Zones->BuildReadModel().Facilities)
 			{
-				if (Row.Amount > Inputs.FestivalTopFacilityGold)
+				FFF_FacilityInstanceRevenue Revenue;
+				if (Facility.State == EFFZSFacilityState::Removed
+					|| !Progression->GetFacilityInstanceRevenue(Facility.FacilityInstanceId, Revenue)
+					|| Revenue.TotalGold <= Inputs.FestivalTopFacilityGold)
 				{
-					Inputs.FestivalTopFacilityGold = Row.Amount;
-					TopDefinitionId = Row.FacilityId;
+					continue;
 				}
-			}
-			if (!TopDefinitionId.IsNone())
-			{
-				const UFF_BuildCatalogSubsystem* Catalog = GI ? GI->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+				Inputs.FestivalTopFacilityGold = Revenue.TotalGold;
 				FFF_BuildCatalogEntry Entry;
-				Inputs.FestivalTopFacilityName = Catalog && Catalog->FindEntry(TopDefinitionId, Entry)
-					? Entry.DisplayName : FText::FromName(TopDefinitionId);
+				Inputs.FestivalTopFacilityName = Catalog && Catalog->FindEntry(Facility.FacilityDefinitionId, Entry)
+					? Entry.DisplayName
+					: (Facility.DisplayName.IsEmpty() ? FText::FromName(Facility.FacilityDefinitionId) : Facility.DisplayName);
 			}
 		}
 		if (const int32* First = SatisfactionByDay.Find(1)) Inputs.FirstDaySatisfaction = *First;
@@ -603,6 +610,7 @@ void UFF_FestivalViewModelSubsystem::FillReportAssistantComment(FFF_DailyReportV
 		}
 	}
 	Report.AssistantComment = FFF_DailyReportCommentRules::Build(Inputs);
+	Report.Complaint = FFF_DailyReportCommentRules::FindComplaint(Inputs);
 }
 
 void UFF_FestivalViewModelSubsystem::CaptureDailyReportIfReady()

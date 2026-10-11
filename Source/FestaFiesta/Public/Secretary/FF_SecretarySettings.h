@@ -80,10 +80,6 @@ public:
 	UPROPERTY(EditAnywhere, Config, Category = "Secretary|Briefing", meta = (ClampMin = "0.0"))
 	float BriefingDelaySeconds = 1.5f;
 
-	// 만족도 항목이 모두 이 점수 이상이면 "크게 아쉬운 점이 없었어요".
-	UPROPERTY(EditAnywhere, Config, Category = "Secretary|Briefing", meta = (ClampMin = "0", ClampMax = "100"))
-	int32 GoodScore = 70;
-
 	// ── 말풍선 모양 ────────────────────────────────────────────────────────
 
 	// 초상화에서 얼굴만 쓰는 영역(UV). 동그랗게 잘라 말풍선 옆에 띄운다.
