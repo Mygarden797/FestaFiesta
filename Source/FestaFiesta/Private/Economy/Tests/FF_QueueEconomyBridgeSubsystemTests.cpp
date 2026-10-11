@@ -1453,4 +1453,77 @@ bool FFF_QueueEconomyBridge_ProductionTableCompletionUpdatesTodayBadge::RunTest(
 	return true;
 }
 
+
+// 화장실은 메인 공연 줄 휴지에도 손님을 받는다. 공연을 보는 동안에도 화장실 욕구는 차기 때문이다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueEconomyBridge_ToiletStaysOpenDuringMainProgram,
+	"FestaFiesta.Economy.QueueBridge.ToiletStaysOpenDuringMainProgram",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueEconomyBridge_ToiletStaysOpenDuringMainProgram::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_QueueEconomyBridgeTestHelpers;
+	FScopedQueueEconomyTestSettings SettingsGuard;
+	FQueueEconomyHarness Harness;
+	if (!TestTrue(TEXT("화장실 휴지 테스트 월드"), Harness.Initialize(this))) return false;
+	auto* Stage = Harness.World->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>();
+	FObjectPropertyBase* ScheduleProperty = FindFProperty<FObjectPropertyBase>(
+		UFF_FestivalStageSubsystem::StaticClass(), TEXT("ProgramScheduleTable"));
+	if (!TestNotNull(TEXT("단계 시계"), Stage) || !TestNotNull(TEXT("공연 일정 표 속성"), ScheduleProperty)) return false;
+	UDataTable* Schedule = NewObject<UDataTable>(Stage);
+	Schedule->RowStruct = FFF_LiveTriggerEvent::StaticStruct();
+	const auto AddProgramEvent = [Schedule](FName RowName, float AtSeconds, bool bStartsShow)
+	{
+		FFF_LiveTriggerEvent Event;
+		Event.Day = 1;
+		Event.TriggerSeconds = AtSeconds;
+		Event.EventLabel = RowName.ToString();
+		Event.bIsMainProgramLockStart = bStartsShow;
+		Schedule->AddRow(RowName, Event);
+	};
+	AddProgramEvent(TEXT("FirstStart"), 180.f, true);
+	AddProgramEvent(TEXT("FirstEnd"), 210.f, false);
+	ScheduleProperty->SetObjectPropertyValue_InContainer(Stage, Schedule);
+
+	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	Spec.Category = EFFZSFacilityCategory::Toilet;
+	Spec.FacilityDefinitionId = TEXT("Toilet_Standard_Standard");
+	// 테스트 설치비 표에는 음식 부스 행만 있다. 화장실도 그 행으로 값을 매긴다
+	Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall");
+	Spec.QueueRules.ServiceCapacity = 1;
+	Spec.QueueRules.ServiceDurationSeconds = 10.f;
+	Spec.QueueRules.AbandonAfterSeconds = 0.f;
+	FString Failure;
+	if (!Harness.InstallFoodStall(Failure, false, &Spec)) { AddError(Failure); return false; }
+	FFFZSCommand Open;
+	Open.CommandId = FGuid::NewGuid();
+	Open.TransactionId = FGuid::NewGuid();
+	Open.Type = EFFZSCommandType::Open;
+	Open.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+	Open.FacilityInstanceId = Harness.FacilityInstanceId;
+	if (!TestTrue(TEXT("화장실이 연다"), Harness.ZoneSystem->ExecuteCommand(Open).bSucceeded)) return false;
+	Stage->CurrentDay = 1;
+	Stage->CurrentStage = EFF_FestivalStage::Live;
+
+	const auto Visit = [&](int32 PartyId)
+	{
+		FFF_JoinRequest Request;
+		Request.PartyId = PartyId;
+		Request.MemberCount = 2;
+		return Harness.QueueBridge->TryJoinZoneFacility(Harness.FacilityInstanceId, Request);
+	};
+	Stage->ElapsedLiveSeconds = 176.f;
+	if (!TestTrue(TEXT("공연 전 줄"), Visit(710001).bAccepted)) return false;
+	Harness.QueueBridge->NotifyZoneFacilityPartyArrived(Harness.FacilityInstanceId, 710001);
+
+	Stage->ElapsedLiveSeconds = 190.f;
+	TestTrue(TEXT("공연 줄 휴지 중이다"), Stage->IsMainProgramQueueBreakActive());
+	Harness.QueueBridge->SynchronizeMainProgramQueueBreak();
+	TestFalse(TEXT("화장실은 공연 정지 대상이 아니다"), Harness.QueueBridge->PausesForMainProgram(Harness.QueueFacilityId));
+	TestEqual(TEXT("공연이 시작돼도 쓰던 팀을 내보내지 않는다"),
+		Harness.Queue->GetQueueState(Harness.QueueFacilityId).OccupiedMemberCount, 2);
+	TestTrue(TEXT("공연 중에도 새 손님을 받는다"), Harness.Queue->GetQueueState(Harness.QueueFacilityId).bAcceptingNew);
+	TestTrue(TEXT("공연 중 줄 가입"), Visit(710002).bAccepted);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -187,7 +187,7 @@ void UFF_QueueSubsystem::NotifyPartyArrived(int32 FacilityId, int32 PartyId)
 {
 	if (FFF_FacilityQueue* Queue = FindQueue(FacilityId))
 	{
-		Queue->NotifyPartyArrived(PartyId);
+		Queue->NotifyPartyArrived(PartyId, SimTimeSeconds);
 	}
 }
 

@@ -143,7 +143,7 @@ FFFZSPolicyDecision UFF_ZoneSystemQueueBridgeSubsystem::ApplyTentativeFFZoneSyst
 		return Decision;
 	}
 	// 공개 Queue 이벤트는 아직 내보내지 않는다. 기존 큐는 비어 있으므로 취소도 발생하지 않는다.
-	QueueSystem->SetPerformanceBreak(QueueFacilityId, bMainProgramQueueBreak);
+	QueueSystem->SetPerformanceBreak(QueueFacilityId, bMainProgramQueueBreak && PausesForMainProgram(CandidateSpec));
 	QueueSystem->FindQueue(QueueFacilityId)->CloseFacility(
 		EFF_QueueCloseReason::Reconfigure, QueueSystem->GetSimTimeSeconds());
 	return Decision;

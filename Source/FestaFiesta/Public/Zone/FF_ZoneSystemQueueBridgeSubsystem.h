@@ -57,6 +57,13 @@ public:
 	FGuid FindZoneFacilityId(int32 QueueFacilityId) const;
 
 	/**
+	 * 메인 공연 줄 휴지 동안 서비스를 멈추는 시설인가. 화장실은 멈추지 않는다 —
+	 * 공연을 보는 동안에도 화장실 욕구는 차는데, 멈추면 급한 손님이 갈 곳이 없어 만족도가 크게 깎였다.
+	 */
+	static bool PausesForMainProgram(const FFFZSFacilitySpec& Spec) { return Spec.Category != EFFZSFacilityCategory::Toilet; }
+	bool PausesForMainProgram(int32 QueueFacilityId) const;
+
+	/**
 	 * FFZS Snapshot 복원처럼 OnWorldChanged가 발생하지 않은 뒤 전체 등록을 다시 만든다.
 	 * 기존 브리지 Queue를 재구성하므로 진행 중 Party가 없는 복원 경계에서만 호출해야 한다.
 	 */

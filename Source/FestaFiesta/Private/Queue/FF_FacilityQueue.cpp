@@ -476,9 +476,14 @@ EFF_QueueJoinResult FFF_FacilityQueue::TryJoin(const FFF_JoinRequest& Request, f
 	return EFF_QueueJoinResult::Accepted;
 }
 
-void FFF_FacilityQueue::NotifyPartyArrived(int32 PartyId)
+void FFF_FacilityQueue::NotifyPartyArrived(int32 PartyId, float SimTimeSeconds)
 {
 	const int32 Index = FindPartyIndex(PartyId);
+	if (Index != INDEX_NONE && Parties[Index].FirstArrivalSimTime < 0.f)
+	{
+		// 시각을 모르는 호출(단위 테스트)은 가입 시각으로 둔다 = 예전처럼 가입부터 잰다
+		Parties[Index].FirstArrivalSimTime = SimTimeSeconds >= 0.f ? SimTimeSeconds : Parties[Index].JoinSimTime;
+	}
 	if (Index != INDEX_NONE && Index < Config.ConcurrentServiceSlots)
 	{
 		Parties[Index].bArrivedAtServicePoint = true;
@@ -621,7 +626,23 @@ void FFF_FacilityQueue::Advance(float DeltaSeconds, float SimTimeSeconds)
 			{
 				continue;
 			}
-			if ((SimTimeSeconds - Party.JoinSimTime) >= Party.MaxWaitSeconds)
+			// 도착 확인을 쓰는 큐(게임의 시설 큐)는 줄 자리에 도착한 뒤부터 잰다. 가입 시각부터 재면
+			// 걸어오는 시간이 대기 한도를 먹어, 화장실 줄에 든 팀의 45%가 칸에 와서 곧 포기했다.
+			// 아직 못 온 팀은 끼임 정리용으로 걸어오는 시간을 대기 한도만큼 더 준다.
+			float WaitStart = Party.JoinSimTime;
+			float Limit = Party.MaxWaitSeconds;
+			if (Config.bRequireArrivalConfirmation)
+			{
+				if (Party.FirstArrivalSimTime >= 0.f)
+				{
+					WaitStart = Party.FirstArrivalSimTime;
+				}
+				else
+				{
+					Limit *= 2.f;
+				}
+			}
+			if ((SimTimeSeconds - WaitStart) >= Limit)
 			{
 				AbandonIndices.Add(Index);
 			}

@@ -29,6 +29,9 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogCrowdDecision, Log, All);
 
+// 화장실 진단에서 "급하다"로 보는 Restroom 값. 만족도의 못 채움 기준(UFF_NpcNeedMetricsSubsystem 기본 0.7)과 같게 둔다
+static constexpr float UrgentRestroomThreshold = 0.7f;
+
 void UFF_CrowdDecisionSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
@@ -680,7 +683,8 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
 	const UFF_FestivalStageSubsystem* Stage = GameInstance
 		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
-	if (Stage && Stage->IsMainProgramQueueBreakActive())
+	const bool bMainProgramQueueBreak = Stage && Stage->IsMainProgramQueueBreakActive();
+	if (bMainProgramQueueBreak)
 	{
 		const UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge =
 			GetWorld()->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>();
@@ -690,8 +694,9 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 			if (!QueueBridge || !FFF_ZoneSystemBridge::TryParseDestinationId(Candidate.DestinationId, FacilityId)
 				|| QueueBridge->FindQueueFacilityId(FacilityId) == INDEX_NONE) return false;
 			const AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(FacilityId);
-			// 공연 관람은 일반 FIFO 대기열을 사용하지 않는다.
-			return !Facility || !Facility->GetFacilitySpec().Audience.bEnabled;
+			// 공연 관람은 일반 FIFO 대기열을 사용하지 않는다. 화장실은 공연 중에도 연다
+			return !Facility || (!Facility->GetFacilitySpec().Audience.bEnabled
+				&& UFF_ZoneSystemQueueBridgeSubsystem::PausesForMainProgram(Facility->GetFacilitySpec()));
 		});
 	}
 	if (Reservations)
@@ -878,6 +883,34 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		// Random 모드에서는 1(변주 없음)로 둔다 — 그 모드는 취향·혼잡 추정을 전부 지우고
 		// 비교 기준선을 만드는 용도이므로, 개체차가 섞이면 기준선이 아니게 된다.
 		bFullMode ? Context.NoveltySeekingMultiplier : 1.f);
+
+	if (bFullMode && Context.Needs.Restroom >= UrgentRestroomThreshold)
+	{
+		++Stats.UrgentRestroom;
+		float NearestToiletMeters = TNumericLimits<float>::Max();
+		bool bChoseToilet = false;
+		for (const FFF_DestinationCandidate& Candidate : Candidates)
+		{
+			if (Candidate.NeedRelief.bRelievesRestroom)
+			{
+				NearestToiletMeters = FMath::Min(NearestToiletMeters, Candidate.DistanceMeters);
+				bChoseToilet |= Candidate.DestinationId == Decision.ChosenDestinationId;
+			}
+		}
+		const bool bHadToilet = NearestToiletMeters < TNumericLimits<float>::Max();
+		if (bHadToilet)
+		{
+			++Stats.UrgentRestroomToiletCandidate;
+			Stats.UrgentRestroomNearestToiletMetersSum += NearestToiletMeters;
+		}
+		else
+		{
+			++Stats.UrgentRestroomNoToiletByZone.FindOrAdd(CurrentZoneId);
+		}
+		Stats.UrgentRestroomDuringBreak += bMainProgramQueueBreak ? 1 : 0;
+		Stats.UrgentRestroomNoToiletDuringBreak += bMainProgramQueueBreak && !bHadToilet ? 1 : 0;
+		Stats.UrgentRestroomChoseToilet += bChoseToilet ? 1 : 0;
+	}
 
 	if (Decision.bIsNoChoice || Decision.ChosenDestinationId.IsNone())
 	{
