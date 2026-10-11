@@ -78,4 +78,43 @@ bool FFF_DailyReportComment_FinalDayLooksBack::RunTest(const FString& Parameters
 	return true;
 }
 
+
+// 판정은 FindComplaint 하나가 한다. 아침 비서 브리핑도 이 판정을 그대로 말한다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DailyReportComment_FindComplaintIsTheOnlyJudge,
+	"FestaFiesta.UI.DailyReportComment.FindComplaintIsTheOnlyJudge",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DailyReportComment_FindComplaintIsTheOnlyJudge::RunTest(const FString& Parameters)
+{
+	FFF_DailyReportCommentInputs Inputs;
+	TestFalse(TEXT("만족도를 모르면 판정하지 않는다"), FFF_DailyReportCommentRules::FindComplaint(Inputs).bJudged);
+
+	Inputs.bHasSatisfaction = true;
+	Inputs.NeedScore = 62;
+	Inputs.WaitScore = 62;
+	Inputs.DensityScore = 80;
+	Inputs.PreferenceScore = 80;
+	FFF_DailyComplaint Complaint = FFF_DailyReportCommentRules::FindComplaint(Inputs);
+	TestTrue(TEXT("판정했다"), Complaint.bJudged);
+	TestEqual(TEXT("점수가 같으면 필요가 먼저"), static_cast<int32>(Complaint.Axis), static_cast<int32>(EFF_DailyComplaintAxis::Need));
+	TestFalse(TEXT("커버리지가 모두 충분하면 모자란 필요가 없다"), Complaint.bHasNeedShortage);
+
+	Inputs.WaitScore = 61;
+	TestEqual(TEXT("더 낮은 항목을 고른다"), static_cast<int32>(FFF_DailyReportCommentRules::FindComplaint(Inputs).Axis), static_cast<int32>(EFF_DailyComplaintAxis::Wait));
+
+	Inputs.HungerCoverage = 0.5f;
+	Inputs.RestroomCoverage = 0.5f;
+	Inputs.StimulationCoverage = 0.4f;
+	Complaint = FFF_DailyReportCommentRules::FindComplaint(Inputs);
+	TestTrue(TEXT("모자란 필요가 있다"), Complaint.bHasNeedShortage);
+	TestEqual(TEXT("커버리지가 가장 낮은 필요"), static_cast<int32>(Complaint.NeedShortage), static_cast<int32>(EFF_NeedType::Stimulation));
+	Inputs.StimulationCoverage = 0.5f;
+	TestEqual(TEXT("커버리지가 같으면 화장실이 먼저"), static_cast<int32>(FFF_DailyReportCommentRules::FindComplaint(Inputs).NeedShortage), static_cast<int32>(EFF_NeedType::Restroom));
+
+	Inputs.NeedScore = Inputs.WaitScore = FFF_DailyReportCommentRules::ComplaintScoreBelow;
+	Complaint = FFF_DailyReportCommentRules::FindComplaint(Inputs);
+	TestTrue(TEXT("모두 기준 이상이어도 판정은 했다"), Complaint.bJudged);
+	TestEqual(TEXT("모두 기준 이상이면 불만 없음"), static_cast<int32>(Complaint.Axis), static_cast<int32>(EFF_DailyComplaintAxis::None));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -15,6 +15,8 @@
    - 새 수치를 만들지 않는다. 만족도 항목 · 필요 · 줄 · 혼잡 · 사건은 팀원 시스템이 이미 내는 값이다.
    - "불만 1등"은 만족도 항목(대기 · 혼잡 · 취향 · 필요 충족) 중 가장 낮은 것이다. 손님 한 명 한 명의
      불만 사유를 세는 기록은 게임에 없다(2026-10-09 사용자 확인: 근사치로 충분).
+   - 아침 브리핑의 불만 1등 · 모자란 필요 · 매출 1등은 직접 고르지 않는다. 어제 결산 한마디
+     (FFF_DailyReportCommentRules::FindComplaint)가 고른 것을 그대로 말해 결산 화면과 어긋나지 않게 한다.
    - 운영 중에는 시설을 지을 수 없다(셋업 · 모닝체크에서만). 운영 중 훈수의 설치 권유는 "내일 아침에"로 말한다.
 */
 
@@ -78,42 +80,6 @@ struct FFF_SecretaryGeneralTip
 	EFF_SecretaryTipKind SameTopic = EFF_SecretaryTipKind::None;
 };
 
-// 아침 브리핑을 지을 때 보는 값. 어제 운영이 끝날 때까지 모아 둔 것이다.
-struct FFF_SecretaryBriefingInputs
-{
-	// 오늘 날짜(1부터).
-	int32 Day = 1;
-
-	// 어제 만족도(0~100). 모르면 INDEX_NONE.
-	int32 YesterdaySatisfaction = INDEX_NONE;
-
-	// 만족도 항목(0~100). 모르면 INDEX_NONE.
-	int32 WaitScore = INDEX_NONE;
-	int32 DensityScore = INDEX_NONE;
-	int32 PreferenceScore = INDEX_NONE;
-	int32 NeedFulfillmentScore = INDEX_NONE;
-
-	// 어제 가장 오래 기다린 시설.
-	FText WorstWaitFacility;
-
-	// 어제 가장 많이 못 채운 필요.
-	bool bHasWorstNeed = false;
-	EFF_NeedType WorstNeed = EFF_NeedType::Hunger;
-
-	// 어제 매출 1등 시설과 금액.
-	FText TopRevenueFacility;
-	int32 TopRevenueGold = 0;
-
-	// 설치된 화장실 수. 모르면 INDEX_NONE.
-	int32 ToiletCount = INDEX_NONE;
-
-	// 아직 한 번도 안 놓아 본 분류. 소개할 순서대로.
-	TArray<EFFZSFacilityCategory> UnbuiltCategories;
-
-	// 항목이 모두 이 점수 이상이면 아쉬운 점이 없다고 말한다.
-	int32 GoodScore = 70;
-};
-
 // 브리핑에서 "가장 아쉬웠던 것"으로 고른 항목.
 enum class EFF_SecretaryWeakness : uint8
 {
@@ -122,6 +88,38 @@ enum class EFF_SecretaryWeakness : uint8
 	Density,
 	Preference,
 	Need
+};
+
+// 아침 브리핑을 지을 때 보는 값. 만족도 · 아쉬운 점 · 매출 1등은 어제 결산(FFF_DailyReportView)에서 옮긴다.
+struct FFF_SecretaryBriefingInputs
+{
+	// 오늘 날짜(1부터).
+	int32 Day = 1;
+
+	// 어제 만족도(0~100). 모르면 INDEX_NONE.
+	int32 YesterdaySatisfaction = INDEX_NONE;
+
+	// 어제 결산이 고른 불만 1위. bJudgedYesterday 가 거짓이면 어제 결산을 못 봐 아쉬운 점 얘기를 하지 않는다.
+	// 참인데 Weakness 가 None 이면 모든 항목이 기준 이상이었다.
+	bool bJudgedYesterday = false;
+	EFF_SecretaryWeakness Weakness = EFF_SecretaryWeakness::None;
+
+	// 어제 가장 오래 기다린 시설.
+	FText WorstWaitFacility;
+
+	// 어제 결산이 짚은 가장 모자란 필요(화장실 · 배고픔 · 자극 중).
+	bool bHasWorstNeed = false;
+	EFF_NeedType WorstNeed = EFF_NeedType::Hunger;
+
+	// 어제 매출 1등 시설(배치된 시설 하나 단위)과 금액.
+	FText TopRevenueFacility;
+	int32 TopRevenueGold = 0;
+
+	// 설치된 화장실 수. 모르면 INDEX_NONE.
+	int32 ToiletCount = INDEX_NONE;
+
+	// 아직 한 번도 안 놓아 본 분류. 소개할 순서대로.
+	TArray<EFFZSFacilityCategory> UnbuiltCategories;
 };
 
 namespace FFSecretaryAdvisor
@@ -152,9 +150,6 @@ namespace FFSecretaryAdvisor
 
 	// 첫날 셋업 인사. 어제가 없어 짧다.
 	FESTAFIESTA_API TArray<FText> BuildFirstDayGreeting();
-
-	// 만족도 항목 중 가장 낮은 것. 모두 GoodScore 이상이거나 아는 값이 없으면 None.
-	FESTAFIESTA_API EFF_SecretaryWeakness FindWeakness(const FFF_SecretaryBriefingInputs& Inputs);
 
 	// 아직 안 놓아 본 분류를 소개하는 순서. 길 · 타일은 소개할 거리가 아니라 뺀다.
 	FESTAFIESTA_API const TArray<EFFZSFacilityCategory>& GetIntroductionOrder();

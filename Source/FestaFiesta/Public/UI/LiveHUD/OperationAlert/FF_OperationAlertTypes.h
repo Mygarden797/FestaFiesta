@@ -47,8 +47,9 @@ struct FFF_OperationAlertInputs
 
 struct FFF_OperationAlertThresholds
 {
-	// 커버리지가 이 값보다 작으면 시설이 모자란다고 알린다
-	float ShortageCoverageBelow = 1.f;
+	// 커버리지가 이 값보다 작으면 시설이 모자란다고 알린다. 커버리지 목표(음식 7 · 즐길 거리 10)는 많이 지은 배치의 기준이라
+	// 1 미만마다 알리면 보통 배치에서도 운영 내내 알림이 뜬다. 목표의 절반에 못 미칠 때만 알린다
+	float ShortageCoverageBelow = 0.5f;
 
 	// 판정 사이에 줄 이탈·갈 곳 없음 퇴장이 이 수 이상 늘면 알린다
 	int32 QueueAbandonsAtLeast = 5;

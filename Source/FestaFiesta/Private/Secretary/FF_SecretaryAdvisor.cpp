@@ -187,25 +187,6 @@ namespace FFSecretaryAdvisor
 		return INDEX_NONE;
 	}
 
-	EFF_SecretaryWeakness FindWeakness(const FFF_SecretaryBriefingInputs& Inputs)
-	{
-		EFF_SecretaryWeakness Weakest = EFF_SecretaryWeakness::None;
-		int32 WeakestScore = Inputs.GoodScore;
-		const auto Consider = [&Weakest, &WeakestScore](const EFF_SecretaryWeakness Kind, const int32 Score)
-		{
-			if (Score != INDEX_NONE && Score < WeakestScore)
-			{
-				Weakest = Kind;
-				WeakestScore = Score;
-			}
-		};
-		Consider(EFF_SecretaryWeakness::Wait, Inputs.WaitScore);
-		Consider(EFF_SecretaryWeakness::Density, Inputs.DensityScore);
-		Consider(EFF_SecretaryWeakness::Preference, Inputs.PreferenceScore);
-		Consider(EFF_SecretaryWeakness::Need, Inputs.NeedFulfillmentScore);
-		return Weakest;
-	}
-
 	TArray<FText> BuildMorningBriefing(const FFF_SecretaryBriefingInputs& Inputs)
 	{
 		TArray<FText> Lines;
@@ -218,13 +199,10 @@ namespace FFSecretaryAdvisor
 				FText::AsNumber(Inputs.YesterdaySatisfaction)));
 		}
 
-		// 어제 값을 하나도 모르면(이어하기로 아침에 들어온 경우 등) 아쉬운 점 얘기를 아예 하지 않는다.
+		// 어제 결산을 못 봤으면(이어하기로 아침에 들어온 경우 등) 아쉬운 점 얘기를 아예 하지 않는다.
 		// "아쉬운 점이 없었어요"는 값을 보고 나서야 할 수 있는 말이다.
-		const bool bHasScores = Inputs.WaitScore != INDEX_NONE || Inputs.DensityScore != INDEX_NONE
-			|| Inputs.PreferenceScore != INDEX_NONE || Inputs.NeedFulfillmentScore != INDEX_NONE;
-
 		bool bSpokeAboutRestroom = false;
-		switch (bHasScores ? FindWeakness(Inputs) : EFF_SecretaryWeakness::None)
+		switch (Inputs.bJudgedYesterday ? Inputs.Weakness : EFF_SecretaryWeakness::None)
 		{
 		case EFF_SecretaryWeakness::Wait:
 			Lines.Add(Inputs.WorstWaitFacility.IsEmpty()
@@ -246,7 +224,7 @@ namespace FFSecretaryAdvisor
 			bSpokeAboutRestroom = Inputs.bHasWorstNeed && Inputs.WorstNeed == EFF_NeedType::Restroom;
 			break;
 		default:
-			if (bHasScores)
+			if (Inputs.bJudgedYesterday)
 			{
 				Lines.Add(LOCTEXT("WeakNone", "어제는 크게 아쉬운 점이 없었어요."));
 			}

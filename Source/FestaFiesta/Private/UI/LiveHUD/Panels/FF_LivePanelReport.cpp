@@ -9,8 +9,10 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Blueprint/WidgetTree.h"
 #include "Engine/GameInstance.h"
 #include "UI/LiveHUD/FF_LiveHudScreen.h"
+#include "UI/LiveHUD/Panels/FF_SatisfactionBreakdownWidget.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 void UFF_DailyReportLedgerRowWidget::ConfigureRow(const FText& Label, const FText& Amount)
@@ -181,6 +183,42 @@ void UFF_LivePanelReport::RefreshLedgerRows(UVerticalBox* Box, const TArray<FFF_
 	if (Rows.IsEmpty() && !EmptyText.IsEmpty()) { AddRow(EmptyText, FText::GetEmpty()); }
 }
 
+TSharedRef<SWidget> UFF_LivePanelReport::RebuildWidget()
+{
+	// Slate 트리가 만들어지기 전에 끼워야 순서가 맞는다. 만든 뒤에는 InsertChildAt 이 UMG 슬롯 순서만 바꾸고 화면은 맨 끝에 붙는다
+	EnsureSatisfactionBreakdown();
+	return Super::RebuildWidget();
+}
+
+void UFF_LivePanelReport::EnsureSatisfactionBreakdown()
+{
+	if (Widget_SatisfactionBreakdown || !WidgetTree)
+	{
+		return;
+	}
+	// 결산 WBP 는 디자인 도구가 만든 에셋이라 건드리지 않는다. 만족도 카드 본문을 이름으로 찾아 평가 만족도 줄 위에 넣는다
+	UVerticalBox* Body = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("Report_SatisfactionBody")));
+	if (!Body)
+	{
+		return;
+	}
+	Widget_SatisfactionBreakdown = CreateWidget<UFF_SatisfactionBreakdownWidget>(this, UFF_SatisfactionBreakdownWidget::StaticClass());
+	if (!Widget_SatisfactionBreakdown)
+	{
+		return;
+	}
+	const UWidget* ScoreRow = WidgetTree->FindWidget(TEXT("Report_ScoreRow"));
+	const int32 ScoreRowIndex = ScoreRow ? Body->GetChildIndex(ScoreRow) : INDEX_NONE;
+	UPanelSlot* BreakdownSlot = ScoreRowIndex != INDEX_NONE
+		? Body->InsertChildAt(ScoreRowIndex, Widget_SatisfactionBreakdown)
+		: Body->AddChild(Widget_SatisfactionBreakdown);
+	if (UVerticalBoxSlot* BoxSlot = Cast<UVerticalBoxSlot>(BreakdownSlot))
+	{
+		BoxSlot->SetPadding(FMargin(0.f, 4.f, 0.f, 10.f));
+		BoxSlot->SetHorizontalAlignment(HAlign_Fill);
+	}
+}
+
 void UFF_LivePanelReport::RefreshAll()
 {
 	const UFF_FestivalViewModelSubsystem* VM = GetViewModel();
@@ -229,6 +267,10 @@ void UFF_LivePanelReport::RefreshAll()
 	RefreshScore(Text_DensityScore, Progress_DensityScore, Report ? Report->DensityScore : INDEX_NONE, bHasSatisfaction);
 	RefreshScore(Text_PreferenceScore, Progress_PreferenceScore, Report ? Report->PreferenceScore : INDEX_NONE, bHasSatisfaction);
 	RefreshScore(Text_NeedScore, Progress_NeedScore, Report ? Report->NeedScore : INDEX_NONE, bHasSatisfaction);
+	if (Widget_SatisfactionBreakdown)
+	{
+		Widget_SatisfactionBreakdown->SetBreakdown(bHasSatisfaction ? Report->SatisfactionBreakdown : FFF_SatisfactionBreakdown());
+	}
 	SetTextOrHide(Text_SatisfactionNote, SatisfactionNoteText);
 	// 안전도에는 확정된 측정 계약이 없다. 이전 임시값 88을 결과로 표시하지 않는다.
 	SetTextOrHide(Text_Safety, NotMeasuredText);
