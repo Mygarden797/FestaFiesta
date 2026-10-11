@@ -3,9 +3,9 @@
   "map": "/Game/FestaFiesta/Maps/Test_Main",
   "slot": "econ_min",
   "facilities": [
-    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage", "zones": ["GZ_DadaPocha"], "origin_cm": [2500, 4025], "yaw_centidegrees": 27000, "expected_audience_capacity": 500},
-    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Info/PDA_FFZS_Info_GeneralInfo_General", "zones": ["GZ_TestMain_27", "GZ_TestMain_01"]},
-    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_BusanFishCakeCart", "zones": ["GZ_TestMain_01"]},
-    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_CharcoalChickenSkewerStall", "zones": ["GZ_TestMain_07"]}
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage", "zones": ["GZ_TemporaryParkingEast"], "expected_audience_capacity": 500},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Info/PDA_FFZS_Info_GeneralInfo_General", "zones": ["GZ_DadaepoForest", "GZ_Tutorial"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_BusanFishCakeCart", "zones": ["GZ_Tutorial"]},
+    {"definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_CharcoalChickenSkewerStall", "zones": ["GZ_TemporaryParkingEast"]}
   ]
 }
