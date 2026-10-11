@@ -9,6 +9,8 @@
 #include "Components/ComboBoxString.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Components/WrapBox.h"
 #include "Editor.h"
 #include "Engine/TextureRenderTarget2D.h"
@@ -24,6 +26,8 @@
 #include "TextureResource.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelProgram.h"
 #include "UI/PrepHUD/Panels/FF_PrepProgramCard.h"
+#include "UI/PrepHUD/Panels/FF_PrepProgramFacilityRow.h"
+#include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 #include "UObject/Package.h"
 #include "UObject/StrongObjectPtr.h"
 #include "Widgets/SOverlay.h"
@@ -35,6 +39,8 @@ namespace FFPrepProgramSkyLayoutTest
 		TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelProgram.WBP_FF_PrepPanelProgram_C");
 	constexpr const TCHAR* CardPath =
 		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepProgramCard.WBP_FF_PrepProgramCard_C");
+	constexpr const TCHAR* FacilityRowPath =
+		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepProgramFacilityRow.WBP_FF_PrepProgramFacilityRow_C");
 
 	bool Contains(const FSlateRect& Outer, const FSlateRect& Inner)
 	{
@@ -57,7 +63,8 @@ namespace FFPrepProgramSkyLayoutTest
 	}
 
 	bool SetFixture(FAutomationTestBase& Test, UFF_PrepPanelProgram& Panel,
-		UWidgetBlueprintGeneratedClass* CardClass, int32 Count, bool bLongTitles)
+		UWidgetBlueprintGeneratedClass* CardClass, UWidgetBlueprintGeneratedClass* FacilityRowClass,
+		int32 Count, bool bLongTitles)
 	{
 		// GI 없는 렌더 검사 인스턴스만 채운다. 카탈로그 에셋, 시설, 편성 또는 경제 상태는 수정하지 않는다.
 		const TPair<const TCHAR*, const TCHAR*> Values[] = {
@@ -74,24 +81,37 @@ namespace FFPrepProgramSkyLayoutTest
 			Text->SetText(FText::FromString(Pair.Value));
 			Text->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		}
-		for (const TCHAR* Name : { TEXT("Text_EmptyCatalog"), TEXT("Text_FacilityNotice"), TEXT("Box_CatalogChoices") })
+		for (const TCHAR* Name : { TEXT("Text_EmptyCatalog"), TEXT("Text_FacilityNotice"), TEXT("Text_FacilityEmpty"), TEXT("Box_CatalogChoices") })
 		{
 			if (UWidget* Widget = Panel.GetWidgetFromName(Name)) { Widget->SetVisibility(ESlateVisibility::Collapsed); }
 		}
 		if (UWidget* Block = Panel.GetWidgetFromName(TEXT("Text_BlockReason"))) { Block->SetVisibility(ESlateVisibility::Hidden); }
 		UWidget* FacilityRow = Panel.GetWidgetFromName(TEXT("Box_FacilityRow"));
 		UComboBoxString* Combo = Cast<UComboBoxString>(Panel.GetWidgetFromName(TEXT("Combo_Facilities")));
+		UVerticalBox* Facilities = Cast<UVerticalBox>(Panel.GetWidgetFromName(TEXT("VerticalBox_FacilityInstances")));
 		UWrapBox* Cards = Cast<UWrapBox>(Panel.GetWidgetFromName(TEXT("Box_ProgramCards")));
 		UButton* Schedule = Cast<UButton>(Panel.GetWidgetFromName(TEXT("Button_Schedule")));
 		if (!Test.TestNotNull(TEXT("시설 선택 줄"), FacilityRow) || !Test.TestNotNull(TEXT("시설 드롭다운"), Combo) ||
+			!Test.TestNotNull(TEXT("현재 설치 시설 목록"), Facilities) ||
 			!Test.TestNotNull(TEXT("프로그램 카드 목록"), Cards) || !Test.TestNotNull(TEXT("편성 버튼"), Schedule)) { return false; }
 		FacilityRow->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-		// 표시 fixture에만 사용한다. 실제 선택 → 견적 갱신은 별도의 계약 검사에서 확인한다.
-		Combo->OnSelectionChanged.Clear();
-		Combo->ClearOptions();
-		Combo->AddOption(TEXT("바다 공예 체험 부스 1"));
-		Combo->AddOption(TEXT("바다 공예 체험 부스 2"));
-		Combo->SetSelectedIndex(0);
+		// 시설 목록 디자인은 드롭다운을 호환 바인딩용으로만 남기고 숨긴다.
+		// 숨겨진 컨트롤을 강제로 보이게 하지 않고 실제 저장된 시설 행을 렌더한다.
+		Test.TestEqual(TEXT("호환용 시설 드롭다운은 숨김 상태를 유지한다"), Combo->GetVisibility(), ESlateVisibility::Collapsed);
+		Facilities->ClearChildren();
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			UFF_PrepProgramFacilityRow* Row = CreateWidget<UFF_PrepProgramFacilityRow>(&Panel, FacilityRowClass);
+			if (!Test.TestNotNull(TEXT("시설 행 검사 인스턴스"), Row)) { return false; }
+			FFF_PrepFacilityOption Data;
+			Data.InstanceLabel = FText::FromString(FString::Printf(TEXT("바다 공방 #%02d"), Index + 1));
+			Data.LocationText = FText::FromString(Index % 2 == 0 ? TEXT("해변 구역") : TEXT("중앙 광장"));
+			Row->ConfigureFacility(Index, Data);
+			Row->SetFacilityState(Index == 0, false);
+			UVerticalBoxSlot* RowSlot = Facilities->AddChildToVerticalBox(Row);
+			RowSlot->SetHorizontalAlignment(HAlign_Fill);
+			RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+		}
 		Schedule->SetIsEnabled(true);
 		Cards->ClearChildren();
 		for (int32 Index = 0; Index < Count; ++Index)
@@ -146,8 +166,11 @@ namespace FFPrepProgramSkyLayoutTest
 			FlushRenderingCommands();
 		};
 		UScrollBox* Scroll = Cast<UScrollBox>(Panel.GetWidgetFromName(TEXT("ScrollBox_Body")));
-		if (!Test.TestNotNull(Context + TEXT(" 본문 스크롤"), Scroll)) { return false; }
+		UScrollBox* FacilityScroll = Cast<UScrollBox>(Panel.GetWidgetFromName(TEXT("ScrollBox_FacilityInstances")));
+		if (!Test.TestNotNull(Context + TEXT(" 본문 스크롤"), Scroll) ||
+			!Test.TestNotNull(Context + TEXT(" 시설 목록 스크롤"), FacilityScroll)) { return false; }
 		Scroll->SetScrollOffset(0.f);
+		FacilityScroll->SetScrollOffset(0.f);
 		DrawFrames();
 		UWidget* Header = Panel.GetWidgetFromName(TEXT("HorizontalBox_Header"));
 		UWidget* Close = Panel.GetWidgetFromName(TEXT("Button_Close"));
@@ -155,7 +178,7 @@ namespace FFPrepProgramSkyLayoutTest
 		UWidget* Schedule = Panel.GetWidgetFromName(TEXT("Button_Schedule"));
 		UWidget* Catalog = Panel.GetWidgetFromName(TEXT("VerticalBox_Catalog"));
 		UWidget* Summary = Panel.GetWidgetFromName(TEXT("Border_Summary"));
-		UWidget* Facilities = Panel.GetWidgetFromName(TEXT("Combo_Facilities"));
+		UVerticalBox* Facilities = Cast<UVerticalBox>(Panel.GetWidgetFromName(TEXT("VerticalBox_FacilityInstances")));
 		UWrapBox* Cards = Cast<UWrapBox>(Panel.GetWidgetFromName(TEXT("Box_ProgramCards")));
 		if (!Test.TestNotNull(Context + TEXT(" 헤더"), Header) || !Test.TestNotNull(Context + TEXT(" 닫기"), Close) ||
 			!Test.TestNotNull(Context + TEXT(" 푸터"), Footer) || !Test.TestNotNull(Context + TEXT(" 편성"), Schedule) ||
@@ -184,8 +207,6 @@ namespace FFPrepProgramSkyLayoutTest
 		CheckText(Test, Panel, TEXT("Text_DailyNotice"), FooterRect, Context);
 		if (!bOverflow && Size.Y >= 600)
 		{
-			Test.TestTrue(Context + TEXT(" 기본 크기에서 시설 선택이 스크롤 없이 보인다"),
-				Contains(ScrollRect, Facilities->GetCachedGeometry().GetLayoutBoundingRect()));
 			for (UWidget* Card : Cards->GetAllChildren())
 			{
 				Test.TestTrue(Context + TEXT(" 기본 두 카드가 본문 안에 모두 보인다"),
@@ -225,10 +246,37 @@ namespace FFPrepProgramSkyLayoutTest
 		{
 			RevealAndCheckText(Panel, Name, Summary, Context);
 		}
-		Scroll->ScrollWidgetIntoView(Facilities, false, EDescendantScrollDestination::IntoView, 2.f);
+		// 현재 시설 선택은 최대 높이가 있는 중첩 목록이다. 본문에 목록을 드러낸 뒤
+		// 각 행을 내부 스크롤로 찾아 두 클리핑 영역 모두에서 버튼과 글자가 보이는지 확인한다.
+		Scroll->ScrollWidgetIntoView(FacilityScroll, false, EDescendantScrollDestination::IntoView, 2.f);
 		DrawFrames();
-		Test.TestTrue(Context + TEXT(" 축소 크기에서도 시설 선택까지 스크롤해 볼 수 있다"),
-			Contains(Scroll->GetCachedGeometry().GetLayoutBoundingRect(), Facilities->GetCachedGeometry().GetLayoutBoundingRect()));
+		Test.TestTrue(Context + TEXT(" 실제 선택할 시설 행이 존재한다"), Facilities->GetChildrenCount() > 0);
+		for (int32 Index = 0; Index < Facilities->GetChildrenCount(); ++Index)
+		{
+			UFF_PrepProgramFacilityRow* Row = Cast<UFF_PrepProgramFacilityRow>(Facilities->GetChildAt(Index));
+			if (!Test.TestNotNull(Context + TEXT(" 렌더된 시설 행"), Row)) { return false; }
+			FacilityScroll->ScrollWidgetIntoView(Row, false, EDescendantScrollDestination::IntoView, 2.f);
+			DrawFrames();
+			const FString Label = Context + FString::Printf(TEXT(" 시설 %d"), Index);
+			const FSlateRect RowRect = Row->GetCachedGeometry().GetLayoutBoundingRect();
+			Test.TestTrue(Label + TEXT(" 본문과 시설 목록 안에 전체가 보인다"),
+				RowRect.GetSize().X > 0.f && RowRect.GetSize().Y > 0.f &&
+				Contains(Scroll->GetCachedGeometry().GetLayoutBoundingRect(), RowRect) &&
+				Contains(FacilityScroll->GetCachedGeometry().GetLayoutBoundingRect(), RowRect));
+			for (const TCHAR* Name : { TEXT("Button_Select"), TEXT("Button_Locate") })
+			{
+				UWidget* Button = Row->GetWidgetFromName(Name);
+				if (!Test.TestNotNull(Label + TEXT(" / ") + Name, Button)) { return false; }
+				const FSlateRect ButtonRect = Button->GetCachedGeometry().GetLayoutBoundingRect();
+				Test.TestTrue(Label + TEXT(" / ") + Name + TEXT(" 조작 영역이 행 안에 보인다"),
+					Button->IsVisible() && Button->GetIsEnabled() && Contains(RowRect, ButtonRect) &&
+					ButtonRect.GetSize().X > 0.f && ButtonRect.GetSize().Y > 0.f);
+			}
+			for (const TCHAR* Name : { TEXT("Text_FacilityName"), TEXT("Text_Location"), TEXT("Text_Locate") })
+			{
+				CheckText(Test, *Row, Name, RowRect, Label);
+			}
+		}
 		for (int32 Index = 0; Index < Cards->GetChildrenCount(); ++Index)
 		{
 			UFF_PrepProgramCard* Card = Cast<UFF_PrepProgramCard>(Cards->GetChildAt(Index));
@@ -242,8 +290,10 @@ namespace FFPrepProgramSkyLayoutTest
 		if (bOverflow)
 		{
 			Test.TestTrue(Context + TEXT(" 늘어난 카탈로그의 아래 카드까지 스크롤할 수 있다"), Scroll->GetScrollOffsetOfEnd() > 0.f);
+			Test.TestTrue(Context + TEXT(" 늘어난 시설 목록도 내부 스크롤을 사용한다"), FacilityScroll->GetScrollOffsetOfEnd() > 0.f);
 		}
 		Scroll->SetScrollOffset(0.f);
+		FacilityScroll->SetScrollOffset(0.f);
 		DrawFrames();
 		TArray<FColor> Pixels;
 		FReadSurfaceDataFlags Flags;
@@ -275,35 +325,41 @@ bool FFF_PrepProgramSkyLayoutTest::RunTest(const FString& Parameters)
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	auto* PanelClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepPanelProgram>(nullptr, PanelPath));
 	auto* CardClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepProgramCard>(nullptr, CardPath));
+	auto* FacilityRowClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepProgramFacilityRow>(nullptr, FacilityRowPath));
 	if (!TestNotNull(TEXT("검사용 에디터 월드"), World) || !TestNotNull(TEXT("저장된 프로그램 패널"), PanelClass) ||
-		!TestNotNull(TEXT("저장된 프로그램 카드"), CardClass)) { return false; }
+		!TestNotNull(TEXT("저장된 프로그램 카드"), CardClass) || !TestNotNull(TEXT("저장된 시설 행"), FacilityRowClass)) { return false; }
 	if (!TestNull(TEXT("표시 fixture는 게임 인스턴스 없는 월드에서만 쓴다"), World->GetGameInstance())) { return false; }
 	const bool bPanelWasDirty = PanelClass->GetOutermost()->IsDirty();
 	const bool bCardWasDirty = CardClass->GetOutermost()->IsDirty();
+	const bool bFacilityRowWasDirty = FacilityRowClass->GetOutermost()->IsDirty();
 	const bool bPanelPreviousInitialize = PanelClass->bCanCallInitializedWithoutPlayerContext;
 	const bool bCardPreviousInitialize = CardClass->bCanCallInitializedWithoutPlayerContext;
+	const bool bFacilityRowPreviousInitialize = FacilityRowClass->bCanCallInitializedWithoutPlayerContext;
 	PanelClass->bCanCallInitializedWithoutPlayerContext = true;
 	CardClass->bCanCallInitializedWithoutPlayerContext = true;
+	FacilityRowClass->bCanCallInitializedWithoutPlayerContext = true;
 	ON_SCOPE_EXIT
 	{
 		PanelClass->bCanCallInitializedWithoutPlayerContext = bPanelPreviousInitialize;
 		CardClass->bCanCallInitializedWithoutPlayerContext = bCardPreviousInitialize;
+		FacilityRowClass->bCanCallInitializedWithoutPlayerContext = bFacilityRowPreviousInitialize;
 	};
 	TStrongObjectPtr<UFF_PrepPanelProgram> Panel(CreateWidget<UFF_PrepPanelProgram>(World, PanelClass));
 	if (!TestNotNull(TEXT("프로그램 패널 검사 인스턴스"), Panel.Get())) { return false; }
 	const TSharedRef<SOverlay> Surface = SNew(SOverlay)
 		+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Fill)[Panel->TakeWidget()];
-	if (!SetFixture(*this, *Panel, CardClass, 2, false)) { return false; }
+	if (!SetFixture(*this, *Panel, CardClass, FacilityRowClass, 2, false)) { return false; }
 	FAssetCompilingManager::Get().FinishAllCompilation();
 	FlushRenderingCommands();
 	for (FIntPoint Size : { FIntPoint(1120, 600), FIntPoint(1160, 640), FIntPoint(1120, 430) })
 	{
 		if (!CaptureAndCheck(*this, *Panel, Surface, Size, TEXT("Saved"), false)) { return false; }
 	}
-	if (!SetFixture(*this, *Panel, CardClass, 8, true) ||
+	if (!SetFixture(*this, *Panel, CardClass, FacilityRowClass, 8, true) ||
 		!CaptureAndCheck(*this, *Panel, Surface, FIntPoint(1120, 600), TEXT("LongCatalog"), true)) { return false; }
 	TestEqual(TEXT("렌더 검사가 패널 WBP를 변경하지 않는다"), PanelClass->GetOutermost()->IsDirty(), bPanelWasDirty);
 	TestEqual(TEXT("렌더 검사가 카드 WBP를 변경하지 않는다"), CardClass->GetOutermost()->IsDirty(), bCardWasDirty);
+	TestEqual(TEXT("렌더 검사가 시설 행 WBP를 변경하지 않는다"), FacilityRowClass->GetOutermost()->IsDirty(), bFacilityRowWasDirty);
 	return true;
 }
 
