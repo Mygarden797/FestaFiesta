@@ -17,6 +17,13 @@ struct FFF_DailyReportCommentInputs
 	int32 PreferenceScore = INDEX_NONE;
 	int32 NeedScore = INDEX_NONE;
 
+	// 항목이 만족도에서 실제로 깎은 점수(FFF_SatisfactionBreakdown). 알면 불만 1위를 원점수가 아니라 이 값으로 고른다.
+	// 비중이 큰 항목은 점수가 덜 낮아도 더 많이 깎는다 — 결산의 "점수가 깎인 이유" 맨 위 줄과 같은 말을 해야 납득된다
+	int32 NeedLoss = INDEX_NONE;
+	int32 WaitLoss = INDEX_NONE;
+	int32 DensityLoss = INDEX_NONE;
+	int32 PreferenceLoss = INDEX_NONE;
+
 	// 시설 커버리지(하한~1). 1 미만인 욕구가 있으면 불만 원인으로 그 시설을 짚는다
 	float HungerCoverage = 1.f;
 	float RestroomCoverage = 1.f;
@@ -67,7 +74,8 @@ struct FESTAFIESTA_API FFF_DailyReportCommentRules
 {
 	static FText Build(const FFF_DailyReportCommentInputs& Inputs);
 
-	// 불만 1위 판정. 점수가 같으면 필요 → 줄 → 붐빔 → 취향 순으로 앞의 것을 고른다
+	// 불만 1위 판정. 기준 점수 미만인 항목 중 깎은 점수(모르면 원점수가 가장 낮은 것)가 가장 큰 것.
+	// 같으면 필요 → 줄 → 붐빔 → 취향 순으로 앞의 것을 고른다
 	static FFF_DailyComplaint FindComplaint(const FFF_DailyReportCommentInputs& Inputs);
 
 	// 이 점수 미만인 항목만 불만으로 짚는다. 모두 넘으면 칭찬한다

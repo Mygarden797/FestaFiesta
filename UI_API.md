@@ -2412,6 +2412,14 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 - **화면**: `UFF_LivePanelReport` 에 `BindWidgetOptional` **`Text_AssistantComment`** 를 추가했습니다. **WBP 에 이 이름의 TextBlock 을 두시면 거기에** 나오고(자동 줄바꿈), 없으면 정산이 끝난 뒤 비는 `Text_MissingNote` 자리에 대신 나옵니다. 머리말은 `AssistantCommentFormat`("비서 한마디\n{Comment}")
 - **아침 비서와 같은 판정**: 불만 1위 판정은 `FFF_DailyReportCommentRules::FindComplaint` 한 곳에서만 하고, 결과를 `FFF_DailyReportView::Complaint` 에 남깁니다. 다음 날 아침 비서 브리핑은 `UFF_FestivalViewModelSubsystem::GetPreviousDailyReport()`(어제 결산, 못 봤으면 nullptr)로 이 판정과 매출 1위를 그대로 읽습니다. 매출 1위는 오늘 · 축제 전체 모두 **배치된 시설 하나 단위**(매출 순위 패널과 같은 기준)입니다
 
+#### 만족도 분해 — `FFF_DailyReportView::SatisfactionBreakdown`
+
+- **헤더**: `Public/UI/ViewModel/FF_SatisfactionBreakdown.h`(규칙), `Public/UI/LiveHUD/Panels/FF_SatisfactionBreakdownWidget.h`(위젯)
+- **상태**: `구현완료` — 만족도를 "100 에서 항목별로 깎인 점수"(욕구 충족 · 대기 · 밀도 · 취향 매칭 · 사건 영향)로 나눈다. 항목 점수를 더하면 정확히 100 − 만족도. 줄마다 근거(시설 수 c/목표 · 못 찾은 손님 % · 평균 대기 초 · 붐비는 곳 % · 취향 %)와 가장 많이 깎은 항목을 줄이는 방법 한 줄
+- **화면**: `UFF_LivePanelReport` 의 `BindWidgetOptional` **`Widget_SatisfactionBreakdown`**. WBP 에 없으면 만족도 카드(`Report_SatisfactionBody`) 안 `Report_ScoreRow` 바로 위에 C++ 가 끼운다(결산 WBP 는 안 바꿈). 문구는 위젯 Class Defaults `TitleText` · `SummaryFormat`
+- **비서와 같은 말**: 결산 한마디 · 아침 비서의 불만 1위는 원점수가 아니라 이 감점이 가장 큰 항목(기준 70 미만)
+- 캡처: `-RenderOffscreen -SatisfactionBreakdownCapture` 로 `FestaFiesta.UI.SatisfactionBreakdown.ReportPanelHostsWidget` → `Saved/Automation/SatisfactionBreakdown/ReportPanel.png`
+
 #### 바뀐 값 (2차)
 
 | 항목 | 지금 |
@@ -2431,6 +2439,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 | 날짜         | 작성자 | 내용                                                                                             |
 | ---------- | --- | ---------------------------------------------------------------------------------------------- |
+| 2026-10-11 | 김시리 | 🆕 결산 만족도 분해(`SatisfactionBreakdown`, 만족도 카드 안 「점수가 깎인 이유」), 불만 1위를 감점 크기로 |
 | 2026-10-11 | 김시리 | 재무 목표 17,000, 시설 커버리지 목표 음식 7 · 즐길 거리 10, 운영 알림 시설 부족 기준 커버리지 0.5 미만 |
 | 2026-10-11 | 김시리 | 결산 한마디 ↔ 아침 비서 브리핑 판정 통일(`FindComplaint`, `FFF_DailyReportView::Complaint`, `GetPreviousDailyReport()`). 마지막 날 축제 전체 매출 1위를 시설 하나 단위로 변경 |
 | 2026-10-09 | 김시리 | 🆕 운영 알림(`UFF_OperationAlertPanel` 오른쪽 위 + 지난 알림 버튼, LiveHUD 가 만듦), 결산 비서 한마디(`FFF_DailyReportView::AssistantComment`, WBP 선택 슬롯 `Text_AssistantComment`), 2차 밸런싱 값("10/9 2차" 절) |

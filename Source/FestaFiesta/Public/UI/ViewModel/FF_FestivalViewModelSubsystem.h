@@ -16,6 +16,7 @@
 #include "UI/Staff/FF_StaffManagementTypes.h"
 #include "UI/PrepHUD/Panels/FF_PrepRecommendedFacilities.h"
 #include "UI/ViewModel/FF_DailyReportComment.h"
+#include "UI/ViewModel/FF_SatisfactionBreakdown.h"
 
 #include "FF_FestivalViewModelSubsystem.generated.h"
 
@@ -45,6 +46,8 @@ struct FESTAFIESTA_API FFF_DailyReportView
 	int32 DensityScore = INDEX_NONE;
 	int32 PreferenceScore = INDEX_NONE;
 	int32 NeedScore = INDEX_NONE;
+	// 만족도를 100 에서 항목별로 깎인 점수로 나눈 것과 그 근거. 하위 점수와 같은 순간에 잡는다
+	FFF_SatisfactionBreakdown SatisfactionBreakdown;
 	int32 AdmittedVisitors = INDEX_NONE;
 	int32 DailyVisitorGoal = INDEX_NONE;
 	bool bDailyGoalAchieved = false;
@@ -1302,6 +1305,7 @@ private:
 	void CaptureDailyReportIfReady();
 	// 매출 1위 시설과 비서 한마디. 결산을 확정할 때 한 번 읽는다
 	void FillReportAssistantComment(FFF_DailyReportView& Report) const;
+	FFF_SatisfactionBreakdown BuildSatisfactionBreakdown(const FFF_DailyReportView& Scores) const;
 	FFF_DailyReportView DailyReport;
 	FFF_DailyReportView LastDailySatisfaction;
 	TSet<int32> AutoShownReportDays;

@@ -63,11 +63,14 @@ void FFF_SatisfactionAggregator::Begin()
 	bHasQueueSuccessRateThisWindow = false;
 	PendingDensityWeightedScoreSum = 0.0;
 	PendingDensityWeight = 0;
+	PendingCrowdedWeight = 0;
 	// 지난 창 이후에 확정된 결정의 취향 표본을 이번 창이 이어받는다. 한 번만 쓰이도록 비운다.
 	PendingPreferenceSum = CarriedPreferenceSum;
 	PendingPreferenceCount = CarriedPreferenceCount;
+	PendingPreferenceMatchedCount = CarriedPreferenceMatchedCount;
 	CarriedPreferenceSum = 0.0;
 	CarriedPreferenceCount = 0;
+	CarriedPreferenceMatchedCount = 0;
 	PendingNeedFulfillmentSum = 0.0;
 	PendingNeedFulfillmentCount = 0;
 	PendingPenaltySum = 0.0;
@@ -97,7 +100,7 @@ bool FFF_SatisfactionAggregator::SetQueueSuccessRate(float SuccessRate01)
 	return true;
 }
 
-bool FFF_SatisfactionAggregator::AddDensitySample(float Score0To100, int32 Weight)
+bool FFF_SatisfactionAggregator::AddDensitySample(float Score0To100, int32 Weight, bool bCrowded)
 {
 	if (!bAggregating || Weight <= 0)
 	{
@@ -105,6 +108,7 @@ bool FFF_SatisfactionAggregator::AddDensitySample(float Score0To100, int32 Weigh
 	}
 	PendingDensityWeightedScoreSum += static_cast<double>(Score0To100) * Weight;
 	PendingDensityWeight += Weight;
+	PendingCrowdedWeight += bCrowded ? Weight : 0;
 	return true;
 }
 
@@ -113,15 +117,19 @@ bool FFF_SatisfactionAggregator::AddPreferenceSample(float PreferenceNorm)
 	// 결정은 집계 창(Begin~Commit) 밖에서 확정된다. 집계는 AdvanceNeeds 한 번의 호출 안에서
 	// 끝나고 결정 처리는 그다음에 도는데, 그때 거부하면 취향 표본이 하나도 못 들어온다.
 	// 그래서 창 밖의 표본은 따로 모아 두었다가 다음 Begin 이 이어받는다.
+	// 취향 항이 0 보다 크면 그 파티의 취향에 맞는 곳을 고른 것이다
+	const int32 Matched = PreferenceNorm > 0.f ? 1 : 0;
 	if (bAggregating)
 	{
 		PendingPreferenceSum += PreferenceNorm;
 		++PendingPreferenceCount;
+		PendingPreferenceMatchedCount += Matched;
 	}
 	else
 	{
 		CarriedPreferenceSum += PreferenceNorm;
 		++CarriedPreferenceCount;
+		CarriedPreferenceMatchedCount += Matched;
 	}
 	return true;
 }
@@ -221,18 +229,23 @@ bool FFF_SatisfactionAggregator::Commit(const FFF_SatisfactionCoefficients& Coef
 			: 100.f;
 		const float SuccessMultiplier = bHasSuccessRate ? PendingQueueSuccessRate : 1.f;
 		CommittedWaitScore = FMath::Clamp(FMath::RoundToInt(RawWaitScore * SuccessMultiplier), 0, 100);
+		CommittedAverageWaitSeconds = bHasWaitSamples ? static_cast<float>(PendingWaitSum / PendingWaitCount) : -1.f;
+		CommittedQueueSuccessRate = SuccessMultiplier;
 	}
 
 	if (bHasDensity)
 	{
 		const float AvgDensityScore = static_cast<float>(PendingDensityWeightedScoreSum / PendingDensityWeight);
 		CommittedDensityScore = FMath::Clamp(FMath::RoundToInt(AvgDensityScore), 0, 100);
+		CommittedCrowdedShare = static_cast<float>(static_cast<double>(PendingCrowdedWeight) / PendingDensityWeight);
 	}
 
 	if (bHasPreference)
 	{
 		const float AvgPreferenceNorm = static_cast<float>(PendingPreferenceSum / PendingPreferenceCount);
 		CommittedPreferenceScore = FMath::Clamp(FMath::RoundToInt((AvgPreferenceNorm + 1.f) * 50.f), 0, 100);
+		CommittedPreferenceMatchShare = static_cast<float>(PendingPreferenceMatchedCount) / PendingPreferenceCount;
+		CommittedPreferenceSampleCount = PendingPreferenceCount;
 	}
 
 	if (bHasNeed)
@@ -328,6 +341,7 @@ void UFF_SatisfactionMetricsSubsystem::Deinitialize()
 
 void UFF_SatisfactionMetricsSubsystem::CommitAggregation(const FFF_SatisfactionCoefficients& Coefficients)
 {
+	LastCoefficients = Coefficients;
 	if (Aggregator.Commit(Coefficients))
 	{
 		OnSimSatisfactionChanged.Broadcast(Aggregator.GetSimSatisfaction());

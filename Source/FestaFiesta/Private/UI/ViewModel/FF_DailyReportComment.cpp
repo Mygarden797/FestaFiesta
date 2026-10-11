@@ -154,20 +154,32 @@ FFF_DailyComplaint FFF_DailyReportCommentRules::FindComplaint(const FFF_DailyRep
 	}
 	Complaint.bJudged = true;
 
-	const TPair<EFF_DailyComplaintAxis, int32> Axes[] =
+	struct FAxis { EFF_DailyComplaintAxis Axis; int32 Score; int32 Loss; };
+	const FAxis Axes[] =
 	{
-		{ EFF_DailyComplaintAxis::Need, Inputs.NeedScore },
-		{ EFF_DailyComplaintAxis::Wait, Inputs.WaitScore },
-		{ EFF_DailyComplaintAxis::Density, Inputs.DensityScore },
-		{ EFF_DailyComplaintAxis::Preference, Inputs.PreferenceScore },
+		{ EFF_DailyComplaintAxis::Need, Inputs.NeedScore, Inputs.NeedLoss },
+		{ EFF_DailyComplaintAxis::Wait, Inputs.WaitScore, Inputs.WaitLoss },
+		{ EFF_DailyComplaintAxis::Density, Inputs.DensityScore, Inputs.DensityLoss },
+		{ EFF_DailyComplaintAxis::Preference, Inputs.PreferenceScore, Inputs.PreferenceLoss },
 	};
-	int32 WorstScore = ComplaintScoreBelow;
-	for (const TPair<EFF_DailyComplaintAxis, int32>& Axis : Axes)
+	bool bKnowsLoss = false;
+	for (const FAxis& Axis : Axes)
 	{
-		if (Axis.Value >= 0 && Axis.Value < WorstScore)
+		bKnowsLoss |= Axis.Loss >= 0;
+	}
+	// 깎은 점수를 알면 큰 쪽이, 모르면 원점수가 낮은 쪽이 더 나쁘다
+	int32 WorstRank = TNumericLimits<int32>::Lowest();
+	for (const FAxis& Axis : Axes)
+	{
+		if (Axis.Score < 0 || Axis.Score >= ComplaintScoreBelow || (bKnowsLoss && Axis.Loss < 0))
 		{
-			WorstScore = Axis.Value;
-			Complaint.Axis = Axis.Key;
+			continue;
+		}
+		const int32 Rank = bKnowsLoss ? Axis.Loss : -Axis.Score;
+		if (Rank > WorstRank)
+		{
+			WorstRank = Rank;
+			Complaint.Axis = Axis.Axis;
 		}
 	}
 	return Complaint;

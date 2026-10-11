@@ -521,6 +521,79 @@ void UFF_FestivalViewModelSubsystem::CaptureDailySatisfaction()
 	LastDailySatisfaction.DensityScore = CachedSatisfactionSubsystem->GetDensityScore();
 	LastDailySatisfaction.PreferenceScore = CachedSatisfactionSubsystem->GetPreferenceScore();
 	LastDailySatisfaction.NeedScore = CachedSatisfactionSubsystem->GetNeedFulfillmentScore();
+	LastDailySatisfaction.SatisfactionBreakdown = BuildSatisfactionBreakdown(LastDailySatisfaction);
+}
+
+FFF_SatisfactionBreakdown UFF_FestivalViewModelSubsystem::BuildSatisfactionBreakdown(const FFF_DailyReportView& Scores) const
+{
+	const UFF_SatisfactionMetricsSubsystem* Satisfaction = CachedSatisfactionSubsystem;
+	if (!Satisfaction)
+	{
+		return FFF_SatisfactionBreakdown();
+	}
+	const FFF_SatisfactionCoefficients& Coefficients = Satisfaction->GetLastCoefficients();
+	FFF_SatisfactionBreakdownInputs Inputs;
+	Inputs.Satisfaction = Scores.SimSatisfaction;
+	Inputs.BaseSatisfaction = Satisfaction->GetBaseSatisfaction();
+	Inputs.WaitScore = Scores.WaitScore;
+	Inputs.DensityScore = Scores.DensityScore;
+	Inputs.PreferenceScore = Scores.PreferenceScore;
+	Inputs.NeedScore = Scores.NeedScore;
+	Inputs.WeightEnvironment = Coefficients.WeightEnvironment;
+	Inputs.WeightPersonalFit = Coefficients.WeightPersonalFit;
+	Inputs.WeightWait = Coefficients.WeightEnvironmentWait;
+	Inputs.WeightDensity = Coefficients.WeightEnvironmentDensity;
+	Inputs.WeightPreference = Coefficients.WeightPersonalFitPreference;
+	Inputs.WeightNeed = Coefficients.WeightPersonalFitNeed;
+	Inputs.AverageWaitSeconds = Satisfaction->GetAverageWaitSeconds();
+	Inputs.WaitRefSeconds = Coefficients.WaitRefSeconds;
+	Inputs.QueueSuccessRate = Satisfaction->GetQueueSuccessRate();
+	Inputs.CrowdedShare = Satisfaction->GetCrowdedShare();
+	Inputs.PreferenceMatchShare = Satisfaction->GetPreferenceMatchShare();
+	Inputs.PreferenceSampleCount = Satisfaction->GetPreferenceSampleCount();
+	Inputs.CoverageFloor = Coefficients.NeedCoverageFloor;
+	Inputs.CoverageTarget[0] = Coefficients.NeedCoverageTargetHunger;
+	Inputs.CoverageTarget[1] = Coefficients.NeedCoverageTargetRestroom;
+	Inputs.CoverageTarget[2] = Coefficients.NeedCoverageTargetStimulation;
+
+	static const EFF_NeedType BreakdownNeeds[FFF_SatisfactionBreakdownInputs::NeedCount] =
+	{
+		EFF_NeedType::Hunger, EFF_NeedType::Restroom, EFF_NeedType::Stimulation
+	};
+	const UGameInstance* GI = GetGameInstance();
+	const UWorld* World = GI ? GI->GetWorld() : nullptr;
+	if (const UFF_CrowdSimulationSubsystem* Crowd = World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr)
+	{
+		for (int32 Index = 0; Index < FFF_SatisfactionBreakdownInputs::NeedCount; ++Index)
+		{
+			Inputs.ReliefFacilityCount[Index] = Crowd->GetNeedReliefFacilityCount(BreakdownNeeds[Index]);
+		}
+	}
+	if (const UFF_NpcNeedMetricsSubsystem* Needs = GI ? GI->GetSubsystem<UFF_NpcNeedMetricsSubsystem>() : nullptr)
+	{
+		if (Needs->GetSampleCount() > 0)
+		{
+			for (int32 Index = 0; Index < FFF_SatisfactionBreakdownInputs::NeedCount; ++Index)
+			{
+				Inputs.UnmetPercent[Index] = Needs->GetNeedUnmetRatio(BreakdownNeeds[Index]);
+			}
+		}
+	}
+	// 가장 오래 기다린 시설. 대기 점수가 시설별 평균 완료 대기로 만들어지므로 그 최댓값이 근거다
+	if (const UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr)
+	{
+		float LongestWait = 0.f;
+		for (const FFFZSFacilityReadModel& Facility : Zones->BuildReadModel().Facilities)
+		{
+			if (Facility.State != EFFZSFacilityState::Removed && Facility.AverageCompletedWaitSeconds > LongestWait
+				&& !Facility.DisplayName.IsEmpty())
+			{
+				LongestWait = Facility.AverageCompletedWaitSeconds;
+				Inputs.LongestWaitFacility = Facility.DisplayName;
+			}
+		}
+	}
+	return FFF_SatisfactionBreakdownRules::Build(Inputs);
 }
 
 bool UFF_FestivalViewModelSubsystem::IsDailyReportSurface() const
@@ -566,6 +639,13 @@ void UFF_FestivalViewModelSubsystem::FillReportAssistantComment(FFF_DailyReportV
 	Inputs.DensityScore = Report.DensityScore;
 	Inputs.PreferenceScore = Report.PreferenceScore;
 	Inputs.NeedScore = Report.NeedScore;
+	if (Report.SatisfactionBreakdown.bValid)
+	{
+		Inputs.NeedLoss = Report.SatisfactionBreakdown.GetLoss(EFF_SatisfactionFactor::Need);
+		Inputs.WaitLoss = Report.SatisfactionBreakdown.GetLoss(EFF_SatisfactionFactor::Wait);
+		Inputs.DensityLoss = Report.SatisfactionBreakdown.GetLoss(EFF_SatisfactionFactor::Density);
+		Inputs.PreferenceLoss = Report.SatisfactionBreakdown.GetLoss(EFF_SatisfactionFactor::Preference);
+	}
 	if (const UFF_CrowdSimulationSubsystem* Crowd = World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr)
 	{
 		Inputs.HungerCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Hunger);
@@ -646,6 +726,17 @@ void UFF_FestivalViewModelSubsystem::CaptureDailyReportIfReady()
 	if (Report.bHasSatisfaction && Report.SimSatisfaction >= 0) SatisfactionByDay.Add(Day, Report.SimSatisfaction);
 	if (Report.DailyVisitorGoal > 0) GoalMetByDay.Add(Day, Report.bDailyGoalAchieved);
 	FillReportAssistantComment(Report);
+	if (Report.SatisfactionBreakdown.bValid)
+	{
+		FString Losses;
+		for (const FFF_SatisfactionLoss& Loss : Report.SatisfactionBreakdown.Losses)
+		{
+			Losses += FString::Printf(TEXT(" | %s -%d (%s)"), *FFF_SatisfactionBreakdown::GetFactorLabel(Loss.Factor).ToString(),
+				Loss.Points, *Loss.Evidence.ToString());
+		}
+		UE_LOG(LogFestaFiestaUI, Log, TEXT("[결산 %d일차] 만족도 %d%s | 힌트: %s"), Day, Report.SatisfactionBreakdown.Satisfaction,
+			*Losses, *Report.SatisfactionBreakdown.Hint.ToString());
+	}
 	DailyReport = MoveTemp(Report);
 	OnDailyReportReady.Broadcast(Day);
 }

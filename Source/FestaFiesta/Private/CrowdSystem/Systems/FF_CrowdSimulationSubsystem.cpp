@@ -6083,6 +6083,12 @@ float UFF_CrowdSimulationSubsystem::GetNeedCoverage(EFF_NeedType NeedType) const
 	return (Index >= 0 && Index < static_cast<int32>(EFF_NeedType::Count)) ? NeedCoverage[Index] : 1.f;
 }
 
+int32 UFF_CrowdSimulationSubsystem::GetNeedReliefFacilityCount(EFF_NeedType NeedType) const
+{
+	const int32 Index = static_cast<int32>(NeedType);
+	return (Index >= 0 && Index < static_cast<int32>(EFF_NeedType::Count)) ? NeedReliefFacilityCounts[Index] : INDEX_NONE;
+}
+
 void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Needs);
@@ -6211,6 +6217,10 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 		}
 		if (bHasFacilityReadModel)
 		{
+			for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
+			{
+				NeedReliefFacilityCounts[Index] = ReliefFacilityCounts[Index];
+			}
 			NeedCoverage[static_cast<int32>(EFF_NeedType::Hunger)] = Coefficients.NeedCoverageMultiplier(
 				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Hunger)], Coefficients.NeedCoverageTargetHunger);
 			NeedCoverage[static_cast<int32>(EFF_NeedType::Restroom)] = Coefficients.NeedCoverageMultiplier(
@@ -6230,7 +6240,7 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 			}
 			const ECrowdLOS Grade = FCrowdDensityGrid::DensityToLOS(Cell.DensityPerSqm);
 			const float GradeScore = Coefficients.ScoreForLOSGrade(static_cast<uint8>(Grade));
-			Satisfaction->AddDensitySample(GradeScore, Cell.Occupancy);
+			Satisfaction->AddDensitySample(GradeScore, Cell.Occupancy, Grade >= ECrowdLOS::D);
 		}
 
 		// 큐 가입 성공률
