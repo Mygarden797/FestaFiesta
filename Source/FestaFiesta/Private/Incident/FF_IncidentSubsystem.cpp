@@ -50,7 +50,7 @@ TStatId UFF_IncidentSubsystem::GetStatId() const
 	STATGROUP_Tickables);
 }
 
-void UFF_IncidentSubsystem::WithdrawIncident(FName DedupeKey)
+void UFF_IncidentSubsystem::WithdrawIncident(FName DedupeKey, EFF_IncidentCloseReason Reason)
 {
 	FFF_IncidentHandle* Handle =  ActiveByKey.Find(DedupeKey);
 	
@@ -63,7 +63,7 @@ void UFF_IncidentSubsystem::WithdrawIncident(FName DedupeKey)
 	float Now = 0.f;
 	TryGetNowMinutes(Now);
 	
-	CloseSlot(Index,EFF_IncidentState::Expired, Now);
+	CloseSlot(Index,EFF_IncidentState::Expired, Now, Reason);
 
 
 
@@ -141,7 +141,7 @@ void UFF_IncidentSubsystem::LapseIncident(FFF_IncidentHandle Handle, float NowMi
 	const EFF_IncidentState FinalState = FFF_IncidentRules::LapseStateFor(Slot->Tone);
 	const UFF_IncidentDefinition* Definition = CachedDef.FindRef(Slot->IncidentTag);
 
-	CloseSlot(Handle.Index, FinalState, NowMinutes);
+	CloseSlot(Handle.Index, FinalState, NowMinutes, EFF_IncidentCloseReason::TimedOut);
 
 	if (Definition && FinalState == EFF_IncidentState::Ignored)
 	{
@@ -171,7 +171,7 @@ bool UFF_IncidentSubsystem::CompleteStaffResponse(FFF_IncidentHandle Handle, int
 	TryGetNowMinutes(Now);
 
 	IncidentSlots[Handle.Index].ChosenOptionIndex = OptionIndex;
-	CloseSlot(Handle.Index, EFF_IncidentState::Resolved, Now);
+	CloseSlot(Handle.Index, EFF_IncidentState::Resolved, Now, EFF_IncidentCloseReason::ResponseCompleted);
 	if (Option)
 	{
 		ApplyEffects(Option->OnResolvedEffect, Context);
@@ -337,7 +337,8 @@ const UFF_IncidentSubsystem::FIncidentSlot* UFF_IncidentSubsystem::FindSlot(FFF_
 
 
 
-void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState, float NowMinutes)
+void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState, float NowMinutes,
+	EFF_IncidentCloseReason Reason)
 {
 	if (!IncidentSlots.IsValidIndex(Index))
 	{
@@ -350,6 +351,7 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	
 	
 	FIncidentSlot& Slot = IncidentSlots[Index];
+	if (!Slot.bInUse) { return; }
 	
 	bool bEscalateTo = ((FinalState == EFF_IncidentState::Ignored) && Slot.EscalateTo.IsValid());
 	FFF_IncidentReport EscalateToReport;
@@ -378,6 +380,7 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	ClosedInfo.Handle = Handle;
 	ClosedInfo.IncidentTag = Slot.IncidentTag;
 	ClosedInfo.FinalState = FinalState;
+	ClosedInfo.CloseReason = Reason;
 	ClosedInfo.Tone = Slot.Tone;
 	ClosedInfo.ChosenOptionIndex = Slot.ChosenOptionIndex;
 	if (const UFF_IncidentDefinition* ClosedDefinition = CachedDef.FindRef(Slot.IncidentTag))

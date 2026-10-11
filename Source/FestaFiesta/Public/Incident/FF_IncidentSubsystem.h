@@ -74,7 +74,7 @@ public:
 	void Tick(float DeltaTime) override;
 	FFF_IncidentHandle ReportIncident(const FFF_IncidentReport& Report);
 	//사건 철회
-	void WithdrawIncident(FName DedupeKey);
+	void WithdrawIncident(FName DedupeKey, EFF_IncidentCloseReason Reason = EFF_IncidentCloseReason::NaturalResolution);
 	// 필요한 스태프가 있으면 배정 시설에서 출동한다. 전원 도착해 작업량을 마친 뒤 사건을 닫는다.
 	// 선택지가 있으면 플레이어가 고른 StaffCount 를 보내되 선택지의 MinStaff 아래로는 내리지 않는다.
 	// 작업 시간(축제 분) = 선택지의 WorkAmount ÷ 보낸 인원. 선택지가 없으면 정의의 RequiredStaff 를 쓰고 작업량은 0이다.
@@ -108,6 +108,7 @@ private:
 	friend class FFF_StaffDispatchIncidentTest;
 	friend class FFF_StaffDispatchWarpTest;
 	friend class FFF_StaffFacilityDispatchTest;
+	friend class FFF_CrowdIncidentBridgeTest;
 	#endif
 
 	void LoadDefinitions();
@@ -115,7 +116,8 @@ private:
 	
 	const FIncidentSlot* FindSlot(FFF_IncidentHandle Handle) const;
 	
-	void CloseSlot(int32 Index, EFF_IncidentState FinalState, float NowMinutes);
+	void CloseSlot(int32 Index, EFF_IncidentState FinalState, float NowMinutes,
+		EFF_IncidentCloseReason Reason = EFF_IncidentCloseReason::Unknown);
 
 	// 수명이 다한 사건을 톤에 맞는 상태로 닫는다. Ignored 면 정의의 OnFailedEffect 를 적용한다. Tick 만 부른다.
 	void LapseIncident(FFF_IncidentHandle Handle, float NowMinutes);

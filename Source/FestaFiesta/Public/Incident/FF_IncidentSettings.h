@@ -42,4 +42,8 @@ public:
 
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Crowd Bridge")
 	FGameplayTag CrowdMemberMissingTag;
+
+	// 혼잡 셀이 이 횟수만큼 연속으로 빠져야 자연 해소한다. 기본 계측 주기는 시뮬레이션 약 1초다.
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Crowd Bridge", meta = (ClampMin = "1", UIMin = "1"))
+	int32 CongestionClearSnapshots = 5;
 };

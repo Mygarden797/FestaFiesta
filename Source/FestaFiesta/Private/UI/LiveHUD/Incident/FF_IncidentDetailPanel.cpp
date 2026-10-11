@@ -486,7 +486,17 @@ void UFF_IncidentDetailPanel::HandlePlusClicked()
 
 void UFF_IncidentDetailPanel::HandleSendClicked()
 {
-	if (!IsOpen() || IsResponding())
+	if (!IsOpen())
+	{
+		return;
+	}
+	// 클릭 직전 사건 종료·출동·가용 인원 변화를 다시 읽는다. 오래된 핸들로 명령을 보내지 않는다.
+	if (!Refresh())
+	{
+		Close();
+		return;
+	}
+	if (IsResponding() || !Button_Send || !Button_Send->GetIsEnabled())
 	{
 		return;
 	}

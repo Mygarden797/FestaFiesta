@@ -6,6 +6,7 @@
 
 #include "Editor.h"
 #include "Engine/World.h"
+#include "Incident/FF_IncidentTypes.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/StrongObjectPtr.h"
 
@@ -126,6 +127,53 @@ bool FFF_OperationAlert_PanelToastsAndHistory::RunTest(const FString& Parameters
 	Panel->ToggleHistory();
 	Panel->SetForceVisible(false);
 	TestFalse(TEXT("Live 를 벗어나면 펼친 목록을 닫는다"), Panel->IsHistoryOpen());
+	return true;
+}
+
+// 사건 종료는 소식에 남지만 기존 사건 토스트와 중복되는 운영 토스트는 만들지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OperationAlert_IncidentHistory,
+	"FestaFiesta.UI.OperationAlert.IncidentHistory",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+bool FFF_OperationAlert_IncidentHistory::RunTest(const FString& Parameters)
+{
+	TStrongObjectPtr<UFF_OperationAlertSubsystem> Alerts(NewObject<UFF_OperationAlertSubsystem>(GetTransientPackage()));
+	Alerts->MaxHistory = 2;
+	Alerts->EvaluateAt(0.f, 3, FFF_OperationAlertInputs());
+	FFF_IncidentClosedInfo Info;
+	Info.Title = FText::FromString(TEXT("병목 발생"));
+	Info.FinalState = EFF_IncidentState::Expired;
+	Info.CloseReason = EFF_IncidentCloseReason::NaturalResolution;
+	Info.bWasResponding = true;
+	Alerts->RecordIncidentFinished(Info);
+	if (!TestEqual(TEXT("사건 종료 이력 추가"), Alerts->GetHistory().Num(), 1)) { return false; }
+	const FFF_OperationAlert Alert = Alerts->GetHistory().Last();
+	TestEqual(TEXT("종료된 날짜"), Alert.Day, 3);
+	TestTrue(TEXT("사건 종료 종류"), Alert.Kind == EFF_OperationAlertKind::IncidentFinished);
+	TestTrue(TEXT("운영 토스트 중복 방지"), Alert.bHistoryOnly);
+	TestTrue(TEXT("자연 해소 원인 표시"), Alert.Message.ToString().Contains(TEXT("자연 해소")));
+	TestTrue(TEXT("출동 중이었다면 복귀 안내"), Alert.Message.ToString().Contains(TEXT("복귀")));
+
+	Info.CloseReason = EFF_IncidentCloseReason::SessionReset;
+	Alerts->RecordIncidentFinished(Info);
+	TestEqual(TEXT("이전 세션 정리는 이력을 만들지 않는다"), Alerts->GetHistory().Num(), 1);
+
+	Alerts->RaiseAlert(EFF_OperationAlertKind::FoodShortage);
+	Info.CloseReason = EFF_IncidentCloseReason::ResponseCompleted;
+	Info.FinalState = EFF_IncidentState::Resolved;
+	Alerts->RecordIncidentFinished(Info);
+	TestEqual(TEXT("종료 이력에도 같은 보관 한도 적용"), Alerts->GetHistory().Num(), 2);
+	TestTrue(TEXT("최신 결과 보존"), Alerts->GetHistory().Last().Message.ToString().Contains(TEXT("처리 완료")));
+
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!TestNotNull(TEXT("에디터 월드"), World)) { return false; }
+	TStrongObjectPtr<UFF_OperationAlertPanel> Panel(CreateWidget<UFF_OperationAlertPanel>(World));
+	if (!TestNotNull(TEXT("운영 알림 위젯"), Panel.Get())) { return false; }
+	Panel->TakeWidget();
+	Panel->AddAlert(Alert);
+	TestEqual(TEXT("이력에는 종료 소식이 남는다"), Panel->GetHistoryCount(), 1);
+	TestEqual(TEXT("중복 토스트는 없다"), Panel->GetToastCount(), 0);
+	Panel->AddAlert(Alerts->GetHistory()[0]);
+	TestEqual(TEXT("기존 시설 부족 토스트는 유지"), Panel->GetToastCount(), 1);
 	return true;
 }
 

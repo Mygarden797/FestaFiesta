@@ -47,6 +47,8 @@ FText FFF_OperationAlertRules::GetMessage(EFF_OperationAlertKind Kind)
 		return LOCTEXT("QueueAbandon", "줄이 길어 떠나는 손님이 많아요");
 	case EFF_OperationAlertKind::NoChoiceLeave:
 		return LOCTEXT("NoChoiceLeave", "갈 곳이 없어 떠나는 손님이 늘고 있어요");
+	case EFF_OperationAlertKind::IncidentFinished:
+		return LOCTEXT("IncidentFinished", "사건이 종료됐어요. 소식에서 결과를 확인하세요");
 	default:
 		return FText::GetEmpty();
 	}
