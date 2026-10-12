@@ -394,6 +394,12 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 		{
 			QueueBreakSimSeconds += FixedStepSeconds;
 		}
+		ToiletFrontSampleAccumulator += FixedStepSeconds;
+		if (ToiletFrontSampleAccumulator >= 0.25f)
+		{
+			SampleToiletFrontWaits(ToiletFrontSampleAccumulator);
+			ToiletFrontSampleAccumulator = 0.f;
+		}
 	}
 
 	ProcessPendingDespawns();
@@ -1118,6 +1124,13 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 				{
 					RequestDecision(AgentIndex, EFF_DecisionReason::Arrived);
 				}
+			}
+			else if (State.QueuePhase == EFF_PartyQueuePhase::Joined && Unit.bHasQueueSlot
+				&& FVector::DistSquared2D(Unit.Position, Unit.QueueSlotLocation)
+					<= FMath::Square(QueueArrivalNotifyRadiusUU))
+			{
+				// 정밀 도착 전이라도 통지 반경 안이면 줄 단계를 진행한다. 걷기는 계속 칸 중심을 향한다.
+				AdvancePartyQueueOnArrival(AgentIndex);
 			}
 			else if ((State.AudiencePhase == EFF_PartyAudiencePhase::GoingToSlot
 					|| State.ProgramPhase == EFF_PartyProgramPhase::Returning)
@@ -4355,15 +4368,17 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 	{
 		// 가입 이벤트와 자리 배정은 지연 전달된다. 아직 접근점을 목표로 삼거나
 		// 일행이 따라오는 동안에는 도착 확인을 보내지 않는다.
+		// 리더가 칸에 들어서면 알린다. 일행은 이용 중에 마저 들어선다.
 		for (const int32 MemberIndex : GetPartyMembers(Leader.PartyID))
 		{
-			const FUnitData& Member = UnitDatas[MemberIndex];
-			if (!Member.bHasQueueSlot
-				|| FVector::DistSquared2D(Member.Position, Member.QueueSlotLocation)
-					> FMath::Square(GetAssignedSlotArrivalRadius()))
+			if (!UnitDatas[MemberIndex].bHasQueueSlot)
 			{
 				return true;
 			}
+		}
+		if (FVector::DistSquared2D(Leader.Position, Leader.QueueSlotLocation) > FMath::Square(QueueArrivalNotifyRadiusUU))
+		{
+			return true;
 		}
 		Bridge->NotifyZoneFacilityPartyArrived(State.QueuedFacilityId, Leader.PartyID);
 		++QueueArrivalNotifies;
@@ -6131,6 +6146,72 @@ void UFF_CrowdSimulationSubsystem::ReloadNeedCoefficients()
 	NeedReliefAmounts = FFF_NeedRules::LoadReliefAmounts(CachedCoefficientTable.Get());
 	StayDrainMultiplierAtMaxNeed = FFF_NeedRules::LoadStayDrainMultiplierAtMaxNeed(CachedCoefficientTable.Get());
 	FFF_NeedRules::LoadInitialNeedFractions(CachedCoefficientTable.Get(), InitialNeedModeFraction, InitialNeedMaxFraction);
+}
+
+void UFF_CrowdSimulationSubsystem::SampleToiletFrontWaits(float ElapsedSeconds)
+{
+	UWorld* World = GetWorld();
+	const UFF_QueueSubsystem* Queue = World ? World->GetSubsystem<UFF_QueueSubsystem>() : nullptr;
+	const UFF_ZoneSystemQueueBridgeSubsystem* Bridge = World ? World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>() : nullptr;
+	if (!Queue || !Bridge)
+	{
+		return;
+	}
+	static constexpr float NearUU = 100.f;
+	static constexpr float StoppedSpeedUU = 10.f;
+	const float RadiusSquared = FMath::Square(QueueArrivalNotifyRadiusUU);
+	for (const TPair<int32, int32>& Pair : PartyLeaderByID)
+	{
+		const int32 LeaderIndex = Pair.Value;
+		if (!PartyDecisionStates.IsValidIndex(LeaderIndex) || !UnitDatas.IsValidIndex(LeaderIndex))
+		{
+			continue;
+		}
+		const FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
+		if (State.QueuePhase != EFF_PartyQueuePhase::Joined && State.QueuePhase != EFF_PartyQueuePhase::AtSlot)
+		{
+			continue;
+		}
+		const int32 QueueFacilityId = Bridge->FindQueueFacilityId(State.QueuedFacilityId);
+		bool bArrived = false;
+		int32 ServiceSlots = 0;
+		const int32 Index = Queue->GetPartyQueueIndex(QueueFacilityId, Pair.Key, &bArrived, &ServiceSlots);
+		if (Index == INDEX_NONE || Index >= ServiceSlots || bArrived
+			|| Queue->HasPartyStartedService(QueueFacilityId, Pair.Key)
+			|| !IsToiletFacility(State.QueuedFacilityId))
+		{
+			continue;
+		}
+
+		EToiletFrontWait Kind = EToiletFrontWait::AllInside;
+		if (State.QueuePhase == EFF_PartyQueuePhase::AtSlot)
+		{
+			Kind = EToiletFrontWait::NotifiedNotArrived;
+		}
+		else
+		{
+			const FUnitData& Leader = UnitDatas[LeaderIndex];
+			const float LeaderDistSquared = FVector::DistSquared2D(Leader.Position, Leader.QueueSlotLocation);
+			bool bAnyNoSlot = false;
+			for (const int32 MemberIndex : GetPartyMembers(Pair.Key))
+			{
+				bAnyNoSlot |= !UnitDatas[MemberIndex].bHasQueueSlot;
+			}
+			if (bAnyNoSlot)
+			{
+				Kind = EToiletFrontWait::NoSlot;
+			}
+			else if (LeaderDistSquared > FMath::Square(NearUU))
+			{
+				Kind = EToiletFrontWait::LeaderFar;
+			}
+			else if (LeaderDistSquared > RadiusSquared)
+			{
+				Kind = Leader.Velocity.Size2D() < StoppedSpeedUU ? EToiletFrontWait::LeaderNearStopped : EToiletFrontWait::LeaderNearMoving;
+			}
+		}
+		ToiletFrontWaitSeconds[static_cast<int32>(Kind)] += ElapsedSeconds;
+	}
 }
 
 bool UFF_CrowdSimulationSubsystem::IsToiletFacility(const FGuid& ZoneFacilityId) const

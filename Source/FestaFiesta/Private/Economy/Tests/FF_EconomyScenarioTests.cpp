@@ -601,6 +601,32 @@ private:
 					}
 				}
 				const int32 LogCount = Exits[0] + Exits[1] + Exits[2];
+				// 화장실마다 시간이 어디로 갔는지(누적): 이용 중 · 막힘(줄은 있는데 이용 시작 못 함) · 비어 있음
+				if (QueueSystem && QueueBridge)
+				{
+					TArray<FString> PerToilet;
+					const UFFZSWorldSubsystem* ToiletZones = World->GetSubsystem<UFFZSWorldSubsystem>();
+					for (const FFFZSFacilityReadModel& Facility : ToiletZones ? ToiletZones->BuildReadModel().Facilities : TArray<FFFZSFacilityReadModel>())
+					{
+						if (Facility.Category != EFFZSFacilityCategory::Toilet) continue;
+						const FFF_QueueFlowDiagnostics* FlowPtr = QueueSystem->GetFlowDiagnostics(QueueBridge->FindQueueFacilityId(Facility.FacilityInstanceId));
+						if (!FlowPtr) continue;
+						const FFF_QueueFlowDiagnostics& Flow = *FlowPtr;
+						const float Total = FMath::Max(Flow.BusySeconds + Flow.BlockedSeconds + Flow.IdleSeconds, KINDA_SMALL_NUMBER);
+						PerToilet.Add(FString::Printf(TEXT("이용 %.0f%% · 막힘 %.0f%% · 빔 %.0f%% · 칸까지 %.1f초 · 차례→시작 %.1f초"),
+							100.f * Flow.BusySeconds / Total, 100.f * Flow.BlockedSeconds / Total, 100.f * Flow.IdleSeconds / Total,
+							Flow.WalkToSlotCount > 0 ? Flow.WalkToSlotSecondsSum / Flow.WalkToSlotCount : 0.0,
+							Flow.FrontToStartCount > 0 ? Flow.FrontToStartSecondsSum / Flow.FrontToStartCount : 0.0));
+					}
+					Test->AddInfo(FString::Printf(TEXT("[Day %d 화장실 시간] %s"), Day, *FString::Join(PerToilet, TEXT(" | "))));
+				}
+				{
+					using EWait = UFF_CrowdSimulationSubsystem::EToiletFrontWait;
+					Test->AddInfo(FString::Printf(TEXT("[Day %d 화장실 차례 대기] 팀·초 누적: 자리 없음 %.0f · 리더 1m 밖 %.0f · 리더 1m 안 이동 %.0f · 리더 1m 안 멈춤 %.0f · 통지 전 %.0f · 통지했는데 미확인 %.0f"),
+						Day, Crowd->GetToiletFrontWaitSeconds(EWait::NoSlot), Crowd->GetToiletFrontWaitSeconds(EWait::LeaderFar),
+						Crowd->GetToiletFrontWaitSeconds(EWait::LeaderNearMoving), Crowd->GetToiletFrontWaitSeconds(EWait::LeaderNearStopped),
+						Crowd->GetToiletFrontWaitSeconds(EWait::AllInside), Crowd->GetToiletFrontWaitSeconds(EWait::NotifiedNotArrived)));
+				}
 				Test->AddInfo(FString::Printf(TEXT("[Day %d 화장실 줄] 끝남: 이용 %d · 대기 포기 %d · 취소 %d · 평균 대기 %.1f초"),
 					Day, Exits[0], Exits[1], Exits[2], LogCount > 0 ? WaitSum / LogCount : 0.0));
 			}

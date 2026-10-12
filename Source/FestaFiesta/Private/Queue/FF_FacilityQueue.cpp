@@ -483,11 +483,19 @@ void FFF_FacilityQueue::NotifyPartyArrived(int32 PartyId, float SimTimeSeconds)
 	{
 		// 시각을 모르는 호출(단위 테스트)은 가입 시각으로 둔다 = 예전처럼 가입부터 잰다
 		Parties[Index].FirstArrivalSimTime = SimTimeSeconds >= 0.f ? SimTimeSeconds : Parties[Index].JoinSimTime;
+		FlowDiagnostics.WalkToSlotSecondsSum += Parties[Index].FirstArrivalSimTime - Parties[Index].JoinSimTime;
+		++FlowDiagnostics.WalkToSlotCount;
 	}
 	if (Index != INDEX_NONE && Index < Config.ConcurrentServiceSlots)
 	{
 		Parties[Index].bArrivedAtServicePoint = true;
 	}
+}
+
+bool FFF_FacilityQueue::HasPartyArrivedAtServicePoint(int32 PartyId) const
+{
+	const int32 Index = FindPartyIndex(PartyId);
+	return Index != INDEX_NONE && Parties[Index].bArrivedAtServicePoint;
 }
 
 void FFF_FacilityQueue::RecordExit(const FFF_QueuedParty& Party, EFF_QueueExit ExitType, float SimTimeSeconds)
@@ -609,6 +617,25 @@ void FFF_FacilityQueue::InvalidateShiftedArrivals(int32 FirstShiftedIndex)
 
 void FFF_FacilityQueue::Advance(float DeltaSeconds, float SimTimeSeconds)
 {
+	if (bIsOpen && !bPerformanceBreak && DeltaSeconds > 0.f)
+	{
+		// 진단: 이 스텝을 시작할 때의 상태로 시간을 나눈다
+		bool bAnyServing = false;
+		for (FFF_QueuedParty& Party : Parties)
+		{
+			bAnyServing |= Party.bServiceStarted;
+		}
+		for (int32 Index = 0; Index < FMath::Min(Config.ConcurrentServiceSlots, Parties.Num()); ++Index)
+		{
+			if (Parties[Index].FrontSinceSimTime < 0.f)
+			{
+				Parties[Index].FrontSinceSimTime = SimTimeSeconds - DeltaSeconds;
+			}
+		}
+		float& Bucket = Parties.IsEmpty() ? FlowDiagnostics.IdleSeconds
+			: bAnyServing ? FlowDiagnostics.BusySeconds : FlowDiagnostics.BlockedSeconds;
+		Bucket += DeltaSeconds;
+	}
 	if (!bIsOpen || bPerformanceBreak || Parties.Num() == 0 || DeltaSeconds <= 0.f)
 	{
 		return;
@@ -689,6 +716,11 @@ void FFF_FacilityQueue::Advance(float DeltaSeconds, float SimTimeSeconds)
 			}
 			Party.bServiceStarted = true;
 			Party.ServiceStartSimTime = FMath::Max(StepTime, Party.JoinSimTime);
+			if (Party.FrontSinceSimTime >= 0.f)
+			{
+				FlowDiagnostics.FrontToStartSecondsSum += FMath::Max(0.f, Party.ServiceStartSimTime - Party.FrontSinceSimTime);
+				++FlowDiagnostics.FrontToStartCount;
+			}
 			FFF_QueueEvent Event;
 			Event.Type = EFF_QueueEventType::ServiceStarted;
 			Event.FacilityId = FacilityId;

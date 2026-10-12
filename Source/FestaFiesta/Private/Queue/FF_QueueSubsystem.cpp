@@ -239,6 +239,26 @@ bool UFF_QueueSubsystem::HasPartyStartedService(int32 FacilityId, int32 PartyId)
 	return Queue && Queue->HasPartyStartedService(PartyId);
 }
 
+const FFF_QueueFlowDiagnostics* UFF_QueueSubsystem::GetFlowDiagnostics(int32 FacilityId) const
+{
+	const FFF_FacilityQueue* Queue = FindQueue(FacilityId);
+	return Queue ? &Queue->GetFlowDiagnostics() : nullptr;
+}
+
+int32 UFF_QueueSubsystem::GetPartyQueueIndex(int32 FacilityId, int32 PartyId, bool* bOutArrivedAtServicePoint, int32* OutServiceSlots) const
+{
+	const FFF_FacilityQueue* Queue = FindQueue(FacilityId);
+	if (bOutArrivedAtServicePoint)
+	{
+		*bOutArrivedAtServicePoint = Queue && Queue->HasPartyArrivedAtServicePoint(PartyId);
+	}
+	if (OutServiceSlots)
+	{
+		*OutServiceSlots = Queue ? Queue->GetConfig().ConcurrentServiceSlots : 0;
+	}
+	return Queue ? Queue->GetPartyIndex(PartyId) : INDEX_NONE;
+}
+
 FFF_QueueState UFF_QueueSubsystem::GetQueueState(int32 FacilityId) const
 {
 	if (const FFF_FacilityQueue* Queue = FindQueue(FacilityId))
