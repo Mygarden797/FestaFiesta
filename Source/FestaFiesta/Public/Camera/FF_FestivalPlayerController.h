@@ -194,9 +194,14 @@ public:
 	FKey EdgeScrollActivationKey = EKeys::MiddleMouseButton;
 
 	// 누른 채 끌면 잡은 땅이 커서를 따라오게 관찰 카메라를 옮긴다. 키는 IMC 가 정한다(IMC_Camera 에서 오른쪽 버튼).
-	// 건축 중에는 쓰지 않는다(TickDragPan 참고). 비어 있으면 끌기 이동이 없다.
+	// 건축 중에도 쓴다(HandleBuildDragPanKey 참고). 비어 있으면 끌기 이동이 없다.
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input")
 	TObjectPtr<UInputAction> DragPanAction;
+
+	// 건축 중에는 끌기 입력을 누른 채 이만큼(화면 픽셀) 움직여야 끌기로 본다. 그보다 덜 움직이고 떼면
+	// 건축의 우클릭(미리보기 취소 · 선택 해제)으로 넘긴다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input", meta = (ClampMin = "1.0"))
+	float BuildDragPanThresholdPixels = 6.f;
 
 	// 시점 전환에 쓸 블렌드 시간. 0 이면 즉시 전환한다.
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera", meta = (ClampMin = "0.0"))
@@ -258,6 +263,23 @@ private:
 	// 끌기 입력(DragPanAction)을 누르고 있는가. 막 눌렀으면 다음 TickDragPan 이 끌기를 시작할지 본다.
 	bool bDragPanHeld = false;
 	bool bDragPanStartPending = false;
+
+	/* 건축 중 끌기(2026-10-12 사용자: 시설을 놓는 동안에도 우클릭으로 화면을 옮기고 싶다).
+	   건축은 같은 키를 누르는 순간 미리보기 취소 · 선택 해제로 쓴다(건축 코드는 그대로 둔다).
+	   그래서 건축 중에는 누름을 PlayerInput 에 넘기지 않고 붙잡아 두었다가, 문턱보다 끌면 화면을 옮기고
+	   끌지 않고 떼면 그제서야 건축 쪽에 클릭(누름 + 뗌)으로 넘긴다. 취소가 '누를 때'에서 '뗄 때'로 바뀐다.
+	*/
+	bool HandleBuildDragPanKey(const FInputKeyEventArgs& Params);
+	bool IsDragPanKey(const FKey& Key) const;
+	void TickBuildDragPanHold();
+	void ReleaseBuildDragPanHold();
+
+	bool bBuildDragHeld = false;
+	bool bBuildDragMoved = false;
+	bool bBuildDragAnchorValid = false;
+	FKey BuildDragKey;
+	FVector2D BuildDragPressPixels = FVector2D::ZeroVector;
+	FVector BuildDragPressAnchor = FVector::ZeroVector;
 
 	// 관찰 시점으로 돌아왔는데 다른 화면이 바꾼 마우스 캡처가 그대로면 이쪽 입력 모드를 다시 건다.
 	void RestoreOverviewInputModeIfLost();
