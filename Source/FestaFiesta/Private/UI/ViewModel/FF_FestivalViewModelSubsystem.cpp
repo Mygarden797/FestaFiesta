@@ -111,6 +111,8 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 	if (CachedInsightsSubsystem)
 	{
 		CachedInsightsSubsystem->OnSnsPostAdded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded);
+		CachedInsightsSubsystem->OnSnsReactionChanged.RemoveDynamic(this, &ThisClass::HandleOwnerSnsReactionChanged);
+		CachedInsightsSubsystem->OnSnsFeedReset.RemoveDynamic(this, &ThisClass::HandleOwnerSnsFeedReset);
 		CachedInsightsSubsystem->OnFinalePostAdded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleSnsPostAdded);
 	}
 	CachedInsightsSubsystem = nullptr;
@@ -435,6 +437,8 @@ void UFF_FestivalViewModelSubsystem::TryBindInsightsSubsystem()
 
 	CachedInsightsSubsystem = Insights;
 	CachedInsightsSubsystem->OnSnsPostAdded.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded);
+	CachedInsightsSubsystem->OnSnsReactionChanged.AddUniqueDynamic(this, &ThisClass::HandleOwnerSnsReactionChanged);
+	CachedInsightsSubsystem->OnSnsFeedReset.AddUniqueDynamic(this, &ThisClass::HandleOwnerSnsFeedReset);
 	CachedInsightsSubsystem->OnFinalePostAdded.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleSnsPostAdded);
 
 	// SimSatisfaction과 다르게 "현재값 1개"가 아니라 "지금까지의 글 목록"이라, bind 시점에
@@ -476,6 +480,8 @@ void UFF_FestivalViewModelSubsystem::HandleReportSaveLoaded(FName SlotId)
 	ResetProgramFacilityPresentation();
 	// 같은 슬롯을 다시 읽어도 별도 플레이 흐름이다. 복원 완료 후 다음 Tick에서 원본을 읽는다.
 	ResetDailyReports();
+	// 피드 복원 중에는 공감 명령을 막는다. 모든 원본의 복원이 끝난 뒤 가능 상태를 다시 알린다.
+	HandleOwnerSnsFeedReset();
 }
 
 const FFF_DailyReportView* UFF_FestivalViewModelSubsystem::GetDailyReport() const
@@ -765,9 +771,60 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerFinaleSnsPostAdded(FFF_SnsPostRo
 	OnFinaleSnsPostAdded.Broadcast(ConvertSnsPostToLiveSocialPost(NewPost));
 }
 
+FFF_SnsReactionState UFF_FestivalViewModelSubsystem::GetSnsReactionState(FGuid PostId) const
+{
+	return CachedInsightsSubsystem ? CachedInsightsSubsystem->GetReactionState(PostId) : FFF_SnsReactionState();
+}
+
+FFF_SnsReactionOutcome UFF_FestivalViewModelSubsystem::RequestSnsReaction(FGuid PostId)
+{
+	TryBindInsightsSubsystem();
+	return CachedInsightsSubsystem ? CachedInsightsSubsystem->TryReactToPost(PostId) : FFF_SnsReactionOutcome();
+}
+
+FText UFF_FestivalViewModelSubsystem::GetSnsReactionResultText(const FFF_SnsReactionOutcome& Outcome) const
+{
+	switch (Outcome.Result)
+	{
+	case EFF_SnsReactionResult::Success:
+		if (Outcome.AppliedBuzz > 0.f)
+		{
+			FNumberFormattingOptions Format;
+			Format.MaximumFractionalDigits = 2;
+			return FText::Format(NSLOCTEXT("FFSnsReaction", "Awarded", "화제성 +{0}"), FText::AsNumber(Outcome.AppliedBuzz, &Format));
+		}
+		return NSLOCTEXT("FFSnsReaction", "NoChange", "공감 완료 · 화제성 변동 없음");
+	case EFF_SnsReactionResult::AlreadyReacted:
+		return NSLOCTEXT("FFSnsReaction", "Already", "이미 공감한 글입니다.");
+	case EFF_SnsReactionResult::PostUnavailable:
+		return NSLOCTEXT("FFSnsReaction", "Expired", "더 이상 공감할 수 없는 글입니다.");
+	default:
+		return NSLOCTEXT("FFSnsReaction", "Unavailable", "지금은 공감할 수 없습니다.");
+	}
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerSnsReactionChanged(FGuid PostId)
+{
+	OnSnsReactionChanged.Broadcast(PostId);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerSnsFeedReset()
+{
+	RecentSnsPosts.Reset();
+	if (CachedInsightsSubsystem)
+	{
+		for (const FFF_SnsPostRow& Row : CachedInsightsSubsystem->GetRecentPosts())
+		{
+			RecentSnsPosts.Add(ConvertSnsPostToLiveSocialPost(Row));
+		}
+	}
+	OnSnsFeedReset.Broadcast();
+}
+
 FFF_LiveSocialPost UFF_FestivalViewModelSubsystem::ConvertSnsPostToLiveSocialPost(const FFF_SnsPostRow& Row)
 {
 	FFF_LiveSocialPost Converted;
+	Converted.PostId = Row.PostId;
 	Converted.Author = FText::FromString(Row.DisplayHandle);
 	Converted.Body = Row.Body;
 	// 강도 0 또는 -1도 실제 반응이다. 방향을 명시해 예전 미확정 센티널과 구분한다.
@@ -1910,6 +1967,20 @@ TArray<FFF_StaffMember> UFF_FestivalViewModelSubsystem::GetStaffRoster() const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	return Progression && Progression->IsFestivalStarted() ? Progression->GetStaffRoster() : TArray<FFF_StaffMember>();
+}
+
+FText UFF_FestivalViewModelSubsystem::GetStaffIncidentEffectText(int32 StaffId) const
+{
+	for (const FFF_StaffMember& Member : GetStaffRoster())
+	{
+		if (Member.StaffId != StaffId) { continue; }
+		// 개인의 기본 능력만 표시한다. 사건별 최소 인원과 실제 도착 인원 계산은 출동 원본이 맡는다.
+		const float Ability = FFF_StaffEventRules::CalcAbilitySum({Member}, 1);
+		return FText::Format(NSLOCTEXT("FestaFiestaStaffTraining", "IncidentAbility",
+			"현장 처리 능력 {Ability}\n승급 효과는 다음 출동부터 적용됩니다."),
+			FFormatNamedArguments{{TEXT("Ability"), FText::AsNumber(Ability)}});
+	}
+	return FText::GetEmpty();
 }
 
 bool UFF_FestivalViewModelSubsystem::CanPromoteStaff(int32 StaffId) const

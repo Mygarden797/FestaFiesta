@@ -143,6 +143,10 @@ struct FESTAFIESTA_API FFF_IncidentClosedInfo
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
 	bool bWasResponding = false;
+
+	// 효과 실행 뒤 경제 원장이 확인한 이번 사건의 실제 지급액. 예상 보상과 구분한다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	int32 GrantedGold = 0;
 };
 
 // Kind 에 따라 아래 필드 중 하나만 의미를 갖는다.

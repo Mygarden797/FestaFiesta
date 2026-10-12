@@ -52,6 +52,10 @@ struct FESTAFIESTA_API FFF_LiveSocialPost
 {
 	GENERATED_BODY()
 
+	/** 공감 명령에 사용하는 원본 식별자. 화면의 도착 번호와 구분한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
+	FGuid PostId;
+
 	/** 누가 썼는지. 현지화 대상이라 `FText` 다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	FText Author;
@@ -153,6 +157,10 @@ protected:
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	UFUNCTION()
 	void HandlePostAdded(FFF_LiveSocialPost NewPost);
+	UFUNCTION()
+	void HandleReactionChanged(FGuid PostId);
+	UFUNCTION()
+	void HandleSnsFeedReset();
 	UFUNCTION()
 	void HandleOperationAlert(const FFF_OperationAlert& Alert);
 	UFUNCTION()
@@ -274,6 +282,7 @@ protected:
 
 private:
 	friend class FFF_UnifiedNewsReadTest;
+	friend class FFF_UnifiedNewsReactionTest;
 	void BindControls();
 	void BindViewModel();
 	void Unbind();
@@ -297,6 +306,8 @@ private:
 	void TickScrollAnchor();
 	void RecordNews(const FFF_LiveSocialPost& Post);
 	void HandleNewsRead(int64 Serial);
+	void HandleReactionRequested(int64 Serial);
+	void RefreshRowReactions();
 	void SaveNewsReadingPosition();
 	void RestoreNewsReadingPosition();
 	int32 CountUnreadNews(bool bOperation) const;
@@ -332,6 +343,8 @@ private:
 	TArray<FFF_LiveSocialPost> RecentNews;
 	TSet<int64> UnreadNewsSerials;
 	TSet<int64> NewNewsSerials;
+	/** 실제 명령 결과를 현재 보관 중인 글에만 잠시 표시한다. 지급 기록은 원본 SNS가 저장한다. */
+	TMap<FGuid, FText> ReactionFeedback;
 	bool bNewsInitialized = false;
 	// 미읽음 수와 목록에 아직 반영하지 않은 도착을 구분한다.
 	int64 NewsSyncedArrival = 0;

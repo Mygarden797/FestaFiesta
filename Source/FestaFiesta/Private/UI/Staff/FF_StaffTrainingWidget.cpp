@@ -137,7 +137,13 @@ void UFF_StaffTrainingWidget::SyncRoster()
 	SetStaffTrainingText(Text_TotalStaff, FormatCount(ViewModel ? ViewModel->GetTotalStaffCount() : INDEX_NONE));
 	SetStaffTrainingText(Text_BaseStaff, FormatCount(ViewModel ? ViewModel->GetBaseStaffCount() : INDEX_NONE));
 	SetStaffTrainingText(Text_HiredStaff, FormatCount(ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE));
-	SetOptionalStaffTrainingText(Text_RosterNote, RosterNoteText);
+	SetOptionalStaffTrainingText(Text_RosterNote, IncidentEffectNoteText);
+	if (Text_RosterNote && !IncidentEffectNoteText.IsEmpty())
+	{
+		// 기존 에셋의 승급 안내는 보존하고, 하단에는 실제 효과를 먼저 설명한다.
+		Text_RosterNote->SetToolTipText(RosterNoteText);
+		Text_RosterNote->SetVisibility(ESlateVisibility::Visible);
+	}
 	RefreshFilterLabels();
 
 	TArray<FFF_StaffMember> Roster = ViewModel ? ViewModel->GetStaffRoster() : TArray<FFF_StaffMember>();
@@ -179,6 +185,7 @@ void UFF_StaffTrainingWidget::SyncRoster()
 		{
 			Row->OnPromoteRequested.BindUObject(this, &ThisClass::HandlePromoteRequested);
 			Row->SetStaffMember(Member, ViewModel->GetStaffPromotionState(Member.StaffId));
+			Row->SetIncidentEffectText(ViewModel->GetStaffIncidentEffectText(Member.StaffId));
 			const FFF_StaffMemberManagementView* Management = bHasManagementSnapshot && ManagementSnapshot.bAvailable
 				? ManagementSnapshot.Members.FindByPredicate([&Member](const FFF_StaffMemberManagementView& Candidate)
 				{

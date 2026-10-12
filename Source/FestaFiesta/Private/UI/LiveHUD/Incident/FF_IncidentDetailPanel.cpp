@@ -359,6 +359,7 @@ void UFF_IncidentDetailPanel::Close()
 	CurrentHandle = FFF_IncidentHandle();
 	CurrentOption = FFF_IncidentOptionView();
 	SelectedStaff = 0;
+	TotalResponseWorkMinutes = 0.f;
 	ResponseStage = EFF_IncidentResponseStage::None;
 	SetVisibility(ESlateVisibility::Collapsed);
 }
@@ -377,6 +378,7 @@ bool UFF_IncidentDetailPanel::Refresh()
 	Text_Body->SetVisibility(View.Body.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
 	ResponseStage = View.ResponseStage;
+	TotalResponseWorkMinutes = View.TotalWorkMinutes;
 	const FText Status = BuildResponseStatusText(View.ResponseStage, View.RemainingWorkMinutes);
 	Text_Status->SetText(Status);
 	Border_Status->SetVisibility(Status.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
@@ -429,12 +431,31 @@ void UFF_IncidentDetailPanel::RefreshStaff()
 	FNumberFormattingOptions WorkFormat;
 	WorkFormat.MinimumFractionalDigits = 0;
 	WorkFormat.MaximumFractionalDigits = 1;
-	Text_WorkAmount->SetText(CurrentOption.WorkAmount > 0.f && SelectedStaff > 0
-		? FText::Format(LOCTEXT("WorkAmountEstimate", "작업량: {0} 사람-분 · 예상 {1}분"),
-			FText::AsNumber(CurrentOption.WorkAmount, &WorkFormat),
-			FText::AsNumber(CurrentOption.WorkAmount / SelectedStaff, &WorkFormat))
-		: FText::Format(LOCTEXT("WorkAmount", "작업량: {0} 사람-분"),
-			FText::AsNumber(CurrentOption.WorkAmount, &WorkFormat)));
+	float WorkMinutes = TotalResponseWorkMinutes;
+	float Ability = 0.f;
+	const UFF_IncidentSubsystem* Incident = GetIncidentSubsystem();
+	const bool bHasEstimate = !IsResponding() && Incident
+		&& Incident->PreviewStaffWork(CurrentHandle, CurrentOption.OptionIndex, SelectedStaff, WorkMinutes, Ability);
+	if (CurrentOption.WorkAmount <= 0.f)
+	{
+		Text_WorkAmount->SetText(LOCTEXT("WorkOnArrival", "현장 도착 후 처리합니다."));
+	}
+	else if (IsResponding() || bHasEstimate)
+	{
+		Text_WorkAmount->SetText(FText::Format(IsResponding()
+			? LOCTEXT("WorkCommitted", "총 현장 작업 {0}분 (축제 시간)\n출동 시 숙련도 기준 · 이동 시간 별도")
+			: LOCTEXT("WorkPreview", "현장 작업 약 {0}분 (축제 시간)\n숙련도 반영 · 이동 시간 별도"),
+			FText::AsNumber(WorkMinutes, &WorkFormat)));
+	}
+	else
+	{
+		Text_WorkAmount->SetText(LOCTEXT("WorkPreviewUnavailable", "현장 작업 예상 —\n출동할 인원과 위치를 확인해 주세요."));
+	}
+	Text_WorkAmount->SetToolTipText(bHasEstimate
+		? FText::Format(LOCTEXT("WorkPreviewTip", "선발팀 능력 {0}. 최소 인원을 넘는 인원은 능력을 절반만 반영합니다. 출동할 때의 숙련도가 적용됩니다."),
+			FText::AsNumber(Ability, &WorkFormat))
+		: FText::GetEmpty());
+	Text_WorkAmount->SetVisibility(ESlateVisibility::Visible);
 
 	Text_StaffCount->SetText(FText::AsNumber(SelectedStaff));
 	Row_Staff->SetVisibility(IsResponding() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);

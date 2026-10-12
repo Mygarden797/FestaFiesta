@@ -1330,10 +1330,9 @@ GetAffordableHireCount() < GetRemainingHireCap()  →  "Gold 가 부족합니다
 
 ### 스태프 강화(승급) — 규칙 확정, API 완성 (2026-09-22 🆕)
 
-> 설계 전체는 `staff_event_design.md`(Git 제외, 로컬 전용) 참고. 여기는 **UI 가 바로 쓸 수
-> 있는 것**만 적습니다. 사건 시스템(이정원)이 아직 없어서 **승급 버튼을 눌러도 게임 안에서
-> 체감되는 효과는 아직 없습니다** — API 는 끝났지만 "왜 눌러야 하는가"의 답은 다음 커밋에
-> 옵니다. 지금 화면을 만드셔도 나중에 API 가 바뀌어서 다시 갈아엎을 일은 없습니다.
+> 설계 전체는 `staff_event_design.md`(Git 제외, 로컬 전용) 참고. 아래는 명단·승급 UI 계약입니다.
+> **2026-10-12 연결:** 기존 숙련도 규칙을 실제 사건의 현장 작업시간에 연결했습니다.
+> 출동 시 선발된 인원의 숙련도를 확정하며, 출동 후 승급은 다음 출동부터 적용합니다.
 
 **규칙 요약** — Staff 는 개인별로 Lv1~3 을 갖습니다. 고용 직후엔 항상 Lv1이고, **고용한
 다음 날 아침부터** 승급할 수 있습니다(당일은 불가). 한 아침에 한 사람당 한 단계만 오릅니다.
@@ -1378,10 +1377,30 @@ UPROPERTY(BlueprintAssignable) FFF_OnStaffRosterChanged OnStaffRosterChanged;
   쪽에 "왜 안 되는지" API가 따로 없어서, 세분화된 문구가 필요하면 요청해 주세요.
 - 사건 트레이(어느 사건에 누가 배치됐는가)는 **이번 범위 밖**입니다 — 아래 B표·§6 참고.
 
+**현장 작업시간과 미리보기 (2026-10-12 백종태 연결)**
+
+- 김시리의 `FFF_StaffEventRules`를 그대로 사용합니다. 최소 필요 인원까지 레벨을 온전히 합산하고, 초과 인원은 50%만 반영합니다. 높은 레벨이 온전한 자리를 먼저 차지합니다.
+- 실제 작업시간은 `CalcResolveSeconds()` 결과를 축제 분으로 환산해 사용합니다. UI는 직접 작업량을 인원수로 나누지 않습니다. 이동 시간은 예상에 포함하지 않습니다.
+- `UFF_StaffFacilitySubsystem::PreviewStaffReservation()`은 예약 없이 실제 출동과 같은 가까운 시설 순 / 동거리 StaffId 순 선발을 조회합니다. 미배정·출동·복귀 중 인원은 대상이 아닙니다.
+- 사건 UI는 `UFF_IncidentSubsystem::PreviewStaffWork(Handle, OptionIndex, StaffCount, OutMinutes, OutAbility)`를 사용합니다. 실패하면 추측한 시간 대신 예상 확인 불가로 표시합니다. 미리보기 이후 인원·배정이 바뀌면 실제 출동 시 다시 계산합니다.
+- 출동 이후에는 `FFF_IncidentView::TotalWorkMinutes` / `RemainingWorkMinutes`와 `ResponseStage`를 읽습니다. 취소·복귀·Live 배속 처리는 기존 계약을 유지합니다.
+- 스태프 목록은 ViewModel `GetStaffIncidentEffectText(StaffId)`로 개인 처리 능력 안내를 받습니다. `OnStaffRosterChanged`와 `OnStaffingChanged`에서 표시를 갱신합니다.
+- 기존 승급은 날짜 조건으로 판단합니다. 이번 연결에서 MorningCheck 전용 제한이나 이동속도 증가, 성공 보상을 새로 넣지 않았습니다.
+
 **시설 철거 환급은 매출이 아닙니다.** 설치비 50%가 돌아오면서 `OnGoldChanged`는 오지만
 `OnTotalRevenueChanged`는 오지 않습니다. "잔액 상승 = 매출 상승"으로 가정한 코드가 있으면 확인해 주세요.
 
 아직 없는 경제 값은 **일차 결과(등급 산출)와 저장 API**입니다.
+
+### SNS 공감·사건 해결 보상 (2026-10-12 백종태 연결)
+
+- 사용자 확정: SNS는 긍정·부정 글 모두 **글당 한 번 화제성 +0.1, 일일 횟수 제한 없음**. 값은 `FestivalDefinition::BuzzPerSnsReaction`으로 조정합니다. 기존 화제성 상한은 유지하며 공감으로 관객의 불만이 해결되지는 않습니다.
+- ViewModel `GetSnsReactionState(PostId)` / `RequestSnsReaction(PostId)` / `GetSnsReactionResultText(Outcome)`를 사용합니다. `FFF_LiveSocialPost::PostId`는 원본 GUID이고 UI의 읽음 도착 번호와 별개입니다. 운영 알림에는 공감이 없습니다.
+- 원본은 `CrowdInsights::TryReactToPost`가 담당합니다. 존재하지 않는 글·기공감·복원 중·축제 종료 뒤 요청을 차단하고 `OnSnsReactionChanged`로 확정 결과를 알립니다. `AppliedBuzz`는 상한을 반영한 실제 증가량입니다. 위젯은 `AddBuzz`나 글 생성용 `ApplySnsPost`를 직접 호출하지 않습니다.
+- 공감 목록·최근 피드·생성 순번·seed는 기존 저장 파이프라인의 `SnsFeed` 키로 저장합니다. 복원은 글 생성 효과를 재실행하지 않으며 `OnSnsFeedReset`으로 목록을 갱신합니다. 신규 축제는 기록을 초기화하고 기존 저장 파일의 누락 필드는 빈 피드로 처리합니다.
+- 사용자 확정: 병목·분실물의 성공 선택지에 기존 금화 보상 Effect로 **100금화**를 설정합니다. 자연 해소·방치·시간 만료는 이 성공 보상을 지급하지 않습니다. 기존 실패 효과는 유지합니다.
+- 사건 상세는 설정된 해결 이득을 안내하고, 종료 소식은 Effect 실행 뒤 실제 금화 수용액을 표시합니다. 이미 닫힌 사건은 다시 지급하지 않습니다. 스태프 출동·복귀·7단계 숙련도 계산은 유지합니다.
+- `FestivalProgression::AddRevenueWithReceipt` / `FestivalBuzz::AddBuzzWithReceipt`는 실제 수용액을 반환하는 호환 추가 경로입니다. 기존 void 호출 API는 유지합니다. UI가 보유 금화 전후 차이로 보상을 추정하지 않습니다.
 
 ### 결산 표 4종
 

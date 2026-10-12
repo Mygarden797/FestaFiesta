@@ -137,6 +137,7 @@ void UFF_LivePanelSNS::NativeOnPanelOpened()
 		if (bUnifiedNews && NewsReadingPositions.Contains(Feed.Filter)) { NewsRestoreFrames = 2; }
 		RefreshPending();
 	}
+	RefreshRowReactions();
 }
 
 void UFF_LivePanelSNS::NativeOnPanelClosed()
@@ -174,6 +175,7 @@ void UFF_LivePanelSNS::NativeDestruct()
 	RecentNews.Reset();
 	UnreadNewsSerials.Reset();
 	NewNewsSerials.Reset();
+	ReactionFeedback.Reset();
 	bNewsInitialized = false;
 	NewsReadingPositions.Reset();
 	NewsRestoreFrames = 0;
@@ -187,14 +189,24 @@ void UFF_LivePanelSNS::BindViewModel()
 	UFF_FestivalViewModelSubsystem* Current = GI ? GI->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
 	if (Current != CachedViewModel)
 	{
-		if (CachedViewModel) { CachedViewModel->OnSnsPostAdded.RemoveDynamic(this, &ThisClass::HandlePostAdded); }
+		if (CachedViewModel)
+		{
+			CachedViewModel->OnSnsPostAdded.RemoveDynamic(this, &ThisClass::HandlePostAdded);
+			CachedViewModel->OnSnsReactionChanged.RemoveDynamic(this, &ThisClass::HandleReactionChanged);
+			CachedViewModel->OnSnsFeedReset.RemoveDynamic(this, &ThisClass::HandleSnsFeedReset);
+		}
 		CachedViewModel = Current;
 		bFeedInitialized = false;
 		// 도착 번호는 구독한 원본 기준이다. 원본이 바뀌면 새로 센다.
 		Feed.ResetArrivals();
 		bNewsInitialized = false;
 	}
-	if (CachedViewModel) { CachedViewModel->OnSnsPostAdded.AddUniqueDynamic(this, &ThisClass::HandlePostAdded); }
+	if (CachedViewModel)
+	{
+		CachedViewModel->OnSnsPostAdded.AddUniqueDynamic(this, &ThisClass::HandlePostAdded);
+		CachedViewModel->OnSnsReactionChanged.AddUniqueDynamic(this, &ThisClass::HandleReactionChanged);
+		CachedViewModel->OnSnsFeedReset.AddUniqueDynamic(this, &ThisClass::HandleSnsFeedReset);
+	}
 	if (bUnifiedNews)
 	{
 		UFF_OperationAlertSubsystem* Alerts = GetWorld() ? GetWorld()->GetSubsystem<UFF_OperationAlertSubsystem>() : nullptr;
@@ -243,7 +255,12 @@ void UFF_LivePanelSNS::BindControls()
 
 void UFF_LivePanelSNS::Unbind()
 {
-	if (CachedViewModel) { CachedViewModel->OnSnsPostAdded.RemoveDynamic(this, &ThisClass::HandlePostAdded); }
+	if (CachedViewModel)
+	{
+		CachedViewModel->OnSnsPostAdded.RemoveDynamic(this, &ThisClass::HandlePostAdded);
+		CachedViewModel->OnSnsReactionChanged.RemoveDynamic(this, &ThisClass::HandleReactionChanged);
+		CachedViewModel->OnSnsFeedReset.RemoveDynamic(this, &ThisClass::HandleSnsFeedReset);
+	}
 	CachedViewModel = nullptr;
 	if (CachedOperationAlerts) { CachedOperationAlerts->OnOperationAlertRaised.RemoveDynamic(this, &ThisClass::HandleOperationAlert); }
 	CachedOperationAlerts = nullptr;
@@ -321,6 +338,13 @@ void UFF_LivePanelSNS::RecordNews(const FFF_LiveSocialPost& Post)
 	Feed.NoteArrival();
 	RecentNews.Insert(Post, 0);
 	if (RecentNews.Num() > 80) { RecentNews.SetNum(80); }
+	for (auto It = ReactionFeedback.CreateIterator(); It; ++It)
+	{
+		if (!RecentNews.ContainsByPredicate([Id = It.Key()](const FFF_LiveSocialPost& Item) { return Item.PostId == Id; }))
+		{
+			It.RemoveCurrent();
+		}
+	}
 	NewNewsSerials.Add(Feed.TotalArrivals);
 	UnreadNewsSerials.Add(Feed.TotalArrivals);
 	const bool bShownNow = bPanelOpen && bFeedInitialized && bAutoShowNewPosts && FFF_LiveSnsFeedState::Matches(Post, Feed.Filter);
@@ -353,6 +377,69 @@ void UFF_LivePanelSNS::HandleNewsRead(int64 Serial)
 	RefreshNewMarks();
 	RefreshFilters();
 	RefreshPending();
+}
+
+void UFF_LivePanelSNS::HandleReactionRequested(int64 Serial)
+{
+	const int32 Index = Feed.DisplayedSerials.IndexOfByKey(Serial);
+	if (!bUnifiedNews || !CachedViewModel || !Feed.DisplayedPosts.IsValidIndex(Index)) { return; }
+	const FFF_LiveSocialPost& Post = Feed.DisplayedPosts[Index];
+	if (Post.bOperationAlert || !Post.PostId.IsValid()) { return; }
+	// 명령 중 원본 이벤트가 목록을 갱신할 수 있어 식별자를 먼저 복사한다.
+	const FGuid PostId = Post.PostId;
+	const FFF_SnsReactionOutcome Outcome = CachedViewModel->RequestSnsReaction(PostId);
+	ReactionFeedback.Add(PostId, CachedViewModel->GetSnsReactionResultText(Outcome));
+	if (Outcome.Result == EFF_SnsReactionResult::Success || Outcome.Result == EFF_SnsReactionResult::AlreadyReacted)
+	{
+		HandleNewsRead(Serial);
+	}
+	RefreshRowReactions();
+}
+
+void UFF_LivePanelSNS::HandleReactionChanged(FGuid PostId)
+{
+	// 원본 지급이 끝난 뒤 현재 상태만 갱신한다. 행 재생성·스크롤 초기화는 하지 않는다.
+	RefreshRowReactions();
+}
+
+void UFF_LivePanelSNS::HandleSnsFeedReset()
+{
+	// 새 축제/저장 복원은 새 글 도착과 구분해 이전 도착 번호·보상 안내를 비운다.
+	ReactionFeedback.Reset();
+	Feed.ResetArrivals();
+	Feed.PendingCount = 0;
+	NewMarkShownAt.Reset();
+	ScrollAnchor = FScrollAnchor();
+	NewsReadingPositions.Reset();
+	UnreadNewsSerials.Reset();
+	NewNewsSerials.Reset();
+	bNewsInitialized = false;
+	bFeedInitialized = false;
+	BindViewModel();
+	SyncFromViewModel();
+}
+
+void UFF_LivePanelSNS::RefreshRowReactions()
+{
+	FNumberFormattingOptions Format;
+	Format.MaximumFractionalDigits = 2;
+	for (int32 Index = 0; Index < PostEntries.Num(); ++Index)
+	{
+		UFF_LiveSnsPostEntry* Entry = PostEntries[Index];
+		if (!Entry || !Feed.DisplayedPosts.IsValidIndex(Index)) { continue; }
+		const FFF_LiveSocialPost& Post = Feed.DisplayedPosts[Index];
+		const bool bVisible = bUnifiedNews && !Post.bOperationAlert && Post.PostId.IsValid();
+		const FFF_SnsReactionState State = bVisible && CachedViewModel
+			? CachedViewModel->GetSnsReactionState(Post.PostId) : FFF_SnsReactionState();
+		FText Hint = State.bReacted ? LOCTEXT("AlreadyReacted", "이 글에 이미 공감했습니다.")
+			: !State.bExists ? LOCTEXT("ReactionExpired", "더 이상 공감할 수 없는 글입니다.")
+			: !State.bCanReact ? LOCTEXT("ReactionUnavailable", "지금은 공감할 수 없습니다.")
+			: FText::Format(LOCTEXT("ReactionHint", "글당 한 번 · 화제성 최대 +{0} · 일일 제한 없음\n공감은 관객의 불편 사항을 직접 해결하지는 않습니다."),
+				FText::AsNumber(State.BuzzReward, &Format));
+		const FText* Feedback = ReactionFeedback.Find(Post.PostId);
+		Entry->ConfigureReaction(bVisible, State.bReacted, State.bCanReact,
+			Feedback ? *Feedback : FText::GetEmpty(), Hint);
+	}
 }
 
 int32 UFF_LivePanelSNS::CountUnreadNews(bool bOperation) const
@@ -430,6 +517,7 @@ bool UFF_LivePanelSNS::BindRows()
 		if (UFF_LiveSnsPostEntry* Extra = PostEntries.Pop())
 		{
 			Extra->OnPostActivated.RemoveAll(this);
+			Extra->OnReactionRequested.RemoveAll(this);
 			Extra->RemoveFromParent();
 		}
 	}
@@ -446,6 +534,7 @@ bool UFF_LivePanelSNS::BindRows()
 		}
 		PostEntries.Add(Entry);
 		Entry->OnPostActivated.AddUObject(this, &ThisClass::HandleNewsRead);
+		Entry->OnReactionRequested.AddUObject(this, &ThisClass::HandleReactionRequested);
 	}
 	for (int32 Index = 0; Index < PostEntries.Num(); ++Index)
 	{
@@ -457,6 +546,7 @@ bool UFF_LivePanelSNS::BindRows()
 	}
 	RefreshNewMarks();
 	Box_Posts->SetVisibility(PostEntries.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+	RefreshRowReactions();
 	return bOk;
 }
 

@@ -64,6 +64,12 @@ void UFF_StaffPromotionRowWidget::SetAssignmentStatus(const FText& Facility, con
 	RefreshAssignmentStatus();
 }
 
+void UFF_StaffPromotionRowWidget::SetIncidentEffectText(const FText& Effect)
+{
+	IncidentEffectText = Effect;
+	RefreshRow();
+}
+
 void UFF_StaffPromotionRowWidget::RefreshAssignmentStatus()
 {
 	if (!bHasAssignmentStatus) { return; }
@@ -132,6 +138,9 @@ void UFF_StaffPromotionRowWidget::RefreshRow()
 	{
 		Text_StaffLevel->SetText(FText::Format(StaffLevelFormat,
 			FFormatNamedArguments{{TEXT("Level"), FText::AsNumber(CurrentMember.TrainingLevel)}}));
+		Text_StaffLevel->SetToolTipText(IncidentEffectText);
+		// 텍스트 위에서도 실제 능력 툴팁을 받을 수 있게 한다. 행의 승급 상태 툴팁은 그대로 둔다.
+		if (!IncidentEffectText.IsEmpty()) { Text_StaffLevel->SetVisibility(ESlateVisibility::Visible); }
 	}
 	const FText FullStatus = bRequestPending ? PendingStatusText : GetPromotionStatusText(CurrentState);
 	const bool bShowPromoteButton = !bCompactManagementRow || CurrentState == EFF_StaffPromotionState::Ready;

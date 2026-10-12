@@ -8,6 +8,7 @@
 #include "NPC/Insights/FF_SnsTypes.h"
 #include "Time/FF_FestivalStage.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
+#include "Save/FF_Saveable.h"
 #include "FF_CrowdInsightsSubsystem.generated.h"
 
 class UDataTable;
@@ -21,6 +22,21 @@ class UFFZSWorldSubsystem;
 class UFF_FinaleShowSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsPostAdded, FFF_SnsPostRow, NewPost);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsReactionChanged, FGuid, PostId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnSnsFeedReset);
+
+// 글 식별자와 공감 이력은 함께 복원한다. 순번만 초기화하면 다른 글에 같은 PostId가 재사용된다.
+USTRUCT()
+struct FFF_SnsFeedSave
+{
+	GENERATED_BODY()
+
+	UPROPERTY() int32 Version = 1;
+	UPROPERTY() int32 GlobalSimulationSeed = 0;
+	UPROPERTY() int32 PostSequenceIndex = 0;
+	UPROPERTY() TArray<FFF_SnsPostRow> RecentPosts;
+	UPROPERTY() TArray<FGuid> ReactedPostIds;
+};
 
 /**
  * SNS 라이브 피드 생성기 — `Live` 단계 동안 주기적으로 글 한 건을 만들어 링버퍼에 쌓는다.
@@ -31,7 +47,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsPostAdded, FFF_SnsPostRow, 
  * 아직 스코프 밖(고정 낮은 점수) — §10 결정대로 실측 전까지 보류.
  */
 UCLASS()
-class FESTAFIESTA_API UFF_CrowdInsightsSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
+class FESTAFIESTA_API UFF_CrowdInsightsSubsystem : public UGameInstanceSubsystem, public FTickableGameObject, public IFF_Saveable
 {
 	GENERATED_BODY()
 
@@ -54,6 +70,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|SNS")
 	const TArray<FFF_SnsPostRow>& GetRecentPosts() const { return RecentPosts; }
 
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|SNS")
+	FFF_SnsReactionState GetReactionState(FGuid PostId) const;
+
+	// 실제 피드의 글만 한 번 공감한다. 공감은 불만을 해결하거나 게시글 생성 효과를 다시 실행하지 않는다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|SNS")
+	FFF_SnsReactionOutcome TryReactToPost(FGuid PostId);
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|SNS")
+	FFF_OnSnsReactionChanged OnSnsReactionChanged;
+
+	// 새 축제·저장 복원 시 현재 피드를 다시 읽는다. 글 생성 이벤트와 분리해 보상을 재적용하지 않는다.
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|SNS")
+	FFF_OnSnsFeedReset OnSnsFeedReset;
+
+	virtual void WriteSaveData(TArray<uint8>& OutBytes) const override;
+	virtual void ReadSaveData(const TArray<uint8>& InBytes) override;
+	virtual FName GetSaveKey() const override { return TEXT("SnsFeed"); }
+	virtual EFF_SaveLoadPhase GetSaveLoadPhase() const override { return EFF_SaveLoadPhase::Presentation; }
+
 	// 테스트 전용 — 타이머를 기다리지 않고 지금 한 건 강제로 만들어 큐에 넣는다
 	FFF_SnsPostRow Debug_ForceGeneratePost();
 
@@ -73,6 +108,12 @@ public:
 	void Debug_StartFinaleFeed(EFF_FinaleGrade Grade);
 
 private:
+	friend class FFF_SnsReactionPersistenceTest;
+	friend class FFF_SnsReactionRewardTest;
+
+	float GetReactionBuzzReward() const;
+	bool IsReactionAvailable() const;
+
 	// Live 단계인지 확인하고, 간격 카운트다운이 0 이하면 신호를 모아 GeneratePost 호출
 	void MaybeGeneratePost(float DeltaTime);
 	// 만족도·혼잡·단계·시설·입장료·공연 상태를 한 번에 채운다. 주기 글과 강제 글이 같은 신호를 쓰게 한다
@@ -143,6 +184,8 @@ private:
 
 	// 실제 글이 쌓이는 배열
 	TArray<FFF_SnsPostRow> RecentPosts;
+	TSet<FGuid> ReactedPostIds;
+	bool bReactionInFlight = false;
 
 	// 오늘 이용 중인 손님을 한 번이라도 봤는지. Live 가 시작될 때 비운다
 	bool bFacilityUsedToday = false;

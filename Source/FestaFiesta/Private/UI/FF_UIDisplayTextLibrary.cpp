@@ -285,8 +285,14 @@ FText UFF_UIDisplayTextLibrary::GetIncidentFinishedText(const FFF_IncidentClosed
 	case EFF_IncidentCloseReason::Unknown:
 		return GetIncidentClosedText(Info.FinalState, Info.Title);
 	}
-	return Info.Title.IsEmpty() ? Reason
+	FText Message = Info.Title.IsEmpty() ? Reason
 		: FText::Format(LOCTEXT("IncidentFinished_WithTitle", "{0} — {1}"), Info.Title, Reason);
+	if (Info.GrantedGold > 0)
+	{
+		Message = FText::Format(LOCTEXT("IncidentFinished_GrantedGold", "{0}\n금화 +{1}"),
+			Message, FText::AsNumber(Info.GrantedGold));
+	}
+	return Message;
 }
 
 EFF_IncidentToastKind UFF_UIDisplayTextLibrary::GetIncidentClosedKind(EFF_IncidentState State)

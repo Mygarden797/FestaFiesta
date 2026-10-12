@@ -12,6 +12,36 @@ enum class EFF_SnsSentiment : uint8
 	Negative
 };
 
+UENUM(BlueprintType)
+enum class EFF_SnsReactionResult : uint8
+{
+	Success,
+	AlreadyReacted,
+	PostUnavailable,
+	Unavailable
+};
+
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_SnsReactionState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly) bool bExists = false;
+	UPROPERTY(BlueprintReadOnly) bool bReacted = false;
+	UPROPERTY(BlueprintReadOnly) bool bCanReact = false;
+	// 설정상 보상. 실제 수용량은 화제성 상한에 따라 줄어들 수 있다.
+	UPROPERTY(BlueprintReadOnly) float BuzzReward = 0.f;
+};
+
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_SnsReactionOutcome
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly) EFF_SnsReactionResult Result = EFF_SnsReactionResult::Unavailable;
+	UPROPERTY(BlueprintReadOnly) float AppliedBuzz = 0.f;
+};
+
 /**
  * SNS 피드에 올라간 글 한 건. `UFF_CrowdInsightsSubsystem`의 링버퍼가 들고 있는 단위.
  *

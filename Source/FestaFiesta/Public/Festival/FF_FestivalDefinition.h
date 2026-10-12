@@ -187,6 +187,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0"))
 	float BuzzPerSnsPost = 0.3f;
 
+	// 플레이어가 게시글에 처음 공감했을 때의 보상. 일일 제한 없이 글마다 한 번 적용한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0"))
+	float BuzzPerSnsReaction = 0.1f;
+
 	// 유료 프로그램 1개가 열릴 때 오르는 Buzz. [밸런스]
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0"))
 	float BuzzPerProgramOpened = 3.f;

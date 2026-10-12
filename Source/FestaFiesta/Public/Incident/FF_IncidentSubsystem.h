@@ -11,6 +11,7 @@
 class UFF_IncidentDefinition;
 class UFF_IncidentCatalog;
 class UFF_IncidentEffect;
+struct FFF_IncidentEffectResult;
 /**
  * 
  */
@@ -77,7 +78,7 @@ public:
 	void WithdrawIncident(FName DedupeKey, EFF_IncidentCloseReason Reason = EFF_IncidentCloseReason::NaturalResolution);
 	// 필요한 스태프가 있으면 배정 시설에서 출동한다. 전원 도착해 작업량을 마친 뒤 사건을 닫는다.
 	// 선택지가 있으면 플레이어가 고른 StaffCount 를 보내되 선택지의 MinStaff 아래로는 내리지 않는다.
-	// 작업 시간(축제 분) = 선택지의 WorkAmount ÷ 보낸 인원. 선택지가 없으면 정의의 RequiredStaff 를 쓰고 작업량은 0이다.
+	// 작업 시간(축제 분)은 실제 선발팀의 숙련도 능력 합으로 계산한다. 선택지가 없으면 작업량은 0이다.
 	// OutResult 를 주면 접수(Dispatched/Resolved)인지, 거부라면 왜인지를 채운다.
 	bool ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex = INDEX_NONE, int32 StaffCount = INDEX_NONE,
 		EFF_IncidentResolveResult* OutResult = nullptr);
@@ -88,6 +89,10 @@ public:
 	void GetActiveHandle(TArray<FFF_IncidentHandle>& OutHandles) const;
 	
 	bool GetIncidentView(FFF_IncidentHandle Handle, FFF_IncidentView& OutView) const;
+
+	// 예약하지 않는 현장 작업 예상. 실제 출동과 같은 시설·인원 선발 및 숙련도 규칙을 쓴다. 이동 시간 제외.
+	bool PreviewStaffWork(FFF_IncidentHandle Handle, int32 OptionIndex, int32 StaffCount,
+		float& OutMinutes, float& OutAbility) const;
 	
 	
 	//사건 발생, 종료 시에 전달되는 델리게이트
@@ -109,6 +114,7 @@ private:
 	friend class FFF_StaffDispatchWarpTest;
 	friend class FFF_StaffFacilityDispatchTest;
 	friend class FFF_CrowdIncidentBridgeTest;
+	friend class FFF_IncidentRewardReceiptTest;
 	#endif
 
 	void LoadDefinitions();
@@ -124,7 +130,7 @@ private:
 
 	void SetResponding(FFF_IncidentHandle Handle, bool bRespond);
 	
-	void ApplyEffects(const TArray<TObjectPtr<UFF_IncidentEffect>>& Effects, const FFF_IncidentContext& Context);
+	FFF_IncidentEffectResult ApplyEffects(const TArray<TObjectPtr<UFF_IncidentEffect>>& Effects, const FFF_IncidentContext& Context);
 	
 	FFF_IncidentContext MakeContext(FFF_IncidentHandle Handle,const FIncidentSlot& Slot, int32 OptionIndex);
 	

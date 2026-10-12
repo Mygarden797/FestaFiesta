@@ -105,6 +105,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnWeatherViewChanged, EFF_Weathe
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnBoolViewChanged, bool, bNewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeViewChanged, EFF_FinaleGrade, NewGrade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsSocialPostChanged, FFF_LiveSocialPost, NewPost);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsReactionViewChanged, FGuid, PostId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnSnsFeedViewReset);
 
 // 편성 목록이 바뀌었다. 원본과 같이 인자를 싣지 않는다 — 무엇이 바뀌었는지는 다시 읽는다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
@@ -477,6 +479,18 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
 	FFF_OnSnsSocialPostChanged OnSnsPostAdded;
 
+	/** 공감은 원본 SNS 명령으로만 요청하며 화제성은 실제 지급 결과로 안내한다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_SnsReactionState GetSnsReactionState(FGuid PostId) const;
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_SnsReactionOutcome RequestSnsReaction(FGuid PostId);
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|SNS")
+	FText GetSnsReactionResultText(const FFF_SnsReactionOutcome& Outcome) const;
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_OnSnsReactionViewChanged OnSnsReactionChanged;
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_OnSnsFeedViewReset OnSnsFeedReset;
+
 	/** 피날레 연출 중 후기. 화면 위로 흘려보내는 용도라 목록을 들고 있지 않는다. 지난 글은 Insights 의 GetFinalePosts() 에 있다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
 	FFF_OnSnsSocialPostChanged OnFinaleSnsPostAdded;
@@ -592,6 +606,9 @@ public:
 	/** 개인별 명단(기본 팀 + 고용). 축제 전이면 빈 배열. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	TArray<FFF_StaffMember> GetStaffRoster() const;
+	/** 원본 규칙으로 읽은 개인별 현장 처리 능력. 출동 중 승급은 다음 출동부터 반영된다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	FText GetStaffIncidentEffectText(int32 StaffId) const;
 
 	/** 설치 시설을 개별 클릭하지 않고 배정/출동/숙련도를 읽는 공통 화면용 스냅샷. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
@@ -1285,6 +1302,10 @@ protected:
 	/** Insights가 쏘는 글 한 건을 변환해 목록 맨 앞에 얹고 위젯에 중계한다. */
 	UFUNCTION()
 	void HandleOwnerSnsPostAdded(FFF_SnsPostRow NewPost);
+	UFUNCTION()
+	void HandleOwnerSnsReactionChanged(FGuid PostId);
+	UFUNCTION()
+	void HandleOwnerSnsFeedReset();
 	UFUNCTION()
 	void HandleOwnerFinaleSnsPostAdded(FFF_SnsPostRow NewPost);
 

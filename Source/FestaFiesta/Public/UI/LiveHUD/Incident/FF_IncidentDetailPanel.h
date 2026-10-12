@@ -25,7 +25,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FFF_OnIncidentDispatchRequested,
  * 사건 아이콘을 눌렀을 때 뜨는 상세 패널. WBP 없이 C++ 만으로 트리를 만든다.
  *
  * 허브의 FFF_IncidentView 만 읽어 제목·본문과 첫 번째 유효 선택지의 작업량·보상을 보여 주고,
- * 작업 인원을 MinStaff 이상, 지금 출동 가능한 스태프 수 이하에서 고르게 하고 예상 작업 시간(작업량 ÷ 인원)을 보여 준다.
+ * 작업 인원을 MinStaff 이상, 지금 출동 가능한 스태프 수 이하에서 고르게 하고 원본의 숙련도 반영 예상 작업 시간을 보여 준다.
  * 가능 인원은 StaffFacility 가 알려 주고, 출동·복귀로 바뀌면(OnStaffingChanged) 다시 계산한다.
  * CostGold·CostStaff 는 현재 출동 경로에서 차감하지 않으므로 비용으로 표시하지 않는다.
  *
@@ -192,5 +192,6 @@ private:
 	FFF_IncidentHandle CurrentHandle;
 	FFF_IncidentOptionView CurrentOption;
 	int32 SelectedStaff = 0;
+	float TotalResponseWorkMinutes = 0.f;
 	EFF_IncidentResponseStage ResponseStage = EFF_IncidentResponseStage::None;
 };
