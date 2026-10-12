@@ -196,19 +196,19 @@ bool FFF_CrowdQueue_ArrivalAndAdvanceLifecycle::RunTest(const FString& Parameter
 	Queue->FlushPendingEvents();
 	Queue->AdvanceFixedSteps(90);
 	TestEqual(TEXT("Walking toward the queue does not complete service"), Queue->GetQueueState(QueueId).CompletedPartyCount, 0);
+	Access::Unit(*Crowd, First).Position = Access::Unit(*Crowd, First).QueueSlotLocation
+		+ FVector(Crowd->QueueArrivalNotifyRadiusUU + 20.f, 0.f, 0.f);
+	Access::Arrive(*Crowd, First);
+	TestEqual(TEXT("A leader outside the notify radius does not confirm arrival"), Crowd->GetQueueArrivalNotifyCount(), 0);
 	Access::Unit(*Crowd, First).Position = Access::Unit(*Crowd, First).QueueSlotLocation + FVector(20.f, 0.f, 0.f);
 	Access::Arrive(*Crowd, First);
-	TestEqual(TEXT("Leader arrival waits for its companion"), Crowd->GetQueueArrivalNotifyCount(), 0);
-	Access::Unit(*Crowd, Member).Position = Access::Unit(*Crowd, Member).QueueSlotLocation;
-	Access::Arrive(*Crowd, First);
-	TestEqual(TEXT("The former 45cm tolerance cannot falsely confirm a leader still 20cm off its slot"), Crowd->GetQueueArrivalNotifyCount(), 0);
-	Access::Unit(*Crowd, First).Position = Access::Unit(*Crowd, First).QueueSlotLocation;
-	Access::Arrive(*Crowd, First);
+	TestEqual(TEXT("A leader inside the notify radius confirms without waiting for its companion"), Crowd->GetQueueArrivalNotifyCount(), 1);
+	TestEqual(TEXT("The companion still walks to its own precise slot"), Access::Unit(*Crowd, Member).ArrivalRadiusUU, Crowd->GetAssignedSlotArrivalRadius());
 	Access::Unit(*Crowd, Second).Position = Access::Unit(*Crowd, Second).QueueSlotLocation;
 	Access::Arrive(*Crowd, Second);
 	const FVector PreviousSecondSlot = Access::Unit(*Crowd, Second).QueueSlotLocation;
 	Queue->AdvanceFixedSteps(31);
-	TestEqual(TEXT("First party completes only after both members arrived"), Queue->GetQueueState(QueueId).CompletedPartyCount, 1);
+	TestEqual(TEXT("First party completes once its leader arrived"), Queue->GetQueueState(QueueId).CompletedPartyCount, 1);
 	TestFalse(TEXT("Next party receives a forward slot"), Access::Unit(*Crowd, Second).QueueSlotLocation.Equals(PreviousSecondSlot));
 	TestEqual(TEXT("Forward movement requests a fresh arrival"), Access::State(*Crowd, Second).QueuePhase, EFF_PartyQueuePhase::Joined);
 	Access::Arrive(*Crowd, Second);

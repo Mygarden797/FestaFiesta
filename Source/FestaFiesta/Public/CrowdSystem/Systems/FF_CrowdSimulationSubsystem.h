@@ -622,6 +622,19 @@ public:
 	int32 GetToiletArrivalCount() const { return ToiletArrivals; }
 	int32 GetToiletPatienceAbandonCount() const { return ToiletPatienceAbandons; }
 
+	// 화장실 이용 자리 차례인데 이용을 시작 못 한 팀이 무엇을 기다렸는지(팀·초 누적, 진단)
+	enum class EToiletFrontWait : uint8
+	{
+		NoSlot,             // 새 자리를 아직 못 받음
+		LeaderFar,          // 리더가 자리에서 1m 밖
+		LeaderNearMoving,   // 리더가 1m 안, 통지 반경 밖에서 다가가는 중
+		LeaderNearStopped,  // 리더가 1m 안, 통지 반경 밖에서 멈춰 있음
+		AllInside,          // 리더가 통지 반경 안인데 아직 통지 전
+		NotifiedNotArrived, // 통지했는데 대기열은 도착으로 모름
+		Count
+	};
+	float GetToiletFrontWaitSeconds(EToiletFrontWait Kind) const { return ToiletFrontWaitSeconds[static_cast<int32>(Kind)]; }
+
 	UFUNCTION(BlueprintPure, Category = "Crowd|Queue")
 	int32 GetQueueFacilityUnresolvedCount() const { return QueueFacilityUnresolved; }
 
@@ -723,6 +736,12 @@ public:
 	// 개별 좌표가 배정된 줄·관람석의 최종 오차. 공용 입구/프로그램 접근점에는 적용하지 않는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "1.0", ClampMax = "10.0"))
 	float AssignedSlotArrivalRadiusUU = 5.f;
+
+	// 시설 줄 칸의 도착 통지 판정. 리더가 자기 칸에서 이 거리 안이면 통지하고, 일행은 기다리지 않는다.
+	// 걷는 목표 오차(위)는 그대로라 일행은 이용 중에 마저 들어선다. 일행 전원 5cm 를 기다리면
+	// 시설이 줄을 두고 노는 시간이 이용 시간보다 길었다. 칸 간격(90cm)의 절반보다 작게 둔다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "1.0", ClampMax = "45.0"))
+	float QueueArrivalNotifyRadiusUU = 40.f;
 
 	float GetAssignedSlotArrivalRadius() const
 	{
@@ -1733,6 +1752,9 @@ private:
 	int32 ToiletJoinRejectedClosed = 0;
 	int32 ToiletArrivals = 0;
 	int32 ToiletPatienceAbandons = 0;
+	float ToiletFrontWaitSeconds[static_cast<int32>(EToiletFrontWait::Count)] = {};
+	float ToiletFrontSampleAccumulator = 0.f;
+	void SampleToiletFrontWaits(float ElapsedSeconds);
 	// 메인 공연 휴지 구간으로 흐른 시뮬 시간 누적. 줄 인내 판정에서 뺀다.
 	float QueueBreakSimSeconds = 0.f;
 	int32 QueueStalledSkips = 0;
