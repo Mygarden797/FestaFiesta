@@ -24,6 +24,7 @@
 #include "InputMappingContext.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Input/CommonUIActionRouterBase.h"
 #include "UnrealClient.h"
 
 namespace
@@ -101,6 +102,10 @@ void AFF_FestivalPlayerController::FlushPressedKeys()
 	Super::FlushPressedKeys();
 	// 창 포커스를 잃거나 입력 모드를 바꿀 때 키만 비우면 이미 쌓인 카메라 입력이 남는다.
 	StopOverviewCameraMotion();
+	// 끌기도 놓는다. 뗌 이벤트가 안 올 수 있다.
+	bDragPanHeld = false;
+	bDragPanStartPending = false;
+	bDragPanActive = false;
 }
 
 void AFF_FestivalPlayerController::SetupInputComponent()
@@ -143,6 +148,12 @@ void AFF_FestivalPlayerController::SetupInputComponent()
 	if (ToggleViewAction)
 	{
 		EnhancedInput->BindAction(ToggleViewAction, ETriggerEvent::Started, this, &AFF_FestivalPlayerController::HandleToggleView);
+	}
+	if (DragPanAction)
+	{
+		EnhancedInput->BindAction(DragPanAction, ETriggerEvent::Started, this, &AFF_FestivalPlayerController::HandleDragPanStarted);
+		EnhancedInput->BindAction(DragPanAction, ETriggerEvent::Completed, this, &AFF_FestivalPlayerController::HandleDragPanEnded);
+		EnhancedInput->BindAction(DragPanAction, ETriggerEvent::Canceled, this, &AFF_FestivalPlayerController::HandleDragPanEnded);
 	}
 }
 
@@ -429,6 +440,9 @@ void AFF_FestivalPlayerController::PlayerTick(float DeltaTime)
 
 	// 끌기 이동은 막힘을 스스로 본다(위와 같은 IsCameraMovementAllowed). 멈춘 카메라를 다시 움직이지 않는다.
 	TickDragPan();
+
+	// 다른 화면이 입력 모드를 바꿔 놓고 간 경우를 되돌린다. 다음 프레임의 클릭부터 다시 게임에 온다.
+	RestoreOverviewInputModeIfLost();
 }
 
 bool AFF_FestivalPlayerController::SwitchToActorView(AActor* TargetActor, float BlendTime)
@@ -698,9 +712,13 @@ void AFF_FestivalPlayerController::TickDragPan()
 
 	   건축 중에는 끈다. 길을 끌어서 까는 조작 · 오른쪽 클릭 취소와 겹친다(사용자 지시).
 	   누를 때만 보지 않고 끄는 도중에도 본다. 건축이 열리거나 시점이 바뀌면 그 자리에서 놓는다.
+
+	   누름은 키를 직접 읽지 않고 IA(DragPanAction)로 받는다(2026-10-12 사용자 지시). 키는 IMC 에서 바꾼다.
+	   Started 가 같은 PlayerTick 의 입력 처리에서 먼저 오고, 이 함수가 그 뒤에 시작 여부를 본다.
 	*/
-	const bool bKeyDown = DragPanKey.IsValid() && IsInputKeyDown(DragPanKey);
-	if (!bKeyDown || !bShowMouseCursor || !IsCameraMovementAllowed() || IsBuildSessionActive())
+	const bool bStartRequested = bDragPanStartPending;
+	bDragPanStartPending = false;
+	if (!bDragPanHeld || !bShowMouseCursor || !IsCameraMovementAllowed() || IsBuildSessionActive())
 	{
 		bDragPanActive = false;
 		return;
@@ -719,7 +737,7 @@ void AFF_FestivalPlayerController::TickDragPan()
 	{
 		// 시작은 막 누른 프레임에만. 정보창 위에서 누른 것은 끌기가 아니다.
 		// 끄는 도중 커서가 정보창 위를 지나가는 것은 막지 않는다.
-		if (!WasInputKeyJustPressed(DragPanKey) || IsPointerOverFacilityUI(GetWorld()))
+		if (!bStartRequested || IsPointerOverFacilityUI(GetWorld()))
 		{
 			return;
 		}
@@ -736,6 +754,66 @@ void AFF_FestivalPlayerController::TickDragPan()
 	}
 	const FVector Focus = CameraPawn->GetCameraState().FocusLocation;
 	CameraPawn->FocusOnLocation(FVector(Focus.X + Offset.X, Focus.Y + Offset.Y, Focus.Z));
+}
+
+void AFF_FestivalPlayerController::HandleDragPanStarted(const FInputActionValue& Value)
+{
+	bDragPanHeld = true;
+	bDragPanStartPending = true;
+}
+
+void AFF_FestivalPlayerController::HandleDragPanEnded(const FInputActionValue& Value)
+{
+	bDragPanHeld = false;
+	bDragPanStartPending = false;
+	bDragPanActive = false;
+}
+
+void AFF_FestivalPlayerController::RestoreOverviewInputModeIfLost()
+{
+	/* 관찰 시점의 입력 모드를 되찾는다(2026-10-12 사용자 제보: 축제 맵에서 오른쪽 끌기가 되다가 안 됨).
+
+	   다른 화면이 입력 모드를 바꾸고 관찰 시점에 맞게 돌려놓지 않으면, 게임 화면을 눌러도 누름이 게임에 오지 않는다.
+	   PIE 에서 마우스 캡처 모드 로그(LogViewport)로 본 두 경우:
+	   - 건축을 닫으면 GameOnly 로 돌아가 캡처가 '계속 잡기'(CapturePermanently)가 된다. 이 모드는 첫 누름을 캡처에 쓰고
+	     게임에 넘기지 않는데, 커서가 보이면 놓을 때마다 캡처가 풀려 다음 누름도 또 캡처에 쓰인다. 끌기가 시작되지 않는다.
+	   - 일시정지 메뉴(CommonUI 메뉴)는 캡처를 '안 잡기'(NoCapture)로 두고, 닫힌 뒤에도 그대로다. 누름이 게임에 안 온다.
+	   두 화면 쪽은 건드리지 않고(팀원 코드), 관찰 시점이 다시 조작 가능해지면 이쪽 모드(GameAndUI · 누를 때만 잡기)를
+	   다시 건다. 게임 화면에 포커스도 돌아온다.
+
+	   건축 · 모달 · 연출 · 조명 입력 중이거나 CommonUI 화면이 입력 설정을 쥐고 있으면 건드리지 않는다. 그 화면의 몫이다.
+	*/
+	if (ViewMode != EFF_CameraViewMode::Overview || bScriptedViewActive || bModalUiActive || IsBuildSessionActive()
+		|| IsFacilityLightingInputCaptured(GetWorld()))
+	{
+		return;
+	}
+	const UWorld* World = GetWorld();
+	const UGameViewportClient* ViewportClient = World ? World->GetGameViewport() : nullptr;
+	if (!ViewportClient || ViewportClient->GetMouseCaptureMode() == EMouseCaptureMode::CaptureDuringMouseDown)
+	{
+		LastInputModeRestoreSkip.Reset();
+		return;
+	}
+
+	// CommonUI 화면이 입력 설정을 쥐고 있으면(메뉴가 떠 있음) 그 화면이 정한 모드다. 비어 있을 때만 되찾는다.
+	const ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	const UCommonUIActionRouterBase* Router = LocalPlayer ? LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>() : nullptr;
+	if (Router && Router->GetActiveInputMode(ECommonInputMode::MAX) != ECommonInputMode::MAX)
+	{
+		const FString Skip = FString::Printf(TEXT("CommonUI 입력 모드 %d"), static_cast<int32>(Router->GetActiveInputMode()));
+		if (LastInputModeRestoreSkip != Skip)
+		{
+			LastInputModeRestoreSkip = Skip;
+			UE_LOG(LogFestaFiestaCamera, Log, TEXT("[카메라] 마우스 캡처가 관찰 시점 모드가 아니지만 %s 이라 그대로 둔다."), *Skip);
+		}
+		return;
+	}
+
+	UE_LOG(LogFestaFiestaCamera, Log, TEXT("[카메라] 마우스 캡처 모드(%d)를 관찰 시점 모드로 되돌린다."),
+		static_cast<int32>(ViewportClient->GetMouseCaptureMode()));
+	LastInputModeRestoreSkip.Reset();
+	ApplyViewInputMode(ViewMode);
 }
 
 void AFF_FestivalPlayerController::HandleRotate(const FInputActionValue& Value)
