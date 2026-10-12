@@ -23,7 +23,7 @@ namespace FFF_FinalePurchaseTestHelpers
 	// UFF_FestivalDefinition 생성자의 FinaleTiers. 여기 값이 바뀌면 아래 기대값도 같이 바꿔야 한다.
 	constexpr int32 CostC = 1000;
 	constexpr int32 CostA = 2600;
-	constexpr int32 BonusA = 10;
+	constexpr int32 BonusA = 5;
 	constexpr int32 CostS = 3500;
 
 	// Unity Build 동명 헬퍼 충돌을 피하려고 파일 전용 이름을 쓴다.

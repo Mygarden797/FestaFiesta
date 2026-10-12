@@ -2379,7 +2379,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | `GetDailyVisitorGoal()` (ViewModel·Progression) | **오늘 목표**. Day N = 900 + 100 × (N−1) → 900 / 1000 / 1100 (`DailyVisitorGoalGrowthPerDay`, `GetDailyVisitorGoalForDay`) | 날이 바뀌면 다시 읽기. 고정값으로 캐시하지 않기 |
 | 재무 점수 (`FFF_FestivalEvaluation::FinanceScore`) | 100 × (최종 Gold − 시작 Gold) / `FinanceTargetProfitGold`(15,000, 잠정), 0~100. 본전·손해면 0 | 평가 화면 설명 문구가 "원금 대비"라면 "목표 이익 대비"로 |
 | 방문객 점수 | 분모가 날짜별 목표의 합(`VisitorGoalTotal`) | — |
-| 피날레 만족도 보너스 C/B/A/S | +3 / +6 / +10 / +15. **가격은 2차 조정에서 1,000 / 1,800 / 2,600 / 3,500** | 숫자를 복제하지 말고 `GetFinaleTiers()` 로 읽기 |
+| 피날레 만족도 보너스 C/B/A/S | **10/12부터 +2 / +3 / +5 / +8** (그전 +3 / +6 / +10 / +15). **가격은 2차 조정에서 1,000 / 1,800 / 2,600 / 3,500** | 숫자를 복제하지 말고 `GetFinaleTiers()` 로 읽기 |
 | 부스 수익 | `BoothCommissionRate` 0.12 → **1.0**. 부스 매출 전액이 축제 몫이고, `DT_FacilityRevenues` 모든 행이 행별 덮어쓰기 꺼짐 | 화면 문구 **"수수료" → "부스 매출"**. 남은 곳: `GetEarnReasonText(FacilityCommission)`("부스 수수료"), 준비 화면 예상 안내("부스 수수료와 미니게임 보상은…"), 시설 정보 예상 수익 툴팁("현재 수수료율…"), 매출 탭 빈 상태("…수수료가 들어옵니다"), 조합 보너스 표기("수수료 +N%") |
 | 기본 스태프 | `InitialStaffCount` 6 → **1** (메인안내소 필수 배정만, 사건 대응은 고용 450) | `최대 N명` 은 `기본 1 + 고용 상한` |
 | 입장료 기준값 | 5 → **3** (범위 0~15 그대로) | `GetAdmissionFeeRange` 로 읽기 |
@@ -2417,6 +2417,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 - **헤더**: `Public/UI/ViewModel/FF_SatisfactionBreakdown.h`(규칙), `Public/UI/LiveHUD/Panels/FF_SatisfactionBreakdownWidget.h`(위젯)
 - **상태**: `구현완료` — 만족도를 "100 에서 항목별로 깎인 점수"(욕구 충족 · 대기 · 밀도 · 취향 매칭 · 사건 영향)로 나눈다. 항목 점수를 더하면 정확히 100 − 만족도. 줄마다 근거(시설 수 c/목표 · 못 찾은 손님 % · 평균 대기 초 · 붐비는 곳 % · 취향 %)와 가장 많이 깎은 항목을 줄이는 방법 한 줄
 - **화면**: `UFF_LivePanelReport` 의 `BindWidgetOptional` **`Widget_SatisfactionBreakdown`**. WBP 에 없으면 만족도 카드(`Report_SatisfactionBody`) 안 `Report_ScoreRow` 바로 위에 C++ 가 끼운다(결산 WBP 는 안 바꿈). 문구는 위젯 Class Defaults `TitleText` · `SummaryFormat`
+- **하루 평균(10/12)**: 결산의 관객 만족도 · 하위 점수 · 분해 · 근거, 그리고 하루 기록(`GetDailySatisfactionHistory`, 평가 점수)은 그날 **Live 동안 확정된 집계 창의 평균**이다(`UFF_SatisfactionMetricsSubsystem::GetDayAverage`). 라이브 HUD 의 만족도는 지금 값 그대로다
 - **비서와 같은 말**: 결산 한마디 · 아침 비서의 불만 1위는 원점수가 아니라 이 감점이 가장 큰 항목(기준 70 미만)
 - 캡처: `-RenderOffscreen -SatisfactionBreakdownCapture` 로 `FestaFiesta.UI.SatisfactionBreakdown.ReportPanelHostsWidget` → `Saved/Automation/SatisfactionBreakdown/ReportPanel.png`
 
@@ -2425,7 +2426,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | 항목 | 지금 |
 |---|---|
 | 피날레 가격 C/B/A/S | 1,000 / 1,800 / 2,600 / 3,500 |
-| 재무 목표 `FinanceTargetProfitGold` | **17,000** (10/11 새 맵 기준, 재무 점수 = 100 × 이익 / 17,000. 10/9 에는 13,000) |
+| 재무 목표 `FinanceTargetProfitGold` | **18,000** (10/12, 재무 점수 = 100 × 이익 / 18,000. 10/11 17,000, 10/9 13,000) |
 | 부스 1회 매출 | 전 행 ×1.5 (`DT_FacilityRevenues`) |
 | 만족도 Need 충족 | 욕구별 운영 중 시설 수 / 목표(10/11부터 음식 **7** · 화장실 2 · 즐길 거리 **10**, 메인 무대 제외. 운영 알림의 시설 부족은 커버리지 0.5 미만일 때만), 하한 0.3 을 곱함. `UFF_CrowdSimulationSubsystem::GetNeedCoverage(EFF_NeedType)` 로 읽을 수 있음 |
 | SNS | 화제 27(어제 글 보고 왔다, 2일차 오전, 어제 매출 1위 시설 이름) 추가. 한산(11)은 붐비는 칸이 없을 때만, 붐빔(4)은 붐비는 칸이 있을 때만 나오고 일부 문장에 시설 이름이 들어감 |
@@ -2439,6 +2440,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 | 날짜         | 작성자 | 내용                                                                                             |
 | ---------- | --- | ---------------------------------------------------------------------------------------------- |
+| 2026-10-12 | 김시리 | 하루 만족도 = 그날 Live 평균(결산 · 분해 · 하루 기록), 피날레 보너스 +2/+3/+5/+8, 재무 목표 18,000 |
 | 2026-10-11 | 김시리 | 🆕 결산 만족도 분해(`SatisfactionBreakdown`, 만족도 카드 안 「점수가 깎인 이유」), 불만 1위를 감점 크기로 |
 | 2026-10-11 | 김시리 | 재무 목표 17,000, 시설 커버리지 목표 음식 7 · 즐길 거리 10, 운영 알림 시설 부족 기준 커버리지 0.5 미만 |
 | 2026-10-11 | 김시리 | 결산 한마디 ↔ 아침 비서 브리핑 판정 통일(`FindComplaint`, `FFF_DailyReportView::Complaint`, `GetPreviousDailyReport()`). 마지막 날 축제 전체 매출 1위를 시설 하나 단위로 변경 |

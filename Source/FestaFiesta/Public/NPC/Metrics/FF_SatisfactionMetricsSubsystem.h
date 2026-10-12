@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "NPC/Party/FF_NeedState.h"
 #include "FF_SatisfactionMetricsSubsystem.generated.h"
 
 class UDataTable;
@@ -220,6 +221,34 @@ private:
 };
 
 /**
+ * 하루 Live 동안 확정된 집계 창을 모두 평균한 만족도. 하루 기록 · 결산 화면 · 만족도 분해가 쓴다.
+ * 마지막 창 하나만 쓰면 Live 끝에 쌓인 욕구가 그대로 잡혀 하루를 대표하지 못했다(관람객의 90%가 화장실이 급한 순간).
+ */
+struct FFF_DaySatisfactionAverage
+{
+	int32 Day = INDEX_NONE;
+	int32 WindowCount = 0;
+
+	int32 Satisfaction = INDEX_NONE;
+	int32 BaseSatisfaction = INDEX_NONE;
+	int32 WaitScore = INDEX_NONE;
+	int32 DensityScore = INDEX_NONE;
+	int32 PreferenceScore = INDEX_NONE;
+	int32 NeedScore = INDEX_NONE;
+
+	// 근거. 모르면 음수
+	float AverageWaitSeconds = -1.f;
+	float QueueSuccessRate = -1.f;
+	float CrowdedShare = -1.f;
+	float PreferenceMatchShare = -1.f;
+	int32 PreferenceSampleCount = 0;
+	// 욕구별 못 채운 손님 비율(0~100). 모르면 음수
+	float NeedUnmetPercent[static_cast<int32>(EFF_NeedType::Count)] = { -1.f, -1.f, -1.f, -1.f, -1.f };
+
+	bool IsValid() const { return WindowCount > 0; }
+};
+
+/**
  * 만족도(SimSatisfaction) 집계 지표
  * UI(Overview HUD)용 읽기 창구. 위 계산기를 감싸 델리게이트만 붙인다.
  *
@@ -300,6 +329,9 @@ public:
 	/** 마지막 확정에 쓴 계수(가중치 · 대기 기준 · 커버리지 목표). 확정 전이면 기본값 */
 	const FFF_SatisfactionCoefficients& GetLastCoefficients() const { return LastCoefficients; }
 
+	/** 지금 모으고 있는(또는 마지막으로 모은) 날의 Live 평균. 다음 날 Live 가 시작되면 새로 모은다 */
+	FFF_DaySatisfactionAverage GetDayAverage() const;
+
 	// 누적을 확정하고, 값이 실제로 바뀌었을 때만 델리게이트를 쏜다. Coefficients는
 	// 호출부가 이미 밀도 표본을 매기려고 로드해 둔 것을 그대로 넘긴다 — 여기서 또
 	// DataTable을 읽지 않는다
@@ -312,6 +344,23 @@ private:
 	UFUNCTION()
 	void HandleFestivalStarted() { ResetForNewFestival(); }
 
+	void AccumulateDayAverage();
+
 	FFF_SatisfactionAggregator Aggregator;
 	FFF_SatisfactionCoefficients LastCoefficients;
+
+	// 하루 평균 누적. 정수 점수는 창마다 더하고, 근거는 아는 창만 따로 센다
+	struct FDayAccumulator
+	{
+		int32 Day = INDEX_NONE;
+		int32 Windows = 0;
+		double Satisfaction = 0.0, Base = 0.0, Wait = 0.0, Density = 0.0, Preference = 0.0, Need = 0.0;
+		double WaitSeconds = 0.0; int32 WaitSecondsCount = 0;
+		double QueueSuccess = 0.0; int32 QueueSuccessCount = 0;
+		double Crowded = 0.0; int32 CrowdedCount = 0;
+		double PreferenceMatched = 0.0; int32 PreferenceSamples = 0;
+		double Unmet[static_cast<int32>(EFF_NeedType::Count)] = {};
+		int32 UnmetCount = 0;
+	};
+	FDayAccumulator DayAccumulator;
 };
