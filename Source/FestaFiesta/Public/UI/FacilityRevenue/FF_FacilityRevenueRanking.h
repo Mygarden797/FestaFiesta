@@ -143,6 +143,8 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 	FVector2D AuthoredFrameSize = FVector2D(1060.f, 690.f);
 	bool bCapturedFrameSize = false;
 	bool bCumulative = false;
+	bool bForegroundSuppressed = false;
+	ESlateVisibility IntroductionVisibilityBeforeSuppression = ESlateVisibility::Collapsed;
 };
 UCLASS()
 class FESTAFIESTA_API UFF_FacilityRevenueRankingSubsystem : public UWorldSubsystem

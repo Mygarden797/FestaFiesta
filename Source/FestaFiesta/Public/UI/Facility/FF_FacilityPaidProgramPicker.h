@@ -88,6 +88,7 @@ private:
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> Size_ProgramList;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> Border_Preview;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_Instruction;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_Eyebrow;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UWidget> Border_Body;

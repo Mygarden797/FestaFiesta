@@ -99,6 +99,8 @@ TSharedRef<SWidget> UFF_BuildCatalogWebView::RebuildWidget()
 	SnapshotPushCount = 0;
 	LastWebItemCount = 0;
 	LastSnapshotMetadata.Reset();
+	SentThumbnailKeys.Reset();
+	bDocumentSupportsThumbnailCache = DocumentHTML.Contains(TEXT("FF_BUILDING_THUMBNAIL_CACHE_V1"));
 	LastWebError.Reset();
 	LastWebDiagnostics.Reset();
 	UWorld* World = GetWorld();
@@ -158,6 +160,7 @@ void UFF_BuildCatalogWebView::SynchronizeProperties()
 	Super::SynchronizeProperties();
 	// Authoring can update embedded images without changing any gameplay metadata.
 	LastSnapshotMetadata.Reset();
+	SentThumbnailKeys.Reset();
 	if (Browser && LoadedDocument != DocumentHTML)
 	{
 		LoadedDocument = DocumentHTML;
@@ -183,6 +186,8 @@ void UFF_BuildCatalogWebView::OnDocumentStarted()
 	bDocumentLoaded = false;
 	bDocumentFailed = false;
 	LastSnapshotMetadata.Reset();
+	SentThumbnailKeys.Reset();
+	bDocumentSupportsThumbnailCache = DocumentHTML.Contains(TEXT("FF_BUILDING_THUMBNAIL_CACHE_V1"));
 	DocumentStartTime = 0.0;
 	BindBridge();
 	ApplyFallbackVisibility();
@@ -243,8 +248,10 @@ void UFF_BuildCatalogWebView::ApplyFallbackVisibility()
 	{
 		// Keep its geometry and off-screen Chromium renderer alive during the handshake.
 		// Hidden would prevent the first paint/tick from establishing the logical size.
-		Browser->SetVisibility(bShowWeb ? EVisibility::Visible : EVisibility::HitTestInvisible);
-		Browser->SetRenderOpacity(bShowWeb ? 1.f : 0.f);
+		const EVisibility DesiredVisibility = bShowWeb ? EVisibility::Visible : EVisibility::HitTestInvisible;
+		if (Browser->GetVisibility() != DesiredVisibility) Browser->SetVisibility(DesiredVisibility);
+		const float DesiredOpacity = bShowWeb ? 1.f : 0.f;
+		if (Browser->GetRenderOpacity() != DesiredOpacity) Browser->SetRenderOpacity(DesiredOpacity);
 	}
 	else if (const TSharedPtr<SWidget> Placeholder = GetCachedWidget())
 	{
@@ -259,9 +266,14 @@ void UFF_BuildCatalogWebView::ApplyFallbackVisibility()
 	if (!Native || Native == this) return;
 	// Native panel reconciliation can restore visibility later in the same frame.
 	// Opacity prevents those hidden fallback cards from painting through web gaps.
-	Native->SetRenderOpacity(bShowWeb ? 0.f : 1.f);
-	if (bShowWeb) Native->SetVisibility(ESlateVisibility::Hidden);
-	else if (bUseNativeFallbackOnError || bGamepad) Native->SetVisibility(ESlateVisibility::Visible);
+	const float NativeOpacity = bShowWeb ? 0.f : 1.f;
+	if (Native->GetRenderOpacity() != NativeOpacity) Native->SetRenderOpacity(NativeOpacity);
+	// The web overlay fills its own host. Hidden native rows still participate in layout;
+	// collapse them after the handshake, and restore them for errors/controller navigation.
+	if (bShowWeb && Native->GetVisibility() != ESlateVisibility::Collapsed)
+		Native->SetVisibility(ESlateVisibility::Collapsed);
+	else if (!bShowWeb && (bUseNativeFallbackOnError || bGamepad) && Native->GetVisibility() != ESlateVisibility::Visible)
+		Native->SetVisibility(ESlateVisibility::Visible);
 	const UWidget* CatalogPanel = Panel->GetWidgetFromName(TEXT("Panel_Catalog"));
 	if (bTransferToNative && Panel->IsVisible() && (!CatalogPanel || CatalogPanel->IsVisible()))
 		Native->SetUserFocus(Panel->GetOwningPlayer());
@@ -361,7 +373,7 @@ void UFF_BuildCatalogWebView::PushSnapshot()
 		const FString* Image = ThumbnailDataUris.Find(Id);
 		if (!Image) Image = ThumbnailDataUris.Find(ThumbnailPath);
 		// Compare only small metadata first. Unchanged frames never copy/serialize image bytes.
-		Entry->SetStringField(TEXT("thumbnailKey"), ThumbnailPath);
+		Entry->SetStringField(TEXT("thumbnailKey"), Id + TEXT("|") + ThumbnailPath);
 		Entry->SetNumberField(TEXT("thumbnailCharacters"), Image ? Image->Len() : 0);
 		Images.Add(Image);
 		Items.Add(MakeShared<FJsonValueObject>(Entry));
@@ -375,17 +387,25 @@ void UFF_BuildCatalogWebView::PushSnapshot()
 	FString Metadata;
 	const auto MetadataWriter = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Metadata);
 	if (!FJsonSerializer::Serialize(Snapshot, MetadataWriter) || Metadata == LastSnapshotMetadata) return;
+	TArray<FString> NewlySentThumbnailKeys;
 	for (int32 Index = 0; Index < Items.Num(); ++Index)
 	{
 		const TSharedPtr<FJsonObject>& Entry = Items[Index]->AsObject();
-		Entry->RemoveField(TEXT("thumbnailKey"));
 		Entry->RemoveField(TEXT("thumbnailCharacters"));
+		const FString ThumbnailKey = Entry->GetStringField(TEXT("thumbnailKey"));
 		const FString* Image = Images[Index];
-		Entry->SetStringField(TEXT("thumbnail"), Image && FFBuildCatalogWeb::IsEmbeddedImage(*Image) ? *Image : FString());
+		// Old saved documents remain compatible until their HTML is synchronized. Updated
+		// documents need image bytes only once, even when gold/selection changes frequently.
+		if (!bDocumentSupportsThumbnailCache || !SentThumbnailKeys.Contains(ThumbnailKey))
+		{
+			Entry->SetStringField(TEXT("thumbnail"), Image && FFBuildCatalogWeb::IsEmbeddedImage(*Image) ? *Image : FString());
+			NewlySentThumbnailKeys.Add(ThumbnailKey);
+		}
 	}
 	FString Json;
 	const auto Writer = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Json);
 	if (!FJsonSerializer::Serialize(Snapshot, Writer)) return;
+	for (const FString& Key : NewlySentThumbnailKeys) SentThumbnailKeys.Add(Key);
 	LastSnapshotMetadata = MoveTemp(Metadata);
 	// JSON serialization escapes arbitrary facility text. No text is interpolated into JS strings.
 	Json.ReplaceInline(TEXT("\u2028"), TEXT("\\u2028"));
@@ -596,6 +616,7 @@ void UFF_BuildCatalogWebView::ReleaseSlateResources(bool bReleaseChildren)
 	Bridge = nullptr;
 	bWebReady = false;
 	bDocumentLoaded = false;
+	SentThumbnailKeys.Reset();
 	ApplyFallbackVisibility();
 	Browser.Reset();
 	Super::ReleaseSlateResources(bReleaseChildren);

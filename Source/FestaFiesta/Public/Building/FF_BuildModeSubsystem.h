@@ -372,6 +372,9 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 	friend class FFF_BuildSynergyCatalogContextTest;
 	friend class FFF_BuildMultiSelectionSessionTest;
 	friend class FFFBuildFeatureGuideInputTest;
+	friend class FFFBuildToolsCatalogHelpTest;
+	friend class FFFBuildToolsForegroundViewportTest;
+	friend class FFF_UIUtilityFlyoutForegroundTest;
 	friend class FFF_BuildGroupEditingTest;
 	friend class FFF_BuildQueueLayoutDraftTest;
 #endif
@@ -583,6 +586,7 @@ public:
 	void ToggleBuildSettings();
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	bool IsBuildSettingsOpen() const;
+	bool IsBuildAuxiliaryPanelOpen() const;
 
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	bool IsPlacementGridVisible() const { return bPlacementGridVisible; }

@@ -16,6 +16,8 @@
 #include "Building/Presentation/FF_BuildFeedback.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Components/Border.h"
@@ -37,6 +39,8 @@
 #include "UI/Settings/FF_KeyBindingRuntimeSubsystem.h"
 #include "TimerManager.h"
 #include "UI/Settings/FF_RuntimeSettingsSubsystem.h"
+#include "UI/Core/FF_UIForegroundRules.h"
+#include "UI/Facility/FF_FacilityInfoSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FFBuildTools"
 
@@ -226,6 +230,8 @@ void UFF_BuildToolsWidget::NativeConstruct()
     if (!Size_BuildWorldHelp)
         Size_BuildWorldHelp = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_BuildWorldHelp")));
     if (Size_BuildWorldHelp) Size_BuildWorldHelp->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    bHelpExpanded = Border_PlacementHelp && Border_PlacementHelp->IsVisible();
+    bHelpForegroundSuppressed = false;
     if (Size_BuildWorldHelp)
         if (auto* HelpCanvasSlot = Cast<UCanvasPanelSlot>(Size_BuildWorldHelp->Slot))
             AuthoredHelpPosition = HelpCanvasSlot->GetPosition();
@@ -325,6 +331,7 @@ void UFF_BuildToolsWidget::NativeConstruct()
         Editable_Angle->SetClearKeyboardFocusOnCommit(false);
         Editable_Angle->OnTextCommitted.AddUniqueDynamic(this, &ThisClass::HandleAngleCommitted);
     }
+    InstallToolbarForegroundLayer();
     RefreshTools();
 }
 
@@ -368,13 +375,16 @@ bool UFF_BuildToolsWidget::IsPointerOverTools() const
         return false;
     }
     // Reading first-use help must never place/move a facility behind the guide.
-    if (IsFeatureGuideOpen()) return true;
+    if (!bBodyForegroundSuppressed && IsFeatureGuideOpen()) return true;
     // Raw BuildMode input runs before Slate's button mouse-up. Geometry also covers that
     // first mouse-down, so clicking a tool never places a building underneath the toolbar.
     for (const UBorder* Panel : { Border_Tools.Get(), Border_PlacementInfo.Get(),
         Border_BuildTopBar.Get(), Border_BuildBack.Get(), Border_BuildToolbarGold.Get(), Panel_BuildSettings.Get(),
         Border_PlacementHelp.Get() })
     {
+        if (bBodyForegroundSuppressed && Panel != Border_BuildTopBar &&
+            Panel != Border_BuildBack && Panel != Border_BuildToolbarGold) continue;
+        if (Panel == Border_PlacementHelp && bHelpForegroundSuppressed) continue;
         if (Panel && Panel->IsVisible() && (Panel->IsHovered() || (FSlateApplication::IsInitialized() &&
             Panel->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos())))) return true;
     }
@@ -570,19 +580,102 @@ void UFF_BuildToolsWidget::ToggleHelp()
     const bool bSession = System && FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState());
     if (!bSession && !ViewData.bPreviewActive) return;
     if (bSession) System->NotifyBuildToolsInteraction();
-    SetHelpExpanded(Border_PlacementHelp && Border_PlacementHelp->GetVisibility() == ESlateVisibility::Collapsed);
+    SetHelpExpanded(!bHelpExpanded);
     SetChoiceState(Button_ToolbarHelp, Cast<UTextBlock>(Button_ToolbarHelp ? Button_ToolbarHelp->GetContent() : nullptr),
-        Border_PlacementHelp && Border_PlacementHelp->IsVisible());
+        bHelpExpanded);
     if (bSession) System->RefreshBuildToolsOcclusion();
 }
 
 void UFF_BuildToolsWidget::SetHelpExpanded(const bool bExpanded)
 {
+    bHelpExpanded = bExpanded;
     if (Border_PlacementHelp)
         Border_PlacementHelp->SetVisibility(bExpanded ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
     if (Button_Help)
         if (auto* Label = Cast<UTextBlock>(Button_Help->GetContent()))
             Label->SetText(bExpanded ? LOCTEXT("ClosePlacementHelp", "안내 닫기") : LOCTEXT("OpenPlacementHelp", "조작 안내"));
+    RefreshHelpPresentation();
+}
+
+void UFF_BuildToolsWidget::InstallToolbarForegroundLayer()
+{
+    if (IsDesignTime()) return;
+    UCanvasPanel* Root = WidgetTree ? Cast<UCanvasPanel>(WidgetTree->RootWidget) : nullptr;
+    if (!Root || ForegroundBodyCanvas) return;
+    TSet<UWidget*> TopSurfaces;
+    for (UWidget* Surface : {static_cast<UWidget*>(Border_BuildTopBar.Get()),
+        static_cast<UWidget*>(Border_BuildBack.Get()), static_cast<UWidget*>(Label_BuildMode.Get()),
+        static_cast<UWidget*>(Border_BuildToolbarGold.Get())})
+    {
+        while (Surface && Surface->GetParent() && Surface->GetParent() != Root)
+            Surface = Surface->GetParent();
+        if (Surface && Surface->GetParent() == Root)
+        {
+            TopSurfaces.Add(Surface);
+            if (auto* TopCanvasSlot = Cast<UCanvasPanelSlot>(Surface->Slot))
+                TopCanvasSlot->SetZOrder(FFBuildToolsModel::ForegroundViewportZOrder);
+        }
+    }
+    if (TopSurfaces.IsEmpty()) return;
+    const TArray<UWidget*> Children = Root->GetAllChildren();
+    ForegroundBodyCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(
+        UCanvasPanel::StaticClass(), TEXT("Canvas_ForegroundBuildBody"));
+    ForegroundBodyCanvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    auto* BodySlot = Root->AddChildToCanvas(ForegroundBodyCanvas);
+    BodySlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+    BodySlot->SetOffsets(FMargin(0.f));
+    BodySlot->SetZOrder(0);
+    // Keep every authored widget in the same tree, with the same anchors and bounds.
+    // One parent can now hide the body without losing open/closed panel intent.
+    for (UWidget* Child : Children)
+    {
+        auto* PreviousSlot = Cast<UCanvasPanelSlot>(Child->Slot);
+        if (TopSurfaces.Contains(Child) || !PreviousSlot) continue;
+        const FAnchorData Layout = PreviousSlot->GetLayout();
+        const bool bAutoSize = PreviousSlot->GetAutoSize();
+        const int32 ZOrder = PreviousSlot->GetZOrder();
+        Child->RemoveFromParent();
+        auto* BodyChildSlot = ForegroundBodyCanvas->AddChildToCanvas(Child);
+        BodyChildSlot->SetLayout(Layout);
+        BodyChildSlot->SetAutoSize(bAutoSize);
+        BodyChildSlot->SetZOrder(ZOrder);
+    }
+}
+
+void UFF_BuildToolsWidget::RefreshBodyPresentation()
+{
+    bBodyForegroundSuppressed = FFUIForegroundRules::HasForegroundWindow(this, false);
+    if (ForegroundBodyCanvas)
+    {
+        const ESlateVisibility BodyVisibility = bBodyForegroundSuppressed
+            ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible;
+        if (ForegroundBodyCanvas->GetVisibility() != BodyVisibility)
+            ForegroundBodyCanvas->SetVisibility(BodyVisibility);
+    }
+}
+
+void UFF_BuildToolsWidget::RefreshHelpPresentation()
+{
+    if (IsDesignTime()) return;
+    RefreshBodyPresentation();
+    const UFF_FacilityInfoSubsystem* Info = GetWorld() ? GetWorld()->GetSubsystem<UFF_FacilityInfoSubsystem>() : nullptr;
+    // The catalog and its toolbar guide share the build session. Only a covering
+    // window suppresses the guide; opening the catalog must still allow Help.
+    bHelpForegroundSuppressed = IsAuxiliaryPanelOpen() || bBodyForegroundSuppressed ||
+        (Info && (Info->HasSelection() || Info->IsRevenueRankingPresentationOpen()));
+    // Hide the complete surface while preserving the user's expanded/dismissed state.
+    // Closing the covering window therefore restores only a previously open guide.
+    if (Size_BuildWorldHelp)
+    {
+        const ESlateVisibility HelpVisibility = bHelpForegroundSuppressed ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible;
+        if (Size_BuildWorldHelp->GetVisibility() != HelpVisibility) Size_BuildWorldHelp->SetVisibility(HelpVisibility);
+    }
+    else if (Border_PlacementHelp)
+    {
+        const ESlateVisibility HelpVisibility = bHelpExpanded && !bHelpForegroundSuppressed
+            ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed;
+        if (Border_PlacementHelp->GetVisibility() != HelpVisibility) Border_PlacementHelp->SetVisibility(HelpVisibility);
+    }
 }
 
 void UFF_BuildToolsWidget::ToggleDirectAdjustment()
@@ -612,7 +705,8 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
     Super::NativeTick(Geometry, DeltaTime);
     if (IsDesignTime()) return;
     RefreshEditingHelp();
-    if (Size_BuildWorldHelp && Border_PlacementHelp && Border_PlacementHelp->IsVisible())
+    RefreshHelpPresentation();
+    if (!bHelpForegroundSuppressed && Size_BuildWorldHelp && Border_PlacementHelp && Border_PlacementHelp->IsVisible())
     {
         // Use the painted catalog edge in the same logical coordinate system.
         // The old fixed 170px reservation was shorter than the 326px catalog itself.
@@ -821,7 +915,7 @@ void UFF_BuildToolsWidget::ToggleBuildSettings()
     }
     if (!bClosing)
     {
-        bRestoreHelpAfterSettings = Border_PlacementHelp && Border_PlacementHelp->IsVisible();
+        bRestoreHelpAfterSettings = bHelpExpanded;
         SetHelpExpanded(false);
     }
     Panel_BuildSettings->SetVisibility(bClosing ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
@@ -927,12 +1021,13 @@ void UFF_BuildToolsWidget::HandleEdgeScroll()
 
 bool UFF_BuildToolsWidget::IsEditingAngle() const
 {
-    return Editable_Angle && Editable_Angle->GetIsEnabled() &&
+    return !bBodyForegroundSuppressed && Editable_Angle && Editable_Angle->GetIsEnabled() &&
         (Editable_Angle->HasKeyboardFocus() || Editable_Angle->HasFocusedDescendants());
 }
 
 FReply UFF_BuildToolsWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
 {
+    if (bBodyForegroundSuppressed) return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
     const UFF_FestivalSettingsDeveloperSettings* PauseSettings = UFF_FestivalSettingsDeveloperSettings::Get();
     const UFF_BuildModeSubsystem* BuildSystem = BuildMode.Get();
     ULocalPlayer* OwningLocalPlayer = GetOwningLocalPlayer();
@@ -995,17 +1090,17 @@ FReply UFF_BuildToolsWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, c
 
 FReply UFF_BuildToolsWidget::NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& MouseEvent)
 {
-    return IsFeatureGuideOpen() ? FReply::Handled() : Super::NativeOnMouseButtonDown(Geometry, MouseEvent);
+    return !bBodyForegroundSuppressed && IsFeatureGuideOpen() ? FReply::Handled() : Super::NativeOnMouseButtonDown(Geometry, MouseEvent);
 }
 
 FReply UFF_BuildToolsWidget::NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& MouseEvent)
 {
-    return IsFeatureGuideOpen() ? FReply::Handled() : Super::NativeOnMouseButtonUp(Geometry, MouseEvent);
+    return !bBodyForegroundSuppressed && IsFeatureGuideOpen() ? FReply::Handled() : Super::NativeOnMouseButtonUp(Geometry, MouseEvent);
 }
 
 FReply UFF_BuildToolsWidget::NativeOnMouseWheel(const FGeometry& Geometry, const FPointerEvent& MouseEvent)
 {
-    return IsFeatureGuideOpen() ? FReply::Handled() : Super::NativeOnMouseWheel(Geometry, MouseEvent);
+    return !bBodyForegroundSuppressed && IsFeatureGuideOpen() ? FReply::Handled() : Super::NativeOnMouseWheel(Geometry, MouseEvent);
 }
 
 void UFF_BuildToolsWidget::SetChoiceState(UButton* Button, UTextBlock* Label, const bool bSelected)
@@ -1435,7 +1530,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     SetChoiceState(Button_ToolbarCatalog, Cast<UTextBlock>(Button_ToolbarCatalog ? Button_ToolbarCatalog->GetContent() : nullptr),
         State == EFF_BuildModeState::CatalogOpen);
     SetChoiceState(Button_ToolbarHelp, Cast<UTextBlock>(Button_ToolbarHelp ? Button_ToolbarHelp->GetContent() : nullptr),
-        Border_PlacementHelp && Border_PlacementHelp->IsVisible());
+        bHelpExpanded);
     SetChoiceState(Button_Confirm, Text_Confirm, bCanConfirm);
     SetChoiceState(Button_SnapMeter, Text_SnapMeter, PreferredSnap == 100);
     SetChoiceState(Button_SnapPrecision, Text_SnapPrecision, PreferredSnap == 25);
@@ -1444,6 +1539,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     SetChoiceState(Button_SettingsSnapPrecision, Text_SettingsSnapPrecision, PreferredSnap == 25);
     SetChoiceState(Button_SettingsSnapFree, Text_SettingsSnapFree, PreferredSnap == 1);
     RefreshFeatureHints();
+    RefreshHelpPresentation();
     if (!IsEditingAngle())
     {
         RefreshAngleText();

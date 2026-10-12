@@ -142,6 +142,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Flow")
 	UFF_UIRootLayout* GetRootLayout() const;
+	/** Current HUD owner, for lightweight window visibility queries. */
+	UUserWidget* GetStageHudWidget() const;
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Flow")
 	EFF_UIFlowMode GetMode() const { return Mode; }

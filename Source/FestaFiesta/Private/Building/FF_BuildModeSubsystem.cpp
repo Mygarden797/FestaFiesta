@@ -46,6 +46,7 @@
 #include "Widgets/SViewport.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "UI/Core/FF_UIForegroundRules.h"
 #include "Building/UI/FF_BuildCatalogScreen.h"
 #include "TimerManager.h"
 #include "UI/Settings/FF_FestivalSettingsSubsystem.h"
@@ -1369,6 +1370,11 @@ bool UFF_BuildModeSubsystem::IsBuildSettingsOpen() const
 	return BuildToolsWidget && BuildToolsWidget->IsBuildSettingsOpen();
 }
 
+bool UFF_BuildModeSubsystem::IsBuildAuxiliaryPanelOpen() const
+{
+	return BuildToolsWidget && BuildToolsWidget->IsAuxiliaryPanelOpen();
+}
+
 
 bool UFF_BuildModeSubsystem::HandleMultiSelectionInput(APlayerController& Controller,
 	const bool bBlockWorldClick, const bool bPointerOverTools,
@@ -1967,9 +1973,9 @@ void UFF_BuildModeSubsystem::CreateBuildTools(APlayerController& Controller)
 	BuildToolsWidget = CreateWidget<UFF_BuildToolsWidget>(&Controller, WidgetClass);
 	if (BuildToolsWidget)
 	{
-		// The catalog lives in the viewport UI layer. Keep the settings drawer
-		// above its lower dock when opened, while the codex remains above both.
-		BuildToolsWidget->AddToViewport(95);
+		// Keep persistent top controls ahead of inspectors, the codex and utility flyouts.
+		// The widget separately hides its body whenever another window covers it.
+		BuildToolsWidget->AddToViewport(FFBuildToolsModel::ForegroundViewportZOrder);
 	}
 }
 
@@ -2091,7 +2097,8 @@ void UFF_BuildModeSubsystem::RefreshBuildModeGuide()
 	// PrepHUD 배치 패널은 같은 조작 안내를 자체 표시한다. 외부 표현이 활성인 동안 레거시
 	// 좌하단 가이드를 함께 띄우면 하단 도킹 패널 뒤에 겹치므로 한 표현 소유자만 남긴다.
 	BuildModeGuideWidget->SetVisibility(
-		(bInputSuspendedForPauseMenu || State == EFF_BuildModeState::CatalogOpen ||
+		(bInputSuspendedForPauseMenu || FFUIForegroundRules::HasForegroundWindow(this) ||
+			State == EFF_BuildModeState::CatalogOpen ||
 			bExternalCatalogPresentationActive || BuildToolsWidget)
 		? ESlateVisibility::Collapsed
 		: ESlateVisibility::HitTestInvisible);

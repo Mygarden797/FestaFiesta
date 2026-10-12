@@ -1821,6 +1821,49 @@ namespace FFFacilityInfoWbpBuilder
 				Tabs->ShiftChild(Index, Primary[Index]);
 				bOutModified = true;
 			}
+		// The primary pages share one hit-target width and row height. Staff was
+		// added after earlier sizing passes and retained its smaller automatic slot.
+		const auto* OperationSlot = Cast<UHorizontalBoxSlot>(Operation->Slot);
+		if (!OperationSlot) return false;
+		const FMargin PrimaryPadding = OperationSlot->GetPadding();
+		for (UWidget* Tab : Primary)
+		{
+			auto* Slot = Cast<UHorizontalBoxSlot>(Tab->Slot);
+			if (!Slot) return false;
+			const FSlateChildSize Size = Slot->GetSize();
+			if (Size.SizeRule == ESlateSizeRule::Fill && FMath::IsNearlyEqual(Size.Value, 1.f) &&
+				Slot->GetPadding() == PrimaryPadding && Slot->GetHorizontalAlignment() == HAlign_Fill &&
+				Slot->GetVerticalAlignment() == VAlign_Fill) continue;
+			Blueprint.Modify(); Slot->Modify();
+			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot->SetPadding(PrimaryPadding);
+			Slot->SetHorizontalAlignment(HAlign_Fill);
+			Slot->SetVerticalAlignment(VAlign_Fill);
+			bOutModified = true;
+		}
+		if (auto* Staff = Cast<UButton>(Tree.FindWidget(TEXT("Button_TabStaff"))))
+			if (auto* Reference = Cast<UButton>(Operation))
+			{
+				auto Style = Staff->GetStyle();
+				const auto& ReferenceStyle = Reference->GetStyle();
+				if (Style.NormalPadding != ReferenceStyle.NormalPadding || Style.PressedPadding != ReferenceStyle.PressedPadding)
+				{
+					Blueprint.Modify(); Staff->Modify();
+					Style.NormalPadding = ReferenceStyle.NormalPadding;
+					Style.PressedPadding = ReferenceStyle.PressedPadding;
+					Staff->SetStyle(Style);
+					bOutModified = true;
+				}
+				if (auto* Label = Cast<UCommonTextBlock>(Staff->GetContent()))
+					if (const auto* ReferenceLabel = Cast<UCommonTextBlock>(Reference->GetContent()))
+						if (Label->GetFont() != ReferenceLabel->GetFont())
+						{
+							Blueprint.Modify(); Label->Modify();
+							Label->SetFont(ReferenceLabel->GetFont());
+							Label->SetJustification(ETextJustify::Center);
+							bOutModified = true;
+						}
+			}
 		return Tabs->GetChildrenCount() == Primary.Num();
 	}
 

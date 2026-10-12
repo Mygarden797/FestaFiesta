@@ -104,6 +104,7 @@ bool FFFBuildFeatureGuideRenderTest::RunTest(const FString& Parameters)
         NewObject<UFF_BuildingFeatureDiscoverySubsystem>(HintGameInstance.Get()));
     TMap<UButton*, FLinearColor> OriginalButtonTints;
     TMap<UTextBlock*, FSlateColor> OriginalCaptions;
+    TMap<UButton*, UTextBlock*> ToolbarCaptions;
     TMap<UBorder*, FSlateBrush> OriginalIconBrushes;
     TMap<UBorder*, FLinearColor> OriginalIconTints;
     TMap<UTextBlock*, FSlateColor> OriginalIconText;
@@ -119,6 +120,7 @@ bool FFFBuildFeatureGuideRenderTest::RunTest(const FString& Parameters)
             FName(*FString::Printf(TEXT("Label_PearlTool%d"), ++ToolbarIndex))));
         if (!TestNotNull(TEXT("Authored toolbar caption"), Caption)) return false;
         OriginalCaptions.Add(Caption, Caption->GetColorAndOpacity());
+        ToolbarCaptions.Add(Button, Caption);
         auto* Icon = Widget->GetWidgetFromName(Topic.ToolbarIcon);
         auto* Badge = Cast<UBorder>(Widget->GetWidgetFromName(
             FName(*FString::Printf(TEXT("Badge_%s"), *Topic.Id.ToString()))));
@@ -145,6 +147,10 @@ bool FFFBuildFeatureGuideRenderTest::RunTest(const FString& Parameters)
             if (auto* Text = Cast<UTextBlock>(Child)) OriginalIconText.Add(Text, Text->GetColorAndOpacity());
         });
     }
+    auto* GuideCaption = Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Text_FeatureGuide")));
+    if (!TestNotNull(TEXT("Authored guide-entry caption"), GuideCaption)) return false;
+    ToolbarCaptions.Add(Open, GuideCaption);
+    TestEqual(TEXT("All eight toolbar captions are covered"), ToolbarCaptions.Num(), 8);
     Widget->FeatureDiscovery = Discovery.Get();
     Widget->RefreshFeatureHints();
     TestEqual(TEXT("Seven first-use toolbar icons are covered"), OriginalButtonTints.Num(), 7);
@@ -213,6 +219,22 @@ bool FFFBuildFeatureGuideRenderTest::RunTest(const FString& Parameters)
         TestTrue(TEXT("Extended toolbar fits viewport"), Contains(Viewport, Bounds(Top)));
         TestTrue(TEXT("Guide appears immediately right of help"), Bounds(Open).Left >= Bounds(Help).Right &&
             Bounds(Open).Left - Bounds(Help).Right <= 12.f * Dpi);
+        for (const auto& Entry : ToolbarCaptions)
+        {
+            const FString Case = FString::Printf(TEXT("%s %dx%d: "), *Entry.Value->GetName(), Resolution.X, Resolution.Y);
+            const FVector2D ButtonSize = Entry.Key->GetCachedGeometry().GetLocalSize();
+            const FVector2D CaptionSize = Entry.Value->GetCachedGeometry().GetLocalSize();
+            const FVector2D FullTextSize = Entry.Value->GetDesiredSize();
+            TestTrue(Case + TEXT("button keeps its enlarged hit target"),
+                FMath::IsNearlyEqual(ButtonSize.X, 96.f, .5f) && FMath::IsNearlyEqual(ButtonSize.Y, 78.f, .5f));
+            TestTrue(Case + TEXT("button fits toolbar"), Contains(Bounds(Top), Bounds(Entry.Key)));
+            TestTrue(Case + TEXT("caption stays inside its clickable button"), Contains(Bounds(Entry.Key), Bounds(Entry.Value)));
+            // Desired size includes the entire unwrapped Korean caption: this fails
+            // if clipping or ellipsis merely hides a label that still needs more room.
+            TestTrue(Case + TEXT("full caption fits without clipping or ellipsis"),
+                !Entry.Value->GetText().IsEmpty() && CaptionSize.X > 0.f && CaptionSize.Y > 0.f &&
+                FullTextSize.X <= CaptionSize.X + .5f && FullTextSize.Y <= CaptionSize.Y + .5f);
+        }
         for (const auto& Entry : Badges)
         {
             const FString Case = FString::Printf(TEXT("%s %dx%d: "), *Entry.Key->GetName(), Resolution.X, Resolution.Y);

@@ -35,6 +35,7 @@
 #include "Staff/FF_StaffFacilitySubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "UI/Core/FF_UIForegroundRules.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "Building/Presentation/FF_BuildFavoritesSubsystem.h"
@@ -139,6 +140,8 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 	ClosePaidProgramPicker();
 	bRevenueRankingPresentationOpen = false;
 	bPauseMenuPresentationSuppressed = false;
+	bPauseMenuSuppressionRequested = false;
+	bForegroundWindowSuppressionRequested = false;
 	bPanelWasVisibleBeforePause = false;
 	bPaidProgramPickerWasVisibleBeforePause = false;
 	PauseMenuSuppressedFacilityId.Invalidate();
@@ -162,6 +165,8 @@ bool UFF_FacilityInfoSubsystem::DoesSupportWorldType(const EWorldType::Type Worl
 
 void UFF_FacilityInfoSubsystem::Tick(const float DeltaTime)
 {
+	bForegroundWindowSuppressionRequested = FFUIForegroundRules::HasForegroundWindow(this);
+	UpdatePresentationSuppression(bPauseMenuSuppressionRequested || bForegroundWindowSuppressionRequested);
 	if (bPauseMenuPresentationSuppressed)
 	{
 		// Pause 중에는 높은 Viewport layer 표면과 hover/selection 갱신을 모두 멈춘다.
@@ -442,6 +447,8 @@ bool UFF_FacilityInfoSubsystem::SelectFacility(
 	AFFZSFacilityActor* Facility,
 	const EFF_FacilityInfoContext Context)
 {
+	bForegroundWindowSuppressionRequested = FFUIForegroundRules::HasForegroundWindow(this);
+	UpdatePresentationSuppression(bPauseMenuSuppressionRequested || bForegroundWindowSuppressionRequested);
 	if (bPauseMenuPresentationSuppressed)
 	{
 		return false;
@@ -600,6 +607,10 @@ bool UFF_FacilityInfoSubsystem::IsLightingTextInputFocused() const
 void UFF_FacilityInfoSubsystem::SetRevenueRankingPresentationOpen(const bool bOpen)
 {
 	bRevenueRankingPresentationOpen = bOpen;
+	if (!bOpen && bPauseMenuPresentationSuppressed && HasSelection())
+	{
+		bPanelWasVisibleBeforePause = !bPaidProgramPickerWasVisibleBeforePause;
+	}
 	const bool bPickerOpen = PaidProgramPicker && PaidProgramPicker->GetVisibility() != ESlateVisibility::Collapsed;
 	if (Panel) Panel->SetPanelOpen(!bOpen && !bPauseMenuPresentationSuppressed && !bPickerOpen &&
 		HasSelection() && IsContextCurrentlyAllowed(SelectionContext));
@@ -614,6 +625,21 @@ void UFF_FacilityInfoSubsystem::HandlePanelRevenueRankingRequested()
 
 void UFF_FacilityInfoSubsystem::SetPauseMenuPresentationSuppressed(const bool bSuppressed)
 {
+	// A new ESC/codex request still owns its close action when another window already hides us.
+	if (bSuppressed && !bPauseMenuSuppressionRequested)
+	{
+		if (UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
+			? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
+		{
+			if (Ranking->IsOpen()) Ranking->Close();
+		}
+	}
+	bPauseMenuSuppressionRequested = bSuppressed;
+	UpdatePresentationSuppression(bPauseMenuSuppressionRequested || bForegroundWindowSuppressionRequested);
+}
+
+void UFF_FacilityInfoSubsystem::UpdatePresentationSuppression(const bool bSuppressed)
+{
 	if (bPauseMenuPresentationSuppressed == bSuppressed)
 	{
 		return;
@@ -622,11 +648,6 @@ void UFF_FacilityInfoSubsystem::SetPauseMenuPresentationSuppressed(const bool bS
 	if (bSuppressed)
 	{
 		// Close the replacement presentation before recording the inspector surface to restore.
-		if (UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
-			? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
-		{
-			if (Ranking->IsOpen()) Ranking->Close();
-		}
 		const auto IsPresented = [](const ESlateVisibility Visibility)
 		{
 			return Visibility != ESlateVisibility::Collapsed &&

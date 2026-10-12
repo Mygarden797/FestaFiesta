@@ -3,6 +3,7 @@
 
 #include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "UI/Core/FF_OutsideClickDismiss.h"
+#include "UI/Core/FF_UIForegroundRules.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Building/Presentation/FF_BuildingFeatureDiscoverySubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
@@ -116,7 +117,7 @@ void UFF_FacilityRevenueRankingPanel::NativeConstruct()
 		bCapturedFrameSize = true;
 	}
 	FFOutsideClickDismiss::Register(this,
-		[this] { return IsInViewport() && IsVisible(); },
+		[this] { return IsInViewport() && IsVisible() && !bForegroundSuppressed; },
 		[this](FVector2D Position)
 		{
 			return FFOutsideClickDismiss::IsInside(Border_Panel, Position)
@@ -134,6 +135,9 @@ void UFF_FacilityRevenueRankingPanel::NativeConstruct()
 }
 void UFF_FacilityRevenueRankingPanel::NativeDestruct()
 {
+	if (UWidget* Surface = Size_ClarityFrame ? static_cast<UWidget*>(Size_ClarityFrame.Get()) : Border_Panel.Get())
+		Surface->SetVisibility(ESlateVisibility::Visible);
+	bForegroundSuppressed = false;
 	FFOutsideClickDismiss::Unregister(this);
 	Button_Close->OnClicked.RemoveAll(this);
 	Button_Today->OnClicked.RemoveAll(this);
@@ -147,6 +151,19 @@ void UFF_FacilityRevenueRankingPanel::NativeDestruct()
 void UFF_FacilityRevenueRankingPanel::NativeTick(const FGeometry& Geometry, float DeltaTime)
 {
 	Super::NativeTick(Geometry, DeltaTime);
+	const bool bSuppressed = FFUIForegroundRules::HasForegroundWindow(this);
+	if (bSuppressed != bForegroundSuppressed)
+	{
+		bForegroundSuppressed = bSuppressed;
+		if (UWidget* Surface = Size_ClarityFrame ? static_cast<UWidget*>(Size_ClarityFrame.Get()) : Border_Panel.Get())
+			Surface->SetVisibility(bSuppressed ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		if (Border_Introduction)
+		{
+			if (bSuppressed) IntroductionVisibilityBeforeSuppression = Border_Introduction->GetVisibility();
+			Border_Introduction->SetVisibility(bSuppressed ? ESlateVisibility::Collapsed : IntroductionVisibilityBeforeSuppression);
+		}
+	}
+	if (bForegroundSuppressed) return;
 	UpdateFrameSize(Geometry.GetLocalSize());
 }
 void UFF_FacilityRevenueRankingPanel::UpdateFrameSize(const FVector2D& Viewport)
@@ -220,6 +237,7 @@ void UFF_FacilityRevenueRankingPanel::DismissIntroduction()
 
 FReply UFF_FacilityRevenueRankingPanel::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
 {
+	if (bForegroundSuppressed) return FReply::Unhandled();
 	if (!IsIntroductionVisible()) return Super::NativeOnPreviewKeyDown(Geometry, Event);
 	if (!Event.IsRepeat() && (Event.GetKey() == EKeys::Escape || Event.GetKey() == EKeys::Enter || Event.GetKey() == EKeys::SpaceBar))
 		DismissIntroduction();
@@ -288,11 +306,13 @@ void UFF_FacilityRevenueRankingPanel::SelectionChanged(UObject *Object)
 }
 bool UFF_FacilityRevenueRankingPanel::IsPointerOverPanel() const
 {
+	if (bForegroundSuppressed) return false;
 	return IsVisible() && Border_Panel && FSlateApplication::IsInitialized() &&
 		   Border_Panel->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos());
 }
 FReply UFF_FacilityRevenueRankingPanel::NativeOnKeyDown(const FGeometry &Geometry, const FKeyEvent &Event)
 {
+	if (bForegroundSuppressed) return FReply::Unhandled();
 	if (Event.GetKey() == EKeys::Escape)
 	{
 		CloseClicked();
@@ -499,7 +519,6 @@ void UFF_FacilityRevenueRankingSubsystem::Refresh()
 	auto *Info = GetWorld()->GetSubsystem<UFF_FacilityInfoSubsystem>();
 	if (Info && Info->IsPauseMenuPresentationSuppressed())
 	{
-		Close();
 		return;
 	}
 	FGuid Selected = Panel->GetSelectedFacilityId();

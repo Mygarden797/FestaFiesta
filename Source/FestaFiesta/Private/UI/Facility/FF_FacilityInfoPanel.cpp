@@ -874,11 +874,20 @@ void UFF_FacilityInfoPanel::EnsureStaffControls()
 			{
 				Label->SetFont(Reference->GetFont());
 				Label->SetColorAndOpacity(Reference->GetColorAndOpacity());
+				Label->SetJustification(ETextJustify::Center);
 			}
 			Button_TabStaff->AddChild(Label);
 			auto* StaffTabSlot = Tabs->AddChildToHorizontalBox(Button_TabStaff);
 			StaffTabSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 			StaffTabSlot->SetPadding(FMargin(2.f, 0.f));
+			StaffTabSlot->SetVerticalAlignment(VAlign_Fill);
+			if (const auto* ReferenceSlot = Cast<UHorizontalBoxSlot>(Button_TabOperation->Slot))
+			{
+				StaffTabSlot->SetSize(ReferenceSlot->GetSize());
+				StaffTabSlot->SetPadding(ReferenceSlot->GetPadding());
+				StaffTabSlot->SetHorizontalAlignment(ReferenceSlot->GetHorizontalAlignment());
+				StaffTabSlot->SetVerticalAlignment(ReferenceSlot->GetVerticalAlignment());
+			}
 			Tabs->ShiftChild(Tabs->GetChildIndex(Button_TabOperation) + 1, Button_TabStaff);
 		}
 	}
