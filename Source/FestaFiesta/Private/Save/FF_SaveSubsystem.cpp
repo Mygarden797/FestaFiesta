@@ -2,6 +2,7 @@
 
 #include "Save/FF_SaveSubsystem.h"
 
+#include "Camera/FF_FestivalGameMode.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -13,7 +14,9 @@
 #include "Time/FF_FestivalStage.h"
 #include "Save/FF_SaveArchive.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Tutorial/FF_TutorialSubsystem.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
+#include "UObject/UObjectGlobals.h"
 
 DEFINE_LOG_CATEGORY(LogFestaFiestaSave);
 
@@ -58,6 +61,9 @@ void UFF_SaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	BindFestivalStage(Collection);
 	RegisterDebugConsoleCommands();
+
+	// 축제 레벨을 벗어나기 직전에 담는다(HandlePreLoadMap).
+	PreLoadMapHandle = FCoreUObjectDelegates::PreLoadMap.AddUObject(this, &UFF_SaveSubsystem::HandlePreLoadMap);
 }
 
 void UFF_SaveSubsystem::PruneSlotIndex()
@@ -107,6 +113,8 @@ void UFF_SaveSubsystem::Deinitialize()
 {
 	UnbindFestivalStage();
 	UnregisterDebugConsoleCommands();
+	FCoreUObjectDelegates::PreLoadMap.Remove(PreLoadMapHandle);
+	PreLoadMapHandle.Reset();
 	Super::Deinitialize();
 }
 
@@ -168,6 +176,84 @@ void UFF_SaveSubsystem::HandleFestivalStarted()
 	   1일차가 "이미 저장한 날" 로 보여 첫 자동 저장이 빠진다.
 	*/
 	LastAutoSavedDay = 0;
+	RunningFestivalId = ResolveCurrentFestivalId(this);
+	ResumeRunSaveIfSameFestival();
+}
+
+void UFF_SaveSubsystem::ResumeRunSaveIfSameFestival()
+{
+	// 프론트엔드가 이미 슬롯을 골랐으면(계속하기 · 저장 목록) 그것이 먼저다.
+	if (HasPendingContinue() || CurrentRunSlotId.IsNone())
+	{
+		return;
+	}
+
+	const FName FestivalId = ResolveCurrentFestivalId(this);
+	UFF_SaveGame* RunSave = nullptr;
+	if (FestivalId.IsNone() || !PeekSlot(CurrentRunSlotId, RunSave) || !RunSave)
+	{
+		return;
+	}
+
+	// 이 판의 세이브가 다른 축제이거나 끝난 축제(로비 세이브)면 새로 시작한다.
+	if (RunSave->Session.FestivalId != FestivalId || !RunSave->Session.IsFestivalInProgress())
+	{
+		return;
+	}
+
+	PendingContinueSlotId = CurrentRunSlotId;
+	UE_LOG(LogFestaFiestaSave, Log,
+		TEXT("[저장] 같은 판에서 %s 를 다시 골랐다. 이 판의 세이브 %s 에서 이어한다."),
+		*FestivalId.ToString(), *CurrentRunSlotId.ToString());
+}
+
+void UFF_SaveSubsystem::HandlePreLoadMap(const FString& MapName)
+{
+	(void)MapName;
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	const UWorld* World = GameInstance ? GameInstance->GetWorld() : nullptr;
+	if (!World || !World->IsGameWorld() || HasPendingContinue() || bIsRestoring)
+	{
+		return;
+	}
+
+	// 축제 레벨에서 나갈 때만. 프론트엔드 · 로딩 레벨은 축제 GameMode 가 아니다.
+	if (!Cast<AFF_FestivalGameMode>(World->GetAuthGameMode()))
+	{
+		return;
+	}
+
+	// 튜토리얼 실습장은 연습이다. 끝나면 잠기는 레벨이라 이어할 자리를 만들지 않는다.
+	if (const UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(World); Tutorial && Tutorial->IsTutorialLevel())
+	{
+		return;
+	}
+
+	const UFF_FestivalProgressionSubsystem* Progression = GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>();
+	const UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>();
+	if (!Progression || !Progression->IsFestivalStarted() || !Stage)
+	{
+		return;
+	}
+
+	// 짓는 시간에만. 운영 도중은 하루 정산이 안 끝나 장부와 어긋난다(HandleStageChanged 주석).
+	if (Stage->CurrentStage != EFF_FestivalStage::Setup && Stage->CurrentStage != EFF_FestivalStage::MorningCheck)
+	{
+		return;
+	}
+
+	// 이 판에서 시작한 축제가 아니면(이름을 모르면) 담지 않는다. 이름 없는 세이브는 이어할 수 없다.
+	if (RunningFestivalId.IsNone())
+	{
+		return;
+	}
+
+	UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 자동 저장 — 축제를 벗어남(%s %d일차)"),
+		*RunningFestivalId.ToString(), Stage->CurrentDay);
+	bSavingOnLeave = true;
+	WriteAutoSave();
+	bSavingOnLeave = false;
 }
 
 void UFF_SaveSubsystem::HandleStageChanged(
@@ -621,7 +707,8 @@ void UFF_SaveSubsystem::CaptureSession(FFF_SessionSave& Out) const
 	/* 어느 축제인지 담는다. 이걸로 저장과 지금 축제가 같은지 가리고, 이어하기가
 	   어느 레벨을 열지 정한다. Progression 의 Definition 은 늘 기본 축제라 쓰지 않는다.
 	*/
-	Out.FestivalId = ResolveCurrentFestivalId(this);
+	// 나갈 때 저장은 UI 흐름이 이미 프론트엔드라 위 규칙이 None 을 준다. 시작할 때 담아 둔 이름을 쓴다.
+	Out.FestivalId = bSavingOnLeave ? RunningFestivalId : ResolveCurrentFestivalId(this);
 
 	// 만족도.
 	if (const UFF_SatisfactionMetricsSubsystem* Metrics =
