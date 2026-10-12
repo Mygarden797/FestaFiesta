@@ -14,6 +14,7 @@ enum class EFF_OperationAlertKind : uint8
 	FunShortage,
 	QueueAbandon,
 	NoChoiceLeave,
+	IncidentFinished,
 
 	Count UMETA(Hidden)
 };
@@ -31,6 +32,10 @@ struct FESTAFIESTA_API FFF_OperationAlert
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|OperationAlert")
 	int32 Day = 1;
+
+	/** 사건 종료 토스트는 HUD가 담당하고, 통합 소식에는 이력만 추가한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|OperationAlert")
+	bool bHistoryOnly = false;
 };
 
 /** 한 번 판정할 때 읽는 값. 퇴장·이탈은 지난 판정 이후 늘어난 수다. */

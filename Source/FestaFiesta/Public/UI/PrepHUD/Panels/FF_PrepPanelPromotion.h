@@ -174,6 +174,12 @@ protected:
 	void HandleGoldChanged(int32 NewValue);
 
 	UFUNCTION()
+	void HandleBuzzChanged(float NewBuzz, float PreviousBuzz);
+
+	UFUNCTION()
+	void HandleWeatherChanged(EFF_WeatherType NewWeather);
+
+	UFUNCTION()
 	void HandlePurchasedPromotionChanged(EFF_PromotionChoice NewChoice);
 
 	UFUNCTION()
@@ -275,7 +281,7 @@ protected:
 	FText OnceNoticeText = NSLOCTEXT("FestaFiestaPrepPromotion", "OnceNotice", "축제당 1회, 셋업에서 구매할 수 있으며 3일 전체에 적용됩니다.");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Text")
-	FText NotAppliedNoticeText = NSLOCTEXT("FestaFiestaPrepPromotion", "NotAppliedNotice", "예상 방문객에는 반영되며, 실제 입장 인원 연동은 준비 중입니다.");
+	FText NotAppliedNoticeText = NSLOCTEXT("FestaFiestaPrepPromotion", "NotAppliedNotice", "홍보 효과는 예상 방문객에 반영됩니다. 실제 입장 인원은 운영 상황에 따라 달라집니다.");
 
 private:
 	UFF_FestivalViewModelSubsystem* GetViewModel() const;

@@ -105,12 +105,7 @@ void UFF_PrepPanelPromotion::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 
-	// ★ 어디까지 먹고 어디부터 안 먹는지 정확히 적는다.
-	//
-	// 🔴 2026-09-02 정정 — 예전 문구는 `아직 방문객 수에 반영되지 않습니다` 였는데
-	// 그 사이 경제가 붙어서 **절반만 맞는 말**이 됐다. 예상 방문객
-	// (`GetExpectedVisitors()`) 에는 배수가 들어간다. 안 들어가는 것은 실제 스폰이다
-	// (`AFF_SpawnActor::UnitCount` 를 쓴다). 김시리님 권장 문구를 그대로 쓴다.
+	// 홍보가 반영된 예상 방문객은 군중 유입에도 전달된다. 예상치와 실제 입장 인원은 구분한다.
 	SetTextOrHide(Text_NotAppliedNotice, NotAppliedNoticeText);
 
 	// `Text_OnceNotice` 는 여기서 안 채운다 — 사유 문구와 같은 말을 할 때가 있어
@@ -175,6 +170,10 @@ void UFF_PrepPanelPromotion::BindViewModel()
 	}
 
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_PrepPanelPromotion::HandleGoldChanged);
+	CachedViewModel->OnAdmissionFeeChanged.AddUniqueDynamic(this, &ThisClass::HandleGoldChanged);
+	CachedViewModel->OnExpectedVisitorsChanged.AddUniqueDynamic(this, &ThisClass::HandleGoldChanged);
+	CachedViewModel->OnBuzzChanged.AddUniqueDynamic(this, &ThisClass::HandleBuzzChanged);
+	CachedViewModel->OnWeatherChanged.AddUniqueDynamic(this, &ThisClass::HandleWeatherChanged);
 	CachedViewModel->OnPurchasedPromotionChanged.AddUniqueDynamic(
 		this, &UFF_PrepPanelPromotion::HandlePurchasedPromotionChanged);
 
@@ -188,6 +187,10 @@ void UFF_PrepPanelPromotion::UnbindViewModel()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_PrepPanelPromotion::HandleGoldChanged);
+		CachedViewModel->OnAdmissionFeeChanged.RemoveDynamic(this, &ThisClass::HandleGoldChanged);
+		CachedViewModel->OnExpectedVisitorsChanged.RemoveDynamic(this, &ThisClass::HandleGoldChanged);
+		CachedViewModel->OnBuzzChanged.RemoveDynamic(this, &ThisClass::HandleBuzzChanged);
+		CachedViewModel->OnWeatherChanged.RemoveDynamic(this, &ThisClass::HandleWeatherChanged);
 		CachedViewModel->OnPurchasedPromotionChanged.RemoveDynamic(
 			this, &UFF_PrepPanelPromotion::HandlePurchasedPromotionChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepPanelPromotion::HandleStageViewChanged);
@@ -247,6 +250,8 @@ const FFF_PromotionOptionView* UFF_PrepPanelPromotion::FindSelectedOption() cons
 void UFF_PrepPanelPromotion::RefreshAll()
 {
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+	// 입장료·날씨·화제성 결과 이벤트마다 현재 조건으로 다시 예측한다. 카드 선택은 유지한다.
+	Options = ViewModel ? ViewModel->GetPromotionOptions() : TArray<FFF_PromotionOptionView>();
 
 	const EFF_PromotionChoice Purchased = ViewModel
 		? ViewModel->GetPurchasedPromotion() : EFF_PromotionChoice::None;
@@ -265,6 +270,7 @@ void UFF_PrepPanelPromotion::RefreshAll()
 		}
 
 		const EFF_PromotionChoice Choice = Options[Index].Choice;
+		CardWidget->ConfigureOption(Options[Index], GetChoiceLabel(Choice));
 
 		// 상태를 매번 전부 다시 정한다. 부분 갱신하면 구매 뒤에도 선택 표시가 남는다.
 		if (Purchased != EFF_PromotionChoice::None)
@@ -506,7 +512,7 @@ bool UFF_PrepPanelPromotion::OpenConfirmDialog()
 		GetPurchaseConfirmationTitle(Quote.Choice),
 		LOCTEXT("PrepPromotion_ConfirmBody",
 			"홍보는 축제당 한 번뿐이고 되돌릴 수 없습니다. 3일 전체에 적용됩니다.\n"
-			"예상 방문객에는 반영되고, 실제 입장 인원 연동은 준비 중입니다."),
+			"홍보 효과는 예상 방문객에 반영됩니다. 실제 입장 인원은 운영 상황에 따라 달라집니다."),
 		Rows,
 		LOCTEXT("PrepPromotion_ConfirmOk", "구매하기"));
 
@@ -556,6 +562,16 @@ void UFF_PrepPanelPromotion::HandlePurchaseCancelled()
 // =============================================================================
 
 void UFF_PrepPanelPromotion::HandleGoldChanged(int32 NewValue)
+{
+	RefreshAll();
+}
+
+void UFF_PrepPanelPromotion::HandleBuzzChanged(float NewBuzz, float PreviousBuzz)
+{
+	RefreshAll();
+}
+
+void UFF_PrepPanelPromotion::HandleWeatherChanged(EFF_WeatherType NewWeather)
 {
 	RefreshAll();
 }

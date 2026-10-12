@@ -15,6 +15,9 @@
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Festival/FF_FestivalBuzzSubsystem.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Festival/FF_FestivalDefinition.h"
+#include "Save/FF_SaveArchive.h"
+#include "Save/FF_SaveSubsystem.h"
 #include "Finale/FF_FinaleShowSubsystem.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
 #include "Queue/FF_QueueSubsystem.h"
@@ -28,6 +31,10 @@
 void UFF_CrowdInsightsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	if (UFF_SaveSubsystem* Save = Collection.InitializeDependency<UFF_SaveSubsystem>())
+	{
+		Save->RegisterSaveable(this);
+	}
 
 	if (const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get())
 	{
@@ -63,7 +70,12 @@ void UFF_CrowdInsightsSubsystem::Deinitialize()
 
 void UFF_CrowdInsightsSubsystem::HandleFestivalStarted()
 {
+	if (const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get())
+	{
+		GlobalSimulationSeed = Settings->GlobalSimulationSeed;
+	}
 	RecentPosts.Reset();
+	ReactedPostIds.Reset();
 	PostSequenceIndex = 0;
 	LastObservedFailedDestinationPenalized = 0;
 	ScheduleNextPost();
@@ -72,6 +84,123 @@ void UFF_CrowdInsightsSubsystem::HandleFestivalStarted()
 	FinalePosts.Reset();
 	FinaleLineCycleByTopic.Reset();
 	FinalePostCount = 0;
+	OnSnsFeedReset.Broadcast();
+}
+
+float UFF_CrowdInsightsSubsystem::GetReactionBuzzReward() const
+{
+	const UGameInstance* Game = GetGameInstance();
+	const UFF_FestivalProgressionSubsystem* Progression = Game
+		? Game->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
+	return Definition && FMath::IsFinite(Definition->BuzzPerSnsReaction)
+		? FMath::Max(0.f, Definition->BuzzPerSnsReaction) : 0.f;
+}
+
+bool UFF_CrowdInsightsSubsystem::IsReactionAvailable() const
+{
+	const UGameInstance* Game = GetGameInstance();
+	const UFF_FestivalProgressionSubsystem* Progression = Game
+		? Game->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = GetStageSubsystem();
+	const UFF_SaveSubsystem* Save = Game ? Game->GetSubsystem<UFF_SaveSubsystem>() : nullptr;
+	return !bReactionInFlight && Game && Game->GetSubsystem<UFF_FestivalBuzzSubsystem>()
+		&& Progression && Progression->IsFestivalStarted() && !Progression->IsFestivalEvaluationFrozen()
+		&& Stage && Stage->bFestivalStarted && !Stage->HasFestivalEnded()
+		&& (!Save || !Save->IsRestoring());
+}
+
+FFF_SnsReactionState UFF_CrowdInsightsSubsystem::GetReactionState(const FGuid PostId) const
+{
+	FFF_SnsReactionState State;
+	State.bExists = PostId.IsValid() && RecentPosts.ContainsByPredicate(
+		[PostId](const FFF_SnsPostRow& Post) { return Post.PostId == PostId; });
+	State.bReacted = PostId.IsValid() && ReactedPostIds.Contains(PostId);
+	State.bCanReact = State.bExists && !State.bReacted && IsReactionAvailable();
+	State.BuzzReward = GetReactionBuzzReward();
+	return State;
+}
+
+FFF_SnsReactionOutcome UFF_CrowdInsightsSubsystem::TryReactToPost(const FGuid PostId)
+{
+	FFF_SnsReactionOutcome Outcome;
+	const FFF_SnsReactionState State = GetReactionState(PostId);
+	if (!State.bExists)
+	{
+		Outcome.Result = EFF_SnsReactionResult::PostUnavailable;
+		return Outcome;
+	}
+	if (State.bReacted)
+	{
+		Outcome.Result = EFF_SnsReactionResult::AlreadyReacted;
+		return Outcome;
+	}
+	if (!State.bCanReact)
+	{
+		return Outcome;
+	}
+
+	UFF_FestivalBuzzSubsystem* Buzz = GetGameInstance()->GetSubsystem<UFF_FestivalBuzzSubsystem>();
+	// 값 변경 알림에서 재호출되더라도 같은 글이나 다른 글에 중복 지급하지 않는다.
+	{
+		TGuardValue<bool> CommandGuard(bReactionInFlight, true);
+		ReactedPostIds.Add(PostId);
+		Outcome.AppliedBuzz = Buzz->AddBuzzWithReceipt(State.BuzzReward, TEXT("SnsReaction"));
+		Outcome.Result = EFF_SnsReactionResult::Success;
+	}
+	OnSnsReactionChanged.Broadcast(PostId);
+	return Outcome;
+}
+
+void UFF_CrowdInsightsSubsystem::WriteSaveData(TArray<uint8>& OutBytes) const
+{
+	FFF_SnsFeedSave State;
+	State.GlobalSimulationSeed = GlobalSimulationSeed;
+	State.PostSequenceIndex = PostSequenceIndex;
+	State.RecentPosts = RecentPosts;
+	State.ReactedPostIds = ReactedPostIds.Array();
+	UFF_SaveArchive::WriteStruct(OutBytes, State);
+}
+
+void UFF_CrowdInsightsSubsystem::ReadSaveData(const TArray<uint8>& InBytes)
+{
+	FFF_SnsFeedSave State;
+	if (!UFF_SaveArchive::ReadStruct(InBytes, State) || State.Version != 1)
+	{
+		// 공감 기능 이전의 저장에는 피드도 공감도 없다. 이전 세션 상태를 남기지 않는다.
+		if (const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get())
+		{
+			GlobalSimulationSeed = Settings->GlobalSimulationSeed;
+		}
+		HandleFestivalStarted();
+		return;
+	}
+
+	GlobalSimulationSeed = State.GlobalSimulationSeed;
+	PostSequenceIndex = FMath::Max(0, State.PostSequenceIndex);
+	RecentPosts.Reset();
+	TSet<FGuid> RestoredIds;
+	for (const FFF_SnsPostRow& Post : State.RecentPosts)
+	{
+		if (RecentPosts.Num() >= RingBufferCapacity) break;
+		if (!Post.PostId.IsValid() || RestoredIds.Contains(Post.PostId)) continue;
+		RestoredIds.Add(Post.PostId);
+		RecentPosts.Add(Post);
+	}
+	ReactedPostIds.Reset();
+	for (const FGuid& PostId : State.ReactedPostIds)
+	{
+		if (PostId.IsValid()) ReactedPostIds.Add(PostId);
+	}
+	LastObservedFailedDestinationPenalized = 0;
+	ScheduleNextPost();
+	bFinaleFeedActive = false;
+	FinalePosts.Reset();
+	FinaleLineCycleByTopic.Reset();
+	FinalePostCount = 0;
+	UsedFinaleBodies.Reset();
+	// PushPost는 생성 시 화제성 효과를 실행하므로 복원에는 사용하지 않는다.
+	OnSnsFeedReset.Broadcast();
 }
 
 void UFF_CrowdInsightsSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage)

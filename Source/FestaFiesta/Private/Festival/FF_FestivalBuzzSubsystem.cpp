@@ -29,11 +29,19 @@ void UFF_FestivalBuzzSubsystem::Deinitialize()
 
 void UFF_FestivalBuzzSubsystem::AddBuzz(const float Delta, const FName Reason)
 {
-	if (FMath::IsNearlyZero(Delta))
+	AddBuzzWithReceipt(Delta, Reason);
+}
+
+float UFF_FestivalBuzzSubsystem::AddBuzzWithReceipt(const float Delta, const FName Reason)
+{
+	if (!FMath::IsFinite(Delta) || FMath::IsNearlyZero(Delta))
 	{
-		return;
+		return 0.f;
 	}
-	SetBuzz(Buzz + Delta, Reason);
+	const float Target = FFF_BuzzRules::Clamp(Buzz + Delta);
+	const float AppliedDelta = Target - Buzz;
+	SetBuzz(Target, Reason);
+	return AppliedDelta;
 }
 
 void UFF_FestivalBuzzSubsystem::ApplySnsPost(const FFF_SnsPostRow& Post)

@@ -39,6 +39,9 @@ struct FESTAFIESTA_API FFF_DailyReportView
 	int32 Refund = 0;
 	int32 Gold = 0;
 	int32 TotalRevenue = 0;
+	// 원본의 날짜별 확정 기록. 아래 실측 분해 캐시와 달리 하루 경계 또는 축제 종료 뒤에 생긴다.
+	bool bHasDailySatisfaction = false;
+	int32 DailySatisfaction = INDEX_NONE;
 	bool bHasSatisfaction = false;
 	int32 SimSatisfaction = INDEX_NONE;
 	int32 ScoreSatisfaction = INDEX_NONE;
@@ -73,6 +76,8 @@ struct FESTAFIESTA_API FFF_FinalReportDayView
 	int64 NetProfit = 0;
 	int32 Refund = 0;
 	int32 AdmittedVisitors = INDEX_NONE;
+	bool bHasDailySatisfaction = false;
+	int32 DailySatisfaction = INDEX_NONE;
 };
 
 /** 최종 화면 조회 결과. 평가는 원본의 동결된 값을 읽으며 UI에서 다시 산출하지 않는다. */
@@ -100,6 +105,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnWeatherViewChanged, EFF_Weathe
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnBoolViewChanged, bool, bNewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeViewChanged, EFF_FinaleGrade, NewGrade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsSocialPostChanged, FFF_LiveSocialPost, NewPost);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsReactionViewChanged, FGuid, PostId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnSnsFeedViewReset);
 
 // 편성 목록이 바뀌었다. 원본과 같이 인자를 싣지 않는다 — 무엇이 바뀌었는지는 다시 읽는다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
@@ -151,9 +158,21 @@ struct FESTAFIESTA_API FFF_PromotionOptionView
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
 	int32 CostGold = 0;
 
-	/** 일일 방문객에 곱한다. `안 함` 은 1.0. */
+	/** 일일 방문객에 곱한다. `안 함` 도 원본의 NoPromotionVisitorMultiplier를 따른다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
 	float VisitorMultiplier = 1.f;
+
+	/** 원본 홍보 등급에 설정된 구매 시 화제성 증가량. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
+	int32 StartingBuzz = 0;
+
+	/** 현재 입장료로 이 등급을 선택했을 때의 예상 방문객. 모르면 INDEX_NONE, 실제 0명과 구분한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
+	int32 ExpectedVisitors = INDEX_NONE;
+
+	/** 예상 방문객 계산에 사용한 입장료. 원본 예측 결과를 그대로 전달하며 모르면 INDEX_NONE이다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
+	int32 ForecastAdmissionFeeGold = INDEX_NONE;
 };
 
 /**
@@ -460,6 +479,18 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
 	FFF_OnSnsSocialPostChanged OnSnsPostAdded;
 
+	/** 공감은 원본 SNS 명령으로만 요청하며 화제성은 실제 지급 결과로 안내한다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_SnsReactionState GetSnsReactionState(FGuid PostId) const;
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_SnsReactionOutcome RequestSnsReaction(FGuid PostId);
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|SNS")
+	FText GetSnsReactionResultText(const FFF_SnsReactionOutcome& Outcome) const;
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_OnSnsReactionViewChanged OnSnsReactionChanged;
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_OnSnsFeedViewReset OnSnsFeedReset;
+
 	/** 피날레 연출 중 후기. 화면 위로 흘려보내는 용도라 목록을 들고 있지 않는다. 지난 글은 Insights 의 GetFinalePosts() 에 있다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
 	FFF_OnSnsSocialPostChanged OnFinaleSnsPostAdded;
@@ -575,6 +606,9 @@ public:
 	/** 개인별 명단(기본 팀 + 고용). 축제 전이면 빈 배열. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	TArray<FFF_StaffMember> GetStaffRoster() const;
+	/** 원본 규칙으로 읽은 개인별 현장 처리 능력. 출동 중 승급은 다음 출동부터 반영된다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	FText GetStaffIncidentEffectText(int32 StaffId) const;
 
 	/** 설치 시설을 개별 클릭하지 않고 배정/출동/숙련도를 읽는 공통 화면용 스냅샷. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
@@ -739,9 +773,13 @@ public:
 	/** 종료 이벤트의 모든 구독자가 처리된 후에만 확정 평가와 전체 원장을 반환한다. */
 	bool GetFinalReport(FFF_FinalReportView& OutReport) const;
 
-	/** 끝난 날의 만족도(1일차부터). 날짜별 그래프용. */
+	/** 원본의 마감 순서별 만족도. 건너뛴 날짜가 있으면 배열 인덱스와 일차가 일치하지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Evaluation")
 	TArray<int32> GetDailySatisfactionHistory() const;
+
+	/** 원본 마감 원장과 확정 기록이 대응하는 날짜만 반환한다. 미기록은 false와 INDEX_NONE, 실제 0점은 true다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Evaluation")
+	bool TryGetRecordedDailySatisfaction(int32 Day, int32& OutSatisfaction) const;
 
 	// --- 피날레 (점검 패널 요약 + U5 피날레 구매 패널) ---
 	//
@@ -1264,6 +1302,10 @@ protected:
 	/** Insights가 쏘는 글 한 건을 변환해 목록 맨 앞에 얹고 위젯에 중계한다. */
 	UFUNCTION()
 	void HandleOwnerSnsPostAdded(FFF_SnsPostRow NewPost);
+	UFUNCTION()
+	void HandleOwnerSnsReactionChanged(FGuid PostId);
+	UFUNCTION()
+	void HandleOwnerSnsFeedReset();
 	UFUNCTION()
 	void HandleOwnerFinaleSnsPostAdded(FFF_SnsPostRow NewPost);
 

@@ -56,6 +56,9 @@ public:
 	// 0~100 으로 자른다. Reason 은 로그용이다.
 	void AddBuzz(float Delta, FName Reason);
 
+	// 상한을 적용한 실제 변화량을 반환한다. 델리게이트 안에서 다른 변화가 일어나도 이 요청분만 반환한다.
+	float AddBuzzWithReceipt(float Delta, FName Reason);
+
 	// SNS 글 한 건을 반영한다. 크기는 축제 정의의 BuzzPerSnsPost × 화제 강도.
 	void ApplySnsPost(const FFF_SnsPostRow& Post);
 

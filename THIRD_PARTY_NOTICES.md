@@ -29,6 +29,17 @@
 
 ## 현재 등록 목록
 
+### 다대포 바다축제 카드 — 사용자 제공 해변 이미지 (2026-10-12)
+
+- 적용: `confirmed` — 사용자가 첨부한 두 번째 해변 이미지를 다대포 축제 선택 카드에 적용하도록 요청함.
+- 제공 파일: `codex-clipboard-102df6e1-9e2e-4a90-8b8d-623392f19588.png` (2026-10-12 전달).
+- 제작자·권리자·라이선스·크레딧 문구·라이선스 동봉 여부: `to_verify` — 사용자 제공 파일이며 별도 출처 정보는 제공되지 않음.
+- 원본 URL / 다운로드 URL: 없음 — 대화 첨부 파일로 제공됨.
+- 원본 SHA256: `e08fee606245117b68310b46d1dc5ba0ef3efe51f6242656929831b14b3d2a6d`.
+- 보관: `SourceArt/UI/Atlas/DadaepoBeach/T_FF_FA_Preview_Dadaepo_Beach.png`.
+- 임포트: `/Game/FestaFiesta/UI/Atlas/Korea/Cards/T_FF_FA_Preview_Dadaepo_Beach`.
+- 수정: 원본 픽셀 수정 없음. UI 텍스처로 임포트하고 카드의 표시 높이를 원본 비율에 맞춤.
+
 | 에셋 | 용도 | 상태 | 라이선스 | 게임 내 표기 |
 | --- | --- | --- | --- | --- |
 | Solar System Scope Planet Textures | 지구·구름·노멀·스페큘러 텍스처 | `confirmed` | CC BY 4.0 | 필요 |
