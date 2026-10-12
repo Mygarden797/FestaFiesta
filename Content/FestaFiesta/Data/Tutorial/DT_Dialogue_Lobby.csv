@@ -1,4 +1,5 @@
 Name,Kind,NextJump,Speaker,Text,WaitCondition,BackgroundImage,ExpectedTab,HighlightAnchor,ClickArea,Skippable,SkipSummary,Choice1Text,Choice1Jump,Choice2Text,Choice2Jump,Choice3Text,Choice3Jump
+Intro_000,Speech,,안내,축제를 고르기 전에 짧은 이야기가 먼저 나와요. 이야기가 끝나면 이 지도에서 첫 축제를 고를 수 있어요.,,,,,,true,,,,,,,
 Office_001,Speech,,,회사를 그만뒀다.,,/Game/FestaFiesta/Data/Tutorial/Scene/office.office,,,,true,,,,,,,
 Office_002,Speech,,,"매일 똑같은 하루에 지쳤고, 스트레스는 쌓여만 갔다.",,,,,,true,,,,,,,
 Office_003,Speech,,,막상 그만두고 나니 딱히 할 일도 없었다.,,,,,,true,,,,,,,

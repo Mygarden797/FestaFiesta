@@ -118,7 +118,7 @@ namespace FFSecretaryAdvisor
 
 		const bool bIdleIncident = Signals.IdleIncidentCount > 0;
 		Offer(EFF_SecretaryTipKind::NoStaffForIncident, bIdleIncident && Signals.DispatchableStaffCount <= 0,
-			LOCTEXT("NoStaff", "사건이 났는데 출동할 스태프가 없어요. 안내 시설에 스태프를 배정해 주세요."));
+			LOCTEXT("NoStaff", "사건이 났는데 출동할 스태프가 없어요. 안내 시설을 눌러 '스태프' 탭에서 '+ 배정'을 눌러 주세요."));
 		Offer(EFF_SecretaryTipKind::IdleIncident, bIdleIncident && Signals.DispatchableStaffCount > 0,
 			LOCTEXT("IdleIncident", "아직 처리 안 된 사건이 있어요. 지도에 뜬 표시를 눌러 스태프를 보내 주세요."));
 
