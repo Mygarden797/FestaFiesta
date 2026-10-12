@@ -36,6 +36,16 @@ public:
 	//같은 아키타입 내 외형 변주
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd")
 	TArray<TSoftObjectPtr<USkeletalMesh>> MeshVariants;
+
+	//성별 구분 외형 풀. 하나라도 채워 두면 Seed로 성별을 정한 뒤 그 풀에서 고른다. 한쪽만 채우면 그쪽으로만 나온다
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd")
+	TArray<TSoftObjectPtr<USkeletalMesh>> FemaleMeshVariants;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd")
+	TArray<TSoftObjectPtr<USkeletalMesh>> MaleMeshVariants;
+
+	//성별 풀이 모두 비어 있으면 Mesh + MeshVariants 중에서, 아니면 성별 풀에서 Seed로 고정된 하나를 고른다. 후보가 없으면 빈 포인터
+	TSoftObjectPtr<USkeletalMesh> PickMesh(int32 Seed) const;
 	
 	
 	//아동 슬롯용
