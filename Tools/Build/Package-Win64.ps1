@@ -18,6 +18,9 @@ param(
 
     [switch] $SkipTests,
 
+    # Manual-QA builds can omit asset validation while still compiling the cooker target.
+    [switch] $SkipDataValidation,
+
     [switch] $SkipSmokeTest,
 
     # Requires a GPU/driver supporting both paths; tests real RHI startup, not gameplay.
@@ -291,12 +294,12 @@ $engineBuildFile = Join-Path $resolvedEngineRoot 'Engine\Build\Build.version'
 $engineBuild = Get-Content -LiteralPath $engineBuildFile -Raw | ConvertFrom-Json
 $toolchainLockFile = Join-Path $PSScriptRoot 'toolchain.lock.json'
 $toolchainLock = Get-Content -LiteralPath $toolchainLockFile -Raw | ConvertFrom-Json
-$hasQualityOverride = [bool]$SkipTests -or [bool]$SkipSmokeTest
+$hasQualityOverride = [bool]$SkipTests -or [bool]$SkipDataValidation -or [bool]$SkipSmokeTest
 if ($hasQualityOverride -and [string]::IsNullOrWhiteSpace($QualityOverrideReason)) {
-    throw '-SkipTests or -SkipSmokeTest requires -QualityOverrideReason so the exception is auditable.'
+    throw '-SkipTests, -SkipDataValidation or -SkipSmokeTest requires -QualityOverrideReason so the exception is auditable.'
 }
 if (-not $hasQualityOverride -and -not [string]::IsNullOrWhiteSpace($QualityOverrideReason)) {
-    throw '-QualityOverrideReason is valid only with -SkipTests or -SkipSmokeTest.'
+    throw '-QualityOverrideReason is valid only with -SkipTests, -SkipDataValidation or -SkipSmokeTest.'
 }
 
 if (-not [string]::IsNullOrWhiteSpace($engineAssociation) -and
@@ -425,20 +428,16 @@ try {
 
     $currentPhase = 'validation'
     $currentLog = 'Validation'
-    if (-not $SkipTests) {
-        & (Join-Path $PSScriptRoot 'Run-AutomationTests.ps1') `
-            -EngineRoot $resolvedEngineRoot `
-            -ProjectFile $projectFile `
-            -OutputRoot $validationRoot
+    # Always compile the Editor modules used by the cooker. Each omitted
+    # validation stage is explicit and recorded in the artifact manifest.
+    $validationArguments = @{
+        EngineRoot = $resolvedEngineRoot
+        ProjectFile = $projectFile
+        OutputRoot = $validationRoot
+        SkipDataValidation = [bool]$SkipDataValidation
     }
-    else {
-        # A test override never bypasses asset validation or the editor compile gate.
-        & (Join-Path $PSScriptRoot 'Run-AutomationTests.ps1') `
-            -EngineRoot $resolvedEngineRoot `
-            -ProjectFile $projectFile `
-            -OutputRoot $validationRoot `
-            -TestFilter @()
-    }
+    if ($SkipTests) { $validationArguments.TestFilter = @() }
+    & (Join-Path $PSScriptRoot 'Run-AutomationTests.ps1') @validationArguments
     # The editor build selects the same toolchain as the game build. Checking
     # its log here fails a drifted machine before the long clean BuildCookRun.
     $null = Assert-LockedToolchainSelection `
@@ -639,7 +638,7 @@ try {
         }
         validation    = [ordered]@{
             automationTests = -not [bool]$SkipTests
-            dataValidation  = $true
+            dataValidation  = -not [bool]$SkipDataValidation
             smokeTest      = -not [bool]$SkipSmokeTest
             graphicsStartupTest = [bool]$GraphicsSmokeTest
             defaultLauncherStartupTest = [bool]$GraphicsSmokeTest
