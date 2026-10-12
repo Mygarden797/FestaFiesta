@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Incident/FF_IncidentTypes.h"
+#include "Time/FF_FestivalStage.h"
 #include "FF_IncidentSubsystem.generated.h"
 
 
@@ -115,7 +116,12 @@ private:
 	
 	const FIncidentSlot* FindSlot(FFF_IncidentHandle Handle) const;
 	
-	void CloseSlot(int32 Index, EFF_IncidentState FinalState, float NowMinutes);
+	void CloseSlot(int32 Index, EFF_IncidentState FinalState, float NowMinutes, bool bNotifyFinished = true);
+
+	UFUNCTION()
+	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+
+	void CloseAllIncidents();
 
 	// 수명이 다한 사건을 톤에 맞는 상태로 닫는다. Ignored 면 정의의 OnFailedEffect 를 적용한다. Tick 만 부른다.
 	void LapseIncident(FFF_IncidentHandle Handle, float NowMinutes);

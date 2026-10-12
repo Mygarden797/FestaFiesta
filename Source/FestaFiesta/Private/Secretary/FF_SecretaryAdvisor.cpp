@@ -220,7 +220,7 @@ namespace FFSecretaryAdvisor
 		case EFF_SecretaryWeakness::Need:
 			Lines.Add(Inputs.bHasWorstNeed
 				? SecretaryMorningNeedText(Inputs.WorstNeed)
-				: LOCTEXT("WeakNeed", "필요한 걸 못 채운 손님이 많았어요. 먹을 곳 · 쉴 곳 · 화장실을 둘러보세요."));
+				: LOCTEXT("WeakNeed", "필요한 걸 못 채운 손님이 많았어요. 먹을 곳, 쉴 곳, 화장실이 넉넉한지 둘러보세요."));
 			bSpokeAboutRestroom = Inputs.bHasWorstNeed && Inputs.WorstNeed == EFF_NeedType::Restroom;
 			break;
 		default:
@@ -241,7 +241,7 @@ namespace FFSecretaryAdvisor
 		const bool bRecommendToilet = Inputs.ToiletCount == 0 && !bSpokeAboutRestroom;
 		if (bRecommendToilet)
 		{
-			Lines.Add(LOCTEXT("RecommendToilet", "그리고 화장실은 꼭 설치하시는 걸 추천드려요."));
+			Lines.Add(LOCTEXT("RecommendToilet", "그리고 화장실은 꼭 설치해 두세요. 없으면 손님들이 금방 불편해해요."));
 		}
 
 		// 아직 안 놓아 본 분류 하나. 방금 화장실을 권했으면 그다음 분류를 소개한다.
@@ -264,7 +264,7 @@ namespace FFSecretaryAdvisor
 	{
 		return {
 			LOCTEXT("FirstDay1", "오늘이 첫날이에요. 운영 중에 눈에 띄는 게 있으면 옆에서 짧게 말씀드릴게요."),
-			LOCTEXT("FirstDay2", "아침마다 어제 운영도 정리해 드릴게요."),
+			LOCTEXT("FirstDay2", "아침마다 전날 운영도 짧게 정리해 드릴게요."),
 		};
 	}
 }
