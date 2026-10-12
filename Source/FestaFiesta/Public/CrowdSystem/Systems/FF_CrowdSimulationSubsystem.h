@@ -449,6 +449,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float AudienceAttendanceRatio = 0.6f;
 
+
 	/**
 	 * 집결 구간 동안 이 주기로 다시 훑는다. 한 번만 부르면 그 뒤에 입장한 손님과
 	 * 그때 줄에 있어서 빠진 손님이 영영 안 온다 — 입장은 Live 내내 이어진다.
@@ -613,6 +614,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Queue")
 	int32 GetQueueJoinRejectedCount() const { return QueueJoinRejected; }
 
+	// 화장실만 따로 센 줄 깔때기(파티 단위 누적): 가입 시도 · 수락 · 꽉 차서 거절 · 닫혀서 거절 · 칸 도착 · 인내 초과 이탈
+	int32 GetToiletJoinAttemptCount() const { return ToiletJoinAttempts; }
+	int32 GetToiletJoinAcceptedCount() const { return ToiletJoinAccepted; }
+	int32 GetToiletJoinRejectedFullCount() const { return ToiletJoinRejectedFull; }
+	int32 GetToiletJoinRejectedClosedCount() const { return ToiletJoinRejectedClosed; }
+	int32 GetToiletArrivalCount() const { return ToiletArrivals; }
+	int32 GetToiletPatienceAbandonCount() const { return ToiletPatienceAbandons; }
+
+	// 화장실 이용 자리 차례인데 이용을 시작 못 한 팀이 무엇을 기다렸는지(팀·초 누적, 진단)
+	enum class EToiletFrontWait : uint8
+	{
+		NoSlot,             // 새 자리를 아직 못 받음
+		LeaderFar,          // 리더가 자리에서 1m 밖
+		LeaderNearMoving,   // 리더가 1m 안, 통지 반경 밖에서 다가가는 중
+		LeaderNearStopped,  // 리더가 1m 안, 통지 반경 밖에서 멈춰 있음
+		AllInside,          // 리더가 통지 반경 안인데 아직 통지 전
+		NotifiedNotArrived, // 통지했는데 대기열은 도착으로 모름
+		Count
+	};
+	float GetToiletFrontWaitSeconds(EToiletFrontWait Kind) const { return ToiletFrontWaitSeconds[static_cast<int32>(Kind)]; }
+
 	UFUNCTION(BlueprintPure, Category = "Crowd|Queue")
 	int32 GetQueueFacilityUnresolvedCount() const { return QueueFacilityUnresolved; }
 
@@ -715,6 +737,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "1.0", ClampMax = "10.0"))
 	float AssignedSlotArrivalRadiusUU = 5.f;
 
+	// 시설 줄 칸의 도착 통지 판정. 리더가 자기 칸에서 이 거리 안이면 통지하고, 일행은 기다리지 않는다.
+	// 걷는 목표 오차(위)는 그대로라 일행은 이용 중에 마저 들어선다. 일행 전원 5cm 를 기다리면
+	// 시설이 줄을 두고 노는 시간이 이용 시간보다 길었다. 칸 간격(90cm)의 절반보다 작게 둔다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "1.0", ClampMax = "45.0"))
+	float QueueArrivalNotifyRadiusUU = 40.f;
+
 	float GetAssignedSlotArrivalRadius() const
 	{
 		return FMath::Min(FMath::Max(QueueSlotArrivalRadiusUU, 1.f),
@@ -761,6 +789,28 @@ public:
 
 	// 커버리지를 낸 해소 시설 수(운영 중 · 메인 무대 제외). 시설 정보가 없어 세지 못했으면 INDEX_NONE
 	int32 GetNeedReliefFacilityCount(EFF_NeedType NeedType) const;
+
+	// 화장실 줄 깔때기 진단용
+	bool IsToiletFacility(const FGuid& ZoneFacilityId) const;
+
+	/**
+	 * 메인 공연 시작 · 끝 순간의 화장실 급함 스냅숏(진단). 관람석에 묶인 손님과 그 밖의 손님을 나눠
+	 * 화장실 욕구가 못 채움 기준(0.7) 이상인 사람 수를 센다. 관람 중에는 목적지 결정을 하지 않으므로
+	 * 결정 통계로는 이 사람들이 안 보인다.
+	 */
+	struct FShowRestroomSnapshot
+	{
+		int32 AudienceAgents = 0;
+		int32 AudienceUrgent = 0;
+		float AudienceRestroomSum = 0.f;
+		int32 OtherAgents = 0;
+		int32 OtherUrgent = 0;
+	};
+	const TArray<TPair<FShowRestroomSnapshot, FShowRestroomSnapshot>>& GetShowRestroomSnapshots() const { return ShowRestroomSnapshots; }
+
+	// 욕구 상승 · 해소 · 초기값 계수를 계수 표에서 다시 읽는다. 월드 시작 때 한 번 읽으므로,
+	// 그 뒤에 표를 바꾸는 실험(경제 시나리오 -FFEconCoef)은 이걸 불러야 반영된다
+	void ReloadNeedCoefficients();
 
 	// 걷는 도중 개인 주기가 차면 목적지를 다시 고른다(jockeying).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim")
@@ -1692,6 +1742,19 @@ private:
 	int32 QueueFacilityUnresolved = 0;
 	int32 QueueArrivalNotifies = 0;
 	int32 QueueHoldTimeouts = 0;
+	FShowRestroomSnapshot CaptureShowRestroomSnapshot() const;
+	FShowRestroomSnapshot PendingShowStartSnapshot;
+	// 공연마다 (시작, 끝)
+	TArray<TPair<FShowRestroomSnapshot, FShowRestroomSnapshot>> ShowRestroomSnapshots;
+	int32 ToiletJoinAttempts = 0;
+	int32 ToiletJoinAccepted = 0;
+	int32 ToiletJoinRejectedFull = 0;
+	int32 ToiletJoinRejectedClosed = 0;
+	int32 ToiletArrivals = 0;
+	int32 ToiletPatienceAbandons = 0;
+	float ToiletFrontWaitSeconds[static_cast<int32>(EToiletFrontWait::Count)] = {};
+	float ToiletFrontSampleAccumulator = 0.f;
+	void SampleToiletFrontWaits(float ElapsedSeconds);
 	// 메인 공연 휴지 구간으로 흐른 시뮬 시간 누적. 줄 인내 판정에서 뺀다.
 	float QueueBreakSimSeconds = 0.f;
 	int32 QueueStalledSkips = 0;

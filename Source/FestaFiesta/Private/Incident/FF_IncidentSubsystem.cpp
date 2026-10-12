@@ -24,15 +24,23 @@ void UFF_IncidentSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	Super::OnWorldBeginPlay(InWorld);
 	
 	LoadDefinitions();
-	
-	
-	
-	
-	
+
+	const UGameInstance* GameInstance = InWorld.GetGameInstance();
+	if (UFF_FestivalStageSubsystem* Stage = GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	{
+		Stage->OnStageChanged.AddUniqueDynamic(this, &UFF_IncidentSubsystem::HandleStageChanged);
+	}
 }
 
 void UFF_IncidentSubsystem::Deinitialize()
 {
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	if (UFF_FestivalStageSubsystem* Stage = GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	{
+		Stage->OnStageChanged.RemoveDynamic(this, &UFF_IncidentSubsystem::HandleStageChanged);
+	}
+
 	Super::Deinitialize();
 	
 	LoadedCatalog = nullptr;
@@ -334,8 +342,31 @@ const UFF_IncidentSubsystem::FIncidentSlot* UFF_IncidentSubsystem::FindSlot(FFF_
 
 
 
+void UFF_IncidentSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage)
+{
+	if (NewStage != EFF_FestivalStage::Live)
+	{
+		CloseAllIncidents();
+	}
+}
+
+void UFF_IncidentSubsystem::CloseAllIncidents()
+{
+	float Now = 0.f;
+	TryGetNowMinutes(Now);
+
+	for (int32 Index = 0; Index < IncidentSlots.Num(); Index++)
+	{
+		if (IncidentSlots[Index].bInUse)
+		{
+			// 운영 종료 정리는 보상·실패 효과와 종료 토스트 없이 마커·출동 상태만 정리한다.
+			CloseSlot(Index, EFF_IncidentState::Expired, Now, EFF_IncidentCloseReason::SessionReset, false);
+		}
+	}
+}
+
 void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState, float NowMinutes,
-	EFF_IncidentCloseReason Reason)
+	EFF_IncidentCloseReason Reason, bool bNotifyFinished)
 {
 	if (!IncidentSlots.IsValidIndex(Index))
 	{
@@ -420,7 +451,10 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	// 모든 원장 반영 뒤 종료를 방송하므로 종료 이력과 저장 요청은 확정된 잔액을 읽는다.
 	ClosedInfo.GrantedGold = ApplyEffects(Effects, EffectContext).GrantedGold;
 	OnIncidentClosed.Broadcast(Handle);
-	OnIncidentFinished.Broadcast(ClosedInfo);
+	if (bNotifyFinished)
+	{
+		OnIncidentFinished.Broadcast(ClosedInfo);
+	}
 
 	if (bEscalateTo)
 	{

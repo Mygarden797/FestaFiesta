@@ -151,12 +151,7 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin,
 
 	if (CachedCoefficientTable)
 	{
-		NeedRiseRates = FFF_NeedRules::LoadRiseRates(CachedCoefficientTable.Get());
-		NeedReliefAmounts = FFF_NeedRules::LoadReliefAmounts(CachedCoefficientTable.Get());
-		StayDrainMultiplierAtMaxNeed =
-			FFF_NeedRules::LoadStayDrainMultiplierAtMaxNeed(CachedCoefficientTable.Get());
-		FFF_NeedRules::LoadInitialNeedFractions(
-			CachedCoefficientTable.Get(), InitialNeedModeFraction, InitialNeedMaxFraction);
+		ReloadNeedCoefficients();
 
 		// 기존 멤버 값을 기본값으로 넘긴다: 행이 없거나 테이블이 없으면 저작값이 살아남고,
 		// 행이 있으면 CSV 가 이긴다. UPROPERTY 로 편집한 값도 여기서 덮이므로 그 의미를
@@ -398,6 +393,12 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 		if (bQueueBreakThisFrame)
 		{
 			QueueBreakSimSeconds += FixedStepSeconds;
+		}
+		ToiletFrontSampleAccumulator += FixedStepSeconds;
+		if (ToiletFrontSampleAccumulator >= 0.25f)
+		{
+			SampleToiletFrontWaits(ToiletFrontSampleAccumulator);
+			ToiletFrontSampleAccumulator = 0.f;
 		}
 	}
 
@@ -1123,6 +1124,13 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 				{
 					RequestDecision(AgentIndex, EFF_DecisionReason::Arrived);
 				}
+			}
+			else if (State.QueuePhase == EFF_PartyQueuePhase::Joined && Unit.bHasQueueSlot
+				&& FVector::DistSquared2D(Unit.Position, Unit.QueueSlotLocation)
+					<= FMath::Square(QueueArrivalNotifyRadiusUU))
+			{
+				// 정밀 도착 전이라도 통지 반경 안이면 줄 단계를 진행한다. 걷기는 계속 칸 중심을 향한다.
+				AdvancePartyQueueOnArrival(AgentIndex);
 			}
 			else if ((State.AudiencePhase == EFF_PartyAudiencePhase::GoingToSlot
 					|| State.ProgramPhase == EFF_PartyProgramPhase::Returning)
@@ -4258,7 +4266,8 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 	{
 		// 공연 휴지 구간에는 시설이 서비스를 멈춘다. 그 시간까지 기다린 것으로 치면 공연이 끝나기 전에
 		// 줄 선 손님이 거의 다 이탈했다(인내 15분 = 실제 15초, 휴지 구간 약 33초). 휴지 구간 시간은 뺀다.
-		const float PausedSeconds = FMath::Max(QueueBreakSimSeconds - State.QueueBreakSecondsAtSlot, 0.f);
+		const float PausedSeconds = Bridge->PausesForMainProgram(Bridge->FindQueueFacilityId(State.QueuedFacilityId))
+			? FMath::Max(QueueBreakSimSeconds - State.QueueBreakSecondsAtSlot, 0.f) : 0.f;
 		const float WaitedMinutes = FMath::Max(SimTimeSeconds - State.QueueAtSlotSimTime - PausedSeconds, 0.f)
 			* Temp_FestivalMinutesPerRealSecond;
 
@@ -4289,6 +4298,7 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 				AgentPersonalThresholds[LeaderAgentIndex].WaitThresholdMinutes);
 
 			++QueuePatienceAbandons;
+			ToiletPatienceAbandons += IsToiletFacility(State.QueuedFacilityId) ? 1 : 0;
 
 			// 큐에 먼저 통지하고(위 주석) 그 다음 재결정을 건다. 이 순서를 바꾸면 안 된다.
 			ClearPartyQueueState(LeaderAgentIndex, true);
@@ -4332,16 +4342,21 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 		Request.CauseId = State.CurrentDestinationId;
 
 		++QueueJoinAttempts;
+		const bool bToilet = IsToiletFacility(ZoneFacilityId);
+		ToiletJoinAttempts += bToilet ? 1 : 0;
 
 		const FFF_QueueJoinResponse Response = Bridge->TryJoinZoneFacility(ZoneFacilityId, Request);
 		if (!Response.bAccepted)
 		{
+			ToiletJoinRejectedFull += bToilet && Response.Result == EFF_QueueJoinResult::RejectedFull ? 1 : 0;
+			ToiletJoinRejectedClosed += bToilet && Response.Result == EFF_QueueJoinResult::RejectedClosed ? 1 : 0;
 			++QueueJoinRejected;
 			RequestDecision(LeaderAgentIndex, EFF_DecisionReason::JoinRejected);
 			return true;
 		}
 
 		++QueueJoinAccepted;
+		ToiletJoinAccepted += bToilet ? 1 : 0;
 		State.QueuePhase = EFF_PartyQueuePhase::Joined;
 		State.QueuedFacilityId = ZoneFacilityId;
 		State.QueueEnteredSimTime = SimTimeSeconds;
@@ -4353,18 +4368,21 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 	{
 		// 가입 이벤트와 자리 배정은 지연 전달된다. 아직 접근점을 목표로 삼거나
 		// 일행이 따라오는 동안에는 도착 확인을 보내지 않는다.
+		// 리더가 칸에 들어서면 알린다. 일행은 이용 중에 마저 들어선다.
 		for (const int32 MemberIndex : GetPartyMembers(Leader.PartyID))
 		{
-			const FUnitData& Member = UnitDatas[MemberIndex];
-			if (!Member.bHasQueueSlot
-				|| FVector::DistSquared2D(Member.Position, Member.QueueSlotLocation)
-					> FMath::Square(GetAssignedSlotArrivalRadius()))
+			if (!UnitDatas[MemberIndex].bHasQueueSlot)
 			{
 				return true;
 			}
 		}
+		if (FVector::DistSquared2D(Leader.Position, Leader.QueueSlotLocation) > FMath::Square(QueueArrivalNotifyRadiusUU))
+		{
+			return true;
+		}
 		Bridge->NotifyZoneFacilityPartyArrived(State.QueuedFacilityId, Leader.PartyID);
 		++QueueArrivalNotifies;
+		ToiletArrivals += IsToiletFacility(State.QueuedFacilityId) ? 1 : 0;
 
 		State.QueuePhase = EFF_PartyQueuePhase::AtSlot;
 		State.QueueAtSlotSimTime = SimTimeSeconds;
@@ -5099,6 +5117,7 @@ void UFF_CrowdSimulationSubsystem::UpdateAudienceShowState()
 		}
 	}
 	UE_LOG(LogTemp, Log, TEXT("[Audience] 공연 시작 — 대기 중이던 %d파티가 관람으로 넘어간다"), SeatedCount);
+	PendingShowStartSnapshot = CaptureShowRestroomSnapshot();
 	LogAudiencePhaseBreakdown(TEXT("공연 시각"));
 }
 
@@ -5112,6 +5131,12 @@ void UFF_CrowdSimulationSubsystem::HandleMainProgramStarted(FString EventLabel)
 void UFF_CrowdSimulationSubsystem::HandleMainProgramEnded(FString EventLabel)
 {
 	LogAudiencePhaseBreakdown(TEXT("공연 종료 직전"));
+	// 종료 신호는 한 공연에 두 번 올 수 있다. 시작을 본 공연만 남긴다
+	if (bMainProgramShowStarted)
+	{
+		ShowRestroomSnapshots.Emplace(PendingShowStartSnapshot, CaptureShowRestroomSnapshot());
+	}
+	PendingShowStartSnapshot = FShowRestroomSnapshot();
 	bMainProgramAudienceActive = false;
 	bMainProgramShowStarted = false;
 	MainProgramStartLiveSeconds = 0.f;
@@ -6081,6 +6106,119 @@ float UFF_CrowdSimulationSubsystem::GetNeedCoverage(EFF_NeedType NeedType) const
 {
 	const int32 Index = static_cast<int32>(NeedType);
 	return (Index >= 0 && Index < static_cast<int32>(EFF_NeedType::Count)) ? NeedCoverage[Index] : 1.f;
+}
+
+UFF_CrowdSimulationSubsystem::FShowRestroomSnapshot UFF_CrowdSimulationSubsystem::CaptureShowRestroomSnapshot() const
+{
+	static constexpr float UrgentRestroom = 0.7f;
+	FShowRestroomSnapshot Snapshot;
+	for (const FUnitData& Unit : UnitDatas)
+	{
+		if (!Unit.bIsActive)
+		{
+			continue;
+		}
+		const bool bInAudience = PartyDecisionStates.IsValidIndex(Unit.LeaderAgentIndex)
+			&& IsAudienceLocked(PartyDecisionStates[Unit.LeaderAgentIndex]);
+		const bool bUrgent = Unit.Needs.Restroom >= UrgentRestroom;
+		if (bInAudience)
+		{
+			++Snapshot.AudienceAgents;
+			Snapshot.AudienceUrgent += bUrgent ? 1 : 0;
+			Snapshot.AudienceRestroomSum += Unit.Needs.Restroom;
+		}
+		else
+		{
+			++Snapshot.OtherAgents;
+			Snapshot.OtherUrgent += bUrgent ? 1 : 0;
+		}
+	}
+	return Snapshot;
+}
+
+void UFF_CrowdSimulationSubsystem::ReloadNeedCoefficients()
+{
+	if (!CachedCoefficientTable)
+	{
+		return;
+	}
+	NeedRiseRates = FFF_NeedRules::LoadRiseRates(CachedCoefficientTable.Get());
+	NeedReliefAmounts = FFF_NeedRules::LoadReliefAmounts(CachedCoefficientTable.Get());
+	StayDrainMultiplierAtMaxNeed = FFF_NeedRules::LoadStayDrainMultiplierAtMaxNeed(CachedCoefficientTable.Get());
+	FFF_NeedRules::LoadInitialNeedFractions(CachedCoefficientTable.Get(), InitialNeedModeFraction, InitialNeedMaxFraction);
+}
+
+void UFF_CrowdSimulationSubsystem::SampleToiletFrontWaits(float ElapsedSeconds)
+{
+	UWorld* World = GetWorld();
+	const UFF_QueueSubsystem* Queue = World ? World->GetSubsystem<UFF_QueueSubsystem>() : nullptr;
+	const UFF_ZoneSystemQueueBridgeSubsystem* Bridge = World ? World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>() : nullptr;
+	if (!Queue || !Bridge)
+	{
+		return;
+	}
+	static constexpr float NearUU = 100.f;
+	static constexpr float StoppedSpeedUU = 10.f;
+	const float RadiusSquared = FMath::Square(QueueArrivalNotifyRadiusUU);
+	for (const TPair<int32, int32>& Pair : PartyLeaderByID)
+	{
+		const int32 LeaderIndex = Pair.Value;
+		if (!PartyDecisionStates.IsValidIndex(LeaderIndex) || !UnitDatas.IsValidIndex(LeaderIndex))
+		{
+			continue;
+		}
+		const FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
+		if (State.QueuePhase != EFF_PartyQueuePhase::Joined && State.QueuePhase != EFF_PartyQueuePhase::AtSlot)
+		{
+			continue;
+		}
+		const int32 QueueFacilityId = Bridge->FindQueueFacilityId(State.QueuedFacilityId);
+		bool bArrived = false;
+		int32 ServiceSlots = 0;
+		const int32 Index = Queue->GetPartyQueueIndex(QueueFacilityId, Pair.Key, &bArrived, &ServiceSlots);
+		if (Index == INDEX_NONE || Index >= ServiceSlots || bArrived
+			|| Queue->HasPartyStartedService(QueueFacilityId, Pair.Key)
+			|| !IsToiletFacility(State.QueuedFacilityId))
+		{
+			continue;
+		}
+
+		EToiletFrontWait Kind = EToiletFrontWait::AllInside;
+		if (State.QueuePhase == EFF_PartyQueuePhase::AtSlot)
+		{
+			Kind = EToiletFrontWait::NotifiedNotArrived;
+		}
+		else
+		{
+			const FUnitData& Leader = UnitDatas[LeaderIndex];
+			const float LeaderDistSquared = FVector::DistSquared2D(Leader.Position, Leader.QueueSlotLocation);
+			bool bAnyNoSlot = false;
+			for (const int32 MemberIndex : GetPartyMembers(Pair.Key))
+			{
+				bAnyNoSlot |= !UnitDatas[MemberIndex].bHasQueueSlot;
+			}
+			if (bAnyNoSlot)
+			{
+				Kind = EToiletFrontWait::NoSlot;
+			}
+			else if (LeaderDistSquared > FMath::Square(NearUU))
+			{
+				Kind = EToiletFrontWait::LeaderFar;
+			}
+			else if (LeaderDistSquared > RadiusSquared)
+			{
+				Kind = Leader.Velocity.Size2D() < StoppedSpeedUU ? EToiletFrontWait::LeaderNearStopped : EToiletFrontWait::LeaderNearMoving;
+			}
+		}
+		ToiletFrontWaitSeconds[static_cast<int32>(Kind)] += ElapsedSeconds;
+	}
+}
+
+bool UFF_CrowdSimulationSubsystem::IsToiletFacility(const FGuid& ZoneFacilityId) const
+{
+	const UFFZSWorldSubsystem* Zones = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const AFFZSFacilityActor* Facility = Zones ? Zones->FindFacility(ZoneFacilityId) : nullptr;
+	return Facility && Facility->GetFacilitySpec().Category == EFFZSFacilityCategory::Toilet;
 }
 
 int32 UFF_CrowdSimulationSubsystem::GetNeedReliefFacilityCount(EFF_NeedType NeedType) const

@@ -518,19 +518,23 @@ void UFF_FestivalViewModelSubsystem::CaptureDailySatisfaction()
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	if (!Progression || !Progression->IsFestivalStarted()) return;
 	// Closing의 빈 표본이 마지막으로 측정한 그날의 값을 중립 50으로 덮지 않도록 한다.
+	// 결산은 그날 Live 평균이다. 아직 평균이 없으면(Live 첫 창 전) 지금 값을 쓴다
+	const FFF_DaySatisfactionAverage DayAverage = CachedSatisfactionSubsystem->GetDayAverage();
+	const bool bUseAverage = DayAverage.IsValid() && DayAverage.Day == GetCurrentDay();
 	LastDailySatisfaction.Day = GetCurrentDay();
 	LastDailySatisfaction.bHasSatisfaction = true;
-	LastDailySatisfaction.SimSatisfaction = CachedSatisfactionSubsystem->GetSimSatisfaction();
+	LastDailySatisfaction.SimSatisfaction = bUseAverage ? DayAverage.Satisfaction : CachedSatisfactionSubsystem->GetSimSatisfaction();
 	LastDailySatisfaction.ScoreSatisfaction = FMath::Clamp(
 		LastDailySatisfaction.SimSatisfaction + Progression->GetFinaleSatisfactionBonus(), 0, MetricMax);
-	LastDailySatisfaction.WaitScore = CachedSatisfactionSubsystem->GetWaitScore();
-	LastDailySatisfaction.DensityScore = CachedSatisfactionSubsystem->GetDensityScore();
-	LastDailySatisfaction.PreferenceScore = CachedSatisfactionSubsystem->GetPreferenceScore();
-	LastDailySatisfaction.NeedScore = CachedSatisfactionSubsystem->GetNeedFulfillmentScore();
-	LastDailySatisfaction.SatisfactionBreakdown = BuildSatisfactionBreakdown(LastDailySatisfaction);
+	LastDailySatisfaction.WaitScore = bUseAverage ? DayAverage.WaitScore : CachedSatisfactionSubsystem->GetWaitScore();
+	LastDailySatisfaction.DensityScore = bUseAverage ? DayAverage.DensityScore : CachedSatisfactionSubsystem->GetDensityScore();
+	LastDailySatisfaction.PreferenceScore = bUseAverage ? DayAverage.PreferenceScore : CachedSatisfactionSubsystem->GetPreferenceScore();
+	LastDailySatisfaction.NeedScore = bUseAverage ? DayAverage.NeedScore : CachedSatisfactionSubsystem->GetNeedFulfillmentScore();
+	LastDailySatisfaction.SatisfactionBreakdown = BuildSatisfactionBreakdown(LastDailySatisfaction, bUseAverage ? &DayAverage : nullptr);
 }
 
-FFF_SatisfactionBreakdown UFF_FestivalViewModelSubsystem::BuildSatisfactionBreakdown(const FFF_DailyReportView& Scores) const
+FFF_SatisfactionBreakdown UFF_FestivalViewModelSubsystem::BuildSatisfactionBreakdown(
+	const FFF_DailyReportView& Scores, const FFF_DaySatisfactionAverage* DayAverage) const
 {
 	const UFF_SatisfactionMetricsSubsystem* Satisfaction = CachedSatisfactionSubsystem;
 	if (!Satisfaction)
@@ -540,7 +544,7 @@ FFF_SatisfactionBreakdown UFF_FestivalViewModelSubsystem::BuildSatisfactionBreak
 	const FFF_SatisfactionCoefficients& Coefficients = Satisfaction->GetLastCoefficients();
 	FFF_SatisfactionBreakdownInputs Inputs;
 	Inputs.Satisfaction = Scores.SimSatisfaction;
-	Inputs.BaseSatisfaction = Satisfaction->GetBaseSatisfaction();
+	Inputs.BaseSatisfaction = DayAverage ? DayAverage->BaseSatisfaction : Satisfaction->GetBaseSatisfaction();
 	Inputs.WaitScore = Scores.WaitScore;
 	Inputs.DensityScore = Scores.DensityScore;
 	Inputs.PreferenceScore = Scores.PreferenceScore;
@@ -551,12 +555,12 @@ FFF_SatisfactionBreakdown UFF_FestivalViewModelSubsystem::BuildSatisfactionBreak
 	Inputs.WeightDensity = Coefficients.WeightEnvironmentDensity;
 	Inputs.WeightPreference = Coefficients.WeightPersonalFitPreference;
 	Inputs.WeightNeed = Coefficients.WeightPersonalFitNeed;
-	Inputs.AverageWaitSeconds = Satisfaction->GetAverageWaitSeconds();
+	Inputs.AverageWaitSeconds = DayAverage ? DayAverage->AverageWaitSeconds : Satisfaction->GetAverageWaitSeconds();
 	Inputs.WaitRefSeconds = Coefficients.WaitRefSeconds;
-	Inputs.QueueSuccessRate = Satisfaction->GetQueueSuccessRate();
-	Inputs.CrowdedShare = Satisfaction->GetCrowdedShare();
-	Inputs.PreferenceMatchShare = Satisfaction->GetPreferenceMatchShare();
-	Inputs.PreferenceSampleCount = Satisfaction->GetPreferenceSampleCount();
+	Inputs.QueueSuccessRate = DayAverage ? DayAverage->QueueSuccessRate : Satisfaction->GetQueueSuccessRate();
+	Inputs.CrowdedShare = DayAverage ? DayAverage->CrowdedShare : Satisfaction->GetCrowdedShare();
+	Inputs.PreferenceMatchShare = DayAverage ? DayAverage->PreferenceMatchShare : Satisfaction->GetPreferenceMatchShare();
+	Inputs.PreferenceSampleCount = DayAverage ? DayAverage->PreferenceSampleCount : Satisfaction->GetPreferenceSampleCount();
 	Inputs.CoverageFloor = Coefficients.NeedCoverageFloor;
 	Inputs.CoverageTarget[0] = Coefficients.NeedCoverageTargetHunger;
 	Inputs.CoverageTarget[1] = Coefficients.NeedCoverageTargetRestroom;
@@ -577,9 +581,13 @@ FFF_SatisfactionBreakdown UFF_FestivalViewModelSubsystem::BuildSatisfactionBreak
 	}
 	if (const UFF_NpcNeedMetricsSubsystem* Needs = GI ? GI->GetSubsystem<UFF_NpcNeedMetricsSubsystem>() : nullptr)
 	{
-		if (Needs->GetSampleCount() > 0)
+		for (int32 Index = 0; Index < FFF_SatisfactionBreakdownInputs::NeedCount; ++Index)
 		{
-			for (int32 Index = 0; Index < FFF_SatisfactionBreakdownInputs::NeedCount; ++Index)
+			if (DayAverage)
+			{
+				Inputs.UnmetPercent[Index] = DayAverage->NeedUnmetPercent[static_cast<int32>(BreakdownNeeds[Index])];
+			}
+			else if (Needs->GetSampleCount() > 0)
 			{
 				Inputs.UnmetPercent[Index] = Needs->GetNeedUnmetRatio(BreakdownNeeds[Index]);
 			}

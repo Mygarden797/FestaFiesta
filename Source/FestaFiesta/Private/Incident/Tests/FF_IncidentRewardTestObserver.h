@@ -17,6 +17,7 @@ public:
 	FFF_IncidentClosedInfo LastInfo;
 	TArray<uint8> SavedAtFinished;
 	int32 FinishedCount = 0;
+	int32 ClosedCount = 0;
 	bool bRunNestedRevenue = false;
 	bool bHandleValidDuringPayment = true;
 
@@ -30,6 +31,12 @@ public:
 			// 다른 수입을 같은 콜스택에서 발생시켜도 사건의 지급 영수증에 섞이면 안 된다.
 			Progression->AddRevenue(7, EFF_EarnReason::IncidentReward);
 		}
+	}
+
+	UFUNCTION()
+	void HandleClosed(FFF_IncidentHandle Handle)
+	{
+		++ClosedCount;
 	}
 
 	UFUNCTION()

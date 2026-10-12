@@ -57,6 +57,7 @@ bool FFF_IncidentRewardReceiptTest::RunTest(const FString& Parameters)
 	Observer->Progression = Progression;
 	Observer->Incident = Incident;
 	Progression->OnGoldChanged.AddDynamic(Observer, &UFF_IncidentRewardTestObserver::HandleGold);
+	Incident->OnIncidentClosed.AddDynamic(Observer, &UFF_IncidentRewardTestObserver::HandleClosed);
 	Incident->OnIncidentFinished.AddDynamic(Observer, &UFF_IncidentRewardTestObserver::HandleFinished);
 
 	auto Open = [&]()
@@ -103,6 +104,28 @@ bool FFF_IncidentRewardReceiptTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("자연 해소와 방치가 성공 보상을 실행하지 않음"), Progression->GetGold(), 1107);
 	TestFalse(TEXT("방치된 핸들 완료 재요청 거부"), Incident->CompleteStaffResponse(TimedOut, 0));
 
+	// Dev의 단계 종료 정리와 기존 보상·종료 알림 처리가 함께 있어도 정리 자체는 지급하지 않는다.
+	const FFF_IncidentHandle ActiveAtClose = Open();
+	const FFF_IncidentHandle RespondingAtClose = Open();
+	Incident->IncidentSlots[RespondingAtClose.Index].State = EFF_IncidentState::Acknowledged;
+	Incident->IncidentSlots[RespondingAtClose.Index].ChosenOptionIndex = 0;
+	Definition->OnFailedEffect.Add(Reward);
+	const int32 ClosedBeforeStage = Observer->ClosedCount;
+	const int32 FinishedBeforeStage = Observer->FinishedCount;
+	Incident->HandleStageChanged(EFF_FestivalStage::Setup, EFF_FestivalStage::Live);
+	TestTrue(TEXT("라이브 진입은 사건을 닫지 않음"), Incident->IsHandleValid(ActiveAtClose));
+	Incident->HandleStageChanged(EFF_FestivalStage::Live, EFF_FestivalStage::Closing);
+	TestFalse(TEXT("운영 종료는 미처리 사건 정리"), Incident->IsHandleValid(ActiveAtClose));
+	TestFalse(TEXT("운영 종료는 출동 중 사건도 정리"), Incident->IsHandleValid(RespondingAtClose));
+	TestEqual(TEXT("마커·스태프 정리용 종료 신호는 각각 전달"), Observer->ClosedCount, ClosedBeforeStage + 2);
+	TestEqual(TEXT("운영 종료에 완료·방치 안내를 추가하지 않음"), Observer->FinishedCount, FinishedBeforeStage);
+	TestEqual(TEXT("운영 종료는 성공·실패 효과 모두 실행하지 않음"), Progression->GetGold(), 1107);
+	TestTrue(TEXT("다음 운영을 위해 중복 키 해제"), Incident->ActiveByKey.IsEmpty());
+	TestFalse(TEXT("운영이 끝난 출동의 늦은 완료도 보상 없음"), Incident->CompleteStaffResponse(RespondingAtClose, 0));
+	Incident->HandleStageChanged(EFF_FestivalStage::Closing, EFF_FestivalStage::Report);
+	TestEqual(TEXT("다음 단계에서 같은 사건을 다시 닫지 않음"), Observer->ClosedCount, ClosedBeforeStage + 2);
+	Definition->OnFailedEffect.Reset();
+
 	Festival->InitialGold = MAX_int32 - 40;
 	Progression->StartFestival(Festival);
 	const FFF_IncidentHandle Capped = Open();
@@ -117,6 +140,7 @@ bool FFF_IncidentRewardReceiptTest::RunTest(const FString& Parameters)
 		UFF_UIDisplayTextLibrary::GetIncidentFinishedText(Observer->LastInfo).ToString().Contains(TEXT("금화 +")));
 
 	Progression->OnGoldChanged.RemoveAll(Observer);
+	Incident->OnIncidentClosed.RemoveAll(Observer);
 	Incident->OnIncidentFinished.RemoveAll(Observer);
 	return true;
 }

@@ -212,9 +212,9 @@ public:
 
 	// 재무 만점 이익(Gold). 재무 점수 = 100 × (최종 - 시작) / 이 값. 본전이면 0점. [밸런스]
 	// 3일 경제 시나리오(FestaFiesta.Scenario.Economy.ThreeDays)로 맞췄다: 최소 배치는 B, 시설 25개 + 인플루언서 + 피날레 S 는 S 에 닿는다.
-	// 구역 13개 맵에서는 시설을 18개 이상 지은 판의 이익이 약 17,800 이라, 그 판들은 만점에 닿고 최소 배치(이익 11,000~13,000)만 덜 받게 둔다.
+	// 구역 13개 맵에서는 시설을 18개 이상 지은 판의 이익이 28,000~37,000 이라, 그 판들은 만점에 닿고 최소 배치(이익 17,000~22,000)만 덜 받게 둔다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Evaluation", meta = (ClampMin = "0"))
-	int32 FinanceTargetProfitGold = 17000;
+	int32 FinanceTargetProfitGold = 28000;
 
 	// --- 뒷정리 -----------------------------------------------------------
 

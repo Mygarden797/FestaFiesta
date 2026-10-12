@@ -318,7 +318,8 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::RegisterOrRefreshFacility(AFFZSFacility
 	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
 	const UFF_FestivalStageSubsystem* Stage = GameInstance
 		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
-	QueueSystem->SetPerformanceBreak(QueueFacilityId, Stage && Stage->IsMainProgramQueueBreakActive());
+	QueueSystem->SetPerformanceBreak(QueueFacilityId,
+		Stage && Stage->IsMainProgramQueueBreakActive() && PausesForMainProgram(Facility.GetFacilitySpec()));
 
 	if (Facility.GetFacilityState() == EFFZSFacilityState::Active)
 	{
@@ -614,9 +615,16 @@ void UFF_ZoneSystemQueueBridgeSubsystem::SynchronizeMainProgramQueueBreak()
 	FacilityIds.Sort();
 	for (const int32 FacilityId : FacilityIds)
 	{
-		QueueSystem->SetPerformanceBreak(FacilityId, bShouldBreak);
+		QueueSystem->SetPerformanceBreak(FacilityId, bShouldBreak && PausesForMainProgram(FacilityId));
 	}
 	QueueSystem->FlushPendingEvents();
+}
+
+bool UFF_ZoneSystemQueueBridgeSubsystem::PausesForMainProgram(const int32 QueueFacilityId) const
+{
+	const FGuid* ZoneFacilityId = QueueToZoneFacilityIds.Find(QueueFacilityId);
+	const AFFZSFacilityActor* Facility = ZoneFacilityId && ZoneSystem ? ZoneSystem->FindFacility(*ZoneFacilityId) : nullptr;
+	return !Facility || PausesForMainProgram(Facility->GetFacilitySpec());
 }
 
 FFF_QueueJoinResponse UFF_ZoneSystemQueueBridgeSubsystem::TryJoinZoneFacility(
@@ -629,13 +637,13 @@ FFF_QueueJoinResponse UFF_ZoneSystemQueueBridgeSubsystem::TryJoinZoneFacility(
 		return Response;
 	}
 	SynchronizeMainProgramQueueBreak();
-	if (bMainProgramQueueBreak)
+	AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(ZoneFacilityId);
+	if (bMainProgramQueueBreak && (!Facility || PausesForMainProgram(Facility->GetFacilitySpec())))
 	{
 		Response.Result = EFF_QueueJoinResult::RejectedClosed;
 		return Response;
 	}
 
-	AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(ZoneFacilityId);
 	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
 	const UFF_ProgramReservationSubsystem* Reservations = GameInstance
 		? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Incident/FF_IncidentTypes.h"
+#include "Time/FF_FestivalStage.h"
 #include "FF_IncidentSubsystem.generated.h"
 
 
@@ -99,7 +100,7 @@ public:
 	FFF_OnIncidentRaised OnIncidentRaised;
 	FFF_OnIncidentClosed OnIncidentClosed;
 
-	//닫힌 이유·제목·출동 여부를 값으로 실어 OnIncidentClosed 바로 뒤에 방송한다.
+	// 닫힌 이유·제목·출동 여부를 값으로 방송한다. 운영 단계 전환의 일괄 정리에서는 생략한다.
 	FFF_OnIncidentFinished OnIncidentFinished;
 FFF_OnIncidentUpdated OnIncidentUpdated;
 	
@@ -123,7 +124,12 @@ private:
 	const FIncidentSlot* FindSlot(FFF_IncidentHandle Handle) const;
 	
 	void CloseSlot(int32 Index, EFF_IncidentState FinalState, float NowMinutes,
-		EFF_IncidentCloseReason Reason = EFF_IncidentCloseReason::Unknown);
+		EFF_IncidentCloseReason Reason = EFF_IncidentCloseReason::Unknown, bool bNotifyFinished = true);
+
+	UFUNCTION()
+	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+
+	void CloseAllIncidents();
 
 	// 수명이 다한 사건을 톤에 맞는 상태로 닫는다. Ignored 면 정의의 OnFailedEffect 를 적용한다. Tick 만 부른다.
 	void LapseIncident(FFF_IncidentHandle Handle, float NowMinutes);

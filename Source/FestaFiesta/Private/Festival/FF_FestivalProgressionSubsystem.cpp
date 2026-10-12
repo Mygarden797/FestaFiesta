@@ -1055,7 +1055,13 @@ int32 UFF_FestivalProgressionSubsystem::ReadCurrentSatisfaction() const
 {
 	const UFF_SatisfactionMetricsSubsystem* Satisfaction = GetGameInstance()
 		? GetGameInstance()->GetSubsystem<UFF_SatisfactionMetricsSubsystem>() : nullptr;
-	return Satisfaction ? Satisfaction->GetSimSatisfaction() : 50;
+	if (!Satisfaction)
+	{
+		return 50;
+	}
+	// 하루 기록은 그날 Live 평균이다. Live 끝 한 순간은 그때 쌓인 욕구가 그대로 잡혀 하루를 대표하지 못한다
+	const FFF_DaySatisfactionAverage DayAverage = Satisfaction->GetDayAverage();
+	return DayAverage.IsValid() ? DayAverage.Satisfaction : Satisfaction->GetSimSatisfaction();
 }
 
 void UFF_FestivalProgressionSubsystem::BroadcastExpectedVisitorsIfChanged(
