@@ -50,6 +50,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
 	void AddPanInput(const FVector2D& ScreenInput);
 
+	// 키보드 이동 속도 배율(2026-10-12 피드백: Shift 로 더 빨리). 1 이 기본이다. 가장자리 스크롤에는 안 붙는다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
+	void SetPanSpeedScale(float Scale) { PanSpeedScale = FMath::Max(0.f, Scale); }
+
 	// 화면 가장자리 스크롤. 키보드 팬과 속도가 달라서 따로 쌓는다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
 	void AddEdgeScrollInput(const FVector2D& ScreenInput);
@@ -166,6 +170,7 @@ private:
 
 	// 이번 프레임에 쌓인 팬 입력. Tick 에서 소비하고 비운다.
 	FVector2D PendingPanInput = FVector2D::ZeroVector;
+	float PanSpeedScale = 1.f;
 	FVector2D PendingEdgeScrollInput = FVector2D::ZeroVector;
 	float PendingRotateInput = 0.f;
 

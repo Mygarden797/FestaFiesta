@@ -112,6 +112,7 @@ void AFF_FestivalPlayerController::FlushPressedKeys()
 	bDragPanStartPending = false;
 	bDragPanActive = false;
 	ReleaseBuildDragPanHold();
+	SetPanBoost(false);
 }
 
 void AFF_FestivalPlayerController::SetupInputComponent()
@@ -160,6 +161,12 @@ void AFF_FestivalPlayerController::SetupInputComponent()
 		EnhancedInput->BindAction(DragPanAction, ETriggerEvent::Started, this, &AFF_FestivalPlayerController::HandleDragPanStarted);
 		EnhancedInput->BindAction(DragPanAction, ETriggerEvent::Completed, this, &AFF_FestivalPlayerController::HandleDragPanEnded);
 		EnhancedInput->BindAction(DragPanAction, ETriggerEvent::Canceled, this, &AFF_FestivalPlayerController::HandleDragPanEnded);
+	}
+	if (PanBoostAction)
+	{
+		EnhancedInput->BindAction(PanBoostAction, ETriggerEvent::Started, this, &AFF_FestivalPlayerController::HandlePanBoostStarted);
+		EnhancedInput->BindAction(PanBoostAction, ETriggerEvent::Completed, this, &AFF_FestivalPlayerController::HandlePanBoostEnded);
+		EnhancedInput->BindAction(PanBoostAction, ETriggerEvent::Canceled, this, &AFF_FestivalPlayerController::HandlePanBoostEnded);
 	}
 }
 
@@ -771,6 +778,25 @@ void AFF_FestivalPlayerController::HandleDragPanStarted(const FInputActionValue&
 {
 	bDragPanHeld = true;
 	bDragPanStartPending = true;
+}
+
+void AFF_FestivalPlayerController::HandlePanBoostStarted(const FInputActionValue& Value)
+{
+	SetPanBoost(true);
+}
+
+void AFF_FestivalPlayerController::HandlePanBoostEnded(const FInputActionValue& Value)
+{
+	SetPanBoost(false);
+}
+
+void AFF_FestivalPlayerController::SetPanBoost(const bool bBoost)
+{
+	// 관찰 카메라에만 건다. 캐릭터 시점에서는 같은 키가 시야 고정이고, 카메라 이동은 어차피 막혀 있다.
+	if (AFF_OverviewCameraPawn* CameraPawn = GetOverviewCameraPawn())
+	{
+		CameraPawn->SetPanSpeedScale(bBoost ? PanBoostMultiplier : 1.f);
+	}
 }
 
 bool AFF_FestivalPlayerController::IsDragPanKey(const FKey& Key) const
