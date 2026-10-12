@@ -37,8 +37,14 @@ void UFF_FacilityPaidProgramCard::ApplyViewData(
 	}
 	if (Text_ProgramMeta)
 	{
-		Text_ProgramMeta->SetText(FText::Format(
-			LOCTEXT("CardMeta", "{0} · {1}"), ViewData.TimeText, ViewData.CostText));
+		Text_ProgramMeta->SetText(Text_ProgramCost
+			? ViewData.TimeText
+			: FText::Format(LOCTEXT("CardMeta", "{0} · {1}"), ViewData.TimeText, ViewData.CostText));
+	}
+	if (Text_ProgramCost)
+	{
+		Text_ProgramCost->SetText(FText::Format(
+			LOCTEXT("CardCost", "{0} Gold"), FText::AsNumber(ViewData.CostGold)));
 	}
 	if (Text_ProgramAvailability)
 	{

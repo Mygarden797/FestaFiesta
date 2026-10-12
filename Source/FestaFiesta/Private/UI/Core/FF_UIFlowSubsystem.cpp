@@ -199,6 +199,11 @@ UFF_UIRootLayout* UFF_UIFlowSubsystem::GetRootLayout() const
 	return RootLayout.Get();
 }
 
+UUserWidget* UFF_UIFlowSubsystem::GetStageHudWidget() const
+{
+	return StageHudWidget.Get();
+}
+
 bool UFF_UIFlowSubsystem::IsFrontendWorld(const UWorld* World) const
 {
 	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();

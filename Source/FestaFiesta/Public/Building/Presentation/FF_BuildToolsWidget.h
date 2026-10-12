@@ -10,6 +10,7 @@
 #include "FF_BuildToolsWidget.generated.h"
 
 class UBorder;
+class UCanvasPanel;
 class UComboBoxString;
 class UEditableTextBox;
 class UImage;
@@ -53,6 +54,8 @@ struct FESTAFIESTA_API FFF_BuildToolsViewData
 
 namespace FFBuildToolsModel
 {
+    /** Persistent toolbar controls stay above the game's ordinary window layers. */
+    inline constexpr int32 ForegroundViewportZOrder = 1000;
     FESTAFIESTA_API FText FormatAudienceSpace(const FFFZSFacilitySpec& Spec);
     FESTAFIESTA_API FText FormatProblemStatus(const FText& Title, int32 ProblemIndex, int32 ProblemCount);
     // Explicit degree input is finite, decimal and within the displayed 0..360 range.
@@ -271,6 +274,7 @@ private:
     friend class FFFBuildFeatureGuideAcknowledgementTest;
     friend class FFFBuildFeatureGuideInputTest;
     friend class FFFBuildFeatureGuideRenderTest;
+    friend class FFFBuildToolsCatalogHelpTest;
     FName CurrentGuideFeature;
     FName PendingGuideAction;
     bool bUpdatingGuideTopic = false;
@@ -304,6 +308,10 @@ private:
     int32 PointerRotationDirection = 0;
     int32 PlacementProblemIndex = 0;
     bool bRestoreHelpAfterSettings = false;
+    bool bHelpExpanded = false;
+    bool bHelpForegroundSuppressed = false;
+    UPROPERTY(Transient) TObjectPtr<UCanvasPanel> ForegroundBodyCanvas;
+    bool bBodyForegroundSuppressed = false;
     double LastPointerRotationTime = 0.0;
     UFUNCTION() void ToggleDetails();
     UFUNCTION() void HandleMultiSelect();
@@ -318,6 +326,9 @@ private:
     UFUNCTION() void HandleEdgeScroll();
     UFUNCTION() void ToggleFacts();
     void SetHelpExpanded(bool bExpanded);
+    void RefreshHelpPresentation();
+    void InstallToolbarForegroundLayer();
+    void RefreshBodyPresentation();
     void CloseRadialMenu();
     void StartPointerFreeRotation(int32 Direction);
     void AdvancePointerFreeRotation();

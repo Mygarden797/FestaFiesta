@@ -41,6 +41,12 @@ bool UFF_LiveUtilityDock::HasUnifiedNews() const
 	return SnsPanel && SnsPanel->bUnifiedNews;
 }
 
+bool UFF_LiveUtilityDock::IsForegroundFlyoutOpen() const
+{
+	return IsInViewport() && IsVisible() && bDockPresented && OpenPanel != 0 &&
+		Panel_Dock && Panel_Dock->IsVisible() && Panel_Flyout && Panel_Flyout->IsVisible();
+}
+
 void UFF_LiveUtilityDock::NativePreConstruct()
 {
 	Super::NativePreConstruct();

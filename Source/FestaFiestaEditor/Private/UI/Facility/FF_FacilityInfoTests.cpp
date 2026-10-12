@@ -2332,6 +2332,37 @@ bool FFF_FacilityInfoPausePresentationLifecycleTest::RunTest(const FString& Para
 	TestEqual(TEXT("panel 복원 때 picker는 겹쳐 열리지 않는다"),
 		Picker->GetVisibility(), ESlateVisibility::Collapsed);
 
+	// 일반 창과 ESC의 숨김 요청이 겹치면 마지막 창이 닫힐 때만 기존 표면을 복원한다.
+	Coordinator->bForegroundWindowSuppressionRequested = true;
+	Coordinator->UpdatePresentationSuppression(true);
+	Coordinator->SetPauseMenuPresentationSuppressed(true);
+	Coordinator->SetPauseMenuPresentationSuppressed(false);
+	TestEqual(TEXT("ESC를 닫아도 다른 창 뒤의 시설정보는 숨긴다"),
+		Panel->GetVisibility(), ESlateVisibility::Collapsed);
+	Coordinator->bForegroundWindowSuppressionRequested = false;
+	Coordinator->UpdatePresentationSuppression(false);
+	TestEqual(TEXT("마지막 전면 창을 닫으면 선택 시설정보를 복원한다"),
+		Panel->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
+	Coordinator->SetPauseMenuPresentationSuppressed(true);
+	Coordinator->bForegroundWindowSuppressionRequested = true;
+	Coordinator->UpdatePresentationSuppression(true);
+	Coordinator->bForegroundWindowSuppressionRequested = false;
+	Coordinator->UpdatePresentationSuppression(Coordinator->bPauseMenuSuppressionRequested);
+	TestEqual(TEXT("일반 창을 먼저 닫아도 ESC 뒤의 시설정보는 숨긴다"),
+		Panel->GetVisibility(), ESlateVisibility::Collapsed);
+	Coordinator->SetPauseMenuPresentationSuppressed(false);
+
+	Coordinator->SetRevenueRankingPresentationOpen(true);
+	Coordinator->bForegroundWindowSuppressionRequested = true;
+	Coordinator->UpdatePresentationSuppression(true);
+	Coordinator->SetRevenueRankingPresentationOpen(false);
+	TestEqual(TEXT("다른 창 뒤에서 매출 창을 닫아도 inspector를 먼저 표시하지 않는다"),
+		Panel->GetVisibility(), ESlateVisibility::Collapsed);
+	Coordinator->bForegroundWindowSuppressionRequested = false;
+	Coordinator->UpdatePresentationSuppression(false);
+	TestEqual(TEXT("매출 창 종료 뒤 마지막 전면 창을 닫으면 inspector가 복원된다"),
+		Panel->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
+
 	Panel->SetPanelOpen(false);
 	Picker->SetPickerOpen(true);
 	Coordinator->SetPauseMenuPresentationSuppressed(true);

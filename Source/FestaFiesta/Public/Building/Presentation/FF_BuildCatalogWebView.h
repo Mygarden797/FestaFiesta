@@ -149,6 +149,9 @@ private:
 	TWeakPtr<FActiveTimerHandle> ActiveTimer;
 	FString LoadedDocument;
 	FString LastSnapshotMetadata;
+	// A document keeps decoded thumbnails across state/filter updates. Reset on navigation.
+	TSet<FString> SentThumbnailKeys;
+	bool bDocumentSupportsThumbnailCache = false;
 	double NextSnapshotTime = 0.0;
 	double DocumentStartTime = 0.0;
 	bool bDocumentLoaded = false;
