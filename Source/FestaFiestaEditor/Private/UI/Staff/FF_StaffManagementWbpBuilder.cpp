@@ -234,8 +234,11 @@ void MigrateTraining(UWidgetBlueprint& BP)
     auto* Root=ParkRoot(BP,TEXT("Management_TrainingRoot"));
     auto* Top=MakeWidget<UHorizontalBox>(BP,T,TEXT("Management_TrainingTop"));
     Title->SetText(FText::FromString(TEXT("직원 · 숙련도"))); Font(Title,21,Ink,true); H(Top,Title,FMargin(0,0,8,0),1);
-    H(Top,Size(BP,T,TEXT("Management_Size_AllFilter"),Action(BP,T,TEXT("Button_AllStaff"),TEXT("전체"),false,TEXT("Text_AllStaffFilter")),88,36),FMargin(0,0,6,0));
-    H(Top,Size(BP,T,TEXT("Management_Size_UnassignedFilter"),Action(BP,T,TEXT("Button_UnassignedStaff"),TEXT("미배정"),false,TEXT("Text_UnassignedStaffFilter")),96,36));
+    // 선택 표시와 인원 수가 붙어도 캡션 + 버튼 패딩을 확보한다. Designer의 최소 폭은 유지한다.
+    auto* AllFilter=Size(BP,T,TEXT("Management_Size_AllFilter"),Action(BP,T,TEXT("Button_AllStaff"),TEXT("전체"),false,TEXT("Text_AllStaffFilter")),0,36);
+    AllFilter->SetMinDesiredWidth(88); H(Top,AllFilter,FMargin(0,0,6,0));
+    auto* UnassignedFilter=Size(BP,T,TEXT("Management_Size_UnassignedFilter"),Action(BP,T,TEXT("Button_UnassignedStaff"),TEXT("미배정"),false,TEXT("Text_UnassignedStaffFilter")),0,36);
+    UnassignedFilter->SetMinDesiredWidth(96); H(Top,UnassignedFilter);
     V(Root,Top,FMargin(0,0,0,12));
     auto* HeaderRow=Get<UHorizontalBox>(T,TEXT("HorizontalBox_RosterHeader"));
     Get<UTextBlock>(T,TEXT("Text_KindHeader"))->SetVisibility(ESlateVisibility::Collapsed);

@@ -31,3 +31,18 @@
 `runpy.run_path(..., init_globals={'FF_BATCH_APPLY': True})`로 통합할 때는 종료 콜백/검사 실행을 생략한다. 이 경우 통합 스크립트가 위 두 검사와 에디터 종료를 맡는다.
 
 런타임에서는 새 공통 관리 위젯만 활성화한다. 숨겨 보관한 부모의 이전 `Widget_StaffTraining`을 동시에 활성화하지 않는다.
+
+## 직원 필터 문구 폭 보정
+
+전체/미배정 필터는 선택 표시와 인원 수를 포함하므로 고정 폭 대신 최소 폭(88/96)을 사용한다.
+기존 WBP를 유지하면서 이 두 SizeBox만 갱신하려면 에디터를 종료하고 PythonScript 명령릿으로
+`Tools/ui/staff_management/fit_filter_captions.py`를 실행한다. 엔진·프로젝트 경로는 설치 환경에 맞춘다.
+
+```powershell
+& 'C:\Unreal\UE_5.7\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' 'C:\FFProj\FestaFiesta.uproject' -run=pythonscript -script='C:\FFProj\Tools\ui\staff_management\fit_filter_captions.py' -ddc=FestaFiestaBuildDDC -UserDir='C:\Builds\FestaFiesta\StaffFilterRepair\User' -unattended -nop4 -nullrhi -nosound
+```
+
+원본은 해당 UserDir의 `Saved/UIBackups/StaffFilterCaptions`에 보관한다.
+`Saved/StaffManagement/filter-caption-report.json`에서 변경 전후 값과 성공 여부를 확인한다.
+이미 보정된 에셋은 다시 저장하지 않으며, 위젯 구조·높이·스타일을 유지한다.
+보정 후 `FestaFiesta.UI.PrepStaff.SkyRenderedLayout`으로 기본/축소 화면과 미확인·두 자리 인원 문구를 검증한다.
