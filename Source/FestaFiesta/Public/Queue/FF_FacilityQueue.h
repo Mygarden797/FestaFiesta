@@ -26,6 +26,29 @@ struct FFF_QueuedParty
 	bool bServiceStarted = false;
 	// Crowd가 현재 이용 자리 도착을 확인했는지. 자리 이동 시 대기 팀의 확인은 초기화한다.
 	bool bArrivedAtServicePoint = false;
+
+	// 줄 자리에 처음 도착한 시각. 도착 확인을 쓰는 큐는 대기 포기 시간을 여기서부터 잰다(-1 = 아직 못 옴)
+	float FirstArrivalSimTime = -1.f;
+
+	// 이용 자리 차례(맨 앞 이용 칸 안)가 된 시각. 진단용(-1 = 아직)
+	float FrontSinceSimTime = -1.f;
+};
+
+/**
+ * 시설 하나의 시간이 어디로 갔는지(진단, 누적). 동작에는 쓰지 않는다.
+ * 막힘 = 줄에 팀이 있는데 이용 중인 팀이 없는 시간. 도착 확인을 쓰는 큐에서는 맨 앞 팀이 이용 자리에 도착 확인을 못 받은 시간이다.
+ */
+struct FFF_QueueFlowDiagnostics
+{
+	float BusySeconds = 0.f;
+	float BlockedSeconds = 0.f;
+	float IdleSeconds = 0.f;
+	// 가입 → 줄 자리 첫 도착
+	double WalkToSlotSecondsSum = 0.0;
+	int32 WalkToSlotCount = 0;
+	// 이용 자리 차례가 된 뒤 → 이용 시작
+	double FrontToStartSecondsSum = 0.0;
+	int32 FrontToStartCount = 0;
 };
 
 /**
@@ -57,7 +80,7 @@ public:
 	bool LeaveQueue(int32 PartyId, float SimTimeSeconds);
 
 	/** Crowd가 이 Party의 리더가 현재 이용 자리에 도착했다고 알려줄 때. */
-	void NotifyPartyArrived(int32 PartyId);
+	void NotifyPartyArrived(int32 PartyId, float SimTimeSeconds = -1.f);
 
 	/**
 	 * DeltaSeconds만큼 서비스 타이머를 돌리고 이탈을 판정한다.
@@ -127,6 +150,11 @@ public:
 	int32 GetActiveServicePartyCount() const;
 	float GetServiceRate() const;
 
+	const FFF_QueueFlowDiagnostics& GetFlowDiagnostics() const { return FlowDiagnostics; }
+	/** 진단용: 줄 안 순서(0 = 맨 앞, 없으면 INDEX_NONE)와 이용 자리 도착 확인 여부 */
+	int32 GetPartyIndex(int32 PartyId) const { return FindPartyIndex(PartyId); }
+	bool HasPartyArrivedAtServicePoint(int32 PartyId) const;
+
 	/** 슬롯 인덱스 → 월드 목표. 스플라인 도입 시 교체할 유일한 지점이다. */
 	FFF_SlotAssignment ResolveSlot(int32 AgentId, int32 PartyId, int32 SlotIndex) const;
 
@@ -149,6 +177,7 @@ private:
 
 	// FIFO. 앞이 창구 쪽이다. 순서 자체가 이 클래스의 핵심 소유 데이터라 정렬하거나 재배치하지 않는다.
 	TArray<FFF_QueuedParty> Parties;
+	FFF_QueueFlowDiagnostics FlowDiagnostics;
 
 	bool bIsOpen = true;
 	bool bPerformanceBreak = false;

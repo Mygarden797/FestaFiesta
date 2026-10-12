@@ -20,21 +20,11 @@
  */
 namespace FFF_FinalePurchaseTestHelpers
 {
-	// [기획서] §10. 여기 값이 바뀌면 아래 기대값도 같이 바꿔야 한다.
-	constexpr int32 CostC = 2000;
-	constexpr int32 CostA = 6000;
-	constexpr int32 BonusA = 20;
-	constexpr int32 CostS = 8000;
-
-	// §2.5 3일 수지의 순이익. Finale 를 사는 예산이 이 값이다.
-	//
-	// 2026-08-24 에 7,680 → 7,930 으로 바뀌었다. 유료 프로그램이 하루짜리 카드가 되면서
-	// 3일 순익 930 이 유입에 들어왔다(옛 값은 기간권 전제의 680 이었다).
-	// **정원이 3일 내내 다 찰 때의 상한**이라 실제 플레이는 이보다 낮게 나온다.
-	constexpr int32 ThreeDayNetProfit = 7930;
-
-	// S 에 얼마나 모자란가. 이 간격이 좁을수록 "한 번 더 하면 닿는다"가 된다.
-	constexpr int32 ShortfallForS = CostS - ThreeDayNetProfit;   // 70
+	// UFF_FestivalDefinition 생성자의 FinaleTiers. 여기 값이 바뀌면 아래 기대값도 같이 바꿔야 한다.
+	constexpr int32 CostC = 1000;
+	constexpr int32 CostA = 2600;
+	constexpr int32 BonusA = 5;
+	constexpr int32 CostS = 3500;
 
 	// Unity Build 동명 헬퍼 충돌을 피하려고 파일 전용 이름을 쓴다.
 	struct FFinalePurchaseHarness
@@ -131,22 +121,23 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinalePurchase_FailureDoesNotMutate, "Festa
 bool FFF_FinalePurchase_FailureDoesNotMutate::RunTest(const FString& Parameters)
 {
 	FFF_FinalePurchaseTestHelpers::FFinalePurchaseHarness Harness;
-	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(2000)))
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(FFF_FinalePurchaseTestHelpers::CostC)))
 	{
 		return false;
 	}
 
-	// 2,000 으로 S(8,000)를 살 수 없다. 클램프해서 2,000 만 빼는 일이 없어야 한다.
+	// C 값만 들고 S 를 살 수 없다. 클램프해서 가진 만큼만 빼는 일이 없어야 한다.
 	TestEqual(TEXT("잔액이 부족하면 거부된다"),
 		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::S),
 		EFF_FinalePurchaseResult::InsufficientGold);
-	TestEqual(TEXT("거부되면 잔액이 그대로다"), Harness.Progression->GetGold(), 2000);
+	TestEqual(TEXT("거부되면 잔액이 그대로다"), Harness.Progression->GetGold(),
+		FFF_FinalePurchaseTestHelpers::CostC);
 	TestEqual(TEXT("거부되면 미구매 상태다"),
 		Harness.Progression->GetPurchasedFinaleGrade(), EFF_FinaleGrade::None);
 	TestEqual(TEXT("거부되면 원장에 아무것도 안 남는다"),
 		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::FinaleFireworks), 0);
 
-	// C(2,000)는 딱 살 수 있다.
+	// C 는 딱 살 수 있다.
 	TestEqual(TEXT("C 를 산다"),
 		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::C),
 		EFF_FinalePurchaseResult::Success);
@@ -164,7 +155,8 @@ bool FFF_FinalePurchase_FailureDoesNotMutate::RunTest(const FString& Parameters)
 	TestEqual(TEXT("등급이 C 에 남아 있다"),
 		Harness.Progression->GetPurchasedFinaleGrade(), EFF_FinaleGrade::C);
 	TestEqual(TEXT("원장의 피날레 지출이 C 비용 그대로다"),
-		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::FinaleFireworks), 2000);
+		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::FinaleFireworks),
+		FFF_FinalePurchaseTestHelpers::CostC);
 
 	return true;
 }
@@ -184,17 +176,17 @@ bool FFF_FinalePurchase_BonusIsNotRevenue::RunTest(const FString& Parameters)
 		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::A),
 		EFF_FinalePurchaseResult::Success);
 
-	TestEqual(TEXT("보너스가 20 점이다"), Harness.Progression->GetFinaleSatisfactionBonus(),
+	TestEqual(TEXT("보너스가 A 등급 값이다"), Harness.Progression->GetFinaleSatisfactionBonus(),
 		FFF_FinalePurchaseTestHelpers::BonusA);
 
-	// 20 이 어디에도 Gold 로 새지 않았다.
+	// 보너스가 어디에도 Gold 로 새지 않았다.
 	TestEqual(TEXT("누적 매출이 0 이다"), Harness.Progression->GetTotalRevenue(), 0);
 	TestEqual(TEXT("오늘 매출이 0 이다"), Harness.Progression->GetTodayRevenue(), 0);
 	TestEqual(TEXT("환급 집계도 0 이다"),
 		Harness.Progression->GetDayLedger().GetTotalRefund(), 0);
 
 	int32 EarnTotal = 0;
-	for (int32 Index = 0; Index <= static_cast<int32>(EFF_EarnReason::MinigameReward); ++Index)
+	for (int32 Index = 0; Index <= static_cast<int32>(EFF_EarnReason::IncidentReward); ++Index)
 	{
 		EarnTotal += Harness.Progression->GetDayLedger().GetEarnByReason(
 			static_cast<EFF_EarnReason>(Index));
@@ -209,7 +201,7 @@ bool FFF_FinalePurchase_BonusIsNotRevenue::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinalePurchase_InsufficientGoldBlocksCheapestGrade, "FestaFiesta.Economy.FinalePurchase.InsufficientGoldBlocksCheapestGrade", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FinalePurchase_InsufficientGoldBlocksCheapestGrade::RunTest(const FString& Parameters)
 {
-	// 가장 싼 등급(C = 2,000)보다 1 적게 들고 시작한다.
+	// 가장 싼 등급(C)보다 1 적게 들고 시작한다.
 	FFF_FinalePurchaseTestHelpers::FFinalePurchaseHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(FFF_FinalePurchaseTestHelpers::CostC - 1)))
 	{
@@ -227,46 +219,21 @@ bool FFF_FinalePurchase_InsufficientGoldBlocksCheapestGrade::RunTest(const FStri
 	return true;
 }
 
-// 🔴 3일 루프가 닫혔다는 증거 — §2.5 순이익 7,930 으로 A 는 사지고 S 는 70 부족하다.
-//
-// 3일을 실제로 시뮬레이션하지 않고 순이익을 직접 넣는다. 유입·유출 순서가 섞이면
-// 최종 잔액이 달라져서, 검산의 결론("A 는 되고 S 는 안 된다")이 아니라 진행 순서를 테스트하게 된다.
-// 하루 경계 자체는 FF_DayBoundaryTests 와 FF_StageEconomyBridgeTests 가 이미 고정한다.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinalePurchase_ThreeDayNetProfitBuysAButNotS, "FestaFiesta.Economy.FinalePurchase.ThreeDayNetProfitBuysAButNotS", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_FinalePurchase_ThreeDayNetProfitBuysAButNotS::RunTest(const FString& Parameters)
+// 이 파일의 가격 상수가 정의 생성자의 FinaleTiers 와 같다. 가격을 밸런싱하면 여기서 먼저 깨진다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinalePurchase_DefaultTiersMatchConstants, "FestaFiesta.Economy.FinalePurchase.DefaultTiersMatchConstants", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FinalePurchase_DefaultTiersMatchConstants::RunTest(const FString& Parameters)
 {
-	// 순이익을 잔액으로 직접 넣는다. InitialGold 0 은 IsDefinitionValid 가 Error 로 거부하므로
-	// (0 이면 Setup 에서 시설을 지을 수 없다) 매출로 채우는 대신 시작 잔액으로 준다.
-	FFF_FinalePurchaseTestHelpers::FFinalePurchaseHarness Harness;
-	if (!TestTrue(TEXT("픽스처가 구성된다"),
-		Harness.Initialize(FFF_FinalePurchaseTestHelpers::ThreeDayNetProfit)))
+	const UFF_FestivalDefinition* Defaults = GetDefault<UFF_FestivalDefinition>();
+	auto FindCost = [Defaults](EFF_FinaleGrade Grade)
 	{
-		return false;
-	}
+		const FFF_FinaleTier* Tier = Defaults->FinaleTiers.FindByPredicate(
+			[Grade](const FFF_FinaleTier& Candidate) { return Candidate.Grade == Grade; });
+		return Tier ? Tier->CostGold : INDEX_NONE;
+	};
 
-	TestEqual(TEXT("Finale 예산이 3일 순이익과 같다"), Harness.Progression->GetGold(),
-		FFF_FinalePurchaseTestHelpers::ThreeDayNetProfit);
-
-	// 🔴 완벽하게 플레이해도 S 에 닿지 않는다. 이 성질이 §2.5 의 결론이다.
-	//
-	// 간격의 크기(70)가 아니라 **부호**를 고정한다. 카드 값을 밸런싱하면 70 은 움직이지만
-	// "닿지 않는다"는 움직이면 안 된다 — 움직이는 순간 상위 피날레가 공짜가 된다.
-	TestTrue(TEXT("3일 순이익으로 S 를 살 수 없다"),
-		FFF_FinalePurchaseTestHelpers::ShortfallForS > 0);
-	TestEqual(TEXT("기본 플레이로 S 는 못 산다"),
-		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::S),
-		EFF_FinalePurchaseResult::InsufficientGold);
-
-	// A 는 사지고 남는다 — 반대쪽 부호도 같이 고정한다.
-	// 둘 중 하나만 보면 "전부 못 산다"나 "전부 산다"로 무너져도 통과한다.
-	TestTrue(TEXT("A 는 살 수 있는 예산이다"),
-		FFF_FinalePurchaseTestHelpers::ThreeDayNetProfit > FFF_FinalePurchaseTestHelpers::CostA);
-	TestEqual(TEXT("기본 플레이로 A 는 산다"),
-		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::A),
-		EFF_FinalePurchaseResult::Success);
-	TestEqual(TEXT("A 를 사고 남는 금액이 맞는다"), Harness.Progression->GetGold(),
-		FFF_FinalePurchaseTestHelpers::ThreeDayNetProfit - FFF_FinalePurchaseTestHelpers::CostA);
-
+	TestEqual(TEXT("C 가격"), FindCost(EFF_FinaleGrade::C), FFF_FinalePurchaseTestHelpers::CostC);
+	TestEqual(TEXT("A 가격"), FindCost(EFF_FinaleGrade::A), FFF_FinalePurchaseTestHelpers::CostA);
+	TestEqual(TEXT("S 가격"), FindCost(EFF_FinaleGrade::S), FFF_FinalePurchaseTestHelpers::CostS);
 	return true;
 }
 

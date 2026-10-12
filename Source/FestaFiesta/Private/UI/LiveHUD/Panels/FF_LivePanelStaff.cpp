@@ -2,12 +2,17 @@
 
 #include "UI/LiveHUD/Panels/FF_LivePanelStaff.h"
 
+#include "Components/Image.h"
+#include "Components/Button.h"
+#include "Components/WidgetSwitcher.h"
+#include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
-#include "Components/VerticalBoxSlot.h"
-#include "Economy/FF_FestivalEconomyTypes.h"
 #include "Engine/GameInstance.h"
 #include "UI/FF_UILog.h"
+#include "UI/Staff/FF_StaffTrainingWidget.h"
+#include "UI/Staff/FF_StaffManagementWidget.h"
+#include "UI/LiveHUD/FF_LiveHudScreen.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaLiveStaff"
@@ -55,30 +60,80 @@ FFF_LiveStaffSummary FFF_LiveStaffRules::BuildSummary(
 // UFF_LivePanelStaff
 // =============================================================================
 
+void UFF_LivePanelStaff::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	if (Button_StaffOverview) Button_StaffOverview->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffOverviewClicked);
+	if (Button_StaffTraining) Button_StaffTraining->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffTrainingClicked);
+	SelectStaffTab(false);
+}
+
+void UFF_LivePanelStaff::SelectStaffTab(bool bTraining)
+{
+	if (Widget_StaffManagement)
+	{
+		if (Widget_StaffTraining) Widget_StaffTraining->DeactivateRoster();
+		if (bStaffPanelOpen)
+		{
+			Widget_StaffManagement->OnRevealWorldRequested.BindUObject(this, &ThisClass::RequestClose);
+			Widget_StaffManagement->OnIncidentRequested.BindUObject(this, &ThisClass::HandleManagementIncident);
+			Widget_StaffManagement->ActivateManagement(true);
+		}
+		return;
+	}
+	bTrainingSelected = bTraining && Widget_StaffTraining && Switcher_StaffContent;
+	if (Switcher_StaffContent) Switcher_StaffContent->SetActiveWidgetIndex(bTrainingSelected ? 1 : 0);
+	if (Indicator_StaffOverview) Indicator_StaffOverview->SetVisibility(bTrainingSelected ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
+	if (Indicator_StaffTraining) Indicator_StaffTraining->SetVisibility(bTrainingSelected ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+	if (Widget_StaffTraining)
+	{
+		if (bStaffPanelOpen && bTrainingSelected) Widget_StaffTraining->ActivateRoster();
+		else Widget_StaffTraining->DeactivateRoster();
+	}
+}
+
+void UFF_LivePanelStaff::HandleStaffOverviewClicked() { SelectStaffTab(false); }
+void UFF_LivePanelStaff::HandleStaffTrainingClicked() { SelectStaffTab(true); }
+
 void UFF_LivePanelStaff::NativeOnPanelOpened()
 {
 	Super::NativeOnPanelOpened();
-
-	// ★ 못 하는 것과 없는 것을 화면에 적는다. 안 적으면 고장난 것으로 읽힌다.
-	SetTextOrHide(Text_HireNote, LOCTEXT("LiveStaff_HireNote",
-		"고용은 셋업과 개장 준비에서만 합니다. 라이브 중에는 늘릴 수 없습니다."));
-
-	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveStaff_FacilityAssignmentNote",
-		"안내 시설을 선택해 스태프를 배정하세요. 배정된 시설에서 사건 현장으로 출동합니다."));
+	bStaffPanelOpen = true;
 
 	BindViewModel();
 	RefreshAll();
+	SelectStaffTab(bTrainingSelected);
 }
 
 void UFF_LivePanelStaff::NativeOnPanelClosed()
 {
+	bStaffPanelOpen = false;
+	if (Widget_StaffManagement) Widget_StaffManagement->DeactivateManagement();
+	if (Widget_StaffTraining) Widget_StaffTraining->DeactivateRoster();
 	UnbindViewModel();
 	Super::NativeOnPanelClosed();
 }
 
+void UFF_LivePanelStaff::NativeDestruct()
+{
+	bStaffPanelOpen = false;
+	if (Widget_StaffManagement) Widget_StaffManagement->DeactivateManagement();
+	if (Widget_StaffTraining) Widget_StaffTraining->DeactivateRoster();
+	UnbindViewModel();
+	Super::NativeDestruct();
+}
+
+void UFF_LivePanelStaff::HandleManagementIncident(FFF_IncidentHandle Handle)
+{
+	UFF_LiveHudScreen* Screen = GetOwningScreen();
+	if (!Screen) return;
+	RequestClose();
+	Screen->RequestOpenIncident(Handle);
+}
+
 UFF_FestivalViewModelSubsystem* UFF_LivePanelStaff::GetViewModel() const
 {
-	if (CachedViewModel)
+	if (IsValid(CachedViewModel))
 	{
 		return CachedViewModel;
 	}
@@ -89,6 +144,7 @@ UFF_FestivalViewModelSubsystem* UFF_LivePanelStaff::GetViewModel() const
 
 void UFF_LivePanelStaff::BindViewModel()
 {
+	UnbindViewModel();
 	UGameInstance* GI = GetGameInstance();
 	CachedViewModel = GI ? GI->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
 
@@ -107,7 +163,7 @@ void UFF_LivePanelStaff::BindViewModel()
 void UFF_LivePanelStaff::UnbindViewModel()
 {
 	// 해제는 조건부, 정리는 무조건.
-	if (CachedViewModel)
+	if (IsValid(CachedViewModel))
 	{
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_LivePanelStaff::HandleStaffCountChanged);
 		CachedViewModel->OnStaffCapacityChanged.RemoveDynamic(this, &ThisClass::HandleStaffCountChanged);
@@ -119,74 +175,61 @@ void UFF_LivePanelStaff::UnbindViewModel()
 void UFF_LivePanelStaff::RefreshAll()
 {
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
-	if (!ViewModel)
-	{
-		return;
-	}
-
+	// 이전 축제의 값이 남지 않도록 ViewModel이 없을 때도 모든 표시를 갱신한다.
 	Summary = FFF_LiveStaffRules::BuildSummary(
-		ViewModel->GetTotalStaffCount(),
-		ViewModel->GetBaseStaffCount(),
-		ViewModel->GetHiredStaffCount(),
-		ViewModel->GetBusyStaffCount());
+		ViewModel ? ViewModel->GetTotalStaffCount() : INDEX_NONE,
+		ViewModel ? ViewModel->GetBaseStaffCount() : INDEX_NONE,
+		ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE,
+		ViewModel ? ViewModel->GetBusyStaffCount() : INDEX_NONE);
 
-	const FText Unknown = LOCTEXT("LiveStaff_Unknown", "—");
-	const int32 MaxTotal = ViewModel->GetMaxTotalStaffCount();
-	const int32 Unassigned = ViewModel->GetUnassignedStaffCount();
+	const int32 MaxTotal = ViewModel ? ViewModel->GetMaxTotalStaffCount() : INDEX_NONE;
+	const int32 Unassigned = ViewModel ? ViewModel->GetUnassignedStaffCount() : INDEX_NONE;
+	SetTextOrHide(Text_HireNote, HireNoteText);
 	SetTextOrHide(Text_MissingNote, Unassigned >= 0
-		? FText::Format(LOCTEXT("LiveStaff_UnassignedCount", "미배정 {0}명 · 안내 시설을 선택해 + 배정하세요."), FText::AsNumber(Unassigned))
-		: LOCTEXT("LiveStaff_FacilityAssignmentNote", "안내 시설을 선택해 스태프를 배정하세요. 배정된 시설에서 사건 현장으로 출동합니다."));
+		? FText::Format(UnassignedGuideTextFormat, FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Unassigned)}})
+		: AssignmentGuideText);
 
 	// --- 요약 ---
-	SetTextOrHide(Text_TotalStaff, (Summary.Total != INDEX_NONE && MaxTotal >= 0)
-		? FText::Format(LOCTEXT("LiveStaff_TotalCapacityValue", "{0} / {1}명"),
-			FText::AsNumber(Summary.Total), FText::AsNumber(MaxTotal))
-		: Unknown);
+	const FText CapacityValue = FText::Format(CapacityTextFormat, FFormatNamedArguments{
+		{TEXT("Total"), Summary.Total >= 0 ? FText::AsNumber(Summary.Total) : MissingValueText},
+		{TEXT("Capacity"), MaxTotal >= 0 ? FText::AsNumber(MaxTotal) : MissingValueText}});
+	SetTextOrHide(Text_TotalStaff, CapacityValue);
+	SetTextOrHide(Text_Capacity, CapacityValue);
 
-	// 내역은 둘 다 알아야 말이 된다. `기본 6 · 고용 —` 은 읽는 사람을 헷갈리게 한다.
+	// 구성 칸은 각각 알려진 원본 값을 표시한다. 막대 합계의 일관성은 별도로 확인한다.
+	SetTextOrHide(Text_BaseStaff, FormatCount(Summary.Base));
+	SetTextOrHide(Text_HiredStaff, FormatCount(Summary.Hired));
+	SetTextOrHide(Text_UnassignedStaff, FormatCount(Unassigned));
 	SetTextOrHide(Text_StaffBreakdown,
-		(Summary.Base != INDEX_NONE && Summary.Hired != INDEX_NONE)
-			? FText::Format(
-				LOCTEXT("LiveStaff_Breakdown", "기본 {0} · 고용 {1}"),
-				FText::AsNumber(Summary.Base), FText::AsNumber(Summary.Hired))
+		(Summary.Base >= 0 && Summary.Hired >= 0)
+			? FText::Format(BreakdownTextFormat, FFormatNamedArguments{
+				{TEXT("Base"), FText::AsNumber(Summary.Base)}, {TEXT("Hired"), FText::AsNumber(Summary.Hired)}})
 			: FText::GetEmpty());
 
-	SetTextOrHide(Text_AssignedStaff, (Summary.Assigned != INDEX_NONE)
-		? FText::Format(LOCTEXT("LiveStaff_AssignedValue", "{0}명"), FText::AsNumber(Summary.Assigned))
-		: Unknown);
+	SetTextOrHide(Text_AssignedStaff, FormatCount(Summary.Assigned));
+	RefreshCapacity(MaxTotal);
 
 	// --- 남는 인원 ---
 	// !! 숫자만 두지 않는다 !! 남는 것이 좋은 일인지 나쁜 일인지 숫자로는 알 수 없다 (AT-011).
-	FText IdleValue = Unknown;
+	FText IdleValue = FormatCount(Summary.Idle);
 	FText IdleNote;
 	switch (Summary.IdleState)
 	{
 	case EFF_LiveStaffIdleState::HasIdle:
-		IdleValue = FText::Format(LOCTEXT("LiveStaff_IdleValue", "{0}명"), FText::AsNumber(Summary.Idle));
-		IdleNote = LOCTEXT("LiveStaff_FacilityIdleNote",
-			"미배정 인원도 포함합니다. 안내 시설에 배정된 대기 인원만 출동할 수 있습니다.");
+		IdleNote = IdleNoteText;
 		break;
 
 	case EFF_LiveStaffIdleState::AllBusy:
-		IdleValue = LOCTEXT("LiveStaff_IdleNone", "없음");
-		IdleNote = LOCTEXT("LiveStaff_AllBusyNote", "전원이 사건 대응 중입니다.");
+		IdleNote = Summary.Total == 0 ? NoStaffNoteText : AllBusyNoteText;
 		break;
 
 	case EFF_LiveStaffIdleState::Inconsistent:
-		// 조용히 넘기지 않는다. 화면에 적어야 누가 알아챈다.
-		IdleValue = LOCTEXT("LiveStaff_IdleBroken", "?");
-		IdleNote = FText::Format(
-			LOCTEXT("LiveStaff_InconsistentNote",
-				"배치 인원({0})이 전체 인원({1})보다 많습니다. 값이 어긋났습니다."),
-			FText::AsNumber(Summary.Assigned), FText::AsNumber(Summary.Total));
-
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] 배치 인원(%d)이 전체 인원(%d)보다 많다. 인력 소유자 쪽을 확인한다."),
-			*GetName(), Summary.Assigned, Summary.Total);
+		IdleNote = FText::Format(InconsistentTextFormat, FFormatNamedArguments{
+			{TEXT("Busy"), FText::AsNumber(Summary.Assigned)}, {TEXT("Total"), FText::AsNumber(Summary.Total)}});
 		break;
 
 	default:
-		IdleNote = LOCTEXT("LiveStaff_IdleUnknownNote", "인원을 아직 읽지 못했습니다.");
+		IdleNote = CheckingText;
 		break;
 	}
 	SetTextOrHide(Text_IdleStaff, IdleValue);
@@ -194,36 +237,68 @@ void UFF_LivePanelStaff::RefreshAll()
 
 	// --- 고용 단가 ---
 	// 1회 구매라 "/ 일" 이 아니다. Live 중에는 못 뽑으므로 참고용 표시다.
-	const int32 HireCost = ViewModel->GetStaffHireCostGold();
-	SetTextOrHide(Text_DailyWage, (HireCost != INDEX_NONE)
-		? FText::Format(LOCTEXT("LiveStaff_HireCost", "1명 고용비 {0}"), FText::AsNumber(HireCost))
-		: FText::GetEmpty());
+	const int32 HireCost = ViewModel ? ViewModel->GetStaffHireCostGold() : INDEX_NONE;
+	SetTextOrHide(Text_DailyWage, FText::Format(HireCostTextFormat, FFormatNamedArguments{
+		{TEXT("Cost"), HireCost >= 0 ? FText::AsNumber(HireCost) : MissingValueText}}));
 
 	RefreshAssignments();
 }
 
 void UFF_LivePanelStaff::RefreshAssignments()
 {
-	if (!Box_Assignments)
+	// 개별 사건 Read Model이 없으므로 인원수로 사건 건수나 해결 상태를 추정하지 않는다.
+	if (Box_Assignments)
 	{
-		return;
+		if (Box_Assignments->GetChildrenCount() > 0)
+		{
+			Box_Assignments->ClearChildren();
+		}
+		Box_Assignments->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
-	Box_Assignments->ClearChildren();
-
-	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
-	if (!ViewModel)
-	{
-		return;
-	}
-
-	const int32 BusyCount = ViewModel->GetBusyStaffCount();
+	const int32 BusyCount = Summary.Assigned;
 	SetTextOrHide(Text_AssignmentsEmpty, BusyCount > 0
-		? FText::Format(LOCTEXT("LiveStaff_ActiveResponse", "{0}명이 사건 현장으로 이동하거나 대응 중입니다."), FText::AsNumber(BusyCount))
-		: BusyCount == 0 ? LOCTEXT("LiveStaff_NoAssignment", "지금 대응 중인 사건이 없습니다.")
-		: LOCTEXT("LiveStaff_AssignmentUnknown", "출동 정보를 아직 읽지 못했습니다."));
+		? FText::Format(ResponseActiveTextFormat, FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(BusyCount)}})
+		: BusyCount == 0 ? ResponseIdleText : ResponseUnknownText);
 
-	Box_Assignments->SetVisibility(ESlateVisibility::Collapsed);
+	if (Image_ResponseStatus)
+	{
+		UTexture2D* Icon = BusyCount > 0 ? ResponseActiveIcon.Get()
+			: BusyCount == 0 ? ResponseIdleIcon.Get() : ResponseUnknownIcon.Get();
+		Image_ResponseStatus->SetBrushFromTexture(Icon, false);
+		Image_ResponseStatus->SetVisibility(Icon ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
+void UFF_LivePanelStaff::RefreshCapacity(const int32 Capacity)
+{
+	const bool bTotalKnown = Summary.Total >= 0 && Capacity >= 0;
+	const bool bValidTotal = bTotalKnown && Summary.Total <= Capacity;
+	const bool bBreakdownKnown = Summary.Base >= 0 && Summary.Hired >= 0;
+	const bool bValidBreakdown = bValidTotal && bBreakdownKnown
+		&& static_cast<int64>(Summary.Base) + Summary.Hired == Summary.Total;
+
+	if (Progress_StaffCapacity)
+	{
+		Progress_StaffCapacity->SetPercent(bValidTotal && Capacity > 0 ? static_cast<float>(Summary.Total) / Capacity : 0.f);
+		Progress_StaffCapacity->SetVisibility(bValidTotal ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
+	}
+	if (Progress_BaseCapacity)
+	{
+		Progress_BaseCapacity->SetPercent(bValidBreakdown && Capacity > 0 ? static_cast<float>(Summary.Base) / Capacity : 0.f);
+		Progress_BaseCapacity->SetVisibility(bValidBreakdown ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
+	}
+
+	SetTextOrHide(Text_CapacityNote, !bTotalKnown ? CapacityUnknownText
+		: !bValidTotal ? CapacityInconsistentText
+		: !bBreakdownKnown ? BreakdownUnknownText
+		: !bValidBreakdown ? BreakdownInconsistentText : CapacityNoteText);
+}
+
+FText UFF_LivePanelStaff::FormatCount(const int32 Count) const
+{
+	return Count >= 0 ? FText::Format(CountTextFormat, FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Count)}})
+		: MissingValueText;
 }
 
 void UFF_LivePanelStaff::HandleStaffCountChanged(int32 NewValue)

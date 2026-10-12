@@ -138,7 +138,10 @@ def validate_open_facilities(world, zones, installed, portals):
             require(definition.spec.audience.enabled == (expected_capacity > 0),
                     f"Audience enablement differs from the reviewed plan: {row['definition']}")
             if expected_capacity == 0:
-                checked_points = validate_service_navigation(world, opened.facility_actor, portals)
+                try:
+                    checked_points = validate_service_navigation(world, opened.facility_actor, portals)
+                except RuntimeError as error:
+                    raise RuntimeError(f"{error} — {row['definition']} in {row['zone_id']} {row['origin_cm']}") from error
                 result.append({'definition': row['definition'], 'audience_slots_checked': 0,
                                'service_and_queue_points_checked': checked_points,
                                'crowd_entrance_connected': True, 'crowd_exit_connected': True})

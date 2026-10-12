@@ -14,6 +14,8 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Save/FF_SaveSubsystem.h"
 #include "Tutorial/FF_TutorialMarker.h"
+#include "Tutorial/FF_TutorialExitWidget.h"
+#include "GameFramework/PlayerController.h"
 #include "Engine/GameInstance.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/Frontend/FF_PlayHubScreen.h"
@@ -24,6 +26,8 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Tutorial/FF_TutorialSettings.h"
+#include "UI/Atlas/FF_FestivalAtlasCatalog.h"
+#include "UI/Core/FF_UIFlowSettings.h"
 
 namespace
 {
@@ -32,6 +36,47 @@ namespace
 	{
 		static const FFF_DialogueLine Empty;
 		return Empty;
+	}
+
+	/* 아틀라스 카탈로그의 튜토리얼 칸에 덮어쓴 잠금(SyncTutorialLevelLock).
+
+	   카탈로그는 레벨이 바뀌어도 남는 애셋이라, 레벨마다 새로 생기는 이 서브시스템이 아니라 여기에 둔다.
+	   원래 값은 덮어쓰기 직전에 받아 두었다가 되돌릴 때 쓴다.
+	*/
+	struct FTutorialLevelLockState
+	{
+		TWeakObjectPtr<UFF_FestivalAtlasCatalog> Catalog;
+		FName FestivalId;
+		bool bOriginalUnlocked = true;
+		FText OriginalReason;
+		bool bOverridden = false;
+	};
+
+	FTutorialLevelLockState& GetTutorialLevelLockState()
+	{
+		static FTutorialLevelLockState State;
+		return State;
+	}
+
+	FFF_FestivalAtlasEntry* FindAtlasEntry(UFF_FestivalAtlasCatalog& Catalog, const FName FestivalId)
+	{
+		return Catalog.Entries.FindByPredicate(
+			[FestivalId](const FFF_FestivalAtlasEntry& Entry) { return Entry.FestivalId == FestivalId; });
+	}
+
+	/* 카탈로그에서 튜토리얼 레벨 칸을 찾는다. 축제 이름이 같거나, 그 칸의 레벨(맵) 이름이 같으면 그 칸이다.
+
+	   튜토리얼 설정의 이름은 맵 이름(Tutorial_ver2)이고 카탈로그 칸의 이름은 Tutorial 이다(2026-10-01 ver2 맵 교체).
+	   지도에서 들어가면 카탈로그 이름으로, 맵을 바로 열면 맵 이름으로 축제를 가리켜서 둘 다 받는다.
+	*/
+	FFF_FestivalAtlasEntry* FindTutorialAtlasEntry(UFF_FestivalAtlasCatalog& Catalog, const FName TutorialId)
+	{
+		const FString TutorialName = TutorialId.ToString();
+		return Catalog.Entries.FindByPredicate([&](const FFF_FestivalAtlasEntry& Entry)
+		{
+			return Entry.FestivalId == TutorialId
+				|| (!Entry.Level.IsNull() && Entry.Level.ToSoftObjectPath().GetAssetName() == TutorialName);
+		});
 	}
 }
 
@@ -63,6 +108,9 @@ void UFF_TutorialSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		bWorldStartedFromContinue = Save->HasPendingContinue();
 	}
 
+	// 지도 화면이 뜨기 전에 튜토리얼 레벨 잠금을 맞춘다. 화면은 뜰 때 잠금 값을 읽어 핀을 그린다.
+	SyncTutorialLevelLock();
+
 	BindGameSignals();
 }
 
@@ -72,6 +120,7 @@ void UFF_TutorialSubsystem::Deinitialize()
 	UnregisterDebugConsoleCommands();
 	StopScript();
 	RemoveWidgets();
+	RestoreTutorialLevelLock();
 	Super::Deinitialize();
 }
 
@@ -165,6 +214,10 @@ void UFF_TutorialSubsystem::RecordScopeCompleted()
 		Save->MarkFestivalTutorialSeen(ActiveScopeFestivalId);
 		break;
 
+	case EFF_TutorialScope::Briefing:
+		// 비서 브리핑은 매일 새로 짓는 대사라 봤다는 기록이 필요 없다.
+		break;
+
 	default:
 		/* 범위를 모르는 재생이다. 콘솔이나 UI 가 직접 부른 경우라 여기서 기록하면
 		   플레이어가 보지도 않은 튜토리얼이 봤다고 남는다. 로그만 남긴다.
@@ -228,6 +281,23 @@ bool UFF_TutorialSubsystem::PlayTable(UDataTable* Table)
 	return StartLines(Lines, FName(*Table->GetName()));
 }
 
+bool UFF_TutorialSubsystem::PlayLines(const TArray<FFF_DialogueLine>& Lines, const FName ScriptId, const EFF_TutorialScope Scope)
+{
+	if (bDialogueActive || Lines.Num() == 0)
+	{
+		return false;
+	}
+
+	PendingNextScript = nullptr;
+	SetPlaybackScope(Scope, NAME_None);
+	if (!StartLines(Lines, ScriptId))
+	{
+		SetPlaybackScope(EFF_TutorialScope::None, NAME_None);
+		return false;
+	}
+	return true;
+}
+
 bool UFF_TutorialSubsystem::PlayScript(UFF_DialogueScriptData* Script)
 {
 	if (!Script || Script->Lines.Num() == 0)
@@ -244,6 +314,9 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// 끝까지 봤거나 건너뛰었으면(또는 새 게임으로 기록이 비면) 바로 지도 잠금에 반영한다.
+	SyncTutorialLevelLock();
+
 	if (AutoStartCountdown >= 0.f)
 	{
 		AutoStartCountdown -= DeltaTime;
@@ -253,9 +326,29 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 		}
 	}
 
+	// 카드 · 카테고리 버튼처럼 다시 만들어지는 위젯을 가리키는 중이면 짧은 주기로 다시 찾는다.
+	if (!CurrentAnchor.IsNone())
+	{
+		DynamicAnchorScanCountdown -= DeltaTime;
+		if (DynamicAnchorScanCountdown <= 0.f)
+		{
+			DynamicAnchorScanCountdown = 0.1f;
+			RefreshDynamicAnchor();
+		}
+	}
+
+	// 대사창이 비켜 설 배치 패널도 같은 주기로 다시 본다. 대사창은 매 프레임 이 값만 읽는다.
+	DialogueLiftScanCountdown -= DeltaTime;
+	if (DialogueLiftScanCountdown <= 0.f)
+	{
+		DialogueLiftScanCountdown = 0.1f;
+		RefreshDialogueLiftPanel();
+	}
+
 	if (IsWaitingForAction())
 	{
 		TickCameraWatch();
+		TickActionWatch();
 
 		// 탭 대기 줄이면 탭 바를 주기적으로 다시 확인한다. TryBindPrepHudBar 주석 참고.
 		if (GetCurrentLine().WaitCondition == EFF_TutorialWaitCondition::PrepTabOpened)
@@ -269,6 +362,27 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 					CheckPrepTabAlreadyOpen();
 				}
 			}
+		}
+	}
+
+	/* 준비 화면 패널을 보기 전용으로 둘지 정한다. IsPrepPanelViewOnly 참고.
+
+	   대사 중 패널은 탭 대기 줄에서 연 것이 대부분이지만, 플레이어가 대사 도중 직접 열 수도 있다.
+	   그래서 탭 바를 아직 구독하지 않았으면 주기적으로 찾는다.
+	*/
+	bPrepPanelViewOnly = false;
+	if (bDialogueActive && !IsWaitingForAction())
+	{
+		PrepPanelScanCountdown -= DeltaTime;
+		if (PrepPanelScanCountdown <= 0.f)
+		{
+			PrepPanelScanCountdown = 0.5f;
+			TryBindPrepHudBar();
+		}
+
+		if (const UFF_PrepHudBar* Bar = BoundPrepHudBar.Get())
+		{
+			bPrepPanelViewOnly = Bar->GetSelection().bHasSelection;
 		}
 	}
 
@@ -374,10 +488,24 @@ void UFF_TutorialSubsystem::UnbindGameSignals()
 void UFF_TutorialSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
 {
 	// 설치만 본다. 철거나 개폐는 튜토리얼에서 기다릴 일이 없다.
-	if (Event.Type == EFFZSCommandType::Install)
+	if (Event.Type != EFFZSCommandType::Install)
 	{
-		NotifyAction(EFF_TutorialWaitCondition::FacilityPlaced);
+		return;
 	}
+
+	/* 줄에 시설을 적어 두었으면 그 시설만 센다(2026-10-07).
+
+	   메인공연장 · 햄버거 가게처럼 시설을 하나씩 짚어 가며 설치시키는데, 다른 시설을 놓아도 넘어가면
+	   안내한 것과 다른 것을 놓은 채 다음 단계로 간다.
+	*/
+	const FFF_DialogueLine& Line = GetCurrentLine();
+	if (Line.WaitCondition == EFF_TutorialWaitCondition::FacilityPlaced && !Line.WaitTarget.IsNone()
+		&& ResolveFacilityDefinitionId(Event.FacilityInstanceId) != Line.WaitTarget)
+	{
+		return;
+	}
+
+	NotifyAction(EFF_TutorialWaitCondition::FacilityPlaced);
 }
 
 bool UFF_TutorialSubsystem::TryBindPrepHudBar()
@@ -480,6 +608,37 @@ void UFF_TutorialSubsystem::HandlePrepTabSelectionChanged(const FFF_PrepTabSelec
 	NotifyAction(EFF_TutorialWaitCondition::PrepTabOpened);
 }
 
+bool UFF_TutorialSubsystem::DismissViewOnlyPrepPanel()
+{
+	if (!bPrepPanelViewOnly)
+	{
+		return false;
+	}
+
+	// 다음 Tick 이 다시 판정하기 전까지 오버레이가 클릭을 계속 막지 않게 바로 내린다.
+	bPrepPanelViewOnly = false;
+	return ClosePrepPanelForDialogue();
+}
+
+bool UFF_TutorialSubsystem::ClosePrepPanelForDialogue()
+{
+	// 탭 대기 줄을 거치지 않고 왔을 수 있다(설치 대기 등). 화면에 있는 탭 바를 다시 확인한다.
+	TryBindPrepHudBar();
+
+	UFF_PrepHudBar* Bar = BoundPrepHudBar.Get();
+	if (!Bar || !Bar->GetSelection().bHasSelection)
+	{
+		return false;
+	}
+
+	UE_LOG(LogFestaFiestaTutorial, Log,
+		TEXT("[튜토리얼] 대사를 넘기려 해서 열린 패널부터 닫는다. 이번 클릭으로는 줄을 넘기지 않는다."));
+
+	// 닫힘도 탭 전환 방송으로 오지만 HandlePrepTabSelectionChanged 가 여는 것만 보므로 대사는 그대로다.
+	Bar->CloseCurrentPanel();
+	return true;
+}
+
 void UFF_TutorialSubsystem::HandleStageChanged(
 	const EFF_FestivalStage PreviousStage, const EFF_FestivalStage NewStage)
 {
@@ -558,6 +717,12 @@ void UFF_TutorialSubsystem::RemoveWidgets()
 	{
 		OverlayWidget->RemoveFromParent();
 		OverlayWidget = nullptr;
+	}
+
+	if (ExitWidget)
+	{
+		ExitWidget->RemoveFromParent();
+		ExitWidget = nullptr;
 	}
 }
 
@@ -690,9 +855,10 @@ void UFF_TutorialSubsystem::TryAutoStart()
 	   축제별이다. 하나로 합쳐 두면 첫 축제를 끝낸 사람이 다음 축제의 안내를
 	   영영 못 보는데, 그게 고치려는 문제 자체다.
 
-	   튜토리얼 레벨만은 예외다. 지도에서 직접 골라 들어왔으면 봤든 건너뛰었든 다시 튼다.
-	   그 레벨은 연습장이라, 고른 것 자체가 "다시 해보겠다" 는 뜻이다. 예전에는 봤으면
-	   레벨 선택으로 돌려보냈는데, 그러면 연습을 다시 할 방법이 없었다(피드백).
+	   튜토리얼 레벨만은 예외다. 새로 들어왔으면(이어하기가 아니면) 봤든 건너뛰었든 다시 튼다.
+	   예전에는 지도에서 다시 골라 연습하는 길이었다(2026-09-29 피드백). 2026-10-07 부터는 끝까지
+	   봤거나 건너뛴 판에서 지도가 튜토리얼 레벨을 잠가(SyncTutorialLevelLock) 흐름으로는 다시 못 들어오고,
+	   에디터에서 맵을 바로 열어 고칠 때 처음부터 다시 보는 길로 남는다.
 	*/
 	const FName FestivalId = ResolveCurrentFestivalId();
 	const bool bReplayTutorialLevel = IsTutorialFestival(FestivalId) && !bWorldStartedFromContinue;
@@ -816,6 +982,7 @@ void UFF_TutorialSubsystem::ResetCameraBaseline()
 	const FFF_OverviewCameraState State = Pawn->GetCameraState();
 	CameraBaselineFocus = State.FocusLocation;
 	CameraBaselineArmLength = State.ArmLength;
+	CameraBaselineYaw = State.Yaw;
 	bCameraBaselineValid = true;
 }
 
@@ -905,6 +1072,7 @@ void UFF_TutorialSubsystem::GoToLine(const int32 LineIndex)
 	if (Line.RequiresPlayerAction())
 	{
 		ResetCameraBaseline();
+		PrepareActionWatch(Line);
 
 		// 탭을 기다리는 줄이면 지금 구독한다. 늦게 뜨는 화면은 Tick 이 다시 잡는다.
 		if (bWaitsForTab)
@@ -945,6 +1113,19 @@ void UFF_TutorialSubsystem::Advance()
 
 	// 선택지도 마찬가지다. 고르지 않고 넘어가면 분기가 무의미해진다.
 	if (Line.Kind == EFF_DialogueLineKind::Choice)
+	{
+		return;
+	}
+
+	/* 준비 화면 패널이 열려 있으면 이번 클릭은 패널을 닫는 데만 쓴다.
+
+	   튜토리얼 레벨의 대사창은 준비 HUD 아래에 깔린다(DialogueBoxZOrder 가 음수).
+	   그래서 시킨 탭을 연 채로 다음 대사가 오면 패널이 대사를 가린다. 조작을 마친 순간
+	   바로 닫으면 열린 탭을 볼 틈이 없으므로(피드백), 탭은 그대로 보여주고 플레이어가
+	   직접 닫거나 대사를 넘기려 할 때 닫는다. 닫는 클릭과 넘기는 클릭을 나눠야
+	   가려져 있던 대사를 읽지 못한 채 지나가지 않는다.
+	*/
+	if (ClosePrepPanelForDialogue())
 	{
 		return;
 	}
@@ -1109,15 +1290,189 @@ void UFF_TutorialSubsystem::FinishScript()
 	   3. 방송 — 맨 마지막. 받는 쪽이 다음 대사를 틀 수 있는데, 방송을 먼저 하면
 	      그 대사를 바로 뒤의 StopScript 가 지운다.
 	*/
+	/* 튜토리얼 레벨이면 대사가 끝나는 대로 레벨을 끝내고 레벨 선택으로 돌아간다.
+
+	   튜토리얼 대사는 개장 직후에 마무리까지 이어진다. 그 뒤에 레벨에 남겨 두면 할 일 없는
+	   축제를 끝까지 치러야 해서, 대사를 다 본 것을 실습의 끝으로 본다(피드백).
+	   범위는 StopScript 가 지우므로 그 전에 판단해 둔다.
+	*/
+	const bool bTutorialLevelFinished = ActiveScope == EFF_TutorialScope::Festival
+		&& (IsTutorialFestival(ActiveScopeFestivalId) || IsTutorialLevel());
+
 	RecordScopeCompleted();
 	StopScript();
 	OnTutorialCompleted.Broadcast();
+
+	if (!bTutorialLevelFinished)
+	{
+		return;
+	}
+
+	/* 건너뛰기 버튼은 대사창과 함께 사라진다. 그 자리에 "나가기" 를 남긴다.
+
+	   흐름을 타고 들어왔으면 바로 아래에서 레벨을 떠나 이 버튼은 잠깐만 보인다. 흐름 밖에서
+	   맵을 바로 열었으면 자동으로 떠나지 않으므로(LeaveIfTutorialLevel), 이 버튼이 유일한 출구다.
+	*/
+	ShowExitButton();
+
+	// 방송 뒤에 떠난다. 레벨을 떠나면 이 월드의 구독자들이 곧 사라지므로 알릴 것은 먼저 알린다.
+	LeaveIfTutorialLevel(ResolveCurrentFestivalId());
+}
+
+void UFF_TutorialSubsystem::ShowExitButton()
+{
+	if (ExitWidget)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+	if (!Controller)
+	{
+		return;
+	}
+
+	ExitWidget = CreateWidget<UFF_TutorialExitWidget>(Controller, UFF_TutorialExitWidget::StaticClass());
+	if (ExitWidget)
+	{
+		// UI 루트(0) 아래에 둔다. 일시정지 화면이 위를 덮고, 오른쪽 위는 HUD 가 비워 둔 자리라 눌린다.
+		ExitWidget->AddToViewport(-40);
+	}
+}
+
+void UFF_TutorialSubsystem::ExitTutorialLevel()
+{
+	UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!Flow)
+	{
+		return;
+	}
+
+	UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 나가기를 눌렀다. 레벨 선택으로 돌아간다."));
+	ReturnToAtlasFromTutorialLevel(*Flow);
+}
+
+void UFF_TutorialSubsystem::ReturnToAtlasFromTutorialLevel(UFF_UIFlowSubsystem& Flow)
+{
+	// 흐름 밖(에디터에서 맵을 바로 연 경우)에는 판이 없어서 남길 세이브도 없다.
+	if (Flow.GetMode() == EFF_UIFlowMode::Festival)
+	{
+		if (UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+		{
+			Save->WriteLobbyAutoSaveAfterTutorial();
+		}
+	}
+	Flow.ReturnToAtlas();
+}
+
+void UFF_TutorialSubsystem::SyncTutorialLevelLock()
+{
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	const UFF_UIFlowSettings* FlowSettings = UFF_UIFlowSettings::Get();
+	const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this);
+	if (!Settings || Settings->TutorialFestivalId.IsNone() || !FlowSettings || FlowSettings->AtlasCatalog.IsNull() || !Save)
+	{
+		return;
+	}
+
+	UFF_FestivalAtlasCatalog* Catalog = FlowSettings->AtlasCatalog.LoadSynchronous();
+	FFF_FestivalAtlasEntry* Entry = Catalog ? FindTutorialAtlasEntry(*Catalog, Settings->TutorialFestivalId) : nullptr;
+	if (!Entry)
+	{
+		static bool bWarnedMissingEntry = false;
+		if (!bWarnedMissingEntry)
+		{
+			bWarnedMissingEntry = true;
+			UE_LOG(LogFestaFiestaTutorial, Warning,
+				TEXT("[튜토리얼] 아틀라스 카탈로그에 튜토리얼 레벨(%s)이 없어 지도에서 잠그지 못한다. ")
+				TEXT("튜토리얼 설정의 Tutorial Festival Id 가 카탈로그 칸의 FestivalId 나 레벨(맵) 이름과 같은지 볼 것."),
+				*Settings->TutorialFestivalId.ToString());
+		}
+		return;
+	}
+
+	// 끝까지 본 기록은 들어온 길에 따라 카탈로그 이름이나 맵 이름으로 남는다(FindTutorialAtlasEntry 주석).
+	const bool bSeen = Save->WasFestivalTutorialSeen(Entry->FestivalId)
+		|| Save->WasFestivalTutorialSeen(Settings->TutorialFestivalId);
+	const bool bOptedOut = Save->IsTutorialOptedOut();
+	const bool bWantLocked = bSeen || bOptedOut;
+
+	FTutorialLevelLockState& State = GetTutorialLevelLockState();
+	if (State.bOverridden && State.Catalog.Get() != Catalog)
+	{
+		// 덮어쓴 카탈로그가 내려갔다(편집기에서 애셋을 다시 불러온 경우). 새로 덮어쓴다.
+		State = FTutorialLevelLockState();
+	}
+	if (bWantLocked == State.bOverridden)
+	{
+		return;
+	}
+
+	if (!bWantLocked)
+	{
+		RestoreTutorialLevelLock();
+		UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 기록이 비어 튜토리얼 레벨을 다시 열었다(새 게임)."));
+		return;
+	}
+
+	State.Catalog = Catalog;
+	State.FestivalId = Entry->FestivalId;
+	State.bOriginalUnlocked = Entry->bUnlocked;
+	State.OriginalReason = Entry->LockReason;
+	State.bOverridden = true;
+
+	Entry->bUnlocked = false;
+	Entry->LockReason = Settings->TutorialLevelLockedReason;
+
+	UE_LOG(LogFestaFiestaTutorial, Log,
+		TEXT("[튜토리얼] 튜토리얼 레벨을 지도에서 잠갔다(끝까지 봄=%s, 건너뜀=%s). 새 게임에서 다시 열린다."),
+		bSeen ? TEXT("예") : TEXT("아니오"), bOptedOut ? TEXT("예") : TEXT("아니오"));
+}
+
+void UFF_TutorialSubsystem::RestoreTutorialLevelLock()
+{
+	FTutorialLevelLockState& State = GetTutorialLevelLockState();
+	if (!State.bOverridden)
+	{
+		return;
+	}
+
+	if (UFF_FestivalAtlasCatalog* Catalog = State.Catalog.Get())
+	{
+		if (FFF_FestivalAtlasEntry* Entry = FindAtlasEntry(*Catalog, State.FestivalId))
+		{
+			Entry->bUnlocked = State.bOriginalUnlocked;
+			Entry->LockReason = State.OriginalReason;
+		}
+	}
+	State = FTutorialLevelLockState();
+}
+
+bool UFF_TutorialSubsystem::IsTutorialLevel() const
+{
+	if (IsTutorialFestival(ResolveCurrentFestivalId()))
+	{
+		return true;
+	}
+
+	const UWorld* World = GetWorld();
+	const AFF_FestivalGameMode* GameMode =
+		World ? Cast<AFF_FestivalGameMode>(World->GetAuthGameMode()) : nullptr;
+	return GameMode && !GameMode->TutorialStartTable.IsNull();
 }
 
 void UFF_TutorialSubsystem::RequestSkipConfirm()
 {
 	if (!CanSkipTutorial())
 	{
+		return;
+	}
+
+	// 비서 브리핑은 되돌릴 것이 없다. 묻지 않고 그 브리핑만 닫는다.
+	if (IsBriefingActive())
+	{
+		StopScript();
 		return;
 	}
 
@@ -1180,6 +1535,13 @@ void UFF_TutorialSubsystem::SkipTutorial()
 		return;
 	}
 
+	// 비서 브리핑을 닫는 건 튜토리얼 건너뛰기가 아니다. 안내를 끄거나 레벨을 떠나지 않는다.
+	if (IsBriefingActive())
+	{
+		StopScript();
+		return;
+	}
+
 	bTutorialSkipped = true;
 
 	UE_LOG(LogFestaFiestaTutorial, Log,
@@ -1224,7 +1586,8 @@ bool UFF_TutorialSubsystem::LeaveIfTutorialLevel(const FName FestivalId)
 	   흐름을 타고 들어온 경우(UIFlow 가 축제 중)에만 돌려보낸다. 에디터에서 레벨을
 	   직접 열어 테스트할 때 쫓겨나면 튜토리얼 레벨을 고칠 수가 없다.
 	*/
-	if (!IsTutorialFestival(FestivalId))
+	// 식별자가 달라도 튜토리얼 레벨이면 떠난다. IsTutorialLevel 참고.
+	if (!IsTutorialFestival(FestivalId) && !IsTutorialLevel())
 	{
 		return false;
 	}
@@ -1240,7 +1603,7 @@ bool UFF_TutorialSubsystem::LeaveIfTutorialLevel(const FName FestivalId)
 	UE_LOG(LogFestaFiestaTutorial, Log,
 		TEXT("[튜토리얼] 튜토리얼을 건너뛰었거나 이미 봤다. 튜토리얼 레벨을 끝내고 레벨 선택으로 돌아간다."));
 
-	Flow->ReturnToAtlas();
+	ReturnToAtlasFromTutorialLevel(*Flow);
 	return true;
 }
 

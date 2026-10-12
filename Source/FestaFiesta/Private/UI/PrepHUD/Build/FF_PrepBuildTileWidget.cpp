@@ -7,6 +7,7 @@
 
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Building/Presentation/FF_BuildFavoritesSubsystem.h"
+#include "Building/Presentation/FF_BuildLightingBadge.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/UI/FF_BuildFacilityCard.h"
 #include "Components/Border.h"
@@ -84,7 +85,7 @@ void UFF_PrepBuildTileView::ConfigureHorizontalRibbon()
 {
 	Orientation = Orient_Horizontal;
 	EntryWidth = 184.f;
-	EntryHeight = 218.f;
+	EntryHeight = 210.f;
 	SetHorizontalEntrySpacing(10.f);
 	SetVerticalEntrySpacing(0.f);
 	ConsumeMouseWheel = EConsumeMouseWheel::Never;
@@ -147,6 +148,8 @@ void UFF_PrepBuildTileWidget::NativePreConstruct()
 		if (Border_Card) { AuthoredCardBrush = Border_Card->Background; }
 		if (Border_ThumbnailBackdrop) { AuthoredThumbnailBrush = Border_ThumbnailBackdrop->Background; }
 		if (Text_Cost) { AuthoredCostColor = Text_Cost->GetColorAndOpacity(); }
+		if (Text_Name) { AuthoredNameColor = Text_Name->GetColorAndOpacity(); }
+		if (Image_Thumbnail) { bAuthoredThumbnailEnabled = Image_Thumbnail->GetIsEnabled(); }
 		if (Text_State) { AuthoredStateColor = Text_State->GetColorAndOpacity(); }
 		if (Text_Favorite) { AuthoredFavoriteColor = Text_Favorite->GetColorAndOpacity(); }
 		bCapturedAppearance = true;
@@ -235,6 +238,14 @@ void UFF_PrepBuildTileWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEve
 	RefreshVisualState();
 }
 
+int32 UFF_PrepBuildTileWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
+	const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId,
+	const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+{
+	const int32 Layer = Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+	return Item && Item->SupportsLighting() ? FFBuildLightingBadge::Paint(AllottedGeometry, OutDrawElements, Layer) : Layer;
+}
+
 void UFF_PrepBuildTileWidget::RefreshItemPresentation()
 {
 	RefreshFromItem();
@@ -248,14 +259,18 @@ void UFF_PrepBuildTileWidget::RefreshItemPresentation()
 void UFF_PrepBuildTileWidget::ApplyProgramAvailability()
 {
 	bHasCompatiblePrograms = Item && Item->HasCompatiblePrograms();
-	const ESlateVisibility BadgeVisibility = bHasCompatiblePrograms
+	const ESlateVisibility BadgeVisibility = bHasCompatiblePrograms && !bRequiredFacility
 		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 	if (Border_ProgramBadge) { Border_ProgramBadge->SetVisibility(BadgeVisibility); }
 	if (Text_ProgramBadge) { Text_ProgramBadge->SetVisibility(BadgeVisibility); }
 	if (Border_ThumbnailBackdrop && bCapturedAppearance)
 	{
 		FSlateBrush Brush = AuthoredThumbnailBrush;
-		if (bRequiredFacility)
+		if (Item && Item->GetTileState() == EFF_PrepBuildTileState::BuildLimitReached)
+		{
+			Brush = FSlateRoundedBoxBrush(LockedCardTint, 8.f);
+		}
+		else if (bRequiredFacility && !bRequiredFacilitySatisfied)
 		{
 			if (RequiredThumbnailBrush.GetResourceObject()) Brush = RequiredThumbnailBrush;
 			else Brush.TintColor = RequiredCardTint;
@@ -324,6 +339,10 @@ void UFF_PrepBuildTileWidget::ApplyRequiredFacilityStatus()
 	if (Border_RequiredSatisfied) { Border_RequiredSatisfied->SetVisibility(SatisfiedVisibility); }
 	if (Text_RequiredMissing) { Text_RequiredMissing->SetVisibility(MissingVisibility); }
 	if (Text_RequiredSatisfied) { Text_RequiredSatisfied->SetVisibility(SatisfiedVisibility); }
+	const FText RequiredLabel = UFF_BuildFacilityCard::MakeRequiredFacilityLabel(RequiredFacilityMinimumCount);
+	if (Text_RequiredMissing) { Text_RequiredMissing->SetText(RequiredLabel); }
+	if (Text_RequiredSatisfied) { Text_RequiredSatisfied->SetText(RequiredLabel); }
+
 }
 
 void UFF_PrepBuildTileWidget::HandleFavoriteClicked()
@@ -401,12 +420,23 @@ void UFF_PrepBuildTileWidget::RefreshFromItem()
 			Description = FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "TileDescriptionWithRequirement", "{0}\n{1}"),
 				Description, UFF_BuildFacilityCard::MakeRequiredFacilityToolTip(Item->IsRequiredFacilitySatisfied(),
 					Item->GetRequiredFacilityCurrentCount(), Item->GetRequiredFacilityMinimumCount()));
+			// 설치만으로 끝나지 않는 필수 시설은 고르기 전에 배정이 필요하다는 것을 알린다.
+			const FFF_BuildCatalogEntry& RequiredEntry = Item->GetEntry();
+			if (RequiredEntry.RequiredStaffCount > 0)
+			{
+				Description = FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "TileDescriptionWithStaffRequirement", "{0}\n{1}"),
+					Description, UFF_BuildFacilityCard::MakeRequiredStaffToolTip(
+						RequiredEntry.RequiredAssignedStaffCount, RequiredEntry.RequiredStaffCount));
+			}
 		}
 		if (Item->HasCompatiblePrograms())
 		{
 			Description = FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "TileDescriptionWithPrograms", "{0}\n{1}"),
 				Description, UFF_BuildFacilityCard::MakeProgramFacilityToolTip(Item->GetEntry()));
 		}
+		if (Item->SupportsLighting())
+			Description = FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "TileDescriptionWithLighting", "{0}\n{1}"),
+				Description, UFF_BuildFacilityCard::MakeLightingToolTip());
 		SetToolTipText(Description);
 	}
 	else
@@ -449,21 +479,33 @@ FVector2D UFF_PrepBuildTileWidget::GetAuthoredThumbnailBounds() const
 void UFF_PrepBuildTileWidget::RefreshVisualState()
 {
 	const bool bAvailable = Item && Item->IsAffordable();
+	const bool bLocked = Item && Item->GetTileState() == EFF_PrepBuildTileState::BuildLimitReached;
 	if (Border_Card && bCapturedAppearance)
 	{
 		FSlateBrush Brush = AuthoredCardBrush;
-		const bool bAccented = bRequiredFacility || bHasCompatiblePrograms;
-		const FLinearColor AccentTint = bRequiredFacility ? RequiredCardTint : ProgramCardTint;
+		const bool bMissingRequired = bRequiredFacility && !bRequiredFacilitySatisfied;
+		const bool bAccented = bMissingRequired || bHasCompatiblePrograms;
+		const FLinearColor AccentTint = bMissingRequired ? RequiredCardTint : ProgramCardTint;
 		if (bAccented)
 		{
 			Brush.TintColor = AccentTint;
-			Brush.OutlineSettings.Color = bRequiredFacility ? RequiredOutlineColor : ProgramOutlineColor;
-			Brush.OutlineSettings.Width = 1.f;
+			Brush.OutlineSettings.Color = bMissingRequired ? RequiredOutlineColor : ProgramOutlineColor;
+			Brush.OutlineSettings.Width = bMissingRequired ? 2.f : 1.f;
 		}
 		if (bCardSelected) { Brush.TintColor = bAccented ? FMath::Lerp(AccentTint, SelectedTint, 0.25f) : SelectedTint; }
 		else if (bCardHovered) { Brush.TintColor = bAccented ? FMath::Lerp(AccentTint, HoverTint, 0.2f) : HoverTint; }
+		if (bLocked)
+		{
+			Brush.TintColor = LockedCardTint;
+			Brush.OutlineSettings.Color = LockedContentColor;
+			Brush.OutlineSettings.Width = 1.f;
+		}
 		Border_Card->SetBrush(Brush);
 	}
-	if (Text_Cost) { Text_Cost->SetColorAndOpacity(Item && !bAvailable ? FSlateColor(UnavailableColor) : AuthoredCostColor); }
-	if (Text_State) { Text_State->SetColorAndOpacity(Item && !bAvailable ? FSlateColor(UnavailableColor) : AuthoredStateColor); }
+	if (Text_Name) { Text_Name->SetColorAndOpacity(bLocked ? FSlateColor(LockedContentColor) : AuthoredNameColor); }
+	if (Text_Cost) { Text_Cost->SetColorAndOpacity(bLocked ? FSlateColor(LockedContentColor) : Item && !bAvailable ? FSlateColor(UnavailableColor) : AuthoredCostColor); }
+	if (Text_State) { Text_State->SetColorAndOpacity(bLocked ? FSlateColor(LockedContentColor) : Item && !bAvailable ? FSlateColor(UnavailableColor) : AuthoredStateColor); }
+	// Disable only decorative artwork for Slate's desaturated effect. The row and
+	// favorite button retain input, and pooled rows restore the authored state.
+	if (Image_Thumbnail) { Image_Thumbnail->SetIsEnabled(!bLocked && bAuthoredThumbnailEnabled); }
 }

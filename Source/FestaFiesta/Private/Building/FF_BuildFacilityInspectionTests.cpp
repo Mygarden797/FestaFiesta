@@ -6,6 +6,7 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Engine/DataTable.h"
@@ -17,22 +18,32 @@
 #include "Framework/Application/SlateApplication.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerInput.h"
 #include "Components/BoxComponent.h"
+#include "Components/Button.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/TextBlock.h"
 #include "InputKeyEventArgs.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
+#include "Staff/FF_StaffFacilitySubsystem.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
+#include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
 #include "UnrealClient.h"
 #include "Widgets/SOverlay.h"
 
@@ -200,7 +211,7 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
     Festival->InitialGold = 10000;
     Progression->StartFestival(Festival);
 
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    const FName ZoneId(FFProjectZoneTest::ZoneId());
     AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
     if (!TestNotNull(TEXT("Fixture zone"), Zone) ||
         !TestTrue(TEXT("Zone preset"), Zone->ApplyAcceptedZonePreset(ZoneId)) ||
@@ -387,6 +398,94 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Normal preparation and live input leave the festival balance unchanged"),
         Progression->GetGold(), GoldBeforeInspection);
     Stage->CurrentStage = EFF_FestivalStage::Setup;
+
+    // Reuse the real viewport/controller fixture to exercise the saved check WBP's
+    // click binding, tab handoff, installed-facility selection and staff controls together.
+    UFF_RequiredFacilitiesSubsystem* Required = World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>();
+    UFF_StaffFacilitySubsystem* Staffing = World->GetSubsystem<UFF_StaffFacilitySubsystem>();
+    if (!TestNotNull(TEXT("Shortcut requirement coordinator"), Required) ||
+        !TestNotNull(TEXT("Shortcut staffing coordinator"), Staffing)) { return false; }
+    Required->OnWorldBeginPlay(*World);
+    UFFZSFacilityDefinition* StaffDefinition = NewObject<UFFZSFacilityDefinition>(Festival);
+    StaffDefinition->Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::Info);
+    StaffDefinition->Spec.FacilityDefinitionId = TEXT("Info_GeneralInfo_CheckShortcutAutomation");
+    StaffDefinition->Spec.InstallCostKey = TEXT("Cost.Info.GeneralInfo.CheckShortcutAutomation");
+    Costs->AddRow(StaffDefinition->Spec.InstallCostKey, CostRow);
+    StaffDefinition->Spec.StaffCapacity = 2;
+    FFF_RequiredFacility& Requirement = Festival->RequiredSetupFacilities.AddDefaulted_GetRef();
+    Requirement.FacilityDefinition = StaffDefinition;
+    Requirement.MinimumCount = 1;
+    Requirement.MinimumAssignedStaff = 1;
+    FFFZSGridPlacement StaffPlacement;
+    StaffPlacement.OriginCell = FIntPoint(1000, 4000);
+    const FFFZSCommand StaffInstall = UFFZSGridLibrary::MakeInstallCommand(
+        StaffDefinition->Spec, ZoneId, StaffPlacement, Zones->GetWorldRevision());
+    const FFFZSCommandResult StaffInstalled = Zones->ExecuteCommand(StaffInstall);
+    if (!TestTrue(*FString::Printf(TEXT("Required staff facility installs: %s"),
+        *StaffInstalled.Message.ToString()), StaffInstalled.bSucceeded)) { return false; }
+    AFFZSFacilityActor* StaffFacility = Zones->FindFacility(StaffInstall.FacilityInstanceId);
+    if (!TestNotNull(TEXT("Installed staff shortcut target"), StaffFacility)) { return false; }
+    TestEqual(TEXT("Unassigned requirement resolves the installed target"),
+        Required->FindStaffAssignmentTarget(), StaffFacility);
+
+    UClass* BarClass = LoadClass<UFF_PrepHudBar>(nullptr, FFBuildUIAssetPaths::PrepHudBarClass);
+    if (!TestNotNull(TEXT("Saved preparation HUD class"), BarClass)) { return false; }
+    UFF_PrepHudBar* Bar = CreateWidget<UFF_PrepHudBar>(Controller, BarClass);
+    if (!TestNotNull(TEXT("Real preparation HUD"), Bar)) { return false; }
+    Bar->AddToViewport();
+    ON_SCOPE_EXIT { Bar->CloseCurrentPanel(); Bar->RemoveFromParent(); };
+    // SelectTab loads the production check WBP and calls InitializePanel with this bar.
+    Bar->SelectTab(EFF_PrepHudTab::Check);
+    TArray<UUserWidget*> CheckPanels;
+    UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, CheckPanels, UFF_PrepPanelCheck::StaticClass(), false);
+    UFF_PrepPanelCheck* Check = nullptr;
+    for (UUserWidget* Widget : CheckPanels)
+    {
+        UFF_PrepPanelCheck* Candidate = Cast<UFF_PrepPanelCheck>(Widget);
+        if (Candidate && Candidate->GetOwningBar() == Bar) { Check = Candidate; break; }
+    }
+    if (!TestNotNull(TEXT("HUD initializes the saved check panel"), Check)) { return false; }
+    UButton* Guidance = Cast<UButton>(Check->GetWidgetFromName(TEXT("Button_OpenGateReason")));
+    auto* Reason = Cast<UTextBlock>(Check->GetWidgetFromName(TEXT("Text_OpenGateReason")));
+    auto* ReasonRow = Cast<UHorizontalBox>(Check->GetWidgetFromName(TEXT("HorizontalBox_OpenGateReason")));
+    if (!TestNotNull(TEXT("Saved warning has an explicit staff assignment action"), Guidance) ||
+        !TestNotNull(TEXT("Warning keeps its own text"), Reason) ||
+        !TestNotNull(TEXT("Warning and action share one horizontal row"), ReasonRow)) { return false; }
+    TestTrue(TEXT("The action is placed immediately right of the warning text"),
+        ReasonRow->GetChildAt(0) == Reason && ReasonRow->GetChildAt(1) == Guidance);
+    TestTrue(TEXT("The warning flexes while the action retains its width"),
+        CastChecked<UHorizontalBoxSlot>(Reason->Slot)->GetSize().SizeRule == ESlateSizeRule::Fill);
+    TestTrue(TEXT("The action occupies only its required width"),
+        CastChecked<UHorizontalBoxSlot>(Guidance->Slot)->GetSize().SizeRule == ESlateSizeRule::Automatic);
+    TestFalse(TEXT("No link text is appended under the warning"), Reason->GetText().ToString().Contains(TEXT("스태프 배정 위치 보기")));
+    TestTrue(TEXT("Unassigned required staff enables the warning shortcut"), Guidance->GetIsEnabled());
+    TestEqual(TEXT("Unassigned required staff shows the right-hand shortcut"), Guidance->GetVisibility(), ESlateVisibility::Visible);
+    const int64 RevisionBeforeShortcut = Zones->GetWorldRevision();
+    const int32 GoldBeforeShortcut = Progression->GetGold();
+    Guidance->OnClicked.Broadcast();
+    TestTrue(TEXT("Warning click opens the build tab synchronously"), Bar->GetSelection().IsSelected(EFF_PrepHudTab::Build));
+    TestEqual(TEXT("Warning click enters facility inspection"), Build->GetBuildModeState(), EFF_BuildModeState::BuildMode);
+    TestEqual(TEXT("Warning click selects the required installed Info facility"),
+        Info->GetSelectedFacilityId(), StaffInstall.FacilityInstanceId);
+    if (!TestNotNull(TEXT("The existing inspector is reused for the shortcut"), Panel)) { return false; }
+    TestEqual(TEXT("Warning click opens the staff page directly"), Panel->GetInfoPage(), EFF_FacilityInfoPage::Staff);
+    UButton* Assign = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_AssignStaff")));
+    UWidget* StaffSection = Panel->GetWidgetFromName(TEXT("Panel_StaffSection"));
+    if (!TestNotNull(TEXT("Assignment button remains bound in the staff page"), Assign) ||
+        !TestNotNull(TEXT("Staff assignment section"), StaffSection)) { return false; }
+    TestTrue(TEXT("Staff section is visible after the warning click"), StaffSection->IsVisible());
+    TestTrue(TEXT("The shortcut exposes an enabled assignment action"), Assign->GetIsEnabled());
+    TestEqual(TEXT("Following the warning does not mutate facility authority"), Zones->GetWorldRevision(), RevisionBeforeShortcut);
+    TestEqual(TEXT("Following the warning does not charge or hire staff"), Progression->GetGold(), GoldBeforeShortcut);
+    Assign->OnClicked.Broadcast();
+    TestEqual(TEXT("The exposed assignment button assigns one waiting staff member"),
+        Staffing->GetAssignedStaffCount(StaffInstall.FacilityInstanceId), 1);
+    Bar->SelectTab(EFF_PrepHudTab::Check);
+    TestTrue(TEXT("Player can return from assignment to the check panel"), Bar->GetSelection().IsSelected(EFF_PrepHudTab::Check));
+    TestFalse(TEXT("Satisfied staffing disables the warning shortcut on reopen"), Guidance->GetIsEnabled());
+    TestEqual(TEXT("Satisfied staffing hides the shortcut and leaves the reason readable"), Guidance->GetVisibility(), ESlateVisibility::Collapsed);
+    TestTrue(TEXT("The reason is separate from the hidden shortcut"), Reason->IsVisible());
+
     Info->ClearSelection();
     Build->State = EFF_BuildModeState::Closed;
     Build->bBuildSessionActive = false;

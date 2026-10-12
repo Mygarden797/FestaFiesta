@@ -319,6 +319,12 @@ bool FFF_KeyBindingFixedBuildModeContractTest::RunTest(const FString& Parameters
 	TestTrue(
 		TEXT("B is recognized as a fixed action key"),
 		UFF_KeyBindingPanel::IsFixedActionKey(EKeys::B));
+	TestTrue(
+		TEXT("the fixed nearby placement key is N"),
+		UFF_KeyBindingPanel::GetFixedNearbyPlacementKey() == EKeys::N);
+	TestTrue(
+		TEXT("N is recognized as a fixed action key"),
+		UFF_KeyBindingPanel::IsFixedActionKey(EKeys::N));
 	TestFalse(
 		TEXT("ordinary player-mappable keys are not fixed"),
 		UFF_KeyBindingPanel::IsFixedActionKey(EKeys::W));
@@ -331,7 +337,95 @@ bool FFF_KeyBindingFixedBuildModeContractTest::RunTest(const FString& Parameters
 		TestTrue(TEXT("B inspection identifies build mode"), Summary.Contains(TEXT("건축 모드")));
 		TestTrue(TEXT("B inspection identifies the binding as fixed"), Summary.Contains(TEXT("고정")));
 		TestTrue(TEXT("B inspection explains it cannot be changed"), Summary.Contains(TEXT("변경 불가")));
+		const FString NearbySummary = Panel->GetCurrentBindingSummary(EKeys::N).ToString();
+		TestTrue(TEXT("N inspection identifies nearby movement"), NearbySummary.Contains(TEXT("가까운 빈자리로 이동")));
+		TestTrue(TEXT("N inspection explains the placement-only context"), NearbySummary.Contains(TEXT("시설 배치 중")));
+		TestTrue(TEXT("N inspection explains it cannot be changed"), NearbySummary.Contains(TEXT("변경 불가")));
 	}
+
+	// Exercise the actual settings panel against an isolated Enhanced Input profile.
+	// Existing saved mappings remain visible, while new conflicting assignments are rejected.
+	UFF_KeyBindingPanel* RuntimePanel = NewObject<UFF_KeyBindingPanel>(GetTransientPackage());
+	RuntimePanel->WidgetTree = NewObject<UWidgetTree>(RuntimePanel);
+	if (!TestTrue(TEXT("native settings fallback can build its runtime tree"), RuntimePanel->BuildFallbackWidgetTree()))
+	{
+		return false;
+	}
+	UEnhancedInputUserSettings* Settings = NewObject<UEnhancedInputUserSettings>(RuntimePanel);
+	FPlayerMappableKeyProfileCreationArgs ProfileArgs;
+	ProfileArgs.ProfileType = UEnhancedPlayerMappableKeyProfile::StaticClass();
+	ProfileArgs.ProfileStringIdentifier = TEXT("FF.KeyBinding.FixedBuildContractTest");
+	ProfileArgs.bSetAsCurrentProfile = true;
+	if (!TestNotNull(TEXT("isolated profile for fixed-key collision checks"), Settings->CreateNewKeyProfile(ProfileArgs)))
+	{
+		return false;
+	}
+	const FName JumpName(TEXT("FF.Character.Jump"));
+	UInputMappingContext* Context = NewObject<UInputMappingContext>(Settings);
+	// RefreshBindings reads every row when drawing the keyboard and checking option keys.
+	// Match a complete runtime profile so those reads do not exercise missing-row diagnostics.
+	for (const FFF_KeyBindingDefinition& Definition : FFKeyBindingDefinitions::GetAll())
+	{
+		UFF_KeyBindingProfileAction* Action = NewObject<UFF_KeyBindingProfileAction>(Context);
+		Action->Configure(Definition.MappingName, Definition.ActionLabel,
+			FFKeyBindingDefinitions::GetContextLabel(Definition.Context),
+			Definition.Context == EFF_KeyBindingContext::System);
+		Context->MapKey(Action, Definition.DefaultKey);
+	}
+	if (!TestTrue(TEXT("real profile registers all player-mappable actions"), Settings->RegisterInputMappingContext(Context)))
+	{
+		return false;
+	}
+	RuntimePanel->UserSettings = Settings;
+	RuntimePanel->RefreshBindings();
+	for (const TPair<const TCHAR*, FKey> Fixed : {
+		TPair<const TCHAR*, FKey>(TEXT("KeyBindingFixedAction_BuildMode"), EKeys::B),
+		TPair<const TCHAR*, FKey>(TEXT("KeyBindingFixedAction_NearbyPlacement"), EKeys::N)})
+	{
+		const auto* Row = Cast<UFF_KeyBindingActionButton>(RuntimePanel->WidgetTree->FindWidget(Fixed.Key));
+		TestTrue(*FString::Printf(TEXT("%s is an inspectable read-only fixed row"), Fixed.Key),
+			Row && Row->IsReadOnlyBinding() && Row->GetCurrentKey() == Fixed.Value);
+	}
+	TArray<UWidget*> Widgets;
+	RuntimePanel->WidgetTree->GetAllWidgets(Widgets);
+	const auto* NearbyKey = Widgets.FindByPredicate([](const UWidget* Widget)
+	{
+		const auto* KeyButton = Cast<UFF_KeyBindingKeyButton>(Widget);
+		return KeyButton && KeyButton->GetConfiguredKey() == EKeys::N;
+	});
+	TestTrue(TEXT("the keyboard diagram marks N as a fixed action"),
+		NearbyKey && Cast<UFF_KeyBindingKeyButton>(*NearbyKey)->IsFixedActionKey());
+	for (const FKey FixedKey : {EKeys::B, EKeys::N})
+	{
+		RuntimePanel->SelectedMappingName = JumpName;
+		RuntimePanel->TryAssignKey(FixedKey);
+		TestTrue(TEXT("assigning a reserved fixed key never changes the actual profile"),
+			FFKeyBindingDefinitions::ResolveCurrentKey(Settings, JumpName) == EKeys::SpaceBar);
+		TestTrue(TEXT("a rejected fixed key keeps capture open for a different key"), RuntimePanel->IsCapturingKey());
+		TestTrue(TEXT("the panel explains the fixed-key reassignment restriction"),
+			RuntimePanel->Text_CaptureStatus->GetText().ToString().Contains(TEXT("다른 동작에 지정할 수 없습니다")));
+	}
+	FMapPlayerKeyArgs LegacyArgs;
+	LegacyArgs.MappingName = JumpName;
+	LegacyArgs.Slot = EPlayerMappableKeySlot::First;
+	LegacyArgs.NewKey = EKeys::N;
+	FGameplayTagContainer FailureReasons;
+	Settings->MapPlayerKey(LegacyArgs, FailureReasons);
+	if (!TestTrue(TEXT("the fixture recreates a saved custom N mapping"), FailureReasons.IsEmpty()))
+	{
+		return false;
+	}
+	RuntimePanel->RefreshBindings();
+	const FString SavedSummary = RuntimePanel->GetCurrentBindingSummary(EKeys::N).ToString();
+	TestTrue(TEXT("refresh preserves an existing custom N mapping"),
+		FFKeyBindingDefinitions::ResolveCurrentKey(Settings, JumpName) == EKeys::N);
+	TestTrue(TEXT("inspection includes the saved action alongside the fixed N action"),
+		SavedSummary.Contains(TEXT("점프")) && SavedSummary.Contains(TEXT("가까운 빈자리로 이동")));
+	TestTrue(TEXT("inspection warns about the saved N conflict"), SavedSummary.Contains(TEXT("주의: N")));
+	RuntimePanel->HandleMappingChosen(TEXT("FF.Fixed.NearbyPlacement"));
+	TestFalse(TEXT("clicking the fixed N action inspects it instead of starting capture"), RuntimePanel->IsCapturingKey());
+	TestTrue(TEXT("the fixed N row shows the nearby placement action in the inspector"),
+		RuntimePanel->Text_CaptureStatus->GetText().ToString().Contains(TEXT("가까운 빈자리로 이동")));
 
 	return true;
 }

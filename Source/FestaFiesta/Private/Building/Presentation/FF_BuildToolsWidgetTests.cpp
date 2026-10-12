@@ -6,14 +6,83 @@
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/TextBlock.h"
+#include "FF_FFZSTypes.h"
 #include "Misc/AutomationTest.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsRequiredSpaceTest,
+    "FestaFiesta.Building.BuildTools.RequiredSpace",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFBuildToolsRequiredSpaceTest::RunTest(const FString& Parameters)
+{
+    FFFZSFacilitySpec Spec;
+    Spec.FootprintSizeCells = FIntPoint(320, 197);
+    Spec.ClearanceCells = 75;
+    Spec.QueueLayout = EFFZSQueueLayout::UShape;
+    // Bent reservation: the inner gap is deliberately not part of the queue.
+    Spec.QueueReservedRects = {FFFZSCellRect(FIntPoint(-100, -200), FIntPoint(0, 0)),
+        FFFZSCellRect(FIntPoint(0, -200), FIntPoint(400, -100))};
+    FText Footprint, Queue;
+    FFBuildToolsModel::FormatRequiredSpace(Spec, Footprint, Queue);
+    TestEqual(TEXT("Legacy clearance does not add a safety margin to the facility dimensions"),
+        Footprint.ToString(), FString(TEXT("시설 크기  3.2 × 1.97 m")));
+    TestTrue(TEXT("Queue bounds include negative offsets and the whole bend"),
+        Queue.ToString().Contains(TEXT("5 × 2 m")) && Queue.ToString().Contains(TEXT("U자형")));
+    Spec.QueueReservedRects.Reset();
+    Spec.QueueReservedCells = {FIntPoint(-50, -25), FIntPoint(49, 24)};
+    FFBuildToolsModel::FormatRequiredSpace(Spec, Footprint, Queue);
+    TestTrue(TEXT("Legacy cell maxima are exclusive and include one centimeter"), Queue.ToString().Contains(TEXT("1 × 0.5 m")));
+    Spec.QueueReservedCells.Reset();
+    FFBuildToolsModel::FormatRequiredSpace(Spec, Footprint, Queue);
+    TestTrue(TEXT("Missing geometry is never presented as zero required space"), Queue.ToString().Contains(TEXT("정보 없음")));
+    Spec.Category = EFFZSFacilityCategory::Road;
+    FFBuildToolsModel::FormatRequiredSpace(Spec, Footprint, Queue);
+    TestEqual(TEXT("Passive facilities explicitly show no queue"), Queue.ToString(), FString(TEXT("대기열 공간 없음")));
+    TestEqual(TEXT("Passive facilities also show only their physical footprint"),
+        Footprint.ToString(), FString(TEXT("시설 크기  3.2 × 1.97 m")));
+    return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsHelpClearanceTest,
     "FestaFiesta.Building.BuildTools.HelpCatalogClearance",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsAudienceSpaceTest,
+    "FestaFiesta.Building.BuildTools.AudienceSpace",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFBuildToolsAudienceSpaceTest::RunTest(const FString& Parameters)
+{
+    FFFZSFacilitySpec Spec;
+    TestTrue(TEXT("Ordinary facilities do not reserve a misleading audience row"),
+        FFBuildToolsModel::FormatAudienceSpace(Spec).IsEmpty());
+    Spec.Audience.bEnabled = true;
+    Spec.Audience.Columns = 3;
+    Spec.Audience.Rows = 2;
+    Spec.Audience.ColumnSpacingCm = 120.f;
+    Spec.Audience.RowSpacingCm = 150.f;
+    Spec.Audience.CenterAisleWidthCm = 200.f;
+    Spec.Audience.PerimeterMarginCm = 180.f;
+    Spec.Audience.FirstSlotLocalCm = FVector(-450, 700, 0);
+    const FString Audience = FFBuildToolsModel::FormatAudienceSpace(Spec).ToString();
+    TestTrue(TEXT("Audience bounds include the center aisle and perimeter, and show seat capacity"),
+        Audience.Contains(TEXT("8 × 5.1 m")) && Audience.Contains(TEXT("정원 6명")));
+    Spec.Audience.Rows = 0;
+    TestTrue(TEXT("Malformed audience geometry is explicit instead of silently showing zero space"),
+        FFBuildToolsModel::FormatAudienceSpace(Spec).ToString().Contains(TEXT("정보 없음")));
+    const FString Problems = FFBuildToolsModel::FormatProblemStatus(FText::FromString(TEXT("관객석 경계 문제")), 0, 4).ToString();
+    TestTrue(TEXT("Problem navigation cannot be mistaken for boundary coverage"),
+        Problems.Contains(TEXT("배치 문제 4개 · 1번째")) && !Problems.Contains(TEXT("1/4")));
+    TestEqual(TEXT("A single problem is not decorated with a counter"),
+        FFBuildToolsModel::FormatProblemStatus(FText::FromString(TEXT("한 문제")), 0, 1).ToString(), FString(TEXT("한 문제")));
+    return true;
+}
+
 bool FFFBuildToolsHelpClearanceTest::RunTest(const FString& Parameters)
 {
+    const FVector2D SharedColumn = FFBuildToolsModel::ResolveHelpVerticalBounds(560.f, 980.f, 525.f, 488.f);
+    TestTrue(TEXT("A long queue guide stays below the measured combination card and within the HUD"),
+        SharedColumn.X >= 488.f && SharedColumn.X + SharedColumn.Y <= 980.f && SharedColumn.Y < 560.f);
     // The catalog reserves its complete 326px tray plus the persistent navigation,
     // and resized/dragged trays can supply their measured top edge instead.
     for (const float ViewHeight : {540.f, 720.f, 900.f, 1080.f})
@@ -236,7 +305,7 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
         Cast<UScrollBox>(Tree->FindWidget(TEXT("Scroll_BuildHelp"))));
     for (const TCHAR* Key : {TEXT("Q"), TEXT("E"), TEXT("W"), TEXT("A"), TEXT("S"),
         TEXT("D"), TEXT("Ctrl"), TEXT("G"), TEXT("B"), TEXT("Esc"),
-        TEXT("Z"), TEXT("Y")})
+        TEXT("Z"), TEXT("Y"), TEXT("N")})
     {
         const FString Name = FString(TEXT("Text_BuildHelpKey_")) + Key;
         const UTextBlock* KeyText = Cast<UTextBlock>(Tree->FindWidget(FName(*Name)));
@@ -253,6 +322,13 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
             KeyText && KeyText->GetText().ToString() == QueueKeys[Index] && KeyText->GetFont().Size >= 14);
     }
     const UTextBlock* QueueHint = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_BuildHelpQueueHint")));
+    const auto* NearbyHelp = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_BuildHelpNearby")));
+    TestTrue(TEXT("The N keycap explains nearby movement in the placement guide"),
+        NearbyHelp && NearbyHelp->GetText().ToString().Contains(TEXT("가까운 빈자리")));
+    const auto* NearbyButton = Cast<UButton>(Tree->FindWidget(TEXT("Button_FindNearby")));
+    const auto* NearbyLabel = NearbyButton ? Cast<UTextBlock>(NearbyButton->GetContent()) : nullptr;
+    TestTrue(TEXT("Nearby button exposes the N shortcut before runtime refresh"),
+        NearbyLabel && NearbyLabel->GetText().ToString().Contains(TEXT("[N]")));
     TestTrue(TEXT("Saved queue mapping matches the active number shortcuts"),
         QueueHint && QueueHint->GetText().ToString() == TEXT("7 기본 · 8 좌측 · 9 우측 · 0 U자"));
     for (const TCHAR* Name : {TEXT("Text_BuildHelpUndo"), TEXT("Text_BuildHelpRedo"), TEXT("Text_BuildHelpQueue"), TEXT("Text_BuildHelpQueueHint")})
@@ -267,8 +343,15 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
         FName(TEXT("Size_BuildHelpPauseIcon"))})
         TestNotNull(*FString::Printf(TEXT("Icon guide contains %s"), *Name.ToString()),
             Cast<USizeBox>(Tree->FindWidget(Name)));
-    for (const FName Name : { FName(TEXT("Text_Queue")), FName(TEXT("Text_Footprint")), FName(TEXT("Text_Balance")) })
+    for (const FName Name : { FName(TEXT("Text_Queue")), FName(TEXT("Text_Footprint")), FName(TEXT("Text_Audience")), FName(TEXT("Text_Balance")) })
         TestNotNull(*Name.ToString(), Cast<UTextBlock>(Tree->FindWidget(Name)));
+    for (const TCHAR* Suffix : {TEXT("Audience"), TEXT("Boundary")})
+        TestNotNull(TEXT("Saved WBP labels audience and the construction boundary separately"),
+            Tree->FindWidget(FName(*(FString(TEXT("Text_PlacementSpaceLegend")) + Suffix))));
+    const auto* AudienceLegend = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_PlacementSpaceLegendAudience")));
+    const auto* FacilityLegend = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_PlacementSpaceLegendFacility")));
+    TestTrue(TEXT("Audience and facility use visibly distinct authored legend colors"),
+        AudienceLegend && FacilityLegend && AudienceLegend->GetColorAndOpacity() != FacilityLegend->GetColorAndOpacity());
     for (const FName Name : {TEXT("Text_PlacementAdvice"), TEXT("Text_PlacementObstruction"), TEXT("Text_AssistanceMessage")})
         TestNotNull(*Name.ToString(), Cast<UTextBlock>(Tree->FindWidget(Name)));
     for (const FName Name : {TEXT("Button_DirectAdjustment"), TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem")})
@@ -310,6 +393,11 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
     Class->bCanCallInitializedWithoutPlayerContext = bPrevious;
     if (!TestNotNull(TEXT("Adaptive tools instance"), Widget.Get())) return false;
     const TSharedRef<SWidget> Slate = Widget->TakeWidget();
+    for (const TCHAR* Name : {TEXT("Border_PlacementSpaceLegendClearance"), TEXT("Text_PlacementSpaceLegendClearance")})
+        if (UWidget* Legacy = Widget->GetWidgetFromName(Name))
+            TestEqual(TEXT("Legacy safety margin legend is not displayed"), Legacy->GetVisibility(), ESlateVisibility::Collapsed);
+    if (auto* Legend = Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Text_RangeLegend"))))
+        TestFalse(TEXT("Range legend no longer advertises a safety margin"), Legend->GetText().ToString().Contains(TEXT("안전 여유")));
     auto* Data = FindFProperty<FStructProperty>(Class, TEXT("ViewData"));
     if (!TestNotNull(TEXT("Transient presentation fixture seam"), Data)) return false;
     // Seed presentation only: no placement subsystem, player save or purchase is touched.

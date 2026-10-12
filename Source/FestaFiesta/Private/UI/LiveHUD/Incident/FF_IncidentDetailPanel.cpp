@@ -5,6 +5,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
@@ -13,12 +14,58 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Engine/Font.h"
 #include "Engine/World.h"
 #include "Incident/FF_IncidentSubsystem.h"
 #include "Staff/FF_StaffFacilitySubsystem.h"
+#include "UI/Data/FF_UIPalette.h"
+#include "UI/Core/FF_OutsideClickDismiss.h"
+#include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/FF_UILog.h"
+#include "UI/LiveHUD/Incident/FF_IncidentUiStyle.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaIncidentDetail"
+
+namespace FFIncidentDetailLocal
+{
+	FFPauseOptionsLightTeal::FTokens GetTokens()
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		return FFPauseOptionsLightTeal::Get(Palette ? *Palette : *GetDefault<UFF_UIPalette>());
+	}
+
+	FLinearColor GetAmber()
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		return (Palette ? Palette : GetDefault<UFF_UIPalette>())->InGame.Amber;
+	}
+}
+
+FText UFF_IncidentDetailPanel::BuildResponseStatusText(EFF_IncidentResponseStage Stage, float RemainingWorkMinutes)
+{
+	switch (Stage)
+	{
+	case EFF_IncidentResponseStage::Travelling:
+		return FText::Format(LOCTEXT("StatusTravelling", "스태프 출동 중 · {0}"),
+			UFF_UIDisplayTextLibrary::GetIncidentResponseStageText(Stage));
+	case EFF_IncidentResponseStage::Working:
+		return FText::Format(LOCTEXT("StatusWorking", "스태프 출동 중 · {0} · 남은 시간 약 {1}분"),
+			UFF_UIDisplayTextLibrary::GetIncidentResponseStageText(Stage),
+			FText::AsNumber(FMath::Max(1, FMath::CeilToInt(RemainingWorkMinutes))));
+	case EFF_IncidentResponseStage::None:
+	default:
+		return FText::GetEmpty();
+	}
+}
+
+FText UFF_IncidentDetailPanel::BuildSendBlockedReason(EFF_IncidentResponseStage Stage, bool bHasOption, int32 Available, int32 MinStaff)
+{
+	if (Stage != EFF_IncidentResponseStage::None || !bHasOption || Available >= MinStaff)
+	{
+		return FText::GetEmpty();
+	}
+	return UFF_UIDisplayTextLibrary::GetIncidentResolveResultText(EFF_IncidentResolveResult::NotEnoughStaff);
+}
 
 TSharedRef<SWidget> UFF_IncidentDetailPanel::RebuildWidget()
 {
@@ -33,12 +80,17 @@ void UFF_IncidentDetailPanel::BuildTree()
 		return;
 	}
 
+	using namespace FFIncidentUiStyle;
+	const FFPauseOptionsLightTeal::FTokens Tokens = FFIncidentDetailLocal::GetTokens();
+	UiFont = LoadUiFont();
+
 	Canvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Canvas_Detail"));
 	Canvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	WidgetTree->RootWidget = Canvas;
 
+	// 패널: PaperStrong 바탕 · Line 테두리 · 패널 모서리 8px
 	Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Border_Card"));
-	Card->SetBrushColor(CardColor);
+	Card->SetBrush(MakeRounded(Tokens.PaperStrong, PanelRadius, Tokens.Line, 1.f));
 	Card->SetPadding(FMargin(16.f, 14.f));
 	Card->SetVisibility(ESlateVisibility::Visible);
 
@@ -57,9 +109,24 @@ void UFF_IncidentDetailPanel::BuildTree()
 	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("VBox_Card"));
 	WidthBox->SetContent(Column);
 
-	Text_Title = MakeText(*Column, TEXT("Text_Title"), 16);
-	Text_Body = MakeText(*Column, TEXT("Text_Body"), 11);
-	Text_Body->SetColorAndOpacity(FSlateColor(FLinearColor(0.8f, 0.82f, 0.86f, 1.f)));
+	Text_Title = MakeText(*Column, TEXT("Text_Title"), TEXT("SemiBold"), PanelTitleFontSize, Tokens.Ink);
+	Text_Body = MakeText(*Column, TEXT("Text_Body"), TEXT("Regular"), 12, Tokens.InkMuted);
+
+	// 출동 상태 칩: TealSoft 바탕 · 칩 모서리 4px 위에 TealDeep 글자. 출동 중일 때만 보인다.
+	Border_Status = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Border_Status"));
+	Border_Status->SetBrush(MakeRounded(Tokens.TealSoft, ChipRadius, Tokens.TealSoft, 0.f));
+	Border_Status->SetPadding(FMargin(12.f, 4.f));
+	Border_Status->SetVisibility(ESlateVisibility::Collapsed);
+	if (UVerticalBoxSlot* StatusSlot = Column->AddChildToVerticalBox(Border_Status))
+	{
+		StatusSlot->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
+		StatusSlot->SetHorizontalAlignment(HAlign_Left);
+	}
+	Text_Status = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_Status"));
+	Text_Status->SetFont(MakeFont(UiFont, TEXT("SemiBold"), 12));
+	Text_Status->SetColorAndOpacity(FSlateColor(Tokens.TealDeep));
+	Text_Status->SetAutoWrapText(true);
+	Border_Status->SetContent(Text_Status);
 
 	Box_Option = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("VBox_Option"));
 	if (UVerticalBoxSlot* OptionSlot = Column->AddChildToVerticalBox(Box_Option))
@@ -67,12 +134,10 @@ void UFF_IncidentDetailPanel::BuildTree()
 		OptionSlot->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
 	}
 
-	Text_OptionLabel = MakeText(*Box_Option, TEXT("Text_OptionLabel"), 13);
-	Text_StaffRange = MakeText(*Box_Option, TEXT("Text_StaffRange"), 11);
-	Text_WorkAmount = MakeText(*Box_Option, TEXT("Text_WorkAmount"), 11);
-	Text_Cost = MakeText(*Box_Option, TEXT("Text_Cost"), 11);
-	Text_Reward = MakeText(*Box_Option, TEXT("Text_Reward"), 11);
-	Text_Reward->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.82f, 0.3f, 1.f)));
+	Text_OptionLabel = MakeText(*Box_Option, TEXT("Text_OptionLabel"), TEXT("SemiBold"), 13, Tokens.Ink);
+	Text_StaffRange = MakeText(*Box_Option, TEXT("Text_StaffRange"), TEXT("Regular"), 12, Tokens.InkMuted);
+	Text_WorkAmount = MakeText(*Box_Option, TEXT("Text_WorkAmount"), TEXT("Regular"), 12, Tokens.InkMuted);
+	Text_Reward = MakeText(*Box_Option, TEXT("Text_Reward"), TEXT("SemiBold"), 12, FFIncidentDetailLocal::GetAmber());
 
 	Row_Staff = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HBox_Staff"));
 	if (UVerticalBoxSlot* StaffSlot = Box_Option->AddChildToVerticalBox(Row_Staff))
@@ -80,14 +145,17 @@ void UFF_IncidentDetailPanel::BuildTree()
 		StaffSlot->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
 	}
 
-	UTextBlock* StaffCaption = MakeText(*Row_Staff, TEXT("Text_StaffCaption"), 12);
-	StaffCaption->SetText(LOCTEXT("StaffCaption", "작업 인원"));
+	UTextBlock* StaffCaption = MakeText(*Row_Staff, TEXT("Text_StaffCaption"), TEXT("Regular"), 12, Tokens.Ink);
+	StaffCaption->SetText(LOCTEXT("StaffCaption", "출동 인원"));
 
-	UTextBlock* Unused = nullptr;
-	Button_Minus = MakeButton(*Row_Staff, TEXT("Button_Minus"), LOCTEXT("Minus", "-"), Unused);
-	Text_StaffCount = MakeText(*Row_Staff, TEXT("Text_StaffCount"), 14);
+	UTextBlock* MinusLabel = nullptr;
+	Button_Minus = MakeButton(*Row_Staff, TEXT("Button_Minus"), LOCTEXT("Minus", "-"), false, MinusLabel);
+	Label_Minus = MinusLabel;
+	Text_StaffCount = MakeText(*Row_Staff, TEXT("Text_StaffCount"), TEXT("SemiBold"), 14, Tokens.Ink);
 	Text_StaffCount->SetJustification(ETextJustify::Center);
-	Button_Plus = MakeButton(*Row_Staff, TEXT("Button_Plus"), LOCTEXT("Plus", "+"), Unused);
+	UTextBlock* PlusLabel = nullptr;
+	Button_Plus = MakeButton(*Row_Staff, TEXT("Button_Plus"), LOCTEXT("Plus", "+"), false, PlusLabel);
+	Label_Plus = PlusLabel;
 
 	for (UWidget* Child : Row_Staff->GetAllChildren())
 	{
@@ -106,12 +174,22 @@ void UFF_IncidentDetailPanel::BuildTree()
 	}
 
 	UTextBlock* SendLabel = nullptr;
-	Button_Send = MakeButton(*Row_Actions, TEXT("Button_Send"), LOCTEXT("Send", "보내기"), SendLabel);
+	Button_Send = MakeButton(*Row_Actions, TEXT("Button_Send"), LOCTEXT("Send", "보내기"), true, SendLabel);
 	Text_SendLabel = SendLabel;
-	Button_Close = MakeButton(*Row_Actions, TEXT("Button_Close"), LOCTEXT("Close", "닫기"), Unused);
-	if (UHorizontalBoxSlot* SendSlot = Cast<UHorizontalBoxSlot>(Button_Send->Slot))
+	UTextBlock* CloseLabel = nullptr;
+	Button_Close = MakeButton(*Row_Actions, TEXT("Button_Close"), LOCTEXT("Close", "닫기"), false, CloseLabel);
+	if (UHorizontalBoxSlot* SendSlot = Button_Send->GetParent() ? Cast<UHorizontalBoxSlot>(Button_Send->GetParent()->Slot) : nullptr)
 	{
 		SendSlot->SetPadding(FMargin(0.f, 0.f, 8.f, 0.f));
+	}
+
+	// [보내기]가 꺼진 이유. 상태 줄로 드러나지 않는 경우에만 보인다.
+	Text_Reason = MakeText(*Column, TEXT("Text_Reason"), TEXT("Regular"), 12, Tokens.Danger);
+	Text_Reason->SetJustification(ETextJustify::Right);
+	Text_Reason->SetVisibility(ESlateVisibility::Collapsed);
+	if (UVerticalBoxSlot* ReasonSlot = Cast<UVerticalBoxSlot>(Text_Reason->Slot))
+	{
+		ReasonSlot->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
 	}
 
 	Button_Minus->OnClicked.AddUniqueDynamic(this, &UFF_IncidentDetailPanel::HandleMinusClicked);
@@ -120,35 +198,62 @@ void UFF_IncidentDetailPanel::BuildTree()
 	Button_Close->OnClicked.AddUniqueDynamic(this, &UFF_IncidentDetailPanel::HandleCloseClicked);
 }
 
-UTextBlock* UFF_IncidentDetailPanel::MakeText(UPanelWidget& Parent, FName Name, int32 FontSize)
+UTextBlock* UFF_IncidentDetailPanel::MakeText(UPanelWidget& Parent, FName Name, const TCHAR* Typeface, int32 FontSize, const FLinearColor& Color)
 {
 	UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
-	FSlateFontInfo Font = Text->GetFont();
-	Font.Size = FontSize;
-	Text->SetFont(Font);
+	Text->SetFont(FFIncidentUiStyle::MakeFont(UiFont, Typeface, FontSize));
+	Text->SetColorAndOpacity(FSlateColor(Color));
 	Text->SetAutoWrapText(true);
 	Parent.AddChild(Text);
 	return Text;
 }
 
-UButton* UFF_IncidentDetailPanel::MakeButton(UPanelWidget& Parent, FName Name, const FText& Label, UTextBlock*& OutLabel)
+UButton* UFF_IncidentDetailPanel::MakeButton(UPanelWidget& Parent, FName Name, const FText& Label, bool bPrimary, UTextBlock*& OutLabel)
 {
+	const FFPauseOptionsLightTeal::FTokens Tokens = FFIncidentDetailLocal::GetTokens();
 	UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
+	Button->SetStyle(FFIncidentUiStyle::MakeButtonStyle(Tokens, bPrimary));
+
 	UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), *(Name.ToString() + TEXT("_Label")));
-	FSlateFontInfo Font = Text->GetFont();
-	Font.Size = 12;
-	Text->SetFont(Font);
+	Text->SetFont(FFIncidentUiStyle::MakeFont(UiFont, TEXT("SemiBold"), 12));
 	Text->SetText(Label);
-	Text->SetColorAndOpacity(FSlateColor(FLinearColor(0.05f, 0.05f, 0.07f, 1.f)));
-	Button->AddChild(Text);
-	Parent.AddChild(Button);
+	Text->SetColorAndOpacity(FSlateColor(FFIncidentUiStyle::GetButtonLabelColor(Tokens, bPrimary, true)));
+	if (UButtonSlot* LabelSlot = Cast<UButtonSlot>(Button->AddChild(Text)))
+	{
+		LabelSlot->SetHorizontalAlignment(HAlign_Center);
+		LabelSlot->SetVerticalAlignment(VAlign_Center);
+	}
+
+	// 누를 수 있는 크기 44px 이상 (DesignSystem_v2 README 적용 규칙 6)
+	USizeBox* HitBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), *(Name.ToString() + TEXT("_Size")));
+	HitBox->SetMinDesiredHeight(FFIncidentUiStyle::MinInteractiveSize);
+	HitBox->SetMinDesiredWidth(FFIncidentUiStyle::MinInteractiveSize);
+	HitBox->SetContent(Button);
+	Parent.AddChild(HitBox);
 	OutLabel = Text;
 	return Button;
+}
+
+void UFF_IncidentDetailPanel::SetButtonEnabled(UButton* Button, UTextBlock* Label, bool bPrimary, bool bEnabled)
+{
+	if (Button)
+	{
+		Button->SetIsEnabled(bEnabled);
+	}
+	if (Label)
+	{
+		Label->SetColorAndOpacity(FSlateColor(
+			FFIncidentUiStyle::GetButtonLabelColor(FFIncidentDetailLocal::GetTokens(), bPrimary, bEnabled)));
+	}
 }
 
 void UFF_IncidentDetailPanel::NativeConstruct()
 {
 	Super::NativeConstruct();
+	FFOutsideClickDismiss::Register(this,
+		[this] { return IsOpen(); },
+		[this](FVector2D Position) { return FFOutsideClickDismiss::IsInside(Card, Position); },
+		FSimpleDelegate::CreateUObject(this, &ThisClass::Close));
 
 	BindIncidents();
 	if (!IsOpen())
@@ -159,6 +264,7 @@ void UFF_IncidentDetailPanel::NativeConstruct()
 
 void UFF_IncidentDetailPanel::NativeDestruct()
 {
+	FFOutsideClickDismiss::Unregister(this);
 	UnbindIncidents();
 	CurrentHandle = FFF_IncidentHandle();
 	Super::NativeDestruct();
@@ -253,6 +359,8 @@ void UFF_IncidentDetailPanel::Close()
 	CurrentHandle = FFF_IncidentHandle();
 	CurrentOption = FFF_IncidentOptionView();
 	SelectedStaff = 0;
+	TotalResponseWorkMinutes = 0.f;
+	ResponseStage = EFF_IncidentResponseStage::None;
 	SetVisibility(ESlateVisibility::Collapsed);
 }
 
@@ -269,6 +377,12 @@ bool UFF_IncidentDetailPanel::Refresh()
 	Text_Body->SetText(View.Body);
 	Text_Body->SetVisibility(View.Body.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
+	ResponseStage = View.ResponseStage;
+	TotalResponseWorkMinutes = View.TotalWorkMinutes;
+	const FText Status = BuildResponseStatusText(View.ResponseStage, View.RemainingWorkMinutes);
+	Text_Status->SetText(Status);
+	Border_Status->SetVisibility(Status.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+
 	CurrentOption = FFF_IncidentOptionView();
 	for (const FFF_IncidentOptionView& Option : View.Options)
 	{
@@ -283,7 +397,8 @@ bool UFF_IncidentDetailPanel::Refresh()
 	{
 		Box_Option->SetVisibility(ESlateVisibility::Collapsed);
 		Text_SendLabel->SetText(LOCTEXT("Acknowledge", "확인"));
-		Button_Send->SetIsEnabled(true);
+		SetButtonEnabled(Button_Send, Text_SendLabel, true, !IsResponding());
+		Text_Reason->SetVisibility(ESlateVisibility::Collapsed);
 		SelectedStaff = 0;
 		return true;
 	}
@@ -293,9 +408,6 @@ bool UFF_IncidentDetailPanel::Refresh()
 
 	Text_OptionLabel->SetText(CurrentOption.Label);
 	Text_OptionLabel->SetVisibility(CurrentOption.Label.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
-
-	Text_Cost->SetText(FText::Format(LOCTEXT("Cost", "비용: {0} G"), FText::AsNumber(CurrentOption.CostGold)));
-	Text_Cost->SetVisibility(CurrentOption.CostGold > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 
 	Text_Reward->SetText(FText::Format(LOCTEXT("Reward", "보상: {0}"), CurrentOption.RewardText));
 	Text_Reward->SetVisibility(CurrentOption.RewardText.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
@@ -312,23 +424,49 @@ void UFF_IncidentDetailPanel::RefreshStaff()
 		? CurrentOption.MinStaff
 		: FMath::Clamp(SelectedStaff, CurrentOption.MinStaff, MaxSelectable);
 
-	Text_StaffRange->SetText(FText::Format(LOCTEXT("StaffRange", "필요 인원: 최소 {0}명 · 가용 {1}명"),
+	Text_StaffRange->SetText(FText::Format(LOCTEXT("StaffRange", "최소 {0}명 · 출동 가능 {1}명"),
 		FText::AsNumber(CurrentOption.MinStaff), FText::AsNumber(Available)));
+	Text_StaffRange->SetVisibility(IsResponding() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
 	FNumberFormattingOptions WorkFormat;
 	WorkFormat.MinimumFractionalDigits = 0;
 	WorkFormat.MaximumFractionalDigits = 1;
-	Text_WorkAmount->SetText(CurrentOption.WorkAmount > 0.f && SelectedStaff > 0
-		? FText::Format(LOCTEXT("WorkAmountEstimate", "작업량: {0} 사람-분 · 예상 {1}분"),
-			FText::AsNumber(CurrentOption.WorkAmount, &WorkFormat),
-			FText::AsNumber(CurrentOption.WorkAmount / SelectedStaff, &WorkFormat))
-		: FText::Format(LOCTEXT("WorkAmount", "작업량: {0} 사람-분"),
-			FText::AsNumber(CurrentOption.WorkAmount, &WorkFormat)));
+	float WorkMinutes = TotalResponseWorkMinutes;
+	float Ability = 0.f;
+	const UFF_IncidentSubsystem* Incident = GetIncidentSubsystem();
+	const bool bHasEstimate = !IsResponding() && Incident
+		&& Incident->PreviewStaffWork(CurrentHandle, CurrentOption.OptionIndex, SelectedStaff, WorkMinutes, Ability);
+	if (CurrentOption.WorkAmount <= 0.f)
+	{
+		Text_WorkAmount->SetText(LOCTEXT("WorkOnArrival", "현장 도착 후 처리합니다."));
+	}
+	else if (IsResponding() || bHasEstimate)
+	{
+		Text_WorkAmount->SetText(FText::Format(IsResponding()
+			? LOCTEXT("WorkCommitted", "총 현장 작업 {0}분 (축제 시간)\n출동 시 숙련도 기준 · 이동 시간 별도")
+			: LOCTEXT("WorkPreview", "현장 작업 약 {0}분 (축제 시간)\n숙련도 반영 · 이동 시간 별도"),
+			FText::AsNumber(WorkMinutes, &WorkFormat)));
+	}
+	else
+	{
+		Text_WorkAmount->SetText(LOCTEXT("WorkPreviewUnavailable", "현장 작업 예상 —\n출동할 인원과 위치를 확인해 주세요."));
+	}
+	Text_WorkAmount->SetToolTipText(bHasEstimate
+		? FText::Format(LOCTEXT("WorkPreviewTip", "선발팀 능력 {0}. 최소 인원을 넘는 인원은 능력을 절반만 반영합니다. 출동할 때의 숙련도가 적용됩니다."),
+			FText::AsNumber(Ability, &WorkFormat))
+		: FText::GetEmpty());
+	Text_WorkAmount->SetVisibility(ESlateVisibility::Visible);
 
 	Text_StaffCount->SetText(FText::AsNumber(SelectedStaff));
-	Button_Minus->SetIsEnabled(SelectedStaff > CurrentOption.MinStaff);
-	Button_Plus->SetIsEnabled(SelectedStaff < Available);
-	Button_Send->SetIsEnabled(SelectedStaff >= CurrentOption.MinStaff && SelectedStaff <= Available);
+	Row_Staff->SetVisibility(IsResponding() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+	SetButtonEnabled(Button_Minus, Label_Minus, false, !IsResponding() && SelectedStaff > CurrentOption.MinStaff);
+	SetButtonEnabled(Button_Plus, Label_Plus, false, !IsResponding() && SelectedStaff < Available);
+	SetButtonEnabled(Button_Send, Text_SendLabel, true,
+		!IsResponding() && SelectedStaff >= CurrentOption.MinStaff && SelectedStaff <= Available);
+
+	const FText Reason = BuildSendBlockedReason(ResponseStage, true, Available, CurrentOption.MinStaff);
+	Text_Reason->SetText(Reason);
+	Text_Reason->SetVisibility(Reason.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 }
 
 void UFF_IncidentDetailPanel::HandleIncidentUpdated(FFF_IncidentHandle Handle)
@@ -349,7 +487,7 @@ void UFF_IncidentDetailPanel::HandleIncidentClosed(FFF_IncidentHandle Handle)
 
 void UFF_IncidentDetailPanel::HandleMinusClicked()
 {
-	if (!CurrentOption.bValid)
+	if (!CurrentOption.bValid || IsResponding())
 	{
 		return;
 	}
@@ -359,7 +497,7 @@ void UFF_IncidentDetailPanel::HandleMinusClicked()
 
 void UFF_IncidentDetailPanel::HandlePlusClicked()
 {
-	if (!CurrentOption.bValid)
+	if (!CurrentOption.bValid || IsResponding())
 	{
 		return;
 	}
@@ -370,6 +508,16 @@ void UFF_IncidentDetailPanel::HandlePlusClicked()
 void UFF_IncidentDetailPanel::HandleSendClicked()
 {
 	if (!IsOpen())
+	{
+		return;
+	}
+	// 클릭 직전 사건 종료·출동·가용 인원 변화를 다시 읽는다. 오래된 핸들로 명령을 보내지 않는다.
+	if (!Refresh())
+	{
+		Close();
+		return;
+	}
+	if (IsResponding() || !Button_Send || !Button_Send->GetIsEnabled())
 	{
 		return;
 	}

@@ -85,20 +85,91 @@ void UFF_DialogueBoxWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+void UFF_DialogueBoxWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	UpdatePanelLift(MyGeometry);
+}
+
+void UFF_DialogueBoxWidget::UpdatePanelLift(const FGeometry& MyGeometry)
+{
+	// 카드 묶음은 WBP 빌더(FF.TutorialDialogueUMG.Rebuild)가 붙인 이름이다. 없는 옛 WBP 면 옮기지 않는다.
+	UWidget* Card = GetWidgetFromName(TEXT("Panel_Dialogue"));
+	if (!Card)
+	{
+		return;
+	}
+
+	float Lift = 0.f;
+	const UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
+	const UWidget* Panel = Tutorial ? Tutorial->GetDialogueLiftPanel() : nullptr;
+	if (Panel && Card->IsVisible())
+	{
+		/* 배치(layout) 변환으로 잰다. 그리기 변환에는 여기서 준 이동이 섞여 있어, 그것으로 재면
+		   올린 만큼 덜 겹친다고 보고 다시 내려와 매 프레임 흔들린다. */
+		const FGeometry& PanelGeometry = Panel->GetCachedGeometry();
+		const FGeometry& CardGeometry = Card->GetCachedGeometry();
+		const FSlateLayoutTransform CardLayout = CardGeometry.GetAccumulatedLayoutTransform();
+		const float Scale = CardLayout.GetScale();
+
+		if (Scale > KINDA_SMALL_NUMBER && PanelGeometry.GetLocalSize().Y > 0.f)
+		{
+			const float PanelTop = PanelGeometry.GetAccumulatedLayoutTransform().GetTranslation().Y;
+			const float CardTop = CardLayout.GetTranslation().Y;
+			const float CardBottom = CardTop + CardGeometry.GetLocalSize().Y * Scale;
+			const float ScreenTop = MyGeometry.GetAccumulatedLayoutTransform().GetTranslation().Y;
+
+			if (CardBottom > PanelTop)
+			{
+				// 패널 윗변 위로 올리되 화면 위로 넘기지는 않는다.
+				const float Wanted = (CardBottom - PanelTop) / Scale + PanelLiftMargin;
+				const float Room = FMath::Max(0.f, (CardTop - ScreenTop) / Scale - PanelLiftMargin);
+				Lift = FMath::Min(Wanted, Room);
+			}
+		}
+	}
+
+	if (FMath::IsNearlyEqual(Lift, AppliedPanelLift, 0.5f))
+	{
+		return;
+	}
+	AppliedPanelLift = Lift;
+
+	const FVector2D Offset(0.f, -Lift);
+	Card->SetRenderTranslation(Offset);
+	if (PortraitImage)
+	{
+		PortraitImage->SetRenderTranslation(Offset);
+	}
+	if (BoxAdvanceButton)
+	{
+		BoxAdvanceButton->SetRenderTranslation(Offset);
+	}
+}
+
 void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
 {
+	// 화자가 없으면 이름칸을 숨긴다. 내레이션이나 독백일 때 빈 칸이 남으면 어색하다.
+	// 이름표가 있으면 이름표째 숨긴다. 글자만 숨기면 이름표 배경이 빈 채로 남는다.
+	const ESlateVisibility SpeakerVisibility =
+		Line.Speaker.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible;
 	if (SpeakerText)
 	{
 		SpeakerText->SetText(Line.Speaker);
-
-		// 화자가 없으면 이름칸을 숨긴다. 내레이션이나 독백일 때 빈 칸이 남으면 어색하다.
-		SpeakerText->SetVisibility(
-			Line.Speaker.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+		SpeakerText->SetVisibility(SpeakerVisibility);
+	}
+	if (SpeakerPlate)
+	{
+		SpeakerPlate->SetVisibility(SpeakerVisibility);
 	}
 
 	if (BodyText)
 	{
 		BodyText->SetText(Line.Text);
+
+		// 선택지 줄은 대사가 비어 있다. 빈 글줄이 한 줄 높이를 차지해 선택지 위가 비지 않게 접는다.
+		BodyText->SetVisibility(
+			Line.Text.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
 	}
 
 	RebuildChoices(Line);
@@ -156,6 +227,16 @@ void UFF_DialogueBoxWidget::HandleSkipClicked()
 	//
 	// 확인 창을 여기서 띄우는 이유는, BP 그래프에 로직을 두면 깃에서 병합도
 	// 리뷰도 안 되기 때문이다. BP 는 배치와 모양만 맡는다.
+
+	// 비서 브리핑은 되돌릴 것이 없다. 묻지 않고 그 브리핑만 닫는다(튜토리얼 안내는 그대로).
+	if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
+	{
+		if (Tutorial->IsBriefingActive())
+		{
+			Tutorial->StopScript();
+			return;
+		}
+	}
 
 	// 이미 떠 있으면 또 만들지 않는다. 겹친 창은 하나를 닫아도 뒤에 하나가 남는다.
 	if (const UFF_SkipConfirmWidget* Existing = OpenSkipConfirm.Get())
@@ -362,6 +443,12 @@ void UFF_DialogueBoxWidget::ApplyClickArea(const FFF_DialogueLine& Line)
 
 	Apply(AdvanceButton, bFullScreen);
 	Apply(BoxAdvanceButton, bBoxOnly);
+
+	// 넘길 수 있을 때만 "다음" 을 보여 준다. 클릭은 받지 않는다 — 클릭은 위의 두 버튼이 받는다.
+	if (AdvanceHint)
+	{
+		AdvanceHint->SetVisibility(bCanAdvance ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 }
 
 // ── 선택지 버튼 ─────────────────────────────────────────────────────────────

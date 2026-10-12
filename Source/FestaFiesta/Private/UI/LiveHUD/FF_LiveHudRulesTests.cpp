@@ -77,7 +77,7 @@ bool FFF_LiveHudRules_LiveStageOnly::RunTest(const FString& Parameters)
 	// 남겨 두면 이미 끝난 줄을 보게 된다. 볼 수 있는 시점에만 띄운다.
 	for (const EFF_LiveTab Tab : {
 		EFF_LiveTab::Operations, EFF_LiveTab::Facilities, EFF_LiveTab::Guests,
-		EFF_LiveTab::Queues, EFF_LiveTab::SNS, EFF_LiveTab::Staff })
+		EFF_LiveTab::Queues, EFF_LiveTab::SNS, EFF_LiveTab::Staff, EFF_LiveTab::RevenueRanking })
 	{
 		TestTrue(TEXT("라이브에서는 운영 탭이 보인다"),
 			FFF_LiveHudRules::IsTabVisible(Tab, EFF_FestivalStage::Live, true));
@@ -96,8 +96,11 @@ bool FFF_LiveHudRules_LiveStageOnly::RunTest(const FString& Parameters)
 	//    살 수 있는 곳(셋업)은 이미 지나간 뒤다.
 	TestFalse(TEXT("안 샀으면 피날레 탭이 숨는다"),
 		FFF_LiveHudRules::IsTabVisible(EFF_LiveTab::Finale, EFF_FestivalStage::Closing, /*Purchased*/ false));
-	TestTrue(TEXT("샀으면 보인다"),
+	// 2026-10-06 — 샀어도 결산 화면에는 띄우지 않는다. 보너스는 결산 평가 만족도에 들어 있다.
+	TestFalse(TEXT("샀어도 마감에는 피날레 탭이 없다"),
 		FFF_LiveHudRules::IsTabVisible(EFF_LiveTab::Finale, EFF_FestivalStage::Closing, /*Purchased*/ true));
+	TestFalse(TEXT("샀어도 결산 단계에는 피날레 탭이 없다"),
+		FFF_LiveHudRules::IsTabVisible(EFF_LiveTab::Finale, EFF_FestivalStage::Report, /*Purchased*/ true));
 
 	// ★ 피날레 **연출 구간**에는 탭을 하나도 안 띄운다. 불꽃을 보는 시간이다.
 	for (const EFF_LiveTab Tab : {

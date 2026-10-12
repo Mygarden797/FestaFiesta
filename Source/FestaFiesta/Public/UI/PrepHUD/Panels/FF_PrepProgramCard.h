@@ -8,6 +8,7 @@
 #include "FF_PrepProgramCard.generated.h"
 
 class UTextBlock;
+class UBorder;
 
 /**
  * 준비 단계 `프로그램` 패널의 카드 한 장.
@@ -38,6 +39,10 @@ public:
 	/** 시설을 고르기 전에는 정원만, 고른 후에는 그 시설의 참가비로 계산한 매출을 표시한다. */
 	void SetRevenuePreview(const FFF_ProgramCard* FacilityCard);
 
+	/** 완료는 편성 실적이다. 다른 시설에도 열 수 있으므로 카드 선택을 막지 않는다. */
+	virtual void ApplyCardState(EFF_PrepCardState InState, const FText& InBadgeText) override;
+	void SetScheduledFacilityCount(int32 InCount);
+
 protected:
 	virtual void CollectStateTexts(TArray<UTextBlock*>& OutTexts) const override;
 
@@ -58,6 +63,29 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_TimeRange;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UBorder> Border_CompletionBadge;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UTextBlock> Text_CompletionBadge;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program|Completion")
+	FText ScheduledBadgeText = NSLOCTEXT("FestaFiestaPrepProgram", "CompletedOneFacility", "✓ 오늘 편성 완료");
+
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program|Completion")
+	FText ScheduledCountFormat = NSLOCTEXT("FestaFiestaPrepProgram", "CompletedFacilities", "✓ 오늘 {Count}곳 편성 완료");
+
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program|Completion")
+	FLinearColor ScheduledBackgroundColor = FLinearColor::FromSRGBColor(FColor(240, 250, 242));
+
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program|Completion")
+	FLinearColor ScheduledOutlineColor = FLinearColor::FromSRGBColor(FColor(117, 190, 146));
+
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program|Completion")
+	FLinearColor ScheduledContentColor = FLinearColor::FromSRGBColor(FColor(25, 76, 64));
+
 private:
 	FFF_ProgramCard Card;
+	int32 ScheduledFacilityCount = 0;
+	void RefreshCompletionPresentation();
 };

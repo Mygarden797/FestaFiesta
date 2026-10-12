@@ -179,7 +179,7 @@ namespace FFPrepHudBrightBuilder
 		SetBorderContent(*Menu, *MenuSize);
 		AddRow(*Rows, *Menu, HAlign_Center);
 		const TCHAR* Names[] = { TEXT("Build"), TEXT("Program"), TEXT("Staff"), TEXT("Promotion"), TEXT("Finale"), TEXT("Check") };
-		const TCHAR* Labels[] = { TEXT("배치"), TEXT("프로그램"), TEXT("인력"), TEXT("홍보"), TEXT("피날레"), TEXT("점검") };
+		const TCHAR* Labels[] = { TEXT("배치"), TEXT("프로그램"), TEXT("스태프"), TEXT("홍보"), TEXT("피날레"), TEXT("점검") };
 		const TCHAR* Icons[] = { TEXT("Navigation/T_FF_LH_Icon_Facilities_White_256"), TEXT("Navigation/T_FF_LH_Icon_Events_White_256"),
 			TEXT("Navigation/T_FF_LH_Icon_Staff_White_256"), TEXT("Navigation/T_FF_LH_Icon_SNS_White_256"),
 			TEXT("Navigation/T_FF_LH_Icon_Events_White_256"), TEXT("Status/T_FF_LH_Icon_StatusCheck_White_256") };
@@ -209,8 +209,8 @@ namespace FFPrepHudBrightBuilder
 		SetBorderContent(*Status, *Columns);
 		AddRow(*Rows, *StatusSize, HAlign_Fill);
 		AddStatusGroup(BP, Tree, *Left, TEXT("Box_FestivalName"), TEXT("Text_FestivalName"), LOCTEXT("FestivalPreview", "다대포 바다축제"));
-		AddStatusGroup(BP, Tree, *Left, TEXT("Box_Gold"), TEXT("Text_Gold"), LOCTEXT("GoldPreview", "10,000 Gold"),
-			TEXT("Metrics/T_FF_LH_Icon_Gold_White_256"), Color(230, 170, 29));
+		AddStatusGroup(BP, Tree, *Left, TEXT("Box_Gold"), TEXT("Text_Gold"), LOCTEXT("GoldPreview", "10,000"),
+			TEXT("Metrics/T_FF_LH_Icon_Gold_White_256"), FLinearColor::White);
 		AddStatusGroup(BP, Tree, *Left, TEXT("Box_Staff"), TEXT("Text_Staff"), LOCTEXT("StaffPreview", "6명"),
 			TEXT("Metrics/T_FF_LH_Icon_StaffCount_White_256"));
 		// 가변 길이 좌우 그룹이 중앙 단계 칩을 밀지 않도록 같은 Fill 비율을 사용한다.

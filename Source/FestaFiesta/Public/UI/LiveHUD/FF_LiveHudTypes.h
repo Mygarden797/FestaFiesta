@@ -6,6 +6,8 @@
 #include "Time/FF_FestivalStage.h"
 #include "FF_LiveHudTypes.generated.h"
 
+struct FGeometry;
+
 /**
  * 라이브 운영 HUD 의 탭 7종.
  *
@@ -24,7 +26,7 @@ enum class EFF_LiveTab : uint8
 {
 	Operations	UMETA(DisplayName = "운영"),
 	Facilities	UMETA(DisplayName = "시설"),
-	Guests		UMETA(DisplayName = "관객"),
+	Guests		UMETA(DisplayName = "현황"),
 	Queues		UMETA(DisplayName = "대기열"),
 	SNS			UMETA(DisplayName = "SNS"),
 	Staff		UMETA(DisplayName = "스태프"),
@@ -36,7 +38,10 @@ enum class EFF_LiveTab : uint8
 	// 실제로 볼 곳(마감)이 따로 있는데 탭이 둘이 되면 어디서 보는 것인지 헷갈린다.
 
 	Report		UMETA(DisplayName = "리포트"),
-	Finale		UMETA(DisplayName = "피날레")
+	Finale		UMETA(DisplayName = "피날레"),
+
+	// 기존 WBP에 저장된 enum 값을 보존하기 위해 끝에 추가한다. 실제 배치는 시설 탭 다음이다.
+	RevenueRanking UMETA(DisplayName = "매출 순위")
 };
 
 /**
@@ -72,7 +77,7 @@ enum class EFF_LiveTab : uint8
 UENUM(BlueprintType)
 enum class EFF_LivePanelDock : uint8
 {
-	/** 하단 바 바로 위 가운데. 표·숫자를 읽는 탭용 — 준비 단계와 같은 자리다. */
+	/** 라이브 7패널은 화면 중앙. 리포트·피날레는 기존 하단 도킹을 유지한다. */
 	Center	UMETA(DisplayName = "가운데"),
 
 	/** 왼쪽. 월드를 계속 봐야 하는 탭용 — 화면 가운데를 비워 둔다. */
@@ -99,7 +104,8 @@ struct FESTAFIESTA_API FFF_LivePanelLayout
 	float Width = 520.f;
 
 	/**
-	 * 패널 높이(px). 하단 바 바로 위에서 **위로** 자란다.
+	 * 패널 높이(px). 라이브 7패널의 Center는 화면 중앙에서 상하로 자란다.
+	 * 작은 창에서는 표시만 축소하고 이 저장값은 보존한다.
 	 *
 	 * === 🔴 왜 "화면 높이에서 빼서" 쓰지 않나 (2026-08-28 실측으로 판명) ===
 	 * 처음에는 세로를 늘어난 축(`Anchors.Y = 0~1`)으로 두고 위아래 여백만 줬다. 그러면
@@ -118,10 +124,22 @@ struct FESTAFIESTA_API FFF_LivePanelLayout
 	/**
 	 * 기준점에서 미는 양(px). 양수 X 는 오른쪽, 양수 Y 는 아래.
 	 *
-	 * 기준점은 `Dock` 이 정한다 — `Center` 는 하단 바 위 가운데, `Left`·`Right` 는 그쪽 모서리.
+	 * 기준점은 `Dock` 이 정한다 — 라이브 7패널의 Center는 실제 화면 중앙,
+	 * 리포트·피날레의 Center는 기존 하단 기준, Left·Right는 그쪽 모서리.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Live Panel Layout")
 	FVector2D Offset = FVector2D::ZeroVector;
+
+	/** 실제 화면 중앙을 사용하는 라이브 정보 패널만 고른다. Designer/좌우 도킹은 유지한다. */
+	bool UsesViewportCenter(EFF_LiveTab Tab) const;
+
+	/**
+	 * 창/DPI를 포함한 viewport 좌표를 호스트 Canvas로 변환한다.
+	 * 작은 창에서는 표시 크기·위치만 보정하며 저장된 Width/Height/Offset은 수정하지 않는다.
+	 * BottomReserve와 Margin은 Canvas 단위다. 아직 배치되지 않은 첫 프레임은 false.
+	 */
+	bool TryResolveCenteredLayout(const FGeometry& ViewportGeometry, const FGeometry& CanvasGeometry,
+		float BottomReserve, float Margin, FVector2D& OutPosition, FVector2D& OutSize) const;
 };
 
 /**
@@ -266,6 +284,8 @@ struct FESTAFIESTA_API FFF_LiveHudRules
 	 * 홍보 프리뷰·노을에서도 열 수 있게 두는 이유는 전부 **읽기 전용 정보**라서다.
 	 * 미리 열어 둔다고 잘못될 것이 없고, 단계가 넘어갈 때 패널이 닫혔다 다시 열리면
 	 * 오히려 눈이 매번 다시 찾는다.
+	 *
+	 * `피날레` 탭은 2026-10-06부터 어느 단계에서도 띄우지 않는다. 인자는 호환을 위해 남겼다.
 	 */
 	static bool IsTabVisible(EFF_LiveTab Tab, EFF_FestivalStage Stage, bool bHasPurchasedFinale);
 

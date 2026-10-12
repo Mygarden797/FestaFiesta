@@ -65,6 +65,12 @@ void UFF_FestivalProgressionSubsystem::Initialize(FSubsystemCollectionBase& Coll
 		Buzz->OnBuzzChanged.AddUniqueDynamic(this, &UFF_FestivalProgressionSubsystem::HandleBuzzChanged);
 	}
 
+	// 축제가 끝나면 평가를 굳힌다. StartFestival 이 되돌리므로 그 전에 물린다.
+	if (UFF_FestivalStageSubsystem* Stage = Collection.InitializeDependency<UFF_FestivalStageSubsystem>())
+	{
+		Stage->OnFestivalEnded.AddUniqueDynamic(this, &UFF_FestivalProgressionSubsystem::HandleFestivalEnded);
+	}
+
 	StartConfiguredFestival();
 
 	/* 저장에 참여한다.
@@ -94,9 +100,22 @@ void UFF_FestivalProgressionSubsystem::WriteSaveData(TArray<uint8>& OutBytes) co
 	State.AdmissionFeeGold = CurrentAdmissionFeeGold;
 	State.DailySatisfaction = DailySatisfaction;
 
-	/* 당일 원장(DayLedger)과 프로그램 편성(ScheduledPrograms)은 여전히 안 담는다.
+	// 끝난 날들의 원장과 시설별 매출 장부. 이어하기 뒤에 결산 표와 시설 정보 패널이 비지 않게 한다.
+	for (const TPair<int32, FFF_DayLedger>& Pair : LedgerHistory)
+	{
+		FFF_DayLedgerSave& Saved = State.LedgerHistory.AddDefaulted_GetRef();
+		Saved.Day = Pair.Key;
+		Pair.Value.Export(Saved.SpendByReason, Saved.EarnByReason, Saved.TotalRefund,
+			Saved.FacilityIds, Saved.FacilityRevenue);
+	}
+	State.CurrentLedger.Day = LastProcessedDay;
+	DayLedger.Export(State.CurrentLedger.SpendByReason, State.CurrentLedger.EarnByReason,
+		State.CurrentLedger.TotalRefund, State.CurrentLedger.FacilityIds, State.CurrentLedger.FacilityRevenue);
+	FacilityRevenueBook.Export(State.FacilityRevenueIds, State.FacilityRevenues);
+
+	/* 프로그램 편성(ScheduledPrograms)은 여전히 안 담는다.
 	   저장은 정산이 끝난 뒤에만 일어나는데(장원재, 이어하기), 그 시점엔 하루 경계가
-	   이미 원장을 비우고 편성을 해제한 뒤라 담을 것이 없다 — 호출 시점이 바뀌면 이 가정도
+	   이미 편성을 해제한 뒤라 담을 것이 없다 — 호출 시점이 바뀌면 이 가정도
 	   같이 재검토할 것. */
 
 	UFF_SaveArchive::WriteStruct(OutBytes, State);
@@ -143,6 +162,25 @@ void UFF_FestivalProgressionSubsystem::ReadSaveData(const TArray<uint8>& InBytes
 			Definition->AdmissionFeeMinGold, Definition->AdmissionFeeMaxGold);
 	}
 	DailySatisfaction = State.DailySatisfaction;
+	bEvaluationFrozen = false;
+
+	// 원장 복원. 옛 저장(필드 없음)이면 비어 있다 - 그 경우 결산 표는 빈 채로 시작한다.
+	LedgerHistory.Reset();
+	EndedDayLedger.Reset();
+	for (const FFF_DayLedgerSave& Saved : State.LedgerHistory)
+	{
+		if (Saved.Day <= 0) continue;
+		FFF_DayLedger& Ledger = LedgerHistory.Add(Saved.Day);
+		Ledger.Import(Saved.SpendByReason, Saved.EarnByReason, Saved.TotalRefund,
+			Saved.FacilityIds, Saved.FacilityRevenue);
+	}
+	if (const FFF_DayLedger* Ended = LedgerHistory.Find(EndedDay))
+	{
+		EndedDayLedger = *Ended;
+	}
+	DayLedger.Import(State.CurrentLedger.SpendByReason, State.CurrentLedger.EarnByReason,
+		State.CurrentLedger.TotalRefund, State.CurrentLedger.FacilityIds, State.CurrentLedger.FacilityRevenue);
+	FacilityRevenueBook.Import(State.FacilityRevenueIds, State.FacilityRevenues);
 
 	// 화면이 따라오게 알린다. 값만 바꾸면 UI 가 옛 숫자를 계속 보여준다.
 	BroadcastGoldIfChanged(PreviousGold);
@@ -245,6 +283,8 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	//        (변이 검사로 확인: 지우면 죽는 테스트가 없다). 호출 순서가 바뀔 때를 위한 방어다.
 	EndedDayLedger.Reset();
 	EndedDay = 0;
+	LedgerHistory.Reset();
+	bEvaluationFrozen = false;
 	StaffPool.Initialize(InDefinition->InitialStaffCount);
 	PurchasedFinaleGrade = EFF_FinaleGrade::None;
 	PurchasedPromotionGrade = EFF_PromotionGrade::None;
@@ -380,6 +420,11 @@ void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason R
 	RecordRevenue(Amount, Reason, FacilityId, FGuid());
 }
 
+int32 UFF_FestivalProgressionSubsystem::AddRevenueWithReceipt(int32 Amount, EFF_EarnReason Reason, FName FacilityId)
+{
+	return RecordRevenue(Amount, Reason, FacilityId, FGuid());
+}
+
 void UFF_FestivalProgressionSubsystem::RecordAdmittedVisitorsForDailyGoal(int32 AdmittedCount)
 {
 	if (Definition == nullptr || LastProcessedDay <= 0 || AdmittedCount <= 0)
@@ -393,7 +438,7 @@ void UFF_FestivalProgressionSubsystem::RecordAdmittedVisitorsForDailyGoal(int32 
 	TotalAdmittedVisitors = static_cast<int32>(FMath::Min<int64>(MAX_int32,
 		static_cast<int64>(TotalAdmittedVisitors) + AdmittedCount));
 
-	const int32 Goal = Definition->DailyVisitorGoal;
+	const int32 Goal = Definition->GetDailyVisitorGoalForDay(LastProcessedDay);
 	if (!bDailyGoalBonusPaid && Goal > 0 && AdmittedVisitorsToday >= Goal)
 	{
 		bDailyGoalBonusPaid = true;
@@ -416,7 +461,7 @@ int32 UFF_FestivalProgressionSubsystem::GetDailyVisitorGoal() const
 	{
 		return INDEX_NONE;
 	}
-	return Definition->DailyVisitorGoal;
+	return Definition->GetDailyVisitorGoalForDay(FMath::Max(LastProcessedDay, 1));
 }
 
 void UFF_FestivalProgressionSubsystem::AddFacilityRevenue(
@@ -431,7 +476,7 @@ bool UFF_FestivalProgressionSubsystem::GetFacilityInstanceRevenue(
 	return FacilityRevenueBook.Find(FacilityInstanceId, OutRevenue);
 }
 
-void UFF_FestivalProgressionSubsystem::RecordRevenue(
+int32 UFF_FestivalProgressionSubsystem::RecordRevenue(
 	int32 Amount, EFF_EarnReason Reason, FName FacilityId, const FGuid& FacilityInstanceId)
 {
 	if (Amount > 0)
@@ -439,7 +484,7 @@ void UFF_FestivalProgressionSubsystem::RecordRevenue(
 		// 잔액과 누적 매출 중 먼저 상한에 닿는 값에 맞춰 동일한 수용액을 원장에도 기록한다.
 		const int32 Capacity = MAX_int32 - FMath::Max3(Funds.GetGold(), Funds.GetTotalRevenue(), Funds.GetTodayRevenue());
 		Amount = FMath::Min(Amount, Capacity);
-		if (Amount == 0) return;
+		if (Amount == 0) return 0;
 	}
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
@@ -458,6 +503,7 @@ void UFF_FestivalProgressionSubsystem::RecordRevenue(
 	{
 		OnFacilityRevenueChanged.Broadcast(FacilityInstanceId);
 	}
+	return FMath::Max(0, Amount);
 }
 
 void UFF_FestivalProgressionSubsystem::GrantDiscoveryGold(int32 Amount)
@@ -507,97 +553,132 @@ void UFF_FestivalProgressionSubsystem::PublishConstructionGoldChange(const int32
 	BroadcastGoldIfChanged(PreviousGold);
 }
 
+namespace
+{
+	TArray<FFF_LedgerRow> BuildEarnRows(const FFF_DayLedger& Ledger)
+	{
+		TArray<FFF_LedgerRow> Rows;
+		// EFF_EarnReason enum의 리플렉션 정보를 가져옴.
+		// 이후 enum 값의 내부 이름/표시 이름을 얻을 때 사용.
+		const UEnum* ReasonEnum = StaticEnum<EFF_EarnReason>();
+
+		for (int64 Value = 0; Value <= static_cast<int64>(EFF_EarnReason::IncidentReward); ++Value)
+		{
+			const int32 Amount = Ledger.GetEarnByReason(static_cast<EFF_EarnReason>(Value));
+			if (Amount == 0) continue;
+			Rows.Add(MakeReasonRow(ReasonEnum, Value, Amount,
+				UFF_EconomyDisplayTextLibrary::GetEarnReasonText(static_cast<EFF_EarnReason>(Value))));
+		}
+		return Rows;
+	}
+
+	TArray<FFF_LedgerRow> BuildSpendRows(const FFF_DayLedger& Ledger)
+	{
+		TArray<FFF_LedgerRow> Rows;
+		const UEnum* ReasonEnum = StaticEnum<EFF_SpendReason>();
+
+		for (int64 Value = 0; Value <= static_cast<int64>(EFF_SpendReason::FacilityUpgrade); ++Value)
+		{
+			const int32 Amount = Ledger.GetSpendByReason(static_cast<EFF_SpendReason>(Value));
+			if (Amount == 0) continue;
+			Rows.Add(MakeReasonRow(ReasonEnum, Value, Amount,
+				UFF_EconomyDisplayTextLibrary::GetSpendReasonText(static_cast<EFF_SpendReason>(Value))));
+		}
+		return Rows;
+	}
+
+	TArray<FFF_FacilityRevenueRow> BuildFacilityRows(const FFF_DayLedger& Ledger)
+	{
+		TArray<FFF_FacilityRevenueRow> Rows;
+		for (const TPair<FName, int32>& Pair : Ledger.GetRevenueByFacility())
+		{
+			FFF_FacilityRevenueRow Row;
+			Row.FacilityId = Pair.Key;
+			Row.Amount = Pair.Value;
+			Rows.Add(Row);
+		}
+
+		// TMap은 순회 순서를 보장하지 않으므로 FacilityId 의 문자열 사전식 순서로 명시적으로 정렬한다.
+		Rows.Sort([](const FFF_FacilityRevenueRow& A, const FFF_FacilityRevenueRow& B)
+		{
+			return A.FacilityId.LexicalLess(B.FacilityId);
+		});
+		return Rows;
+	}
+}
+
+FFF_DayLedger UFF_FestivalProgressionSubsystem::BuildFestivalLedger() const
+{
+	FFF_DayLedger Total;
+	for (const TPair<int32, FFF_DayLedger>& Pair : LedgerHistory)
+	{
+		Total.Accumulate(Pair.Value);
+	}
+	if (IsFestivalStarted())
+	{
+		Total.Accumulate(DayLedger);
+	}
+	return Total;
+}
+
+TArray<FFF_LedgerRow> UFF_FestivalProgressionSubsystem::GetEarnRowsForFestival() const
+{
+	return BuildEarnRows(BuildFestivalLedger());
+}
+
+TArray<FFF_LedgerRow> UFF_FestivalProgressionSubsystem::GetSpendRowsForFestival() const
+{
+	return BuildSpendRows(BuildFestivalLedger());
+}
+
+TArray<FFF_FacilityRevenueRow> UFF_FestivalProgressionSubsystem::GetRevenueByFacilityRowsForFestival() const
+{
+	return BuildFacilityRows(BuildFestivalLedger());
+}
+
+int32 UFF_FestivalProgressionSubsystem::GetTotalRefundForFestival() const
+{
+	return BuildFestivalLedger().GetTotalRefund();
+}
+
 TArray<FFF_LedgerRow> UFF_FestivalProgressionSubsystem::GetEarnRowsForDay(int32 Day) const
 {
-	TArray<FFF_LedgerRow> Rows;
-	
 	const FFF_DayLedger* Ledger = FindLedgerForDay(Day);
 	if (Ledger == nullptr)
 	{
 		UE_LOG(LogFestaFiestaEconomy, Warning,
 			TEXT("[경제] Day %d 의 원장이 없다(진행 중 %d · 닫힌 날 %d). 빈 표를 돌려준다."),
 			Day, LastProcessedDay, EndedDay);
-		return Rows;
+		return TArray<FFF_LedgerRow>();
 	}
-	
-	// EFF_EarnReason enum의 리플렉션 정보를 가져옴.
-	// 이후 enum 값의 내부 이름/표시 이름을 얻을 때 사용.
-	const UEnum* ReasonEnum = StaticEnum<EFF_EarnReason>();
-	
-	for (int64 Value = 0; Value <= static_cast<int64>(EFF_EarnReason::MinigameReward); ++Value)
-	{
-		const int32 Amount = Ledger->GetEarnByReason(static_cast<EFF_EarnReason>(Value));
-		if (Amount == 0) continue;
-		Rows.Add(MakeReasonRow(ReasonEnum, Value, Amount,
-			UFF_EconomyDisplayTextLibrary::GetEarnReasonText(static_cast<EFF_EarnReason>(Value))));
-	}
-	
-	return Rows;
+	return BuildEarnRows(*Ledger);
 }
 
 TArray<FFF_LedgerRow> UFF_FestivalProgressionSubsystem::GetSpendRowsForDay(int32 Day) const
 {
-	TArray<FFF_LedgerRow> Rows;
-
 	const FFF_DayLedger* Ledger = FindLedgerForDay(Day);
 	if (Ledger == nullptr)
 	{
 		UE_LOG(LogFestaFiestaEconomy, Warning,
 			TEXT("[경제] Day %d 의 원장이 없다(진행 중 %d · 닫힌 날 %d). 빈 표를 돌려준다."),
 			Day, LastProcessedDay, EndedDay);
-		return Rows;
+		return TArray<FFF_LedgerRow>();
 	}
-
-	const UEnum* ReasonEnum = StaticEnum<EFF_SpendReason>();
-	
-	for (int64 Value = 0; Value <= static_cast<int64>(EFF_SpendReason::FacilityUpgrade); ++Value)
-	{
-		const int32 Amount = Ledger->GetSpendByReason(static_cast<EFF_SpendReason>(Value));
-		if (Amount == 0)
-		{
-			continue;
-		}
-
-		Rows.Add(MakeReasonRow(ReasonEnum, Value, Amount,
-			UFF_EconomyDisplayTextLibrary::GetSpendReasonText(static_cast<EFF_SpendReason>(Value))));
-	}
-
-	return Rows;
+	return BuildSpendRows(*Ledger);
 }
 
 TArray<FFF_FacilityRevenueRow> UFF_FestivalProgressionSubsystem::GetRevenueByFacilityRowsForDay(int32 Day) const
 {
-	TArray<FFF_FacilityRevenueRow> Rows;
-
 	const FFF_DayLedger* Ledger = FindLedgerForDay(Day);
 	if (Ledger == nullptr)
 	{
 		UE_LOG(LogFestaFiestaEconomy, Warning,
 			TEXT("[경제] Day %d 의 원장이 없다(진행 중 %d · 닫힌 날 %d). 빈 표를 돌려준다."),
 			Day, LastProcessedDay, EndedDay);
-		return Rows;
+		return TArray<FFF_FacilityRevenueRow>();
 	}
-
-	for (const TPair<FName, int32>& Pair : Ledger->GetRevenueByFacility())
-	{
-		FFF_FacilityRevenueRow Row;
-		Row.FacilityId = Pair.Key;
-		Row.Amount = Pair.Value;
-		Rows.Add(Row);
-	}
-
-	// TMap은 순회 순서를 의미 있는 출력 순서로 보장하지 않음.
-	// 따라서 실행 환경이나 내부 상태에 따라 UI 표의 순서가 달라질 수 있음.
-	// 이를 방지하기 위해 FacilityId의 "문자열 내용"을 기준으로 명시적으로 정렬함.
-	// LexicalLess()는 FName 내부 인덱스가 아니라 이름 문자열의 사전식 순서를 비교함.
-	Rows.Sort([](const FFF_FacilityRevenueRow& A, const FFF_FacilityRevenueRow& B)
-	{
-		return A.FacilityId.LexicalLess(B.FacilityId);
-	});
-	
-	return Rows;
+	return BuildFacilityRows(*Ledger);
 }
-
 int32 UFF_FestivalProgressionSubsystem::GetTotalRefundForDay(int32 Day) const
 {
 	const FFF_DayLedger* Ledger = FindLedgerForDay(Day);
@@ -827,7 +908,19 @@ FFF_VisitorForecast UFF_FestivalProgressionSubsystem::PreviewVisitorForecast(
 	}
 
 	const int32 Fee = FMath::Clamp(AdmissionFeeGold, Definition->AdmissionFeeMinGold, Definition->AdmissionFeeMaxGold);
-	return FFF_VisitorForecastRules::BuildForecast(*Definition, Grade, Fee, PreviewBuzz);
+	return FFF_VisitorForecastRules::BuildForecast(
+		*Definition, Grade, Fee, PreviewBuzz, GetReputationMultiplier());
+}
+
+float UFF_FestivalProgressionSubsystem::GetReputationMultiplier() const
+{
+	if (Definition == nullptr || LastProcessedDay < 2 || DailySatisfaction.IsEmpty())
+	{
+		return 1.f;
+	}
+	return FFF_VisitorForecastRules::CalcReputationMultiplier(
+		static_cast<float>(DailySatisfaction.Last()),
+		Definition->ReputationMinVisitorMultiplier, Definition->ReputationMaxVisitorMultiplier);
 }
 
 FFF_PromotionTier UFF_FestivalProgressionSubsystem::GetPromotionTier(const EFF_PromotionGrade Grade) const
@@ -892,6 +985,26 @@ EFF_AdmissionFeeResult UFF_FestivalProgressionSubsystem::TrySetAdmissionFee(cons
 
 FFF_FestivalEvaluation UFF_FestivalProgressionSubsystem::GetFestivalEvaluation() const
 {
+	return bEvaluationFrozen ? FrozenEvaluation : ComputeFestivalEvaluation();
+}
+
+void UFF_FestivalProgressionSubsystem::HandleFestivalEnded()
+{
+	if (Definition == nullptr || bEvaluationFrozen)
+	{
+		return;
+	}
+	// 마지막 날은 하루 경계를 안 넘으므로 그날 만족도를 여기서 기록에 넣는다. 날짜별 그래프가 3칸이 된다.
+	if (LastProcessedDay > DailySatisfaction.Num())
+	{
+		DailySatisfaction.Add(ReadCurrentSatisfaction());
+	}
+	FrozenEvaluation = ComputeFestivalEvaluation();
+	bEvaluationFrozen = true;
+}
+
+FFF_FestivalEvaluation UFF_FestivalProgressionSubsystem::ComputeFestivalEvaluation() const
+{
 	FFF_FestivalEvaluationInput Input;
 	Input.DailySatisfaction = DailySatisfaction;
 	// 하루 경계를 아직 안 넘은 오늘(마지막 날 포함)은 지금 값을 그날 값으로 쓴다.
@@ -907,7 +1020,12 @@ FFF_FestivalEvaluation UFF_FestivalProgressionSubsystem::GetFestivalEvaluation()
 	if (Definition != nullptr)
 	{
 		Input.DailyVisitorGoal = Definition->DailyVisitorGoal;
+		for (int32 Day = 1; Day <= Input.DaysPlayed; ++Day)
+		{
+			Input.VisitorGoalTotal += Definition->GetDailyVisitorGoalForDay(Day);
+		}
 		Input.InitialGold = Definition->InitialGold;
+		Input.TargetProfitGold = Definition->FinanceTargetProfitGold;
 		Input.WeightSatisfaction = Definition->EvaluationWeightSatisfaction;
 		Input.WeightVisitors = Definition->EvaluationWeightVisitors;
 		Input.WeightFinance = Definition->EvaluationWeightFinance;
@@ -924,7 +1042,7 @@ void UFF_FestivalProgressionSubsystem::HandleBuzzChanged(const float NewBuzz, co
 	}
 	const int32 Fee = FMath::Clamp(CurrentAdmissionFeeGold, Definition->AdmissionFeeMinGold, Definition->AdmissionFeeMaxGold);
 	const int32 Previous = FFF_VisitorForecastRules::BuildForecast(
-		*Definition, PurchasedPromotionGrade, Fee, PreviousBuzz).ExpectedVisitors;
+		*Definition, PurchasedPromotionGrade, Fee, PreviousBuzz, GetReputationMultiplier()).ExpectedVisitors;
 	BroadcastExpectedVisitorsIfChanged(Previous);
 }
 
@@ -937,7 +1055,13 @@ int32 UFF_FestivalProgressionSubsystem::ReadCurrentSatisfaction() const
 {
 	const UFF_SatisfactionMetricsSubsystem* Satisfaction = GetGameInstance()
 		? GetGameInstance()->GetSubsystem<UFF_SatisfactionMetricsSubsystem>() : nullptr;
-	return Satisfaction ? Satisfaction->GetSimSatisfaction() : 50;
+	if (!Satisfaction)
+	{
+		return 50;
+	}
+	// 하루 기록은 그날 Live 평균이다. Live 끝 한 순간은 그때 쌓인 욕구가 그대로 잡혀 하루를 대표하지 못한다
+	const FFF_DaySatisfactionAverage DayAverage = Satisfaction->GetDayAverage();
+	return DayAverage.IsValid() ? DayAverage.Satisfaction : Satisfaction->GetSimSatisfaction();
 }
 
 void UFF_FestivalProgressionSubsystem::BroadcastExpectedVisitorsIfChanged(
@@ -1376,6 +1500,8 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 
 	// 덮기 전에 읽는다 — 바로 아래에서 LastProcessedDay 가 NewDay 로 바뀐다.
 	const int32 JustEndedDay = LastProcessedDay;
+	// 어제 만족도가 평판 배수를 바꾸므로, 경계를 넘은 뒤 예상 방문객이 달라졌으면 끝에서 알린다.
+	const int32 PreviousExpectedVisitors = GetExpectedVisitors();
 
 	// 끝난 날의 만족도를 남긴다. 만족도는 표본이 없으면 직전 값을 유지하므로
 	// 아침(Live 가 끝난 뒤)에 읽어도 그날 마지막 값이다.
@@ -1400,6 +1526,10 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	// 리셋 직전에 직전 하루를 보관한다.
 	EndedDayLedger = DayLedger;
 	EndedDay = JustEndedDay;
+	if (JustEndedDay > 0)
+	{
+		LedgerHistory.Add(JustEndedDay, DayLedger);
+	}
 
 	DayLedger.Reset();
 	// 시설별 장부는 오늘 값만 0 으로 돌아가고 누적은 남는다 (시설 정보 패널의 "누적 매출").
@@ -1432,6 +1562,7 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	{
 		OnAdmittedVisitorsTodayChanged.Broadcast(AdmittedVisitorsToday);
 	}
+	BroadcastExpectedVisitorsIfChanged(PreviousExpectedVisitors);
 
 	return true;
 }
@@ -1443,7 +1574,7 @@ const FFF_DayLedger* UFF_FestivalProgressionSubsystem::FindLedgerForDay(int32 Da
 	if (Day == LastProcessedDay) return &DayLedger;
 	
 	if (Day == EndedDay) return &EndedDayLedger;
-	
-	return nullptr;
+
+	return LedgerHistory.Find(Day);
 }
 

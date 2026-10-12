@@ -14,6 +14,7 @@
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Misc/AutomationTest.h"
@@ -95,7 +96,7 @@ bool FFF_BuildQueueLayoutDraftTest::RunTest(const FString& Parameters)
     Economy->StartFestival(Festival.Get());
     Zones->SetChangePhase(EFFZSChangePhase::InitialSetup);
     AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
-    if (!Zone || !Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+    if (!FFProjectZoneTest::RegisterZone(*this, Zone, Zones)) return false;
     ON_SCOPE_EXIT
     {
         Build->EndDragPlacement();
@@ -110,6 +111,18 @@ bool FFF_BuildQueueLayoutDraftTest::RunTest(const FString& Parameters)
     Build->CurrentPlacement.OriginCell = FIntPoint(1000, 1000);
     Build->SpawnPlacementPreview();
     if (!TestNotNull(TEXT("Placement preview"), Build->PlacementPreview.Get())) return false;
+    // Old assets can still carry service defaults before their next normalization.
+    // Category capability must keep these objects out of queue editing regardless.
+    for (const EFFZSFacilityCategory Category : {EFFZSFacilityCategory::Lighting,
+        EFFZSFacilityCategory::Road, EFFZSFacilityCategory::Tile})
+    {
+        Build->SelectedSpec.Category = Category;
+        TestFalse(TEXT("Non-service placement never exposes queue layout controls"), Build->CanChooseQueueLayout());
+        TestFalse(TEXT("Non-service placement rejects queue shape shortcuts"),
+            Build->SetSelectedFacilityQueueLayout(EFFZSQueueLayout::Left));
+        TestTrue(TEXT("Non-service placement has no queue shortcut hint"), Build->GetQueueLayoutKeyHint().IsEmpty());
+    }
+    Build->SelectedSpec = Definition->Spec;
     TestTrue(TEXT("Placing supports queue layout shortcuts"), Build->CanChooseQueueLayout());
     TestTrue(TEXT("A placing choice updates the draft"), Build->SetSelectedFacilityQueueLayout(EFFZSQueueLayout::Left));
     Build->RebuildPreviewCommand();

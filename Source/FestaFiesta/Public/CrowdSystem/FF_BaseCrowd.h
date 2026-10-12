@@ -11,6 +11,8 @@ class UAnimInstance;
 class UFF_CrowdAnimInstance;
 class UFF_CrowdMovementComponent;
 class UFF_CrowdVisualComponent;
+class USkeletalMesh;
+class USkeletalMeshComponent;
 class UStaticMeshComponent;
 
 
@@ -35,6 +37,11 @@ public:
 	virtual void ReleaseFromAgent();
 	// --- 후 보정이 끝난 이동 값을 그대로 적용하기 위한 함수 ---/
 	virtual void PushPresentation(FVector NewPosition, FRotator NewRotator, float NewSpeed);
+	// Running 일 때의 재생 배속(다른 상태에서는 기억만 한다)
+	void SetAnimPlayRate(float PlayRate);
+	// 애니메이션 전용. 이동·위치에는 영향이 없다
+	void SetState(EFF_CrowdRunState NewState);
+	EFF_CrowdRunState GetCurrentState() const { return CurrentState; }
 	// --- 알맞는 외형을 선택하기 위한 장치 --- /
 	virtual void ApplyAppearance(USkeletalMesh* Mesh,UClass* AnimClass, float YawOffset, float UniformScale);
 	
@@ -75,6 +82,13 @@ private:
 
 	// GetVelocity()가 돌려줄 값. PushPresentation에서 갱신한다
 	FVector CachedVelocity = FVector::ZeroVector;
-	
-	
+
+	// 상태의 소유자는 Actor 이고 바꾸는 길은 SetState 뿐이다(AnimInstance 가 새로 만들어져도 여기서 다시 얹는다)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crowd|Animation", meta = (AllowPrivateAccess = "true"))
+	EFF_CrowdRunState CurrentState = EFF_CrowdRunState::Running;
+
+	// Running 일 때 쓸 재생 배속. 상태와 무관하게 마지막 값을 기억한다
+	float RunningAnimPlayRate = 1.f;
+
+	void ApplyStateToAnimation();
 };

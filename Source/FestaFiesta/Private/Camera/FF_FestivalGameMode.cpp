@@ -75,7 +75,7 @@ void AFF_FestivalGameMode::BeginPlay()
 
 	if (AFF_OverviewCameraPawn* CameraPawn = Controller->GetOverviewCameraPawn())
 	{
-		CameraPawn->InitializeOverview(InitialFocusLocation, InitialArmLength);
+		CameraPawn->InitializeOverview(InitialFocusLocation, InitialArmLength, bPreserveInitialCameraHeight);
 	}
 	else
 	{

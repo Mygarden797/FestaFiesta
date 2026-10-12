@@ -14,6 +14,7 @@
 
 class AFF_FinaleViewpoint;
 class AFF_FinaleLaunchSite;
+class AFF_FinaleShellTracer;
 class AFF_FestivalPlayerController;
 
 // 연출 진행 상태가 바뀔 때. UI 가 표시를 바꾸거나 다른 시스템이 멈출 때 쓴다.
@@ -24,6 +25,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnFinaleBurst, FVector, WorldLo
 
 // 3막 연출에서 막이 바뀔 때. 엔딩곡처럼 막에 맞춰 바뀌어야 하는 것을 여기에 건다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleTourActChanged, EFF_FinaleTourAct, NewAct);
+
+// 바지선에서 한 발 쏘아 올릴 때. 발사음(쿵)은 여기에 건다. RiseSeconds 뒤에 BurstLocation 에서 OnBurst 가 온다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FFF_OnFinaleLaunch, FVector, LaunchLocation, FVector, BurstLocation, float, RiseSeconds);
 
 // 피날레 불꽃 연출을 실행한다.
 //
@@ -64,16 +68,43 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
 	int32 GetFiredBurstCount() const { return FiredBursts; }
 
+	// 지금까지 바지선에서 쏘아 올린 알 수. 오르는 중인 알도 센다. 모양 알은 여러 발을 품어도 하나다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
+	int32 GetLaunchedShellCount() const { return LaunchedShells; }
+
+	// 지금 오르는 중인 발수. 모양 알 하나는 품은 발을 전부 센다(터지면 그만큼 피어난다).
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
+	int32 GetShellsInFlight() const { return InFlightBurstCount; }
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
 	float GetElapsedSeconds() const { return ElapsedSeconds; }
+
+	// 이번 연출에서 마지막 모양(FFF_FinaleGradeSpec::FinalShape)을 올렸는지.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
+	bool HasFiredFinalShape() const { return bFinalShapeFired; }
 
 	/* 카메라 순회를 끊고 원래 시점으로 돌아간다. 불꽃은 계속 터진다.
 
 	   두 번째 플레이부터는 영상을 다시 보고 싶지 않다. 그렇다고 연출을 통째로
-	   끝내면 마지막을 못 보므로, 카메라만 놓아준다.
+	   끝내면 마지막을 못 보므로, 카메라만 놓아준다. 막은 시간대로 계속 넘어가서
+	   마무리와 일제 발사도 제때 온다. 피날레 중에 Tab(시점 전환)을 누르면 이걸 부르고 1인칭으로 간다.
+	   놓은 카메라는 ResumeCinematicCamera 로 다시 잡는다.
 	*/
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Finale")
 	void SkipCinematicCamera();
+
+	/* 놓아 준 연출 카메라를 다시 잡는다. 연출이 진행 중이고 카메라를 놓아 둔 상태일 때만 한다.
+
+	   피날레 중 Tab 은 연출 카메라와 캐릭터 시점을 오간다(2026-10-07 피드백). 예전에는 한 번 놓으면
+	   끝까지 다시 잡지 않아서, 두 번째 Tab 이 기본 카메라로 가 불꽃이 화면에서 사라졌다.
+	   놓아 둔 동안에도 막은 시간대로 넘어갔으므로 지금 막의 지금 자리로 돌아간다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Finale")
+	void ResumeCinematicCamera();
+
+	// 연출 카메라를 놓아 둔 채 연출이 진행 중인지. 이때 Tab 은 기본 카메라 대신 연출 카메라로 돌아간다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
+	bool CanResumeCinematicCamera() const { return bShowInProgress && bTakeOverCamera && bTourSkipped; }
 
 	// 지금 카메라 순회 중인지. 스킵 안내를 띄울지 정하는 데 쓴다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
@@ -106,6 +137,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Finale")
 	FFF_OnFinaleTourActChanged OnTourActChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Finale")
+	FFF_OnFinaleLaunch OnLaunch;
 
 	// 등급별 수치를 직접 지정한다. 보통은 비워두고 GameMode 나 Project Settings 를 쓴다.
 	//
@@ -198,8 +232,8 @@ private:
 
 	/* 지금 발사해도 되는지.
 
-	   3막이 아니면 남은 발이 있는 한 열려 있다. 3막이면 축제장 순회 동안 닫히고,
-	   불꽃 관람 막에서는 마무리 몫을 남기고 닫힌다.
+	   3막이 아니면 남은 발이 있는 한 열려 있다. 3막이면 불꽃 관람 · 축제장 순회 막에서
+	   마무리 몫을 남기고 닫힌다. 순회 동안에도 쏜다(2026-10-06 피드백).
 	*/
 	bool IsFiringGateOpen() const;
 
@@ -208,6 +242,26 @@ private:
 
 	// 남은 발을 모든 발사대에서 한꺼번에 올린다. 3막 마무리의 마지막 한 방이다.
 	void FireFinalSalvo();
+
+	/* 마지막 모양(태극기)을 올린다. 일제 발사 바로 앞의 한 차례다(FFF_FinaleGradeSpec::FinalShape 주석).
+
+	   발마다 가장 가까운 발사 위치에서 올린다. 한 배에서 다 올리면 수백 m 짜리 모양이 부채꼴로 쏠리고,
+	   실제 해상 불꽃도 큰 그림은 여러 배가 나눠 그린다.
+	*/
+	void FireFinalShape();
+
+	// 마지막 모양 몫으로 남겨 둘 발수. 마지막 모양이 없거나 이미 올렸으면 0.
+	int32 GetFinalShapeReserve() const;
+
+	// 마무리 막에서 일반 차례가 쓰면 안 되는 발수(일제 발사 몫 + 마지막 모양 몫). 다른 막에서는 0.
+	int32 GetClosingReserve() const;
+
+	// 마지막 모양이 오르는 시간(초). 바지선에서 쏘지 않으면 0.
+	float ResolveFinalShapeRiseSeconds() const;
+
+	// 이번 연출에서 마지막 모양을 올렸는지 · 다 피는 시각(경과 초). 곡에 맞추지 않을 때 일제 발사를 이것으로 늦춘다.
+	bool bFinalShapeFired = false;
+	float FinalShapeBloomEndAt = -1.f;
 
 	// 지금 시점으로 카메라를 옮긴다.
 	void ApplyTourViewpoint(float BlendSeconds);
@@ -220,10 +274,52 @@ private:
 	*/
 	const FFF_FinaleVolley& PickVolley(int32 RemainingShells) const;
 
-	// 한 발을 실제로 띄운다. 패턴이 정한 자리든 흩뿌린 자리든 여기로 모인다.
+	// 한 발을 실제로 터뜨린다. 패턴이 정한 자리든 흩뿌린 자리든 여기로 모인다.
 	// SizeScale 은 등급 크기에 곱한다. 높이에 따른 구경 차이를 여기로 넘긴다.
 	void SpawnShell(const FVector& Location, const FLinearColor& Color, class UNiagaraSystem* Effect,
 		float SizeScale = 1.f);
+
+	/* 한 발을 Origin(바지선)에서 쏘아 올린다. RiseSeconds 뒤에 Location 에서 터진다(SpawnShell).
+
+	   RiseSeconds 가 0 이하면 터질 높이로 상승 시간을 낸다. 모양 패턴은 차례 전체에 같은 시간을
+	   넘긴다 — 발마다 높이가 달라 시간이 갈리면 하트가 한꺼번에 피지 않는다.
+	   발사가 꺼져 있으면(FFF_FinaleLaunchSpec::bLaunchFromSite) 바로 터뜨린다.
+	*/
+	void LaunchShell(const FVector& Origin, const FVector& Location, const FLinearColor& Color,
+		class UNiagaraSystem* Effect, float SizeScale, float RiseSeconds = 0.f);
+
+	// 오르는 알이 터질 때 피는 불꽃 하나.
+	struct FShellBurst
+	{
+		FVector Location = FVector::ZeroVector;
+		FLinearColor Color = FLinearColor::White;
+		TWeakObjectPtr<class UNiagaraSystem> Effect;
+		float SizeScale = 1.f;
+	};
+
+	/* 알 하나를 Target 까지 쏘아 올리고, 다 오르면 Bursts 를 한꺼번에 터뜨린다.
+
+	   하트·원처럼 한 순간에 피는 모양은 실제로 알 하나가 터지며 그린다(모양 불꽃). 예전처럼
+	   발마다 따로 쏘아 올리면 알 열몇 개가 다발로 올라가 해파리처럼 보였다(2026-10-05 화면 확인).
+	   한 발짜리는 Bursts 가 하나다.
+	*/
+	void LaunchCarrier(const FVector& Origin, const FVector& Target, TArray<FShellBurst>&& Bursts,
+		const FLinearColor& Color, float RiseSeconds);
+
+	// 오르는 발을 옮기고, 다 오른 발을 터뜨린다. 터뜨리다 연출이 멈추면 false.
+	bool TickInFlightShells(float DeltaTime);
+
+	// 지금 켜진 번쩍임 빛의 수. 동시 조명 상한을 지킨다.
+	int32 CountActiveFlashLights() const;
+
+	// 이번 연출의 발사 방식. 데이터 애셋이 없으면 구조체 기본값(시간·궤적만, 모습 없음)이다.
+	FFF_FinaleLaunchSpec ResolveLaunchSpec() const;
+
+	/* 레벨에 발사 지점·연출 시점이 없으면 데이터의 기본 배치로 세운다(FFF_FinaleLayoutLaunchSite 주석).
+
+	   레벨에 놓은 액터가 있으면 그 종류는 손대지 않는다. 한 월드에서 한 번만 세운다.
+	*/
+	void EnsureFallbackLayout();
 
 	// 아직 쏘지도 예약하지도 않은 발수. 연출의 끝을 이것으로 정한다.
 	int32 GetRemainingShells() const;
@@ -234,7 +330,15 @@ private:
 	// 지연 발사 대기열. 일렬이나 부챗살은 한 프레임에 다 쏘지 않는다.
 	struct FPendingShell
 	{
+		// 터질 자리.
 		FVector Location = FVector::ZeroVector;
+
+		// 쏘아 올릴 바지선 자리.
+		FVector Origin = FVector::ZeroVector;
+
+		// 상승 시간. 0 이하면 쏠 때 높이로 낸다(LaunchShell).
+		float RiseSeconds = 0.f;
+
 		FLinearColor Color = FLinearColor::White;
 		float DelayRemaining = 0.f;
 
@@ -249,6 +353,55 @@ private:
 
 	TArray<FPendingShell> PendingShells;
 
+	// 쏘아 올려 오르는 중인 알. 다 오르면 품은 불꽃을 터뜨린다.
+	struct FInFlightShell
+	{
+		FVector Origin = FVector::ZeroVector;
+		FVector Target = FVector::ZeroVector;
+		TArray<FShellBurst> Bursts;
+		float RiseSeconds = 1.f;
+		float Elapsed = 0.f;
+		float WobblePhase = 0.f;
+		TWeakObjectPtr<AFF_FinaleShellTracer> Tracer;
+	};
+
+	TArray<FInFlightShell> InFlightShells;
+
+	// 오르는 알들이 품은 발수의 합. 남은 발수·막의 몫을 셀 때 이것을 뺀다.
+	int32 InFlightBurstCount = 0;
+
+	// 이번 연출의 발사 방식. 시작할 때 한 번 정한다.
+	FFF_FinaleLaunchSpec ActiveLaunch;
+
+	// 이 월드에서 기본 배치를 이미 세웠는지.
+	bool bFallbackLayoutApplied = false;
+
+	/* 축제장 순회 경로를 만든다. 입구(손님이 들어오는 게이트)와 설치된 시설을 읽는다.
+
+	   만들었으면 순회 카메라를 경로 시작에 놓고 true. 입구도 시설도 없으면 false 이고,
+	   그때는 레벨·데이터의 고정 순회 자리를 쓴다(FFF_FinaleSiteTourSpec 주석).
+	*/
+	bool PrepareSiteTour();
+
+	// 순회 카메라를 순회 자리에 머문 지 HeldSeconds 째 자리로 옮긴다. 날아 들어오는 동안은 출발점에 선다.
+	void UpdateSiteTourCamera(float HeldSeconds, bool bSnap);
+
+	// 이번 연출의 순회 설정과 경로. 시간은 날아 들어오는 시간을 뺀 순회 몫이다.
+	FFF_FinaleSiteTourSpec ActiveSiteTour;
+	FFF_FinaleSiteTourRoute SiteTourRoute;
+	float SiteTourSeconds = 0.f;
+
+	// 이번 경로의 카메라 높이 · 보는 지점에서 뒤로 떨어진 거리(cm). 빨리 날수록 둘 다 커진다.
+	float SiteTourHeight = 0.f;
+	float SiteTourTrail = 0.f;
+
+	// 카메라에서 보는 지점 쪽 수평 방향. 카메라는 이 반대쪽으로 물러선다. 경로가 꺾일 때 한 번에 돌지 않게 천천히 따라간다.
+	FVector SiteTourBoomDirection = FVector::ForwardVector;
+
+	// 경로를 따라 움직이는 순회 카메라. 한 번 만들어 연출마다 다시 쓴다.
+	UPROPERTY(Transient)
+	TObjectPtr<AFF_FinaleViewpoint> SiteTourCamera;
+
 	// 이번 연출에서 돌 시점들. 하나뿐이면 고정 연출이다.
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AFF_FinaleViewpoint>> TourViewpoints;
@@ -258,8 +411,24 @@ private:
 	// 지금 자리에 머문 시간. 체류 시간을 채우면 다음으로 넘어간다.
 	float TourHeldSeconds = 0.f;
 
-	// 이번 연출에서 카메라 순회를 끊었는지. 끊은 뒤에는 다시 잡지 않는다.
+	// 지금 카메라 순회를 놓아 두었는지. 놓아도 막은 시간대로 넘어간다(SkipCinematicCamera). 화면에 걸지만 않는다.
+	// ResumeCinematicCamera 가 다시 잡으면 풀린다.
 	bool bTourSkipped = false;
+
+	// 곡에 맞춘 시간표. 곡에 맞추지 않는 등급이면 비어 있다(FFF_FinaleGradeSpec::bMatchSongLength).
+	FFF_FinaleSongPlan SongPlan;
+
+	// 곡에 맞출 때 자리마다 머무는 시간(TourViewpoints 와 같은 순서). 비어 있으면 자리의 TourHoldSeconds 를 쓴다.
+	TArray<float> TourHoldOverrides;
+
+	// 곡에 맞춘 시간표를 세운다. BuildTour 다음에 불러야 막과 순회 시간을 안다.
+	void PrepareSongPlan();
+
+	// 이 등급이 트는 피날레 곡 길이(초). 못 읽으면 0.
+	float ResolveShowSongSeconds() const;
+
+	// 곡에 맞출 때 다음 차례까지의 간격. 이번 막이 끝날 시각까지 이번 막 몫을 고르게 나눈다.
+	float ResolveSongVolleyInterval() const;
 
 	// TourViewpoints 와 같은 순서로 각 자리의 막을 든다.
 	// 마무리 시점이 없으면 첫 불꽃 관람 자리를 마무리로 한 번 더 쓰므로, 자리의 설정값과 다를 수 있다.
@@ -275,9 +444,9 @@ private:
 
 	/* 발사용 시계. 발사가 열려 있거나 예약된 발이 남아 있을 때만 흐른다.
 
-	   축제장 순회 동안 발사를 멈추려면 발사 간격 계산도 같이 멈춰야 한다.
-	   전체 경과 시간으로 재면 순회를 마치고 돌아온 순간 밀린 간격을 한꺼번에 따라잡으려 든다.
-	   3막이 아니면 발사가 끝날 때까지 늘 열려 있어 전체 경과 시간과 같게 흐른다.
+	   1막 몫을 일찍 다 쐈으면 마무리 막까지 발사가 닫힌다. 그동안 간격 계산도 같이 멈춰야 한다.
+	   전체 경과 시간으로 재면 마무리 막에 들어선 순간 밀린 간격을 한꺼번에 따라잡으려 든다.
+	   (예전에는 축제장 순회 동안에도 발사를 멈췄다. 2026-10-06 부터 순회 중에도 쏜다.)
 	*/
 	float FiringClock = 0.f;
 
@@ -328,6 +497,7 @@ private:
 	float NextVolleyAt = 0.f;
 	int32 FiredBursts = 0;
 	int32 FiredVolleys = 0;
+	int32 LaunchedShells = 0;
 
 	// 마지막 발 이후 여운 시간. 음수면 아직 발사가 안 끝난 것이다.
 	float TailStartedAt = -1.f;

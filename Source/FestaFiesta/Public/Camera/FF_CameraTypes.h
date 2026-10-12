@@ -306,13 +306,12 @@ struct FFF_OverviewCameraSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bounds")
 	bool bUseZoneBounds = true;
 
-	// 초점이 Zone 안에 있도록 매 프레임 확인할지.
-	//
-	// 사각형 경계만으로는 부족하다. Zone 이 여러 개면 그것들을 감싸는 상자에는
-	// Zone 사이 빈 공간과 바깥 모서리가 전부 들어간다. 그래서 벽 너머로 갈 수 있다.
-	// 실제 Zone 안쪽인지 확인하면 그 구멍이 막힌다.
+	// 개별 Zone 폴리곤 안으로만 초점을 제한하는 선택 옵션.
+	// 기본 관찰 카메라는 전체 Zone 경계와 Padding 안에서 구역 사이 도로도 통과한다.
+	// 건축 Zone은 서로 떨어져 있으므로 이 옵션을 켜면 작은 틈에서도 직전 위치로
+	// 되돌아가 다른 구역으로 이동하지 못한다. 연결된 제한 구역을 쓰는 특수 맵에서만 켠다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bounds")
-	bool bConstrainFocusToZones = true;
+	bool bConstrainFocusToZones = false;
 
 	// Zone 범위 바깥으로 이만큼은 더 나갈 수 있다.
 	// 0 이면 경계에 딱 붙어서 가장자리 시설이 화면 끝에 걸린다.

@@ -9,6 +9,7 @@
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Components/WrapBox.h"
+#include "Engine/UserInterfaceSettings.h"
 #include "Editor.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
@@ -23,8 +24,12 @@
 #include "TextureResource.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UObject/Package.h"
 #include "UObject/StrongObjectPtr.h"
+#include "UObject/UnrealType.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SDPIScaler.h"
 #include "Widgets/SOverlay.h"
 
 namespace FFPrepCheckSkyLayoutTest
@@ -68,7 +73,7 @@ namespace FFPrepCheckSkyLayoutTest
 			{ TEXT("Text_DailyGoalValue"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("500명") },
 			{ TEXT("Text_DailyGoalBonus"), bUnknown ? TEXT("달성 보너스 미확인") : TEXT("달성 시 +300 Gold") },
 			{ TEXT("Text_ExpectedVisitors"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("425명") },
-			{ TEXT("Text_Gold"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("9,700 Gold") },
+			{ TEXT("Text_Gold"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("9,700") },
 			{ TEXT("Text_CapacityRisk"), bUnknown ? TEXT("? 판정 불가 — 예상 방문객이나 정원을 아직 읽지 못했습니다") : TEXT("○ 여유") },
 			{ TEXT("Text_CapacityDetail"), bUnknown ? TEXT("Zone 정원을 읽지 못했습니다. 시설을 놓으면 계산됩니다.") : TEXT("정원 62,887명 대비 최대 예상 425명") },
 			{ TEXT("Text_StaffSummary"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("6명 (기본 6 · 고용 0)") },
@@ -78,7 +83,7 @@ namespace FFPrepCheckSkyLayoutTest
 			{ TEXT("Text_StaffWageCost"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("0 Gold") },
 			{ TEXT("Text_ExpectedAdmission"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("2,125 Gold") },
 			{ TEXT("Text_ExpectedGoalBonus"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("0 Gold") },
-			{ TEXT("Text_EstimateNotice"), TEXT("부스 수수료와 미니게임 보상은 운영 결과에 따라 달라지므로 이 표에 넣지 않았습니다.") },
+			{ TEXT("Text_EstimateNotice"), TEXT("부스 매출과 미니게임 보상은 운영 결과에 따라 달라지므로 이 표에 넣지 않았습니다.") },
 			{ TEXT("Text_OpenGateReason"), bUnknown ? TEXT("아직 시작 가능 여부를 확인하지 못했습니다.") : bReady ? TEXT("✓ 준비가 완료되었습니다.") : TEXT("메인공연장: 1개 추가 설치가 필요합니다. (설치 0/1)") },
 			{ TEXT("Text_OpenGateLabel"), bMorning ? TEXT("개장하기") : TEXT("확정하고 Day 1 시작") }
 		};
@@ -148,6 +153,7 @@ namespace FFPrepCheckSkyLayoutTest
 		UWidget* Header = Panel.GetWidgetFromName(TEXT("HorizontalBox_Header"));
 		UWidget* Footer = Panel.GetWidgetFromName(TEXT("Border_Footer"));
 		auto* Metrics = Cast<UWrapBox>(Panel.GetWidgetFromName(TEXT("WrapBox_Metrics")));
+		const bool bHasAdmissionSection = Panel.GetWidgetFromName(TEXT("Border_AdmissionSection")) != nullptr;
 		if (!Test.TestNotNull(Context + TEXT(" 스크롤 본문"), Scroll) || !Test.TestNotNull(Context + TEXT(" 전체 본문"), Body) ||
 			!Test.TestNotNull(Context + TEXT(" 헤더"), Header) || !Test.TestNotNull(Context + TEXT(" 푸터"), Footer) ||
 			!Test.TestNotNull(Context + TEXT(" 요약 카드 묶음"), Metrics)) { return false; }
@@ -173,10 +179,10 @@ namespace FFPrepCheckSkyLayoutTest
 		Test.TestTrue(Context + TEXT(" 헤더와 실행 영역이 패널 안에 유지된다"), Contains(PanelRect, HeaderRect) && Contains(PanelRect, FooterRect));
 		Test.TestTrue(Context + TEXT(" 본문이 고정 영역을 침범하지 않는다"), Contains(PanelRect, ScrollRect) &&
 			ScrollRect.Top >= HeaderRect.Bottom - Tolerance && ScrollRect.Bottom <= FooterRect.Top + Tolerance && ScrollRect.GetSize().Y > 0.f);
-		if (Size == FIntPoint(1140, 700) && (Kind == EFixture::Blocked || Kind == EFixture::Ready))
+		if (!bHasAdmissionSection && Size == FIntPoint(1140, 700) && (Kind == EFixture::Blocked || Kind == EFixture::Ready))
 		{
-			// 기본 화면은 최초 표시만으로 준비 현황과 견적을 모두 읽을 수 있어야 한다.
-			// 축소·추가 피날레·긴 목록은 아래 스크롤 검사로 따로 확인한다.
+			// 입장료 영역이 없는 기존 화면만 무스크롤을 요구한다.
+			// 입장료 추가·축소·피날레·긴 목록은 아래의 스크롤 도달 검사로 확인한다.
 			Test.TestTrue(Context + TEXT(" 기본 크기에서는 본문을 스크롤할 필요가 없다"),
 				Scroll->GetScrollOffsetOfEnd() <= Tolerance);
 			for (const TCHAR* Name : { TEXT("Text_RequiredFacilities"), TEXT("Text_ExpectedGoalBonus"), TEXT("Text_EstimateNotice") })
@@ -204,15 +210,24 @@ namespace FFPrepCheckSkyLayoutTest
 		if (UWidget* Close = Panel.GetWidgetFromName(TEXT("Button_Close")))
 		{ Test.TestTrue(Context + TEXT(" 닫기는 고정 헤더 안에 남는다"), Contains(HeaderRect, Close->GetCachedGeometry().GetLayoutBoundingRect())); }
 		else { Test.AddError(Context + TEXT(" 닫기 버튼이 없다")); }
-		Test.TestEqual(Context + TEXT(" 요약 카드 네 장"), Metrics->GetChildrenCount(), 4);
+		Test.TestEqual(Context + TEXT(" 입장료 영역 유무에 맞는 요약 카드 수"),
+			Metrics->GetChildrenCount(), bHasAdmissionSection ? 3 : 4);
+		if (bHasAdmissionSection)
+		{
+			UWidget* ForecastCard = Panel.GetWidgetFromName(TEXT("SizeBox_ExpectedVisitorsCard"));
+			if (Test.TestNotNull(Context + TEXT(" 예상 방문객 카드"), ForecastCard))
+			{
+				Test.TestTrue(Context + TEXT(" 예상 방문객은 입장료 미리보기로 분리된다"), ForecastCard->GetParent() != Metrics);
+			}
+		}
 		if (Size.X >= 1080)
 		{
 			FSlateRect Previous;
 			for (int32 Index = 0; Index < Metrics->GetChildrenCount(); ++Index)
 			{
 				const FSlateRect Rect = Metrics->GetChildAt(Index)->GetCachedGeometry().GetLayoutBoundingRect();
-				Test.TestTrue(Context + TEXT(" 네 카드가 좌우 폭 안에 들어온다"), Rect.Left >= ScrollRect.Left - Tolerance && Rect.Right <= ScrollRect.Right + Tolerance);
-				if (Index > 0) { Test.TestTrue(Context + TEXT(" 넓은 패널에서는 네 카드가 한 줄이다"),
+				Test.TestTrue(Context + TEXT(" 요약 카드가 좌우 폭 안에 들어온다"), Rect.Left >= ScrollRect.Left - Tolerance && Rect.Right <= ScrollRect.Right + Tolerance);
+				if (Index > 0) { Test.TestTrue(Context + TEXT(" 넓은 패널에서는 요약 카드가 한 줄이다"),
 					FMath::IsNearlyEqual(Rect.Top, Previous.Top, Tolerance) && Rect.Left >= Previous.Right - Tolerance); }
 				Previous = Rect;
 			}
@@ -323,6 +338,108 @@ bool FFF_PrepCheckSkyLayoutTest::RunTest(const FString& Parameters)
 		FSlateFontInfo Font = Text->GetFont(); Font.Size = Pair.Value; Text->SetFont(Font);
 	}
 	return CaptureAndCheck(*this, *Panel, Surface, FIntPoint(1140, 740), EFixture::Ready, TEXT("EditableFont"));
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepCheckStaffShortcutLayoutTest,
+	"FestaFiesta.UI.PrepCheck.StaffShortcutRenderedLayout",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter | EAutomationTestFlags::NonNullRHI)
+
+bool FFF_PrepCheckStaffShortcutLayoutTest::RunTest(const FString& Parameters)
+{
+	using namespace FFPrepCheckSkyLayoutTest;
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	auto* PanelClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepPanelCheck>(nullptr,
+		TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelCheck.WBP_FF_PrepPanelCheck_C")));
+	UClass* BarClass = LoadClass<UFF_PrepHudBar>(nullptr,
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepHudBar.WBP_FF_PrepHudBar_C"));
+	if (!TestNotNull(TEXT("검사용 에디터 월드"), World) || !TestNotNull(TEXT("저장 점검 WBP"), PanelClass) ||
+		!TestNotNull(TEXT("저장 준비 HUD"), BarClass)) return false;
+	const FMapProperty* LayoutProperty = FindFProperty<FMapProperty>(BarClass, TEXT("PanelLayouts"));
+	if (!TestNotNull(TEXT("실제 HUD의 패널 크기 설정"), LayoutProperty)) return false;
+	const auto* Layouts = LayoutProperty->ContainerPtrToValuePtr<TMap<EFF_PrepHudTab, FFF_PrepPanelLayout>>(BarClass->GetDefaultObject());
+	const FFF_PrepPanelLayout* Layout = Layouts->Find(EFF_PrepHudTab::Check);
+	if (!TestNotNull(TEXT("실제 점검 크기"), Layout)) return false;
+	const bool bPreviousPlayerless = PanelClass->bCanCallInitializedWithoutPlayerContext;
+	PanelClass->bCanCallInitializedWithoutPlayerContext = true;
+	ON_SCOPE_EXIT { PanelClass->bCanCallInitializedWithoutPlayerContext = bPreviousPlayerless; };
+	TStrongObjectPtr<UFF_PrepPanelCheck> Panel(CreateWidget<UFF_PrepPanelCheck>(World, PanelClass));
+	if (!TestNotNull(TEXT("저장 점검 인스턴스"), Panel.Get())) return false;
+	const TSharedRef<SWidget> PanelSlate = Panel->TakeWidget();
+	if (!SetFixture(*this, *Panel, EFixture::Blocked)) return false;
+	auto* Reason = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_OpenGateReason")));
+	auto* Action = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_OpenGateReason")));
+	auto* ActionLabel = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_OpenGateStaffLink")));
+	UWidget* Row = Panel->GetWidgetFromName(TEXT("HorizontalBox_OpenGateReason"));
+	UWidget* Footer = Panel->GetWidgetFromName(TEXT("Border_Footer"));
+	if (!TestNotNull(TEXT("배정 사유 문구"), Reason) || !TestNotNull(TEXT("오른쪽 배정 버튼"), Action) ||
+		!TestNotNull(TEXT("버튼 이름"), ActionLabel) || !TestNotNull(TEXT("사유와 버튼 행"), Row) ||
+		!TestNotNull(TEXT("고정 푸터"), Footer)) return false;
+	Action->SetVisibility(ESlateVisibility::Visible);
+	Action->SetIsEnabled(true);
+	FAssetCompilingManager::Get().FinishAllCompilation();
+	FlushRenderingCommands();
+	// Match both authoritative guidance branches, including the longer no-waiting-staff case.
+	const TCHAR* Reasons[] = {
+		TEXT("메인안내소: 스태프를 1명 더 배정해야 합니다. (배정 0/1) 설치한 시설의 `스태프` 탭에서 `+ 배정`을 누르세요."),
+		TEXT("메인안내소: 스태프를 1명 더 배정해야 합니다. (배정 0/1) 대기 중인 스태프가 없습니다. `인력` 탭에서 고용하거나 다른 안내 시설의 스태프를 `- 해제`한 뒤 배정하세요.")
+	};
+	for (const FIntPoint Resolution : { FIntPoint(1280, 720), FIntPoint(1920, 1080) })
+	{
+		const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Resolution);
+		const TSharedRef<SWidget> Surface = SNew(SDPIScaler).DPIScale(Dpi)
+		[
+			SNew(SOverlay)
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+			[
+				SNew(SBox).WidthOverride(Layout->Size.X).HeightOverride(Layout->Size.Y)[PanelSlate]
+			]
+		];
+		FWidgetRenderer Renderer(false, true);
+		TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(
+			FVector2D(Resolution.X, Resolution.Y), TF_Bilinear, true));
+		if (!TestNotNull(TEXT("배정 바로가기 렌더 타깃"), Target.Get())) return false;
+		for (int32 Variant = 0; Variant < UE_ARRAY_COUNT(Reasons); ++Variant)
+		{
+			Reason->SetText(FText::FromString(Reasons[Variant]));
+			for (int32 Frame = 0; Frame < 4; ++Frame)
+			{
+				Panel->ForceLayoutPrepass();
+				Renderer.DrawWidget(Target.Get(), Surface, FVector2D(Resolution.X, Resolution.Y), 1.f / 60.f, false);
+			}
+			FlushRenderingCommands();
+			const FString Context = FString::Printf(TEXT("Check_StaffShortcut_%s_%dx%d"),
+				Variant == 0 ? TEXT("Available") : TEXT("NoWaitingStaff"), Resolution.X, Resolution.Y);
+			const FSlateRect Screen(0.f, 0.f, Resolution.X, Resolution.Y);
+			const FSlateRect ReasonRect = Reason->GetCachedGeometry().GetLayoutBoundingRect();
+			const FSlateRect ActionRect = Action->GetCachedGeometry().GetLayoutBoundingRect();
+			const FSlateRect RowRect = Row->GetCachedGeometry().GetLayoutBoundingRect();
+			const FSlateRect FooterRect = Footer->GetCachedGeometry().GetLayoutBoundingRect();
+			TestTrue(Context + TEXT(" 안내 문구 바로 오른쪽에 버튼이 보인다"),
+				ActionRect.Left >= ReasonRect.Right + 8.f * Dpi &&
+				FMath::IsNearlyEqual((ReasonRect.Top + ReasonRect.Bottom) * .5f,
+					(ActionRect.Top + ActionRect.Bottom) * .5f, 1.f));
+			TestFalse(Context + TEXT(" 문구와 버튼이 겹치지 않는다"), Intersects(ReasonRect, ActionRect));
+			TestTrue(Context + TEXT(" 문구와 버튼이 같은 행과 화면 안에 전부 들어온다"),
+				Contains(RowRect, ReasonRect) && Contains(RowRect, ActionRect) &&
+				Contains(FooterRect, RowRect) && Contains(Screen, FooterRect));
+			for (UTextBlock* Text : { Reason, ActionLabel })
+			{
+				const FVector2D Allocated = Text->GetCachedGeometry().GetLocalSize();
+				const FVector2D Desired = Text->GetDesiredSize();
+				TestTrue(Context + TEXT(" / ") + Text->GetName() + TEXT(" 글자 크기·줄바꿈이 잘리지 않는다"),
+					Allocated.X + Tolerance >= Desired.X && Allocated.Y + Tolerance >= Desired.Y);
+			}
+			TestTrue(Context + TEXT(" 버튼 이름이 버튼 내부에 전부 들어온다"),
+				Contains(ActionRect, ActionLabel->GetCachedGeometry().GetLayoutBoundingRect()));
+			TestTrue(Context + TEXT(" 버튼 클릭 높이를 유지한다"), Action->GetCachedGeometry().GetLocalSize().Y >= 36.f);
+			if (Variant == 1)
+				TestTrue(Context + TEXT(" 긴 실제 배정 사유는 여러 줄로 읽힌다"),
+					Reason->GetDesiredSize().Y > ActionLabel->GetDesiredSize().Y * 1.5f);
+			if (!SaveTarget(*this, *Target, Resolution, Context)) return false;
+		}
+	}
+	Panel->ReleaseSlateResources(true);
+	return true;
 }
 
 #endif // WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS

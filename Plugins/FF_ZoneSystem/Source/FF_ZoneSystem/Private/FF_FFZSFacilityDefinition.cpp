@@ -99,6 +99,10 @@ bool UFFZSFacilityDefinition::DoesSpecMatchLoadedDefinition(
     Candidate.FacilitySpec.QueueLayout = Definition->Spec.QueueLayout;
     FFFZSCommand Canonical = Candidate;
     Canonical.FacilitySpec = Definition->Spec;
+    // Legacy padding no longer affects facility identity or placement. Preserve the raw
+    // fingerprint format for stored command receipts, and normalize only this comparison.
+    Candidate.FacilitySpec.ClearanceCells = 0;
+    Canonical.FacilitySpec.ClearanceCells = 0;
     return UFFZSGridLibrary::BuildCommandFingerprint(Candidate) ==
         UFFZSGridLibrary::BuildCommandFingerprint(Canonical);
 }
@@ -112,7 +116,19 @@ FPrimaryAssetId UFFZSFacilityDefinition::GetPrimaryAssetId() const
     return Super::GetPrimaryAssetId();
 }
 
+void UFFZSFacilityDefinition::PostLoad()
+{
+    Super::PostLoad();
+    Spec.NormalizeNonServiceGeometry();
+}
+
 #if WITH_EDITOR
+void UFFZSFacilityDefinition::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+    Spec.NormalizeNonServiceGeometry();
+    Super::PostEditChangeProperty(PropertyChangedEvent);
+}
+
 // 에디터 저장·검증 메뉴가 부모 오류와 Spec 오류를 모두 보게 한다.
 // 런타임 빌드에는 이 경로가 없으므로 설치 명령도 같은 Spec 검증을 다시 수행한다.
 void UFFZSFacilityDefinition::PostInitProperties()

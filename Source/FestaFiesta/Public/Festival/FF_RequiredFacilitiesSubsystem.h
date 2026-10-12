@@ -7,12 +7,14 @@
 
 class UFF_FestivalDefinition;
 class UFF_FestivalProgressionSubsystem;
+class UFF_StaffFacilitySubsystem;
 class UFFZSWorldSubsystem;
+class AFFZSFacilityActor;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnRequiredFacilitiesChanged);
 DECLARE_MULTICAST_DELEGATE(FFF_OnRequiredFacilitiesChangedNative);
 
-// 필수 시설의 설치 조건과 UI 조회 경계. 단계 전환도 같은 판정을 사용한다.
+// 필수 시설의 설치·스태프 배정 조건과 UI 조회 경계. 단계 전환도 같은 판정을 사용한다.
 UCLASS()
 class FESTAFIESTA_API UFF_RequiredFacilitiesSubsystem : public UWorldSubsystem
 {
@@ -27,15 +29,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Festival|Setup")
 	FFF_RequiredFacilitiesStatus GetRequiredFacilitiesStatus() const;
 
-	// 부족한 시설이 있는 카테고리 탭의 느낌표 표시용.
+	// 부족한 시설이 있는 카테고리 탭의 느낌표 표시용. 설치 개수만 본다(스태프 배정 부족은 탭 문제가 아니다).
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Festival|Setup")
 	bool HasMissingRequiredFacilitiesInCategory(EFFZSFacilityCategory Category) const;
 
-	// 카드별 필수 개수/부족 개수/안내 조회. 필수 시설이 아니면 false.
+	// 카드별 필수 개수/부족 개수/배정 인원/안내 조회. 필수 시설이 아니면 false.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Festival|Setup")
 	bool TryGetRequiredFacilityRow(FName FacilityDefinitionId, FFF_RequiredFacilityRow& OutRow) const;
 
-	// 설치/철거/수명주기/복원/축제 정의 교체 뒤 재조회 신호. 부족 개수가 같아도 발행할 수 있다.
+	// 설치/철거/수명주기/복원/축제 정의 교체/스태프 배정 변경 뒤 재조회 신호. 부족 개수가 같아도 발행할 수 있다.
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Festival|Setup")
 	FFF_OnRequiredFacilitiesChanged OnRequiredFacilitiesChanged;
 	// C++ 위젯/구독자용 동일한 갱신 신호.
@@ -44,8 +46,19 @@ public:
 	// 월드 없이도 동일한 조건을 회귀 검증할 수 있는 값 기반 판정.
 	// ★ 판정 규칙의 유일한 출처다. GetRequiredFacilitiesStatus()는 현재 월드를 물어다 이 함수에
 	//   넘기는 wrapper이므로, 규칙을 바꿀 때는 여기만 고친다.
+	// 이 오버로드는 스태프 배정 상태를 모르는 것으로 본다. 배정을 요구하는 행은 충족되지 않는다.
 	static FFF_RequiredFacilitiesStatus EvaluateRequirements(
 		const UFF_FestivalDefinition* Definition, const FFFZSReadModel& Model, bool bWorldAvailable = true);
+	// 스태프 배정 조건(MinimumAssignedStaff)까지 판정한다.
+	static FFF_RequiredFacilitiesStatus EvaluateRequirements(
+		const UFF_FestivalDefinition* Definition, const FFFZSReadModel& Model,
+		const FFF_RequiredFacilityStaffing& StaffingState, bool bWorldAvailable = true);
+
+	// 현재 월드의 스태프 배정 상태를 판정 입력으로 모은다. 스태프 경계가 없으면 bKnown=false.
+	FFF_RequiredFacilityStaffing BuildStaffingSnapshot(const FFFZSReadModel& Model) const;
+
+	/** 배정이 부족한 필수 시설 중 빈 스태프 자리가 있는 설치 시설. 클릭 시마다 다시 조회한다. */
+	AFFZSFacilityActor* FindStaffAssignmentTarget() const;
 
 	// 디버그 전용(매일 재검사 원인 조사)
 	FString DebugDescribeRequiredFacilities() const;
@@ -60,4 +73,7 @@ private:
 	TObjectPtr<UFFZSWorldSubsystem> ZoneSystem;
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_FestivalProgressionSubsystem> Progression;
+	// 배정·해제·정원 정리는 이 경계가 OnStaffingChanged 로 알린다. 그 신호를 필수 조건 변경으로 다시 낸다.
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_StaffFacilitySubsystem> Staffing;
 };

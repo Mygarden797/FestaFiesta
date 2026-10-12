@@ -1,13 +1,14 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/LiveHUD/Panels/FF_LivePanelQueues.h"
+#include "UI/LiveHUD/Panels/FF_LiveQueueRowWidget.h"
 
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/GameInstance.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
-#include "UI/FF_UILog.h"
+
 
 #define LOCTEXT_NAMESPACE "FestaFiestaLiveQueues"
 
@@ -23,6 +24,18 @@ FFF_LiveQueueSummary FFF_LiveQueueRules::BuildSummary(const TArray<FFF_LiveFacil
 
 	for (const FFF_LiveFacilityView& Facility : Facilities)
 	{
+		// 길·타일·조명은 대기열 자체가 없다. `미접수` 개수를 부풀리지 않게 아예 세지 않는다.
+		if (!IsShownInQueuePanel(Facility))
+		{
+			continue;
+		}
+		// 관람석은 줄이 없어 대기·이용이 늘 0이다. 섞으면 평균·상태 개수가 "한산함" 쪽으로 기운다.
+		if (Facility.bSeatedVenue)
+		{
+			++Result.SeatedVenueCount;
+			continue;
+		}
+		++Result.QueueFacilityCount;
 		Result.TotalWaiting += Facility.WaitingCount;
 		Result.TotalInService += Facility.ActiveServiceCount;
 
@@ -39,6 +52,8 @@ FFF_LiveQueueSummary FFF_LiveQueueRules::BuildSummary(const TArray<FFF_LiveFacil
 		case EFF_LiveFacilityQueueState::Open:		++Result.OpenCount; break;
 		case EFF_LiveFacilityQueueState::Full:		++Result.FullCount; break;
 		case EFF_LiveFacilityQueueState::Blocked:	++Result.BlockedCount; break;
+		// 공연이 끝나면 저절로 다시 받는다. 정원 참·닫힘과 할 일이 달라 따로 센다.
+		case EFF_LiveFacilityQueueState::Paused:	++Result.PausedCount; break;
 
 		// 닫힘과 비우는 중은 둘 다 "지금 새 손님을 안 받는다" 다. 화면에서 구분해도
 		// 사람이 할 일이 같아서 한 칸으로 묶는다.
@@ -103,6 +118,11 @@ void FFF_LiveQueueRules::SortByWaiting(TArray<FFF_LiveFacilityView>& Facilities)
 {
 	Facilities.Sort([](const FFF_LiveFacilityView& A, const FFF_LiveFacilityView& B)
 	{
+		// 관람석은 줄 비교 대상이 아니라 표 맨 아래에 따로 둔다.
+		if (A.bSeatedVenue != B.bSeatedVenue)
+		{
+			return B.bSeatedVenue;
+		}
 		if (A.WaitingCount != B.WaitingCount)
 		{
 			return A.WaitingCount > B.WaitingCount;
@@ -121,12 +141,7 @@ void FFF_LiveQueueRules::SortByWaiting(TArray<FFF_LiveFacilityView>& Facilities)
 void UFF_LivePanelQueues::NativeOnPanelOpened()
 {
 	Super::NativeOnPanelOpened();
-
-	// ★ 아직 못 보여주는 것을 적는다. 안 적으면 빠진 줄 모른다.
-	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveQueue_MissingNote",
-		"대기·이용 수는 팀 기준입니다. 줄을 포기한 팀 수는 아직 읽을 수 없습니다."));
-
-	// 열자마자 한 번 읽는다. 첫 갱신을 주기까지 기다리면 빈 목록이 한 번 보인다.
+	SetTextOrHide(Text_MissingNote, FooterNoteText);
 	TimeSinceRefresh = 0.f;
 	RefreshAll();
 }
@@ -134,26 +149,22 @@ void UFF_LivePanelQueues::NativeOnPanelOpened()
 void UFF_LivePanelQueues::NativeOnPanelClosed()
 {
 	Summary = FFF_LiveQueueSummary();
+	Rows.Reset();
 	Super::NativeOnPanelClosed();
 }
 
 void UFF_LivePanelQueues::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-
-	// 🔴 **닫혀 있으면 읽지 않는다.** 패널은 캐시되어 살아 있으므로, 이 검사가 없으면
-	// 안 보이는 패널이 라이브 내내 시설 전부를 훑는다.
-	if (GetVisibility() == ESlateVisibility::Collapsed)
+	if (!IsVisible())
 	{
 		return;
 	}
-
 	TimeSinceRefresh += InDeltaTime;
 	if (TimeSinceRefresh < RefreshIntervalSeconds)
 	{
 		return;
 	}
-
 	TimeSinceRefresh = 0.f;
 	RefreshAll();
 }
@@ -166,123 +177,175 @@ void UFF_LivePanelQueues::RefreshAll()
 
 	if (!ViewModel)
 	{
-		UE_LOG(LogFestaFiestaUI, Error,
-			TEXT("[%s] ViewModel 을 찾지 못했다. 대기열이 비어 보인다."), *GetName());
+		// 읽기 실패 때 이전 숫자와 행을 남겨 두지 않는다.
+		Summary = FFF_LiveQueueSummary();
+		Rows.Reset();
+		SetTextOrHide(Text_TotalWaiting, MissingValueText);
+		SetTextOrHide(Text_InService, MissingValueText);
+		SetTextOrHide(Text_AverageWait, MissingValueText);
+		SetTextOrHide(Text_AverageNote, CheckingText);
+		SetTextOrHide(Text_Longest, CheckingText);
+		SetTextOrHide(Text_WorstWait, ExpectedWaitUnknownText);
+		SetTextOrHide(Text_StateCounts, MissingValueText);
+		RefreshRowWidgets();
+		SetTextOrHide(Text_Empty, CheckingText);
 		return;
 	}
 
-	TArray<FFF_LiveFacilityView> Facilities = ViewModel->GetLiveFacilities();
-	Summary = FFF_LiveQueueRules::BuildSummary(Facilities);
-	FFF_LiveQueueRules::SortByWaiting(Facilities);
+	Rows = ViewModel->GetLiveFacilities();
+	// 시설 화면과 같은 원본이지만 여기서는 줄을 받는 시설과 관람석만 보인다.
+	Rows.RemoveAll([](const FFF_LiveFacilityView& Row) { return !FFF_LiveQueueRules::IsShownInQueuePanel(Row); });
+	Summary = FFF_LiveQueueRules::BuildSummary(Rows);
+	FFF_LiveQueueRules::SortByWaiting(Rows);
 
-	// --- 요약 ---
-	SetTextOrHide(Text_TotalWaiting, FText::Format(
-		LOCTEXT("LiveQueue_TotalWaiting", "{0}팀"), FText::AsNumber(Summary.TotalWaiting)));
+	SetTextOrHide(Text_TotalWaiting, FText::Format(TeamCountTextFormat,
+		FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Summary.TotalWaiting)}}));
+	SetTextOrHide(Text_InService, FText::Format(TeamCountTextFormat,
+		FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Summary.TotalInService)}}));
+	SetTextOrHide(Text_AverageWait, Summary.AverageWaitSeconds >= 0
+		? FText::Format(WaitSecondsTextFormat,
+			FFormatNamedArguments{{TEXT("Seconds"), FText::AsNumber(Summary.AverageWaitSeconds)}})
+		: MissingValueText);
 
-	SetTextOrHide(Text_InService, FText::Format(
-		LOCTEXT("LiveQueue_InService", "{0}팀"), FText::AsNumber(Summary.TotalInService)));
+	// 고객 수 가중 평균이 아니라, 완료 기록이 있는 시설별 평균의 산술 평균이다.
+	SetTextOrHide(Text_AverageNote, Summary.AverageSampleCount > 0
+		? FText::Format(AverageNoteTextFormat,
+			FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Summary.AverageSampleCount)}})
+		: AverageNoSampleText);
 
-	SetTextOrHide(Text_AverageWait, (Summary.AverageWaitSeconds != INDEX_NONE)
-		? FText::Format(LOCTEXT("LiveQueue_AvgWait", "{0}초"), FText::AsNumber(Summary.AverageWaitSeconds))
-		: LOCTEXT("LiveQueue_AvgUnknown", "—"));
+	// 관람석만 있으면 "대기 중인 팀이 없다" 가 아니라 "줄 서는 시설이 없다" 다.
+	SetTextOrHide(Text_Longest, Rows.IsEmpty() ? EmptyText
+		: !Summary.HasQueueFacility() ? NoQueueFacilityText
+		: Summary.HasAnyQueue()
+			? FText::Format(LongestTextFormat, FFormatNamedArguments{
+				{TEXT("Name"), Summary.LongestQueueName},
+				{TEXT("Count"), FText::AsNumber(Summary.LongestQueueWaiting)}})
+			: NoQueueText);
+	// 가장 많은 팀과 가장 긴 예상 시간은 서로 다른 시설일 수 있다. 줄 서는 시설이 없으면 줄 자체를 숨긴다.
+	SetTextOrHide(Text_WorstWait, !Summary.HasQueueFacility() ? FText::GetEmpty()
+		: Summary.WorstExpectedWaitSeconds >= 0
+			? FText::Format(WorstWaitTextFormat, FFormatNamedArguments{
+				{TEXT("Name"), Summary.WorstExpectedWaitName},
+				{TEXT("Seconds"), FText::AsNumber(Summary.WorstExpectedWaitSeconds)}})
+			: ExpectedWaitUnknownText);
+	SetTextOrHide(Text_StateCounts, FText::Format(StateCountsTextFormat, FFormatNamedArguments{
+		{TEXT("Open"), FText::AsNumber(Summary.OpenCount)},
+		{TEXT("Full"), FText::AsNumber(Summary.FullCount)},
+		{TEXT("Paused"), FText::AsNumber(Summary.PausedCount)},
+		{TEXT("NotAccepting"), FText::AsNumber(Summary.NotAcceptingCount)},
+		{TEXT("Blocked"), FText::AsNumber(Summary.BlockedCount)},
+		{TEXT("Unknown"), FText::AsNumber(Summary.UnknownCount)}}));
 
-	// 한 곳만 센 평균과 여섯 곳을 센 평균은 뜻이 다르다. 몇 곳을 셌는지 함께 적는다.
-	SetTextOrHide(Text_AverageNote, (Summary.AverageSampleCount > 0)
-		? FText::Format(
-			LOCTEXT("LiveQueue_AvgNote", "줄을 끝낸 손님이 있는 {0}곳 기준"),
-			FText::AsNumber(Summary.AverageSampleCount))
-		: LOCTEXT("LiveQueue_AvgNoSample", "아직 줄을 끝낸 손님이 없어 평균을 낼 수 없습니다."));
+	RefreshRowWidgets();
+	SetTextOrHide(Text_Empty, Rows.IsEmpty() ? EmptyText : FText::GetEmpty());
+}
 
-	SetTextOrHide(Text_Longest, Summary.HasAnyQueue()
-		? FText::Format(
-			LOCTEXT("LiveQueue_Longest", "가장 긴 줄 · {0} {1}팀"),
-			Summary.LongestQueueName, FText::AsNumber(Summary.LongestQueueWaiting))
-		: LOCTEXT("LiveQueue_NoQueue", "줄 서 있는 손님이 없습니다."));
-
-	// 지금 서면 가장 오래 걸리는 곳. **못 읽었으면 칸째 접는다** — `0초` 로 적으면
-	// "어디든 바로 이용 가능" 이라는 틀린 사실이 된다.
-	SetTextOrHide(Text_WorstWait, (Summary.WorstExpectedWaitSeconds != INDEX_NONE)
-		? FText::Format(
-			LOCTEXT("LiveQueue_WorstWait", "지금 서면 가장 오래 · {0} {1}초"),
-			Summary.WorstExpectedWaitName,
-			FText::AsNumber(Summary.WorstExpectedWaitSeconds))
-		: FText::GetEmpty());
-
-	// 모름은 따로 적는다. 닫힘에 섞으면 못 읽은 것이 정상적으로 닫힌 것처럼 보인다.
-	const FText UnknownSuffix = (Summary.UnknownCount > 0)
-		? FText::Format(
-			LOCTEXT("LiveQueue_UnknownSuffix", " · 모름 {0}"), FText::AsNumber(Summary.UnknownCount))
-		: FText::GetEmpty();
-
-	SetTextOrHide(Text_StateCounts, FText::Format(
-		LOCTEXT("LiveQueue_StateCounts", "받는 중 {0} · 정원 참 {1} · 안 받음 {2} · 막힘 {3}{4}"),
-		FText::AsNumber(Summary.OpenCount),
-		FText::AsNumber(Summary.FullCount),
-		FText::AsNumber(Summary.NotAcceptingCount),
-		FText::AsNumber(Summary.BlockedCount),
-		UnknownSuffix));
-
-	// --- 목록 ---
+void UFF_LivePanelQueues::RefreshRowWidgets()
+{
 	if (!Box_Queues)
 	{
 		return;
 	}
 
-	Box_Queues->ClearChildren();
-
-	const int32 ShownCount = FMath::Min(Facilities.Num(), FMath::Max(1, MaxRows));
+	const int32 ShownCount = MaxRows <= 0 ? Rows.Num() : FMath::Min(Rows.Num(), MaxRows);
+	bool bAddedChild = false;
 	for (int32 Index = 0; Index < ShownCount; ++Index)
 	{
-		const FFF_LiveFacilityView& Facility = Facilities[Index];
-
-		UTextBlock* Line = NewObject<UTextBlock>(this);
-		if (!Line)
+		const FFF_LiveFacilityView& Row = Rows[Index];
+		if (RowWidgetClass)
 		{
+			if (!CachedRowWidgets.IsValidIndex(Index))
+			{
+				UFF_LiveQueueRowWidget* RowWidget = CreateWidget<UFF_LiveQueueRowWidget>(this, RowWidgetClass);
+				if (!RowWidget)
+				{
+					break;
+				}
+				CachedRowWidgets.Add(RowWidget);
+				if (UVerticalBoxSlot* RowSlot = Box_Queues->AddChildToVerticalBox(RowWidget))
+				{
+					RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+				}
+				bAddedChild = true;
+			}
+			CachedRowWidgets[Index]->SetRowData(Row);
+			CachedRowWidgets[Index]->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 			continue;
 		}
 
-		const FText Wait = (Facility.AverageWaitSeconds != INDEX_NONE)
-			? FText::Format(
-				LOCTEXT("LiveQueue_RowWait", " · 평균 {0}초"),
-				FText::AsNumber(Facility.AverageWaitSeconds))
-			: FText::GetEmpty();
-
-		// !! 숫자만 두지 않는다 !! 대기 0 팀이 "한산하다" 인지 "닫혀 있다" 인지
-		// 숫자로는 알 수 없다 (AT-011).
-		Line->SetText(FText::Format(
-			LOCTEXT("LiveQueue_Row", "{0}  대기 {1}팀 · 이용 {2}팀{3}  —  {4}"),
-			Facility.DisplayName,
-			FText::AsNumber(Facility.WaitingCount),
-			FText::AsNumber(Facility.ActiveServiceCount),
-			Wait,
-			UFF_UIDisplayTextLibrary::GetFacilityQueueStateText(Facility.QueueState)));
-		Line->SetAutoWrapText(true);
-
-		if (UVerticalBoxSlot* LineSlot = Box_Queues->AddChildToVerticalBox(Line))
+		// 행 WBP가 지정되지 않은 기존 화면도 같은 TextBlock을 재사용한다.
+		if (!CachedFallbackLines.IsValidIndex(Index))
 		{
-			LineSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+			UTextBlock* Line = NewObject<UTextBlock>(this);
+			CachedFallbackLines.Add(Line);
+			if (UVerticalBoxSlot* LineSlot = Box_Queues->AddChildToVerticalBox(Line))
+			{
+				LineSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+			}
+			bAddedChild = true;
 		}
+		UpdateFallbackLine(*CachedFallbackLines[Index], Row);
+		CachedFallbackLines[Index]->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	}
 
-	// 🔴 잘린 줄이 있으면 반드시 적는다. 안 적으면 목록이 전부인 줄 안다.
-	if (Facilities.Num() > ShownCount)
+	for (int32 Index = 0; Index < CachedRowWidgets.Num(); ++Index)
 	{
-		if (UTextBlock* More = NewObject<UTextBlock>(this))
+		if (!RowWidgetClass || Index >= ShownCount)
 		{
-			More->SetText(FText::Format(
-				LOCTEXT("LiveQueue_More", "…외 {0}개는 목록에 없습니다"),
-				FText::AsNumber(Facilities.Num() - ShownCount)));
-			Box_Queues->AddChildToVerticalBox(More);
+			CachedRowWidgets[Index]->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+	for (int32 Index = 0; Index < CachedFallbackLines.Num(); ++Index)
+	{
+		if (RowWidgetClass || Index >= ShownCount)
+		{
+			CachedFallbackLines[Index]->SetVisibility(ESlateVisibility::Collapsed);
 		}
 	}
 
-	Box_Queues->SetVisibility((Facilities.Num() > 0)
-		? ESlateVisibility::SelfHitTestInvisible
-		: ESlateVisibility::Collapsed);
+	if (Rows.Num() > ShownCount && !MoreRowsText)
+	{
+		MoreRowsText = NewObject<UTextBlock>(this);
+		ApplyDynamicRowStyle(*MoreRowsText, true);
+		Box_Queues->AddChildToVerticalBox(MoreRowsText);
+	}
+	else if (MoreRowsText && bAddedChild)
+	{
+		MoreRowsText->RemoveFromParent();
+		Box_Queues->AddChildToVerticalBox(MoreRowsText);
+	}
+	SetTextOrHide(MoreRowsText, Rows.Num() > ShownCount
+		? FText::Format(MoreRowsTextFormat,
+			FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Rows.Num() - ShownCount)}})
+		: FText::GetEmpty());
+	Box_Queues->SetVisibility(Rows.IsEmpty()
+		? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+}
 
-	SetTextOrHide(Text_Empty, (Facilities.Num() > 0)
-		? FText::GetEmpty()
-		: LOCTEXT("LiveQueue_Empty", "줄을 세울 시설이 없습니다."));
+void UFF_LivePanelQueues::UpdateFallbackLine(UTextBlock& Line, const FFF_LiveFacilityView& Row) const
+{
+	if (Row.bSeatedVenue)
+	{
+		Line.SetText(FText::Format(SeatedFallbackLineFormat, FFormatNamedArguments{{TEXT("Name"), Row.DisplayName}}));
+		Line.SetToolTipText(FText::GetEmpty());
+		ApplyDynamicRowStyle(Line);
+		return;
+	}
+	const FText Expected = Row.ExpectedWaitSeconds >= 0
+		? FText::Format(WaitSecondsTextFormat,
+			FFormatNamedArguments{{TEXT("Seconds"), FText::AsNumber(Row.ExpectedWaitSeconds)}})
+		: MissingValueText;
+	const FText Average = Row.AverageWaitSeconds >= 0
+		? FText::Format(WaitSecondsTextFormat,
+			FFormatNamedArguments{{TEXT("Seconds"), FText::AsNumber(Row.AverageWaitSeconds)}})
+		: MissingValueText;
+	Line.SetText(FText::Format(
+		LOCTEXT("LiveQueue_FallbackRow", "{0}  대기 {1}팀 · 이용 {2}팀 · 지금 서면 {3}  —  {4}"),
+		Row.DisplayName, FText::AsNumber(Row.WaitingCount), FText::AsNumber(Row.ActiveServiceCount),
+		Expected, UFF_UIDisplayTextLibrary::GetFacilityQueueStateText(Row.QueueState)));
+	Line.SetToolTipText(FText::Format(
+		LOCTEXT("LiveQueue_FallbackAverage", "완료 고객의 실제 평균 대기: {0}"), Average));
+	ApplyDynamicRowStyle(Line);
 }
 
 void UFF_LivePanelQueues::SetTextOrHide(UTextBlock* TextBlock, const FText& Value)
@@ -291,11 +354,9 @@ void UFF_LivePanelQueues::SetTextOrHide(UTextBlock* TextBlock, const FText& Valu
 	{
 		return;
 	}
-
 	TextBlock->SetText(Value);
 	TextBlock->SetVisibility(Value.IsEmpty()
-		? ESlateVisibility::Collapsed
-		: ESlateVisibility::SelfHitTestInvisible);
+		? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
 }
 
 #undef LOCTEXT_NAMESPACE

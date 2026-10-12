@@ -3,10 +3,13 @@
 #include "UI/PrepHUD/Panels/FF_PrepPanelStaff.h"
 
 #include "Components/Button.h"
+#include "Components/WidgetSwitcher.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "UI/FF_UILog.h"
+#include "UI/Staff/FF_StaffTrainingWidget.h"
+#include "UI/Staff/FF_StaffManagementWidget.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaPrepStaff"
@@ -121,6 +124,9 @@ void UFF_PrepPanelStaff::NativePreConstruct()
 void UFF_PrepPanelStaff::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	if (Button_StaffOverview) Button_StaffOverview->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffOverviewClicked);
+	if (Button_StaffTraining) Button_StaffTraining->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffTrainingClicked);
+	SelectStaffTab(false);
 
 	// 내부 버튼이라 인스턴스 수명과 같다. 외부 시스템 구독만 패널을 열 때 붙인다.
 	if (Button_Decrease)
@@ -145,6 +151,7 @@ void UFF_PrepPanelStaff::NativeOnInitialized()
 void UFF_PrepPanelStaff::NativeOnPanelOpened()
 {
 	Super::NativeOnPanelOpened();
+	bStaffPanelOpen = true;
 
 	// 열 때마다 기본값에서 시작한다. 이전에 고른 값이 남아 있으면 잔액이 달라진 뒤에도
 	// 같은 인원이 선택돼 있어 "왜 이 숫자인지" 설명되지 않는다.
@@ -152,13 +159,53 @@ void UFF_PrepPanelStaff::NativeOnPanelOpened()
 
 	BindViewModel();
 	RefreshAll();
+	SelectStaffTab(bTrainingSelected);
 }
 
 void UFF_PrepPanelStaff::NativeOnPanelClosed()
 {
+	bStaffPanelOpen = false;
+	if (Widget_StaffManagement) Widget_StaffManagement->DeactivateManagement();
+	if (Widget_StaffTraining) Widget_StaffTraining->DeactivateRoster();
 	UnbindViewModel();
 	Super::NativeOnPanelClosed();
 }
+
+void UFF_PrepPanelStaff::NativeDestruct()
+{
+	bStaffPanelOpen = false;
+	if (Widget_StaffManagement) Widget_StaffManagement->DeactivateManagement();
+	if (Widget_StaffTraining) Widget_StaffTraining->DeactivateRoster();
+	UnbindViewModel();
+	Super::NativeDestruct();
+}
+
+void UFF_PrepPanelStaff::SelectStaffTab(bool bTraining)
+{
+	if (Widget_StaffManagement)
+	{
+		if (Widget_StaffTraining) Widget_StaffTraining->DeactivateRoster();
+		if (bStaffPanelOpen)
+		{
+			if (Text_PanelTitle) Text_PanelTitle->SetText(LOCTEXT("ManagementTitle", "스태프"));
+			Widget_StaffManagement->OnRevealWorldRequested.BindUObject(this, &ThisClass::RequestClose);
+			Widget_StaffManagement->ActivateManagement(false);
+		}
+		return;
+	}
+	bTrainingSelected = bTraining && Widget_StaffTraining && Switcher_StaffContent;
+	if (Switcher_StaffContent) Switcher_StaffContent->SetActiveWidgetIndex(bTrainingSelected ? 1 : 0);
+	if (Indicator_StaffOverview) Indicator_StaffOverview->SetVisibility(bTrainingSelected ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
+	if (Indicator_StaffTraining) Indicator_StaffTraining->SetVisibility(bTrainingSelected ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+	if (Widget_StaffTraining)
+	{
+		if (bStaffPanelOpen && bTrainingSelected) Widget_StaffTraining->ActivateRoster();
+		else Widget_StaffTraining->DeactivateRoster();
+	}
+}
+
+void UFF_PrepPanelStaff::HandleStaffOverviewClicked() { SelectStaffTab(false); }
+void UFF_PrepPanelStaff::HandleStaffTrainingClicked() { SelectStaffTab(true); }
 
 // =============================================================================
 // 구독
@@ -222,6 +269,7 @@ void UFF_PrepPanelStaff::RefreshAll()
 	const int32 MaxTotal = ViewModel ? ViewModel->GetMaxTotalStaffCount() : INDEX_NONE;
 	const int32 HireCost = ViewModel ? ViewModel->GetStaffHireCostGold() : INDEX_NONE;
 	const int32 Gold = ViewModel ? ViewModel->GetGold() : INDEX_NONE;
+	SetTextOrHide(Text_CurrentGold, Gold >= 0 ? FText::AsNumber(Gold) : LOCTEXT("UnknownGold", "—"));
 
 	Quote = FFF_PrepStaffRules::BuildQuote(
 		DesiredCount,

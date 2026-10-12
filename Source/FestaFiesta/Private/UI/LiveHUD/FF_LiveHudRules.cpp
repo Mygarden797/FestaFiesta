@@ -68,11 +68,12 @@ bool FFF_LiveHudRules::IsTabVisible(EFF_LiveTab Tab, EFF_FestivalStage Stage, bo
 		return false;
 	}
 
-	// 🔴 피날레를 사지 않았으면 그 탭은 숨긴다. 빈 패널은 "고장났나" 로 읽히고,
-	//    살 수 있는 곳(셋업)은 이미 지나간 뒤라 화면에서 할 수 있는 것이 없다.
+	// 🔴 `피날레` 탭은 결산 화면에 두지 않는다 (2026-10-06 백종태 결정).
+	//    구매 등급의 보너스는 마감 결산의 평가 만족도와 최종 결산에 이미 들어가 있어,
+	//    탭을 하나 더 열어 볼 내용이 없다. 구매 여부 인자는 호출부 호환을 위해 남긴다.
 	if (Tab == EFF_LiveTab::Finale)
 	{
-		return bHasPurchasedFinale;
+		return false;
 	}
 
 	return true;

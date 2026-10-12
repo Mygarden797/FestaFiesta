@@ -68,7 +68,7 @@ def verify(packages):
     tools = unreal.load_asset(BASE + "Controls/WBP_FF_BuildTools")
     assert unreal.EditorAssetLibrary.get_metadata_tag(tools, "FF.BuildReferenceTools.RemoveTopWalletV12") == "1", "Missing top gold removal"
     panel_class = unreal.EditorAssetLibrary.load_blueprint_class(LAYOUT_PACKAGES[0])
-    assert abs(unreal.get_default_object(panel_class).get_editor_property("catalog_height") - 378.0) < .1, "Catalog height was not saved"
+    assert abs(unreal.get_default_object(panel_class).get_editor_property("catalog_height") - 324.0) < .1, "Catalog height was not saved"
 
 
 def main():

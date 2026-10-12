@@ -3,6 +3,7 @@
 
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
@@ -14,10 +15,16 @@
 #include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
 #include "Engine/Texture2D.h"
+#include "Editor.h"
+#include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Misc/PackageName.h"
+#include "Misc/Paths.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
+#include "UObject/Package.h"
+#include "UObject/UnrealType.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaPrepCheckSky"
 
@@ -37,6 +44,53 @@ namespace FFPrepCheckSkyBuilder
 		UTextBlock* Result = Text(BP, Tree, Name, Preview, Size, Tint, bVariable);
 		Result->SetAutoWrapText(true);
 		return Result;
+	}
+
+	UButton* StaffLink(UWidgetBlueprint& BP, UWidgetTree& Tree, const TCHAR* Name)
+	{
+		UButton* Result = MakeWidget<UButton>(BP, Tree, Name, true);
+		FButtonStyle Style = Result->GetStyle();
+		Style.Normal = Style.Disabled = Brush(FLinearColor::Transparent);
+		Style.Hovered = Brush(FLinearColor(.05f, .55f, .55f, .08f), 4.f);
+		Style.Pressed = Brush(FLinearColor(.05f, .55f, .55f, .15f), 4.f);
+		Style.NormalPadding = Style.PressedPadding = FMargin(0.f);
+		Result->SetStyle(Style);
+		return Result;
+	}
+
+	void SetStaffLinkContent(UButton& Link, UWidget& Content)
+	{
+		UButtonSlot* Slot = CastChecked<UButtonSlot>(Link.AddChild(&Content));
+		Slot->SetPadding(FMargin(0.f));
+		Slot->SetHorizontalAlignment(HAlign_Fill);
+		Slot->SetVerticalAlignment(VAlign_Fill);
+	}
+
+	UButton* StaffLink(UWidgetBlueprint& BP, UWidgetTree& Tree, const TCHAR* Name, UWidget& Content)
+	{
+		UButton* Result = StaffLink(BP, Tree, Name);
+		SetStaffLinkContent(*Result, Content);
+		return Result;
+	}
+
+	void AddInlineStaffAction(UWidgetBlueprint& BP, UWidgetTree& Tree, UHorizontalBox& Row,
+		UTextBlock& Reason, UButton& Action)
+	{
+		Column(Row, Reason, FMargin(0.f, 0.f, 16.f, 0.f), true);
+		CastChecked<UHorizontalBoxSlot>(Reason.Slot)->SetVerticalAlignment(VAlign_Center);
+		auto* Label = Text(BP, Tree, TEXT("Text_OpenGateStaffLink"),
+			LOCTEXT("StaffAssignmentAction", "스태프 배정 →"), 16, FLinearColor::White);
+		Label->SetJustification(ETextJustify::Center);
+		SetStaffLinkContent(Action, *Label);
+		FButtonStyle Style = Action.GetStyle();
+		Style.Normal = Brush(Color(33, 112, 139), 6.f);
+		Style.Hovered = Brush(Color(40, 136, 164), 6.f);
+		Style.Pressed = Brush(Color(26, 89, 112), 6.f);
+		Style.NormalPadding = Style.PressedPadding = FMargin(14.f, 10.f);
+		Action.SetStyle(Style);
+		Action.SetCursor(EMouseCursor::Hand);
+		Column(Row, Action);
+		CastChecked<UHorizontalBoxSlot>(Action.Slot)->SetVerticalAlignment(VAlign_Center);
 	}
 
 	USizeBox* Icon(UWidgetBlueprint& BP, UWidgetTree& Tree, const FString& Name,
@@ -204,7 +258,8 @@ namespace FFPrepCheckSkyBuilder
 		DetailRow(BP, Tree, *Summary, TEXT("Box_ProgramSummaryRow"), TEXT("Text_ProgramSummary"), LOCTEXT("Programs", "유료 프로그램"), LOCTEXT("ProgramsPreview", "0개 편성"));
 		// 필수 시설은 축제별로 여러 조건이 올 수 있으므로 전체 폭에서 줄바꿈한다.
 		Row(*Summary, *Text(BP, Tree, TEXT("Text_RequiredFacilitiesCaption"), LOCTEXT("Required", "필수 시설"), 16, Muted), FMargin(0.f, 0.f, 0.f, 5.f));
-		Row(*Summary, *Wrapped(BP, Tree, TEXT("Text_RequiredFacilities"), LOCTEXT("RequiredPreview", "메인공연장 · 0/1 · ! 추가 설치 필요"), 16), FMargin(0.f, 0.f, 0.f, 12.f));
+		Row(*Summary, *StaffLink(BP, Tree, TEXT("Button_RequiredFacilities"),
+			*Wrapped(BP, Tree, TEXT("Text_RequiredFacilities"), LOCTEXT("RequiredPreview", "메인공연장 · 1개 설치 · ! 추가 설치 필요"), 16)), FMargin(0.f, 0.f, 0.f, 12.f));
 		DetailRow(BP, Tree, *Summary, TEXT("Box_FinaleSummaryRow"), TEXT("Text_FinaleSummary"), LOCTEXT("Finale", "피날레"), LOCTEXT("FinalePreview", "미구매 — 최소 연출만 실행됩니다"), true);
 		Tree.FindWidget(TEXT("Box_FinaleSummaryRow"))->SetVisibility(ESlateVisibility::Collapsed);
 		Tree.FindWidget(TEXT("Box_FinaleSummaryRow_Rule_Size"))->SetVisibility(ESlateVisibility::Collapsed);
@@ -213,9 +268,13 @@ namespace FFPrepCheckSkyBuilder
 		DetailRow(BP, Tree, *Estimate, TEXT("Box_WageRow"), TEXT("Text_StaffWageCost"), LOCTEXT("HireCost", "고용비"), LOCTEXT("ZeroGold", "0 Gold"));
 		DetailRow(BP, Tree, *Estimate, TEXT("Box_AdmissionRow"), TEXT("Text_ExpectedAdmission"), LOCTEXT("Admission", "예상 입장료 수입"), LOCTEXT("AdmissionPreview", "2,125 Gold"));
 		DetailRow(BP, Tree, *Estimate, TEXT("Box_GoalBonusRow"), TEXT("Text_ExpectedGoalBonus"), LOCTEXT("Bonus", "일일 목표 보너스"), LOCTEXT("ZeroGold", "0 Gold"));
-		Row(*Estimate, *Wrapped(BP, Tree, TEXT("Text_EstimateNotice"), LOCTEXT("EstimateNotice", "부스 수수료와 미니게임 보상은 포함되지 않습니다."), 14, Muted));
+		Row(*Estimate, *Wrapped(BP, Tree, TEXT("Text_EstimateNotice"), LOCTEXT("EstimateNotice", "부스 매출과 미니게임 보상은 포함되지 않습니다."), 14, Muted));
 
-		Row(*Frame.Footer, *Wrapped(BP, Tree, TEXT("Text_OpenGateReason"), LOCTEXT("ReasonPreview", "! 필수 시설을 설치하면 시작할 수 있어요."), 16), FMargin(0.f, 0.f, 0.f, 9.f));
+		UHorizontalBox* ReasonRow = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_OpenGateReason"));
+		AddInlineStaffAction(BP, Tree, *ReasonRow,
+			*Wrapped(BP, Tree, TEXT("Text_OpenGateReason"), LOCTEXT("ReasonPreview", "! 필수 시설을 설치하면 시작할 수 있어요."), 16),
+			*StaffLink(BP, Tree, TEXT("Button_OpenGateReason")));
+		Row(*Frame.Footer, *ReasonRow, FMargin(0.f, 0.f, 0.f, 9.f));
 		UHorizontalBox* Actions = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_CheckActions"));
 		Column(*Actions, *MakeWidget<USpacer>(BP, Tree, TEXT("Spacer_Actions")), FMargin(0.f), true);
 		USizeBox* ContinueSize = MakeWidget<USizeBox>(BP, Tree, TEXT("SizeBox_ContinueBuild"));
@@ -229,6 +288,131 @@ namespace FFPrepCheckSkyBuilder
 			*Text(BP, Tree, TEXT("Text_OpenGateLabel"), LOCTEXT("OpenPreview", "확정하고 Day 1 시작"), 18, FLinearColor::White, true), true));
 		Column(*Actions, *OpenSize); Row(*Frame.Footer, *Actions);
 		return true;
+	}
+
+	void MigrateStaffLinks()
+	{
+		constexpr const TCHAR* MigrationLog = TEXT("FF_PREP_CHECK_STAFF_LINKS");
+		if (GEditor && GEditor->PlayWorld)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: PIE 실행 중에는 점검 화면을 수정하지 않습니다."), MigrationLog);
+			return;
+		}
+		UWidgetBlueprint* BP = LoadExistingBlueprint(PanelPackage);
+		if (!BP || !BP->WidgetTree || !BP->GeneratedClass || !BP->ParentClass ||
+			!BP->ParentClass->IsChildOf(UFF_PrepPanelCheck::StaticClass()))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 기존 FF_PrepPanelCheck 점검 WBP가 필요합니다."), MigrationLog);
+			return;
+		}
+		UWidgetTree& Tree = *BP->WidgetTree;
+		struct FLink { const TCHAR* TextName; const TCHAR* ButtonName; };
+		const FLink Links[] = {
+			{ TEXT("Text_RequiredFacilities"), TEXT("Button_RequiredFacilities") }
+		};
+		UTextBlock* Reason = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_OpenGateReason")));
+		UWidget* ExistingAction = Tree.FindWidget(TEXT("Button_OpenGateReason"));
+		UWidget* ExistingRow = Tree.FindWidget(TEXT("HorizontalBox_OpenGateReason"));
+		const bool bInlineAction = ExistingRow && Cast<UHorizontalBox>(ExistingRow) &&
+			Reason && Reason->GetParent() == ExistingRow && Cast<UButton>(ExistingAction) &&
+			ExistingAction->GetParent() == ExistingRow &&
+			Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_OpenGateStaffLink"))) &&
+			Cast<UButton>(ExistingAction)->GetContent() == Tree.FindWidget(TEXT("Text_OpenGateStaffLink"));
+		if (!Reason || !Reason->GetParent() || !Reason->Slot ||
+			(ExistingRow && !bInlineAction) ||
+			(!ExistingRow && ((ExistingAction && (!Cast<UButton>(ExistingAction) || Reason->GetParent() != ExistingAction ||
+				!ExistingAction->GetParent() || !ExistingAction->Slot)) || Tree.FindWidget(TEXT("Text_OpenGateStaffLink")))))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 개장 사유의 기존 구조 또는 배정 버튼 이름이 예상과 다릅니다."), MigrationLog);
+			return;
+		}
+		bool bNeedsWrap = false;
+		for (const FLink& Link : Links)
+		{
+			UTextBlock* Label = Cast<UTextBlock>(Tree.FindWidget(Link.TextName));
+			UWidget* Existing = Tree.FindWidget(Link.ButtonName);
+			if (!Label || !Label->GetParent() || !Label->Slot ||
+				(Existing && (!Cast<UButton>(Existing) || Label->GetParent() != Existing)))
+			{
+				UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: %s의 기존 구조 또는 %s 이름이 예상과 다릅니다."),
+					MigrationLog, Link.TextName, Link.ButtonName);
+				return;
+			}
+			bNeedsWrap |= !Existing;
+		}
+		FTextProperty* FormatProperty = FindFProperty<FTextProperty>(BP->GeneratedClass, TEXT("RequiredFacilityFormat"));
+		UObject* Defaults = BP->GeneratedClass->GetDefaultObject();
+		const bool bLegacyFormat = FormatProperty && FormatProperty->GetPropertyValue_InContainer(Defaults).ToString()
+			== TEXT("{Name} · {Installed}/{Required} · {State}");
+		if (!bNeedsWrap && !bLegacyFormat && bInlineAction)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_REUSE: 점검 링크와 Designer 편집값을 보존합니다."), MigrationLog);
+			return;
+		}
+		UPackage* Package = BP->GetOutermost();
+		if (Package->IsDirty())
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 미저장 점검 WBP가 있습니다. 저장 후 다시 실행하세요."), MigrationLog);
+			return;
+		}
+		const FString File = FPackageName::LongPackageNameToFilename(PanelPackage, FPackageName::GetAssetPackageExtension());
+		const FString Backup = FPaths::ProjectSavedDir() / TEXT("UIBackups/PrepCheckStaffLinks") / FGuid::NewGuid().ToString(EGuidFormats::Digits);
+		if (IFileManager::Get().IsReadOnly(*File) || !IFileManager::Get().MakeDirectory(*Backup, true) ||
+			IFileManager::Get().Copy(*(Backup / FPaths::GetCleanFilename(File)), *File, false, false) != COPY_OK)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 점검 WBP 백업 또는 쓰기 권한 확인 실패."), MigrationLog);
+			return;
+		}
+		BP->Modify();
+		Tree.Modify();
+		for (const FLink& Link : Links)
+		{
+			if (Tree.FindWidget(Link.ButtonName)) { continue; }
+			UWidget* Label = Tree.FindWidget(Link.TextName);
+			UPanelWidget* Parent = Label->GetParent();
+			Parent->Modify();
+			Label->Modify();
+			Label->Slot->Modify();
+			UButton* Wrapper = StaffLink(*BP, Tree, Link.ButtonName);
+			// ReplaceChild keeps the original slot object, including all authored layout values.
+			if (!Parent->ReplaceChild(Label, Wrapper))
+			{
+				UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: %s 감싸기 실패. 저장하지 않았습니다. 백업=%s"), MigrationLog, Link.TextName, *Backup);
+				return;
+			}
+			// ReplaceChild does not clear the outgoing child's Slot. Clear it before AddChild
+			// so UButton does not remove the wrapper's preserved slot from the old parent.
+			Label->Slot = nullptr;
+			SetStaffLinkContent(*Wrapper, *Label);
+		}
+		if (!bInlineAction)
+		{
+			// The old asset wrapped the whole reason in a button. Keep its authored outer
+			// slot and text styling, then place a separate compact action on the right.
+			UWidget* Previous = ExistingAction ? ExistingAction : Reason;
+			UPanelWidget* Parent = Previous->GetParent();
+			Parent->Modify(); Previous->Modify(); Previous->Slot->Modify(); Reason->Modify();
+			UHorizontalBox* InlineRow = MakeWidget<UHorizontalBox>(*BP, Tree, TEXT("HorizontalBox_OpenGateReason"));
+			if (!Parent->ReplaceChild(Previous, InlineRow))
+			{
+				UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 사유/배정 버튼 행 구성 실패. 저장하지 않았습니다. 백업=%s"), MigrationLog, *Backup);
+				return;
+			}
+			Previous->Slot = nullptr;
+			if (ExistingAction) Reason->RemoveFromParent();
+			UButton* Action = ExistingAction ? CastChecked<UButton>(ExistingAction)
+				: StaffLink(*BP, Tree, TEXT("Button_OpenGateReason"));
+			AddInlineStaffAction(*BP, Tree, *InlineRow, *Reason, *Action);
+		}
+		if (bLegacyFormat)
+		{
+			Defaults->Modify();
+			FormatProperty->SetPropertyValue_InContainer(Defaults,
+				LOCTEXT("RequiredInstallFormat", "{Name} · {Required}개 설치 · {State}"));
+		}
+		if (!SaveNewBlueprint(MigrationLog, *BP)) { return; }
+		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_APPLIED: 점검 안내에 스태프 배정 바로가기를 추가했습니다. 기존 슬롯과 편집값 보존. 백업=%s"),
+			MigrationLog, *FPaths::ConvertRelativePathToFull(Backup));
 	}
 
 	void Apply()
@@ -256,6 +440,9 @@ namespace FFPrepCheckSkyBuilder
 	FAutoConsoleCommand Command(TEXT("FF.ApplyPrepCheckSkyDesign"),
 		TEXT("P5 점검 WBP에 하늘색 카드·준비 현황·견적 디자인을 최초 적용한다. 이후 Designer 편집 보존."),
 		FConsoleCommandDelegate::CreateStatic(&Apply));
+	FAutoConsoleCommand StaffLinksCommand(TEXT("FF.MigratePrepCheckStaffLinks"),
+		TEXT("점검 안내 오른쪽에 스태프 배정 버튼을 배치하고 기본 필수 시설 문구의 설치 비율을 제거한다. 기존 Designer 편집 보존."),
+		FConsoleCommandDelegate::CreateStatic(&MigrateStaffLinks));
 }
 
 #undef LOCTEXT_NAMESPACE

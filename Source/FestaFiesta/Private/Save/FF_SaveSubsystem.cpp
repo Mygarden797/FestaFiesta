@@ -257,11 +257,15 @@ void UFF_SaveSubsystem::HandleFestivalEnded()
 	const UFF_FestivalDefinition* Definition = Progression->GetDefinition();
 	Record.BestProfit = Progression->GetGold() - (Definition ? Definition->InitialGold : 0);
 
-	if (const UFF_SatisfactionMetricsSubsystem* Metrics =
-		GameInstance->GetSubsystem<UFF_SatisfactionMetricsSubsystem>())
-	{
-		Record.BestSatisfaction = static_cast<float>(Metrics->GetSimSatisfaction());
-	}
+	/* 만족도와 등급은 축제 평가에서 읽는다.
+
+	   종료 순간의 만족도 한 점은 마지막 날 마감의 순간값이라, 평가가 쓰는 날짜별 평균과
+	   다르다. 같은 판에서 화면에 보이는 값과 기록이 어긋나지 않도록 평가 값을 그대로 쓴다.
+	*/
+	const FFF_FestivalEvaluation Evaluation = Progression->GetFestivalEvaluation();
+	Record.BestSatisfaction = static_cast<float>(Evaluation.SatisfactionScore);
+	Record.BestScore = Evaluation.TotalScore;
+	Record.BestGrade = Evaluation.Grade;
 
 	/* 방문객 수 — 경제 쪽에 누적 방문객 getter 가 생겨서 채운다(2026-09-22).
 
@@ -975,6 +979,18 @@ void UFF_SaveSubsystem::MarkTutorialOptedOut()
 		TEXT("[저장] 튜토리얼 안내를 껐다. 이 판에서는 축제가 바뀌어도 다시 나오지 않는다."));
 
 	WriteRunMeta();
+}
+
+void UFF_SaveSubsystem::WriteLobbyAutoSaveAfterTutorial()
+{
+	if (!bRunActive)
+	{
+		UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 판을 시작하지 않아 튜토리얼 뒤 로비 세이브를 남기지 않는다."));
+		return;
+	}
+
+	UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 튜토리얼 레벨을 마치고 레벨 선택으로 돌아간다. 로비 세이브를 남긴다."));
+	WriteLobbyAutoSave();
 }
 
 void UFF_SaveSubsystem::BeginNewRun()

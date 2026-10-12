@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "NPC/Party/FF_NeedState.h"
 #include "FF_SatisfactionMetricsSubsystem.generated.h"
 
 class UDataTable;
@@ -58,6 +59,24 @@ struct FFF_SatisfactionCoefficients
 		return LOSGradeScore[FMath::Clamp<int32>(GradeIndex, 0, 5)];
 	}
 
+	// 시설 커버리지: 그 욕구를 해소하는 운영 중 시설 수가 목표에 못 미치면 Need 충족도에 비율을 곱한다.
+	// 체류가 짧아 개인 욕구가 한계까지 거의 차지 않으므로, 이게 없으면 시설이 모자란 배치도 충족도가 100 근처로 나온다
+	float NeedCoverageTargetHunger = 7.f;
+	float NeedCoverageTargetRestroom = 2.f;
+	float NeedCoverageTargetStimulation = 10.f;
+	float NeedCoverageFloor = 0.3f;
+
+	// 0이면 시설이 하나도 없어도 하한만큼은 남긴다. 목표가 0 이하이면 커버리지를 보지 않는다
+	float NeedCoverageMultiplier(int32 OpenFacilityCount, float Target) const
+	{
+		if (Target <= 0.f)
+		{
+			return 1.f;
+		}
+		const float Floor = FMath::Clamp(NeedCoverageFloor, 0.f, 1.f);
+		return FMath::Clamp(static_cast<float>(OpenFacilityCount) / Target, Floor, 1.f);
+	}
+
 	static FFF_SatisfactionCoefficients LoadFromTable(const UDataTable* UtilityCoefficientTable);
 };
 
@@ -108,8 +127,9 @@ struct FFF_SatisfactionAggregator
 	bool SetQueueSuccessRate(float SuccessRate01);
 
 	// 점유 셀 하나의 쾌적도 점수(0~100, ScoreForLOSGrade로 미리 매긴 값)와 그 셀의 인원 수.
-	// Weight가 0 이하면 무시한다(빈 셀을 넣을 이유가 없다)
-	bool AddDensitySample(float Score0To100, int32 Weight);
+	// Weight가 0 이하면 무시한다(빈 셀을 넣을 이유가 없다). bCrowded 는 그 칸이 붐비는 등급(D 이하)인지 —
+	// 결산이 "붐비는 곳에 있던 손님 비율"을 근거로 보여 준다
+	bool AddDensitySample(float Score0To100, int32 Weight, bool bCrowded = false);
 
 	// 확정된 결정 하나의 취향매칭 정도. -1(비선호)~1(선호). Choose()가 no_choice를
 	// 돌려준 회차는 애초에 호출하지 않는다.
@@ -139,6 +159,17 @@ struct FFF_SatisfactionAggregator
 	// 최종 점수에서 빠진 평균 감점(점). 0이면 감점이 없다. 디버그·분해 표시용
 	int32 GetPenaltyPoints() const { return CommittedPenaltyPoints; }
 
+	// 감점을 빼기 전 점수. 결산 만족도 분해가 "100 에서 항목별로 깎인 점수"를 이 값에 맞춘다
+	int32 GetBaseSatisfaction() const { return CommittedBaseSatisfaction; }
+
+	// 하위 점수의 근거(마지막 확정 창 기준). 모르면 음수.
+	// 평균 완료 대기(초) · 줄 가입 성공률(0~1) · 붐비는 칸에 있던 인원 비율(0~1) · 취향에 맞는 곳을 고른 결정 비율(0~1)
+	float GetAverageWaitSeconds() const { return CommittedAverageWaitSeconds; }
+	float GetQueueSuccessRate() const { return CommittedQueueSuccessRate; }
+	float GetCrowdedShare() const { return CommittedCrowdedShare; }
+	float GetPreferenceMatchShare() const { return CommittedPreferenceMatchShare; }
+	int32 GetPreferenceSampleCount() const { return CommittedPreferenceSampleCount; }
+
 	// 이번 확정 주기에 들어간 표본 수 중 최솟값 — 넷 중 하나라도 비면 그 사실이 드러난다
 	int32 GetSampleCount() const { return CommittedSampleCount; }
 
@@ -162,6 +193,11 @@ private:
 	int32 CommittedEnvironmentScore = NeutralScore;
 	int32 CommittedPersonalFitScore = NeutralScore;
 	int32 CommittedSampleCount = 0;
+	float CommittedAverageWaitSeconds = -1.f;
+	float CommittedQueueSuccessRate = -1.f;
+	float CommittedCrowdedShare = -1.f;
+	float CommittedPreferenceMatchShare = -1.f;
+	int32 CommittedPreferenceSampleCount = 0;
 
 	double PendingWaitSum = 0.0;
 	int32 PendingWaitCount = 0;
@@ -169,16 +205,47 @@ private:
 	bool bHasQueueSuccessRateThisWindow = false;
 	double PendingDensityWeightedScoreSum = 0.0;
 	int64 PendingDensityWeight = 0;
+	int64 PendingCrowdedWeight = 0;
 	double PendingPreferenceSum = 0.0;
 	int32 PendingPreferenceCount = 0;
+	int32 PendingPreferenceMatchedCount = 0;
 	// 집계 창 밖에서 들어온 취향 표본. 다음 Begin 이 Pending 으로 넘겨받고 비운다
 	double CarriedPreferenceSum = 0.0;
 	int32 CarriedPreferenceCount = 0;
+	int32 CarriedPreferenceMatchedCount = 0;
 	double PendingNeedFulfillmentSum = 0.0;
 	int32 PendingNeedFulfillmentCount = 0;
 	double PendingPenaltySum = 0.0;
 	int32 PendingPenaltyCount = 0;
 	bool bAggregating = false;
+};
+
+/**
+ * 하루 Live 동안 확정된 집계 창을 모두 평균한 만족도. 하루 기록 · 결산 화면 · 만족도 분해가 쓴다.
+ * 마지막 창 하나만 쓰면 Live 끝에 쌓인 욕구가 그대로 잡혀 하루를 대표하지 못했다(관람객의 90%가 화장실이 급한 순간).
+ */
+struct FFF_DaySatisfactionAverage
+{
+	int32 Day = INDEX_NONE;
+	int32 WindowCount = 0;
+
+	int32 Satisfaction = INDEX_NONE;
+	int32 BaseSatisfaction = INDEX_NONE;
+	int32 WaitScore = INDEX_NONE;
+	int32 DensityScore = INDEX_NONE;
+	int32 PreferenceScore = INDEX_NONE;
+	int32 NeedScore = INDEX_NONE;
+
+	// 근거. 모르면 음수
+	float AverageWaitSeconds = -1.f;
+	float QueueSuccessRate = -1.f;
+	float CrowdedShare = -1.f;
+	float PreferenceMatchShare = -1.f;
+	int32 PreferenceSampleCount = 0;
+	// 욕구별 못 채운 손님 비율(0~100). 모르면 음수
+	float NeedUnmetPercent[static_cast<int32>(EFF_NeedType::Count)] = { -1.f, -1.f, -1.f, -1.f, -1.f };
+
+	bool IsValid() const { return WindowCount > 0; }
 };
 
 /**
@@ -242,7 +309,7 @@ public:
 
 	void AddWaitSample(float CompletedWaitSeconds) { Aggregator.AddWaitSample(CompletedWaitSeconds); }
 	void SetQueueSuccessRate(float SuccessRate01) { Aggregator.SetQueueSuccessRate(SuccessRate01); }
-	void AddDensitySample(float Score0To100, int32 Weight) { Aggregator.AddDensitySample(Score0To100, Weight); }
+	void AddDensitySample(float Score0To100, int32 Weight, bool bCrowded = false) { Aggregator.AddDensitySample(Score0To100, Weight, bCrowded); }
 	void AddPreferenceSample(float PreferenceNorm) { Aggregator.AddPreferenceSample(PreferenceNorm); }
 	void AddNeedFulfillmentSample(float FulfillmentScore0To100) { Aggregator.AddNeedFulfillmentSample(FulfillmentScore0To100); }
 	void AddPenaltySample(float PenaltyPoints) { Aggregator.AddPenaltySample(PenaltyPoints); }
@@ -251,11 +318,49 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|NPC|Satisfaction")
 	int32 GetPenaltyPoints() const { return Aggregator.GetPenaltyPoints(); }
 
+	/** 결산 만족도 분해용 읽기. 의미는 FFF_SatisfactionAggregator 의 같은 이름 함수 */
+	int32 GetBaseSatisfaction() const { return Aggregator.GetBaseSatisfaction(); }
+	float GetAverageWaitSeconds() const { return Aggregator.GetAverageWaitSeconds(); }
+	float GetQueueSuccessRate() const { return Aggregator.GetQueueSuccessRate(); }
+	float GetCrowdedShare() const { return Aggregator.GetCrowdedShare(); }
+	float GetPreferenceMatchShare() const { return Aggregator.GetPreferenceMatchShare(); }
+	int32 GetPreferenceSampleCount() const { return Aggregator.GetPreferenceSampleCount(); }
+
+	/** 마지막 확정에 쓴 계수(가중치 · 대기 기준 · 커버리지 목표). 확정 전이면 기본값 */
+	const FFF_SatisfactionCoefficients& GetLastCoefficients() const { return LastCoefficients; }
+
+	/** 지금 모으고 있는(또는 마지막으로 모은) 날의 Live 평균. 다음 날 Live 가 시작되면 새로 모은다 */
+	FFF_DaySatisfactionAverage GetDayAverage() const;
+
 	// 누적을 확정하고, 값이 실제로 바뀌었을 때만 델리게이트를 쏜다. Coefficients는
 	// 호출부가 이미 밀도 표본을 매기려고 로드해 둔 것을 그대로 넘긴다 — 여기서 또
 	// DataTable을 읽지 않는다
 	void CommitAggregation(const FFF_SatisfactionCoefficients& Coefficients);
 
+	/** 새 축제를 시작할 때 이전 판의 집계를 중립값으로 되돌린다. 이 서브시스템은 레벨을 건너 살아남는다. */
+	void ResetForNewFestival();
+
 private:
+	UFUNCTION()
+	void HandleFestivalStarted() { ResetForNewFestival(); }
+
+	void AccumulateDayAverage();
+
 	FFF_SatisfactionAggregator Aggregator;
+	FFF_SatisfactionCoefficients LastCoefficients;
+
+	// 하루 평균 누적. 정수 점수는 창마다 더하고, 근거는 아는 창만 따로 센다
+	struct FDayAccumulator
+	{
+		int32 Day = INDEX_NONE;
+		int32 Windows = 0;
+		double Satisfaction = 0.0, Base = 0.0, Wait = 0.0, Density = 0.0, Preference = 0.0, Need = 0.0;
+		double WaitSeconds = 0.0; int32 WaitSecondsCount = 0;
+		double QueueSuccess = 0.0; int32 QueueSuccessCount = 0;
+		double Crowded = 0.0; int32 CrowdedCount = 0;
+		double PreferenceMatched = 0.0; int32 PreferenceSamples = 0;
+		double Unmet[static_cast<int32>(EFF_NeedType::Count)] = {};
+		int32 UnmetCount = 0;
+	};
+	FDayAccumulator DayAccumulator;
 };

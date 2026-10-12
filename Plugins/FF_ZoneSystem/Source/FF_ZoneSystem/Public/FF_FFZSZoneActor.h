@@ -34,7 +34,7 @@ public:
     
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone|Components")
     TObjectPtr<USplineComponent> BoundarySpline;
-    // 선형 폐곡선 spline. 각 점의 로컬 X/Y cm가 존 폴리곤 정점이며 자기 교차와 중복 변은 허용하지 않는다.
+    // 선형 폐곡선 spline. 컴포넌트 Transform을 반영한 액터 로컬 X/Y가 존 경계이며 자기 교차와 중복 변은 허용하지 않는다.
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone|Identity")
     FName ZoneId = NAME_None;
@@ -92,7 +92,7 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Zone")
     TArray<FVector2D> GetBoundaryPolygonLocalCm() const;
-    // 현재 spline 점을 존 로컬 X/Y cm 배열로 복사한다. 호출마다 배열을 할당하므로 대량 반복 시 결과를 호출 측에서 캐시.
+    // 컴포넌트 Transform까지 반영한 현재 spline 점을 존 액터 로컬 X/Y cm로 복사한다. 대량 반복 시 호출 측에서 캐시.
 
     UFUNCTION(BlueprintPure, Category = "Zone")
     bool ContainsWorldPoint(const FVector& WorldPoint) const;

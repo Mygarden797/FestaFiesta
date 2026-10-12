@@ -108,6 +108,7 @@ FFFZSFacilitySpec FFZSFacilityUpgradeRules::BuildEffectiveSpec(
     const FFFZSFacilitySpec& BaseSpec, const int32 Level, const float SizeMultiplier)
 {
     FFFZSFacilitySpec Result = BaseSpec;
+    Result.NormalizeNonServiceGeometry();
     if (!FMath::IsFinite(SizeMultiplier) || SizeMultiplier <= 0.0f)
     {
         Result.FootprintSizeCells = FIntPoint::ZeroValue;
@@ -157,7 +158,7 @@ FFFZSFacilitySpec FFZSFacilityUpgradeRules::BuildEffectiveSpec(
         Result.FootprintSizeCells = FIntPoint::ZeroValue;
         return Result;
     }
-    if (!BaseSpec.QueueReservedCells.IsEmpty())
+    if (!Result.QueueReservedCells.IsEmpty())
     {
         // Merge old individual cells into their exact half-open region before scaling;
         // expanding a cell by rounding its centre would otherwise lose occupied space.
@@ -312,10 +313,28 @@ bool FFFZSFacilityAudioSettings::HasNonDefaultValues() const
     // 오류를 가능한 한 모아 저작자에게 한 번에 보여 주되, 위험한 반복문은 선행 조건이 모두
     // 유효할 때만 실행한다. 따라서 잘못된 대형 입력도 실제 Cell/Slot 열거 전에 실패한다.
  
+void FFFZSFacilitySpec::NormalizeNonServiceGeometry()
+{
+    // Retired for every facility; keep the serialized field only for legacy assets/saves.
+    ClearanceCells = 0;
+    if (UsesServiceQueue())
+    {
+        return;
+    }
+    QueueReservedRects.Reset();
+    QueueReservedCells.Reset();
+    QueueSplinePointsCm.Reset();
+    Anchors.Reset();
+    QueueRules.MaxWaitingAgents = 0;
+    QueueRules.ServiceCapacity = 0;
+    QueueLayout = EFFZSQueueLayout::Authored;
+    Audience.bEnabled = false;
+}
+
 bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
-    const bool bHasNoService = Category == EFFZSFacilityCategory::Lighting || IsGroundSurface();
+    const bool bHasNoService = !UsesServiceQueue();
     if (!StaticEnum<EFFZSQueueLayout>()->IsValidEnumValue(static_cast<int64>(QueueLayout)) ||
         (bHasNoService && QueueLayout != EFFZSQueueLayout::Authored))
     {
@@ -354,10 +373,6 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     {
         OutErrors.Add(LOCTEXT("InvalidFootprint", "Footprint의 두 크기는 모두 최소 1 Cell이어야 합니다."));
     }
-    if (ClearanceCells < 0)
-    {
-        OutErrors.Add(LOCTEXT("InvalidClearance", "ClearanceCells는 음수일 수 없습니다."));
-    }
     if (MaxInstancesPerWorld < 0)
     {
         OutErrors.Add(LOCTEXT(
@@ -371,14 +386,14 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
             "InvalidRevenuePerUseGold",
             "Revenue per Use (Gold)는 0(무료) 이상이어야 합니다."));
     }
-    // 양수/비음수 조건을 먼저 통과한 경우에만 예산 계산을 호출해 오류 중복과 오버플로를 피한다.
-    if (FootprintSizeCells.X > 0 && FootprintSizeCells.Y > 0 && ClearanceCells >= 0 &&
+    // 양수 크기를 먼저 확인한 경우에만 예산 계산을 호출해 오류 중복과 오버플로를 피한다.
+    if (FootprintSizeCells.X > 0 && FootprintSizeCells.Y > 0 &&
         !UFFZSGridLibrary::CanEnumerateFacilityCells(*this))
     {
         OutErrors.Add(FText::Format(
             LOCTEXT(
                 "FacilityCellEnumerationLimit",
-                "시설 본체·여유 공간·일반 Queue는 공통 면적 한도 {0}cm² 안에 있어야 합니다. 관람 영역은 Audience Area Limit이 0이면 공통 한도에 합산하고, 양수면 설정한 m² 한도를 따릅니다. 관람 인원을 늘리려면 해당 시설의 Audience Area Limit을 먼저 확인하세요."),
+                "시설 본체·일반 Queue는 공통 면적 한도 {0}cm² 안에 있어야 합니다. 관람 영역은 Audience Area Limit이 0이면 공통 한도에 합산하고, 양수면 설정한 m² 한도를 따릅니다. 관람 인원을 늘리려면 해당 시설의 Audience Area Limit을 먼저 확인하세요."),
             FText::AsNumber(UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility())));
     }
 
@@ -813,11 +828,35 @@ void FFFZSPlacementValidation::AddObstruction(FFFZSPlacementObstruction Obstruct
             Existing.FacilityInstanceId == Obstruction.FacilityInstanceId &&
             Existing.WorldCenter.Equals(Obstruction.WorldCenter, 0.01) &&
             Existing.WorldHalfExtent.Equals(Obstruction.WorldHalfExtent, 0.01) &&
-            Existing.WorldRotation.Equals(Obstruction.WorldRotation, 0.0001)) return;
+            Existing.WorldRotation.Equals(Obstruction.WorldRotation, 0.0001) &&
+            Existing.AffectedWorldRegion.CenterCell.Equals(Obstruction.AffectedWorldRegion.CenterCell, 0.01) &&
+            Existing.AffectedWorldRegion.HalfExtentCells.Equals(Obstruction.AffectedWorldRegion.HalfExtentCells, 0.01) &&
+            FMath::IsNearlyEqual(Existing.AffectedWorldRegion.YawDegrees, Obstruction.AffectedWorldRegion.YawDegrees, 0.0001f)) return;
     }
     Obstruction.WorldBounds = FBox(-Obstruction.WorldHalfExtent, Obstruction.WorldHalfExtent)
         .TransformBy(FTransform(Obstruction.WorldRotation, Obstruction.WorldCenter));
     Obstructions.Add(MoveTemp(Obstruction));
+}
+
+FText FFFZSPlacementValidation::GetBoundaryFailureText() const
+{
+    TArray<FText> Names;
+    for (const EFFZSPlacementRegion Region : {EFFZSPlacementRegion::Footprint,
+        EFFZSPlacementRegion::Queue, EFFZSPlacementRegion::Audience})
+    {
+        if (!BoundaryIssues.ContainsByPredicate([Region](const FFFZSPlacementBoundaryIssue& Issue)
+            { return Issue.Region == Region; })) continue;
+        switch (Region)
+        {
+        case EFFZSPlacementRegion::Footprint: Names.Add(LOCTEXT("BoundaryFootprint", "시설 본체")); break;
+        case EFFZSPlacementRegion::Clearance: break;
+        case EFFZSPlacementRegion::Queue: Names.Add(LOCTEXT("BoundaryQueue", "대기열")); break;
+        case EFFZSPlacementRegion::Audience: Names.Add(LOCTEXT("BoundaryAudience", "관객석")); break;
+        }
+    }
+    return Names.IsEmpty() ? FText::GetEmpty() : FText::Format(
+        LOCTEXT("BoundaryRegionsOutside", "{0} 영역이 건축구역 밖으로 나갔어요"),
+        FText::Join(LOCTEXT("BoundaryRegionSeparator", "·"), Names));
 }
 
 void FFFZSPlacementValidation::AddFailure(const EFFZSPlacementFailure Reason, const FText& Message)

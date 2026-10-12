@@ -3,6 +3,7 @@
 #include "Tutorial/FF_TutorialOverlayWidget.h"
 
 #include "Blueprint/SlateBlueprintLibrary.h"
+#include "Brushes/SlateColorBrush.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/Widget.h"
@@ -12,8 +13,10 @@ namespace
 {
 	// 어두운 사각형 한 장을 그린다.
 	//
-	// 채우기를 MakeBox 대신 굵은 선으로 그린다. 브러시 애셋 없이 되고,
-	// 이 프로젝트의 다른 커스텀 그리기도 전부 MakeLines 를 쓰고 있어 방식이 일관된다.
+	// 단색 상자로 칠한다. 예전에는 굵은 선 한 줄(선 굵기 = 높이)로 칠했는데, 카테고리 안내 때
+	// 덮개에 검은 줄이 심하게 생긴다는 피드백이 있었다(2026-10-08). 선은 해상도마다 굵기 · 끝 처리가
+	// 달라 칸 경계가 겹치거나 비어 줄이 될 수 있다. 상자는 주어진 칸을 정확히 채우고 픽셀에 맞춰진다.
+	// 브러시 애셋 없이 쓰려고 흰 단색 브러시를 코드에 두고 색으로 물들인다.
 	void DrawMaskRect(
 		FSlateWindowElementList& OutDrawElements,
 		const int32 LayerId,
@@ -28,23 +31,14 @@ namespace
 			return;
 		}
 
-		// 가로로 긴 선 한 줄로 세로를 다 덮는다. 선 굵기가 곧 높이다.
-		const float HalfHeight = Size.Y * 0.5f;
-
-		TArray<FVector2f> Points {
-			FVector2f(TopLeft.X, TopLeft.Y + HalfHeight),
-			FVector2f(TopLeft.X + Size.X, TopLeft.Y + HalfHeight)
-		};
-
-		FSlateDrawElement::MakeLines(
+		static const FSlateColorBrush WhiteBrush(FLinearColor::White);
+		FSlateDrawElement::MakeBox(
 			OutDrawElements,
 			LayerId,
-			Geometry.ToPaintGeometry(),
-			MoveTemp(Points),
+			Geometry.ToPaintGeometry(Size, FSlateLayoutTransform(TopLeft)),
+			&WhiteBrush,
 			ESlateDrawEffect::None,
-			Color,
-			false,
-			Size.Y);
+			Color);
 	}
 }
 
@@ -99,7 +93,38 @@ void UFF_TutorialOverlayWidget::HandleHighlightAnchorChanged(const FName AnchorI
 void UFF_TutorialOverlayWidget::HandleDialogueActiveChanged(const bool bActive)
 {
 	// 대사가 없으면 덮개도 없앤다. 대사 중이 아닌데 화면이 어두우면 버그로 보인다.
+	bBlockingViewOnlyPanel = false;
 	SetVisibility(bActive ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+}
+
+void UFF_TutorialOverlayWidget::SetBlockingViewOnlyPanel(const bool bBlock)
+{
+	if (bBlock == bBlockingViewOnlyPanel)
+	{
+		return;
+	}
+	bBlockingViewOnlyPanel = bBlock;
+
+	// 막을 때만 Visible 로 올린다. 화면 전체를 덮는 위젯이라 이 동안은 아래 UI 가 눌리지 않는다.
+	SetVisibility(bBlock ? ESlateVisibility::Visible : ESlateVisibility::HitTestInvisible);
+}
+
+FReply UFF_TutorialOverlayWidget::NativeOnMouseButtonDown(
+	const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (!bBlockingViewOnlyPanel)
+	{
+		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+	}
+
+	// 어디를 눌렀든 패널만 닫는다. 이 클릭은 아래로 보내지 않는다 — 대사를 넘기거나
+	// 배치 중인 시설을 놓는 데 쓰이면 플레이어가 예상하지 못한 일이 생긴다.
+	if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
+	{
+		Tutorial->DismissViewOnlyPrepPanel();
+	}
+	SetBlockingViewOnlyPanel(false);
+	return FReply::Handled();
 }
 
 bool UFF_TutorialOverlayWidget::ResolveHighlightRect(
@@ -215,6 +240,12 @@ bool UFF_TutorialOverlayWidget::ResolveWorldCircle(FVector2D& OutCenter, float& 
 void UFF_TutorialOverlayWidget::NativeTick(const FGeometry& MyGeometry, const float DeltaTime)
 {
 	Super::NativeTick(MyGeometry, DeltaTime);
+
+	// 보기 전용 패널이 열려 있으면 클릭을 받는다. NativeOnMouseButtonDown 참고.
+	{
+		const UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
+		SetBlockingViewOnlyPanel(Tutorial && Tutorial->IsDialogueActive() && Tutorial->IsPrepPanelViewOnly());
+	}
 
 	PulseTime += DeltaTime;
 

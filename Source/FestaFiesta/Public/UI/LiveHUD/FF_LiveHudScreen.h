@@ -16,6 +16,9 @@ class UButton;
 class UFF_FestivalViewModelSubsystem;
 class UFF_IncidentDetailPanel;
 class UFF_IncidentMarkerLayer;
+class UFF_IncidentToast;
+class UFF_FinaleSnsOverlay;
+class UFF_OperationAlertPanel;
 class UFF_LivePanelBase;
 class UFF_LivePlaceholderPanel;
 class UFF_LiveTabButton;
@@ -56,6 +59,9 @@ class FESTAFIESTA_API UFF_LiveHudScreen : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	/** 스태프 관리 등 HUD 내부 바로가기에서도 기존 사건 상세 창을 재사용한다. */
+	void RequestOpenIncident(FFF_IncidentHandle Handle);
+
 	/** 탭을 눌렀을 때와 같은 경로. 콘솔·디버그에서도 쓴다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Live")
 	void ToggleTab(EFF_LiveTab Tab);
@@ -77,6 +83,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Layout")
 	float GetBottomBarHeight() const;
+
+	/** Designer/드래그 원본 치수. 작은 창에 맞춘 표시 크기와 구분한다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Layout")
+	FFF_LivePanelLayout GetOpenPanelLayout() const;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI|Live")
 	FFF_OnLiveTabSelectionChanged OnTabSelectionChanged;
@@ -147,6 +157,10 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Tabs")
 	TObjectPtr<UFF_LiveTabButton> Tab_Facilities;
+
+	/** 시설을 먼저 선택하지 않고 기존 시설 매출 순위 화면을 연다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UFF_LiveTabButton> Tab_RevenueRanking;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Tabs")
 	TObjectPtr<UFF_LiveTabButton> Tab_Guests;
@@ -347,7 +361,7 @@ protected:
 
 	/** 중괄호 이름은 유지하고 표시 문구만 바꾼다. 실제 값은 ViewModel에서 읽는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Text")
-	FText GoldTextFormat = NSLOCTEXT("FestaFiestaLiveHud", "GoldFormat", "{Amount} Gold");
+	FText GoldTextFormat = NSLOCTEXT("FestaFiestaLiveHud", "GoldFormat", "{Amount}");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Text")
 	FText RevenueTextFormat = NSLOCTEXT("FestaFiestaLiveHud", "RevenueFormat", "{Amount}");
@@ -446,6 +460,9 @@ public:
 	bool IsPanelDragAllowed() const;
 
 private:
+	UFUNCTION()
+	void HandleDailyReportReady(int32 Day);
+	void TryShowDailyReport();
 
 	/** 없으면 만들어 호스트에 넣는다. 만든 것은 캐시한다. */
 	UFF_LivePanelBase* EnsurePanel(EFF_LiveTab Tab);
@@ -453,7 +470,9 @@ private:
 	UClass* ResolvePanelClass(EFF_LiveTab Tab, const FString& EnumName, bool& bOutIsPlaceholder) const;
 
 	FFF_LivePanelLayout ResolveLayout(EFF_LiveTab Tab) const;
-	void ApplyPanelLayout(const FFF_LivePanelLayout& Layout);
+	void ApplyPanelLayout(const FFF_LivePanelLayout& Layout, const FGeometry* CurrentHudGeometry = nullptr);
+	void RefreshPanelHostVisibility();
+	bool bAwaitingCenteredLayout = false;
 
 	/**
 	 * 다음 틱에 패널·호스트의 **실제 크기**를 로그로 찍는다.
@@ -499,6 +518,39 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_IncidentDetailPanel> IncidentDetailPanel;
+
+	/** [보내기]/[확인] 결과를 잠깐 띄운다. 거부면 이유를 적는다. 상세 패널보다 위에 둔다. */
+	void EnsureIncidentToast();
+
+	/**
+	 * 사건 종료 이유를 소식에 남기고 토스트로 알린다. 자연 해소는 열람했거나 출동했던 사건만 알린다.
+	 * 즉시 해결은 [보내기] 결과 토스트가 이미 알리므로 토스트만 억제하고 소식 기록은 유지한다.
+	 */
+	void BindIncidentFinished();
+
+	void UnbindIncidentFinished();
+
+	UFUNCTION()
+	void HandleIncidentFinished(const FFF_IncidentClosedInfo& Info);
+
+	bool bSuppressClosedToast = false;
+	// 열람은 UI에서만 기억한다. 사건의 Acknowledged 상태는 출동용이므로 변경하지 않는다.
+	TSet<FFF_IncidentHandle> ViewedIncidentHandles;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_IncidentToast> IncidentToast;
+
+	/** 피날레 연출 중 후기를 왼쪽 아래에 흘려보낸다. 후기가 없으면 스스로 숨는다. */
+	void EnsureFinaleSnsOverlay();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_FinaleSnsOverlay> FinaleSnsOverlay;
+
+	/** 운영 알림(시설 부족·줄 이탈)을 오른쪽 위에 띄우고 지난 알림을 다시 보여 준다. Live 에서만 보인다. */
+	void EnsureOperationAlertPanel();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_OperationAlertPanel> OperationAlertPanel;
 
 	void RefreshTabs();
 	void RefreshStatusRow();

@@ -30,6 +30,10 @@ struct FESTAFIESTA_API FFF_FacilityRevenueBook
 
 	int32 Num() const { return Entries.Num(); }
 
+	// 저장·복원용. 이어하기 뒤에도 시설 정보 패널의 누적 매출이 이어지게 한다.
+	void Export(TArray<FGuid>& OutIds, TArray<FFF_FacilityInstanceRevenue>& OutRevenues) const;
+	void Import(const TArray<FGuid>& InIds, const TArray<FFF_FacilityInstanceRevenue>& InRevenues);
+
 private:
 	TMap<FGuid, FFF_FacilityInstanceRevenue> Entries;
 };

@@ -34,5 +34,5 @@ public:
 	float WorkAmount = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Instanced, Category = "Option|Reward")
-	TObjectPtr<UFF_IncidentEffect> Effect;
+	TArray<TObjectPtr<UFF_IncidentEffect>> OnResolvedEffect;
 };

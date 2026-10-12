@@ -79,4 +79,90 @@ bool FFF_SnsFilterLimitTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("빈 소스 동기화도 배지 해제"), State.PendingCount, 0);
 	return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsAutoInsertTest, "FestaFiesta.UI.SNS.AutoInsertNewMarks",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SnsAutoInsertTest::RunTest(const FString& Parameters)
+{
+	using namespace FFSnsTests;
+	FFF_LiveSnsFeedState State;
+	TArray<FFF_LiveSocialPost> Source = {Post(TEXT("기존1"), 10), Post(TEXT("기존2"), -10)};
+	State.Sync(Source, 30);
+	TestFalse(TEXT("구독 전부터 있던 글은 새 글 아님"), State.IsNew(0));
+
+	// 열려 있을 때 도착: 버튼 없이 맨 위에 들어가고 점이 붙는다.
+	Source.Insert(Post(TEXT("새1"), 20), 0);
+	State.NoteArrival();
+	TestTrue(TEXT("열린 목록에 바로 추가"), State.InsertArrival(Source[0], 30));
+	TestEqual(TEXT("새 글이 맨 위"), State.DisplayedPosts[0].Body.ToString(), FString(TEXT("새1")));
+	TestTrue(TEXT("새 글 점"), State.IsNew(0));
+	TestFalse(TEXT("기존 글은 점 없음"), State.IsNew(1));
+	TestEqual(TEXT("열려 있을 때는 배지 없음"), State.PendingCount, 0);
+
+	// 패널을 닫으면 읽음.
+	State.MarkAllSeen();
+	TestFalse(TEXT("닫은 뒤 점 해제"), State.IsNew(0));
+
+	// 닫혀 있는 동안 두 글 도착 → 배지, 열 때 다시 읽으면 두 글에만 점.
+	Source.Insert(Post(TEXT("새2"), -5, EFF_LiveSnsSentiment::Negative), 0);
+	State.NoteArrival(); State.RecordArrival(Source[0]);
+	Source.Insert(Post(TEXT("새3"), 5, EFF_LiveSnsSentiment::Positive), 0);
+	State.NoteArrival(); State.RecordArrival(Source[0]);
+	TestEqual(TEXT("닫힌 동안 배지 2"), State.PendingCount, 2);
+	State.Sync(Source, 30);
+	TestTrue(TEXT("새3 점"), State.IsNew(0));
+	TestTrue(TEXT("새2 점"), State.IsNew(1));
+	TestFalse(TEXT("이미 본 새1 점 없음"), State.IsNew(2));
+	TestEqual(TEXT("열면 배지 해제"), State.PendingCount, 0);
+
+	// 필터를 바꿔 다시 읽어도 같은 글에만 점.
+	State.Filter = EFF_LiveSnsFilter::Positive;
+	State.Sync(Source, 30);
+	TestEqual(TEXT("긍정 필터 첫 글"), State.DisplayedPosts[0].Body.ToString(), FString(TEXT("새3")));
+	TestTrue(TEXT("필터 바꿔도 새 글 점 유지"), State.IsNew(0));
+	TestFalse(TEXT("필터 바꿔도 읽은 글은 점 없음"), State.IsNew(1));
+	TestFalse(TEXT("필터 밖 글은 열린 목록에 안 들어감"), State.InsertArrival(Post(TEXT("아쉬움"), -3, EFF_LiveSnsSentiment::Negative), 30));
+
+	// 시간으로 지우기: 이 번호까지 읽음.
+	State.MarkSeenUpTo(State.DisplayedSerials[0]);
+	TestFalse(TEXT("시간이 지난 글 점 해제"), State.IsNew(0));
+
+	// 한도: 맨 위에 넣고 아래를 뺀다.
+	State.Filter = EFF_LiveSnsFilter::All;
+	State.Sync(Source, 2);
+	State.NoteArrival();
+	State.InsertArrival(Post(TEXT("새4"), 1), 2);
+	TestEqual(TEXT("한도 유지"), State.DisplayedPosts.Num(), 2);
+	TestEqual(TEXT("번호도 같은 수"), State.DisplayedSerials.Num(), 2);
+	TestEqual(TEXT("한도에서도 새 글이 위"), State.DisplayedPosts[0].Body.ToString(), FString(TEXT("새4")));
+	return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UnifiedNewsSourceTest, "FestaFiesta.UI.SNS.UnifiedNewsSources",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UnifiedNewsSourceTest::RunTest(const FString& Parameters)
+{
+	using namespace FFSnsTests;
+	FFF_LiveSocialPost Operation = Post(TEXT("음식 부스 부족"), INDEX_NONE);
+	Operation.bOperationAlert = true;
+	Operation.OperationDay = 2;
+	const TArray<FFF_LiveSocialPost> Source = { Post(TEXT("관객 최신 글"), 20), Operation, Post(TEXT("관객 이전 글"), -20) };
+	FFF_LiveSnsFeedState State;
+	State.TotalArrivals = 3;
+	State.Sync(Source, 80);
+	TestEqual(TEXT("전체는 도착 순서대로 두 원본 포함"), State.DisplayedPosts.Num(), 3);
+	State.Filter = EFF_LiveSnsFilter::Social;
+	State.Sync(Source, 80);
+	TestEqual(TEXT("SNS는 긍정과 아쉬움을 모두 포함"), State.DisplayedPosts.Num(), 2);
+	TestEqual(TEXT("종류 필터 후에도 원래 도착 번호 유지"), State.DisplayedSerials[1], int64(1));
+	State.Filter = EFF_LiveSnsFilter::Operation;
+	State.Sync(Source, 80);
+	TestEqual(TEXT("운영 알림만 따로 조회"), State.DisplayedPosts.Num(), 1);
+	TestTrue(TEXT("운영 종류 보존"), State.DisplayedPosts[0].bOperationAlert);
+	TestEqual(TEXT("운영 일차 보존"), State.DisplayedPosts[0].OperationDay, 2);
+	TestEqual(TEXT("운영 도착 번호 보존"), State.DisplayedSerials[0], int64(2));
+	State.NoteArrival();
+	TestFalse(TEXT("운영 필터에서 SNS 실시간 삽입 제외"), State.InsertArrival(Source[0], 80));
+	State.NoteArrival();
+	TestTrue(TEXT("운영 필터에서 운영 실시간 삽입"), State.InsertArrival(Operation, 80));
+	return true;
+}
 #endif

@@ -140,6 +140,13 @@ namespace FFBuildModeModel
 			State == EFF_BuildModeState::Moving;
 	}
 
+	inline bool ShouldProcessNearbyPlacementShortcut(const EFF_BuildModeState State, const FKey Key,
+		const bool bTextFocused, const bool bModifierDown, const bool bIsRepeat, const bool bSuspended)
+	{
+		return Key == EKeys::N && IsPreviewActive(State) && !bTextFocused &&
+			!bModifierDown && !bIsRepeat && !bSuspended;
+	}
+
 	// 시설 선택 전에도 주변의 사용 가능한 땅을 살펴볼 수 있다. 일반 플레이에서는 숨긴다.
 	inline bool ShouldShowPlacementGrid(const EFF_BuildModeState State)
 	{
@@ -364,6 +371,7 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 	friend class FFF_BuildDragPlacementTest;
 	friend class FFF_BuildSynergyCatalogContextTest;
 	friend class FFF_BuildMultiSelectionSessionTest;
+	friend class FFFBuildFeatureGuideInputTest;
 	friend class FFF_BuildGroupEditingTest;
 	friend class FFF_BuildQueueLayoutDraftTest;
 #endif
@@ -469,6 +477,9 @@ public:
 	 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	bool StartPlacement(FName FacilityDefinitionId);
+
+	/** Show a non-blocking reason when a catalog action or world placement is rejected. */
+	void PresentPlacementFailure(EFFZSPlacementFailure FailureReason, const FText& Detail);
 
 	// 현재 배치를 취소하고 선택 정보를 비운 뒤 동일 건축 세션의 카탈로그로 돌아간다. 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
@@ -601,12 +612,16 @@ public:
 	FText GetPlacementStatusText() const;
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	FFF_BuildPlacementGuidance GetPlacementGuidance(int32 ProblemIndex = 0) const;
+	// Keep the active explanation and world highlights in sync; no placement validation or commit.
+	void SetPlacementDiagnosticIndex(int32 ProblemIndex);
 	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
 	void ToggleDirectPlacementAdjustment();
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	bool IsDirectPlacementAdjustment() const { return bDirectPlacementAdjustment; }
 	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
 	bool FindNearbyPlacement();
+	/** Fixed N shortcut, shared by world input and a focused construction widget. */
+	bool HandleNearbyPlacementShortcut(const FKey& Key, bool bModifierDown = false, bool bIsRepeat = false);
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	bool IsFindingNearbyPlacement() const { return bFindingNearbyPlacement; }
 	FText GetPlacementAssistanceMessage() const { return PlacementAssistanceMessage; }
@@ -931,8 +946,6 @@ private:
 	void HandleWorldSnapshotRestored();
 	UFUNCTION()
 	void HandleFestivalStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
-	// 권위 실패 코드와 상세 사유를 신규 UMG 토스트에 표시한다. 프리뷰 Tick에서는 호출하지 않는다.
-	void PresentPlacementFailure(EFFZSPlacementFailure FailureReason, const FText& Detail);
 	UFF_BuildPlacementFailureFeedback* GetOrCreatePlacementFailureFeedback();
 	UFF_FacilityInfoSubsystem* GetFacilityInfoSubsystem() const;
 	void DismissPlacementFailureFeedback(bool bRemoveFromParent = false);

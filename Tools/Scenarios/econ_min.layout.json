@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "description": "경제 시나리오 최소 배치: 필수 시설(메인 공연장·메인안내소)과 음식 부스 2개뿐이다. 입장료만으로 점수가 나오는지 본다.",
+  "map": "/Game/FestaFiesta/Maps/Test_Main",
+  "slot": "econ_min",
+  "facilities": [
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage",
+      "zone_id": "GZ_TemporaryParkingEast",
+      "origin_cm": [
+        6670,
+        12380
+      ],
+      "yaw_centidegrees": 0,
+      "expected_audience_capacity": 500
+    },
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Info/PDA_FFZS_Info_GeneralInfo_General",
+      "zone_id": "GZ_Tutorial",
+      "origin_cm": [
+        6360,
+        3540
+      ],
+      "yaw_centidegrees": 0
+    },
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_BusanFishCakeCart",
+      "zone_id": "GZ_Tutorial",
+      "origin_cm": [
+        6660,
+        3540
+      ],
+      "yaw_centidegrees": 27000
+    },
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_CharcoalChickenSkewerStall",
+      "zone_id": "GZ_TemporaryParkingEast",
+      "origin_cm": [
+        3370,
+        12380
+      ],
+      "yaw_centidegrees": 27000
+    }
+  ]
+}

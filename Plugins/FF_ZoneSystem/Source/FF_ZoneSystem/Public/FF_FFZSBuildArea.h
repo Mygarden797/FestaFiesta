@@ -12,6 +12,13 @@ class FFFZSBuildAreaGeometry;
 class UFFZSWorldSubsystem;
 struct FFFZSOrientedRect;
 
+// World XY centimetres. Presentation consumes the same polygon union as placement authority.
+struct FF_ZONESYSTEM_API FFFZSBuildAreaLineSegment
+{
+    FVector2D Start = FVector2D::ZeroVector;
+    FVector2D End = FVector2D::ZeroVector;
+};
+
 /**
  * 여러 지역의 경계를 합쳐 건설 가능한 땅을 하나로 관리한다. 지역 사이에서도 시설을 설치할 수 있다.
  * NPC 소속과 혼잡도를 위한 기존 지역 정보는 유지한다. 레벨에 이 액터를 하나 배치하면 활성화되며,
@@ -53,6 +60,15 @@ public:
 
     // 이 사각형은 지역 내부 좌표가 아니라 월드 전체의 XY 좌표(cm)를 사용한다.
     bool ContainsWorldOrientedRect(const FFFZSOrientedRect& WorldRectCm, double WorldZCm) const;
+
+    // Outer contours and holes, clipped to the requested view. Internal region seams are omitted.
+    void GetBoundarySegments(double WorldZCm, const FBox2D& ViewBounds,
+        TArray<FFFZSBuildAreaLineSegment>& OutSegments) const;
+
+    // Clips world-space input lines to the reservation rectangle and keeps only unbuildable pieces.
+    void GetOutsideSegments(const FFFZSOrientedRect& WorldRectCm, double WorldZCm,
+        const TArray<FFFZSBuildAreaLineSegment>& InputSegments,
+        TArray<FFFZSBuildAreaLineSegment>& OutSegments) const;
 
     UFUNCTION(BlueprintPure, Category = "Build Area")
     FBox GetBuildBounds() const;

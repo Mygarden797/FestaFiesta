@@ -111,7 +111,7 @@ namespace FFFacilityInfoModel
 				: FText::Format(LOCTEXT("SynergyBeneficiary", "수익을 받는 시설: {0}"), Name(Source.TargetFacilityId));
 			const float MinApplied = Group.NearbyCount > 0 ? Group.MinApplied : 0.f;
 			const float MaxApplied = Group.NearbyCount > 0 ? Group.MaxApplied : 0.f;
-			Entry.EffectText = FText::Format(LOCTEXT("SynergyRuleEffect", "{0} 이용 수수료\n설정 +{1}% · 현재 적용 +{2}%"),
+			Entry.EffectText = FText::Format(LOCTEXT("SynergyRuleEffect", "{0} 부스 매출\n설정 +{1}% · 현재 적용 +{2}%"),
 				Name(Source.TargetFacilityId), Number(Source.ConfiguredBonusPercent), Range(MinApplied, MaxApplied));
 			if (Group.bHasPartnerRole && Group.NearbyCount > 0)
 			{
@@ -132,7 +132,7 @@ namespace FFFacilityInfoModel
 			if (Entry.bActive) ++ActiveRules;
 		}
 		ViewData.SynergySummaryText = bSelectionEligible
-			? FText::Format(LOCTEXT("SynergySummary", "조합 {0}개 · 적용 중 {1}개\n이 시설의 이용 수수료 보너스 +{2}%"),
+			? FText::Format(LOCTEXT("SynergySummary", "조합 {0}개 · 적용 중 {1}개\n이 시설의 부스 매출 보너스 +{2}%"),
 				FText::AsNumber(ViewData.SynergyEntries.Num()), FText::AsNumber(ActiveRules), Number(SelectedBonusPercent))
 			: LOCTEXT("SynergySelectionIneligible", "현재 시설은 조합 효과를 받을 수 없습니다.\n유효한 위치에 배치한 뒤 다시 확인해 주세요.");
 	}
@@ -140,12 +140,17 @@ namespace FFFacilityInfoModel
 	void ApplyUpgradePreview(
 		const FFF_FacilityUpgradePreview* Preview, FFF_FacilityInfoViewData& ViewData)
 	{
-		ViewData.FacilityRevenueText = Preview && Preview->bRevenueAvailable
+		const bool bHasCurrentRevenueQuote = Preview && Preview->bRevenueAvailable &&
+			(Preview->CurrentRevenuePerUseGold > 0 ||
+			 Preview->CurrentRevenueByTeamSizeGold.ContainsByPredicate([](int32 Gold) { return Gold > 0; }));
+		const bool bShowUpgradeRevenue = Preview && Preview->bRevenueAvailable &&
+			(bHasCurrentRevenueQuote || Preview->NextRevenuePerUseGold > 0);
+		ViewData.FacilityRevenueText = bHasCurrentRevenueQuote
 			? FText::Format(LOCTEXT("CurrentRevenueSigned", "1인 예상 수익  {0} Gold\n기본 대비 {1} Gold"),
 				FText::AsNumber(Preview->CurrentRevenuePerUseGold),
 				FormatSignedChange(Preview->CurrentRevenuePerUseGold - Preview->BaseRevenuePerUseGold))
-			: LOCTEXT("TeamRevenueUnavailable", "팀당 예상 수익  정보 없음");
-		if (Preview && Preview->bRevenueAvailable && Preview->CurrentRevenueByTeamSizeGold.Num() == 6)
+			: FText::GetEmpty();
+		if (bHasCurrentRevenueQuote && Preview->CurrentRevenueByTeamSizeGold.Num() == 6)
 		{
 			// Each amount is quoted before rounding by the same rule as a completed team payment.
 			// These are explicit team-size examples, not a guaranteed minimum/maximum payment.
@@ -196,23 +201,24 @@ namespace FFFacilityInfoModel
 			Preview->CurrentServiceDurationSeconds, Preview->NextServiceDurationSeconds) < .1f ? 3 : 1;
 		auto FormatComparison = [&](const bool bNext)
 		{
-			const FText Revenue = Preview->bRevenueAvailable
-				? FormatGold(true, bNext ? Preview->NextRevenuePerUseGold : Preview->CurrentRevenuePerUseGold)
-				: LOCTEXT("ComparisonRevenueUnavailable", "정보 없음");
-			return FText::Format(LOCTEXT("UpgradeComparisonValues", "1인 수익  {0}\n팀당 시간  {1}초\n분당  {2}팀\n크기  {3}"),
-				Revenue,
+			const FText ServiceValues = FText::Format(
+				LOCTEXT("UpgradeComparisonServiceValues", "팀당 시간  {0}초\n분당  {1}팀\n크기  {2}"),
 				FText::AsNumber(bNext ? Preview->NextServiceDurationSeconds : Preview->CurrentServiceDurationSeconds, &SecondsOptions),
 				FText::AsNumber(bNext ? Preview->NextThroughputPerMinute : Preview->CurrentThroughputPerMinute, &Options),
 				FormatFootprint(bNext ? Preview->NextFootprintCentimeters : Preview->CurrentFootprintCentimeters));
+			return bShowUpgradeRevenue ? FText::Format(
+				LOCTEXT("UpgradeComparisonWithRevenue", "1인 수익  {0}\n{1}"),
+				FormatGold(true, bNext ? Preview->NextRevenuePerUseGold : Preview->CurrentRevenuePerUseGold),
+				ServiceValues) : ServiceValues;
 		};
 		ViewData.UpgradeCurrentText = FormatComparison(false);
 		ViewData.UpgradeNextText = FormatComparison(true);
 		auto MakeColumn = [&](const bool bNext)
 		{
 			FFF_FacilityUpgradeColumnData Values;
-			Values.Revenue = Preview->bRevenueAvailable
+			Values.Revenue = bShowUpgradeRevenue
 				? FormatGold(true, bNext ? Preview->NextRevenuePerUseGold : Preview->CurrentRevenuePerUseGold)
-				: LOCTEXT("ComparisonRevenueUnavailable", "정보 없음");
+				: FText::GetEmpty();
 			Values.ServiceTime = FText::Format(LOCTEXT("UpgradeCellSeconds", "{0}초"),
 				FText::AsNumber(bNext ? Preview->NextServiceDurationSeconds : Preview->CurrentServiceDurationSeconds, &SecondsOptions));
 			Values.Throughput = FText::Format(LOCTEXT("UpgradeCellThroughput", "{0}팀/분"),
@@ -233,7 +239,7 @@ namespace FFFacilityInfoModel
 			FText::AsNumber(Preview->NextServiceDurationSeconds, &SecondsOptions),
 			FText::AsNumber(Preview->CurrentThroughputPerMinute, &Options),
 			FText::AsNumber(Preview->NextThroughputPerMinute, &Options));
-		if (Preview->bRevenueAvailable)
+		if (bShowUpgradeRevenue)
 		{
 			const int32 AddedGold = Preview->NextRevenuePerUseGold - Preview->CurrentRevenuePerUseGold;
 			FNumberFormattingOptions PercentOptions;
@@ -273,18 +279,28 @@ namespace FFFacilityInfoModel
 		const int32 FestivalTodayRevenueGold,
 		FFF_FacilityInfoViewData& ViewData)
 	{
-		ViewData.bShowRevenueSection = bSectionApplicable;
 		ViewData.TodayRevenueGold = Revenue ? Revenue->TodayGold : 0;
 		ViewData.TotalRevenueGold = Revenue ? Revenue->TotalGold : 0;
 		ViewData.TodayPaymentCount = Revenue ? Revenue->TodayPaymentCount : 0;
 		ViewData.TotalPaymentCount = Revenue ? Revenue->TotalPaymentCount : 0;
 		// Money already earned proves the facility sells even when its per-use price is unknown.
 		ViewData.bFacilityGeneratesRevenue = bGeneratesDirectRevenue || ViewData.TotalRevenueGold > 0;
+		ViewData.bShowRevenueSection = bSectionApplicable && ViewData.bFacilityGeneratesRevenue;
 		ViewData.TodayRevenueSharePercent =
 			Revenue && FestivalTodayRevenueGold > 0 && ViewData.TodayRevenueGold > 0
 				? FMath::Clamp(100.f * static_cast<float>(ViewData.TodayRevenueGold) /
 					static_cast<float>(FestivalTodayRevenueGold), 0.f, 100.f)
 				: 0.f;
+		if (!ViewData.bShowRevenueSection)
+		{
+			ViewData.TodayRevenueText = FText::GetEmpty();
+			ViewData.TotalRevenueText = FText::GetEmpty();
+			ViewData.RevenuePaymentCountText = FText::GetEmpty();
+			ViewData.RevenueShareText = FText::GetEmpty();
+			ViewData.RevenueSummaryText = FText::GetEmpty();
+			ViewData.RevenueStatusText = FText::GetEmpty();
+			return;
+		}
 		if (!Revenue)
 		{
 			const FText Unknown = LOCTEXT("FacilityRevenueUnknown", "정보 없음");
@@ -310,15 +326,10 @@ namespace FFFacilityInfoModel
 		ViewData.RevenueSummaryText = FText::Format(
 			LOCTEXT("FacilityRevenueSummary", "오늘 {0} · 누적 {1}"),
 			ViewData.TodayRevenueText, ViewData.TotalRevenueText);
-		if (!ViewData.bFacilityGeneratesRevenue)
-		{
-			ViewData.RevenueStatusText = LOCTEXT("FacilityRevenueAttractionOnly",
-				"직접 수익이 없는 집객 시설입니다. 주변 부스의 손님을 늘려 줍니다.");
-		}
-		else if (ViewData.TotalPaymentCount == 0)
+		if (ViewData.TotalPaymentCount == 0)
 		{
 			ViewData.RevenueStatusText = LOCTEXT("FacilityRevenueNoPayments",
-				"아직 결제가 없습니다. 손님이 이용을 마치면 수수료가 들어옵니다.");
+				"아직 결제가 없습니다.");
 		}
 		else if (ViewData.TodayPaymentCount == 0)
 		{

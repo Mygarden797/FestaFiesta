@@ -10,6 +10,8 @@
 #include "Building/Synergy/FF_FacilitySynergyTypes.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Components/Border.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Editor.h"
@@ -28,6 +30,7 @@
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/Core/FF_BuildPearlStyle.h"
 #include "UObject/StrongObjectPtr.h"
+#include "UObject/UnrealType.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/SOverlay.h"
 
@@ -85,6 +88,11 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
         Entry.PartnerWorldLocation = FVector(1250.0 + Index * 500.0, 0.0, 0.0);
     }
     Widget->PresentPreview(Preview, FVector::ZeroVector);
+    const auto* SynergySlot = SynergySize ? Cast<UCanvasPanelSlot>(SynergySize->Slot) : nullptr;
+    TestTrue(TEXT("Live combination card uses the left margin below the top toolbar"),
+        SynergySlot && SynergySlot->GetAnchors().Minimum.Equals(FVector2D::ZeroVector) &&
+        SynergySlot->GetAlignment().Equals(FVector2D::ZeroVector) &&
+        SynergySlot->GetPosition().Equals(FVector2D(32.f, 104.f)));
     TestFalse(TEXT("Missing catalog never exposes internal facility IDs"),
         Widget->RowDetails[0]->GetText().ToString().Contains(TEXT("Booth_")) ||
         Widget->RowDetails[0]->GetText().ToString().Contains(TEXT("Rest_")));
@@ -106,9 +114,23 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
         Widget->GetVisibility(), ESlateVisibility::Collapsed);
     Widget->PresentPreview(Preview, FVector::ZeroVector);
 
+    TStrongObjectPtr<UFF_BuildSynergyWidget> Fallback(CreateWidget<UFF_BuildSynergyWidget>(World,
+        UFF_BuildSynergyWidget::StaticClass()));
+    if (!TestNotNull(TEXT("Missing-asset native fallback"), Fallback.Get())) return false;
+    Fallback->TakeWidget();
+    Fallback->PresentPreview(Preview, FVector::ZeroVector);
+    const auto* FallbackSize = Cast<USizeBox>(Fallback->GetWidgetFromName(TEXT("Size_Synergy")));
+    const auto* FallbackSlot = FallbackSize ? Cast<UCanvasPanelSlot>(FallbackSize->Slot) : nullptr;
+    TestTrue(TEXT("Native fallback shares the same left placement without changing its width"),
+        FallbackSize && FallbackSize->GetWidthOverride() == 344.f && FallbackSlot &&
+        FallbackSlot->GetAnchors().Minimum.Equals(FVector2D::ZeroVector) &&
+        FallbackSlot->GetAlignment().Equals(FVector2D::ZeroVector) &&
+        FallbackSlot->GetPosition().Equals(FVector2D(32.f, 104.f)));
+    Fallback->ClearPreview();
+
     if (FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
     {
-        AddInfo(TEXT("Lifecycle checked; use -RenderOffscreen for the two real layout PNGs."));
+        AddInfo(TEXT("Lifecycle checked; use -RenderOffscreen for the four composed layout PNGs."));
         return true;
     }
     if(bClarity)
@@ -126,11 +148,39 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("Existing placement toolbar instance"), ToolsWidget.Get())) { return false; }
     const TSharedRef<SWidget> ToolsSlate = ToolsWidget->TakeWidget();
     ToolsWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    auto* ToolsData = FindFProperty<FStructProperty>(ToolsClass, TEXT("ViewData"));
+    if (!TestNotNull(TEXT("Presentation-only placement fixture seam"), ToolsData)) return false;
+    ToolsData->ContainerPtrToValuePtr<FFF_BuildToolsViewData>(ToolsWidget.Get())->bPreviewActive = true;
     UBorder* ToolsPanel = Cast<UBorder>(ToolsWidget->GetWidgetFromName(TEXT("Border_Tools")));
-    if (!TestNotNull(TEXT("Toolbar geometry for overlap check"), ToolsPanel)) { return false; }
+    UBorder* InfoPanel = Cast<UBorder>(ToolsWidget->GetWidgetFromName(TEXT("Border_PlacementInfo")));
+    UBorder* HelpPanel = Cast<UBorder>(ToolsWidget->GetWidgetFromName(TEXT("Border_PlacementHelp")));
+    USizeBox* HelpSize = Cast<USizeBox>(ToolsWidget->GetWidgetFromName(TEXT("Size_BuildWorldHelp")));
+    UWidget* HelpColumn = ToolsWidget->GetWidgetFromName(TEXT("Column_BuildIconHelp"));
+    UScrollBox* HelpScroll = Cast<UScrollBox>(ToolsWidget->GetWidgetFromName(TEXT("Scroll_BuildHelp")));
+    if (!TestNotNull(TEXT("Toolbar geometry for overlap check"), ToolsPanel) ||
+        !TestNotNull(TEXT("Required-space inspector for overlap check"), InfoPanel) ||
+        !TestNotNull(TEXT("Independent placement help for overlap check"), HelpPanel) ||
+        !TestNotNull(TEXT("Authored help bounds"), HelpSize) ||
+        !TestNotNull(TEXT("Authored scrollable help content"), HelpColumn) ||
+        !TestNotNull(TEXT("Help keeps all instructions reachable after fitting"), HelpScroll)) return false;
+    const auto* AuthoredHelpSlot = Cast<UCanvasPanelSlot>(HelpSize->Slot);
+    if (!TestNotNull(TEXT("Designer-owned help position"), AuthoredHelpSlot)) return false;
+    const FVector2D AuthoredHelpPosition = AuthoredHelpSlot->GetPosition();
     // The playerless editor world is Closed. Render the real placement dock
     // explicitly, as the build-tools visual fixture does, to measure overlap.
     ToolsPanel->SetVisibility(ESlateVisibility::Visible);
+    InfoPanel->SetVisibility(ESlateVisibility::Visible);
+    auto SetText = [&](const TCHAR* Name, const TCHAR* Value)
+    {
+        if (auto* Text = Cast<UTextBlock>(ToolsWidget->GetWidgetFromName(Name)))
+        {
+            Text->SetText(FText::FromString(Value));
+            Text->SetVisibility(ESlateVisibility::HitTestInvisible);
+        }
+    };
+    SetText(TEXT("Text_FacilityName"), TEXT("구름 솜사탕 부스"));
+    SetText(TEXT("Text_Footprint"), TEXT("시설 크기  3.2 × 1.97 m"));
+    SetText(TEXT("Text_Queue"), TEXT("대기열 범위  4.35 × 6.65 m\n기본형 · 대기·이용 5팀\n7 기본 · 8 좌측 · 9 우측 · 0 U자"));
     const TSharedRef<SWidget> Composition = SNew(SOverlay)
         + SOverlay::Slot()[SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush(TEXT("WhiteBrush")))
             .BorderBackgroundColor(UFF_UIPalette::Get()->InGame.PaperSunken)]
@@ -138,20 +188,47 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
         + SOverlay::Slot()[ToolsSlate];
     FWidgetRenderer Renderer(false, true);
     for (const FIntPoint Size : { FIntPoint(1280, 720), FIntPoint(1920, 1080) })
+    for (const bool bShowHelp : {false, true})
     {
+        HelpPanel->SetVisibility(bShowHelp ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
         TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(FVector2D(Size), TF_Bilinear, true));
         if (!TestNotNull(TEXT("sRGB synergy capture target"), Target.Get())) { return false; }
-        for(int32 Frame=0;Frame<3;++Frame)
+        for(int32 Frame=0;Frame<5;++Frame)
         {
             Widget->ForceLayoutPrepass();ToolsWidget->ForceLayoutPrepass();
+            if (bShowHelp)
+            {
+                // Match NativeTick's shared fitting rule after the real combo
+                // content has a desired height. No runtime gameplay state is seeded.
+                const float ReservedTop = 104.f + Widget->CardPanel->GetDesiredSize().Y + 16.f;
+                const FVector2D HelpBounds = FFBuildToolsModel::ResolveHelpVerticalBounds(
+                    HelpColumn->GetDesiredSize().Y + 24.f, Size.Y - 100.f, AuthoredHelpPosition.Y, ReservedTop);
+                HelpSize->SetHeightOverride(HelpBounds.Y);
+                if (auto* HelpSlot = Cast<UCanvasPanelSlot>(HelpSize->Slot))
+                    HelpSlot->SetPosition(FVector2D(AuthoredHelpPosition.X, HelpBounds.X));
+            }
             Renderer.DrawWidget(Target.Get(), Composition, FVector2D(Size), 0.0f, false);
         }
         const FSlateRect Card = Widget->CardPanel->GetCachedGeometry().GetLayoutBoundingRect();
         const FSlateRect Tools = ToolsPanel->GetCachedGeometry().GetLayoutBoundingRect();
+        const FSlateRect Inspector = InfoPanel->GetCachedGeometry().GetLayoutBoundingRect();
         TestTrue(TEXT("Placement dock has measurable rendered geometry"), Tools.GetSize().X > 0 && Tools.GetSize().Y > 0);
-        TestTrue(TEXT("Combo panel fits between upper HUD and existing bottom toolbar"),
-            Card.Left >= 0.0f && Card.Right <= Size.X && Card.Top >= (bClarity?55.f:90.f) && Card.Bottom < Tools.Top);
-        if(bClarity) TestTrue(TEXT("Three wrapped recipes stay inside the reserved side area"), Card.GetSize().Y <= 490.f);
+        TestTrue(TEXT("Combo panel stays in the left scene margin below the upper HUD"),
+            FMath::IsNearlyEqual(Card.Left, 32.f, 1.f) && FMath::IsNearlyEqual(Card.Top, 104.f, 1.f) &&
+            Card.Right < Size.X * .4f && Card.Bottom < Tools.Top);
+        TestTrue(TEXT("Required placement space and all three combination rules remain separate"),
+            Inspector.GetSize().X > 0.f && Inspector.GetSize().Y > 0.f && Card.Right + 16.f <= Inspector.Left);
+        if(bClarity) TestTrue(TEXT("Three wrapped recipes fit above the preferred help position"), Card.Bottom + 16.f <= 525.f);
+        if (bShowHelp)
+        {
+            const FSlateRect Help = HelpPanel->GetCachedGeometry().GetLayoutBoundingRect();
+            TestTrue(TEXT("Open instructions remain measurable below every combination rule"),
+                Help.GetSize().Y > 0.f && Help.Top >= Card.Bottom + 15.f && Help.Bottom <= Size.Y - 99.f);
+            TestTrue(TEXT("Help preserves its Designer left margin and cannot cover the placement inspector"),
+                FMath::IsNearlyEqual(Help.Left, float(AuthoredHelpPosition.X), 1.f) && Help.Right + 16.f <= Inspector.Left);
+            TestTrue(TEXT("A short viewport retains a scrollable guide without clipping the combination card"),
+                Size.Y > 720 || HelpScroll->GetScrollOffsetOfEnd() > 0.f);
+        }
         const FSlateRect LegendRect=Widget->Legend->GetCachedGeometry().GetLayoutBoundingRect();
         TestTrue(TEXT("Full legend wraps inside the card without truncation"),
             LegendRect.Left>=Card.Left && LegendRect.Right<=Card.Right &&
@@ -185,12 +262,14 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
         { return false; }
         const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation/FacilitySynergy"));
         IFileManager::Get().MakeDirectory(*Directory, true);
-        const FString Path = Directory / FString::Printf(TEXT("Synergy_%dx%d.png"), Size.X, Size.Y);
+        const FString Path = Directory / FString::Printf(TEXT("Synergy%s_%dx%d.png"),
+            bShowHelp ? TEXT("_Help") : TEXT(""), Size.X, Size.Y);
         TArray64<uint8> Png;
         FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
         TestTrue(TEXT("Synergy and existing toolbar PNG saved"), FFileHelper::SaveArrayToFile(Png, *Path));
-        AddInfo(FString::Printf(TEXT("Synergy layout %.0f,%.0f..%.0f,%.0f; toolbar top %.0f; PNG %s"),
-            Card.Left, Card.Top, Card.Right, Card.Bottom, Tools.Top, *FPaths::ConvertRelativePathToFull(Path)));
+        AddInfo(FString::Printf(TEXT("Synergy layout %.0f,%.0f..%.0f,%.0f; inspector left %.0f; help %s; toolbar top %.0f; PNG %s"),
+            Card.Left, Card.Top, Card.Right, Card.Bottom, Inspector.Left, bShowHelp ? TEXT("open") : TEXT("closed"),
+            Tools.Top, *FPaths::ConvertRelativePathToFull(Path)));
     }
     Widget->ClearPreview();
     return true;

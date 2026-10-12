@@ -17,8 +17,10 @@
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
 #include "Tests/AutomationCommon.h"
@@ -77,6 +79,8 @@ bool FFF_BuildPlacementAssistanceReasonsTest::RunTest(const FString& Parameters)
         EReason::QueueFootprintBlocked, EReason::ProtectedRouteBlocked, EReason::AccessibilityRouteBlocked,
         EReason::RequiredRouteDisconnected };
     const FText Generic = FFBuildPlacementAssistance::ReasonTitle(EReason::InternalError);
+    TestEqual(TEXT("The legacy clearance failure now describes reserved audience space"),
+        FFBuildPlacementAssistance::ReasonTitle(EReason::InsufficientClearance).ToString(), FString(TEXT("관람 공간과 겹쳐요")));
     for (const auto Reason : Spatial)
     {
         const FString Context = StaticEnum<EReason>()->GetNameStringByValue(static_cast<int64>(Reason));
@@ -147,7 +151,7 @@ bool FFF_BuildPlacementAssistanceIntegrationTest::RunTest(const FString& Paramet
     Festival->InitialGold = 10000;
     Economy->StartFestival(Festival.Get());
     Zones->SetChangePhase(EFFZSChangePhase::InitialSetup);
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    const FName ZoneId(FFProjectZoneTest::ZoneId());
     auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
     if (!TestNotNull(TEXT("Real construction zone"), Zone) ||
         !TestTrue(TEXT("Zone accepts the existing project preset"), Zone->ApplyAcceptedZonePreset(ZoneId))) return false;
@@ -214,6 +218,73 @@ bool FFF_BuildPlacementAssistanceIntegrationTest::RunTest(const FString& Paramet
     if (!TestTrue(TEXT("The actual authority rejects the seeded position outside its zone"),
         Build->LastValidation.Reasons.Contains(EFFZSPlacementFailure::OutsideZone)) ||
         !TestTrue(TEXT("The actual spatial result offers nearby assistance"), Build->GetPlacementGuidance().bCanFindNearby)) return false;
+    TestTrue(TEXT("A spatial placement failure teaches N where the player needs it"),
+        Build->GetPlacementGuidance().Advice.ToString().Contains(TEXT("N으로 가까운 빈자리")));
+    if (!Build->LastValidation.GetBoundaryFailureText().IsEmpty())
+    {
+        const FText AuthoritySummary = Build->LastValidation.Summary;
+        const auto Guidance = Build->GetPlacementGuidance();
+        TestEqual(TEXT("The actual preview names its failed region in the placement panel"),
+            Guidance.Title.ToString(), Build->LastValidation.GetBoundaryFailureText().ToString());
+        TestTrue(TEXT("Panel advice matches the clipped red hatching and internal-gap rule"),
+            Guidance.Advice.ToString().Contains(TEXT("붉은 사선")) && Guidance.Advice.ToString().Contains(TEXT("빈틈")));
+        TestTrue(TEXT("Reading panel guidance preserves the authority's first summary"),
+            Build->LastValidation.Summary.EqualTo(AuthoritySummary));
+    }
+    {
+        const FFFZSPlacementValidation Original = Build->LastValidation;
+        Build->LastValidation = FFFZSPlacementValidation();
+        Build->LastValidation.Reasons = {EFFZSPlacementFailure::PlacementCollision, EFFZSPlacementFailure::InsufficientClearance};
+        FFFZSPlacementObstruction Terrain;
+        Terrain.Kind = EFFZSPlacementObstructionKind::GroundSupport;
+        Terrain.Reason = EFFZSPlacementFailure::InsufficientClearance;
+        Terrain.DisplayName = FText::FromString(TEXT("관객석 바닥 높이 차가 너무 커요"));
+        Terrain.Detail = FText::FromString(TEXT("바닥 높이 차 134 cm / 허용 80 cm"));
+        Build->LastValidation.Obstructions.Add(Terrain);
+        const auto TerrainGuidance = Build->GetPlacementGuidance(1);
+        TestEqual(TEXT("Selected region terrain detail replaces the generic overlap title"),
+            TerrainGuidance.Title.ToString(), Terrain.DisplayName.ToString());
+        TestTrue(TEXT("Selected region terrain guidance retains numeric limits"),
+            TerrainGuidance.Advice.ToString().Contains(TEXT("134 cm")) &&
+            TerrainGuidance.Advice.ToString().Contains(TEXT("80 cm")));
+        TestTrue(TEXT("Terrain limits are never listed as a colliding world obstacle"), TerrainGuidance.Obstruction.IsEmpty());
+        TestFalse(TEXT("Selecting the independent footprint problem does not leak the terrain title"),
+            Build->GetPlacementGuidance(0).Title.EqualTo(Terrain.DisplayName));
+        Build->LastValidation = Original;
+    }
+    // The isolated world has no game viewport to take focus from an editor text
+    // field. Preserve the real typing guard, but give this shortcut fixture an
+    // explicit neutral focus state just like the drag/inspection input fixtures.
+    const TSharedPtr<SWidget> PreviousKeyboardFocus = FSlateApplication::IsInitialized()
+        ? FSlateApplication::Get().GetKeyboardFocusedWidget() : nullptr;
+    ON_SCOPE_EXIT
+    {
+        if (FSlateApplication::IsInitialized())
+        {
+            if (PreviousKeyboardFocus.IsValid())
+                FSlateApplication::Get().SetKeyboardFocus(PreviousKeyboardFocus);
+            else
+                FSlateApplication::Get().ClearKeyboardFocus();
+            const TSharedPtr<SWidget> RestoredFocus = FSlateApplication::Get().GetKeyboardFocusedWidget();
+            AddInfo(FString::Printf(TEXT("Nearby shortcut fixture restored external Slate focus: %s"),
+                RestoredFocus.IsValid() ? *RestoredFocus->ToString() : TEXT("None")));
+        }
+    };
+    if (FSlateApplication::IsInitialized())
+    {
+        AddInfo(FString::Printf(TEXT("Nearby shortcut fixture inherited Slate focus: type=%s tag=%s widget=%s"),
+            PreviousKeyboardFocus.IsValid() ? *PreviousKeyboardFocus->GetTypeAsString() : TEXT("None"),
+            PreviousKeyboardFocus.IsValid() ? *PreviousKeyboardFocus->GetTag().ToString() : TEXT("None"),
+            PreviousKeyboardFocus.IsValid() ? *PreviousKeyboardFocus->ToString() : TEXT("None")));
+        FSlateApplication::Get().ClearKeyboardFocus();
+        if (!TestFalse(TEXT("Isolated shortcut fixture has no external editor keyboard focus"),
+            FSlateApplication::Get().GetKeyboardFocusedWidget().IsValid())) return false;
+    }
+    for (const auto State : {EFF_BuildModeState::Closed, EFF_BuildModeState::BuildMode, EFF_BuildModeState::CatalogOpen})
+    {
+        TGuardValue<EFF_BuildModeState> InactivePreview(Build->State, State);
+        TestFalse(TEXT("N cannot start nearby placement outside a facility preview"), Build->HandleNearbyPlacementShortcut(EKeys::N));
+    }
     Build->ToggleDirectPlacementAdjustment();
     TestTrue(TEXT("Direct adjustment pins the preview"), Build->IsDirectPlacementAdjustment());
     Build->ToggleDirectPlacementAdjustment();
@@ -229,15 +300,23 @@ bool FFF_BuildPlacementAssistanceIntegrationTest::RunTest(const FString& Paramet
         Build->ToggleDirectPlacementAdjustment();
         TestFalse(TEXT("Pause blocks direct adjustment changes"), Build->IsDirectPlacementAdjustment());
         TestFalse(TEXT("Pause blocks starting a suggestion search"), Build->FindNearbyPlacement());
+        TestFalse(TEXT("Pause also blocks the N shortcut"), Build->HandleNearbyPlacementShortcut(EKeys::N));
     }
-    if (!TestTrue(TEXT("Spatial preview starts a bounded nearby search"), Build->FindNearbyPlacement())) return false;
+    TestFalse(TEXT("A different key cannot start nearby assistance"), Build->HandleNearbyPlacementShortcut(EKeys::M));
+    TestFalse(TEXT("Modified N does not steal another shortcut"), Build->HandleNearbyPlacementShortcut(EKeys::N, true));
+    TestFalse(TEXT("Holding N does not start repeated searches"), Build->HandleNearbyPlacementShortcut(EKeys::N, false, true));
+    if (!TestTrue(TEXT("Shortcut search retains a real spatial rejection"), Build->GetPlacementGuidance().bCanFindNearby) ||
+        !TestFalse(TEXT("Input guard checks do not start a search"), Build->IsFindingNearbyPlacement())) return false;
+    if (!TestTrue(TEXT("N starts the real bounded nearby search"), Build->HandleNearbyPlacementShortcut(EKeys::N))) return false;
     TestTrue(TEXT("Searching pins the destination for later confirmation"), Build->IsDirectPlacementAdjustment());
     for (int32 Pass = 0; Pass < 128 && Build->IsFindingNearbyPlacement(); ++Pass) Build->TickPlacementAssistance();
     TestFalse(TEXT("A finite candidate search completes"), Build->IsFindingNearbyPlacement());
     TestTrue(TEXT("A found suggestion passes real validation and remains a preview"),
         Build->IsCurrentPlacementValid() && Zones->ValidatePlacement(Build->PlacementPreview->PreviewCommand).bIsValid);
-    TestFalse(TEXT("A found suggestion explains the separate confirmation step"), Build->GetPlacementAssistanceMessage().IsEmpty());
+    TestTrue(TEXT("A found suggestion explains the separate Enter confirmation step"),
+        Build->GetPlacementAssistanceMessage().ToString().Contains(TEXT("Enter")));
     ExpectPreviewOnly(TEXT("Find nearby"));
+    TestFalse(TEXT("N cannot search again at an already valid destination"), Build->HandleNearbyPlacementShortcut(EKeys::N));
     SelectOutside();
     Build->FindNearbyPlacement();
     Build->ToggleDirectPlacementAdjustment();

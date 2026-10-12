@@ -780,10 +780,14 @@ FText UFF_BuildCatalogScreen::MakeRequiredFacilityText(const FFF_BuildCatalogEnt
 {
 	if (!Entry.bRequiredForSetup) return FText::GetEmpty();
 	if (Entry.RequiredMinimumCount <= 0) return LOCTEXT("RequiredSetupInvalid", "필수 · 설정 확인");
-	return FText::Format(Entry.bRequiredSetupSatisfied
+	const FText InstallText = FText::Format(Entry.bRequiredSetupSatisfied
 		? LOCTEXT("RequiredSetupSatisfied", "필수 · 설치 완료 {0}/{1}")
 		: LOCTEXT("RequiredSetupMissing", "필수 · 설치 {0}/{1}"),
 		FText::AsNumber(Entry.RequiredInstalledCount), FText::AsNumber(Entry.RequiredMinimumCount));
+	if (Entry.RequiredStaffCount <= 0) return InstallText;
+	// 설치만으로 끝나지 않는 시설은 배정 진행도도 같은 줄에 붙인다.
+	return FText::Format(LOCTEXT("RequiredSetupWithStaff", "{0} · 배정 {1}/{2}"), InstallText,
+		FText::AsNumber(FMath::Max(0, Entry.RequiredAssignedStaffCount)), FText::AsNumber(Entry.RequiredStaffCount));
 }
 
 void UFF_BuildCatalogScreen::RefreshRequiredCardPresentation()

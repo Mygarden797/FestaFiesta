@@ -29,6 +29,14 @@ public:
 	FText InteractionDisplayName;
 	// 화면에 표시할 상호작용 이름 (예: "사진 찍기")
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger|Experience")
+	float ExperienceDurationSeconds = 0.0f;
+	// NEW 체험 시간(초), 0이면 Ability 기본값 사용
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger|Experience")
+	FText CompletionMessage;
+	//  NEW 체험 끝날 때 띄울 문구
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger|Input")
 	EFF_TriggerInputType InputType = EFF_TriggerInputType::Press;
 	// 짧게 누르기(Press)인지, 꾹 누르기(Hold)인지

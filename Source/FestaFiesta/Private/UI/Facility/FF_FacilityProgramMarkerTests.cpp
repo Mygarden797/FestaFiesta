@@ -25,6 +25,7 @@
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "HAL/FileManager.h"
 #include "ImageUtils.h"
 #include "Misc/AutomationTest.h"
@@ -129,7 +130,7 @@ bool FFF_FacilityProgramMarkerLifecycleTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	const FName ZoneId(TEXT("GZ_DadaPocha"));
+	const FName ZoneId(FFProjectZoneTest::ZoneId());
 	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
 	if (!TestNotNull(TEXT("Gameplay zone"), Zone) ||
 		!TestTrue(TEXT("Accepted zone preset"), Zone->ApplyAcceptedZonePreset(ZoneId)) ||

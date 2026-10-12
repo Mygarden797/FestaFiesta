@@ -229,6 +229,11 @@ public:
 		return UnitDatas.IsValidIndex(AgentIndex) ? UnitDatas[AgentIndex].TargetLocation : FVector::ZeroVector;
 	}
 
+	int32 GetAgentStuckSteps(int32 AgentIndex) const
+	{
+		return UnitDatas.IsValidIndex(AgentIndex) ? UnitDatas[AgentIndex].StuckSteps : 0;
+	}
+
 	UFUNCTION(BlueprintPure, Category = "Crowd")
 	bool IsAgentActive(int32 AgentIndex) const
 	{
@@ -376,12 +381,23 @@ public:
 	int32 LastWindowQueueJoinRejected = 0;
 	int32 LastWindowQueuePatienceAbandons = 0;
 
+	// GetNeedCoverage 가 돌려주는 값. EFF_NeedType 순서
+	float NeedCoverage[static_cast<int32>(EFF_NeedType::Count)] = { 1.f, 1.f, 1.f, 1.f, 1.f };
+	// GetNeedReliefFacilityCount 가 돌려주는 값. EFF_NeedType 순서
+	int32 NeedReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Count)] = { INDEX_NONE, INDEX_NONE, INDEX_NONE, INDEX_NONE, INDEX_NONE };
+
 	void DespawnParty(int32 PartyID);
 
 	// 조정자가 여기에 물어 목적지를 내려준다. 비어 있으면 Crowd가 배회로 폴백한다
 	FFF_OnPartyNeedsDecision OnPartyNeedsDecision;
 
 	void RequestDecision(int32 LeaderAgentIndex, EFF_DecisionReason Reason);
+
+	// 외부가 정한 애니메이션 상태를 풀의 모든 Actor 에게 전달만 한다(저장·판단·읽기 없음)
+	void SetCrowdState(EFF_CrowdRunState NewState);
+
+	// 개체 하나(UnitDatas 인덱스)의 Actor 에게만 전달한다. 바인딩된 Actor 가 없으면 false
+	bool SetCrowdStateForAgent(int32 AgentIndex, EFF_CrowdRunState NewState);
 
 	/**
 	 * 새 목적지가 열렸을 때 유휴 파티에게만 재결정을 요청하고 요청한 파티 수를 돌려준다.
@@ -413,6 +429,28 @@ public:
 	float AudienceGatherSafetySeconds = 10.f;
 
 	/**
+	 * 집결 판정을 시작하는 바깥 창(Live 경과 초). 대기열 중단(3축제분 = 3초)과 다른 값이다 -
+	 * 집결을 거기에 묶으면 전원이 공연 3초 전에 출발해 공연 후반에야 도착한다.
+	 * 실제 출발 시각은 파티마다 자기 이동시간으로 정해지므로 이 값은 상한일 뿐이다.
+	 *
+	 * 3이면 대기열 중단과 같아 한광훈의 9/29 규칙 그대로(대부분 공연 중반 이후 도착).
+	 * 창을 줄이면 먼 파티가 공연 시작 뒤에 도착한다 - 실측(Test_Main, 10/3) 도보가 100초를 넘는 파티가
+	 * 많아 90초로 줄이면 시작 시점 착석이 0 이 된다. 쏠려 보이는 문제는 창이 아니라
+	 * AudienceAttendanceRatio 로 푼다. 이용 중인 팀은 이 창과 무관하게 줄에서 빼지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0"))
+	float AudienceGatherLeadSeconds = 180.f;
+
+	/**
+	 * 공연마다 관람하러 가는 파티의 비율(0~1). 나머지는 평소처럼 부스를 돈다.
+	 * 파티ID 와 공연 시각으로 결정론적으로 고르므로 같은 판에서는 같은 파티가 간다.
+	 * 1 이면 전원이 간다(예전 동작). 모두가 무대로 달려가 보이지 않게 하려는 값이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AudienceAttendanceRatio = 0.6f;
+
+
+	/**
 	 * 집결 구간 동안 이 주기로 다시 훑는다. 한 번만 부르면 그 뒤에 입장한 손님과
 	 * 그때 줄에 있어서 빠진 손님이 영영 안 온다 — 입장은 Live 내내 이어진다.
 	 */
@@ -442,7 +480,7 @@ public:
 	 *   진짜로 낀 개체도 못 빠져나온다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float AudienceSocialForceScale = 0.25f;
+	float AudienceSocialForceScale = 0.1f;
 
 	/**
 	 * 약속된 장소(관람 좌석·유료 프로그램 대기 슬롯)로 가는 동안의 보행 속도 배수.
@@ -490,6 +528,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
 	void GetScheduledPhaseCounts(int32& OutAudienceSeated, int32& OutAudienceWalking,
 		int32& OutProgramAtVenue, int32& OutProgramWalking) const;
+
+	/**
+	 * 좌석으로 걷는 관람 파티(리더)의 이동 진단. 도착이 늦는 원인이 거리인지 속도인지 막힘인지 가른다.
+	 * 계측용이라 시나리오 테스트만 부른다.
+	 */
+	void GetAudienceWalkDiagnostics(int32& OutWalkingLeaders, float& OutMeanRemainingMeters,
+		float& OutMaxRemainingMeters, float& OutMeanSpeedMetersPerSecond,
+		float& OutMeanCruiseMetersPerSecond, int32& OutStalledLeaders,
+		int32& OutNoPathLeaders, int32& OutQueryFailedLeaders, float& OutStalledMeanRemainingMeters,
+		int32& OutStalledBlockedLine) const;
 
 	// 집결 시도 / 집결 파티 / 정원 부족 거절 / 스냅샷 실패 / 예약 우선 제외.
 	void GetAudienceStats(int32& OutAttempts, int32& OutGatheredParties, int32& OutGatheredMembers,
@@ -566,6 +614,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Queue")
 	int32 GetQueueJoinRejectedCount() const { return QueueJoinRejected; }
 
+	// 화장실만 따로 센 줄 깔때기(파티 단위 누적): 가입 시도 · 수락 · 꽉 차서 거절 · 닫혀서 거절 · 칸 도착 · 인내 초과 이탈
+	int32 GetToiletJoinAttemptCount() const { return ToiletJoinAttempts; }
+	int32 GetToiletJoinAcceptedCount() const { return ToiletJoinAccepted; }
+	int32 GetToiletJoinRejectedFullCount() const { return ToiletJoinRejectedFull; }
+	int32 GetToiletJoinRejectedClosedCount() const { return ToiletJoinRejectedClosed; }
+	int32 GetToiletArrivalCount() const { return ToiletArrivals; }
+	int32 GetToiletPatienceAbandonCount() const { return ToiletPatienceAbandons; }
+
+	// 화장실 이용 자리 차례인데 이용을 시작 못 한 팀이 무엇을 기다렸는지(팀·초 누적, 진단)
+	enum class EToiletFrontWait : uint8
+	{
+		NoSlot,             // 새 자리를 아직 못 받음
+		LeaderFar,          // 리더가 자리에서 1m 밖
+		LeaderNearMoving,   // 리더가 1m 안, 통지 반경 밖에서 다가가는 중
+		LeaderNearStopped,  // 리더가 1m 안, 통지 반경 밖에서 멈춰 있음
+		AllInside,          // 리더가 통지 반경 안인데 아직 통지 전
+		NotifiedNotArrived, // 통지했는데 대기열은 도착으로 모름
+		Count
+	};
+	float GetToiletFrontWaitSeconds(EToiletFrontWait Kind) const { return ToiletFrontWaitSeconds[static_cast<int32>(Kind)]; }
+
 	UFUNCTION(BlueprintPure, Category = "Crowd|Queue")
 	int32 GetQueueFacilityUnresolvedCount() const { return QueueFacilityUnresolved; }
 
@@ -604,6 +673,9 @@ public:
 	// 막힘 때문에 목적지를 다시 고른 횟수. 0이면 이 경로가 한 번도 안 걸린 것이다
 	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
 	int32 GetStuckDecisionRequests() const { return StuckDecisionRequests; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
+	int32 GetStuckCounterBackoffs() const { return StuckCounterBackoffs; }
 
 	// 통행 상한에 막혀 되돌린 스텝 수. 0이면 상한이 한 번도 안 걸린 것이다
 	UFUNCTION(BlueprintPure, Category = "Crowd|Terrain")
@@ -665,6 +737,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "1.0", ClampMax = "10.0"))
 	float AssignedSlotArrivalRadiusUU = 5.f;
 
+	// 시설 줄 칸의 도착 통지 판정. 리더가 자기 칸에서 이 거리 안이면 통지하고, 일행은 기다리지 않는다.
+	// 걷는 목표 오차(위)는 그대로라 일행은 이용 중에 마저 들어선다. 일행 전원 5cm 를 기다리면
+	// 시설이 줄을 두고 노는 시간이 이용 시간보다 길었다. 칸 간격(90cm)의 절반보다 작게 둔다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "1.0", ClampMax = "45.0"))
+	float QueueArrivalNotifyRadiusUU = 40.f;
+
 	float GetAssignedSlotArrivalRadius() const
 	{
 		return FMath::Min(FMath::Max(QueueSlotArrivalRadiusUU, 1.f),
@@ -704,9 +782,48 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Queue")
 	int32 GetQueuePatienceAbandons() const { return QueuePatienceAbandons; }
 
+	// 마지막 만족도 창의 시설 커버리지(하한~1). 그 욕구를 해소하는 운영 중 시설 수 / 목표.
+	// Hunger·Restroom·Stimulation 만 계산하고 나머지는 1. 1 미만이면 그 시설이 모자란다는 뜻이다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Metrics")
+	float GetNeedCoverage(EFF_NeedType NeedType) const;
+
+	// 커버리지를 낸 해소 시설 수(운영 중 · 메인 무대 제외). 시설 정보가 없어 세지 못했으면 INDEX_NONE
+	int32 GetNeedReliefFacilityCount(EFF_NeedType NeedType) const;
+
+	// 화장실 줄 깔때기 진단용
+	bool IsToiletFacility(const FGuid& ZoneFacilityId) const;
+
+	/**
+	 * 메인 공연 시작 · 끝 순간의 화장실 급함 스냅숏(진단). 관람석에 묶인 손님과 그 밖의 손님을 나눠
+	 * 화장실 욕구가 못 채움 기준(0.7) 이상인 사람 수를 센다. 관람 중에는 목적지 결정을 하지 않으므로
+	 * 결정 통계로는 이 사람들이 안 보인다.
+	 */
+	struct FShowRestroomSnapshot
+	{
+		int32 AudienceAgents = 0;
+		int32 AudienceUrgent = 0;
+		float AudienceRestroomSum = 0.f;
+		int32 OtherAgents = 0;
+		int32 OtherUrgent = 0;
+	};
+	const TArray<TPair<FShowRestroomSnapshot, FShowRestroomSnapshot>>& GetShowRestroomSnapshots() const { return ShowRestroomSnapshots; }
+
+	// 욕구 상승 · 해소 · 초기값 계수를 계수 표에서 다시 읽는다. 월드 시작 때 한 번 읽으므로,
+	// 그 뒤에 표를 바꾸는 실험(경제 시나리오 -FFEconCoef)은 이걸 불러야 반영된다
+	void ReloadNeedCoefficients();
+
 	// 걷는 도중 개인 주기가 차면 목적지를 다시 고른다(jockeying).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim")
 	bool bEnablePeriodicReevaluation = true;
+
+	// 시설로 걸어가는 중일 때 개인 재평가 주기에 곱하는 배수. 1 이면 배회 중과 같다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "1.0"))
+	float EnRouteReevaluateIntervalScale = 3.f;
+
+	// 손님 기본 보행 속도 배수(150cm/s 에 곱한다). 새로 스폰되는 파티부터 적용된다.
+	// 1.0 이면 Test_Main 의 입구~시설 거리(100~500m)를 걷는 데 체류 시간을 거의 다 써서 줄 서기가 하루 수십 건뿐이었다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "0.1"))
+	float GuestWalkSpeedScale = 1.6f;
 
 	// 줄에서 개인 인내심 한계를 넘기면 이탈한다(reneging).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Queue")
@@ -728,14 +845,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
 	bool bAvoidanceUseFacilityWalls = true;
 
-	// 시설 벽에 여유(Clearance) 링까지 포함시킨다. 기본값은 **끔**(바닥면만).
-	//
-	// ★ 켜면 반발 벽이 ZoneSystem의 nav 구멍보다 커진다. 그쪽은 고형 footprint만 도려내므로
-	//   경로는 clearance를 통과 가능한 것으로 계획하는데 힘은 밀어내 서로 싸운다.
-	//   좁은 통로에서 웨이포인트와 반발이 평형을 이뤄 사람이 멈춰 선다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
-	bool bAvoidanceFacilityWallsIncludeClearance = false;
-
 	// 개체의 Z를 지형 높이에 맞춘다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
 	bool bEnableHeightField = true;
@@ -755,6 +864,11 @@ public:
 	// 트레이스 시작 높이(UU). 지형 최고점보다 낮으면 그 위 지형을 못 잡아 개체가 파묻힌다
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
 	float HeightFieldTraceAboveUU = 5000.f;
+
+	// 트레이스가 맞은 면 근처에 NavMesh가 있을 때만 지면으로 인정한다. 아치·가로등·지붕처럼
+	// 걸을 수 없는 물체는 건너뛰고 그 아래 면을 다시 찾는다. NavMesh가 없으면 이 검사는 생략된다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	bool bHeightFieldRequireNavMesh = true;
 
 	// SimOrigin.Z 기준 상대 통행 상한(UU). 지면이 이보다 높은 곳으로는 들어가지 않는다.
 	// 0 이하면 제한이 없다.
@@ -1072,7 +1186,8 @@ public:
 
 	
 	float SimulationTimeScale = 1.0f;
-	
+	float AppliedCrowdAnimPlayRate = 1.0f;
+
 	UFUNCTION(BlueprintPure, Category = "Crowd|Need")
 	float GetLiveMinutes() const { return (SimTimeSeconds - LiveStartSimTime) * Temp_FestivalMinutesPerRealSecond; }
 
@@ -1156,6 +1271,7 @@ private:
 	void StepSimulation(float FixedDt);
 
 	void PushPresentationToActors(float DeltaTime, float InterpAlpha);
+	void ApplyCrowdAnimPlayRate(float PlayRate);
 
 	void PublishCrowdReadModel();
 
@@ -1188,6 +1304,17 @@ public:
 	bool DidFacilityWallsSeeZoneSystem() const { return bFacilityWallsSawZoneSystem; }
 
 	const FFF_CrowdHeightField& GetHeightField() const { return HeightField; }
+	const FFF_CrowdHeightField& GetHeightFieldAt(const FVector2D& WorldXYCm) const;
+	int32 GetGroundRefinementCount() const { return GroundRefinements.Num(); }
+	int32 GetGroundRefinementSampleCount() const;
+	double GetGroundRefinementBuildSeconds() const { return GroundRefinementBuildSeconds; }
+	int32 GetGateGroundRefinementCount() const { return GateGroundRefinements.Num(); }
+	// Grid samples plus all boundary probe attempts, including rejected cells.
+	int32 GetGateGroundRefinementSampleCount() const;
+	SIZE_T GetGateGroundRefinementAllocatedBytes() const;
+	int32 GetGateGroundEdgeRefinementCount() const { return GateGroundEdgeFields.Num(); }
+	double GetGateGroundRefinementBuildSeconds() const { return GateGroundRefinementBuildSeconds; }
+	bool IsGroundWalkable(const FVector& WorldLocation) const;
 
 	bool TryGetGroundZ(const FVector& WorldLocation, double& OutZ) const;
 
@@ -1203,7 +1330,7 @@ private:
 	void ApplySimArea(FVector NewOrigin, const FBox& AreaBoundsCm);
 
 	void RebuildDensityGrid();
-	void RebuildHeightField();
+	void RebuildHeightField(bool bOnlyGateRefinements = false);
 	void RebuildAvoidanceWalls();
 
 	void EnsureFacilityWalls();
@@ -1343,6 +1470,9 @@ private:
 	//게이트 관련 변수
 	// GateLocation 은 NavMesh 투영 좌표로 덮여 있다. 저작 좌표를 그대로 쓰면 지면에서 뜬 곳에 사람이 나온다.
 	TArray<FFF_CrowdGate> ValidGates;
+	// Validated authored gates occupy this prefix. EnsureFallbackGate may append
+	// an emergency entry, which must not acquire an authored precision patch.
+	int32 ValidatedAuthoredGateCount = 0;
 
 	TArray<int32> SpawnGateIndices;
 
@@ -1437,6 +1567,8 @@ private:
 	TArray<FVector2f> ScratchDesiredVel2DMeters;
 	// 개체별 사회력 배수. 관람 단계에 따라 매 스텝 채운다.
 	TArray<float> ScratchSocialScale;
+	// 개체별 자세(EFF_CrowdPosture). 관람 단계에서 매 스텝 채우며, 멈춰 선 사람에게서 받는 Social 을 끄는 데 쓴다.
+	TArray<uint8> ScratchPosture;
 
 	// 활성 개체의 조밀 인덱스. 오름차순으로 채운다 — 힘 합산 순서가 결정성의 전제다
 	TArray<int32> ScratchActiveIds;
@@ -1466,7 +1598,6 @@ private:
 
 	// 마지막 재구축이 어떤 손잡이 값으로 지어졌는지.
 	bool bBuiltWithFacilityWalls = false;
-	bool bBuiltWithClearance = false;
 
 	// --- 경로추종 상태 -----------------------------------------------------------------------
 
@@ -1521,6 +1652,27 @@ private:
 	// --- 지형 ------------------------------------------------------------------------------
 
 	FFF_CrowdHeightField HeightField;
+	// Only explicitly tagged, static cube walkways receive a local physics bake.
+	// The apron also samples overlapping landings; a cube plane alone would put
+	// feet through a higher deck where the two surfaces overlap.
+	struct FGroundRefinement
+	{
+		FBox2D BoundsCm = FBox2D(ForceInit);
+		FFF_CrowdHeightField Field;
+		FBox2D CoreBoundsCm = FBox2D(ForceInit);
+		FFF_CrowdHeightField CoreField;
+	};
+	TArray<FGroundRefinement> GroundRefinements;
+	double GroundRefinementBuildSeconds = 0.0;
+	// Entrances need fine ground before visitors spread into the coarse world
+	// grid. Built once from validated gate disks, independently of map labels.
+	TArray<FGroundRefinement> GateGroundRefinements;
+	// Only discontinuous 5 cm gate-core cells receive a cached 1 cm subgrid.
+	// Mixed subcells store a sampled boundary and interpolate within one class.
+	// Keys are world-aligned 5 cm cell coordinates, shared by overlapping gates.
+	TMap<FIntPoint, FFF_CrowdHeightField> GateGroundEdgeFields;
+	int32 GateGroundRefinementProbeCount = 0;
+	double GateGroundRefinementBuildSeconds = 0.0;
 
 	// Roads overlay the coarse terrain height without rebuilding its physics samples.
 	// Buckets refresh once per layout revision; each NPC only inspects its local bucket.
@@ -1590,6 +1742,21 @@ private:
 	int32 QueueFacilityUnresolved = 0;
 	int32 QueueArrivalNotifies = 0;
 	int32 QueueHoldTimeouts = 0;
+	FShowRestroomSnapshot CaptureShowRestroomSnapshot() const;
+	FShowRestroomSnapshot PendingShowStartSnapshot;
+	// 공연마다 (시작, 끝)
+	TArray<TPair<FShowRestroomSnapshot, FShowRestroomSnapshot>> ShowRestroomSnapshots;
+	int32 ToiletJoinAttempts = 0;
+	int32 ToiletJoinAccepted = 0;
+	int32 ToiletJoinRejectedFull = 0;
+	int32 ToiletJoinRejectedClosed = 0;
+	int32 ToiletArrivals = 0;
+	int32 ToiletPatienceAbandons = 0;
+	float ToiletFrontWaitSeconds[static_cast<int32>(EToiletFrontWait::Count)] = {};
+	float ToiletFrontSampleAccumulator = 0.f;
+	void SampleToiletFrontWaits(float ElapsedSeconds);
+	// 메인 공연 휴지 구간으로 흐른 시뮬 시간 누적. 줄 인내 판정에서 뺀다.
+	float QueueBreakSimSeconds = 0.f;
 	int32 QueueStalledSkips = 0;
 
 	// 결정 churn 계수기. 쿨다운이 실제로 무엇을 막았는지 보려면 둘을 같이 봐야 한다
@@ -1599,6 +1766,8 @@ private:
 	// 막힘으로 목적지를 포기한 횟수. 위 둘과 같이 봐야 한다 — 이 값만 크면 잼이 안 풀리는 것이고,
 	// 쿨다운 스킵만 크면 임계가 짧아서 같은 파티가 계속 재시도하는 것이다
 	int32 StuckDecisionRequests = 0;
+
+	int32 StuckCounterBackoffs = 0;
 
 	// 개인 주기가 차서 걷던 중 재평가한 횟수. DecisionsProcessed 와 같이 봐야 한다 —
 	// 이 값이 처리량의 대부분을 차지하면 reevaluate_interval_seconds 가 너무 짧다

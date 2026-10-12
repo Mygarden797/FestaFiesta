@@ -28,6 +28,19 @@ void UFF_PrepPromotionCard::ConfigureOption(const FFF_PromotionOptionView& InOpt
 		? FText::Format(EffectFormat, FText::AsNumber(InOption.VisitorMultiplier, &MultiplierFormat))
 		: UnknownValueText);
 
+	SetTextOrHide(Text_Buzz, FText::Format(
+		LOCTEXT("CardStartingBuzz", "화제성 +{0}"), FText::AsNumber(InOption.StartingBuzz)));
+	SetTextOrHide(Text_Forecast,
+		InOption.ExpectedVisitors != INDEX_NONE && InOption.ForecastAdmissionFeeGold != INDEX_NONE
+			? FText::Format(LOCTEXT("CardVisitorForecast", "예상 방문객 {0}명\n현재 입장료 {1} 기준"),
+				FText::AsNumber(InOption.ExpectedVisitors), FText::AsNumber(InOption.ForecastAdmissionFeeGold))
+			: LOCTEXT("CardVisitorForecastPending", "예상 방문객 확인 중"));
+	if (Text_Forecast)
+	{
+		Text_Forecast->SetToolTipText(LOCTEXT("CardVisitorForecastHint",
+			"현재 입장료·화제성·평판을 기준으로 이 홍보 등급을 적용했을 때의 하루 예상 방문객입니다. 실제 입장 인원과 다를 수 있습니다."));
+	}
+
 	ApplyContentColor();
 }
 
@@ -35,6 +48,8 @@ void UFF_PrepPromotionCard::CollectStateTexts(TArray<UTextBlock*>& OutTexts) con
 {
 	OutTexts.Add(Text_Cost);
 	OutTexts.Add(Text_Effect);
+	OutTexts.Add(Text_Buzz);
+	OutTexts.Add(Text_Forecast);
 }
 
 #undef LOCTEXT_NAMESPACE

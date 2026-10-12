@@ -21,6 +21,8 @@ struct FF_ZONESYSTEM_API FFFZSGroundValidationSettings
     double TraceBelowCm;
     double MaxSlopeDegrees;
     double MaxHeightVarianceCm;
+    // 타일은 지면 최고점 위에 수평으로 놓는다. 길과 일반 시설의 기존 높이 규칙은 유지한다.
+    bool bUseHighestSupport = false;
 };
 
 // Project Settings > Game > FF_ZoneSystem에서 담당자가 조정하는 전역 규칙.
@@ -41,7 +43,7 @@ public:
      
     static constexpr double DefaultPlacementCellSizeCm = 1.0;
 	
-    static constexpr int32 DefaultMaxEnumeratedCellsPerFacility = 10000000;
+    static constexpr int32 DefaultMaxEnumeratedCellsPerFacility = 20000000;
 	// 사용자 설정이 없을 때 적용하는 시설당 보수적 셀 열거 작업 예산.
 	
     static constexpr int32 MaxMaterializedDebugCells = 10000;
@@ -67,12 +69,18 @@ public:
     static constexpr float DefaultGroundSampleSpacingCm = 100.0f;
 
     static constexpr float DefaultGroundTraceDistanceCm = 1000.0f;
-    static constexpr float DefaultMaxGroundSlopeDegrees = 5.0f;
-    static constexpr float DefaultMaxGroundHeightVarianceCm = 20.0f;
+    // Game Config가 없거나 값이 비정상일 때 사용하는 지면 허용치. 두 조건을 모두 만족해야 한다.
+    static constexpr float DefaultMaxGroundSlopeDegrees = 15.0f;
+    static constexpr float DefaultMaxGroundHeightVarianceCm = 80.0f;
+    static constexpr float DefaultMaxTileGroundSlopeDegrees = 89.0f;
+    static constexpr float DefaultMaxTileGroundHeightVarianceCm = DefaultGroundTraceDistanceCm * 2.0f;
 
     // 설정창의 제한을 우회한 ini/코드 입력도 같은 기준으로 보정한다.
     // 정상 설정은 그대로 전달하며 NaN/무한대는 선언된 기본값으로 되돌린다.
     FFFZSGroundValidationSettings ResolveGroundValidationSettings() const;
+
+    // 분류별 지면 정책의 단일 진입점. Tile만 기반 바닥 정책을 적용하고 Road는 일반 정책을 유지한다.
+    FFFZSGroundValidationSettings ResolveGroundValidationSettings(EFFZSFacilityCategory Category) const;
 	// 지면 검증 밀도는 1 cm 점유 해상도와 분리한다. 기본 100 cm마다 대표 표본 하나를 검사.
 
     // 시설별 저장 필드를 추가하지 않고 Footprint에서 선택 Query Box를 파생하는 전역 정책이다.
@@ -81,11 +89,12 @@ public:
     static constexpr float MaxFacilitySelectionPaddingCm = 500.0f;
 
     // 시설 하나를 검증할 때 허용하는 보수적 열거 작업 예산.
-    // 회전 전 footprint를 clearance만큼 확장한 이론 면적과 정규화한 Queue 압축 영역 면적을 합산해
+    // 회전 전 footprint 면적과 정규화한 Queue 압축 영역 면적을 합산해
     // 비정상적으로 큰 저작 데이터를 조기에 거부한다. 권위 런타임은 영역을 개별 셀로 펼치지 않는다.
-    // 구 호환·디버그 배열은 별도 10,000셀 상한을 넘으면 비우며, 이 값은 1..10,000,000으로 제한한다.
+    // 원본 크기의 대형 무대도 허용하되 구 호환·디버그 배열은 별도 10,000셀 상한을 유지한다.
+    // 이 값은 1..20,000,000으로 제한한다.
 
-    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Performance", meta = (ClampMin = "1", ClampMax = "10000000"))
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Performance", meta = (ClampMin = "1", ClampMax = "20000000"))
     int32 MaxEnumeratedCellsPerFacility = DefaultMaxEnumeratedCellsPerFacility;
 
     // 시설 footprint 지면을 검사하는 물리 표본 간격(cm)이다.
@@ -106,6 +115,12 @@ public:
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "0.0", ClampMax = "89.0", Units = "deg"))
     float MaxGroundSlopeDegrees = DefaultMaxGroundSlopeDegrees;
 	// 모든 지면 표본의 법선으로 허용할 최대 경사각이다. 
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Tile", meta = (DisplayName = "Tile Maximum Ground Slope (Degrees)", ToolTip = "타일 아래 지면에서 허용하는 최대 경사각입니다. 타일은 지면을 따라 기울지 않고 확인된 최고점 위에 수평으로 놓입니다. 길과 일반 건축물에는 일반 지면 설정을 적용합니다.", ClampMin = "0.0", ClampMax = "89.0", Units = "deg"))
+    float MaxTileGroundSlopeDegrees = DefaultMaxTileGroundSlopeDegrees;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Tile", meta = (DisplayName = "Tile Maximum Ground Height Difference (cm)", ToolTip = "타일 아래에서 확인된 최고점과 최저점의 허용 높이 차입니다. 기본값 2000cm는 기본 지면 탐색 범위 전체에 해당합니다. 이 값이 커도 건축 가능 구역, 지면 존재, 다른 시설과의 겹침 검사는 유지됩니다.", ClampMin = "0.0", Units = "cm"))
+    float MaxTileGroundHeightVarianceCm = DefaultMaxTileGroundHeightVarianceCm;
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Controls", meta = (DisplayName = "Rotation Snap (Degrees)", ToolTip = "건축 모드에서 Q/E를 한 번 눌렀을 때 회전하는 각도입니다.", ClampMin = "0.01", ClampMax = "180.0", Units = "deg"))
     float PlacementRotationSnapDegrees = 45.0f;

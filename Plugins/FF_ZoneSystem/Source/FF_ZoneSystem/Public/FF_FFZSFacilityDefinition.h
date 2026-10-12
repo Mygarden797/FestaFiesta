@@ -56,10 +56,12 @@ public:
     // Spec을 변경하지 않고 모든 검증 오류를 OutErrors 뒤에 추가한다. 오류가 없으면 true다. 
     
     virtual FPrimaryAssetId GetPrimaryAssetId() const override;
+    virtual void PostLoad() override;
     // 유효한 정의 ID면 FFZSFacilityDefinition:FacilityDefinitionId를 반환하고, 없으면 부모 규칙을 사용.
 
 #if WITH_EDITOR
     virtual void PostInitProperties() override;
+    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
     virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
     // Content Browser 데이터 검증에 Spec 오류를 전달한다. 런타임 빌드에는 포함되지 않는다. 
 #endif

@@ -118,6 +118,9 @@ protected:
 	virtual void NativeOnEntryReleased() override;
 	virtual void NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnMouseLeave(const FPointerEvent& InMouseEvent) override;
+	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
+		const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId,
+		const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 
 	/** 추가 애니메이션 등을 연결합니다. 재활용 해제 시에도 false 상태를 받습니다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|UI|Prep|Build|Synergy")
@@ -224,6 +227,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States")
 	FLinearColor UnavailableColor = FLinearColor::FromSRGBColor(FColor(0xD7, 0x4E, 0x43));
 
+	/** Capacity locks override required/program and selection colors without disabling input. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States")
+	FLinearColor LockedCardTint = FLinearColor::FromSRGBColor(FColor(0xDE, 0xE0, 0xE4));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States")
+	FLinearColor LockedContentColor = FLinearColor::FromSRGBColor(FColor(0x64, 0x68, 0x70));
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States")
 	FLinearColor FavoriteColor = FLinearColor::FromSRGBColor(FColor(0x99, 0x73, 0x21));
 
@@ -263,7 +273,9 @@ private:
 	FSlateBrush AuthoredCardBrush;
 	FSlateBrush AuthoredThumbnailBrush;
 	FSlateColor AuthoredCostColor;
+	FSlateColor AuthoredNameColor;
 	FSlateColor AuthoredStateColor;
 	FSlateColor AuthoredFavoriteColor;
 	bool bCapturedAppearance = false;
+	bool bAuthoredThumbnailEnabled = true;
 };

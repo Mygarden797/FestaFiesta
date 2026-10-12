@@ -270,9 +270,13 @@ FVector2f FFF_CrowdForceSolver::ClampAcceleration(const FVector2f& Accel, float 
 	return Accel;
 }
 
-FVector2f FFF_CrowdForceSolver::ComputeUnstuckImpulse(int32 StableAgentId, const FVector2f& SuggestedDir)
+FVector2f FFF_CrowdForceSolver::ComputeUnstuckImpulse(int32 StableAgentId, const FVector2f& SuggestedDir, int32 AttemptIndex)
 {
-	const uint32 Hash = HashCombine(GetTypeHash(StableAgentId), 0x9E3779B9u);
+	uint32 Hash = HashCombine(GetTypeHash(StableAgentId), 0x9E3779B9u);
+	if (AttemptIndex != 0)
+	{
+		Hash = HashCombine(Hash, GetTypeHash(AttemptIndex));
+	}
 	const float Frac = static_cast<float>(Hash & 0xFFFFu) / 65535.f;
 
 	float Len = 0.f;
@@ -416,6 +420,7 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 	const bool bCullWalls = (Config.WallCullRadiusMeters > 0.f);
 	const TArray<FVector2f>* DesiredVel = In.DesiredVelMeters;
 	const TArray<float>* SocialScale = In.SocialScale;
+	const TArray<uint8>* Posture = In.Posture;
 
 	const int32 N = ActiveIds.Num();
 	if (N == 0)
@@ -450,6 +455,11 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 
 			const float MassKg = FMath::Max(U.MassKg, KINDA_SMALL_NUMBER);
 
+			const bool bIMoving = Posture
+				&& (*Posture)[i] == static_cast<uint8>(EFF_CrowdPosture::Moving);
+			const bool bIHolding = Posture
+				&& (*Posture)[i] == static_cast<uint8>(EFF_CrowdPosture::Holding);
+
 			FFF_CrowdForceTerms Terms;
 
 			Grid.GatherNearest(Pos, Pos[i], SearchRadius, Config.MaxNeighbours + 1, Neighbours);
@@ -473,13 +483,20 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 					&& FVector::DistSquared2D(U.QueueSlotLocation, Units[j].QueueSlotLocation)
 						>= FMath::Square(U.Radius + Units[j].Radius
 							+ U.ArrivalRadiusUU + Units[j].ArrivalRadiusUU);
-				if (bCompatibleAssignedSlots)
+				const bool bMovingPastHolding = bIMoving && Units.IsValidIndex(j)
+					&& (*Posture)[j] == static_cast<uint8>(EFF_CrowdPosture::Holding);
+				const bool bGhostPair = bIHolding || bMovingPastHolding;
+				if (bGhostPair)
+				{
+					Interaction = FFF_CrowdForceTerms();
+				}
+				else if (bCompatibleAssignedSlots)
 				{
 					Interaction.Social = FVector2f::ZeroVector;
 				}
 				Terms += Interaction;
 
-				if (bUseLaneBias && !bCompatibleAssignedSlots)
+				if (bUseLaneBias && !bCompatibleAssignedSlots && !bGhostPair)
 				{
 					Terms.Social += ComputeLaneBias(
 						Pos[i], Radius[i], Pos[j], Radius[j],
@@ -539,19 +556,28 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 			if (bUnstuckEnabled && !CrowdSteering::IsApproachingAssignedSlot(U))
 			{
 				const int32 HoldMax = FMath::Max(1, Config.UnstuckHoldSteps);
-				const float HoldScale = (U.StuckSteps >= Config.StuckDetectSteps)
+				const float HoldScale = (U.UnstuckHoldSteps > 0 && U.StuckSteps >= Config.StuckDetectSteps)
 					? 1.f
 					: static_cast<float>(FMath::Min(U.UnstuckHoldSteps, HoldMax)) / static_cast<float>(HoldMax);
 
 				if (HoldScale > 0.f && SocialGain > 0.f)
 				{
+					// 빈 칸이 여럿이면 붐빔이 방향을 못 정한다. 그때는 목적지 옆으로 비키고, 시도마다 좌우를 바꾼다
 					FVector2f Suggested = FVector2f::ZeroVector;
 					FVector2f CellCenter;
-					if (Grid.FindLeastCrowdedNeighbourCell(Pos[i], CellCenter))
+					int32 TieCount = 0;
+					if (Grid.FindLeastCrowdedNeighbourCell(Pos[i], CellCenter, &TieCount) && TieCount == 1)
 					{
 						Suggested = CellCenter - Pos[i];
 					}
-					Accel += ComputeUnstuckImpulse(U.StableAgentID, Suggested)
+					else
+					{
+						const FVector ToSteer = U.GetSteerTarget() - U.Position;
+						const FVector2f Forward(static_cast<float>(ToSteer.X), static_cast<float>(ToSteer.Y));
+						const bool bLeft = ((static_cast<uint32>(U.StableAgentID) + static_cast<uint32>(U.UnstuckAttemptCount)) & 1u) != 0;
+						Suggested = bLeft ? FVector2f(-Forward.Y, Forward.X) : FVector2f(Forward.Y, -Forward.X);
+					}
+					Accel += ComputeUnstuckImpulse(U.StableAgentID, Suggested, U.UnstuckAttemptCount)
 						* (Config.UnstuckAccelMps2 * HoldScale * SocialGain);
 				}
 			}

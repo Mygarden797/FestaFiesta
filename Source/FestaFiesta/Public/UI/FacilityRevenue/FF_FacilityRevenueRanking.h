@@ -19,6 +19,7 @@ class USizeBox;
 class UFF_FacilityCodexImage;
 class UFF_FestivalProgressionSubsystem;
 class UFF_BuildCatalogSubsystem;
+class UFF_BuildingFeatureDiscoverySubsystem;
 enum class EFF_BuildModeState : uint8;
 struct FFFZSWorldChangeEvent;
 
@@ -71,6 +72,7 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankRow : public UUserWidget, public IU
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_Location;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_Amount;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Share;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SelectionMark;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_ThumbnailFallback;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UFF_FacilityCodexImage> Image_Thumbnail;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UProgressBar> Bar_Revenue;
@@ -95,6 +97,8 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 		return bCumulative;
 	}
 	bool IsPointerOverPanel() const;
+	bool ShowIntroduction();
+	bool IsIntroductionVisible() const;
 	FSimpleMulticastDelegate OnCloseRequested;
 	FSimpleMulticastDelegate OnPeriodChanged;
 	FSimpleMulticastDelegate OnInspectRequested;
@@ -103,6 +107,7 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event) override;
 	virtual FReply NativeOnKeyDown(const FGeometry &Geometry, const FKeyEvent &Event) override;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UBorder> Border_Panel;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> Size_ClarityFrame;
@@ -118,6 +123,8 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> Button_Total;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> Button_Close;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> Button_Inspect;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_Introduction;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_DismissIntroduction;
 	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Tabs")
 	FLinearColor SelectedPeriodTextColor = FLinearColor::White;
 	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Tabs")
@@ -128,11 +135,13 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 	UFUNCTION() void Total();
 	UFUNCTION() void CloseClicked();
 	UFUNCTION() void InspectClicked();
+	UFUNCTION() void DismissIntroduction();
 	void SelectionChanged(UObject *Object);
 	void UpdatePeriod();
 	UPROPERTY(Transient) TMap<FName, FButtonStyle> AuthoredPeriodStyles;
 	void UpdateFrameSize(const FVector2D& Viewport);
-	float DesiredFrameHeight = 600.f;
+	FVector2D AuthoredFrameSize = FVector2D(1060.f, 690.f);
+	bool bCapturedFrameSize = false;
 	bool bCumulative = false;
 };
 UCLASS()
@@ -148,9 +157,14 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingSubsystem : public UWorldSubsyst
 	UFUNCTION(BlueprintPure, Category = "Facility Revenue") bool IsOpen() const;
 	bool IsPointerOverPanel() const;
 	FGuid GetSelectedFacilityId() const;
+	/** The catalog owns the authored badge; only weak references are retained here. */
+	void RegisterIntroductionHint(UBorder* Hint);
 
   private:
 	void BindEconomy();
+	void BindFeatureDiscovery();
+	UFUNCTION() void FeatureSeen(FName FeatureId);
+	void RefreshIntroductionHints();
 	void Refresh();
 	void Inspect();
 	UFUNCTION() void Changed();
@@ -162,5 +176,7 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingSubsystem : public UWorldSubsyst
 	UPROPERTY(Transient) TObjectPtr<UFF_FacilityRevenueRankingPanel> Panel;
 	UPROPERTY(Transient) TObjectPtr<UFF_FestivalProgressionSubsystem> Progression;
 	UPROPERTY(Transient) TObjectPtr<UFF_BuildCatalogSubsystem> Catalog;
+	UPROPERTY(Transient) TObjectPtr<UFF_BuildingFeatureDiscoverySubsystem> FeatureDiscovery;
+	TArray<TWeakObjectPtr<UBorder>> IntroductionHints;
 	UPROPERTY(Transient) TArray<TObjectPtr<UFF_FacilityRevenueRankItem>> Items;
 };

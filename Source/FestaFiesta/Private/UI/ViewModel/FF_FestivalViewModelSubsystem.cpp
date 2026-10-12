@@ -4,27 +4,41 @@
 
 #include "Building/FF_FacilityNamingLibrary.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
+#include "Building/FF_BuildModeSubsystem.h"
+#include "Camera/FF_FestivalPlayerController.h"
+#include "Camera/FF_OverviewCameraPawn.h"
 #include "Economy/FF_StageEconomyBridgeSubsystem.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
 #include "Engine/GameInstance.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "Framework/Application/SlateApplication.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSZoneActor.h"
 #include "Economy/Rules/FF_StaffEventRules.h"
 #include "Staff/FF_StaffFacilitySubsystem.h"
 #include "Festival/FF_FestivalBuzzSubsystem.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "NPC/Insights/FF_CrowdInsightsSubsystem.h"
+#include "NPC/Integration/FF_ZoneSystemBridge.h"
 #include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
 #include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Queue/FF_QueueTypes.h"
+#include "Save/FF_SaveSubsystem.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "UI/FF_UILog.h"
+#include "UI/ViewModel/FF_DailyReportComment.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
+#include "UI/Core/FF_UIFlowSubsystem.h"
+#include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Widgets/SViewport.h"
 
 void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -38,16 +52,22 @@ void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collec
 	TryBindInsightsSubsystem();
 	TryBindBuzzSubsystem();
 	TryBindStaffFacilitySubsystem();
+	TryBindReportSaveSubsystem();
 }
 
 void UFF_FestivalViewModelSubsystem::Deinitialize()
 {
+	ResetProgramFacilityPresentation();
+	if (ReportSaveSubsystem) ReportSaveSubsystem->OnSaveLoaded.RemoveDynamic(this, &ThisClass::HandleReportSaveLoaded);
+	ReportSaveSubsystem = nullptr;
+	ResetDailyReports();
 	// 해제는 조건부, 정리는 무조건. 조기 return으로 빠져나가지 않는다.
 	if (CachedStageSubsystem)
 	{
 		CachedStageSubsystem->OnStageChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleStageChanged);
 		CachedStageSubsystem->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleRemainingSecondsChanged);
 		CachedStageSubsystem->OnEnvironmentStateChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged);
+		CachedStageSubsystem->OnFestivalStarted.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFestivalStarted);
 		CachedStageSubsystem->OnMainProgramStarted.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramStarted);
 		CachedStageSubsystem->OnMainProgramEnded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramEnded);
 	}
@@ -55,6 +75,7 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 
 	if (CachedProgressionSubsystem)
 	{
+		CachedProgressionSubsystem->OnFestivalDefinitionChanged.RemoveDynamic(this, &ThisClass::ResetDailyReports);
 		CachedProgressionSubsystem->OnGoldChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged);
 		CachedProgressionSubsystem->OnTotalRevenueChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged);
 		CachedProgressionSubsystem->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTodayRevenueChanged);
@@ -90,6 +111,9 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 	if (CachedInsightsSubsystem)
 	{
 		CachedInsightsSubsystem->OnSnsPostAdded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded);
+		CachedInsightsSubsystem->OnSnsReactionChanged.RemoveDynamic(this, &ThisClass::HandleOwnerSnsReactionChanged);
+		CachedInsightsSubsystem->OnSnsFeedReset.RemoveDynamic(this, &ThisClass::HandleOwnerSnsFeedReset);
+		CachedInsightsSubsystem->OnFinalePostAdded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleSnsPostAdded);
 	}
 	CachedInsightsSubsystem = nullptr;
 
@@ -215,6 +239,7 @@ void UFF_FestivalViewModelSubsystem::TryBindStageSubsystem()
 	CachedStageSubsystem->OnStageChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleStageChanged);
 	CachedStageSubsystem->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleRemainingSecondsChanged);
 	CachedStageSubsystem->OnEnvironmentStateChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged);
+	CachedStageSubsystem->OnFestivalStarted.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFestivalStarted);
 
 	// 🔴 둘 다 받는다. 시작만 받으면 공연이 끝나도 화면은 계속 `잠김` 으로 남는다.
 	CachedStageSubsystem->OnMainProgramStarted.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramStarted);
@@ -283,6 +308,7 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 
 	// Bind + Sync. StartFestival이 이미 지나갔다면 방송을 놓쳤으므로 현재값을 직접 읽는다.
 	CachedProgressionSubsystem->OnGoldChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged);
+	CachedProgressionSubsystem->OnFestivalDefinitionChanged.AddUniqueDynamic(this, &ThisClass::ResetDailyReports);
 
 	// 🔴 매출 둘은 2026-09-02 까지 **구독이 없어서 화면이 영원히 `0`** 이었다.
 	// 소유자에는 값도 델리게이트도 처음부터 있었는데 ViewModel 이 안 받고 있었다.
@@ -380,6 +406,7 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerSimSatisfactionChanged(int32 New
 	}
 
 	RecomputeScoreSatisfaction();
+	CaptureDailySatisfaction();
 }
 
 void UFF_FestivalViewModelSubsystem::TryBindInsightsSubsystem()
@@ -410,6 +437,9 @@ void UFF_FestivalViewModelSubsystem::TryBindInsightsSubsystem()
 
 	CachedInsightsSubsystem = Insights;
 	CachedInsightsSubsystem->OnSnsPostAdded.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded);
+	CachedInsightsSubsystem->OnSnsReactionChanged.AddUniqueDynamic(this, &ThisClass::HandleOwnerSnsReactionChanged);
+	CachedInsightsSubsystem->OnSnsFeedReset.AddUniqueDynamic(this, &ThisClass::HandleOwnerSnsFeedReset);
+	CachedInsightsSubsystem->OnFinalePostAdded.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleSnsPostAdded);
 
 	// SimSatisfaction과 다르게 "현재값 1개"가 아니라 "지금까지의 글 목록"이라, bind 시점에
 	// 이미 쌓여 있던 글도 놓치지 않게 전부 변환해 채운다.
@@ -418,6 +448,317 @@ void UFF_FestivalViewModelSubsystem::TryBindInsightsSubsystem()
 	{
 		RecentSnsPosts.Add(ConvertSnsPostToLiveSocialPost(Row));
 	}
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerFestivalStarted()
+{
+	ResetProgramFacilityPresentation();
+	RecentSnsPosts.Reset();
+	ResetDailyReports();
+}
+
+void UFF_FestivalViewModelSubsystem::TryBindReportSaveSubsystem()
+{
+	if (ReportSaveSubsystem) return;
+	UGameInstance* GI = GetGameInstance();
+	ReportSaveSubsystem = GI ? GI->GetSubsystem<UFF_SaveSubsystem>() : nullptr;
+	if (ReportSaveSubsystem) ReportSaveSubsystem->OnSaveLoaded.AddUniqueDynamic(this, &ThisClass::HandleReportSaveLoaded);
+}
+
+void UFF_FestivalViewModelSubsystem::ResetDailyReports()
+{
+	DailyReport = FFF_DailyReportView();
+	LastDailySatisfaction = FFF_DailyReportView();
+	AutoShownReportDays.Reset();
+	AdmittedVisitorsByDay.Reset();
+	SatisfactionByDay.Reset();
+	GoalMetByDay.Reset();
+}
+
+void UFF_FestivalViewModelSubsystem::HandleReportSaveLoaded(FName SlotId)
+{
+	ResetProgramFacilityPresentation();
+	// 같은 슬롯을 다시 읽어도 별도 플레이 흐름이다. 복원 완료 후 다음 Tick에서 원본을 읽는다.
+	ResetDailyReports();
+	// 피드 복원 중에는 공감 명령을 막는다. 모든 원본의 복원이 끝난 뒤 가능 상태를 다시 알린다.
+	HandleOwnerSnsFeedReset();
+}
+
+const FFF_DailyReportView* UFF_FestivalViewModelSubsystem::GetDailyReport() const
+{
+	if (ReportSaveSubsystem && ReportSaveSubsystem->IsRestoring()) return nullptr;
+	return IsDailyReportSurface() && DailyReport.Day == GetCurrentDay() ? &DailyReport : nullptr;
+}
+
+const FFF_DailyReportView* UFF_FestivalViewModelSubsystem::GetPreviousDailyReport() const
+{
+	if (ReportSaveSubsystem && ReportSaveSubsystem->IsRestoring()) return nullptr;
+	return DailyReport.Day > 0 && DailyReport.Day == GetCurrentDay() - 1 ? &DailyReport : nullptr;
+}
+
+bool UFF_FestivalViewModelSubsystem::WasDailyReportAutoShown(int32 Day) const
+{
+	return AutoShownReportDays.Contains(Day);
+}
+
+void UFF_FestivalViewModelSubsystem::MarkDailyReportAutoShown(int32 Day)
+{
+	if (const FFF_DailyReportView* Report = GetDailyReport(); Report && Report->Day == Day)
+	{
+		AutoShownReportDays.Add(Day);
+	}
+}
+
+void UFF_FestivalViewModelSubsystem::CaptureDailySatisfaction()
+{
+	const EFF_FestivalStage Stage = GetCurrentStage();
+	if ((Stage != EFF_FestivalStage::Live && Stage != EFF_FestivalStage::Finale && Stage != EFF_FestivalStage::Closing)
+		|| (ReportSaveSubsystem && ReportSaveSubsystem->IsRestoring())
+		|| !CachedSatisfactionSubsystem || CachedSatisfactionSubsystem->GetSampleCount() <= 0) return;
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted()) return;
+	// Closing의 빈 표본이 마지막으로 측정한 그날의 값을 중립 50으로 덮지 않도록 한다.
+	// 결산은 그날 Live 평균이다. 아직 평균이 없으면(Live 첫 창 전) 지금 값을 쓴다
+	const FFF_DaySatisfactionAverage DayAverage = CachedSatisfactionSubsystem->GetDayAverage();
+	const bool bUseAverage = DayAverage.IsValid() && DayAverage.Day == GetCurrentDay();
+	LastDailySatisfaction.Day = GetCurrentDay();
+	LastDailySatisfaction.bHasSatisfaction = true;
+	LastDailySatisfaction.SimSatisfaction = bUseAverage ? DayAverage.Satisfaction : CachedSatisfactionSubsystem->GetSimSatisfaction();
+	LastDailySatisfaction.ScoreSatisfaction = FMath::Clamp(
+		LastDailySatisfaction.SimSatisfaction + Progression->GetFinaleSatisfactionBonus(), 0, MetricMax);
+	LastDailySatisfaction.WaitScore = bUseAverage ? DayAverage.WaitScore : CachedSatisfactionSubsystem->GetWaitScore();
+	LastDailySatisfaction.DensityScore = bUseAverage ? DayAverage.DensityScore : CachedSatisfactionSubsystem->GetDensityScore();
+	LastDailySatisfaction.PreferenceScore = bUseAverage ? DayAverage.PreferenceScore : CachedSatisfactionSubsystem->GetPreferenceScore();
+	LastDailySatisfaction.NeedScore = bUseAverage ? DayAverage.NeedScore : CachedSatisfactionSubsystem->GetNeedFulfillmentScore();
+	LastDailySatisfaction.SatisfactionBreakdown = BuildSatisfactionBreakdown(LastDailySatisfaction, bUseAverage ? &DayAverage : nullptr);
+}
+
+FFF_SatisfactionBreakdown UFF_FestivalViewModelSubsystem::BuildSatisfactionBreakdown(
+	const FFF_DailyReportView& Scores, const FFF_DaySatisfactionAverage* DayAverage) const
+{
+	const UFF_SatisfactionMetricsSubsystem* Satisfaction = CachedSatisfactionSubsystem;
+	if (!Satisfaction)
+	{
+		return FFF_SatisfactionBreakdown();
+	}
+	const FFF_SatisfactionCoefficients& Coefficients = Satisfaction->GetLastCoefficients();
+	FFF_SatisfactionBreakdownInputs Inputs;
+	Inputs.Satisfaction = Scores.SimSatisfaction;
+	Inputs.BaseSatisfaction = DayAverage ? DayAverage->BaseSatisfaction : Satisfaction->GetBaseSatisfaction();
+	Inputs.WaitScore = Scores.WaitScore;
+	Inputs.DensityScore = Scores.DensityScore;
+	Inputs.PreferenceScore = Scores.PreferenceScore;
+	Inputs.NeedScore = Scores.NeedScore;
+	Inputs.WeightEnvironment = Coefficients.WeightEnvironment;
+	Inputs.WeightPersonalFit = Coefficients.WeightPersonalFit;
+	Inputs.WeightWait = Coefficients.WeightEnvironmentWait;
+	Inputs.WeightDensity = Coefficients.WeightEnvironmentDensity;
+	Inputs.WeightPreference = Coefficients.WeightPersonalFitPreference;
+	Inputs.WeightNeed = Coefficients.WeightPersonalFitNeed;
+	Inputs.AverageWaitSeconds = DayAverage ? DayAverage->AverageWaitSeconds : Satisfaction->GetAverageWaitSeconds();
+	Inputs.WaitRefSeconds = Coefficients.WaitRefSeconds;
+	Inputs.QueueSuccessRate = DayAverage ? DayAverage->QueueSuccessRate : Satisfaction->GetQueueSuccessRate();
+	Inputs.CrowdedShare = DayAverage ? DayAverage->CrowdedShare : Satisfaction->GetCrowdedShare();
+	Inputs.PreferenceMatchShare = DayAverage ? DayAverage->PreferenceMatchShare : Satisfaction->GetPreferenceMatchShare();
+	Inputs.PreferenceSampleCount = DayAverage ? DayAverage->PreferenceSampleCount : Satisfaction->GetPreferenceSampleCount();
+	Inputs.CoverageFloor = Coefficients.NeedCoverageFloor;
+	Inputs.CoverageTarget[0] = Coefficients.NeedCoverageTargetHunger;
+	Inputs.CoverageTarget[1] = Coefficients.NeedCoverageTargetRestroom;
+	Inputs.CoverageTarget[2] = Coefficients.NeedCoverageTargetStimulation;
+
+	static const EFF_NeedType BreakdownNeeds[FFF_SatisfactionBreakdownInputs::NeedCount] =
+	{
+		EFF_NeedType::Hunger, EFF_NeedType::Restroom, EFF_NeedType::Stimulation
+	};
+	const UGameInstance* GI = GetGameInstance();
+	const UWorld* World = GI ? GI->GetWorld() : nullptr;
+	if (const UFF_CrowdSimulationSubsystem* Crowd = World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr)
+	{
+		for (int32 Index = 0; Index < FFF_SatisfactionBreakdownInputs::NeedCount; ++Index)
+		{
+			Inputs.ReliefFacilityCount[Index] = Crowd->GetNeedReliefFacilityCount(BreakdownNeeds[Index]);
+		}
+	}
+	if (const UFF_NpcNeedMetricsSubsystem* Needs = GI ? GI->GetSubsystem<UFF_NpcNeedMetricsSubsystem>() : nullptr)
+	{
+		for (int32 Index = 0; Index < FFF_SatisfactionBreakdownInputs::NeedCount; ++Index)
+		{
+			if (DayAverage)
+			{
+				Inputs.UnmetPercent[Index] = DayAverage->NeedUnmetPercent[static_cast<int32>(BreakdownNeeds[Index])];
+			}
+			else if (Needs->GetSampleCount() > 0)
+			{
+				Inputs.UnmetPercent[Index] = Needs->GetNeedUnmetRatio(BreakdownNeeds[Index]);
+			}
+		}
+	}
+	// 가장 오래 기다린 시설. 대기 점수가 시설별 평균 완료 대기로 만들어지므로 그 최댓값이 근거다
+	if (const UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr)
+	{
+		float LongestWait = 0.f;
+		for (const FFFZSFacilityReadModel& Facility : Zones->BuildReadModel().Facilities)
+		{
+			if (Facility.State != EFFZSFacilityState::Removed && Facility.AverageCompletedWaitSeconds > LongestWait
+				&& !Facility.DisplayName.IsEmpty())
+			{
+				LongestWait = Facility.AverageCompletedWaitSeconds;
+				Inputs.LongestWaitFacility = Facility.DisplayName;
+			}
+		}
+	}
+	return FFF_SatisfactionBreakdownRules::Build(Inputs);
+}
+
+bool UFF_FestivalViewModelSubsystem::IsDailyReportSurface() const
+{
+	// 마감은 시간 제한이 없고 하루의 원장은 마감 진입 때 이미 닫혀 있다. 그래서 결산을
+	// 마감에 바로 띄운다. 1·2일차는 이후 결산 단계를 거쳐 다음 날로, 3일차는 마감에서 끝난다.
+	return IsReportStage() || GetCurrentStage() == EFF_FestivalStage::Closing;
+}
+
+void UFF_FestivalViewModelSubsystem::FillReportAssistantComment(FFF_DailyReportView& Report) const
+{
+	FFF_DailyReportCommentInputs Inputs;
+	const UGameInstance* GI = GetGameInstance();
+	const UWorld* World = GI ? GI->GetWorld() : nullptr;
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+
+	// 오늘 매출 1위 시설. 결산 단계는 아직 하루 경계를 넘기 전이라 TodayGold 가 오늘 값이다
+	const UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	if (Zones && Progression)
+	{
+		const UFF_BuildCatalogSubsystem* Catalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>();
+		for (const FFFZSFacilityReadModel& Facility : Zones->BuildReadModel().Facilities)
+		{
+			FFF_FacilityInstanceRevenue Revenue;
+			if (Facility.State == EFFZSFacilityState::Removed
+				|| !Progression->GetFacilityInstanceRevenue(Facility.FacilityInstanceId, Revenue)
+				|| Revenue.TodayGold <= Report.TopFacilityGold)
+			{
+				continue;
+			}
+			Report.TopFacilityGold = Revenue.TodayGold;
+			FFF_BuildCatalogEntry Entry;
+			Report.TopFacilityName = Catalog && Catalog->FindEntry(Facility.FacilityDefinitionId, Entry)
+				? Entry.DisplayName
+				: (Facility.DisplayName.IsEmpty() ? FText::FromName(Facility.FacilityDefinitionId) : Facility.DisplayName);
+		}
+	}
+	Inputs.TopFacilityName = Report.TopFacilityName;
+	Inputs.TopFacilityGold = Report.TopFacilityGold;
+
+	Inputs.bHasSatisfaction = Report.bHasSatisfaction;
+	Inputs.WaitScore = Report.WaitScore;
+	Inputs.DensityScore = Report.DensityScore;
+	Inputs.PreferenceScore = Report.PreferenceScore;
+	Inputs.NeedScore = Report.NeedScore;
+	if (Report.SatisfactionBreakdown.bValid)
+	{
+		Inputs.NeedLoss = Report.SatisfactionBreakdown.GetLoss(EFF_SatisfactionFactor::Need);
+		Inputs.WaitLoss = Report.SatisfactionBreakdown.GetLoss(EFF_SatisfactionFactor::Wait);
+		Inputs.DensityLoss = Report.SatisfactionBreakdown.GetLoss(EFF_SatisfactionFactor::Density);
+		Inputs.PreferenceLoss = Report.SatisfactionBreakdown.GetLoss(EFF_SatisfactionFactor::Preference);
+	}
+	if (const UFF_CrowdSimulationSubsystem* Crowd = World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr)
+	{
+		Inputs.HungerCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Hunger);
+		Inputs.RestroomCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Restroom);
+		Inputs.StimulationCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Stimulation);
+	}
+	Inputs.AdmittedVisitors = Report.AdmittedVisitors;
+	Inputs.DailyVisitorGoal = Report.DailyVisitorGoal;
+
+	// 마지막 날은 "내일"이 없다. 축제 전체를 돌아보는 값을 채운다
+	if (IsFinalDay())
+	{
+		Inputs.bFinalDay = true;
+		Inputs.DaysPlayed = Report.Day;
+		// 축제 전체 1위도 오늘 1위 · 매출 순위 패널처럼 배치된 시설 하나 단위로 센다
+		if (Zones && Progression)
+		{
+			const UFF_BuildCatalogSubsystem* Catalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>();
+			for (const FFFZSFacilityReadModel& Facility : Zones->BuildReadModel().Facilities)
+			{
+				FFF_FacilityInstanceRevenue Revenue;
+				if (Facility.State == EFFZSFacilityState::Removed
+					|| !Progression->GetFacilityInstanceRevenue(Facility.FacilityInstanceId, Revenue)
+					|| Revenue.TotalGold <= Inputs.FestivalTopFacilityGold)
+				{
+					continue;
+				}
+				Inputs.FestivalTopFacilityGold = Revenue.TotalGold;
+				FFF_BuildCatalogEntry Entry;
+				Inputs.FestivalTopFacilityName = Catalog && Catalog->FindEntry(Facility.FacilityDefinitionId, Entry)
+					? Entry.DisplayName
+					: (Facility.DisplayName.IsEmpty() ? FText::FromName(Facility.FacilityDefinitionId) : Facility.DisplayName);
+			}
+		}
+		if (const int32* First = SatisfactionByDay.Find(1)) Inputs.FirstDaySatisfaction = *First;
+		if (const int32* Last = SatisfactionByDay.Find(Report.Day)) Inputs.FinalDaySatisfaction = *Last;
+		// 축제 도중 불러와 빠진 날이 있으면 일수를 말하지 않는다
+		if (GoalMetByDay.Num() == Report.Day)
+		{
+			Inputs.GoalDaysMet = 0;
+			for (const TPair<int32, bool>& Pair : GoalMetByDay) Inputs.GoalDaysMet += Pair.Value ? 1 : 0;
+		}
+	}
+	Report.AssistantComment = FFF_DailyReportCommentRules::Build(Inputs);
+	Report.Complaint = FFF_DailyReportCommentRules::FindComplaint(Inputs);
+}
+
+void UFF_FestivalViewModelSubsystem::CaptureDailyReportIfReady()
+{
+	// 별도 Stage 타이머/정지 없이 기존 VM Tick을 사용한다. Stage의 동기 구독자 처리가
+	// 모두 끝난 뒤 읽어 Closing 안전망 정산과 복원 중인 이전 원장이 섞이지 않게 한다.
+	if (!IsDailyReportSurface() || (ReportSaveSubsystem && ReportSaveSubsystem->IsRestoring())) return;
+	const int32 Day = GetCurrentDay();
+	if (Day <= 0) return;
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted() || Progression->GetLastProcessedDay() != Day
+		|| !Progression->HasLedgerForDay(Day)) return;
+	int32 RecordedSatisfaction = INDEX_NONE;
+	const bool bHasRecordedSatisfaction = TryGetRecordedDailySatisfaction(Day, RecordedSatisfaction);
+	// 마감 중 늦은 정산 또는 축제 종료의 만족도 확정이 있을 때 같은 날 결산을 다시 읽는다.
+	if (DailyReport.Day == Day && DailyReport.Gold == Progression->GetGold()
+		&& DailyReport.bHasDailySatisfaction == bHasRecordedSatisfaction
+		&& DailyReport.DailySatisfaction == RecordedSatisfaction) return;
+	FFF_DailyReportView Report = LastDailySatisfaction.Day == Day ? LastDailySatisfaction : FFF_DailyReportView();
+	Report.Day = Day;
+	Report.bHasDailySatisfaction = bHasRecordedSatisfaction;
+	Report.DailySatisfaction = RecordedSatisfaction;
+	// EndedDayLedger는 Report 안에서 어제 값이다. 반드시 표시 날짜로 원본을 요청한다.
+	Report.EarnRows = Progression->GetEarnRowsForDay(Day);
+	Report.SpendRows = Progression->GetSpendRowsForDay(Day);
+	for (const FFF_LedgerRow& Row : Report.EarnRows) Report.Revenue += Row.Amount;
+	for (const FFF_LedgerRow& Row : Report.SpendRows) Report.Expense += Row.Amount;
+	Report.NetProfit = Report.Revenue - Report.Expense;
+	Report.Refund = Progression->GetTotalRefundForDay(Day);
+	Report.Gold = Progression->GetGold();
+	Report.TotalRevenue = Progression->GetTotalRevenue();
+	Report.AdmittedVisitors = Progression->GetAdmittedVisitorsToday();
+	if (Report.AdmittedVisitors >= 0) AdmittedVisitorsByDay.Add(Day, Report.AdmittedVisitors);
+	Report.DailyVisitorGoal = Progression->GetDailyVisitorGoal();
+	Report.bDailyGoalAchieved = Progression->IsDailyGoalBonusPaid();
+	Report.TotalStaff = Progression->GetTotalStaffCount();
+	Report.HiredStaff = Progression->GetHiredStaffCount();
+	Report.Programs = Progression->GetScheduledPrograms().Num();
+	if (Report.bHasSatisfaction && Report.SimSatisfaction >= 0) SatisfactionByDay.Add(Day, Report.SimSatisfaction);
+	if (Report.DailyVisitorGoal > 0) GoalMetByDay.Add(Day, Report.bDailyGoalAchieved);
+	FillReportAssistantComment(Report);
+	if (Report.SatisfactionBreakdown.bValid)
+	{
+		FString Losses;
+		for (const FFF_SatisfactionLoss& Loss : Report.SatisfactionBreakdown.Losses)
+		{
+			Losses += FString::Printf(TEXT(" | %s -%d (%s)"), *FFF_SatisfactionBreakdown::GetFactorLabel(Loss.Factor).ToString(),
+				Loss.Points, *Loss.Evidence.ToString());
+		}
+		UE_LOG(LogFestaFiestaUI, Log, TEXT("[결산 %d일차] 만족도 %d%s | 힌트: %s"), Day, Report.SatisfactionBreakdown.Satisfaction,
+			*Losses, *Report.SatisfactionBreakdown.Hint.ToString());
+	}
+	DailyReport = MoveTemp(Report);
+	OnDailyReportReady.Broadcast(Day);
 }
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded(FFF_SnsPostRow NewPost)
@@ -433,9 +774,65 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded(FFF_SnsPostRow NewP
 	OnSnsPostAdded.Broadcast(Converted);
 }
 
+void UFF_FestivalViewModelSubsystem::HandleOwnerFinaleSnsPostAdded(FFF_SnsPostRow NewPost)
+{
+	OnFinaleSnsPostAdded.Broadcast(ConvertSnsPostToLiveSocialPost(NewPost));
+}
+
+FFF_SnsReactionState UFF_FestivalViewModelSubsystem::GetSnsReactionState(FGuid PostId) const
+{
+	return CachedInsightsSubsystem ? CachedInsightsSubsystem->GetReactionState(PostId) : FFF_SnsReactionState();
+}
+
+FFF_SnsReactionOutcome UFF_FestivalViewModelSubsystem::RequestSnsReaction(FGuid PostId)
+{
+	TryBindInsightsSubsystem();
+	return CachedInsightsSubsystem ? CachedInsightsSubsystem->TryReactToPost(PostId) : FFF_SnsReactionOutcome();
+}
+
+FText UFF_FestivalViewModelSubsystem::GetSnsReactionResultText(const FFF_SnsReactionOutcome& Outcome) const
+{
+	switch (Outcome.Result)
+	{
+	case EFF_SnsReactionResult::Success:
+		if (Outcome.AppliedBuzz > 0.f)
+		{
+			FNumberFormattingOptions Format;
+			Format.MaximumFractionalDigits = 2;
+			return FText::Format(NSLOCTEXT("FFSnsReaction", "Awarded", "화제성 +{0}"), FText::AsNumber(Outcome.AppliedBuzz, &Format));
+		}
+		return NSLOCTEXT("FFSnsReaction", "NoChange", "공감 완료 · 화제성 변동 없음");
+	case EFF_SnsReactionResult::AlreadyReacted:
+		return NSLOCTEXT("FFSnsReaction", "Already", "이미 공감한 글입니다.");
+	case EFF_SnsReactionResult::PostUnavailable:
+		return NSLOCTEXT("FFSnsReaction", "Expired", "더 이상 공감할 수 없는 글입니다.");
+	default:
+		return NSLOCTEXT("FFSnsReaction", "Unavailable", "지금은 공감할 수 없습니다.");
+	}
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerSnsReactionChanged(FGuid PostId)
+{
+	OnSnsReactionChanged.Broadcast(PostId);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerSnsFeedReset()
+{
+	RecentSnsPosts.Reset();
+	if (CachedInsightsSubsystem)
+	{
+		for (const FFF_SnsPostRow& Row : CachedInsightsSubsystem->GetRecentPosts())
+		{
+			RecentSnsPosts.Add(ConvertSnsPostToLiveSocialPost(Row));
+		}
+	}
+	OnSnsFeedReset.Broadcast();
+}
+
 FFF_LiveSocialPost UFF_FestivalViewModelSubsystem::ConvertSnsPostToLiveSocialPost(const FFF_SnsPostRow& Row)
 {
 	FFF_LiveSocialPost Converted;
+	Converted.PostId = Row.PostId;
 	Converted.Author = FText::FromString(Row.DisplayHandle);
 	Converted.Body = Row.Body;
 	// 강도 0 또는 -1도 실제 반응이다. 방향을 명시해 예전 미확정 센티널과 구분한다.
@@ -525,9 +922,9 @@ void UFF_FestivalViewModelSubsystem::RequestSetWeather(EFF_WeatherType NewWeathe
 
 int32 UFF_FestivalViewModelSubsystem::GetDailyVisitorGoal() const
 {
+	// 목표가 날마다 늘어나므로 오늘 목표를 묻는다
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
-	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
-	return Definition ? Definition->DailyVisitorGoal : INDEX_NONE;
+	return Progression ? Progression->GetDailyVisitorGoal() : INDEX_NONE;
 }
 
 int32 UFF_FestivalViewModelSubsystem::GetDailyGoalBonusGold() const
@@ -652,6 +1049,8 @@ void UFF_FestivalViewModelSubsystem::TryBindBuzzSubsystem()
 
 	CachedBuzzSubsystem = Buzz;
 	CachedBuzzSubsystem->OnBuzzChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerBuzzChanged);
+	// 패널이 먼저 열렸다면 첫 연결에서도 미집계 표시를 실제 값으로 바꾼다.
+	OnBuzzChanged.Broadcast(Buzz->GetBuzz(), Buzz->GetBuzz());
 }
 
 float UFF_FestivalViewModelSubsystem::GetBuzz() const
@@ -669,6 +1068,19 @@ float UFF_FestivalViewModelSubsystem::GetBuzzChangeToday() const
 	return GetBuzz() - GetBuzzAtDayStart();
 }
 
+bool UFF_FestivalViewModelSubsystem::TryGetBuzzValues(float& OutBuzz, float& OutChangeToday) const
+{
+	OutBuzz = 0.f;
+	OutChangeToday = 0.f;
+	if (!CachedBuzzSubsystem) return false;
+	const float Value = CachedBuzzSubsystem->GetBuzz();
+	const float DayStart = CachedBuzzSubsystem->GetBuzzAtDayStart();
+	if (!FMath::IsFinite(Value) || !FMath::IsFinite(DayStart)) return false;
+	OutBuzz = Value;
+	OutChangeToday = Value - DayStart;
+	return true;
+}
+
 void UFF_FestivalViewModelSubsystem::HandleOwnerBuzzChanged(float NewBuzz, float PreviousBuzz)
 {
 	OnBuzzChanged.Broadcast(NewBuzz, PreviousBuzz);
@@ -680,10 +1092,89 @@ FFF_FestivalEvaluation UFF_FestivalViewModelSubsystem::GetFestivalEvaluation() c
 	return Progression ? Progression->GetFestivalEvaluation() : FFF_FestivalEvaluation();
 }
 
+bool UFF_FestivalViewModelSubsystem::GetFinalReport(FFF_FinalReportView& OutReport) const
+{
+	OutReport = FFF_FinalReportView();
+	const UGameInstance* GI = GetGameInstance();
+	const UFF_FestivalStageSubsystem* Stage = GI ? GI->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Stage || !Stage->HasFestivalEnded() || !Progression || !Progression->IsFestivalEvaluationFrozen()
+		|| (ReportSaveSubsystem && ReportSaveSubsystem->IsRestoring())) return false;
+
+	// Flow의 화면 생성과 경제의 평가 확정은 같은 종료 이벤트의 구독자다.
+	// 동결 전에는 GetFestivalEvaluation을 호출하지 않아 임시 등급이 먼저 보이지 않게 한다.
+	OutReport.Evaluation = Progression->GetFestivalEvaluation();
+	OutReport.DaysPlayed = FMath::Max(0, Progression->GetLastProcessedDay());
+	if (const UFF_UIFlowSubsystem* Flow = GI->GetSubsystem<UFF_UIFlowSubsystem>())
+	{
+		OutReport.FestivalName = Flow->GetActiveFestivalDisplayName();
+	}
+	// ForFestival은 완료일 기록과 마지막 날 원장을 이미 합친다. 날짜별 합계를 다시 더하지 않는다.
+	for (const FFF_LedgerRow& Row : Progression->GetEarnRowsForFestival()) OutReport.Revenue += Row.Amount;
+	for (const FFF_LedgerRow& Row : Progression->GetSpendRowsForFestival()) OutReport.Expense += Row.Amount;
+	OutReport.NetProfit = OutReport.Revenue - OutReport.Expense;
+	OutReport.Refund = Progression->GetTotalRefundForFestival();
+	OutReport.Gold = Progression->GetGold();
+	OutReport.TotalAdmittedVisitors = Progression->GetTotalAdmittedVisitors();
+	for (int32 Day = 1; Day <= OutReport.DaysPlayed; ++Day)
+	{
+		FFF_FinalReportDayView& Row = OutReport.Days.AddDefaulted_GetRef();
+		Row.Day = Day;
+		Row.bHasDailySatisfaction = TryGetRecordedDailySatisfaction(Day, Row.DailySatisfaction);
+		Row.bHasLedger = Progression->HasLedgerForDay(Day);
+		if (Row.bHasLedger)
+		{
+			for (const FFF_LedgerRow& Earn : Progression->GetEarnRowsForDay(Day)) Row.Revenue += Earn.Amount;
+			for (const FFF_LedgerRow& Spend : Progression->GetSpendRowsForDay(Day)) Row.Expense += Spend.Amount;
+			Row.NetProfit = Row.Revenue - Row.Expense;
+			Row.Refund = Progression->GetTotalRefundForDay(Day);
+		}
+		// 과거 날짜의 입장 수는 원본 조회 계약이 없다. 그날 결산 때 남긴 값만 쓰고,
+		// 없으면(축제 도중 불러옴) 미기록이다. 입장료 수입이나 누적값으로 역산하지 않는다.
+		if (Day == OutReport.DaysPlayed) Row.AdmittedVisitors = Progression->GetAdmittedVisitorsToday();
+		else if (const int32* Recorded = AdmittedVisitorsByDay.Find(Day)) Row.AdmittedVisitors = *Recorded;
+	}
+	return true;
+}
+
 TArray<int32> UFF_FestivalViewModelSubsystem::GetDailySatisfactionHistory() const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	return Progression ? Progression->GetDailySatisfactionHistory() : TArray<int32>();
+}
+
+bool UFF_FestivalViewModelSubsystem::TryGetRecordedDailySatisfaction(int32 Day, int32& OutSatisfaction) const
+{
+	OutSatisfaction = INDEX_NONE;
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted()
+		|| (ReportSaveSubsystem && ReportSaveSubsystem->IsRestoring())) return false;
+	const int32 CurrentDay = Progression->GetLastProcessedDay();
+	if (Day <= 0 || Day > CurrentDay) return false;
+
+	// TryProcessNewDay는 단조 증가한 실제 처리일마다 만족도와 그날 원장을 함께 저장한다.
+	// 예를 들어 1→3→4로 건너뛰면 배열의 두 번째 값은 3일차다. Day-1로 읽으면 안 된다.
+	const TArray<int32> History = Progression->GetDailySatisfactionHistory();
+	int32 RecordedDays = 0;
+	int32 RecordIndex = INDEX_NONE;
+	for (int32 RecordedDay = 1; RecordedDay < CurrentDay; ++RecordedDay)
+	{
+		if (!Progression->HasLedgerForDay(RecordedDay)) continue;
+		if (RecordedDay == Day) RecordIndex = RecordedDays;
+		++RecordedDays;
+	}
+	// 마지막 날은 하루 경계를 넘지 않는다. 원본 평가가 동결된 후에만 마지막 기록을 쓴다.
+	if (Progression->IsFestivalEvaluationFrozen() && Progression->HasLedgerForDay(CurrentDay))
+	{
+		if (Day == CurrentDay) RecordIndex = RecordedDays;
+		++RecordedDays;
+	}
+	// 과거 원장이 빠진 저장 등으로 대응이 불명확하면 순서를 추측하거나 현재 실측값으로 채우지 않는다.
+	if (RecordedDays != History.Num() || !History.IsValidIndex(RecordIndex)) return false;
+	const int32 RecordedValue = History[RecordIndex];
+	if (RecordedValue < 0 || RecordedValue > MetricMax) return false;
+	OutSatisfaction = RecordedValue;
+	return true;
 }
 
 EFF_FinaleGrade UFF_FestivalViewModelSubsystem::GetPurchasedFinaleGrade() const
@@ -832,7 +1323,7 @@ TArray<FFF_PrepFacilityOption> UFF_FestivalViewModelSubsystem::GetEligibleFacili
 
 	// Zone 은 월드 서브시스템이라 GameInstance 에서 바로 못 꺼낸다.
 	const UGameInstance* GI = GetGameInstance();
-	const UWorld* World = GI ? GI->GetWorld() : nullptr;
+	UWorld* World = GI ? GI->GetWorld() : nullptr;
 	const UFFZSWorldSubsystem* Zone = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
 	if (!Zone)
 	{
@@ -844,6 +1335,23 @@ TArray<FFF_PrepFacilityOption> UFF_FestivalViewModelSubsystem::GetEligibleFacili
 	}
 
 	const FFFZSReadModel ReadModel = Zone->BuildReadModel();
+	// 원본에는 표시용 일련번호가 없다. GUID를 UI 캐시에만 대응시키고 이동/철거로 재번호하지 않는다.
+	// 같은 정의의 미편성 시설까지 먼저 번호를 잡아 선택한 프로그램에 따라 번호가 달라지지 않게 한다.
+	if (ProgramFacilityIdentityWorld.Get() != World)
+	{
+		ProgramFacilityIdentityWorld = World;
+		ProgramFacilityInstanceNumbers.Reset();
+		ProgramFacilityNextNumbers.Reset();
+	}
+	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+	{
+		if (Facility.FacilityInstanceId.IsValid() && !ProgramFacilityInstanceNumbers.Contains(Facility.FacilityInstanceId))
+		{
+			int32& LastNumber = ProgramFacilityNextNumbers.FindOrAdd(Facility.FacilityDefinitionId);
+			ProgramFacilityInstanceNumbers.Add(Facility.FacilityInstanceId, ++LastNumber);
+		}
+	}
+	const UFF_BuildCatalogSubsystem* BuildCatalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>();
 	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
 	{
 		FFF_FacilityNameParts Parts;
@@ -864,16 +1372,110 @@ TArray<FFF_PrepFacilityOption> UFF_FestivalViewModelSubsystem::GetEligibleFacili
 
 		FFF_PrepFacilityOption& Option = Options.AddDefaulted_GetRef();
 		Option.FacilityInstanceId = Facility.FacilityInstanceId;
+		Option.FacilityDefinitionId = Facility.FacilityDefinitionId;
 		Option.ZoneId = Facility.ZoneId;
 
-		// Use the same authored name as the guide and construction catalog.
-		const UFF_BuildCatalogSubsystem* BuildCatalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>();
+		// 안내 및 건축목록과 같은 저작 이름을 유지하고 번호를 별도 레이블에 붙인다.
 		Option.DisplayName = BuildCatalog
 			? BuildCatalog->ResolveFacilityDisplayName(Facility.FacilityDefinitionId)
-			: NSLOCTEXT("FestaFiestaPrepProgram", "FacilityNameUnavailable", "프로그램 시설");
+			: (!Facility.DisplayName.IsEmpty() ? Facility.DisplayName
+				: NSLOCTEXT("FestaFiestaPrepProgram", "FacilityNameUnavailable", "프로그램 시설"));
+		Option.InstanceNumber = ProgramFacilityInstanceNumbers.FindRef(Facility.FacilityInstanceId);
+		FNumberFormattingOptions NumberFormat;
+		NumberFormat.SetMinimumIntegralDigits(2).SetUseGrouping(false);
+		Option.InstanceLabel = FText::Format(
+			NSLOCTEXT("FestaFiestaPrepProgram", "FacilityInstanceLabel", "{0} #{1}"),
+			Option.DisplayName, FText::AsNumber(Option.InstanceNumber, &NumberFormat));
+
+		const AFFZSGameplayZone* GameplayZone = Zone->FindZone(Facility.ZoneId);
+		// 목록에는 읽기 쉬운 구역명만 표시한다. 세부 위치는 위치 보기로 확인한다.
+		Option.LocationText = GameplayZone
+			? (!GameplayZone->DisplayName.IsEmpty() ? GameplayZone->DisplayName : FText::FromName(Facility.ZoneId))
+			: FText::FromName(Facility.ZoneId);
 	}
+	Options.Sort([](const FFF_PrepFacilityOption& A, const FFF_PrepFacilityOption& B)
+	{
+		return A.FacilityDefinitionId == B.FacilityDefinitionId
+			? A.InstanceNumber < B.InstanceNumber
+			: A.FacilityDefinitionId.LexicalLess(B.FacilityDefinitionId);
+	});
 
 	return Options;
+}
+
+bool UFF_FestivalViewModelSubsystem::RequestLocateProgramFacility(FGuid FacilityInstanceId)
+{
+	UGameInstance* GI = GetGameInstance();
+	UWorld* World = GI ? GI->GetWorld() : nullptr;
+	UFFZSWorldSubsystem* Zone = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	AFFZSFacilityActor* Facility = Zone ? Zone->FindFacility(FacilityInstanceId) : nullptr;
+	AFF_FestivalPlayerController* Controller = GI
+		? Cast<AFF_FestivalPlayerController>(GI->GetFirstLocalPlayerController(World)) : nullptr;
+	AFF_OverviewCameraPawn* Camera = Controller ? Controller->GetOverviewCameraPawn() : nullptr;
+	if (!IsValid(Facility) || !IsValid(Camera) || Camera->GetWorld() != World ||
+		Controller->GetViewMode() != EFF_CameraViewMode::Overview ||
+		Controller->GetInputBlockReason() == EFF_CameraInputBlock::ModalUi ||
+		Controller->GetInputBlockReason() == EFF_CameraInputBlock::Scripted ||
+		Facility->GetFacilityState() == EFFZSFacilityState::Removed)
+	{
+		return false;
+	}
+
+	// 버튼에 남은 키보드 포커스는 Controller가 비활성 뷰포트로 판정한다.
+	// 그 상태에서 FocusOnLocation만 호출하면 다음 PlayerTick이 이동을 취소하므로,
+	// 이 플레이어의 게임 화면으로 포커스를 먼저 돌리고 소유자의 입력 정책을 따른다.
+	if (FSlateApplication::IsInitialized())
+	{
+		if (const UGameViewportClient* ViewportClient = GI->GetGameViewportClient())
+		{
+			if (const TSharedPtr<SViewport> ViewportWidget = ViewportClient->GetGameViewportWidget())
+			{
+				FSlateApplication::Get().SetAllUserFocus(ViewportWidget);
+			}
+		}
+	}
+	if (!Controller->IsCameraMovementAllowed())
+	{
+		return false;
+	}
+
+	ClearProgramFacilityHighlight();
+	Camera->FocusOnLocation(Facility->GetActorLocation());
+	// 배치/정보 패널 선택 명령은 사용하지 않는다. 기존 프로그램 선택을 보존하는 표현만 요청한다.
+	// 이미 다른 UI가 선택한 강조는 소유하지 않으므로 종료 시에도 지우지 않는다.
+	if (Facility->GetSelectionIndicatorState() == EFFZSFacilitySelectionIndicatorState::Hidden)
+	{
+		Facility->SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Selected);
+		LocatedProgramFacility = Facility;
+		ProgramFacilityHighlightUntil = FPlatformTime::Seconds() + FMath::Max(0.1f, ProgramFacilityLocateSeconds);
+	}
+	return true;
+}
+
+void UFF_FestivalViewModelSubsystem::ClearProgramFacilityHighlight()
+{
+	if (AFFZSFacilityActor* Facility = LocatedProgramFacility.Get())
+	{
+		UWorld* World = Facility->GetWorld();
+		const UFF_FacilityInfoSubsystem* Info = World ? World->GetSubsystem<UFF_FacilityInfoSubsystem>() : nullptr;
+		const UFF_BuildModeSubsystem* Build = World ? World->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+		const bool bSelectedElsewhere = (Info && Info->GetSelectedFacilityId() == Facility->GetFacilityInstanceId()) ||
+			(Build && Build->GetMultiSelectedFacilities().Contains(Facility));
+		if (!bSelectedElsewhere && Facility->GetSelectionIndicatorState() == EFFZSFacilitySelectionIndicatorState::Selected)
+		{
+			Facility->SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Hidden);
+		}
+	}
+	LocatedProgramFacility.Reset();
+	ProgramFacilityHighlightUntil = 0.;
+}
+
+void UFF_FestivalViewModelSubsystem::ResetProgramFacilityPresentation()
+{
+	ClearProgramFacilityHighlight();
+	ProgramFacilityIdentityWorld.Reset();
+	ProgramFacilityInstanceNumbers.Reset();
+	ProgramFacilityNextNumbers.Reset();
 }
 
 TArray<FFF_LiveNeedView> UFF_FestivalViewModelSubsystem::GetNeedMetrics() const
@@ -927,6 +1529,17 @@ int32 UFF_FestivalViewModelSubsystem::GetConcurrentVisitorCount() const
 
 namespace FFViewModelFacilityLocal
 {
+	/**
+	 * 손님 줄을 받는 시설인가. 큐 다리(`RegisterOrRefreshFacility`)와 같은 기준이다 —
+	 * 조명과 바닥면(길·타일)은 대기열을 만들지 않는다. 바닥면 판정은 원본 사양의 함수를 그대로 쓴다.
+	 */
+	bool UsesPartyQueue(EFFZSFacilityCategory Category)
+	{
+		FFFZSFacilitySpec Probe;
+		Probe.Category = Category;
+		return Category != EFFZSFacilityCategory::Lighting && !Probe.IsGroundSurface();
+	}
+
 	/** ZoneSystem 의 설치 상태를 UI 값으로 옮긴다. 모르는 값은 지어내지 않고 `Unknown` 이다. */
 	EFF_LiveFacilityState ToUIState(EFFZSFacilityState State)
 	{
@@ -954,6 +1567,16 @@ namespace FFViewModelFacilityLocal
 		default:						return EFF_LiveFacilityQueueState::Unknown;
 		}
 	}
+}
+
+FFF_PrepRecommendedFacilitiesView UFF_FestivalViewModelSubsystem::GetPrepRecommendedFacilities(
+	const FFF_PrepRecommendedFacilityRules& Rules) const
+{
+	const UWorld* World = GetWorld();
+	const UFFZSWorldSubsystem* Zone = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	if (!Zone) return {};
+	const FFFZSReadModel Model = Zone->BuildReadModel();
+	return FFPrepRecommendedFacilities::Evaluate(Model, Rules, !Model.Zones.IsEmpty());
 }
 
 TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities() const
@@ -992,6 +1615,10 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 	const FFFZSReadModel ReadModel = Zone->BuildReadModel();
 	Views.Reserve(ReadModel.Facilities.Num());
 
+	// 공연 휴지 구간에는 큐 다리가 모든 일반 시설을 `접수 불가`로 둔다. 정원이 찬 것과 가른다.
+	const UFF_FestivalStageSubsystem* StageSubsystem = GetStageSubsystem();
+	const bool bMainProgramQueueBreak = StageSubsystem && StageSubsystem->IsMainProgramQueueBreakActive();
+
 	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
 	{
 		// 🔴 철거된 시설은 뺀다. 목록에 남기면 "폐쇄" 와 구분이 안 되어
@@ -1009,6 +1636,9 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 		View.WaitingCount = FMath::Max(0, Facility.WaitingCount);
 		View.ActiveServiceCount = FMath::Max(0, Facility.ActiveServiceCount);
 		View.bNeedsRelocation = Facility.bNeedsRelocation;
+		// 관람석 판정은 NPC 목적지 선택과 같은 함수를 쓴다. 규칙을 두 곳에 두지 않는다.
+		View.bSeatedVenue = FFF_ZoneSystemBridge::IsMainStageFacility(Facility.Category, Facility.FacilityDefinitionId);
+		View.bUsesQueue = FFViewModelFacilityLocal::UsesPartyQueue(Facility.Category);
 
 		// 🔴 아무도 아직 못 끝냈으면 평균이 `0.0` 으로 온다. 그것을 `0초 대기` 로 그리면
 		//    "기다림이 없다" 는 틀린 사실이 된다 — 실제로는 **아직 모르는 것**이다.
@@ -1027,7 +1657,9 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 				View.ActiveServiceCount = FMath::Max(0, TeamQueue.ActiveServicePartyCount);
 				View.QueueState = !TeamQueue.bIsOpen
 					? (TeamQueue.WaitingPartyCount > 0 ? EFF_LiveFacilityQueueState::Draining : EFF_LiveFacilityQueueState::Closed)
-					: (TeamQueue.bAcceptingNew ? EFF_LiveFacilityQueueState::Open : EFF_LiveFacilityQueueState::Full);
+					: TeamQueue.bAcceptingNew ? EFF_LiveFacilityQueueState::Open
+					: bMainProgramQueueBreak ? EFF_LiveFacilityQueueState::Paused
+					: EFF_LiveFacilityQueueState::Full;
 				View.AverageWaitSeconds = TeamQueue.CompletedPartyCount > 0
 					? FMath::Max(0, FMath::RoundToInt(TeamQueue.AverageCompletedWaitSeconds)) : INDEX_NONE;
 				const float WaitSeconds = Queue->GetExpectedWaitSeconds(QueueFacilityId, /*IncomingMemberCount=*/1);
@@ -1038,7 +1670,10 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 				//    화면에 `1440분` 이 뜬다. 여기서 `모름` 으로 바꾼다.
 				const bool bReachable = WaitSeconds < FFF_QueueTimings::UnreachableWaitSeconds;
 
-				View.ExpectedWaitSeconds = bReachable
+				// 지금 새 손님을 안 받는 곳은 "지금 서면" 이 성립하지 않는다. 원본은 이때 0을
+				// 돌려줄 수 있어 `0초` 로 그리면 기다림이 없는 곳처럼 보인다 — 모름으로 둔다.
+				const bool bCanJoinNow = View.QueueState == EFF_LiveFacilityQueueState::Open;
+				View.ExpectedWaitSeconds = bReachable && bCanJoinNow
 					? FMath::Max(0, FMath::RoundToInt(WaitSeconds))
 					: INDEX_NONE;
 
@@ -1098,8 +1733,9 @@ TArray<FFF_PromotionOptionView> UFF_FestivalViewModelSubsystem::GetPromotionOpti
 		return Options;
 	}
 
-	// 비용·배수는 경제의 GetPromotionTier 가 준다. `홍보 없음` 도 거기서 0 Gold · NoPromotionVisitorMultiplier(1.0 미만) 로 온다 —
-	// 숫자를 여기서 만들면 "안 사면 손해" 가 화면에 안 드러난다.
+	// 비용·배수·화제성은 경제의 GetPromotionTier가 준다. 홍보 없음도 원본 값을 그대로 전달한다.
+	// 방문객은 현재 입장료와 후보 등급을 원본 예측 API에 넘겨 읽는다.
+	const int32 AdmissionFeeGold = Progression->GetAdmissionFee();
 	const EFF_PromotionChoice Choices[] = {
 		EFF_PromotionChoice::None, EFF_PromotionChoice::Basic,
 		EFF_PromotionChoice::Focused, EFF_PromotionChoice::Influencer };
@@ -1110,6 +1746,13 @@ TArray<FFF_PromotionOptionView> UFF_FestivalViewModelSubsystem::GetPromotionOpti
 		Option.Choice = Choice;
 		Option.CostGold = Tier.CostGold;
 		Option.VisitorMultiplier = Tier.VisitorMultiplier;
+		Option.StartingBuzz = Tier.StartingBuzz;
+		if (AdmissionFeeGold != INDEX_NONE)
+		{
+			const FFF_VisitorForecast Forecast = PreviewVisitorForecast(Choice, AdmissionFeeGold);
+			Option.ExpectedVisitors = Forecast.ExpectedVisitors;
+			Option.ForecastAdmissionFeeGold = Forecast.AdmissionFeeGold;
+		}
 	}
 
 	return Options;
@@ -1334,27 +1977,54 @@ TArray<FFF_StaffMember> UFF_FestivalViewModelSubsystem::GetStaffRoster() const
 	return Progression && Progression->IsFestivalStarted() ? Progression->GetStaffRoster() : TArray<FFF_StaffMember>();
 }
 
+FText UFF_FestivalViewModelSubsystem::GetStaffIncidentEffectText(int32 StaffId) const
+{
+	for (const FFF_StaffMember& Member : GetStaffRoster())
+	{
+		if (Member.StaffId != StaffId) { continue; }
+		// 개인의 기본 능력만 표시한다. 사건별 최소 인원과 실제 도착 인원 계산은 출동 원본이 맡는다.
+		const float Ability = FFF_StaffEventRules::CalcAbilitySum({Member}, 1);
+		return FText::Format(NSLOCTEXT("FestaFiestaStaffTraining", "IncidentAbility",
+			"현장 처리 능력 {Ability}\n승급 효과는 다음 출동부터 적용됩니다."),
+			FFormatNamedArguments{{TEXT("Ability"), FText::AsNumber(Ability)}});
+	}
+	return FText::GetEmpty();
+}
+
 bool UFF_FestivalViewModelSubsystem::CanPromoteStaff(int32 StaffId) const
+{
+	return GetStaffPromotionState(StaffId) == EFF_StaffPromotionState::Ready;
+}
+
+EFF_StaffPromotionState UFF_FestivalViewModelSubsystem::GetStaffPromotionState(int32 StaffId) const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	if (!Progression || !Progression->IsFestivalStarted())
 	{
-		return false;
+		return EFF_StaffPromotionState::NotStarted;
 	}
 
 	// 소유자 TryPromoteStaff 와 같은 날짜(열린 날)로 같은 규칙을 부른다.
+	const int32 Day = Progression->GetLastProcessedDay();
 	for (const FFF_StaffMember& Member : Progression->GetStaffRoster())
 	{
 		if (Member.StaffId == StaffId)
 		{
-			return FFF_StaffEventRules::CanPromote(Member, Progression->GetLastProcessedDay());
+			if (FFF_StaffEventRules::CanPromote(Member, Day)) return EFF_StaffPromotionState::Ready;
+			// 원본이 거부한 이유만 설명한다. Lv.3은 현재 FFF_StaffEventRules의 상한이다.
+			if (Member.TrainingLevel >= 3) return EFF_StaffPromotionState::MaxLevel;
+			if (Day <= Member.HiredOnDay) return EFF_StaffPromotionState::HiredToday;
+			if (Member.LastPromotedDay == Day) return EFF_StaffPromotionState::AlreadyPromotedToday;
+			return EFF_StaffPromotionState::Unavailable;
 		}
 	}
-	return false;
+	return EFF_StaffPromotionState::NotFound;
 }
 
 bool UFF_FestivalViewModelSubsystem::RequestPromoteStaff(int32 StaffId)
 {
+	// 클릭 직전 명단/날짜를 다시 읽어 닫힌 화면이나 이전 행의 요청을 처리하지 않는다.
+	if (!CanPromoteStaff(StaffId)) return false;
 	UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	if (!Progression)
 	{
@@ -1606,6 +2276,13 @@ void UFF_FestivalViewModelSubsystem::PollMetricsFromSources()
 
 void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
 {
+	if (LocatedProgramFacility.IsValid() &&
+		(LocatedProgramFacility->GetWorld() != GetWorld() ||
+		 FPlatformTime::Seconds() >= ProgramFacilityHighlightUntil || !CanScheduleProgramNow()))
+	{
+		ClearProgramFacilityHighlight();
+	}
+	TryBindReportSaveSubsystem();
 	// Rebind across map travel; actual staffing data is refreshed only by owner events.
 	TryBindStaffFacilitySubsystem();
 	if (!CachedStageSubsystem)
@@ -1632,6 +2309,7 @@ void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
 	{
 		TryBindBuzzSubsystem();
 	}
+	CaptureDailyReportIfReady();
 
 	// 남은 시간은 여기서 폴링하지 않는다.
 	// 2026-08-11 강민서 쪽에 모든 Stage를 커버하는 OnRemainingSecondsChanged가 생겨서
@@ -1647,6 +2325,7 @@ void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
 	PollAccumulator = 0.f;
 
 	PollMetricsFromSources();
+	CaptureDailySatisfaction();
 }
 
 void UFF_FestivalViewModelSubsystem::RequestAdvanceToNextDay()

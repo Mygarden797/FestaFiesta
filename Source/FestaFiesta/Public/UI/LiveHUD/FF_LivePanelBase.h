@@ -4,8 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Fonts/SlateFontInfo.h"
 #include "UI/LiveHUD/FF_LiveHudTypes.h"
 #include "UI/Atlas/FF_AtlasScreenGeo.h"
+#include "UI/Widgets/FF_PanelScrollStyle.h"
 #include "FF_LivePanelBase.generated.h"
 
 class UButton;
@@ -34,6 +36,33 @@ class FESTAFIESTA_API UFF_LivePanelBase : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	UFF_LivePanelBase(const FObjectInitializer& ObjectInitializer);
+
+	/** 별도 도크에서 사용하는 패널의 닫기 요청. 연결되어 있으면 기존 하단 바보다 우선한다. */
+	FSimpleDelegate OnCloseRequested;
+
+	/** 시설·관객·대기열의 동적 목록 글꼴. 각 패널 WBP Class Defaults에서 수정한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Rows")
+	FSlateFontInfo DynamicRowFont;
+
+	/** 동적 행은 Designer에 없으므로 패널별 기본값으로 색을 명시한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Rows")
+	FLinearColor DynamicRowColor = FLinearColor::FromSRGBColor(FColor(23, 66, 55));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Rows")
+	FLinearColor DynamicRowNoteColor = FLinearColor::FromSRGBColor(FColor(101, 127, 117));
+
+	/** 패널 안 스크롤바 모양. 끄면 각 ScrollBox 의 Designer 스타일을 그대로 쓴다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Scroll")
+	FFF_PanelScrollStyle ScrollStyle;
+
+	/**
+	 * 패널 위에서 굴린 휠을 패널이 가진다. 끝까지 스크롤해 목록이 안 받은 휠이 뒤의 게임
+	 * 화면까지 내려가 카메라가 확대·축소되던 것을 막는다 (2026-10-06 사용자 보고).
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Scroll")
+	bool bConsumeMouseWheel = true;
+
 	/**
 	 * 바가 패널을 만든 직후 한 번 부른다. 어느 탭의 패널인지와 제목을 함께 넣는다.
 	 * 따로 두면 제목만 바뀌고 탭이 남아 "대기열 패널에 SNS 제목"이 뜬다.
@@ -52,6 +81,9 @@ public:
 	UFF_LiveHudScreen* GetOwningScreen() const { return OwningScreen.Get(); }
 
 protected:
+	/** 목록 재생성 시에도 에디터에서 지정한 글꼴·색을 사용한다. 데이터와 문구는 바꾸지 않는다. */
+	void ApplyDynamicRowStyle(UTextBlock& TextBlock, bool bNote = false) const;
+
 	/** 값이 비면 칸째 접는다. 빈 줄을 남기면 고장난 것으로 보인다. */
 	static void SetTextOrHide(class UTextBlock* TextBlock, const FText& Value);
 	/** 이 패널을 닫아 달라고 **바에 요청한다.** 직접 숨기지 않는다. */
@@ -60,6 +92,8 @@ protected:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativePreConstruct() override;
+	virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 	/** 오른쪽 위 닫기 버튼. 없으면 하단 바의 탭을 다시 눌러 닫는다. */
 	UFUNCTION()

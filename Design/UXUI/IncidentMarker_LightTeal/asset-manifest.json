@@ -1,0 +1,123 @@
+{
+  "pack": "IncidentMarker_LightTeal_v2",
+  "import": {
+    "compression_settings": "TC_EditorIcon",
+    "lod_group": "TEXTUREGROUP_UI",
+    "mip_gen_settings": "TMGS_NoMipmaps",
+    "address": "Clamp"
+  },
+  "exception": "월드 마커 기호는 LightTeal HUD 아이콘 규칙(흰 선 4.5/64, 18~24px)의 예외로 면 채움을 쓴다. 40px 안팎 월드 위에서 읽혀야 하기 때문이다.",
+  "runtime": {
+    "disc": {
+      "radius_uv": 0.45,
+      "color": "Palette InGame.Ink",
+      "opacity": 0.88,
+      "brush": "RoundedBox · HalfHeightRadius"
+    },
+    "ring_material": {
+      "asset": "/Game/FestaFiesta/UI/Material/M_UI_IncidentTimerRing",
+      "domain": "User Interface",
+      "blend": "Translucent",
+      "params": {
+        "Progress": "0~1. 12시에서 시계방향으로 이만큼 칠한다",
+        "CenterUV": [
+          0.5,
+          0.5
+        ],
+        "InnerRadius": 0.355,
+        "OuterRadius": 0.425,
+        "FillColor": "상태별 (아래 ring_states)",
+        "TrackColor": "White",
+        "TrackOpacity": 0.14
+      }
+    },
+    "glyph_scale_in_texture": 0.9,
+    "ring_states": {
+      "before_dispatch": {
+        "when": "ResponseStage == None",
+        "glyph": "Tone == Notice ? IncidentInfo : IncidentQuest",
+        "fill_color": "Urgency 색",
+        "progress": "남은 시간 / MinutesUntilLapse (줄어듦). MinutesUntilLapse <= 0 이면 1 고정"
+      },
+      "dispatched": {
+        "when": "ResponseStage != None",
+        "glyph": "IncidentDispatched",
+        "fill_color": "IncidentDispatch (신규, Teal 밝은 톤)",
+        "progress": "1 - RemainingWorkMinutes / 총 작업분 (차오름). 이동 단계에서는 0"
+      }
+    },
+    "urgency": [
+      {
+        "key": "Low",
+        "color": "#F1F4F2",
+        "palette": "IncidentUrgencyLow (신규)",
+        "motion": "없음"
+      },
+      {
+        "key": "Medium",
+        "color": "#F2C230",
+        "palette": "IncidentUrgencyMedium (신규)",
+        "motion": "없음"
+      },
+      {
+        "key": "High",
+        "color": "#E39A22",
+        "palette": "Amber",
+        "motion": "느린 펄스"
+      },
+      {
+        "key": "Immediate",
+        "color": "#D74E43",
+        "palette": "Danger",
+        "motion": "빠른 깜빡임 · 링 +1px"
+      }
+    ]
+  },
+  "assets": [
+    {
+      "file": "Generated/T_FF_LH_Icon_IncidentQuest_White_256.png",
+      "source_svg": "VectorSource/T_FF_LH_Icon_IncidentQuest_White_256.svg",
+      "unreal_destination": "/Game/FestaFiesta/UI/LiveHUD/Themes/LightTeal/Icons/Incident/T_FF_LH_Icon_IncidentQuest_White_256",
+      "width": 256,
+      "height": 256,
+      "draw_as": "Image",
+      "margin_px": null,
+      "srgb": true,
+      "never_stream": true,
+      "tintable": false,
+      "tileable": false,
+      "target_size_1080p": "40px 월드 마커 (원판과 같은 정사각형)",
+      "usage": "사건 월드 마커 기호 \"!\". Tone = Problem · Opportunity (처리가 필요한 사건)."
+    },
+    {
+      "file": "Generated/T_FF_LH_Icon_IncidentInfo_White_256.png",
+      "source_svg": "VectorSource/T_FF_LH_Icon_IncidentInfo_White_256.svg",
+      "unreal_destination": "/Game/FestaFiesta/UI/LiveHUD/Themes/LightTeal/Icons/Incident/T_FF_LH_Icon_IncidentInfo_White_256",
+      "width": 256,
+      "height": 256,
+      "draw_as": "Image",
+      "margin_px": null,
+      "srgb": true,
+      "never_stream": true,
+      "tintable": false,
+      "tileable": false,
+      "target_size_1080p": "40px 월드 마커 (원판과 같은 정사각형)",
+      "usage": "사건 월드 마커 기호 \"?\". Tone = Notice (확인만 하면 되는 사건)."
+    },
+    {
+      "file": "Generated/T_FF_LH_Icon_IncidentDispatched_White_256.png",
+      "source_svg": "VectorSource/T_FF_LH_Icon_IncidentDispatched_White_256.svg",
+      "unreal_destination": "/Game/FestaFiesta/UI/LiveHUD/Themes/LightTeal/Icons/Incident/T_FF_LH_Icon_IncidentDispatched_White_256",
+      "width": 256,
+      "height": 256,
+      "draw_as": "Image",
+      "margin_px": null,
+      "srgb": true,
+      "never_stream": true,
+      "tintable": false,
+      "tileable": false,
+      "target_size_1080p": "40px 월드 마커 (원판과 같은 정사각형)",
+      "usage": "사건 월드 마커 기호 \"출동 중\". ResponseStage != None 일 때 Tone 기호를 대신한다. HUD용 AssignStaff의 면 채움 월드 버전."
+    }
+  ]
+}

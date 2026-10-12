@@ -17,7 +17,7 @@ FText UFF_UIDisplayTextLibrary::GetFestivalStageText(EFF_FestivalStage Stage)
 	case EFF_FestivalStage::MorningCheck:		return LOCTEXT("Stage_MorningCheck", "모닝체크");
 	case EFF_FestivalStage::Live:				return LOCTEXT("Stage_Live", "라이브");
 	case EFF_FestivalStage::Closing:			return LOCTEXT("Stage_Closing", "마감");
-	case EFF_FestivalStage::Report:				return LOCTEXT("Stage_Report", "리포트");
+	case EFF_FestivalStage::Report:				return LOCTEXT("Stage_Report", "리포트	");
 	case EFF_FestivalStage::Finale:				return LOCTEXT("Stage_Finale", "피날레");
 	}
 
@@ -30,7 +30,7 @@ FText UFF_UIDisplayTextLibrary::GetPrepTabText(EFF_PrepHudTab Tab)
 	{
 	case EFF_PrepHudTab::Build:		return LOCTEXT("PrepTab_Build", "배치");
 	case EFF_PrepHudTab::Program:	return LOCTEXT("PrepTab_Program", "프로그램");
-	case EFF_PrepHudTab::Staff:		return LOCTEXT("PrepTab_Staff", "인력");
+	case EFF_PrepHudTab::Staff:		return LOCTEXT("PrepTab_Staff", "스태프");
 	case EFF_PrepHudTab::Promotion:	return LOCTEXT("PrepTab_Promotion", "홍보");
 	case EFF_PrepHudTab::Finale:	return LOCTEXT("PrepTab_Finale", "피날레");
 	case EFF_PrepHudTab::Check:		return LOCTEXT("PrepTab_Check", "점검");
@@ -45,7 +45,8 @@ FText UFF_UIDisplayTextLibrary::GetLiveTabText(EFF_LiveTab Tab)
 	{
 	case EFF_LiveTab::Operations:	return LOCTEXT("LiveTab_Operations", "운영");
 	case EFF_LiveTab::Facilities:	return LOCTEXT("LiveTab_Facilities", "시설");
-	case EFF_LiveTab::Guests:		return LOCTEXT("LiveTab_Guests", "관객");
+	case EFF_LiveTab::Guests:		return LOCTEXT("LiveTab_Guests", "현황");
+	case EFF_LiveTab::RevenueRanking: return LOCTEXT("LiveTab_RevenueRanking", "매출 순위");
 	case EFF_LiveTab::Queues:		return LOCTEXT("LiveTab_Queues", "대기열");
 	case EFF_LiveTab::SNS:			return LOCTEXT("LiveTab_SNS", "SNS");
 	case EFF_LiveTab::Report:		return LOCTEXT("LiveTab_Report", "리포트");
@@ -116,6 +117,7 @@ FText UFF_UIDisplayTextLibrary::GetFacilityQueueStateText(EFF_LiveFacilityQueueS
 	case EFF_LiveFacilityQueueState::Closed:	return LOCTEXT("FacQueue_Closed", "닫힘");
 	case EFF_LiveFacilityQueueState::Blocked:	return LOCTEXT("FacQueue_Blocked", "막힘");
 	case EFF_LiveFacilityQueueState::Unknown:	return LOCTEXT("FacQueue_Unknown", "모름");
+	case EFF_LiveFacilityQueueState::Paused:	return LOCTEXT("FacQueue_Paused", "공연 중 중단");
 	}
 
 	return FText::GetEmpty();
@@ -147,6 +149,166 @@ FText UFF_UIDisplayTextLibrary::GetNeedRemedyText(EFF_NeedType NeedType)
 	case EFF_NeedType::Stimulation:	return LOCTEXT("NeedFix_Stimulation", "볼거리를 늘리세요");
 	default:						return FText::GetEmpty();
 	}
+}
+
+FText UFF_UIDisplayTextLibrary::GetIncidentResolveResultText(EFF_IncidentResolveResult Result)
+{
+	switch (Result)
+	{
+	case EFF_IncidentResolveResult::Dispatched:			return LOCTEXT("IncidentResult_Dispatched", "스태프가 현장으로 출동했어요");
+	case EFF_IncidentResolveResult::Resolved:			return LOCTEXT("IncidentResult_Resolved", "사건을 처리했어요");
+	case EFF_IncidentResolveResult::InvalidIncident:	return LOCTEXT("IncidentResult_InvalidIncident", "이미 끝난 사건이에요");
+	case EFF_IncidentResolveResult::InvalidOption:		return LOCTEXT("IncidentResult_InvalidOption", "고를 수 없는 선택지예요 · 다른 선택지를 골라 주세요");
+	case EFF_IncidentResolveResult::AlreadyResponding:	return LOCTEXT("IncidentResult_AlreadyResponding", "이미 스태프가 출동 중이에요 · 도착할 때까지 기다려 주세요");
+	case EFF_IncidentResolveResult::NotEnoughStaff:		return LOCTEXT("IncidentResult_NotEnoughStaff", "출동할 스태프가 부족해요 · 안내 시설에 스태프를 배정해 주세요");
+	case EFF_IncidentResolveResult::NoSite:				return LOCTEXT("IncidentResult_NoSite", "사건 현장을 찾지 못했어요");
+	case EFF_IncidentResolveResult::DispatchFailed:		return LOCTEXT("IncidentResult_DispatchFailed", "출동하지 못했어요 · 잠시 후 다시 시도해 주세요");
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_UIDisplayTextLibrary::GetIncidentResolveResultLabel(EFF_IncidentResolveResult Result)
+{
+	switch (Result)
+	{
+	case EFF_IncidentResolveResult::Dispatched:			return LOCTEXT("IncidentLabel_Dispatched", "출동");
+	case EFF_IncidentResolveResult::Resolved:			return LOCTEXT("IncidentLabel_Resolved", "처리");
+	case EFF_IncidentResolveResult::InvalidIncident:
+	case EFF_IncidentResolveResult::InvalidOption:
+	case EFF_IncidentResolveResult::AlreadyResponding:
+	case EFF_IncidentResolveResult::NotEnoughStaff:
+	case EFF_IncidentResolveResult::NoSite:
+	case EFF_IncidentResolveResult::DispatchFailed:		return LOCTEXT("IncidentLabel_Rejected", "불가");
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_UIDisplayTextLibrary::GetIncidentResponseStageText(EFF_IncidentResponseStage Stage)
+{
+	switch (Stage)
+	{
+	case EFF_IncidentResponseStage::None:		return LOCTEXT("IncidentStage_None", "출동 전");
+	case EFF_IncidentResponseStage::Travelling:	return LOCTEXT("IncidentStage_Travelling", "현장으로 가는 중");
+	case EFF_IncidentResponseStage::Working:	return LOCTEXT("IncidentStage_Working", "현장 작업 중");
+	}
+
+	return FText::GetEmpty();
+}
+
+bool UFF_UIDisplayTextLibrary::IsIncidentResolveAccepted(EFF_IncidentResolveResult Result)
+{
+	return Result == EFF_IncidentResolveResult::Dispatched || Result == EFF_IncidentResolveResult::Resolved;
+}
+
+FText UFF_UIDisplayTextLibrary::GetIncidentClosedLabel(EFF_IncidentState State)
+{
+	switch (State)
+	{
+	case EFF_IncidentState::Resolved:	return LOCTEXT("IncidentClosedLabel_Resolved", "완료");
+	case EFF_IncidentState::Expired:	return LOCTEXT("IncidentClosedLabel_Expired", "소멸");
+	case EFF_IncidentState::Ignored:	return LOCTEXT("IncidentClosedLabel_Ignored", "방치");
+	case EFF_IncidentState::Missed:		return LOCTEXT("IncidentClosedLabel_Missed", "놓침");
+	case EFF_IncidentState::Active:
+	case EFF_IncidentState::Acknowledged:
+	case EFF_IncidentState::Taken:		return FText::GetEmpty();
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_UIDisplayTextLibrary::GetIncidentClosedText(EFF_IncidentState State, const FText& Title)
+{
+	if (Title.IsEmpty())
+	{
+		switch (State)
+		{
+		case EFF_IncidentState::Resolved:	return LOCTEXT("IncidentClosedBare_Resolved", "사건 처리를 마쳤어요");
+		case EFF_IncidentState::Expired:	return LOCTEXT("IncidentClosedBare_Expired", "사건이 저절로 사라졌어요");
+		case EFF_IncidentState::Ignored:	return LOCTEXT("IncidentClosedBare_Ignored", "사건을 손쓰지 못한 채 끝났어요");
+		case EFF_IncidentState::Missed:		return LOCTEXT("IncidentClosedBare_Missed", "기회를 놓쳤어요");
+		case EFF_IncidentState::Active:
+		case EFF_IncidentState::Acknowledged:
+		case EFF_IncidentState::Taken:		return FText::GetEmpty();
+		}
+		return FText::GetEmpty();
+	}
+
+	switch (State)
+	{
+	case EFF_IncidentState::Resolved:	return FText::Format(LOCTEXT("IncidentClosedText_Resolved", "{0} — 처리를 마쳤어요"), Title);
+	case EFF_IncidentState::Expired:	return FText::Format(LOCTEXT("IncidentClosedText_Expired", "{0} — 저절로 사라졌어요"), Title);
+	case EFF_IncidentState::Ignored:	return FText::Format(LOCTEXT("IncidentClosedText_Ignored", "{0} — 손쓰지 못한 채 끝났어요"), Title);
+	case EFF_IncidentState::Missed:		return FText::Format(LOCTEXT("IncidentClosedText_Missed", "{0} — 기회를 놓쳤어요"), Title);
+	case EFF_IncidentState::Active:
+	case EFF_IncidentState::Acknowledged:
+	case EFF_IncidentState::Taken:		return FText::GetEmpty();
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_UIDisplayTextLibrary::GetIncidentFinishedLabel(const FFF_IncidentClosedInfo& Info)
+{
+	switch (Info.CloseReason)
+	{
+	case EFF_IncidentCloseReason::NaturalResolution: return LOCTEXT("IncidentFinishedLabel_Natural", "자연 해소");
+	case EFF_IncidentCloseReason::ResponseCompleted: return LOCTEXT("IncidentFinishedLabel_Completed", "처리 완료");
+	case EFF_IncidentCloseReason::TimedOut: return LOCTEXT("IncidentFinishedLabel_TimedOut", "시간 만료");
+	case EFF_IncidentCloseReason::SessionReset: return FText::GetEmpty();
+	case EFF_IncidentCloseReason::Unknown: return GetIncidentClosedLabel(Info.FinalState);
+	}
+	return FText::GetEmpty();
+}
+
+FText UFF_UIDisplayTextLibrary::GetIncidentFinishedText(const FFF_IncidentClosedInfo& Info)
+{
+	FText Reason;
+	switch (Info.CloseReason)
+	{
+	case EFF_IncidentCloseReason::NaturalResolution:
+		Reason = Info.bWasResponding
+			? LOCTEXT("IncidentFinished_NaturalReturn", "상황이 해소되어 스태프가 복귀합니다")
+			: LOCTEXT("IncidentFinished_Natural", "상황이 해소되었습니다");
+		break;
+	case EFF_IncidentCloseReason::ResponseCompleted:
+		Reason = LOCTEXT("IncidentFinished_Completed", "처리를 마쳤습니다");
+		break;
+	case EFF_IncidentCloseReason::TimedOut:
+		Reason = Info.FinalState == EFF_IncidentState::Missed
+			? LOCTEXT("IncidentFinished_Missed", "대응 시간이 지나 기회를 놓쳤습니다")
+			: LOCTEXT("IncidentFinished_TimedOut", "대응 시간이 지나 종료되었습니다");
+		break;
+	case EFF_IncidentCloseReason::SessionReset:
+		return FText::GetEmpty();
+	case EFF_IncidentCloseReason::Unknown:
+		return GetIncidentClosedText(Info.FinalState, Info.Title);
+	}
+	FText Message = Info.Title.IsEmpty() ? Reason
+		: FText::Format(LOCTEXT("IncidentFinished_WithTitle", "{0} — {1}"), Info.Title, Reason);
+	if (Info.GrantedGold > 0)
+	{
+		Message = FText::Format(LOCTEXT("IncidentFinished_GrantedGold", "{0}\n금화 +{1}"),
+			Message, FText::AsNumber(Info.GrantedGold));
+	}
+	return Message;
+}
+
+EFF_IncidentToastKind UFF_UIDisplayTextLibrary::GetIncidentClosedKind(EFF_IncidentState State)
+{
+	switch (State)
+	{
+	case EFF_IncidentState::Resolved:	return EFF_IncidentToastKind::Good;
+	case EFF_IncidentState::Ignored:	return EFF_IncidentToastKind::Danger;
+	case EFF_IncidentState::Expired:
+	case EFF_IncidentState::Missed:
+	case EFF_IncidentState::Active:
+	case EFF_IncidentState::Acknowledged:
+	case EFF_IncidentState::Taken:		return EFF_IncidentToastKind::Neutral;
+	}
+
+	return EFF_IncidentToastKind::Neutral;
 }
 
 #undef LOCTEXT_NAMESPACE

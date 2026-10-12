@@ -13,6 +13,7 @@
 #include "Misc/AutomationTest.h"
 #include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "Tests/AutomationCommon.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 
 /**
  * ScoreSatisfaction 합성(`Clamp(SimSatisfaction + FinaleBonus, 0, 100)`)을 검증한다
@@ -129,20 +130,64 @@ bool FFF_ScoreSatisfaction_AddsFinaleBonusAndClampsAtMax::RunTest(const FString&
 	Harness.CommitSimSatisfaction(40.f);
 	TestEqual(TEXT("구매 전 SimSatisfaction은 40이다"), Harness.ViewModel->GetSimSatisfaction(), 40);
 
-	// A 등급 보너스는 +20이다([기획서] §10, `FF_FinalePurchaseTests.cpp`의 BonusA와 동일).
+	// A 등급 보너스는 +5이다(`FF_FinalePurchaseTests.cpp`의 BonusA와 동일).
 	TestEqual(TEXT("A 등급을 구매한다"),
 		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::A),
 		EFF_FinalePurchaseResult::Success);
 
-	TestEqual(TEXT("ViewModel에 보너스 20이 노출된다"), Harness.ViewModel->GetFinaleSatisfactionBonus(), 20);
-	TestEqual(TEXT("ScoreSatisfaction이 40+20=60으로 갈라진다(클램프 없이)"),
-		Harness.ViewModel->GetScoreSatisfaction(), 60);
+	TestEqual(TEXT("ViewModel에 보너스 5가 노출된다"), Harness.ViewModel->GetFinaleSatisfactionBonus(), 5);
+	TestEqual(TEXT("ScoreSatisfaction이 40+5=45로 갈라진다(클램프 없이)"),
+		Harness.ViewModel->GetScoreSatisfaction(), 45);
 
 	// SimSatisfaction이 나중에 다시 바뀌어도(보너스는 구매 시점에 고정) 합이 계속 따라간다.
 	Harness.CommitSimSatisfaction(95.f);
 	TestEqual(TEXT("SimSatisfaction이 95로 갱신된다"), Harness.ViewModel->GetSimSatisfaction(), 95);
-	TestEqual(TEXT("95+20=115는 100으로 클램프된다"), Harness.ViewModel->GetScoreSatisfaction(), 100);
+	TestEqual(TEXT("95+5=100으로 클램프 경계에 닿는다"), Harness.ViewModel->GetScoreSatisfaction(), 100);
 
+	return true;
+}
+
+// 하루 만족도는 그날 Live 창들의 평균이다. Live 밖 창은 세지 않고, 다음 날 Live 가 시작되면 새로 모은다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ScoreSatisfaction_DayAverageCoversLive, "FestaFiesta.UI.ViewModel.ScoreSatisfaction.DayAverageCoversLive", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ScoreSatisfaction_DayAverageCoversLive::RunTest(const FString& Parameters)
+{
+	using namespace FFF_ScoreSatisfactionSynthesisTestHelpers;
+
+	FScoreSatisfactionHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(this)))
+	{
+		return false;
+	}
+	UFF_FestivalStageSubsystem* Stage = Harness.TestWorld.GetTestWorld()->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>();
+	if (!TestNotNull(TEXT("단계 시계"), Stage))
+	{
+		return false;
+	}
+
+	Stage->CurrentDay = 1;
+	Stage->CurrentStage = EFF_FestivalStage::Setup;
+	Harness.CommitSimSatisfaction(10.f);
+	TestFalse(TEXT("Live 밖 창은 하루 평균에 넣지 않는다"), Harness.Satisfaction->GetDayAverage().IsValid());
+
+	Stage->CurrentStage = EFF_FestivalStage::Live;
+	Harness.CommitSimSatisfaction(40.f);
+	Harness.CommitSimSatisfaction(80.f);
+	FFF_DaySatisfactionAverage Day1 = Harness.Satisfaction->GetDayAverage();
+	TestEqual(TEXT("1일차"), Day1.Day, 1);
+	TestEqual(TEXT("두 창의 평균"), Day1.Satisfaction, 60);
+	TestEqual(TEXT("하위 점수도 평균"), Day1.DensityScore, 60);
+	TestEqual(TEXT("마지막 순간 값은 따로 남는다"), Harness.Satisfaction->GetSimSatisfaction(), 80);
+
+	Stage->CurrentStage = EFF_FestivalStage::Closing;
+	Harness.CommitSimSatisfaction(20.f);
+	TestEqual(TEXT("마감 창은 평균을 바꾸지 않는다"), Harness.Satisfaction->GetDayAverage().Satisfaction, 60);
+
+	Stage->CurrentDay = 2;
+	Stage->CurrentStage = EFF_FestivalStage::Live;
+	Harness.CommitSimSatisfaction(30.f);
+	const FFF_DaySatisfactionAverage Day2 = Harness.Satisfaction->GetDayAverage();
+	TestEqual(TEXT("다음 날은 새로 모은다"), Day2.Day, 2);
+	TestEqual(TEXT("2일차 평균"), Day2.Satisfaction, 30);
 	return true;
 }
 

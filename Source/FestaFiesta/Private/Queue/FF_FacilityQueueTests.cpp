@@ -191,6 +191,36 @@ bool FFF_FacilityQueue_AbandonsAfterMaxWait::RunTest(const FString& Parameters)
 	return true;
 }
 
+// 5-1. 도착 확인을 쓰는 큐는 줄 자리에 도착한 뒤부터 대기를 잰다. 걸어오는 시간은 대기가 아니다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_AbandonTimerStartsAtArrival, "FestaFiesta.Queue.FacilityQueue.AbandonTimerStartsAtArrival", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_AbandonTimerStartsAtArrival::RunTest(const FString& Parameters)
+{
+	FFF_QueueConfig Config = MakeConfig(20, /*ServiceSecondsPerParty=*/300.f);
+	Config.bRequireArrivalConfirmation = true;
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, Config, MakeLane());
+
+	float SimTime = 0.f;
+	Join(Queue, MakeRequest(10, 1, /*MaxWaitSeconds=*/-1.f), SimTime);   // 앞사람: 무제한 + 긴 서비스
+	Join(Queue, MakeRequest(20, 2, /*MaxWaitSeconds=*/30.f), SimTime);   // 25초 걸어와 도착
+	Join(Queue, MakeRequest(30, 1, /*MaxWaitSeconds=*/30.f), SimTime);   // 끝내 못 옴
+	Queue.NotifyPartyArrived(10, SimTime);
+	StepFor(Queue, 25.f, SimTime);
+	Queue.NotifyPartyArrived(20, SimTime);
+
+	StepFor(Queue, 15.f, SimTime);
+	TestTrue(TEXT("가입 40초지만 도착 15초라 아직 기다린다"), Queue.ContainsParty(20));
+	TestTrue(TEXT("못 온 팀은 걸어오는 시간을 한도만큼 더 받는다"), Queue.ContainsParty(30));
+
+	StepFor(Queue, 16.f, SimTime);
+	TestFalse(TEXT("도착 뒤 30초가 지나면 포기한다"), Queue.ContainsParty(20));
+	TestTrue(TEXT("못 온 팀은 아직(가입 56초)"), Queue.ContainsParty(30));
+
+	StepFor(Queue, 5.f, SimTime);
+	TestFalse(TEXT("못 온 팀은 가입 60초에 정리된다"), Queue.ContainsParty(30));
+	return true;
+}
+
 // 6. 서비스가 시작된 Party는 이탈하지 않는다
 //    창구에 선 사람이 갑자기 사라지면 관측이 이상해지고 서비스·이탈 타이머가 경쟁한다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_ServingPartyNeverAbandons, "FestaFiesta.Queue.FacilityQueue.ServingPartyNeverAbandons", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

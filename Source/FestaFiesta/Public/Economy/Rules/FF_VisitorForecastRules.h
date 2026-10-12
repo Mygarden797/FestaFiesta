@@ -15,6 +15,10 @@ struct FESTAFIESTA_API FFF_VisitorForecastRules
 	// 배수 = 1 + (Buzz - 50) / 50 × Swing. Buzz 는 0~100 으로 자른 뒤 계산한다.
 	static float CalcBuzzMultiplier(float Buzz, float Swing);
 
+	// 어제 만족도(0~100)의 평판 배수. 50 에서 1.0, 0 에서 MinMultiplier, 100 에서 MaxMultiplier 로 직선 보간한다.
+	// 어제가 없으면(첫날) 호출하지 말고 1.0 을 쓴다.
+	static float CalcReputationMultiplier(float YesterdaySatisfaction, float MinMultiplier, float MaxMultiplier);
+
 	// 홍보 등급의 방문객 배수. 미구매는 NoPromotionVisitorMultiplier.
 	static float CalcPromotionMultiplier(EFF_PromotionGrade Grade, const UFF_FestivalDefinition& Definition);
 
@@ -24,7 +28,8 @@ struct FESTAFIESTA_API FFF_VisitorForecastRules
 		const UFF_FestivalDefinition& Definition,
 		EFF_PromotionGrade Grade,
 		int32 AdmissionFeeGold,
-		float Buzz);
+		float Buzz,
+		float ReputationMultiplier = 1.f);
 };
 
 // 축제 화제성(Buzz) 규칙. 0~100, 50 이 중립이다.

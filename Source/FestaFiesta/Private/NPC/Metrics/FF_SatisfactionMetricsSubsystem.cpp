@@ -3,6 +3,9 @@
 #include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h" // LogFestaFiestaNpc
+#include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
+#include "Time/FF_FestivalStageSubsystem.h"
+#include "Engine/GameInstance.h"
 
 FFF_SatisfactionCoefficients FFF_SatisfactionCoefficients::LoadFromTable(const UDataTable* UtilityCoefficientTable)
 {
@@ -28,6 +31,15 @@ FFF_SatisfactionCoefficients FFF_SatisfactionCoefficients::LoadFromTable(const U
 	Coefficients.PreferenceTermRef = FFF_UtilityCoefficientHelpers::GetCoefficient(
 		UtilityCoefficientTable, TEXT("satisfaction_preference_term_ref"), Coefficients.PreferenceTermRef);
 
+	Coefficients.NeedCoverageTargetHunger = FFF_UtilityCoefficientHelpers::GetCoefficient(
+		UtilityCoefficientTable, TEXT("need_coverage_target_hunger"), Coefficients.NeedCoverageTargetHunger);
+	Coefficients.NeedCoverageTargetRestroom = FFF_UtilityCoefficientHelpers::GetCoefficient(
+		UtilityCoefficientTable, TEXT("need_coverage_target_restroom"), Coefficients.NeedCoverageTargetRestroom);
+	Coefficients.NeedCoverageTargetStimulation = FFF_UtilityCoefficientHelpers::GetCoefficient(
+		UtilityCoefficientTable, TEXT("need_coverage_target_stimulation"), Coefficients.NeedCoverageTargetStimulation);
+	Coefficients.NeedCoverageFloor = FFF_UtilityCoefficientHelpers::GetCoefficient(
+		UtilityCoefficientTable, TEXT("need_coverage_floor"), Coefficients.NeedCoverageFloor);
+
 	static const TCHAR* LOSGradeCoefficientIds[6] =
 	{
 		TEXT("satisfaction_los_a_score"), TEXT("satisfaction_los_b_score"), TEXT("satisfaction_los_c_score"),
@@ -52,11 +64,14 @@ void FFF_SatisfactionAggregator::Begin()
 	bHasQueueSuccessRateThisWindow = false;
 	PendingDensityWeightedScoreSum = 0.0;
 	PendingDensityWeight = 0;
+	PendingCrowdedWeight = 0;
 	// 지난 창 이후에 확정된 결정의 취향 표본을 이번 창이 이어받는다. 한 번만 쓰이도록 비운다.
 	PendingPreferenceSum = CarriedPreferenceSum;
 	PendingPreferenceCount = CarriedPreferenceCount;
+	PendingPreferenceMatchedCount = CarriedPreferenceMatchedCount;
 	CarriedPreferenceSum = 0.0;
 	CarriedPreferenceCount = 0;
+	CarriedPreferenceMatchedCount = 0;
 	PendingNeedFulfillmentSum = 0.0;
 	PendingNeedFulfillmentCount = 0;
 	PendingPenaltySum = 0.0;
@@ -86,7 +101,7 @@ bool FFF_SatisfactionAggregator::SetQueueSuccessRate(float SuccessRate01)
 	return true;
 }
 
-bool FFF_SatisfactionAggregator::AddDensitySample(float Score0To100, int32 Weight)
+bool FFF_SatisfactionAggregator::AddDensitySample(float Score0To100, int32 Weight, bool bCrowded)
 {
 	if (!bAggregating || Weight <= 0)
 	{
@@ -94,6 +109,7 @@ bool FFF_SatisfactionAggregator::AddDensitySample(float Score0To100, int32 Weigh
 	}
 	PendingDensityWeightedScoreSum += static_cast<double>(Score0To100) * Weight;
 	PendingDensityWeight += Weight;
+	PendingCrowdedWeight += bCrowded ? Weight : 0;
 	return true;
 }
 
@@ -102,15 +118,19 @@ bool FFF_SatisfactionAggregator::AddPreferenceSample(float PreferenceNorm)
 	// 결정은 집계 창(Begin~Commit) 밖에서 확정된다. 집계는 AdvanceNeeds 한 번의 호출 안에서
 	// 끝나고 결정 처리는 그다음에 도는데, 그때 거부하면 취향 표본이 하나도 못 들어온다.
 	// 그래서 창 밖의 표본은 따로 모아 두었다가 다음 Begin 이 이어받는다.
+	// 취향 항이 0 보다 크면 그 파티의 취향에 맞는 곳을 고른 것이다
+	const int32 Matched = PreferenceNorm > 0.f ? 1 : 0;
 	if (bAggregating)
 	{
 		PendingPreferenceSum += PreferenceNorm;
 		++PendingPreferenceCount;
+		PendingPreferenceMatchedCount += Matched;
 	}
 	else
 	{
 		CarriedPreferenceSum += PreferenceNorm;
 		++CarriedPreferenceCount;
+		CarriedPreferenceMatchedCount += Matched;
 	}
 	return true;
 }
@@ -210,18 +230,23 @@ bool FFF_SatisfactionAggregator::Commit(const FFF_SatisfactionCoefficients& Coef
 			: 100.f;
 		const float SuccessMultiplier = bHasSuccessRate ? PendingQueueSuccessRate : 1.f;
 		CommittedWaitScore = FMath::Clamp(FMath::RoundToInt(RawWaitScore * SuccessMultiplier), 0, 100);
+		CommittedAverageWaitSeconds = bHasWaitSamples ? static_cast<float>(PendingWaitSum / PendingWaitCount) : -1.f;
+		CommittedQueueSuccessRate = SuccessMultiplier;
 	}
 
 	if (bHasDensity)
 	{
 		const float AvgDensityScore = static_cast<float>(PendingDensityWeightedScoreSum / PendingDensityWeight);
 		CommittedDensityScore = FMath::Clamp(FMath::RoundToInt(AvgDensityScore), 0, 100);
+		CommittedCrowdedShare = static_cast<float>(static_cast<double>(PendingCrowdedWeight) / PendingDensityWeight);
 	}
 
 	if (bHasPreference)
 	{
 		const float AvgPreferenceNorm = static_cast<float>(PendingPreferenceSum / PendingPreferenceCount);
 		CommittedPreferenceScore = FMath::Clamp(FMath::RoundToInt((AvgPreferenceNorm + 1.f) * 50.f), 0, 100);
+		CommittedPreferenceMatchShare = static_cast<float>(PendingPreferenceMatchedCount) / PendingPreferenceCount;
+		CommittedPreferenceSampleCount = PendingPreferenceCount;
 	}
 
 	if (bHasNeed)
@@ -283,23 +308,118 @@ bool FFF_SatisfactionAggregator::Commit(const FFF_SatisfactionCoefficients& Coef
 
 void UFF_SatisfactionMetricsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
+	Collection.InitializeDependency<UFF_FestivalStageSubsystem>();
 	Super::Initialize(Collection);
+
+	if (UFF_FestivalStageSubsystem* Stage = GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>())
+	{
+		Stage->OnFestivalStarted.AddUniqueDynamic(this, &UFF_SatisfactionMetricsSubsystem::HandleFestivalStarted);
+	}
 
 	UE_LOG(LogFestaFiestaNpc, Log,
 		TEXT("UFF_SatisfactionMetricsSubsystem 초기화. 첫 확정 전까지는 중립값 50을 돌려준다 ")
 		TEXT("(GetSampleCount()==0으로 '아직 안 걸림'을 구분할 것)."));
 }
 
+void UFF_SatisfactionMetricsSubsystem::ResetForNewFestival()
+{
+	Aggregator = FFF_SatisfactionAggregator();
+	DayAccumulator = FDayAccumulator();
+	OnSimSatisfactionChanged.Broadcast(Aggregator.GetSimSatisfaction());
+}
+
 void UFF_SatisfactionMetricsSubsystem::Deinitialize()
 {
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+		{
+			Stage->OnFestivalStarted.RemoveDynamic(this, &UFF_SatisfactionMetricsSubsystem::HandleFestivalStarted);
+		}
+	}
 	OnSimSatisfactionChanged.Clear();
 	Super::Deinitialize();
 }
 
 void UFF_SatisfactionMetricsSubsystem::CommitAggregation(const FFF_SatisfactionCoefficients& Coefficients)
 {
-	if (Aggregator.Commit(Coefficients))
+	LastCoefficients = Coefficients;
+	const bool bChanged = Aggregator.Commit(Coefficients);
+	AccumulateDayAverage();
+	if (bChanged)
 	{
 		OnSimSatisfactionChanged.Broadcast(Aggregator.GetSimSatisfaction());
 	}
+}
+
+void UFF_SatisfactionMetricsSubsystem::AccumulateDayAverage()
+{
+	// 손님 표본이 있는 Live 창만 하루 평균에 넣는다. 표본이 없는 창은 직전 값을 유지할 뿐이라 세면 한쪽으로 쏠린다
+	const UGameInstance* GameInstance = GetGameInstance();
+	const UFF_FestivalStageSubsystem* Stage = GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	if (!Stage || Stage->CurrentStage != EFF_FestivalStage::Live || Aggregator.GetSampleCount() <= 0)
+	{
+		return;
+	}
+	FDayAccumulator& Acc = DayAccumulator;
+	if (Acc.Day != Stage->CurrentDay)
+	{
+		Acc = FDayAccumulator();
+		Acc.Day = Stage->CurrentDay;
+	}
+	++Acc.Windows;
+	Acc.Satisfaction += Aggregator.GetSimSatisfaction();
+	Acc.Base += Aggregator.GetBaseSatisfaction();
+	Acc.Wait += Aggregator.GetWaitScore();
+	Acc.Density += Aggregator.GetDensityScore();
+	Acc.Preference += Aggregator.GetPreferenceScore();
+	Acc.Need += Aggregator.GetNeedFulfillmentScore();
+	if (Aggregator.GetAverageWaitSeconds() >= 0.f) { Acc.WaitSeconds += Aggregator.GetAverageWaitSeconds(); ++Acc.WaitSecondsCount; }
+	if (Aggregator.GetQueueSuccessRate() >= 0.f) { Acc.QueueSuccess += Aggregator.GetQueueSuccessRate(); ++Acc.QueueSuccessCount; }
+	if (Aggregator.GetCrowdedShare() >= 0.f) { Acc.Crowded += Aggregator.GetCrowdedShare(); ++Acc.CrowdedCount; }
+	if (Aggregator.GetPreferenceMatchShare() >= 0.f && Aggregator.GetPreferenceSampleCount() > 0)
+	{
+		Acc.PreferenceMatched += Aggregator.GetPreferenceMatchShare() * Aggregator.GetPreferenceSampleCount();
+		Acc.PreferenceSamples += Aggregator.GetPreferenceSampleCount();
+	}
+	if (const UFF_NpcNeedMetricsSubsystem* Needs = GameInstance->GetSubsystem<UFF_NpcNeedMetricsSubsystem>())
+	{
+		if (Needs->GetSampleCount() > 0)
+		{
+			for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
+			{
+				Acc.Unmet[Index] += Needs->GetNeedUnmetRatio(static_cast<EFF_NeedType>(Index));
+			}
+			++Acc.UnmetCount;
+		}
+	}
+}
+
+FFF_DaySatisfactionAverage UFF_SatisfactionMetricsSubsystem::GetDayAverage() const
+{
+	FFF_DaySatisfactionAverage Result;
+	const FDayAccumulator& Acc = DayAccumulator;
+	Result.Day = Acc.Day;
+	Result.WindowCount = Acc.Windows;
+	if (Acc.Windows <= 0)
+	{
+		return Result;
+	}
+	const auto Average = [&Acc](double Sum) { return FMath::Clamp(FMath::RoundToInt(static_cast<float>(Sum / Acc.Windows)), 0, 100); };
+	Result.Satisfaction = Average(Acc.Satisfaction);
+	Result.BaseSatisfaction = FMath::Max(Average(Acc.Base), Result.Satisfaction);
+	Result.WaitScore = Average(Acc.Wait);
+	Result.DensityScore = Average(Acc.Density);
+	Result.PreferenceScore = Average(Acc.Preference);
+	Result.NeedScore = Average(Acc.Need);
+	Result.AverageWaitSeconds = Acc.WaitSecondsCount > 0 ? static_cast<float>(Acc.WaitSeconds / Acc.WaitSecondsCount) : -1.f;
+	Result.QueueSuccessRate = Acc.QueueSuccessCount > 0 ? static_cast<float>(Acc.QueueSuccess / Acc.QueueSuccessCount) : -1.f;
+	Result.CrowdedShare = Acc.CrowdedCount > 0 ? static_cast<float>(Acc.Crowded / Acc.CrowdedCount) : -1.f;
+	Result.PreferenceMatchShare = Acc.PreferenceSamples > 0 ? static_cast<float>(Acc.PreferenceMatched / Acc.PreferenceSamples) : -1.f;
+	Result.PreferenceSampleCount = Acc.PreferenceSamples;
+	for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
+	{
+		Result.NeedUnmetPercent[Index] = Acc.UnmetCount > 0 ? static_cast<float>(Acc.Unmet[Index] / Acc.UnmetCount) : -1.f;
+	}
+	return Result;
 }

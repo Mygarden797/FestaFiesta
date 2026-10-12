@@ -253,7 +253,7 @@ bool FFF_BoothRevenue_DefinitionDefaultsMatchSpec::RunTest(const FString& Parame
 	TestEqual(TEXT("야간"), FFF_BoothRevenueRules::FindRevenuePerUse(Table, TEXT("Nightlife")), RevenueNightlife);
 
 	// 수수료율도 같은 표에서 온다 (§1.1 3번).
-	TestEqual(TEXT("수수료율 12%"), Definition->BoothCommissionRate, CommissionRate);
+	TestEqual(TEXT("부스는 축제 직영이라 수익 100%"), Definition->BoothCommissionRate, 1.0f);
 
 	return true;
 }

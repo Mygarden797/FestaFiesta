@@ -23,7 +23,7 @@ bool FFFZSQueueGeometry::ApplySelectedLayout(FFFZSFacilitySpec& InOutSpec, FText
     const int32 Count = InOutSpec.QueueRules.MaxWaitingAgents;
     const double Spacing = InOutSpec.QueueRules.SlotSpacingCm;
     const double Tolerance = InOutSpec.QueueRules.SlotArrivalToleranceCm;
-    if (InOutSpec.IsGroundSurface() || InOutSpec.Category == EFFZSFacilityCategory::Lighting ||
+    if (!InOutSpec.UsesServiceQueue() ||
         Count <= 0 || Count > UFFZSDeveloperSettings::MaxQueueWaitingAgents ||
         !FMath::IsFinite(Spacing) || Spacing <= 0.0 || !FMath::IsFinite(Tolerance) || Tolerance < 0.0 ||
         InOutSpec.FootprintSizeCells.X <= 0 || InOutSpec.FootprintSizeCells.Y <= 0)
@@ -63,8 +63,7 @@ bool FFFZSQueueGeometry::ApplySelectedLayout(FFFZSFacilitySpec& InOutSpec, FText
     const FVector Right(Outward.Y, -Outward.X, 0.0);
     const double HalfLaneWidth = FMath::Max(50.0, Tolerance + 1.0);
     const double Separation = FMath::Max(Spacing, FMath::Max(1.0, Tolerance * 2.0));
-    double HeadDistance = (bXFace ? HalfSize.X : HalfSize.Y) +
-        FMath::Max(0, Candidate.ClearanceCells) + HalfLaneWidth;
+    double HeadDistance = (bXFace ? HalfSize.X : HalfSize.Y) + HalfLaneWidth;
     for (const FFFZSAnchorDefinition& Anchor : Candidate.Anchors)
     {
         if (Anchor.Type != EFFZSAnchorType::Entry || Anchor.Index != 0)

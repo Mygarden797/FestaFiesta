@@ -25,7 +25,7 @@
 namespace
 {
     // Region 연산의 정확한 좌표와 면적을 사람이 계산할 수 있도록 만든 작은 합성 사양이다.
-     // footprint=[0,3)x[0,2), clearance=1, queue=[3,5)x[0,1)이다.
+     // footprint=[0,3)x[0,2), legacy clearance=1 (ignored), queue=[3,5)x[0,1).
      // 대형 1 cm fixture는 이 테스트에서 Get*Cells로 펼치지 않는다.
      
     FFFZSFacilitySpec MakeSmallRegionSpec()
@@ -215,10 +215,10 @@ bool FFFZSCompressedRegionContractTest::RunTest(const FString& Parameters)
         UFFZSGridLibrary::GetCellRectArea(FootprintRects), static_cast<int64>(6));
     TestEqual(TEXT("대기열 Region이 1센티미터 Cell 2개를 포함한다"),
         UFFZSGridLibrary::GetCellRectArea(QueueRects), static_cast<int64>(2));
-    TestEqual(TEXT("여유 영역에서 점유 영역과 대기열의 겹침이 제외된다"),
-        UFFZSGridLibrary::GetCellRectArea(ClearanceRects), static_cast<int64>(13));
+    TestEqual(TEXT("Legacy clearance does not reserve additional space"),
+        UFFZSGridLibrary::GetCellRectArea(ClearanceRects), static_cast<int64>(0));
     TestEqual(TEXT("예약 Region은 중복 계산 없는 정확한 합집합이다"),
-        UFFZSGridLibrary::GetCellRectArea(ReservedRects), static_cast<int64>(21));
+        UFFZSGridLibrary::GetCellRectArea(ReservedRects), static_cast<int64>(8));
 
     TestFalse(TEXT("점유 영역과 여유 Region이 서로 겹치지 않는다"),
         UFFZSGridLibrary::DoCellRectSetsOverlap(FootprintRects, ClearanceRects));
@@ -236,12 +236,12 @@ bool FFFZSCompressedRegionContractTest::RunTest(const FString& Parameters)
     // 작은 합성 입력에서만 구 호환 Get*Cells를 펼쳐 Region 면적과 같은지 확인한다.
     TestEqual(TEXT("작은 디버그 점유 영역의 모든 Cell이 구체화된다"),
         UFFZSGridLibrary::GetFootprintCells(Spec, Placement).Num(), 6);
-    TestEqual(TEXT("작은 디버그 여유 영역의 모든 Cell이 구체화된다"),
-        UFFZSGridLibrary::GetClearanceCells(Spec, Placement).Num(), 13);
+    TestEqual(TEXT("Legacy clearance has no debug cells"),
+        UFFZSGridLibrary::GetClearanceCells(Spec, Placement).Num(), 0);
     TestEqual(TEXT("작은 디버그 대기열의 모든 Cell이 구체화된다"),
         UFFZSGridLibrary::GetQueueCells(Spec, Placement).Num(), 2);
     TestEqual(TEXT("작은 디버그 예약 영역이 정확한 합집합으로 구체화된다"),
-        UFFZSGridLibrary::GetReservedCells(Spec, Placement).Num(), 21);
+        UFFZSGridLibrary::GetReservedCells(Spec, Placement).Num(), 8);
 
     // Arrange/Act: 겹치고 맞닿는 Rect 입력을 결정적 비중첩 합집합으로 정규화한다.
     const TArray<FFFZSCellRect> Canonical = UFFZSGridLibrary::CanonicalizeCellRects({
@@ -335,19 +335,119 @@ bool FFFZSCompressedRegionContractTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("대기열 전용 오버플로는 불완전한 예약 합집합을 노출하지 않는다"),
         UFFZSGridLibrary::GetReservedRects(Spec, QueueOverflowPlacement).IsEmpty());
 
-    // 보수적 예산은 expanded footprint 20 + queue 2를 합산해 겹침과 무관하게 22로 판단한다.
+    // The budget covers footprint 6 + queue 2, without legacy clearance.
     {
         TGuardValue<int32> BelowBudgetGuard(
-            MutableSettings->MaxEnumeratedCellsPerFacility, 21);
-        TestFalse(TEXT("보수적 Region 작업 예산은 필요한 22 Cell보다 1 부족하면 거부한다"),
+            MutableSettings->MaxEnumeratedCellsPerFacility, 7);
+        TestFalse(TEXT("The region budget rejects one cell below the required eight"),
             UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
     }
     {
         TGuardValue<int32> ExactBudgetGuard(
-            MutableSettings->MaxEnumeratedCellsPerFacility, 22);
+            MutableSettings->MaxEnumeratedCellsPerFacility, 8);
         TestTrue(TEXT("보수적 Region 작업 예산은 정확한 경곗값을 허용한다"),
             UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
     }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSPassiveFootprintRegionsTest,
+    "FF_ZoneSystem.Unit.Grid.PassiveInfrastructureReservesOnlyFootprint",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSPassiveFootprintRegionsTest::RunTest(const FString& Parameters)
+{
+    TGuardValue<int32> Budget(GetMutableDefault<UFFZSDeveloperSettings>()->MaxEnumeratedCellsPerFacility, 6);
+    for (const EFFZSFacilityCategory Category : {
+        EFFZSFacilityCategory::Road, EFFZSFacilityCategory::Tile, EFFZSFacilityCategory::Lighting })
+    {
+        FFFZSFacilitySpec Legacy = MakeSmallRegionSpec();
+        Legacy.Category = Category;
+        Legacy.ClearanceCells = 100;
+        Legacy.QueueReservedCells.Add(FIntPoint(100, 100));
+        TestTrue(TEXT("Only the 3x2 footprint consumes the region budget"),
+            UFFZSGridLibrary::CanEnumerateFacilityCells(Legacy));
+        const FFFZSGridPlacement Identity;
+        TestTrue(TEXT("Direct queue query ignores obsolete reservations"),
+            UFFZSGridLibrary::GetQueueRects(Legacy, Identity).IsEmpty());
+        TestEqual(TEXT("Reserved area equals the exact footprint"),
+            UFFZSGridLibrary::GetCellRectArea(UFFZSGridLibrary::GetReservedRects(Legacy, Identity)), int64(6));
+        for (const int32 Yaw : { 0, 3700, 9000, 22500 })
+        {
+            FFFZSGridPlacement Placement;
+            Placement.OriginCell = FIntPoint(123, 456);
+            Placement.YawCentidegrees = Yaw;
+            TArray<FFFZSOrientedRect> Footprint, Clearance, Queue, Reserved;
+            UFFZSGridLibrary::BuildPlacementOrientedRegions(Legacy, Placement, Footprint, Clearance, Queue, Reserved);
+            TestEqual(TEXT("A rotated passive footprint remains one rectangle"), Footprint.Num(), 1);
+            TestTrue(TEXT("Rotation never adds clearance or a queue"), Clearance.IsEmpty() && Queue.IsEmpty());
+            TestTrue(TEXT("Reserved geometry exactly matches the rotated footprint"),
+                AreOrientedRectArraysEquivalent(Footprint, Reserved));
+        }
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSNativeStageAreaBudgetTest,
+    "FF_ZoneSystem.Unit.Grid.NativeStageFitsCompressedAreaBudget",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSNativeStageAreaBudgetTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    UFFZSDeveloperSettings* MutableSettings = GetMutableDefault<UFFZSDeveloperSettings>();
+    TGuardValue<int32> BudgetGuard(MutableSettings->MaxEnumeratedCellsPerFacility,
+        UFFZSDeveloperSettings::DefaultMaxEnumeratedCellsPerFacility);
+
+    // Actual main-stage mesh bounds with an ignored legacy 1m clearance.
+    // The area remains compressed even though it exceeds the previous 1,000m2 allowance.
+    FFFZSFacilitySpec Spec;
+    Spec.FootprintSizeCells = FIntPoint(5071, 3149);
+    Spec.ClearanceCells = 100;
+    const FFFZSGridPlacement Placement;
+    TestTrue(TEXT("Native main-stage dimensions fit the production area budget"),
+        UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
+    const TArray<FFFZSCellRect> Footprint = UFFZSGridLibrary::GetFootprintRects(Spec, Placement);
+    TestEqual(TEXT("A native-size stage stays one authoritative footprint rectangle"), Footprint.Num(), 1);
+    TestEqual(TEXT("The stage rectangle preserves its full native footprint area"),
+        UFFZSGridLibrary::GetCellRectArea(Footprint), static_cast<int64>(15'968'579));
+    TestEqual(TEXT("The stage reservation does not include legacy clearance"),
+        UFFZSGridLibrary::GetCellRectArea(UFFZSGridLibrary::GetReservedRects(Spec, Placement)),
+        static_cast<int64>(15'968'579));
+    TestTrue(TEXT("Native stage size does not enable massive debug cell materialization"),
+        UFFZSGridLibrary::GetReservedCells(Spec, Placement).IsEmpty());
+
+    // A separate audience allowance must remain independent of the stage body/queue limit.
+    Spec.Audience.bEnabled = true;
+    Spec.Audience.Columns = 22;
+    Spec.Audience.Rows = 22;
+    Spec.Audience.FirstSlotLocalCm = FVector(0, 2500, 0);
+    if (!TestTrue(TEXT("The audience layout can arrange its seats and portals"),
+            Spec.Audience.TryCenterAndArrangePortals()))
+    {
+        return false;
+    }
+    TestFalse(TEXT("The large stage and audience exceed the shared area budget"),
+        UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
+    Spec.Audience.AreaLimitM2 = 909.f;
+    TestTrue(TEXT("A 909-square-meter audience allowance permits the native-size stage audience"),
+        UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
+    TestTrue(TEXT("The separate audience allowance still leaves large debug cell arrays empty"),
+        UFFZSGridLibrary::GetReservedCells(Spec, Placement).IsEmpty());
+
+    Spec.Audience.bEnabled = false;
+    Spec.ClearanceCells = 0;
+    Spec.FootprintSizeCells = FIntPoint(5000, 4000);
+    TestTrue(TEXT("Exactly 20,000,000 square centimeters are permitted"),
+        UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
+    Spec.FootprintSizeCells.X += 1;
+    TestFalse(TEXT("A footprint beyond 20,000,000 square centimeters is rejected"),
+        UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
+    TestTrue(TEXT("An oversized footprint cannot expose partial authority rectangles"),
+        UFFZSGridLibrary::GetFootprintRects(Spec, Placement).IsEmpty());
     return true;
 }
 
@@ -723,8 +823,10 @@ bool FFFZSAuthoredUpgradeSpecTest::RunTest(const FString& Parameters)
         TestTrue(TEXT("Derived definition errors identify the authored level"), !Errors.IsEmpty() && Errors[0].ToString().StartsWith(TEXT("Lv.2:")));
     }
     const FFFZSFacilitySpec Identity = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Legacy, 1, 1.0f);
-    TestTrue(TEXT("Identity scale keeps all legacy values exactly"),
-        FFFZSFacilitySpec::StaticStruct()->CompareScriptStruct(&Legacy, &Identity, 0));
+    FFFZSFacilitySpec NormalizedLegacy = Legacy;
+    NormalizedLegacy.ClearanceCells = 0;
+    TestTrue(TEXT("Identity scale preserves authored geometry and removes legacy clearance"),
+        FFFZSFacilitySpec::StaticStruct()->CompareScriptStruct(&NormalizedLegacy, &Identity, 0));
     const FFFZSFacilitySpec DecimalGrowth = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Base, 2, 1.15f);
     TestTrue(TEXT("Decimal growth keeps a touching queue outside the building"), DecimalGrowth.IsValid(Errors));
     TestEqual(TEXT("Decimal float noise does not steal a row at the shared edge"),
@@ -764,7 +866,7 @@ bool FFFZSAuthoredUpgradeSpecTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Expanded authored geometry validates"), Grown.IsValid(Errors));
     TestEqual(TEXT("Actual footprint doubles"), Grown.FootprintSizeCells, FIntPoint(1200, 600));
     TestEqual(TEXT("Actual obstacle height doubles"), Grown.PlacementObstacleHeightCm, Base.PlacementObstacleHeightCm * 2.0f);
-    TestEqual(TEXT("Clearance preserves human safety distance"), Grown.ClearanceCells, Base.ClearanceCells);
+    TestEqual(TEXT("Upgrades discard legacy safety clearance"), Grown.ClearanceCells, 0);
     TestEqual(TEXT("Queue slot spacing stays unchanged"), Grown.QueueRules.SlotSpacingCm, Base.QueueRules.SlotSpacingCm);
     TestEqual(TEXT("Queue capacity stays unchanged"), Grown.QueueRules.MaxWaitingAgents, Base.QueueRules.MaxWaitingAgents);
     TestEqual(TEXT("Original service duration is not compounded in effective spec"), Grown.QueueRules.ServiceDurationSeconds, Base.QueueRules.ServiceDurationSeconds);

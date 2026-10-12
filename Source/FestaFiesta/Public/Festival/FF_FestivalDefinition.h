@@ -41,6 +41,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival", meta = (ClampMin = "0"))
 	int32 DailyVisitorGoal = 900;
 
+	// 날마다 목표에 더하는 인원. Day N 목표 = DailyVisitorGoal + 이 값 × (N - 1). [밸런스]
+	// 고정 900 은 홍보 없이도 채워져 방문객 점수가 늘 만점이었다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival", meta = (ClampMin = "0"))
+	int32 DailyVisitorGoalGrowthPerDay = 100;
+
+	int32 GetDailyVisitorGoalForDay(int32 Day) const
+	{
+		return DailyVisitorGoal > 0 ? DailyVisitorGoal + DailyVisitorGoalGrowthPerDay * FMath::Max(Day - 1, 0) : 0;
+	}
+
 	/**
 	 * 하루 방문객(누적)의 기준. 홍보·입장료·화제성 배수를 곱한 값이 `GetExpectedVisitors()` 이고,
 	 * Crowd 는 그 값으로 그날 도착 인원을 정한다. `AFF_SpawnActor::UnitCount` 는 경제가 없을 때의 폴백이다.
@@ -49,7 +59,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival", meta = (ClampMin = "0"))
 	int32 BaseDailyVisitors = 1000;
 
-	// Setup 완료 및 운영 진입에 필요한 시설. 기본은 SunsetMainStage 1개. 빈 목록이면 조건 없음.
+	// Setup 완료 및 운영 진입에 필요한 시설. 빈 목록이면 조건 없음.
+	// 기본은 SunsetMainStage 1개 + 메인안내소 1개(스태프 1명 이상 배정까지). 안내소는 사건 대응 스태프가
+	// 출발하는 집이라, 설치만 하고 배정을 잊으면 사건에 아무도 출동하지 못한다 — 그래서 배정까지 요구한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Setup", meta = (TitleProperty = "FacilityDefinition"))
 	TArray<FFF_RequiredFacility> RequiredSetupFacilities;
 
@@ -59,9 +71,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Initial", meta = (ClampMin = "0"))
 	int32 InitialGold = 10000;
 
-	// 무페이 기본 Staff. [기획서] §8.2 "중형 Event 1개 해결 가능, 2개 동시는 어려운 수준"
+	// 무페이 기본 Staff. 메인안내소 필수 배정 1명만 채운다 — 사건 대응 인력은 고용으로 산다.
+	// 6명이면 고용을 안 해도 사건이 다 풀려 스태프 고용이 선택지가 되지 않았다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Initial", meta = (ClampMin = "0"))
-	int32 InitialStaffCount = 6;
+	int32 InitialStaffCount = 1;
 
 	// --- 스태프 고용 -----------------------------------------------------------
 
@@ -91,10 +104,11 @@ public:
 	//        덮을 것이 없어져 3일 7,500 이 통째로 순이익이 됐다 — 초기 자금과 함께
 	//        다시 앉혀야 하는 값이다.
 
-	// 1인당 입장료 기준값 (Gold). [밸런스] 3일 7,500
+	// 1인당 입장료 기준값 (Gold). [밸런스]
+	// 5 일 때 매출의 95% 이상이 입장료라 시설을 안 지어도 점수가 나왔다. 3 으로 낮춰 부스 매출이 4할쯤 되게 했다.
 	// 플레이어가 매일 아침 바꿀 수 있다. 이 값은 축제 시작 시 입장료이자 "수요 배수 1.0" 인 지점이다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "0"))
-	int32 AdmissionFeeGold = 5;
+	int32 AdmissionFeeGold = 3;
 
 	// 플레이어가 고를 수 있는 입장료 범위 (Gold). [밸런스]
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "0"))
@@ -115,9 +129,11 @@ public:
 	float AdmissionFeeMaxVisitorMultiplier = 1.15f;
 
 	// [참고] 유료 프로그램은 플레이어가 Gold 를 내서 직접 산 것이므로 체험비를 전부 받는다.
-	// 유료 프로그램 외 '부스 매출' 중 플레이어 몫 (0.0~1.0). [밸런스] 3일 9,000.
+	// 유료 프로그램 외 '부스 매출' 중 플레이어 몫 (0.0~1.0). [밸런스]
+	// 부스는 축제가 직영한다(1.0). 0.12 일 때 1회 이용이 4 Gold 남짓이라 부스를 지을 이유가 없었다.
+	// DT_FacilityRevenues 의 행별 수수료 덮어쓰기는 꺼 두었다(Tools/DataTables/use_festival_commission_rate.py).
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float BoothCommissionRate = 0.12f;
+	float BoothCommissionRate = 1.0f;
 	
 	// 시설별 수익표에 행이 없고 Data Asset의 개별 매출도 끈 기존 시설만 쓰는 기본값.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (DisplayName = "Default Revenue Per Use by Minor Token", ToolTip = "시설 수익표에 해당 시설 행이 없고 시설 Data Asset의 개별 매출 설정도 꺼져 있을 때만 적용합니다. 시설별 조정은 Facility Revenue Table의 수치를 바꾸세요. 금액은 1명당 1회 매출이며 실제 수입에는 Booth Commission Rate가 적용됩니다."))
@@ -155,13 +171,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float BuzzVisitorSwing = 0.15f;
 
+	// 평판 배수: 어제 만족도(0~100)가 다음날 방문객을 움직인다. 50(중립)에서 ×1.00, 0 에서 Min, 100 에서 Max.
+	// Day1 은 어제가 없어 ×1.00 이다. 폭은 홍보 등급 폭을 넘기지 않는다(staff_event_design.md 5절). [밸런스]
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Reputation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ReputationMinVisitorMultiplier = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Reputation", meta = (ClampMin = "1.0"))
+	float ReputationMaxVisitorMultiplier = 1.25f;
+
 	// 하루가 바뀔 때 중립(50)과의 거리를 이 비율만큼 줄인다. 화제는 식는다. [밸런스]
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float BuzzDailyDecayToNeutral = 0.25f;
+	float BuzzDailyDecayToNeutral = 0.4f;
 
 	// SNS 글 1건이 Buzz 를 움직이는 최대치. 실제 값은 × (화제 강도 / 100), 긍정 +, 부정 -. [밸런스]
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0"))
-	float BuzzPerSnsPost = 0.6f;
+	float BuzzPerSnsPost = 0.3f;
+
+	// 플레이어가 게시글에 처음 공감했을 때의 보상. 일일 제한 없이 글마다 한 번 적용한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0"))
+	float BuzzPerSnsReaction = 0.1f;
 
 	// 유료 프로그램 1개가 열릴 때 오르는 Buzz. [밸런스]
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0"))
@@ -181,6 +209,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Evaluation", meta = (ClampMin = "0.0"))
 	float EvaluationWeightBuzz = 0.15f;
+
+	// 재무 만점 이익(Gold). 재무 점수 = 100 × (최종 - 시작) / 이 값. 본전이면 0점. [밸런스]
+	// 3일 경제 시나리오(FestaFiesta.Scenario.Economy.ThreeDays)로 맞췄다: 최소 배치는 B, 시설 25개 + 인플루언서 + 피날레 S 는 S 에 닿는다.
+	// 구역 13개 맵에서는 시설을 18개 이상 지은 판의 이익이 28,000~37,000 이라, 그 판들은 만점에 닿고 최소 배치(이익 17,000~22,000)만 덜 받게 둔다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Evaluation", meta = (ClampMin = "0"))
+	int32 FinanceTargetProfitGold = 28000;
 
 	// --- 뒷정리 -----------------------------------------------------------
 

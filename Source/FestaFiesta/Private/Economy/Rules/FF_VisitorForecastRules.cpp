@@ -19,6 +19,17 @@ float FFF_VisitorForecastRules::CalcBuzzMultiplier(const float Buzz, const float
 	return 1.f + Offset * FMath::Clamp(Swing, 0.f, 1.f);
 }
 
+float FFF_VisitorForecastRules::CalcReputationMultiplier(
+	const float YesterdaySatisfaction, const float MinMultiplier, const float MaxMultiplier)
+{
+	const float Satisfaction = FMath::Clamp(YesterdaySatisfaction, 0.f, 100.f);
+	const float Low = FMath::Min(MinMultiplier, 1.f);
+	const float High = FMath::Max(MaxMultiplier, 1.f);
+	return Satisfaction <= 50.f
+		? FMath::Lerp(Low, 1.f, Satisfaction / 50.f)
+		: FMath::Lerp(1.f, High, (Satisfaction - 50.f) / 50.f);
+}
+
 float FFF_VisitorForecastRules::CalcPromotionMultiplier(
 	const EFF_PromotionGrade Grade, const UFF_FestivalDefinition& Definition)
 {
@@ -31,7 +42,8 @@ FFF_VisitorForecast FFF_VisitorForecastRules::BuildForecast(
 	const UFF_FestivalDefinition& Definition,
 	const EFF_PromotionGrade Grade,
 	const int32 AdmissionFeeGold,
-	const float Buzz)
+	const float Buzz,
+	const float ReputationMultiplier)
 {
 	FFF_VisitorForecast Forecast;
 	Forecast.AdmissionFeeGold = AdmissionFeeGold;
@@ -42,7 +54,9 @@ FFF_VisitorForecast FFF_VisitorForecastRules::BuildForecast(
 	Forecast.BuzzMultiplier = CalcBuzzMultiplier(Buzz, Definition.BuzzVisitorSwing);
 
 	const float Base = static_cast<float>(FMath::Max(Definition.BaseDailyVisitors, 0));
-	const float WithoutFee = Base * Forecast.PromotionMultiplier * Forecast.BuzzMultiplier;
+	Forecast.ReputationMultiplier = FMath::Max(ReputationMultiplier, 0.f);
+	const float WithoutFee = Base * Forecast.PromotionMultiplier * Forecast.BuzzMultiplier
+		* Forecast.ReputationMultiplier;
 
 	// 1e-4 를 더하고 내린다. 500 × 1.12 가 부동소수로 559.9999 가 되어 559 로 떨어지는 것을 막는다.
 	Forecast.ExpectedVisitors = FMath::Max(0, FMath::FloorToInt32(WithoutFee * Forecast.AdmissionFeeMultiplier + 1e-4f));

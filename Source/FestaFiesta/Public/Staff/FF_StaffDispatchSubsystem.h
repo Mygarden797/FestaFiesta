@@ -1,0 +1,100 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Incident/FF_IncidentTypes.h"
+#include "Subsystems/WorldSubsystem.h"
+#include "FF_StaffDispatchSubsystem.generated.h"
+
+class UFF_IncidentSubsystem;
+class UFF_StaffFacilitySubsystem;
+class UFF_StaffSubsystem;
+struct FFF_StaffDispatchOrigin;
+
+/** Staff reservations belong to StaffFacility and staff movement belongs to StaffSubsystem; this subsystem owns only the incident response.
+ *  It only says "send" / "recall" and reads each member's state: all Working = start work, any member gave up = cancel,
+ *  Idle while returning = that member is home and its reservation is released. */
+UCLASS()
+class FESTAFIESTA_API UFF_StaffDispatchSubsystem : public UTickableWorldSubsystem
+{
+	GENERATED_BODY()
+
+public:
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
+	virtual void Tick(float DeltaTime) override;
+	virtual bool IsTickable() const override;
+	virtual TStatId GetStatId() const override;
+	virtual bool DoesSupportWorldType(EWorldType::Type WorldType) const override;
+
+	// All responders must have a home and a visual before dispatch succeeds. A missing navigation path does not block dispatch.
+	// WorkAmount(사람-분)를 원본 숙련도 능력치 합으로 나눈 축제 분 동안 전원 도착 뒤 작업한다.
+	// MinStaff는 사건의 최소 인원이며 RequiredStaff는 실제로 선택한 인원이다.
+	// OutResult 를 주면 Dispatched 또는 거부 이유를 채운다.
+	bool TryDispatch(FFF_IncidentHandle Handle, int32 OptionIndex, int32 RequiredStaff,
+		const FFF_IncidentAnchor& Anchor, float WorkAmount = 0.f, EFF_IncidentResolveResult* OutResult = nullptr,
+		int32 MinStaff = 1);
+	// 이동 시간을 제외한 현장 작업 예상 축제 분과 능력치 합. 실패 시 출력은 0이며 예약하지 않는다.
+	bool PreviewWork(int32 RequiredStaff, const FFF_IncidentAnchor& Anchor, float WorkAmount,
+		int32 MinStaff, float& OutMinutes, float& OutAbility) const;
+	bool IsResponding(FFF_IncidentHandle Handle) const;
+
+	// 현장 작업 중이면 남은 축제 분을 돌려준다. 이동 중이거나 출동이 없으면 false.
+	bool GetRemainingWorkMinutes(FFF_IncidentHandle Handle, float& OutMinutes) const;
+
+	bool GetTotalWorkMinutes(FFF_IncidentHandle Handle, float& OutMinutes) const;
+
+	// 화면용 출동 단계. 복귀 중(사건 취소 뒤)은 None 이다. Working 이면 OutRemainingMinutes 를 채운다.
+	// 단계가 바뀔 때(작업 시작·작업 멈춤)와 남은 시간이 화면 표시 단위(올림한 분)로 바뀔 때 OnIncidentUpdated 를 방송한다.
+	// UI 는 이 방송만 받아 다시 읽으면 되고, 매 틱 들여다보지 않는다 (UI_API.md 원칙 3).
+	EFF_IncidentResponseStage GetResponseStage(FFF_IncidentHandle Handle, float& OutRemainingMinutes) const;
+
+	// 남은 작업 시간이 올림한 분 단위로 바뀌었고 아직 남아 있으면 true. 끝나는 순간은 사건이 닫히므로 알리지 않는다.
+	static bool ShouldAnnounceWorkMinute(float PreviousMinutes, float CurrentMinutes);
+
+private:
+	struct FDispatch
+	{
+		FFF_IncidentHandle Handle;
+		int32 OptionIndex = INDEX_NONE;
+		FFF_IncidentAnchor Anchor;
+		TArray<int32> StaffIds;
+		bool bReturning = false;
+		bool bWorking = false;
+		float RemainingWorkMinutes = 0.f;
+		float TotalWorkMinutes = 0.f;
+	};
+
+	bool TryGetFestivalMinutes(float& OutMinutes) const;
+	static bool CalculateWork(const TArray<FFF_StaffDispatchOrigin>& Origins, float WorkAmount,
+		int32 MinStaff, float& OutMinutes, float& OutAbility);
+	void ResetDispatches(bool bAnnounce);
+
+	bool TryGetLocation(const FFF_IncidentAnchor& Anchor, FVector& OutLocation) const;
+	void BeginReturn(FDispatch& Dispatch);
+	void ReleaseReturnedStaff(FDispatch& Dispatch);
+	void ReleaseDispatch(FDispatch& Dispatch);
+
+	UFUNCTION()
+	void HandleIncidentClosed(FFF_IncidentHandle Handle);
+	UFUNCTION()
+	void HandleReservationsReset();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_IncidentSubsystem> Incident;
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_StaffFacilitySubsystem> Staffing;
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_StaffSubsystem> StaffBodies;
+
+	TArray<FDispatch> Dispatches;
+	float LastWorkClockMinutes = -1.f;
+	bool bDispatchInFlight = false;
+
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_StaffDispatchJourneyTest;
+	friend class FFF_StaffDispatchIncidentTest;
+	friend class FFF_StaffDispatchWarpTest;
+	friend class FFF_StaffDispatchTrainingRuleTest;
+	friend class FFF_StaffFacilityDispatchTest;
+#endif
+};

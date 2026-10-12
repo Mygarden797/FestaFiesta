@@ -6,6 +6,8 @@
 #include "Curve/GeneralPolygon2.h"
 #include "FF_FFZSTypes.h"
 
+struct FFFZSBuildAreaLineSegment;
+
 // Construction authority is the exact union of the regions, including holes and disconnected pieces.
 // Boolean geometry is rebuilt only when the source regions change. Queries allocate no polygon arrays.
 struct FFFZSBuildAreaSourcePolygon
@@ -21,6 +23,11 @@ public:
     bool Rebuild(const TArray<FFFZSBuildAreaSourcePolygon>& Sources);
     bool ContainsWorldPoint(const FVector& WorldPoint) const;
     bool ContainsWorldOrientedRect(const FFFZSOrientedRect& WorldRectCm, double WorldZCm) const;
+    void GetBoundarySegments(double WorldZCm, const FBox2D& ViewBounds,
+        TArray<FFFZSBuildAreaLineSegment>& OutSegments) const;
+    void GetOutsideSegments(const FFFZSOrientedRect& WorldRectCm, double WorldZCm,
+        const TArray<FFFZSBuildAreaLineSegment>& InputSegments,
+        TArray<FFFZSBuildAreaLineSegment>& OutSegments) const;
     bool IsReady() const { return !Slices.IsEmpty(); }
     const FBox& GetBounds() const { return Bounds; }
     double GetAreaSquareMeters() const { return AreaSquareMeters; }
@@ -34,6 +41,7 @@ private:
         TArray<UE::Geometry::FGeneralPolygon2d> Polygons;
         TArray<FBox2D> PolygonBounds;
     };
+    const FSlice* FindSlice(double WorldZCm) const;
     TArray<FSlice> Slices;
     FBox Bounds = FBox(ForceInit);
     double AreaSquareMeters = 0.0;

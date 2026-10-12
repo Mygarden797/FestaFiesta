@@ -6,10 +6,11 @@ UE_LOG(LogTemp, Warning, TEXT(Format), ##__VA_ARGS__)
 
 #include "Incident/FF_IncidentSubsystem.h"
 
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Incident/Effects/FF_IncidentEffect.h"
 #include "Incident/FF_IncidentSettings.h"
-#include "Incident/FF_StaffDispatchSubsystem.h"
+#include "Staff/FF_StaffDispatchSubsystem.h"
 #include "Incident/Rules/FF_IncidentRules.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 
@@ -23,15 +24,23 @@ void UFF_IncidentSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	Super::OnWorldBeginPlay(InWorld);
 	
 	LoadDefinitions();
-	
-	
-	
-	
-	
+
+	const UGameInstance* GameInstance = InWorld.GetGameInstance();
+	if (UFF_FestivalStageSubsystem* Stage = GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	{
+		Stage->OnStageChanged.AddUniqueDynamic(this, &UFF_IncidentSubsystem::HandleStageChanged);
+	}
 }
 
 void UFF_IncidentSubsystem::Deinitialize()
 {
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	if (UFF_FestivalStageSubsystem* Stage = GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	{
+		Stage->OnStageChanged.RemoveDynamic(this, &UFF_IncidentSubsystem::HandleStageChanged);
+	}
+
 	Super::Deinitialize();
 	
 	LoadedCatalog = nullptr;
@@ -49,7 +58,7 @@ TStatId UFF_IncidentSubsystem::GetStatId() const
 	STATGROUP_Tickables);
 }
 
-void UFF_IncidentSubsystem::WithdrawIncident(FName DedupeKey)
+void UFF_IncidentSubsystem::WithdrawIncident(FName DedupeKey, EFF_IncidentCloseReason Reason)
 {
 	FFF_IncidentHandle* Handle =  ActiveByKey.Find(DedupeKey);
 	
@@ -62,30 +71,37 @@ void UFF_IncidentSubsystem::WithdrawIncident(FName DedupeKey)
 	float Now = 0.f;
 	TryGetNowMinutes(Now);
 	
-	CloseSlot(Index,EFF_IncidentState::Expired, Now);
+	CloseSlot(Index,EFF_IncidentState::Expired, Now, Reason);
 
 
 
 	
 }
 
-bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex, int32 StaffCount)
+bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 OptionIndex, int32 StaffCount,
+	EFF_IncidentResolveResult* OutResult)
 {
+	EFF_IncidentResolveResult LocalResult = EFF_IncidentResolveResult::DispatchFailed;
+	EFF_IncidentResolveResult& Result = OutResult ? *OutResult : LocalResult;
+
 	const FIncidentSlot* Slot = FindSlot(Handle);
 	if (!Slot)
 	{
 		FF_INCIDENT_LOG("ResolveIncident: handle %d/%d is not active", Handle.Index, Handle.Serial);
+		Result = EFF_IncidentResolveResult::InvalidIncident;
 		return false;
 	}
 
 	const UFF_IncidentDefinition* Definition = CachedDef.FindRef(Slot->IncidentTag);
 	if (!Definition)
 	{
+		Result = EFF_IncidentResolveResult::InvalidIncident;
 		return false;
 	}
 	const UFF_IncidentOption* Option = Definition->GetOption(OptionIndex);
 	if (OptionIndex != INDEX_NONE && !Option)
 	{
+		Result = EFF_IncidentResolveResult::InvalidOption;
 		return false;
 	}
 	int32 RequiredStaff = FMath::Max(0, Definition->RequiredStaff);
@@ -98,13 +114,59 @@ bool UFF_IncidentSubsystem::ResolveIncident(FFF_IncidentHandle Handle, int32 Opt
 	UFF_StaffDispatchSubsystem* Dispatch = GetWorld() ? GetWorld()->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr;
 	if (Dispatch && Dispatch->IsResponding(Handle))
 	{
+		Result = EFF_IncidentResolveResult::AlreadyResponding;
 		return false;
 	}
 	if (RequiredStaff > 0)
 	{
-		return Dispatch && Dispatch->TryDispatch(Handle, OptionIndex, RequiredStaff, Slot->Anchor, WorkAmount);
+		if (!Dispatch)
+		{
+			Result = EFF_IncidentResolveResult::DispatchFailed;
+			return false;
+		}
+		const int32 MinStaff = Option ? FMath::Max(1, Option->MinStaff) : RequiredStaff;
+		return Dispatch->TryDispatch(Handle, OptionIndex, RequiredStaff, Slot->Anchor, WorkAmount, &Result, MinStaff);
 	}
-	return CompleteStaffResponse(Handle, OptionIndex);
+	const bool bResolved = CompleteStaffResponse(Handle, OptionIndex);
+	Result = bResolved ? EFF_IncidentResolveResult::Resolved : EFF_IncidentResolveResult::InvalidIncident;
+	return bResolved;
+}
+
+bool UFF_IncidentSubsystem::PreviewStaffWork(FFF_IncidentHandle Handle, int32 OptionIndex, int32 StaffCount,
+	float& OutMinutes, float& OutAbility) const
+{
+	OutMinutes = 0.f;
+	OutAbility = 0.f;
+	const FIncidentSlot* Slot = FindSlot(Handle);
+	const UFF_IncidentDefinition* Definition = Slot ? CachedDef.FindRef(Slot->IncidentTag) : nullptr;
+	const UFF_IncidentOption* Option = Definition ? Definition->GetOption(OptionIndex) : nullptr;
+	const UFF_StaffDispatchSubsystem* Dispatch = GetWorld() ? GetWorld()->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr;
+	if (!Slot || !Option || !Dispatch || Dispatch->IsResponding(Handle))
+	{
+		return false;
+	}
+	const int32 MinStaff = FMath::Max(1, Option->MinStaff);
+	return Dispatch->PreviewWork(FMath::Max(MinStaff, StaffCount), Slot->Anchor,
+		FMath::Max(0.f, Option->WorkAmount), MinStaff, OutMinutes, OutAbility);
+}
+
+/**
+ * 만료는 플레이어가 아무것도 고르지 않은 상태라 Context 의 OptionIndex 는 INDEX_NONE 이다.
+ * Context·상태·정의를 먼저 잡고 닫는다 — CloseSlot 의 방송을 받은 쪽이 이 슬롯을 곧바로 재사용할 수 있다.
+ * 정의를 못 찾아도 사건은 닫는다. 그러지 않으면 매 틱 다시 만료 판정에 걸린다.
+ */
+void UFF_IncidentSubsystem::LapseIncident(FFF_IncidentHandle Handle, float NowMinutes)
+{
+	const FIncidentSlot* Slot = FindSlot(Handle);
+	if (!Slot)
+	{
+		FF_INCIDENT_LOG("LapseIncident: handle %d/%d is not active", Handle.Index, Handle.Serial);
+		return;
+	}
+
+	const EFF_IncidentState FinalState = FFF_IncidentRules::LapseStateFor(Slot->Tone);
+
+	CloseSlot(Handle.Index, FinalState, NowMinutes, EFF_IncidentCloseReason::TimedOut);
 }
 
 bool UFF_IncidentSubsystem::CompleteStaffResponse(FFF_IncidentHandle Handle, int32 OptionIndex)
@@ -114,27 +176,11 @@ bool UFF_IncidentSubsystem::CompleteStaffResponse(FFF_IncidentHandle Handle, int
 	{
 		return false;
 	}
-	// Copy effect context before CloseSlot broadcasts; observers may immediately reuse this slot.
-	FFF_IncidentContext Context;
-	Context.World = GetWorld();
-	Context.Handle = Handle;
-	Context.IncidentTag = Slot->IncidentTag;
-	Context.Anchor = Slot->Anchor;
-	Context.ContextTags = Slot->ContextTags;
-	Context.OptionIndex = OptionIndex;
-	Context.PeakIntensity = Slot->PeakIntensity;
-	const UFF_IncidentDefinition* Definition = CachedDef.FindRef(Slot->IncidentTag);
-	const UFF_IncidentOption* Option = Definition ? Definition->GetOption(OptionIndex) : nullptr;
-	UFF_IncidentEffect* Effect = Option ? Option->Effect.Get() : nullptr;
 	float Now = 0.f;
 	TryGetNowMinutes(Now);
 
 	IncidentSlots[Handle.Index].ChosenOptionIndex = OptionIndex;
-	CloseSlot(Handle.Index, EFF_IncidentState::Resolved, Now);
-	if (Effect)
-	{
-		Effect->Apply(Context);
-	}
+	CloseSlot(Handle.Index, EFF_IncidentState::Resolved, Now, EFF_IncidentCloseReason::ResponseCompleted);
 	return true;
 }
 
@@ -184,11 +230,22 @@ bool UFF_IncidentSubsystem::GetIncidentView(FFF_IncidentHandle Handle, FFF_Incid
 	
 	OutView.IncidentTag = Slot->IncidentTag;
 	OutView.MinuteUntileLapse = Slot->MinutesUntilLapse;
+	OutView.Tone = Slot->Tone;
+	OutView.Urgency = Slot->Urgency;
+	OutView.OccurredAtMinutes = Slot->OccurredAtMinutes;
 	OutView.Title = Def->Title;
 	OutView.Body = Def->Body;
-	OutView.MarkerIcon = Def->MarkerIcon;
 	OutView.Anchor = Slot->Anchor;
 	FFF_IncidentRules::BuildOptionViews(*Def, OutView.Options);
+
+	OutView.ResponseStage = EFF_IncidentResponseStage::None;
+	OutView.RemainingWorkMinutes = 0.f;
+	OutView.TotalWorkMinutes = 0.f;
+	if (const UFF_StaffDispatchSubsystem* Dispatch = GetWorld() ? GetWorld()->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr)
+	{
+		OutView.ResponseStage = Dispatch->GetResponseStage(Handle, OutView.RemainingWorkMinutes);
+		Dispatch->GetTotalWorkMinutes(Handle, OutView.TotalWorkMinutes);
+	}
 
 	return true;
 }
@@ -285,7 +342,31 @@ const UFF_IncidentSubsystem::FIncidentSlot* UFF_IncidentSubsystem::FindSlot(FFF_
 
 
 
-void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState, float NowMinutes)
+void UFF_IncidentSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage)
+{
+	if (NewStage != EFF_FestivalStage::Live)
+	{
+		CloseAllIncidents();
+	}
+}
+
+void UFF_IncidentSubsystem::CloseAllIncidents()
+{
+	float Now = 0.f;
+	TryGetNowMinutes(Now);
+
+	for (int32 Index = 0; Index < IncidentSlots.Num(); Index++)
+	{
+		if (IncidentSlots[Index].bInUse)
+		{
+			// 운영 종료 정리는 보상·실패 효과와 종료 토스트 없이 마커·출동 상태만 정리한다.
+			CloseSlot(Index, EFF_IncidentState::Expired, Now, EFF_IncidentCloseReason::SessionReset, false);
+		}
+	}
+}
+
+void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState, float NowMinutes,
+	EFF_IncidentCloseReason Reason, bool bNotifyFinished)
 {
 	if (!IncidentSlots.IsValidIndex(Index))
 	{
@@ -298,6 +379,7 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	
 	
 	FIncidentSlot& Slot = IncidentSlots[Index];
+	if (!Slot.bInUse) { return; }
 	
 	bool bEscalateTo = ((FinalState == EFF_IncidentState::Ignored) && Slot.EscalateTo.IsValid());
 	FFF_IncidentReport EscalateToReport;
@@ -321,7 +403,36 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	
 	Handle.Index = Index;
 	Handle.Serial = Slot.Serial;
-	
+
+	FFF_IncidentClosedInfo ClosedInfo;
+	ClosedInfo.Handle = Handle;
+	ClosedInfo.IncidentTag = Slot.IncidentTag;
+	ClosedInfo.FinalState = FinalState;
+	ClosedInfo.CloseReason = Reason;
+	ClosedInfo.Tone = Slot.Tone;
+	ClosedInfo.ChosenOptionIndex = Slot.ChosenOptionIndex;
+	const FFF_IncidentContext EffectContext = MakeContext(Handle, Slot, Slot.ChosenOptionIndex);
+	TArray<TObjectPtr<UFF_IncidentEffect>> Effects;
+	if (const UFF_IncidentDefinition* ClosedDefinition = CachedDef.FindRef(Slot.IncidentTag))
+	{
+		ClosedInfo.Title = ClosedDefinition->Title;
+		if (FinalState == EFF_IncidentState::Resolved && Reason == EFF_IncidentCloseReason::ResponseCompleted)
+		{
+			if (const UFF_IncidentOption* Option = ClosedDefinition->GetOption(Slot.ChosenOptionIndex))
+			{
+				Effects = Option->OnResolvedEffect;
+			}
+		}
+		else if (FinalState == EFF_IncidentState::Ignored && Reason == EFF_IncidentCloseReason::TimedOut)
+		{
+			Effects = ClosedDefinition->OnFailedEffect;
+		}
+	}
+	if (const UFF_StaffDispatchSubsystem* Dispatch = GetWorld() ? GetWorld()->GetSubsystem<UFF_StaffDispatchSubsystem>() : nullptr)
+	{
+		ClosedInfo.bWasResponding = Dispatch->IsResponding(Handle);
+	}
+
 	Slot.Serial++;
 	Slot.bInUse = false;
 	Slot.State = FinalState;
@@ -336,8 +447,15 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	FreeSlots.Push(Index);
 	
 	
+	// 먼저 핸들을 무효화해 지급 중 델리게이트 재진입도 같은 사건을 다시 해결하지 못한다.
+	// 모든 원장 반영 뒤 종료를 방송하므로 종료 이력과 저장 요청은 확정된 잔액을 읽는다.
+	ClosedInfo.GrantedGold = ApplyEffects(Effects, EffectContext).GrantedGold;
 	OnIncidentClosed.Broadcast(Handle);
-	
+	if (bNotifyFinished)
+	{
+		OnIncidentFinished.Broadcast(ClosedInfo);
+	}
+
 	if (bEscalateTo)
 	{
 		ReportIncident(EscalateToReport);
@@ -350,6 +468,80 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	
 	
 }
+
+void UFF_IncidentSubsystem::SetResponding(FFF_IncidentHandle Handle, bool bRespond)
+{
+	if (!FindSlot(Handle))
+	{
+		FF_INCIDENT_LOG("SetResponding: handle %d/%d is not active", Handle.Index, Handle.Serial);
+		return;
+	}
+	
+	
+	float Now = 0.f;
+	const bool bHasNow = TryGetNowMinutes(Now);
+	FIncidentSlot& Slot = IncidentSlots[Handle.Index];
+	
+	if (bRespond)
+	{
+		
+		if (!bHasNow)
+		{
+			FF_INCIDENT_LOG("AcknowledgeAtMinutes is not recorded");
+			return;
+		}
+		Slot.State = EFF_IncidentState::Acknowledged;
+		Slot.AcknowledgedAtMinutes = Now;
+		return;
+		
+		
+	}
+	if (Slot.State != EFF_IncidentState::Acknowledged)
+	{
+		return;
+	}
+	
+	Slot.State = EFF_IncidentState::Active;
+	if (bHasNow)
+	{
+		Slot.OccurredAtMinutes +=FMath::Max(0.f, Now-Slot.AcknowledgedAtMinutes);
+	}
+	
+	
+
+}
+
+FFF_IncidentEffectResult UFF_IncidentSubsystem::ApplyEffects(const TArray<TObjectPtr<UFF_IncidentEffect>>& Effects,
+	const FFF_IncidentContext& Context)
+{
+	FFF_IncidentEffectResult Result;
+	for (UFF_IncidentEffect* Effect : Effects)
+	{
+		if (Effect && Effect->CanApply(Context))
+		{
+			const FFF_IncidentEffectResult Applied = Effect->ApplyWithResult(Context);
+			Result.GrantedGold = static_cast<int32>(FMath::Min<int64>(MAX_int32,
+				static_cast<int64>(Result.GrantedGold) + FMath::Max(0, Applied.GrantedGold)));
+		}
+	}
+	return Result;
+}
+
+FFF_IncidentContext UFF_IncidentSubsystem::MakeContext(FFF_IncidentHandle Handle, const FIncidentSlot& Slot,
+	int32 OptionIndex)
+{
+	FFF_IncidentContext Context;
+	Context.World = GetWorld();
+	Context.Handle = Handle;
+	Context.IncidentTag = Slot.IncidentTag;
+	Context.Anchor = Slot.Anchor;
+	Context.ContextTags = Slot.ContextTags;
+	Context.OptionIndex = OptionIndex;
+	Context.PeakIntensity = Slot.PeakIntensity;
+	return Context;
+}
+
+
 
 void UFF_IncidentSubsystem::Tick(float DeltaTime)
 {
@@ -370,12 +562,16 @@ void UFF_IncidentSubsystem::Tick(float DeltaTime)
 			continue;
 		}
 		
+		if (Slot.State ==EFF_IncidentState::Acknowledged)
+			continue;
+		
 		
 		if (FFF_IncidentRules::HasLapsed(Now,Slot.OccurredAtMinutes,Slot.MinutesUntilLapse))
 		{
-			
-			
-			CloseSlot(index,FFF_IncidentRules::LapseStateFor(Slot.Tone),Now);
+			FFF_IncidentHandle Handle;
+			Handle.Index = index;
+			Handle.Serial = Slot.Serial;
+			LapseIncident(Handle, Now);
 		}
 	}
 	

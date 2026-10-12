@@ -58,6 +58,9 @@ UFF_PrepPanelBuild::UFF_PrepPanelBuild(const FObjectInitializer& ObjectInitializ
 {
 	// Dragging a virtualized list must scroll the list, not move the whole docked panel.
 	bAllowDragToMove = false;
+	// 2026-10-06 공용 패널 스크롤바·휠 소비는 배치 패널(한광훈 님 담당)의 기존 동작을 바꾸지 않도록 끈다.
+	ScrollStyle.bApply = false;
+	bConsumeMouseWheel = false;
 }
 
 void UFF_PrepPanelBuild::NativeOnInitialized()
@@ -99,6 +102,7 @@ void UFF_PrepPanelBuild::NativeConstruct()
 			? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
 		{
 			RankingButton->OnClicked.AddUniqueDynamic(Ranking, &UFF_FacilityRevenueRankingSubsystem::Open);
+			Ranking->RegisterIntroductionHint(Cast<UBorder>(GetWidgetFromName(TEXT("Border_RevenueIntroductionHint"))));
 		}
 	}
 	LastResponsiveListWidth = -1.0f;
@@ -939,7 +943,9 @@ void UFF_PrepPanelBuild::RefreshRequiredFacilityGuide(const FFF_RequiredFaciliti
 		: Cast<UBorder>(GetWidgetFromName(TEXT("Border_CatalogRequiredGuide")));
 	if (Guide)
 	{
-		const bool bNeedsInstallation = !Status.Facilities.IsEmpty() && !Status.bCanProceed;
+		// 범례는 `필수 · 1일차 시작 전 설치` 라서 설치가 남았을 때만 띄운다.
+		// 설치를 마치고 스태프 배정만 남은 상태는 하단 바 사유와 시설 정보가 안내한다.
+		const bool bNeedsInstallation = Status.HasMissingInstallations();
 		Guide->SetVisibility(bNeedsInstallation
 			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
@@ -1040,9 +1046,15 @@ bool UFF_PrepPanelBuild::ActivateCatalogFacility(const FName FacilityDefinitionI
 
 	if (!Tile->IsAffordable())
 	{
+		const FText Reason = Tile->GetStateText();
+		if (Tile->GetTileState() == EFF_PrepBuildTileState::BuildLimitReached)
+		{
+			// The ribbon has no visible status footer. Keep locked cards clickable and
+			// explain their current authoritative limit in the existing screen toast.
+			BuildModeSubsystem->PresentPlacementFailure(EFFZSPlacementFailure::BuildLimitReached, Reason);
+		}
 		if (Text_Status)
 		{
-			const FText Reason = Tile->GetStateText();
 			Text_Status->SetText(Reason.IsEmpty()
 				? LOCTEXT("UnavailableTile", "지금은 이 시설을 선택할 수 없습니다.")
 				: Reason);

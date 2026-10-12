@@ -31,9 +31,7 @@ public:
 	FText Title;
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
 	FText Body;
-	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
-	TSoftObjectPtr<UTexture2D> MarkerIcon;
-	
+
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Identity")
 	float MinuteUntileLapse = 60.f;
 	
@@ -44,6 +42,10 @@ public:
 	// 클릭 시 선택지. 비어 있으면 RequiredStaff 인원을 보내고, 0명이면 즉시 확인한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Instanced, Category = "Incident|Options")
 	TArray<TObjectPtr<UFF_IncidentOption>> Options;
+
+	// 방치돼 수명이 다했을 때(Ignored) 적용한다. 플레이어가 고른 선택지가 없으므로 선택지가 아니라 사건에 붙는다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Instanced, Category = "Incident|Penalty")
+	TArray<TObjectPtr<UFF_IncidentEffect>> OnFailedEffect;
 
 	// 선택지 없이 마커를 눌렀을 때 출동할 인원. 단순 알림은 0으로 설정한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Incident|Staff", meta = (ClampMin = "0"))

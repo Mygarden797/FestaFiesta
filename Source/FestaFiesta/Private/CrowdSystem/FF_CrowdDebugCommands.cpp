@@ -5,6 +5,7 @@
 #include "CrowdSystem/FF_BaseCrowd.h"
 #include "Engine/EngineTypes.h"
 #include "Engine/HitResult.h"
+#include "CrowdSystem/Systems/FF_CrowdHeightField.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "DataTables/FF_ArrivalCurveRow.h"
@@ -19,6 +20,8 @@
 #include "Queue/FF_QueueSubsystem.h"
 #include "TimerManager.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Engine/GameInstance.h"
+#include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "UObject/UObjectGlobals.h"
 #include "UnrealClient.h"
 
@@ -347,13 +350,16 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	Ar.Logf(TEXT("  막혀서 포기   : %d회 (임계 %d스텝 = %.1fs)  <-- 0이면 이 경로가 안 걸린다"),
 		CrowdSim->GetStuckDecisionRequests(), CrowdSim->DecisionStuckSteps,
 		CrowdSim->DecisionStuckSteps / 30.f);
+	Ar.Logf(TEXT("  막힘 백오프   : %d회  <-- 파티원·큐·관람·퇴장 중 리더의 막힘 카운터를 비운 횟수"),
+		CrowdSim->GetStuckCounterBackoffs());
 	Ar.Logf(TEXT("  주기 재평가   : %d회 (%s)  <-- 켰는데 0이면 개인 주기가 안 차고 있다"),
 		CrowdSim->GetReevaluateRequests(),
 		CrowdSim->bEnablePeriodicReevaluation ? TEXT("켬") : TEXT("끔"));
 	Ar.Logf(TEXT("막힘          : %d (%.1f%%)  <-- 가려는데 못 가는 사람"),
 		Flow.Blocked, BlockedPercent);
-	Ar.Logf(TEXT("  탈출 가속 중: %d  (임계 %d스텝, 최장 %d스텝 = %.1f초)"),
+	Ar.Logf(TEXT("  탈출 가속 중: %d  (임계 %d스텝, 밀기 %d / 쉼 %d스텝, 최장 %d스텝 = %.1f초)"),
 		Flow.UnstuckActive, CrowdSim->AvoidanceConfig.StuckDetectSteps,
+		CrowdSim->AvoidanceConfig.UnstuckHoldSteps, CrowdSim->AvoidanceConfig.UnstuckCooldownSteps,
 		Flow.MaxStuckSteps, Flow.MaxStuckSteps / 30.f);
 
 	const int32 FacilityWalls = CrowdSim->GetFacilityWallCount();
@@ -364,9 +370,8 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	Ar.Logf(TEXT("대형 직선 막힘: 지금 %d명, 누적 %d회, 우회 경로 쿼리 %d건  <-- 건물에 가려 슬롯으로 직진할 수 없는 멤버"),
 		CrowdSim->GetFormationBlockedMemberCount(), CrowdSim->GetFormationBlockEvents(),
 		CrowdSim->GetFormationPathQueries());
-	Ar.Logf(TEXT("시설 벽       : %s%s"),
-		CrowdSim->bAvoidanceUseFacilityWalls ? TEXT("on") : TEXT("off"),
-		CrowdSim->bAvoidanceFacilityWallsIncludeClearance ? TEXT(" + 여유 1m 링") : TEXT(""));
+	Ar.Logf(TEXT("시설 벽       : %s"),
+		CrowdSim->bAvoidanceUseFacilityWalls ? TEXT("on") : TEXT("off"));
 	Ar.Logf(TEXT("벽 역방향 상한: %.2f  %s"),
 		CrowdSim->AvoidanceConfig.MaxWallOpposingAccelMps2,
 		(CrowdSim->AvoidanceConfig.MaxWallOpposingAccelMps2 < 0.f)
@@ -542,6 +547,79 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdStatsCommand(
 	TEXT("FF.Crowd.Stats"),
 	TEXT("현재 군중/혼잡도 수치를 출력한다"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdStatsCommand));
+
+// 막힌 개체가 서 있는 높이 격자 칸을 그대로 찍는 진단 명령.
+//
+// 통행 상한이 막았는지(네 꼭짓점 중 상한 초과가 있는가), 지면을 못 찾은 꼭짓점이 섞였는지,
+// 그 높이가 얼마인지를 한 번에 본다. 개체 위치와 목적지 쪽 50cm 앞 지점을 둘 다 판정한다.
+static void CrowdStuckProbeCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	if (!CrowdSim)
+	{
+		return;
+	}
+
+	const int32 MaxPrint = FMath::Max(1, FFCrowdConsole::ParseIntArg(Args, 0, 8));
+	const int32 MinStuck = FMath::Max(1, FFCrowdConsole::ParseIntArg(Args, 1, 10));
+	const double CeilingCm = CrowdSim->SimOrigin.Z + static_cast<double>(CrowdSim->MaxWalkableHeightAboveOriginUU);
+
+	Ar.Logf(TEXT("--- 막힘 진단 (StuckSteps >= %d, 최대 %d명) --- 통행 상한 Z %.0f%s, 막아 되돌린 스텝 %d회"),
+		MinStuck, MaxPrint, CeilingCm,
+		CrowdSim->MaxWalkableHeightAboveOriginUU > 0.f ? TEXT("") : TEXT(" (꺼짐)"),
+		CrowdSim->GetHeightBlockedSteps());
+
+	int32 Printed = 0;
+	int32 Matched = 0;
+	for (int32 Index = 0; Index < CrowdSim->GetAgentPoolSize(); ++Index)
+	{
+		if (!CrowdSim->IsAgentActive(Index) || CrowdSim->GetAgentStuckSteps(Index) < MinStuck)
+		{
+			continue;
+		}
+		++Matched;
+		if (Printed >= MaxPrint)
+		{
+			continue;
+		}
+		++Printed;
+
+		const FVector Pos = CrowdSim->GetAgentPosition(Index);
+		const FVector Dest = CrowdSim->GetAgentDestination(Index);
+		FVector Dir = Dest - Pos;
+		Dir.Z = 0.f;
+		const FVector Ahead = Pos + Dir.GetSafeNormal2D() * 50.f;
+
+		Ar.Logf(TEXT("[%d] 위치 (%.0f, %.0f, %.0f) 목적지까지 %.0fcm StuckSteps %d  현재 칸 %s / 50cm 앞 칸 %s"),
+			Index, Pos.X, Pos.Y, Pos.Z, Dir.Size2D(), CrowdSim->GetAgentStuckSteps(Index),
+			CrowdSim->IsGroundWalkable(Pos) ? TEXT("통행 가능") : TEXT("통행 불가"),
+			CrowdSim->IsGroundWalkable(Ahead) ? TEXT("통행 가능") : TEXT("통행 불가"));
+
+		FFF_CrowdHeightField::FCellProbe Probe;
+		const FFF_CrowdHeightField& Ground = CrowdSim->GetHeightFieldAt(FVector2D(Ahead.X, Ahead.Y));
+		if (!Ground.ProbeCell(FVector2D(Ahead.X, Ahead.Y), Probe))
+		{
+			Ar.Logf(TEXT("    높이 격자 없음"));
+			continue;
+		}
+		for (int32 Corner = 0; Corner < 4; ++Corner)
+		{
+			Ar.Logf(TEXT("    꼭짓점 %d (%.0f, %.0f): %s %.0f%s"),
+				Corner, Probe.CornerXYCm[Corner].X, Probe.CornerXYCm[Corner].Y,
+				Probe.bCornerValid[Corner] ? TEXT("높이") : TEXT("지면 없음"),
+				Probe.CornerHeightCm[Corner],
+				(Probe.bCornerValid[Corner] && Probe.CornerHeightCm[Corner] > CeilingCm) ? TEXT("  <-- 상한 초과") : TEXT(""));
+		}
+	}
+
+	Ar.Logf(TEXT("조건에 맞는 개체 %d명 중 %d명 출력. 50cm 앞 칸이 '통행 불가'이고 상한 초과 꼭짓점이 있으면 높이 격자가 원인이다"),
+		Matched, Printed);
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdStuckProbeCommand(
+	TEXT("FF.Crowd.StuckProbe"),
+	TEXT("막힌 개체가 서 있는 높이 격자 칸의 꼭짓점 높이를 출력한다. FF.Crowd.StuckProbe [최대 인원=8] [최소 StuckSteps=10]"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdStuckProbeCommand));
 
 // 레인이 실제로 먹었는지 보는 명령.
 //
@@ -1159,8 +1237,6 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 	const FSwitch Switches[] = {
 		{ TEXT("facilitywalls"), &CrowdSim->bAvoidanceUseFacilityWalls,
 		  TEXT("시설 footprint를 벽으로. 끄면 부스를 통과한다") },
-		{ TEXT("clearance"), &CrowdSim->bAvoidanceFacilityWallsIncludeClearance,
-		  TEXT("시설 벽에 여유 링 포함. 켜면 nav 구멍보다 벽이 커져 경로와 힘이 어긋난다") },
 		{ TEXT("pathfollow"), &CrowdSim->bEnablePathFollowing,
 		  TEXT("NavMesh 경로 우회. 끄면 최종 목적지로 직선 조향(벽에 붙어 미끄러진다)") },
 		{ TEXT("blockunknown"), &CrowdSim->bBlockUnknownGround,
@@ -1567,5 +1643,71 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdArrivalCommand(
 	TEXT("FF.Crowd.Arrival"),
 	TEXT("입장 곡선 진행 상태와 배선을 출력한다. 곡선이 꺼져 있으면 원인까지 좁혀준다"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdArrivalCommand));
+
+static UFF_SatisfactionMetricsSubsystem* GetSatisfaction(UWorld* World, FOutputDevice& Ar)
+{
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_SatisfactionMetricsSubsystem* Satisfaction =
+		GameInstance ? GameInstance->GetSubsystem<UFF_SatisfactionMetricsSubsystem>() : nullptr;
+	if (!Satisfaction)
+	{
+		Ar.Logf(ELogVerbosity::Error, TEXT("SatisfactionMetricsSubsystem을 찾을 수 없습니다 (게임이 실행 중인지 확인)"));
+	}
+	return Satisfaction;
+}
+
+static void SatShowCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	const UFF_SatisfactionMetricsSubsystem* Satisfaction = GetSatisfaction(World, Ar);
+	if (!Satisfaction)
+	{
+		return;
+	}
+
+	Ar.Logf(TEXT("만족도 %d  (환경 %d = 대기 %d + 밀도 %d / 개인 부합도 %d = 취향 %d + Need %d)"),
+		Satisfaction->GetSimSatisfaction(), Satisfaction->GetEnvironmentScore(),
+		Satisfaction->GetWaitScore(), Satisfaction->GetDensityScore(),
+		Satisfaction->GetPersonalFitScore(), Satisfaction->GetPreferenceScore(),
+		Satisfaction->GetNeedFulfillmentScore());
+	Ar.Logf(TEXT("평균 감점 %d점, 이번 주기 최소 표본 %d  (50 고정이면 아직 표본이 안 들어온 것)"),
+		Satisfaction->GetPenaltyPoints(), Satisfaction->GetSampleCount());
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GSatShowCommand(
+	TEXT("FF.Sat.Show"),
+	TEXT("현재 만족도와 하위 점수, 평균 감점을 출력한다. 취향 점수가 50에서 움직이는지 볼 때 쓴다"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&SatShowCommand));
+
+// 만족도 영역 감점 임시 검증용. 사건 시스템이 붙기 전까지 API 동작을 눈으로 확인한다
+static void SatPenaltyCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	const UFF_SatisfactionMetricsSubsystem* Satisfaction = GetSatisfaction(World, Ar);
+	if (!CrowdSim || !Satisfaction)
+	{
+		return;
+	}
+
+	const float DropPoints = FFCrowdConsole::ParseFloatArg(Args, 0, 30.f);
+	const float RadiusCm = FFCrowdConsole::ParseFloatArg(Args, 1, 1500.f);
+	const FVector Center = Args.Num() >= 5
+		? FVector(FFCrowdConsole::ParseFloatArg(Args, 2, 0.f), FFCrowdConsole::ParseFloatArg(Args, 3, 0.f),
+			FFCrowdConsole::ParseFloatArg(Args, 4, 0.f))
+		: FFCrowdConsole::GetViewerLocation(World);
+
+	const int32 Before = Satisfaction->GetSimSatisfaction();
+	const int32 Affected = CrowdSim->ApplySatisfactionPenaltyInArea(Center, RadiusCm, DropPoints);
+
+	Ar.Logf(TEXT("감점 적용: 중심 %s 반경 %.0fcm, %d명에게 사람당 %.1f점"),
+		*Center.ToCompactString(), RadiusCm, Affected, DropPoints);
+	Ar.Logf(TEXT("호출 직전 만족도 %d. 반영은 다음 집계 창(약 1초 뒤)이라 FF.Sat.Show 로 다시 볼 것"), Before);
+	Ar.Logf(TEXT("회복 속도는 축제 시간 1분당 %.1f점이라, 시간 배속이 낮으면 회복이 느려 보인다"),
+		CrowdSim->SatisfactionPenaltyRecoverPerMinute);
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GSatPenaltyCommand(
+	TEXT("FF.Sat.Penalty"),
+	TEXT("영역 안 방문객 만족도를 깎는다. FF.Sat.Penalty [점수=30] [반경cm=1500] [X Y Z]  중심을 생략하면 지금 시점 위치"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&SatPenaltyCommand));
 
 #endif // !UE_BUILD_SHIPPING

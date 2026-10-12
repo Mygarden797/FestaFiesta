@@ -4,12 +4,19 @@
 
 #include "CoreMinimal.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
+#include "Incident/FF_IncidentTypes.h"
 #include "FF_LivePanelStaff.generated.h"
 
 class UFF_FestivalViewModelSubsystem;
 class UTextBlock;
 class UVerticalBox;
 class UWidget;
+class UProgressBar;
+class UImage;
+class UTexture2D;
+class UWidgetSwitcher;
+class UFF_StaffTrainingWidget;
+class UFF_StaffManagementWidget;
 
 /**
  * 인력이 남아도는 정도.
@@ -87,19 +94,10 @@ struct FESTAFIESTA_API FFF_LiveStaffRules
 /**
  * 라이브 `스태프` 패널.
  *
- * === 🔴 읽기 전용이다 ===
- * 인원 고용은 **셋업·개장 준비 전용**이고 축제 끝까지 남는다. 라이브 중에 늘릴 수 있게 하면
- * "부족하면 그때 사면 된다" 가 되어 준비 단계의 결정이 의미를 잃는다.
- * 그래서 여기에는 명령 버튼이 없고, **대신 언제 늘릴 수 있는지 적는다** —
- * 못 하는 것을 흐려 놓기만 하면 왜 못 하는지 알 수 없다 (AT-011 과 같은 이유).
- *
- * === 그럼 왜 필요한가 ===
- * **사건에 대응 중인 인원과 남는 인원**을 보여주는 것이 이 패널의 값어치다.
- * 사건이 몰릴 때 사람이 모자란지가 여기서만 보인다.
- *
- * [주의] 유료 프로그램은 인원을 쓰지 않는다. 배치는 사건 대응 전용이다.
- *
- * 시설별 배정은 안내 시설 정보 패널에서 조절한다. 이 패널은 보유·정원·미배정·출동 인원을 읽는다.
+ * 공통 관리 위젯에서 안내시설 배정·해제, 빈자리 채우기, 직원 승급을 요청한다.
+ * 고용은 셋업·아침 점검 전용이며 여기서는 출동·복귀 상태와 사건 바로가기를 제공한다.
+ * 출동 중인 인원은 원본 배정 API가 해제를 거부한다. 라이브 시뮬레이션은 계속 흐른다.
+ * 기존 요약 바인딩은 이전 WBP 호환용으로 남겨 둔다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Live Panel - Staff"))
 class FESTAFIESTA_API UFF_LivePanelStaff : public UFF_LivePanelBase
@@ -110,15 +108,118 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Staff")
 	FFF_LiveStaffSummary GetSummary() const { return Summary; }
 
+	// 동적 문구만 클래스 기본값에서 편집한다. 크기·글꼴·색·막대 스타일은 Designer 소유다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText MissingValueText = NSLOCTEXT("FestaFiestaLiveStaff", "MissingValue", "—");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text", meta = (ToolTip = "{Count}: 인원"))
+	FText CountTextFormat = NSLOCTEXT("FestaFiestaLiveStaff", "CountFormat", "{Count}명");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text", meta = (ToolTip = "{Total}: 보유 인원, {Capacity}: 정원. 모르는 값은 —"))
+	FText CapacityTextFormat = NSLOCTEXT("FestaFiestaLiveStaff", "CapacityFormat", "{Total} / {Capacity}명");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text", meta = (ToolTip = "{Base}: 기본 인원, {Hired}: 고용 인원"))
+	FText BreakdownTextFormat = NSLOCTEXT("FestaFiestaLiveStaff", "BreakdownFormat", "기본 {Base} · 고용 {Hired}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText IdleNoteText = NSLOCTEXT("FestaFiestaLiveStaff", "IdleNote", "미배정 인원도 포함합니다. 안내 시설에 배정된 대기 인원만 출동할 수 있습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText AllBusyNoteText = NSLOCTEXT("FestaFiestaLiveStaff", "AllBusyNoteAccurate", "전원이 출동 중입니다. 이동·사건 대응·복귀 인원을 포함합니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText NoStaffNoteText = NSLOCTEXT("FestaFiestaLiveStaff", "NoStaffNote", "현재 보유한 스태프가 없습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText CheckingText = NSLOCTEXT("FestaFiestaLiveStaff", "Checking", "스태프 정보를 확인하고 있습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text", meta = (ToolTip = "{Busy}: 출동 인원, {Total}: 전체 인원"))
+	FText InconsistentTextFormat = NSLOCTEXT("FestaFiestaLiveStaff", "InconsistentFormat", "출동 인원({Busy})이 전체 인원({Total})보다 많습니다. 인원 정보를 확인해야 합니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text", meta = (ToolTip = "{Count}: 이동·대응·복귀 인원"))
+	FText ResponseActiveTextFormat = NSLOCTEXT("FestaFiestaLiveStaff", "ResponseActiveFormat", "{Count}명이 이동·사건 대응·복귀 중입니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText ResponseIdleText = NSLOCTEXT("FestaFiestaLiveStaff", "ResponseIdle", "현재 이동·사건 대응·복귀 중인 스태프가 없습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText ResponseUnknownText = NSLOCTEXT("FestaFiestaLiveStaff", "ResponseUnknown", "출동 정보를 확인하고 있습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text", meta = (ToolTip = "{Cost}: 1회 고용 단가"))
+	FText HireCostTextFormat = NSLOCTEXT("FestaFiestaLiveStaff", "HireCostFormat", "1명 고용비 {Cost}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText HireNoteText = NSLOCTEXT("FestaFiestaLiveStaff", "HireNote", "고용은 셋업과 개장 준비에서만 가능합니다. 라이브 중에는 늘릴 수 없습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText AssignmentGuideText = NSLOCTEXT("FestaFiestaLiveStaff", "AssignmentGuide", "안내 시설을 선택해 스태프를 배정하세요. 배정된 시설에서 사건 현장으로 출동합니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text", meta = (ToolTip = "{Count}: 미배정 인원"))
+	FText UnassignedGuideTextFormat = NSLOCTEXT("FestaFiestaLiveStaff", "UnassignedGuideFormat", "미배정 {Count}명 · 안내 시설을 선택해 스태프를 배정하세요.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText CapacityNoteText = NSLOCTEXT("FestaFiestaLiveStaff", "CapacityNote", "막대는 정원 대비 보유 인원입니다. 미배정은 보유 인원에 포함됩니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText CapacityUnknownText = NSLOCTEXT("FestaFiestaLiveStaff", "CapacityUnknown", "보유 인원과 정원을 확인하고 있습니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText BreakdownUnknownText = NSLOCTEXT("FestaFiestaLiveStaff", "BreakdownUnknown", "기본·고용 내역을 확인하고 있습니다. 막대는 전체 보유 인원만 표시합니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText BreakdownInconsistentText = NSLOCTEXT("FestaFiestaLiveStaff", "BreakdownInconsistent", "기본·고용 합계와 전체 인원이 다릅니다. 막대는 전체 보유 인원만 표시합니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Text")
+	FText CapacityInconsistentText = NSLOCTEXT("FestaFiestaLiveStaff", "CapacityInconsistent", "보유 인원이 정원보다 많아 막대를 표시할 수 없습니다. 인원 정보를 확인해야 합니다.");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Icons")
+	TObjectPtr<UTexture2D> ResponseIdleIcon;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Icons")
+	TObjectPtr<UTexture2D> ResponseActiveIcon;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff|Icons")
+	TObjectPtr<UTexture2D> ResponseUnknownIcon;
+
 protected:
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UFF_StaffManagementWidget> Widget_StaffManagement;
+	void HandleManagementIncident(FFF_IncidentHandle Handle);
+
+	virtual void NativeOnInitialized() override;
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
+	virtual void NativeDestruct() override;
 
 	UFUNCTION()
 	void HandleStaffCountChanged(int32 NewValue);
 
 	UFUNCTION()
 	void HandleStaffAssignmentChanged();
+
+	UFUNCTION()
+	void HandleStaffOverviewClicked();
+
+	UFUNCTION()
+	void HandleStaffTrainingClicked();
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UButton> Button_StaffOverview;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UButton> Button_StaffTraining;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UWidgetSwitcher> Switcher_StaffContent;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UFF_StaffTrainingWidget> Widget_StaffTraining;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UWidget> Indicator_StaffOverview;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Staff|Tabs")
+	TObjectPtr<UWidget> Indicator_StaffTraining;
 
 protected:
 	// --- 요약 3칸 ---
@@ -140,7 +241,31 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
 	TObjectPtr<UTextBlock> Text_IdleNote;
 
+	// --- 인원 구성과 정원. 숫자·비율만 갱신하고 Designer 스타일을 유지한다. ---
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
+	TObjectPtr<UTextBlock> Text_Capacity;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
+	TObjectPtr<UTextBlock> Text_BaseStaff;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
+	TObjectPtr<UTextBlock> Text_HiredStaff;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
+	TObjectPtr<UTextBlock> Text_UnassignedStaff;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
+	TObjectPtr<UTextBlock> Text_CapacityNote;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
+	TObjectPtr<UProgressBar> Progress_StaffCapacity;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
+	TObjectPtr<UProgressBar> Progress_BaseCapacity;
+
 	// --- 사건 대응 ---
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
+	TObjectPtr<UImage> Image_ResponseStatus;
 
 	/** 대응 중인 사건 줄이 쌓이는 곳. 비면 통째로 숨긴다. 사건 시스템이 오면 채워진다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
@@ -172,12 +297,18 @@ protected:
 	TSubclassOf<UUserWidget> AssignmentRowClass;
 
 private:
+	void SelectStaffTab(bool bTraining);
+	bool bStaffPanelOpen = false;
+	bool bTrainingSelected = false;
+
 	UFF_FestivalViewModelSubsystem* GetViewModel() const;
 
 	void BindViewModel();
 	void UnbindViewModel();
 	void RefreshAll();
 	void RefreshAssignments();
+	void RefreshCapacity(int32 Capacity);
+	FText FormatCount(int32 Count) const;
 
 	static void SetTextOrHide(UTextBlock* TextBlock, const FText& Value);
 

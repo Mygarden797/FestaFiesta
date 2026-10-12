@@ -150,6 +150,9 @@ struct FESTAFIESTA_API FFF_CrowdAvoidanceConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unstuck", meta = (ClampMin = "0"))
 	int32 UnstuckHoldSteps = 30;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unstuck", meta = (ClampMin = "0"))
+	int32 UnstuckCooldownSteps = 60;
+
 	// 목적지 방향 진척이 이 속도(UU/s) 미만이면 막힌 것으로 본다. 막힘 카운터의 판정 기준이다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unstuck", meta = (ClampMin = "0.0"))
 	float StuckSpeedThresholdUU = 20.f;

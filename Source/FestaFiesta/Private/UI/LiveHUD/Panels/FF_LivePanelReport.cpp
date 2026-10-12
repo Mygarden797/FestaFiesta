@@ -1,193 +1,291 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
+// 하루 결산은 ViewModel이 확정한 날짜별 읽기 모델만 표시한다.
 #include "UI/LiveHUD/Panels/FF_LivePanelReport.h"
 
 #include "Components/Button.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/ProgressBar.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
-#include "UI/LiveHUD/FF_LiveHudScreen.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
+#include "Blueprint/WidgetTree.h"
 #include "Engine/GameInstance.h"
-#include "UI/FF_UILog.h"
+#include "UI/LiveHUD/FF_LiveHudScreen.h"
+#include "UI/LiveHUD/Panels/FF_SatisfactionBreakdownWidget.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
-#define LOCTEXT_NAMESPACE "FestaFiestaLiveReport"
+void UFF_DailyReportLedgerRowWidget::ConfigureRow(const FText& Label, const FText& Amount)
+{
+	CurrentLabel = Label;
+	CurrentAmount = Amount;
+	bHasRow = true;
+	RefreshRow();
+}
+
+void UFF_DailyReportLedgerRowWidget::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+	if (bHasRow) { RefreshRow(); }
+}
+
+void UFF_DailyReportLedgerRowWidget::RefreshRow()
+{
+	if (Text_Label) { Text_Label->SetText(CurrentLabel); }
+	if (Text_Amount)
+	{
+		Text_Amount->SetText(CurrentAmount);
+		Text_Amount->SetVisibility(CurrentAmount.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+	}
+}
+
+void UFF_LivePanelReport::ConfigureLedgerRowDefaults(TSubclassOf<UFF_DailyReportLedgerRowWidget> InRowClass)
+{
+	LedgerRowClass = InRowClass;
+}
 
 void UFF_LivePanelReport::NativeOnPanelOpened()
 {
 	Super::NativeOnPanelOpened();
-
-	// ★ 아직 못 하는 것을 적는다. 숫자만 두면 "왜 그런지" 를 물을 곳이 없다는 사실이
-	// 화면에서 사라진다.
-	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveReport_MissingNote",
-		"어느 시설이 만족도를 깎았는지는 아직 볼 수 없습니다. 원인 집계가 붙으면 여기에 들어갑니다."));
-
-	if (Button_Advance)
-	{
-		Button_Advance->OnClicked.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleAdvanceClicked);
-	}
-
-	// 🔴 열 때마다 0 으로 되돌린다. 닫았다 다시 열면 **다시 읽는 시간**이다 —
-	// 한 번 열어 두고 닫아 둔 것을 "읽었다" 로 치면 대기의 뜻이 사라진다.
-
+	if (Button_Advance) { Button_Advance->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAdvanceClicked); }
 	BindViewModel();
 	RefreshAll();
 }
 
 void UFF_LivePanelReport::NativeOnPanelClosed()
 {
+	if (Button_Advance) { Button_Advance->OnClicked.RemoveDynamic(this, &ThisClass::HandleAdvanceClicked); }
 	UnbindViewModel();
 	Super::NativeOnPanelClosed();
 }
 
+void UFF_LivePanelReport::NativeDestruct()
+{
+	if (Button_Advance) { Button_Advance->OnClicked.RemoveDynamic(this, &ThisClass::HandleAdvanceClicked); }
+	UnbindViewModel();
+	Super::NativeDestruct();
+}
+
 UFF_FestivalViewModelSubsystem* UFF_LivePanelReport::GetViewModel() const
 {
-	if (CachedViewModel)
-	{
-		return CachedViewModel;
-	}
-
+	if (CachedViewModel) { return CachedViewModel; }
 	const UGameInstance* GI = GetGameInstance();
 	return GI ? GI->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
 }
 
 void UFF_LivePanelReport::BindViewModel()
 {
+	UnbindViewModel();
 	UGameInstance* GI = GetGameInstance();
 	CachedViewModel = GI ? GI->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
-
-	if (!CachedViewModel)
-	{
-		UE_LOG(LogFestaFiestaUI, Error,
-			TEXT("[%s] ViewModel 을 찾지 못했다. 성적표가 비어 보인다."), *GetName());
-		return;
-	}
-
-	// 결산 중에도 값이 움직인다 (마감 정산이 들어온다). 하나만 받고 나머지를 그때 읽으면
-	// 갱신 시점이 어긋나므로, 바뀌는 것들을 다 받고 **매번 전부 다시 읽는다.**
-	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-	CachedViewModel->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-	CachedViewModel->OnTotalRevenueChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-	CachedViewModel->OnSimSatisfactionChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-	CachedViewModel->OnScoreSatisfactionChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-	CachedViewModel->OnSafetyChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleStageViewChanged);
+	if (!CachedViewModel) { return; }
+	// 실시간 매출/만족도를 섞지 않는다. 정산 확정과 날짜 변경 때만 같은 읽기 모델을 다시 읽는다.
+	CachedViewModel->OnDailyReportReady.AddUniqueDynamic(this, &ThisClass::HandleReportChanged);
+	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &ThisClass::HandleStageViewChanged);
 }
 
 void UFF_LivePanelReport::UnbindViewModel()
 {
-	// 해제는 조건부, 정리는 무조건.
 	if (CachedViewModel)
 	{
-		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-		CachedViewModel->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-		CachedViewModel->OnTotalRevenueChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-		CachedViewModel->OnSimSatisfactionChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-		CachedViewModel->OnScoreSatisfactionChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-		CachedViewModel->OnSafetyChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleStageViewChanged);
+		CachedViewModel->OnDailyReportReady.RemoveDynamic(this, &ThisClass::HandleReportChanged);
+		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &ThisClass::HandleStageViewChanged);
 	}
 	CachedViewModel = nullptr;
 }
 
 void UFF_LivePanelReport::HandleAdvanceClicked()
 {
-	UFF_LiveHudScreen* Screen = GetOwningScreen();
-	if (!Screen)
-	{
-		return;
-	}
-
-	// 여기서 미리 막지 않는다. 판정의 소유자는 화면과 Stage 시스템이다 (UI 규칙 2).
-	Screen->RequestAdvance();
+	const UFF_FestivalViewModelSubsystem* VM = GetViewModel();
+	if (!VM || !VM->GetDailyReport()) { RefreshAdvance(); return; }
+	// 마감에서 눌렀으면 HUD 가 마감 건너뛰기와 다음 날을 차례로 요청한다.
+	if (UFF_LiveHudScreen* Screen = GetOwningScreen()) { Screen->RequestAdvance(); }
 }
 
 void UFF_LivePanelReport::RefreshAdvance()
 {
 	const UFF_LiveHudScreen* Screen = GetOwningScreen();
-	if (!Screen)
-	{
-		return;
-	}
-
-	const EFF_LiveCtaState State = Screen->GetCtaState();
-
-	// 넘길 수 있는 상태인지만 본다. 기다리게 하지 않는다.
-	const bool bCanAdvance =
-		(State != EFF_LiveCtaState::Hidden && State != EFF_LiveCtaState::BlockedNotReport);
-
-	SetTextOrHide(Text_AdvanceLabel, Screen->GetCtaLabelText());
-
+	const UFF_FestivalViewModelSubsystem* VM = GetViewModel();
+	// GetDailyReport 가 결산을 띄우는 단계(마감·결산)와 날짜를 이미 확인한다.
+	const FFF_DailyReportView* Report = VM ? VM->GetDailyReport() : nullptr;
+	const bool bReady = Report && Report->Day == VM->GetCurrentDay();
+	const EFF_LiveCtaState State = Screen ? Screen->GetCtaState() : EFF_LiveCtaState::Hidden;
+	const bool bStageReady = State != EFF_LiveCtaState::Hidden && State != EFF_LiveCtaState::BlockedNotReport;
+	const bool bCanAdvance = bStageReady && bReady;
+	SetTextOrHide(Text_AdvanceLabel, Screen ? Screen->GetCtaLabelText() : FText::GetEmpty());
 	if (Button_Advance)
 	{
 		Button_Advance->SetIsEnabled(bCanAdvance);
-
-		// ★ 못 누르는 상태가 **눈에 보여야** 한다. 흐려짐 + 아래 이유 문구 둘 다 쓴다.
 		Button_Advance->SetRenderOpacity(bCanAdvance ? 1.f : DimmedOpacity);
-
-		Button_Advance->SetVisibility(State == EFF_LiveCtaState::Hidden
-			? ESlateVisibility::Collapsed
-			: ESlateVisibility::Visible);
+		Button_Advance->SetVisibility(State == EFF_LiveCtaState::Hidden ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 	}
-
-	// !! 흐려짐만으로는 왜 못 누르는지 알 수 없다 !! (AT-011)
-	SetTextOrHide(Text_AdvanceReason, Screen->GetCtaReasonText());
+	const FText CtaReason = Screen ? Screen->GetCtaReasonText() : FText::GetEmpty();
+	SetTextOrHide(Text_AdvanceReason, bStageReady && !bReady ? PendingReportText : CtaReason);
 }
 
-void UFF_LivePanelReport::HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay)
+void UFF_LivePanelReport::HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay) { RefreshAll(); }
+void UFF_LivePanelReport::HandleIntMetricChanged(int32 NewValue) { RefreshAll(); }
+void UFF_LivePanelReport::HandleReportChanged(int32 ReportDay) { RefreshAll(); }
+
+void UFF_LivePanelReport::RefreshScore(UTextBlock* Label, UProgressBar* Bar, int32 Score, bool bAvailable)
 {
-	// 값도 함께 바뀐다 (마감 정산이 들어온다). 전부 다시 읽는다.
-	RefreshAll();
+	const bool bMeasured = bAvailable && Score >= 0;
+	SetTextOrHide(Label, bMeasured ? FText::AsNumber(Score) : NotMeasuredText);
+	if (Bar)
+	{
+		// 막대만 숨겨 자리를 유지한다. 미측정을 0점 막대로 보이지 않는다.
+		Bar->SetVisibility(bMeasured ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
+		if (bMeasured) { Bar->SetPercent(FMath::Clamp(static_cast<float>(Score) / 100.f, 0.f, 1.f)); }
+	}
 }
 
-void UFF_LivePanelReport::HandleIntMetricChanged(int32 NewValue)
+void UFF_LivePanelReport::RefreshLedgerRows(UVerticalBox* Box, const TArray<FFF_LedgerRow>& Rows,
+	const TMap<FName, FText>& LabelOverrides, const FText& EmptyText, const bool bExpense)
 {
-	// 인자를 쓰지 않는다. 어느 값이 왔든 전부 다시 읽어야 서로 어긋나지 않는다.
-	RefreshAll();
+	if (!Box) { return; }
+	Box->ClearChildren();
+	const auto AddRow = [this, Box](const FText& Label, const FText& Amount)
+	{
+		UWidget* Row = nullptr;
+		if (LedgerRowClass)
+		{
+			if (UFF_DailyReportLedgerRowWidget* Entry = CreateWidget<UFF_DailyReportLedgerRowWidget>(this, LedgerRowClass))
+			{
+				Entry->ConfigureRow(Label, Amount);
+				Row = Entry;
+			}
+		}
+		if (!Row)
+		{
+			// 행 클래스가 없는 이전 에셋도 부모의 편집 가능한 글꼴/색으로 읽을 수 있다.
+			UHorizontalBox* Columns = NewObject<UHorizontalBox>(this);
+			UTextBlock* Name = NewObject<UTextBlock>(this); Name->SetText(Label); ApplyDynamicRowStyle(*Name);
+			UHorizontalBoxSlot* NameSlot = Columns->AddChildToHorizontalBox(Name);
+			NameSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill)); NameSlot->SetPadding(FMargin(0.f, 0.f, RowColumnGap, 0.f));
+			NameSlot->SetVerticalAlignment(VAlign_Center);
+			if (!Amount.IsEmpty())
+			{
+				USizeBox* AmountSize = NewObject<USizeBox>(this); AmountSize->SetMinDesiredWidth(AmountColumnMinWidth);
+				UTextBlock* Value = NewObject<UTextBlock>(this); Value->SetText(Amount); ApplyDynamicRowStyle(*Value);
+				Value->SetJustification(ETextJustify::Right); AmountSize->AddChild(Value);
+				UHorizontalBoxSlot* ValueSlot = Columns->AddChildToHorizontalBox(AmountSize); ValueSlot->SetVerticalAlignment(VAlign_Center);
+			}
+			Row = Columns;
+		}
+		UVerticalBoxSlot* RowSlot = Box->AddChildToVerticalBox(Row);
+		RowSlot->SetHorizontalAlignment(HAlign_Fill); RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, FMath::Max(0.f, RowSpacing)));
+	};
+	for (const FFF_LedgerRow& Row : Rows)
+	{
+		const FText* Override = LabelOverrides.Find(Row.ReasonId);
+		AddRow(Override ? *Override : Row.DisplayName, bExpense
+			? FFF_SignedAmountStyle::FormatExpense(Row.Amount)
+			: FFF_SignedAmountStyle::Format(Row.Amount, PositiveAmountFormat));
+	}
+	if (Rows.IsEmpty() && !EmptyText.IsEmpty()) { AddRow(EmptyText, FText::GetEmpty()); }
+}
+
+TSharedRef<SWidget> UFF_LivePanelReport::RebuildWidget()
+{
+	// Slate 트리가 만들어지기 전에 끼워야 순서가 맞는다. 만든 뒤에는 InsertChildAt 이 UMG 슬롯 순서만 바꾸고 화면은 맨 끝에 붙는다
+	EnsureSatisfactionBreakdown();
+	return Super::RebuildWidget();
+}
+
+void UFF_LivePanelReport::EnsureSatisfactionBreakdown()
+{
+	if (Widget_SatisfactionBreakdown || !WidgetTree)
+	{
+		return;
+	}
+	// 결산 WBP 는 디자인 도구가 만든 에셋이라 건드리지 않는다. 만족도 카드 본문을 이름으로 찾아 평가 만족도 줄 위에 넣는다
+	UVerticalBox* Body = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("Report_SatisfactionBody")));
+	if (!Body)
+	{
+		return;
+	}
+	Widget_SatisfactionBreakdown = CreateWidget<UFF_SatisfactionBreakdownWidget>(this, UFF_SatisfactionBreakdownWidget::StaticClass());
+	if (!Widget_SatisfactionBreakdown)
+	{
+		return;
+	}
+	const UWidget* ScoreRow = WidgetTree->FindWidget(TEXT("Report_ScoreRow"));
+	const int32 ScoreRowIndex = ScoreRow ? Body->GetChildIndex(ScoreRow) : INDEX_NONE;
+	UPanelSlot* BreakdownSlot = ScoreRowIndex != INDEX_NONE
+		? Body->InsertChildAt(ScoreRowIndex, Widget_SatisfactionBreakdown)
+		: Body->AddChild(Widget_SatisfactionBreakdown);
+	if (UVerticalBoxSlot* BoxSlot = Cast<UVerticalBoxSlot>(BreakdownSlot))
+	{
+		BoxSlot->SetPadding(FMargin(0.f, 4.f, 0.f, 10.f));
+		BoxSlot->SetHorizontalAlignment(HAlign_Fill);
+	}
 }
 
 void UFF_LivePanelReport::RefreshAll()
 {
-	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
-	if (!ViewModel)
+	const UFF_FestivalViewModelSubsystem* VM = GetViewModel();
+	const FFF_DailyReportView* Report = VM ? VM->GetDailyReport() : nullptr;
+	// 단계는 GetDailyReport 가 본다(마감도 결산을 띄운다). 여기서 결산 단계로 다시 좁히면
+	// 마감의 결산이 버려져 버튼이 잠긴다. 날짜만 다시 확인한다.
+	if (Report && Report->Day != VM->GetCurrentDay()) { Report = nullptr; }
+	const int32 Day = Report ? Report->Day : VM ? VM->GetCurrentDay() : INDEX_NONE;
+	const FFormatNamedArguments DayArgs{{TEXT("Day"), Day > 0 ? FText::AsNumber(Day) : UnknownValueText}};
+	SetTextOrHide(Text_PanelTitle, FText::Format(DayTitleFormat, DayArgs));
+	SetTextOrHide(Text_DayLabel, FText::Format(DayLabelFormat, DayArgs));
+	const FText Comment = Report && !Report->AssistantComment.IsEmpty()
+		? FText::FormatNamed(AssistantCommentFormat, TEXT("Comment"), Report->AssistantComment) : FText::GetEmpty();
+	if (Text_AssistantComment)
 	{
-		return;
+		Text_AssistantComment->SetAutoWrapText(true);
+		SetTextOrHide(Text_AssistantComment, Comment);
+		SetTextOrHide(Text_MissingNote, Report ? FText::GetEmpty() : PendingReportText);
+	}
+	else
+	{
+		if (Text_MissingNote && Report)
+		{
+			Text_MissingNote->SetAutoWrapText(true);
+		}
+		SetTextOrHide(Text_MissingNote, Report ? Comment : PendingReportText);
 	}
 
-	// --- 돈 ---
-	SetTextOrHide(Text_TodayRevenue, FText::AsNumber(ViewModel->GetTodayRevenue()));
-	SetTextOrHide(Text_TotalRevenue, FText::AsNumber(ViewModel->GetTotalRevenue()));
-	SetTextOrHide(Text_Gold, FText::AsNumber(ViewModel->GetGold()));
+	SetTextOrHide(Text_TodayRevenue, Report ? FFF_SignedAmountStyle::Format(Report->Revenue, PositiveAmountFormat) : UnknownValueText);
+	SetTextOrHide(Text_TodayExpense, Report ? FFF_SignedAmountStyle::FormatExpense(Report->Expense) : UnknownValueText);
+	// 순이익의 음수는 결측값이 아니다. ReadModel의 부호를 그대로 표시한다.
+	SetTextOrHide(Text_TodayNetProfit, Report ? FFF_SignedAmountStyle::Format(Report->NetProfit, PositiveAmountFormat) : UnknownValueText);
+	NetProfitStyle.ApplyColor(Text_TodayNetProfit, Report ? TOptional<int64>(Report->NetProfit) : TOptional<int64>());
+	SetTextOrHide(Text_Refund, Report ? FFF_SignedAmountStyle::Format(Report->Refund, PositiveAmountFormat) : UnknownValueText);
+	SetTextOrHide(Text_Gold, Report ? FText::AsNumber(Report->Gold) : UnknownValueText);
+	SetTextOrHide(Text_TotalRevenue, Report ? FFF_SignedAmountStyle::Format(Report->TotalRevenue, PositiveAmountFormat) : UnknownValueText);
+	SetTextOrHide(Text_LedgerNote, LedgerNoteText);
+	const TArray<FFF_LedgerRow> NoRows;
+	RefreshLedgerRows(Box_EarnRows, Report ? Report->EarnRows : NoRows, EarnLabelOverrides, Report ? NoIncomeText : FText::GetEmpty(), false);
+	RefreshLedgerRows(Box_SpendRows, Report ? Report->SpendRows : NoRows, SpendLabelOverrides, Report ? NoExpenseText : FText::GetEmpty(), true);
 
-	// --- 평가 ---
-	const int32 Sim = ViewModel->GetSimSatisfaction();
-	const int32 Score = ViewModel->GetScoreSatisfaction();
+	const bool bHasSatisfaction = Report && Report->bHasSatisfaction;
+	RefreshScore(Text_SimSatisfaction, nullptr, Report ? Report->SimSatisfaction : INDEX_NONE, bHasSatisfaction);
+	RefreshScore(Text_ScoreSatisfaction, nullptr, Report ? Report->ScoreSatisfaction : INDEX_NONE, bHasSatisfaction);
+	RefreshScore(Text_WaitScore, Progress_WaitScore, Report ? Report->WaitScore : INDEX_NONE, bHasSatisfaction);
+	RefreshScore(Text_DensityScore, Progress_DensityScore, Report ? Report->DensityScore : INDEX_NONE, bHasSatisfaction);
+	RefreshScore(Text_PreferenceScore, Progress_PreferenceScore, Report ? Report->PreferenceScore : INDEX_NONE, bHasSatisfaction);
+	RefreshScore(Text_NeedScore, Progress_NeedScore, Report ? Report->NeedScore : INDEX_NONE, bHasSatisfaction);
+	if (Widget_SatisfactionBreakdown)
+	{
+		Widget_SatisfactionBreakdown->SetBreakdown(bHasSatisfaction ? Report->SatisfactionBreakdown : FFF_SatisfactionBreakdown());
+	}
+	SetTextOrHide(Text_SatisfactionNote, SatisfactionNoteText);
+	// 안전도에는 확정된 측정 계약이 없다. 이전 임시값 88을 결과로 표시하지 않는다.
+	SetTextOrHide(Text_Safety, NotMeasuredText);
 
-	SetTextOrHide(Text_SimSatisfaction, FText::AsNumber(Sim));
-	SetTextOrHide(Text_ScoreSatisfaction, FText::AsNumber(Score));
-	SetTextOrHide(Text_Safety, FText::AsNumber(ViewModel->GetSafety()));
-
-	// ★ 두 만족도가 같으면 설명이 필요 없다. 다를 때만 왜 다른지 적는다 —
-	//   항상 띄우면 사람이 안 읽고, 다를 때 놓친다.
-	SetTextOrHide(Text_SatisfactionNote, (Sim != Score)
-		? FText::Format(
-			LOCTEXT("LiveReport_SatisfactionNote",
-				"평가 점수는 관객 만족도에 피날레·연출 보정을 더한 값입니다 ({0} 차이)."),
-			FText::AsNumber(Score - Sim))
-		: FText::GetEmpty());
-
-	// --- 운영 ---
-	const int32 TotalStaff = ViewModel->GetTotalStaffCount();
-	const int32 HiredStaff = ViewModel->GetHiredStaffCount();
-	SetTextOrHide(Text_Staff, (TotalStaff >= 0 && HiredStaff >= 0)
-		? FText::Format(
-			LOCTEXT("LiveReport_Staff", "{0}명 (고용 {1})"),
-			FText::AsNumber(TotalStaff), FText::AsNumber(HiredStaff))
-		: FText::GetEmpty());
-
-	SetTextOrHide(Text_Programs, FText::Format(
-		LOCTEXT("LiveReport_Programs", "{0}개"),
-		FText::AsNumber(ViewModel->GetScheduledProgramIds().Num())));
-
+	const bool bHasGoal = Report && Report->AdmittedVisitors >= 0 && Report->DailyVisitorGoal >= 0;
+	SetTextOrHide(Text_DailyGoal, bHasGoal ? FText::Format(GoalProgressFormat, FFormatNamedArguments{
+		{TEXT("Admitted"), FText::AsNumber(Report->AdmittedVisitors)},
+		{TEXT("Goal"), FText::AsNumber(Report->DailyVisitorGoal)}}) : NotMeasuredText);
+	SetTextOrHide(Text_DailyGoalState, bHasGoal ? (Report->bDailyGoalAchieved ? GoalAchievedText : GoalMissedText) : NotMeasuredText);
+	SetTextOrHide(Text_Staff, Report && Report->TotalStaff >= 0 && Report->HiredStaff >= 0
+		? FText::Format(StaffFormat, FFormatNamedArguments{
+			{TEXT("Total"), FText::AsNumber(Report->TotalStaff)}, {TEXT("Hired"), FText::AsNumber(Report->HiredStaff)}}) : UnknownValueText);
+	SetTextOrHide(Text_Programs, Report && Report->Programs >= 0
+		? FText::Format(ProgramCountFormat, FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Report->Programs)}}) : UnknownValueText);
 	RefreshAdvance();
 }
-
-#undef LOCTEXT_NAMESPACE

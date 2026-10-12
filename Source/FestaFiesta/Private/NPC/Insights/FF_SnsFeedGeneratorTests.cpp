@@ -6,6 +6,7 @@
 
 #include "NPC/Insights/FF_SnsFeedGenerator.h"
 #include "DataTables/FF_SnsPostTemplateRow.h"
+#include "Economy/FF_FestivalEconomyTypes.h"
 
 // UFF_CrowdInsightsSubsystem 자체는 GameInstance를 Outer로 요구하므로 테스트에서 만들 수
 // 없다. 그래서 화제·문장 선택 로직을 FFF_SnsFeedGenerator(순수 함수)로 분리했고
@@ -136,6 +137,38 @@ bool FFF_SnsFeedGenerator_GatedTopicsRespectEligibility::RunTest(const FString& 
 	Day2.CurrentDay = 2;
 	TestFalse(TEXT("2일차면 화제12는 자격이 없다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(12, Day2));
 
+	// 화제27(어제 글 보고 왔다): 2일차 오전 + 어제 매출 1위가 있을 때만
+	FFF_SnsFeedSignals Inflow;
+	Inflow.CurrentDay = 2;
+	Inflow.LiveElapsedFraction = 0.1f;
+	TestFalse(TEXT("어제 매출 1위가 없으면 화제27은 자격이 없다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(27, Inflow));
+	Inflow.YesterdayTopFacilityDisplayName = TEXT("피자 부스");
+	TestTrue(TEXT("2일차 오전이면 화제27은 자격이 있다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(27, Inflow));
+	Inflow.LiveElapsedFraction = 0.5f;
+	TestFalse(TEXT("오후에는 화제27이 나오지 않는다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(27, Inflow));
+	// 한산(11)은 붐비는 칸이 없고 밀도 점수가 높을 때만, 붐빔(4)은 붐비는 칸이 있을 때만
+	FFF_SnsFeedSignals Calm;
+	Calm.bFacilityUsedToday = true;
+	Calm.DensityScore0To100 = FFF_SnsFeedGenerator::CalmDensityScoreAtLeast;
+	TestTrue(TEXT("한산하면 화제11"), FFF_SnsFeedGenerator::IsTopicEligibleNow(11, Calm));
+	TestFalse(TEXT("붐비는 칸이 없으면 화제4는 없다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(4, Calm));
+	Calm.CongestedCellCount = 1;
+	TestFalse(TEXT("붐비는 칸이 있으면 한산 글은 없다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(11, Calm));
+	TestTrue(TEXT("붐비는 칸이 있으면 화제4"), FFF_SnsFeedGenerator::IsTopicEligibleNow(4, Calm));
+
+	Inflow.LiveElapsedFraction = 0.1f;
+	Inflow.CurrentDay = 1;
+	TestFalse(TEXT("1일차에는 화제27이 나오지 않는다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(27, Inflow));
+
+	FFF_SnsPostTemplateRow InflowRow;
+	InflowRow.TopicId = 27;
+	InflowRow.bUsesFacilityPlaceholder = true;
+	InflowRow.Text = FText::FromString(TEXT("어제 SNS 보니까 {시설} 있어서 왔어요"));
+	Inflow.CurrentDay = 2;
+	TestTrue(TEXT("화제27의 {시설} 행은 쓴다"), FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(InflowRow));
+	TestEqual(TEXT("{시설}은 어제 매출 1위로 바뀐다"),
+		FFF_SnsFeedGenerator::ResolveBodyText(InflowRow, Inflow).ToString(), FString(TEXT("어제 SNS 보니까 피자 부스 있어서 왔어요")));
+
 	return true;
 }
 
@@ -184,6 +217,7 @@ bool FFF_SnsFeedGenerator_SalienceReflectsChosenTopicScore::RunTest(const FStrin
 
 	FFF_SnsFeedSignals Signals;
 	Signals.WaitScore0To100 = 20; // 화제1(대기시간 김) 점수 = 100 - 20 = 80
+	Signals.WorstWaitFacilityDisplayName = TEXT("어묵 포장마차"); // 대기를 마친 시설이 있어야 화제1이 나간다
 
 	// 극성·화제 선택이 어떤 인덱스에서 화제1(대기)을 고르는지 몰라도, 고른 화제의 점수와
 	// 실제로 채워진 값이 일치하기만 하면 된다
@@ -206,11 +240,11 @@ bool FFF_SnsFeedGenerator_SalienceReflectsChosenTopicScore::RunTest(const FStrin
 	return true;
 }
 
-// {시설} 자리표시자는 가리킬 시설이 신호로 분명한 화제(1·7·10·14)만 통과한다
+// {시설} 자리표시자는 가리킬 시설이 신호로 분명한 화제(1·4·7·10·14·27)만 통과한다
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForSignaledTopics, "FestaFiesta.NPC.SnsFeedGenerator.FacilityPlaceholderOnlyForSignaledTopics", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForSignaledTopics::RunTest(const FString& Parameters)
 {
-	for (const int32 TopicId : {7, 14})
+	for (const int32 TopicId : {4, 7, 14})
 	{
 		FFF_SnsPostTemplateRow Row;
 		Row.TopicId = TopicId;
@@ -351,6 +385,160 @@ bool FFF_Sns_AdmissionFeeTopics::RunTest(const FString& Parameters)
 	TestEqual(TEXT("0 Gold 면 점수 100"), FFF_SnsFeedGenerator::ComputeTopicScore(16, Signals), 100.f, 1e-3f);
 	TestEqual(TEXT("가성비는 긍정 화제"), FFF_SnsFeedGenerator::GetTopicPolarity(16), EFF_SnsSentiment::Positive);
 	TestEqual(TEXT("0 Gold 면 긍정 쪽으로 10 기운다"), FFF_SnsFeedGenerator::CalcPolaritySatisfaction(Signals), 70);
+	return true;
+}
+
+// 피날레는 문장 수보다 글이 많이 나간다. 풀을 여러 바퀴 돌아도 같은 문장이 두 번 보이지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_Sns_FinaleBodiesNeverRepeat, "FestaFiesta.NPC.SnsFeedGenerator.FinaleBodiesNeverRepeat", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_Sns_FinaleBodiesNeverRepeat::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("Variant 0 은 원문"), FFF_SnsFeedGenerator::DecorateBody(TEXT("불꽃"), EFF_SnsSentiment::Positive, 0), FString(TEXT("불꽃")));
+	TestNotEqual(TEXT("Variant 1 부터는 추임새가 붙는다"), FFF_SnsFeedGenerator::DecorateBody(TEXT("불꽃"), EFF_SnsSentiment::Positive, 1), FString(TEXT("불꽃")));
+
+	// S 등급 한 판(약 90초 · 0.35초 간격 ≈ 260건)보다 넉넉하게 400건을 62문장 풀로 만든다
+	constexpr int32 PoolSize = 62;
+	constexpr int32 Posts = 400;
+	TSet<FString> Used;
+	for (int32 Cycle = 0; Cycle < Posts; ++Cycle)
+	{
+		const int32 Slot = Cycle % PoolSize;
+		const FString Base = FString::Printf(TEXT("문장 %d"), Slot);
+		const int32 Before = Used.Num();
+		FFF_SnsFeedGenerator::MakeUniqueDecoratedBody(Base, EFF_SnsSentiment::Positive, Cycle / PoolSize, GetTypeHash(Base), Used);
+		if (Used.Num() != Before + 1)
+		{
+			AddError(FString::Printf(TEXT("%d번째 글에서 같은 문장이 다시 나왔다"), Cycle));
+			break;
+		}
+	}
+
+	// 부정 쪽 추임새도 같은 성질이다
+	TSet<FString> UsedNegative;
+	for (int32 Cycle = 0; Cycle < 120; ++Cycle)
+	{
+		const FString Base = FString::Printf(TEXT("아쉬움 %d"), Cycle % 25);
+		FFF_SnsFeedGenerator::MakeUniqueDecoratedBody(Base, EFF_SnsSentiment::Negative, Cycle / 25, GetTypeHash(Base), UsedNegative);
+	}
+	TestEqual(TEXT("부정 120건도 전부 다른 문장"), UsedNegative.Num(), 120);
+	return true;
+}
+
+// 첫날 개장 직후에는 "또 왔다"·"좋았다"처럼 이미 겪은 글이 나가지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_Sns_OpeningHasNoExperiencedPosts, "FestaFiesta.NPC.SnsFeedGenerator.OpeningHasNoExperiencedPosts", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_Sns_OpeningHasNoExperiencedPosts::RunTest(const FString& Parameters)
+{
+	FFF_SnsFeedSignals Opening;
+	Opening.CurrentDay = 1;
+	Opening.LiveElapsedFraction = 0.02f;
+	Opening.SimSatisfaction0To100 = 90;
+
+	for (int32 Sequence = 0; Sequence < 300; ++Sequence)
+	{
+		for (const EFF_SnsSentiment Polarity : { EFF_SnsSentiment::Positive, EFF_SnsSentiment::Negative })
+		{
+			const int32 Topic = FFF_SnsFeedGenerator::ChooseTopicId(7, Sequence, Polarity, Opening);
+			if (Topic == 1 || Topic == 3 || Topic == 7 || Topic == 10 || Topic == 11 || Topic == 14)
+			{
+				AddError(FString::Printf(TEXT("개장 직후에 화제 %d 가 나왔다"), Topic));
+				return true;
+			}
+		}
+	}
+	TestTrue(TEXT("개장 직후에는 개장 기대감이 나온다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(26, Opening));
+
+	FFF_SnsFeedSignals Day1Late = Opening;
+	Day1Late.LiveElapsedFraction = 0.6f;
+	Day1Late.bFacilityUsedToday = true;
+	TestTrue(TEXT("1일차 후반에 시설을 써 봤으면 재방문 글이 나올 수 있다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(14, Day1Late));
+	TestFalse(TEXT("후반에는 개장 기대감이 안 나온다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(26, Day1Late));
+
+	FFF_SnsFeedSignals Day2Early = Opening;
+	Day2Early.CurrentDay = 2;
+	Day2Early.bFacilityUsedToday = true;
+	TestTrue(TEXT("2일차에는 이른 시간에도 재방문 글이 나올 수 있다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(14, Day2Early));
+	return true;
+}
+
+// 공연 시간에는 공연 얘기가 나온다. 공연 직전 기대감은 공연이 시작되면 그친다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_Sns_MainShowTopics, "FestaFiesta.NPC.SnsFeedGenerator.MainShowTopics", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_Sns_MainShowTopics::RunTest(const FString& Parameters)
+{
+	FFF_SnsFeedSignals Show;
+	Show.LiveElapsedFraction = 0.8f;
+	Show.bMainProgramLocked = true;
+	Show.bMainShowRunning = true;
+	TestTrue(TEXT("공연 중 글"), FFF_SnsFeedGenerator::IsTopicEligibleNow(23, Show));
+	TestTrue(TEXT("공연 관람 불편 글"), FFF_SnsFeedGenerator::IsTopicEligibleNow(25, Show));
+	TestFalse(TEXT("공연이 시작되면 직전 기대감은 그친다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(8, Show));
+	TestFalse(TEXT("공연 중에는 여운 글이 아니다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(24, Show));
+	TestEqual(TEXT("공연 중 글은 긍정"), FFF_SnsFeedGenerator::GetTopicPolarity(23), EFF_SnsSentiment::Positive);
+	TestEqual(TEXT("관람 불편은 부정"), FFF_SnsFeedGenerator::GetTopicPolarity(25), EFF_SnsSentiment::Negative);
+
+	FFF_SnsFeedSignals After;
+	After.LiveElapsedFraction = 0.9f;
+	After.bMainShowJustEnded = true;
+	TestTrue(TEXT("공연이 막 끝나면 여운 글"), FFF_SnsFeedGenerator::IsTopicEligibleNow(24, After));
+	TestFalse(TEXT("끝나면 공연 중 글은 그친다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(23, After));
+	return true;
+}
+
+// 피날레 후기 — 등급마다 다른 화제로 가고, 미구매·C 는 부정이며, 주기 선택에는 끼지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_Sns_FinaleTopicsFollowGrade, "FestaFiesta.NPC.SnsFeedGenerator.FinaleTopicsFollowGrade", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_Sns_FinaleTopicsFollowGrade::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("미구매"), FFF_SnsFeedGenerator::GetFinaleVerdictTopicId(EFF_FinaleGrade::None), 18);
+	TestEqual(TEXT("C"), FFF_SnsFeedGenerator::GetFinaleVerdictTopicId(EFF_FinaleGrade::C), 19);
+	TestEqual(TEXT("B"), FFF_SnsFeedGenerator::GetFinaleVerdictTopicId(EFF_FinaleGrade::B), 20);
+	TestEqual(TEXT("A"), FFF_SnsFeedGenerator::GetFinaleVerdictTopicId(EFF_FinaleGrade::A), 21);
+	TestEqual(TEXT("S"), FFF_SnsFeedGenerator::GetFinaleVerdictTopicId(EFF_FinaleGrade::S), 22);
+
+	TestEqual(TEXT("기대감은 긍정"), FFF_SnsFeedGenerator::GetTopicPolarity(17), EFF_SnsSentiment::Positive);
+	TestEqual(TEXT("미구매는 부정"), FFF_SnsFeedGenerator::GetTopicPolarity(18), EFF_SnsSentiment::Negative);
+	TestEqual(TEXT("C 는 아쉬움(부정)"), FFF_SnsFeedGenerator::GetTopicPolarity(19), EFF_SnsSentiment::Negative);
+	TestEqual(TEXT("B 는 긍정"), FFF_SnsFeedGenerator::GetTopicPolarity(20), EFF_SnsSentiment::Positive);
+	TestEqual(TEXT("S 는 긍정"), FFF_SnsFeedGenerator::GetTopicPolarity(22), EFF_SnsSentiment::Positive);
+
+	TestTrue(TEXT("17~22 는 피날레 연출 후기"), FFF_SnsFeedGenerator::IsFinaleShowTopic(17) && FFF_SnsFeedGenerator::IsFinaleShowTopic(22));
+	TestFalse(TEXT("9(축제 총평)는 연출 후기가 아니다"), FFF_SnsFeedGenerator::IsFinaleShowTopic(9));
+
+	// 주기 선택은 피날레 화제를 고르지 않는다 — 기대감이 낮 피드에 섞이면 안 된다
+	FFF_SnsFeedSignals Signals;
+	for (int32 Sequence = 0; Sequence < 200; ++Sequence)
+	{
+		const int32 Positive = FFF_SnsFeedGenerator::ChooseTopicId(42, Sequence, EFF_SnsSentiment::Positive, Signals);
+		const int32 Negative = FFF_SnsFeedGenerator::ChooseTopicId(42, Sequence, EFF_SnsSentiment::Negative, Signals);
+		if (FFF_SnsFeedGenerator::IsFinaleShowTopic(Positive) || FFF_SnsFeedGenerator::IsFinaleShowTopic(Negative))
+		{
+			AddError(FString::Printf(TEXT("주기 선택이 피날레 화제를 골랐다: %d / %d"), Positive, Negative));
+			break;
+		}
+	}
+	return true;
+}
+
+// 피날레처럼 몰아 올릴 때는 문장 풀을 한 바퀴 다 쓰기 전에 같은 문장이 다시 나오지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_Sns_CycledLinesDoNotRepeatWithinRound, "FestaFiesta.NPC.SnsFeedGenerator.CycledLinesDoNotRepeatWithinRound", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_Sns_CycledLinesDoNotRepeatWithinRound::RunTest(const FString& Parameters)
+{
+	constexpr int32 PoolSize = 7;
+	TArray<FFF_SnsPostTemplateRow> RowStorage;
+	AddTopicPool(RowStorage, 22, PoolSize);
+	TMap<int32, TArray<const FFF_SnsPostTemplateRow*>> TemplatesByTopic;
+	BuildPoolsFromStorage(TemplatesByTopic, RowStorage);
+
+	const FFF_SnsFeedSignals Signals;
+	for (int32 Round = 0; Round < 3; ++Round)
+	{
+		TSet<FName> Seen;
+		for (int32 Slot = 0; Slot < PoolSize; ++Slot)
+		{
+			const int32 Cycle = Round * PoolSize + Slot;
+			const FFF_SnsPostRow Post = FFF_SnsFeedGenerator::GeneratePost(
+				42, 1000 + Cycle, Signals, TemplatesByTopic, 0.f, 22, Cycle);
+			Seen.Add(Post.MessageTemplateId);
+		}
+		TestEqual(FString::Printf(TEXT("%d바퀴째에 문장 %d개를 한 번씩 다 썼다"), Round + 1, PoolSize), Seen.Num(), PoolSize);
+	}
 	return true;
 }
 

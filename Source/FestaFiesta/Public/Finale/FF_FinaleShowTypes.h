@@ -5,9 +5,13 @@
 #include "CoreMinimal.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
 #include "Engine/DataAsset.h"
+#include "Finale/FF_FinaleSiteTour.h"
 #include "FF_FinaleShowTypes.generated.h"
 
+class UMaterialInterface;
 class UNiagaraSystem;
+class UStaticMesh;
+class UWorld;
 
 // 피날레 불꽃 연출 관련 타입.
 //
@@ -92,7 +96,7 @@ enum class EFF_FinaleTourAct : uint8
 	// 하늘을 보는 자리. 기본값이라 예전에 놓은 시점은 전부 여기에 든다.
 	Fireworks    UMETA(DisplayName = "불꽃 관람"),
 
-	// 축제장을 보는 자리. 이 막 동안은 발사를 멈추고 엔딩곡을 튼다.
+	// 축제장을 보는 자리. 이 막 동안에도 발사는 이어진다(2026-10-06 부터).
 	SiteTour     UMETA(DisplayName = "축제장 순회"),
 
 	// 마무리를 보는 자리. 하나도 없으면 첫 불꽃 관람 자리로 돌아온다.
@@ -193,6 +197,37 @@ struct FFF_FinaleVolley
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.01"))
 	float Weight = 1.f;
 
+	/* 연출이 이만큼(0~1, 쏜 발수 기준) 진행된 뒤부터 뽑힌다.
+
+	   실제 불꽃놀이는 처음엔 기본 불꽃이 하늘을 채우고, 중간에 가끔 모양 불꽃이 끼고, 끝으로
+	   갈수록 큰 모양이 나온다. 큰 모양을 0.5 이상에 두면 3막의 마무리에서만 나온다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ShowProgressFrom = 0.f;
+
+	/* 이 패턴의 불꽃 크기 배율. 등급의 BurstScale 에 곱한다.
+
+	   알 하나가 터지며 하트를 그리는 모양 불꽃은 하트를 이루는 불티가 작다. 기본 크기로
+	   터뜨리면 점마다 큰 국화가 피어 하트가 뭉개진다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.05"))
+	float SizeMultiplier = 1.f;
+
+	/* 켜면 모든 발을 한꺼번에 쏘아 올리고, 도화선 길이(상승 시간)를 ShellDelaySeconds 씩 늘려
+	   차례로 터뜨린다. 끄면 ShellDelaySeconds 간격으로 하나씩 쏘아 올린다(연발통).
+
+	   큰 하트·별을 기본 불꽃으로 그릴 때 쓴다. 알 여럿이 함께 올라가 윤곽을 따라 하나씩 터지며
+	   모양이 드러난다. ShellDelaySeconds 가 0 이면 의미가 없다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale")
+	bool bStaggerByFuse = false;
+
+	// 지금 진행률(0~1)에서 뽑을 수 있는가.
+	bool IsAvailableAt(const float ShowProgress) const
+	{
+		return ShowProgress + KINDA_SMALL_NUMBER >= ShowProgressFrom;
+	}
+
 	// 이 패턴이 끝나기까지 걸리는 시간.
 	float GetSpanSeconds() const
 	{
@@ -210,9 +245,14 @@ struct FFF_FinaleVolley
 
 	   자리를 정하지 않는 패턴(단발·동시)은 아무것도 채우지 않는다. 호출부가
 	   흩뿌리는 규칙을 그대로 쓰면 된다 — HasFixedLayout() 으로 미리 가른다.
+
+	   점마다 색을 가진 모양(UFF_FinaleShapeData::PointColors)이면 OutColors 에 자리와 같은 순서로
+	   색을 담는다. 그 밖에는 비워 둔다 — 호출부는 비었으면 볼리의 색 규칙을 쓴다.
+	   점 그림은 점 수가 발수보다 적으면 자리도 그만큼만 나온다. 남는 발은 다음 차례 몫이다.
 	*/
 	FESTAFIESTA_API void BuildShellLayout(
-		const FFF_FinaleLayoutContext& Context, TArray<FVector>& OutLocations) const;
+		const FFF_FinaleLayoutContext& Context, TArray<FVector>& OutLocations,
+		TArray<FLinearColor>* OutColors = nullptr) const;
 
 	// 자리를 패턴이 정하는가. 아니면 호출부가 흩뿌린다.
 	bool HasFixedLayout() const
@@ -260,9 +300,9 @@ struct FFF_FinaleGradeSpec
 	   레벨에 불꽃 관람 시점과 축제장 순회 시점이 하나 이상씩 있어야 막이 선다.
 	   하나라도 없으면 예전처럼 하늘 시점만 돈다. 3막일 때는 TourViewpointLimit 를 보지 않는다.
 
-	   최고 등급에만 켠다. 순회 동안 발사를 멈추므로 발수가 적은 등급에서 켜면
-	   하늘이 비어 보인다. 기본값을 false 로 둔 이유도 같다. 데이터 애셋은 기본값과
-	   다른 값만 저장하므로, 기본값이 true 면 이미 만든 애셋의 모든 등급이 켜진다.
+	   최고 등급에만 켠다. 순회 동안에도 발사는 이어지지만(2026-10-06 피드백) 카메라가 축제장을
+	   비추는 동안 하늘이 화면에 덜 나오므로 발수가 많은 등급이어야 산다. 기본값을 false 로 둔 이유는
+	   데이터 애셋이 기본값과 다른 값만 저장해서다. 기본값이 true 면 이미 만든 애셋의 모든 등급이 켜진다.
 	*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막")
 	bool bSiteTour = false;
@@ -288,6 +328,69 @@ struct FFF_FinaleGradeSpec
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막",
 		meta = (ClampMin = "0", EditCondition = "bSiteTour"))
 	int32 FinalSalvoShells = 0;
+
+	/* 마지막 일제 발사 바로 앞에 올릴 큰 모양 한 차례. 모양 패턴에 모양 애셋이 있을 때만 쏜다.
+
+	   최고 등급의 마지막 장면(2026-10-06 태극기 요청). 큰 하트 · 별처럼 여러 발이 함께 올라가 점 순서대로
+	   터지되(bStaggerByFuse), 무작위로 뽑히지 않고 정해진 때 한 번만 나온다. 마무리 막 몫에서 ShellCount 만큼
+	   떼어 둔다. 자리는 흩뿌리지 않고 발사 위치들의 가운데, 높이 범위의 가운데에 세워 관객을 마주본다.
+
+	   일제 발사와 겹치지 않게, 다 핀 뒤 FinalShapeLeadSeconds 가 지나서 일제 발사의 첫 발이 터진다.
+	   그 앞 일반 차례는 모양이 피기 전에 다 터지도록 일찍 끝낸다 — 하늘이 비어야 모양이 읽힌다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막", meta = (EditCondition = "bSiteTour"))
+	FFF_FinaleVolley FinalShape;
+
+	// 마지막 모양이 다 핀 뒤 일제 발사의 첫 발이 터지기까지(초). 모양을 혼자 보여 주는 시간이다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|3막",
+		meta = (ClampMin = "0.0", EditCondition = "bSiteTour"))
+	float FinalShapeLeadSeconds = 1.f;
+
+	// 마지막 모양을 쏘는 등급인가. 3막이어야 하고, 모양 패턴에 모양 애셋이 있어야 한다.
+	bool HasFinalShape() const
+	{
+		return bSiteTour
+			&& FinalShape.Pattern == EFF_FinaleVolleyPattern::Shape
+			&& FinalShape.ShellCount > 0
+			&& !FinalShape.Shape.IsNull();
+	}
+
+	// 마지막 모양의 높이(발사 위치 위, cm). 높이 범위의 가운데다. 위아래로 펼쳐지는 모양이 범위 안에 든다.
+	float GetFinalShapeHeight() const
+	{
+		return (BurstHeightMin + BurstHeightMax) * 0.5f;
+	}
+
+	/* 마지막 모양이 첫 발부터 마지막 발까지 피는 데 걸리는 시간(초). 간격이 0 이면 한꺼번에 핀다.
+
+	   도화선 차례든 연발통이든 발 사이 간격이 그대로 터지는 간격이 된다(UFF_FinaleShowSubsystem::FireFinalShape).
+	*/
+	float GetFinalShapeBloomSeconds() const
+	{
+		return FinalShape.GetSpanSeconds();
+	}
+
+	/* 연출 길이를 이 등급이 트는 곡 길이에 맞춘다(FFF_FinaleSongPlan).
+
+	   켜면 연출을 시작할 때 오디오 뱅크에서 이 등급의 피날레 곡 길이를 읽는다. 마지막 일제 발사가 곡 끝
+	   직전에 터지고 연출은 곡과 함께 끝난다. 곡을 바꾸면 길이도 따라간다. 그때 DurationSeconds 는 곡 길이로
+	   바뀐다. 뱅크에 곡이 없어 길이를 못 읽으면 DurationSeconds 그대로 돈다.
+
+	   최고 등급 전용곡에 맞추려고 만들었다(2026-10-06 "불꽃 피는 밤" 확정). 길게 잡는 대신 건너뛸 수 있다 —
+	   라이브 HUD 의 "다음으로" 는 연출을 끝내고, Tab 은 카메라만 놓아 준다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|곡 맞춤")
+	bool bMatchSongLength = false;
+
+	/* 곡의 어디쯤(0~1)에서 축제장 순회를 시작할지. 3막일 때만 쓴다.
+
+	   1막(불꽃 관람)은 처음부터 여기까지, 순회는 순회에 걸리는 시간만큼, 그 뒤 곡 끝까지가 마무리 막이다.
+	   "불꽃 피는 밤"(77초)은 30초에 첫 후렴이 끝나고 잠시 가라앉았다가 끝까지 올라간다. 그 가라앉는
+	   자리에서 순회를 시작하려고 0.39 로 둔다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale|곡 맞춤",
+		meta = (ClampMin = "0.05", ClampMax = "0.9", EditCondition = "bMatchSongLength"))
+	float SongSiteTourAt = 0.39f;
 
 	/* 이 등급에서 쓸 발사 패턴.
 
@@ -403,16 +506,34 @@ struct FFF_FinaleGradeSpec
 			return static_cast<float>(Base);
 		}
 
-		float TotalWeight = 0.f;
-		float WeightedShells = 0.f;
-		for (const FFF_FinaleVolley& Volley : Volleys)
+		/* 진행률마다 뽑을 수 있는 패턴이 다르다(ShowProgressFrom). 구간 열 개의 가운데에서
+		   그때 뽑힐 수 있는 것만으로 기댓값을 내고 평균한다. 늦게 나오는 큰 모양까지 처음부터
+		   섞어 세면 앞부분 간격이 너무 길어져 시간 상한에 걸린다(2026-10-05 시험이 잡았다).
+		*/
+		constexpr int32 ProgressSlices = 10;
+		float Sum = 0.f;
+		int32 Counted = 0;
+		for (int32 Slice = 0; Slice < ProgressSlices; ++Slice)
 		{
-			const float Weight = FMath::Max(0.01f, Volley.Weight);
-			TotalWeight += Weight;
-			WeightedShells += Weight * static_cast<float>(FMath::Max(Base, Volley.ShellCount));
+			const float Progress = (static_cast<float>(Slice) + 0.5f) / ProgressSlices;
+			float TotalWeight = 0.f;
+			float WeightedShells = 0.f;
+			for (const FFF_FinaleVolley& Volley : Volleys)
+			{
+				if (!Volley.IsAvailableAt(Progress))
+				{
+					continue;
+				}
+				const float Weight = FMath::Max(0.01f, Volley.Weight);
+				TotalWeight += Weight;
+				WeightedShells += Weight * static_cast<float>(FMath::Max(Base, Volley.ShellCount));
+			}
+			// 그 구간에 뽑을 패턴이 없으면 단발로 메운다(PickVolley 와 같다).
+			Sum += TotalWeight > 0.f ? WeightedShells / TotalWeight : static_cast<float>(Base);
+			++Counted;
 		}
 
-		return TotalWeight > 0.f ? WeightedShells / TotalWeight : static_cast<float>(Base);
+		return Counted > 0 ? Sum / static_cast<float>(Counted) : static_cast<float>(Base);
 	}
 
 	/* 몇 번에 나눠 쏘는가. 간격을 정하는 데만 쓴다.
@@ -459,6 +580,72 @@ struct FFF_FinaleGradeSpec
 	}
 };
 
+/* 곡에 맞춘 연출 시간표(초, 연출 시작 기준). FFF_FinaleGradeSpec::bMatchSongLength 가 켜졌을 때 쓴다.
+
+   월드를 모른다. 곡 길이와 순회 시간 같은 값만 받아 시각을 낸다. 그래서 월드 없이 시험할 수 있다.
+
+   ─── 끝을 곡 끝에 맞추는 법 ─────────────────────────────────────────────────
+   연출은 마지막 발이 터지고 여운(Tail)이 지나야 끝난다. 그래서 마지막 일제 발사는
+   "곡 끝 - 여운 - 가장 높은 발이 오르는 시간" 에 올린다. 그러면 마지막 발이 곡 끝 몇 초 전에 터지고
+   여운과 함께 곡이 끝난다.
+
+   ─── 안 하는 것 ─────────────────────────────────────────────────────────────
+   곡의 박자나 세기를 읽어 발사를 맞추지는 않는다. 막 경계(순회 시작)만 곡의 비율로 정하고, 그 안에서는
+   남은 시간에 남은 발을 고르게 나눈다. 곡은 실행 중에 분석할 수 없다(패키지에는 압축된 소리만 남는다).
+*/
+struct FESTAFIESTA_API FFF_FinaleSongPlan
+{
+	// 곡 길이. 0 이면 시간표가 없다(곡에 맞추지 않는다).
+	float SongSeconds = 0.f;
+
+	// 축제장 순회와 마무리 막이 시작하는 시각. 3막이 아니면 음수다.
+	float SiteTourAt = -1.f;
+	float GrandFinaleAt = -1.f;
+
+	// 마지막 일제 발사를 올리는 시각. 3막이 아니면 남은 발을 여기까지 나눠 쏜다.
+	float SalvoAt = 0.f;
+
+	// 마지막 모양(FFF_FinaleGradeSpec::FinalShape)을 올리는 시각. 없으면 음수다.
+	float FinalShapeAt = -1.f;
+
+	// 마무리 막의 일반 차례를 이 시각까지 다 쏜다. 마지막 모양이 없으면 SalvoAt 과 같다.
+	float VolleysEndAt = 0.f;
+
+	bool IsValid() const { return SongSeconds > 0.f; }
+	bool HasActs() const { return IsValid() && SiteTourAt >= 0.f && GrandFinaleAt >= SiteTourAt; }
+	bool HasFinalShape() const { return HasActs() && FinalShapeAt >= 0.f; }
+
+	/* 마지막 모양의 자리를 잡는다. Make 다음에 부른다. 3막이 아니면 아무것도 하지 않는다.
+
+	   거꾸로 센다. 일제 발사의 첫 발(가장 낮은 발)이 SalvoAt + SalvoFirstRiseSeconds 에 터진다. 그보다
+	   LeadSeconds 앞에 모양이 다 피고, BloomSeconds 앞에 피기 시작하고, ShapeRiseSeconds 앞에 올린다.
+	   일반 차례는 가장 높은 발(MaxRiseSeconds)도 모양이 피기 전에 터지도록 그만큼 일찍 끝낸다.
+	   마무리 막보다 앞으로 당겨지면 마무리 막 시작에 묶는다.
+	*/
+	void PlaceFinalShape(float ShapeRiseSeconds, float BloomSeconds, float SalvoFirstRiseSeconds,
+		float MaxRiseSeconds, float LeadSeconds);
+
+	/* 시간표를 만든다.
+
+	   SiteActSeconds 는 축제장 순회 막이 차지하는 시간(날아 들어옴 포함). 0 이면 3막이 아니다.
+	   순회가 곡 끝에 너무 붙으면 마무리 막이 MinGrandFinaleSeconds 는 되도록 순회를 앞당긴다.
+	*/
+	static FFF_FinaleSongPlan Make(float SongSeconds, float SiteTourAtFraction, float SiteActSeconds,
+		float MaxRiseSeconds, float TailSeconds);
+
+	/* Now 부터 EndAt 까지 Shells 발을 고르게 쏠 간격. 차례마다 평균 PerVolley 발이 나간다.
+
+	   차례마다 다시 계산해서 앞에서 밀리거나 당겨진 만큼을 뒤에서 메운다. 남은 시간이 없으면 MinInterval 이다.
+	*/
+	static float ResolveIntervalToFinish(float Now, float EndAt, int32 Shells, float PerVolley, float MinInterval);
+
+	// 마무리 막이 이보다 짧아지지 않게 한다(초).
+	static constexpr float MinGrandFinaleSeconds = 8.f;
+
+	// 마지막 발이 곡 끝보다 이만큼 먼저 터지게 한다(초). 곡이 먼저 끝나면 마지막 장면이 조용해진다.
+	static constexpr float EndMarginSeconds = 0.3f;
+};
+
 // Niagara 이펙트에 넘기는 User 파라미터 이름.
 //
 // 이펙트 쪽에서 같은 이름으로 User 파라미터를 만들어두면 값이 자동으로 들어간다.
@@ -490,6 +677,231 @@ namespace FFF_FinaleGrades
 	}
 }
 
+/* 불꽃을 바지선에서 쏘아 올리는 방식. 모든 등급이 같이 쓴다.
+
+   ─── 왜 올려 쏘는가 ─────────────────────────────────────────────────────────
+   예전에는 터질 자리에 이펙트를 바로 띄워서 하늘에 꽃이 갑자기 피었다. 실제 해상 불꽃
+   (다대포·광안리)은 바지선의 발사통에서 번쩍 하고 쿵 소리와 함께 알이 올라가고, 꼬리를
+   끌며 몇 초 오른 뒤 꼭대기 근처에서 터진다. 오르는 몇 초가 "곧 터진다" 는 기대를 만든다.
+
+   ─── 상승 시간 ──────────────────────────────────────────────────────────────
+   알(구경)이 클수록 높이, 오래 오른다. 3인치 약 120m 에 3초대, 6인치 약 210m 에 4초 반,
+   12인치 약 350m 에 6초쯤이다(업계 자료의 대략값). 셋 다 높이의 제곱근에 거의 비례해서
+   기준 높이 하나와 그때의 시간만 두고 나머지는 제곱근으로 늘린다.
+
+   ─── 궤적 ───────────────────────────────────────────────────────────────────
+   통을 떠난 순간이 가장 빠르고 꼭대기에서 거의 멈춘다(중력과 공기 저항). 수직은 세게,
+   수평은 덜 감속시켜서 비스듬히 쏜 발은 끝에서 살짝 눕는다. 끝점은 정확히 터질 자리라
+   하트·원 같은 모양 패턴이 그대로 남는다.
+
+   ─── 안 하는 것 ─────────────────────────────────────────────────────────────
+   물리 시뮬레이션은 하지 않는다. 터질 자리와 시간이 먼저 정해져 있고(패턴·막 진행이
+   그것을 기준으로 짜여 있다), 궤적은 그 둘을 잇는 곡선일 뿐이다.
+*/
+USTRUCT(BlueprintType)
+struct FFF_FinaleLaunchSpec
+{
+	GENERATED_BODY()
+
+	// 끄면 예전처럼 터질 자리에서 바로 터진다. 연출을 비교하거나 문제를 가를 때 쓴다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch")
+	bool bLaunchFromSite = true;
+
+	// 상승 시간의 기준. 발사 지점 위 이 높이(cm)까지 ReferenceRiseSeconds 초가 걸린다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Rise", meta = (ClampMin = "100.0"))
+	float ReferenceHeightCm = 21000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Rise", meta = (ClampMin = "0.1"))
+	float ReferenceRiseSeconds = 4.5f;
+
+	// 상승 시간의 범위. 아주 낮거나 높은 발이 너무 빠르거나 늘어지지 않게 묶는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Rise", meta = (ClampMin = "0.1"))
+	float MinRiseSeconds = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Rise", meta = (ClampMin = "0.1"))
+	float MaxRiseSeconds = 7.f;
+
+	/* 감속의 세기. 1 이면 등속, 2 면 중력만 받는 포물선, 그보다 크면 공기 저항까지 받은 모양이다.
+
+	   수직을 수평보다 세게 두어야 꼭대기에서 수직으로는 멈추고 수평으로는 조금 흘러, 비스듬히
+	   쏜 발이 끝에서 눕는다. 둘이 같으면 궤적이 곧은 선이 된다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Rise", meta = (ClampMin = "1.0", ClampMax = "4.0"))
+	float VerticalEase = 2.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Rise", meta = (ClampMin = "1.0", ClampMax = "4.0"))
+	float HorizontalEase = 1.4f;
+
+	// 오르는 동안 옆으로 흔들리는 폭(cm). 실제 알은 바람과 회전으로 조금씩 휘청인다. 0 이면 곧게 오른다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Rise", meta = (ClampMin = "0.0"))
+	float WobbleCm = 120.f;
+
+	// ── 꼬리 ──────────────────────────────────────────────────────────────
+
+	/* 오르는 알에 붙일 이펙트. 비워 두면 아래 메시·머티리얼로 만든 꼬리를 쓴다.
+
+	   이펙트는 알을 따라 움직인다(월드 공간 파티클이면 꼬리가 남는다). 등급 색은
+	   User 파라미터 BurstColor 로 넘긴다. 터지는 순간 비활성화해 남은 파티클만 사라지게 한다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Trail")
+	TSoftObjectPtr<UNiagaraSystem> RiseEffect;
+
+	// 꼬리 메시. 앞(+Z 쪽 끝)이 꼬리 끝, 뒤(-Z 쪽 끝)가 알이 되게 놓는다. 원뿔이면 알 쪽이 굵다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Trail")
+	TSoftObjectPtr<UStaticMesh> TrailMesh;
+
+	/* 꼬리 머티리얼. 아래 이름의 파라미터를 읽는다(FFF_FinaleLaunchParams).
+
+	   Color(벡터)·Intensity·Fade(스칼라)·HeadPosition(벡터, 알의 월드 위치)·TrailLength(스칼라, cm).
+	   이름이 다르면 조용히 무시된다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Trail")
+	TSoftObjectPtr<UMaterialInterface> TrailMaterial;
+
+	// 알과 발사 순간 번쩍임에 쓰는 둥근 빛 머티리얼. Color·Intensity·Fade·Phase 를 읽는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Trail")
+	TSoftObjectPtr<UMaterialInterface> GlowMaterial;
+
+	/* 꼬리 색. 오르는 알은 대개 금색·은색 불티를 흘린다. 터질 색과 따로 둔다.
+
+	   HDR 값이라 1 을 넘겨도 된다. 밤하늘에서 번져 보이려면 Intensity 를 크게 둔다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Trail")
+	FLinearColor TrailColor = FLinearColor(1.f, 0.62f, 0.3f);
+
+	// 켜면 꼬리를 터질 색으로 물들인다. 화려하지만 실제 불꽃과는 멀어진다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Trail")
+	bool bTrailUsesBurstColor = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Trail", meta = (ClampMin = "0.0"))
+	float TrailIntensity = 40.f;
+
+	/* 꼬리 길이를 시간으로 정한다. 알이 이만큼 전에 있던 자리까지 꼬리를 그린다.
+
+	   거리로 고정하지 않는 이유는 실제 꼬리가 그렇기 때문이다. 막 쏘아 올려 빠를 때는
+	   길게, 꼭대기에서 느려지면 짧게 줄어든다. 등급의 TrailLength 를 곱한다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Trail", meta = (ClampMin = "0.0"))
+	float TrailSeconds = 0.3f;
+
+	// 꼬리 굵기(cm). 알 쪽 끝 기준이다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Trail", meta = (ClampMin = "1.0"))
+	float TrailWidthCm = 140.f;
+
+	// 알의 빛 크기(cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Trail", meta = (ClampMin = "1.0"))
+	float HeadSizeCm = 420.f;
+
+	// 터진 뒤 꼬리가 사라지는 시간(초).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Trail", meta = (ClampMin = "0.0"))
+	float FadeOutSeconds = 0.45f;
+
+	// ── 발사 순간 번쩍임 ──────────────────────────────────────────────────
+
+	// 발사통에서 번쩍이는 시간(초). 0 이면 번쩍임을 끈다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Flash", meta = (ClampMin = "0.0"))
+	float FlashSeconds = 0.3f;
+
+	// 바지선과 물결을 비추는 빛의 세기(칸델라). 꺼진 상태로 두려면 0.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Flash", meta = (ClampMin = "0.0"))
+	float FlashLightIntensity = 60000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Flash", meta = (ClampMin = "0.0"))
+	float FlashRadiusCm = 9000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Flash")
+	FLinearColor FlashColor = FLinearColor(1.f, 0.72f, 0.42f);
+
+	// 번쩍임 빛 덩어리 크기(cm). 머티리얼이 없으면 빛만 켠다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Flash", meta = (ClampMin = "0.0"))
+	float FlashGlowSizeCm = 1800.f;
+
+	/* 동시에 켜 둘 번쩍임 빛의 수. 넘치면 빛 없이 빛 덩어리만 보인다.
+
+	   일제 발사는 수십 발이 한꺼번에 나간다. 그만큼 동적 조명을 켜면 프레임이 떨어진다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch|Flash", meta = (ClampMin = "0"))
+	int32 MaxFlashLights = 6;
+
+	bool IsEnabled() const { return bLaunchFromSite; }
+
+	// 발사 지점 위 HeightCm 까지 오르는 데 걸리는 시간(초).
+	FESTAFIESTA_API float ResolveRiseSeconds(float HeightCm) const;
+
+	/* 오르는 중의 위치. Alpha 는 0(발사) ~ 1(터짐)이다. 끝점은 Start 와 Target 그대로다.
+
+	   WobblePhase 는 발마다 다른 값을 넣어 흔들림이 겹치지 않게 한다. 흔들림은 양 끝에서
+	   0 이라 발사통과 터질 자리를 벗어나지 않는다.
+	*/
+	FESTAFIESTA_API FVector EvaluateRise(const FVector& Start, const FVector& Target, float Alpha,
+		float WobblePhase = 0.f) const;
+};
+
+// 발사 꼬리·빛 머티리얼에 넘기는 파라미터 이름. 머티리얼 쪽에서 같은 이름으로 만든다.
+namespace FFF_FinaleLaunchParams
+{
+	inline const FName Color(TEXT("Color"));
+	inline const FName Intensity(TEXT("Intensity"));
+	inline const FName Fade(TEXT("Fade"));
+	inline const FName Phase(TEXT("Phase"));
+	inline const FName HeadPosition(TEXT("HeadPosition"));
+	inline const FName TrailLength(TEXT("TrailLength"));
+}
+
+/* 레벨에 발사 지점·연출 시점이 없을 때 대신 세울 자리.
+
+   공용 맵(Test_Main)은 여러 사람이 고치는 큰 바이너리라 피날레 액터가 덮어쓰기로 사라진 적이
+   있다(9/3 에 놓은 발사대·시점이 같은 날 다른 커밋에서 빠졌다). 그래서 기본 배치를 연출 데이터에
+   둔다. 레벨에 직접 놓은 액터가 하나라도 있으면 그쪽이 이기고 여기는 쓰지 않는다.
+   좌표는 레벨 좌표라 LayoutLevel 이 지금 레벨일 때만 쓴다.
+*/
+USTRUCT(BlueprintType)
+struct FFF_FinaleLayoutLaunchSite
+{
+	GENERATED_BODY()
+
+	// 앞(X)이 해변을 보게 둔다. 바지선은 오른쪽(Y)으로 늘어선다(AFF_FinaleLaunchSite).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout")
+	FTransform Transform;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout", meta = (ClampMin = "1", ClampMax = "9"))
+	int32 BargeCount = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout", meta = (ClampMin = "0.0"))
+	float BargeSpacingCm = 15000.f;
+};
+
+USTRUCT(BlueprintType)
+struct FFF_FinaleLayoutViewpoint
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout")
+	FTransform Transform;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout")
+	EFF_FinaleTourAct TourAct = EFF_FinaleTourAct::Fireworks;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout")
+	int32 TourOrder = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout", meta = (ClampMin = "0.5"))
+	float TourHoldSeconds = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout", meta = (ClampMin = "0.0"))
+	float TourBlendSeconds = 2.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout")
+	FVector TourDriftOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout", meta = (ClampMin = "5.0", ClampMax = "170.0"))
+	float FieldOfView = 70.f;
+
+	// 고정 연출(3막이 아닌 등급)에서 이 자리를 고를 우선순위. 큰 쪽이 이긴다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout")
+	int32 Priority = 0;
+};
+
 // 등급별 연출 수치를 담는 데이터 애셋.
 //
 // 지정하지 않아도 동작한다. 없으면 코드에 박힌 기본값을 쓴다.
@@ -500,6 +912,26 @@ class FESTAFIESTA_API UFF_FinaleShowData : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	// 쏘아 올리는 방식. 모든 등급이 같이 쓴다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale|Launch")
+	FFF_FinaleLaunchSpec Launch;
+
+	// 3막의 축제장 순회. 입구에서 시작해 설치된 시설을 훑는다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale|SiteTour")
+	FFF_FinaleSiteTourSpec SiteTour;
+
+	// 아래 기본 배치를 쓸 레벨. 다른 레벨에서는 좌표가 맞지 않아 쓰지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale|Layout")
+	TSoftObjectPtr<UWorld> LayoutLevel;
+
+	// 레벨에 발사 지점이 하나도 없을 때 세울 바지선 자리.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale|Layout")
+	TArray<FFF_FinaleLayoutLaunchSite> FallbackLaunchSites;
+
+	// 레벨에 연출 시점이 하나도 없을 때 세울 카메라 자리.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale|Layout")
+	TArray<FFF_FinaleLayoutViewpoint> FallbackViewpoints;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale")
 	FFF_FinaleGradeSpec NoneGrade;
 

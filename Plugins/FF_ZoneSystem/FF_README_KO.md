@@ -1,5 +1,7 @@
 # FF_ZoneSystem 기능 상세 가이드
 
+> **2026-10-07 타일 기초 바닥:** Tile은 전용 경사·높이 차 기준(89도·2000cm)과 바닥 최고점 검사를 사용해 수평으로 설치된다. Road와 일반 시설의 기준은 15도·80cm다. 건축 구역·NoBuild·점유 제한은 유지된다. [비전공자용 타일 안내](../../Collaboration/TileFoundation_UserGuide_KO.md)에 설정, 메시 지면 태그, 확인 절차를 정리했다.
+
 > **2026-09-26 빌드·성능 정리:** 단순 기하 API는 필요한 타입만 선언하고, 관객 조회 API는 관람 데이터만 포함한다.
 > 해당 타입의 값을 직접 만들거나 멤버를 읽는 `.cpp`는 `FF_FFZSTypes.h`를 직접 포함한다.
 > 실행 코드가 없던 `FF_FFZSExternalPolicy.cpp`, `FF_FFZSQueueAgent.cpp`, `FF_FFZSFacilityAnchorComponent.cpp`는 제거했다.
@@ -34,7 +36,7 @@
 권한 명령으로 처리하면서 다음 상태가 서로 어긋나지 않도록 묶는다.
 
 - Zone 경계와 Zone 간 그래프
-- 시설 Footprint, 여유 공간, 최대 Queue 영역
+- 시설 Footprint, 관람 공간, 최대 Queue 영역
 - 보호 동선과 설치 금지 영역
 - 지면, 월드 충돌, Navigation 연결성
 - 시설 설치·이동·제거·개장·폐장 상태
@@ -50,7 +52,7 @@
 | 기능 영역 | 플러그인이 담당하는 것 | 플러그인 밖에서 담당할 것 |
 |---|---|---|
 | Zone | 경계, Stable ID, 포함 판정, 인접 그래프 검증, 수용량·밀도 상태 | GIS 원본 수집, 레벨 디자인 승인 |
-| 시설 배치 | 1 cm 격자, 회전, 점유, 여유 공간, Queue 예약 영역, 배치 검증 | 플레이어 입력, 카메라, 최종 UX |
+| 시설 배치 | 1 cm 격자, 회전, 점유, 관람 공간, Queue 예약 영역, 배치 검증 | 플레이어 입력, 카메라, 최종 UX |
 | 지면·충돌 | Line Trace 표본, 경사·높이 편차, Visibility Overlap | 지형/Collision 저작 품질 |
 | Navigation | Anchor·Queue Slot 투영과 동기 경로 연결성 검사 | 실제 AI 이동, 비동기 Nav rebuild, 회피 |
 | 보호 영역 | NoBuild·일반·긴급·접근성·관람 영역과 OBB 교차 판정 | 실제 법규·현장 안전 승인 |
@@ -215,7 +217,7 @@ Rect는 다음 연산을 지원한다.
 | 영역 | 의미 | 충돌 시 실패 |
 |---|---|---|
 | `FootprintRects` | 시설 본체 | `PlacementCollision` |
-| `ClearanceRects` | 본체와 Queue를 제외한 필수 여유 공간 | `InsufficientClearance` |
+| `ClearanceRects` | 명시적으로 설정한 관람 공간. 기존 API 이름만 유지하며 시설 둘레 안전 여유는 생성하지 않음 | `InsufficientClearance` |
 | `QueueRects` | 만석일 때까지 예약하는 최대 대기 공간 | `QueueFootprintBlocked` |
 | `ReservedRects` | 위 세 영역의 정확한 합집합 | Zone 소유·보호 영역·Snapshot 판정 |
 
@@ -235,9 +237,9 @@ Transform은 회전된 Footprint 중심과 Zone Actor의 Yaw를 조합하며 Act
 
 ### 4.5 안전 예산
 
-`MaxEnumeratedCellsPerFacility` 기본값은 10,000,000이다. 이 값은 대형 정상 시설을 실제 Cell로
-펼치는 한도가 아니라, 잘못된 Footprint·Clearance·Queue 입력을 빠르게 거부하기 위한 보수적 예산이다.
-설정값도 하드 상한 10,000,000으로 제한된다.
+`MaxEnumeratedCellsPerFacility` 기본값은 20,000,000이다. 이 값은 원본 크기의 대형 무대를 포함한 정상 시설을 실제 Cell로
+펼치는 한도가 아니라, 잘못된 Footprint·관람 공간·Queue 입력을 빠르게 거부하기 위한 보수적 예산이다.
+설정값도 하드 상한 20,000,000으로 제한된다. 개별 디버그 Cell 배열의 상한은 계속 10,000개다.
 권위 점유·충돌 판정은 Cell이 아니라 압축 사각형 단위로 동작하므로 이 예산을 올려도 메모리와
 판정 비용은 늘지 않는다. 다만 지면 표본 수는 Footprint 면적에 비례하므로
 `GroundSampleSpacingCm`을 과도하게 낮춘 채 대형 시설을 배치하면 LineTrace 비용이 급증한다.
@@ -427,7 +429,7 @@ Threshold를 둔 대칭형 Hysteresis는 아니다. 이 수치는 게임 Prototy
 | Identity | `SchemaVersion` | 현재 지원값 2 |
 | Identity | `FacilityDefinitionId / DisplayName / Category` | Stable ID, 표시명, 카테고리 |
 | Placement | `FootprintSizeCells` | 실제 cm와 같은 1 cm Cell 크기 |
-| Placement | `ClearanceCells` | 전 방향 여유 폭 |
+| 호환성 | `ClearanceCells` | 제거된 안전 여유의 구 자산·세이브 호환 필드. 기본값 0이며 기존 값도 배치에 적용하지 않음 |
 | Placement | `QueueReservedRects` | 최대 Queue 예약 영역 |
 | Queue | `QueueSplinePointsCm` | Service에서 Queue Tail 방향의 로컬 점 |
 | Queue | `QueueRules` | 용량·간격·서비스·포기·이동 규칙 |
@@ -449,7 +451,7 @@ Threshold를 둔 대칭형 Hysteresis는 아니다. 이 수치는 게임 Prototy
 
 - SchemaVersion이 2인가
 - ID와 DisplayName이 존재하고 Category가 유효한가
-- Footprint가 양수, Clearance가 0 이상인가
+- Footprint가 양수인가. 제거된 `ClearanceCells` 값은 공간 생성·검증에서 무시한다.
 - 이론적 공간 작업량이 안전 예산 안인가
 - Queue 수용량, Service 수, 거리, 시간이 유효한가
 - Queue Spline이 2점 이상이고 모든 Slot을 놓을 만큼 긴가
@@ -557,10 +559,10 @@ Install 또는 Move의 로컬 검증은 다음 순서로 진행된다.
 3. FacilitySpec 전체 데이터 계약
 4. 대상 Zone 존재와 Zone 데이터 계약
 5. Zone Category와 Facility `AllowedZoneIds`
-6. 회전 정규화와 Footprint·Clearance·Queue·Reserved Rect 생성
+6. 회전 정규화와 Footprint·관람 공간·Queue·Reserved Rect 생성
 7. 모든 Reserved Rect가 정확히 하나의 Zone에 완전히 포함되는지
 8. 기존 시설 점유와 Footprint 충돌
-9. 기존 시설 점유와 Clearance 충돌
+9. 기존 시설 점유와 명시적 관람 공간 충돌
 10. 기존 시설 점유와 Queue 충돌
 11. Protected Area 교차
 12. 지면 표본
@@ -578,20 +580,22 @@ Move 요청으로 시설 정의를 몰래 바꿀 수 없도록 하기 위한 규
 
 - 작은 시설도 최소 1개 표본 사용
 - 기본 표본 간격 100 cm
-- 모든 표본 요구 여부는 `bRequireEveryGroundSample`로 제어
+- 일반 시설·길의 모든 표본 요구 여부는 `bRequireEveryGroundSample`로 제어하며, 타일은 이 값과 관계없이 모든 검사 표본의 지면을 요구
 - 성공 표본이 없으면 `InvalidGround`
 - 최대 법선 경사가 설정값을 넘으면 `ExcessSlope`
 - 최고·최저 Z 차가 설정값을 넘으면 `HeightVarianceExceeded`
-- 통과하면 평균 지면 높이로 Placement Transform Z를 보정
+- 일반 시설·길은 평균 지면 높이로 Placement Transform Z를 보정
+- Tile은 중심·가장자리 표본에 footprint 크기의 하향 sweep를 추가해 최고 지면 높이에 수평으로 배치
 
 1 cm 점유 해상도와 물리 Trace 밀도는 의도적으로 분리되어 있다.
+타일의 평평한 윗면은 설치된 Actor의 `TileSupportSurface`가 제공한다. 메시 지면을 명시할 때는 실제 지면에만 `FFZS_TileGround` 컴포넌트·액터 태그를 적용한다. 이 태그는 건축 허가를 부여하지 않는다. 자세한 제작 기준과 제한은 [타일 기초 바닥 안내](../../Collaboration/TileFoundation_UserGuide_KO.md)를 따른다.
 
 ### 8.4 월드 충돌
 
 `bEnableWorldCollisionChecks`가 켜져 있으면 각 압축 Rect를 Box Overlap으로 검사한다.
 
 - Footprint 충돌 → `PlacementCollision`
-- Clearance 충돌 → `InsufficientClearance`
+- 관람 공간 충돌 → `InsufficientClearance` (호환용 코드명)
 - Queue 충돌 → `QueueFootprintBlocked`
 
 Visibility Channel을 기준으로 하며 GameplayZone, ProtectedArea, FacilityActor는 이 물리 검사에서
@@ -1092,7 +1096,7 @@ Snapshot에는 Actor 포인터가 없으므로 NPC를 다시 Spawn한 뒤 Stable
 
 제한된 Schema 3(1 Cell = 100 cm) Snapshot은 메모리에서 Schema 4로 변환할 수 있다.
 
-- Footprint, Clearance, Origin Cell을 100배
+- Footprint와 Origin Cell을 100배. 제거된 안전 여유 값은 0으로 정규화
 - 구 개별 Queue Cell을 100 x 100 cm 압축 Rect로 병합
 - Queue Cell이 10,000개를 넘으면 오프라인 마이그레이션 요구
 - Queue Spline·Anchor·시간처럼 이미 cm/초인 값은 유지
@@ -1185,7 +1189,7 @@ Read Model 수정은 권위 상태에 영향을 주지 않는다. Queue 참가·
 5. Custom Depth와 Debug Box 갱신
 
 현재 표현 규칙은 유효 Preview Custom Depth 1, 실패 Preview 2이며,
-Footprint는 초록, Clearance는 청록, Queue는 노랑, 실패 영역은 빨강으로 그린다.
+Footprint는 파랑, Queue는 청록, 실패 영역은 빨강으로 그린다. 명시적 관람 공간 표시는 유지하며 시설 둘레 안전 여유와 해당 범례는 표시하지 않는다.
 개별 1 cm Cell이 아니라 Canonical Rect당 Box 하나를 그린다.
 
 자동 갱신은 기본 false이고 간격 기본값은 0.1초다. 짧은 간격으로 켜면 Ground, Collision,
@@ -1205,15 +1209,19 @@ deprecated raw Spec 노드를 새로 사용하지 말고, 카탈로그에서 선
 
 Editor의 `Edit -> Project Settings -> Game -> FF Zone System`에서 설정한다.
 
+지면 허용치의 쉬운 설명과 변경·적용 절차는 [시설 설치 지면 안내](../../Collaboration/FacilityGroundPlacement_UserGuide_KO.md)를 참고한다.
+
 | 영역 | 설정 | 기본값 | 적용 의미 |
 |---|---|---:|---|
 | Units | Placement Cell Size | 1 cm 고정 | 변경 불가 좌표 계약 |
-| Performance | Max Enumerated Cells Per Facility | 10,000,000 | 손상 입력 조기 거부 예산 |
+| Performance | Max Enumerated Cells Per Facility | 20,000,000 | 손상 입력 조기 거부 예산 |
 | Performance | Ground Sample Spacing | 100 cm | 지면 Trace 간격 |
 | Performance | Queue Simulation Tick Interval | 0.1초 | 0이면 매 Frame |
 | Selection | Facility Selection Padding | 75 cm/변 | Footprint 기반 선택 Query Box의 XY 사방 여백, 전체 치수는 +150 cm |
-| Placement | Max Ground Slope | 5도 | 표본 법선 최대 경사 |
-| Placement | Max Ground Height Variance | 20 cm | 표본 최고·최저 Z 차 |
+| Placement | Max Ground Slope | 15도 | 일반 시설·길의 표본 법선 최대 경사 |
+| Placement | Max Ground Height Variance | 80 cm | 일반 시설·길의 표본 최고·최저 Z 차 |
+| Placement / Tile | Tile Maximum Ground Slope | 89도 | 타일 지면 표본의 최대 경사 |
+| Placement / Tile | Tile Maximum Ground Height Difference | 2000 cm | 타일 아래 최고·최저 지면 높이 차 |
 | Placement | Ground Trace Above / Below | 1000 / 1000 cm | Line Trace 범위 |
 | Placement | Enable Ground Checks | true | 지면 검증 사용 |
 | Placement | Require Every Ground Sample | true | 모든 표본 Hit 요구 |
@@ -1281,7 +1289,7 @@ Blueprint 노드:
 - 최대 열거 예산 조회
 - QuarterTurns 정규화
 - Cell·Rect 회전
-- Debug용 Footprint·Clearance·Queue·Reserved Cell 조회
+- Debug용 Footprint·관람 공간·Queue·Reserved Cell 조회 (`Clearance` 조회는 관람 공간만 반환)
 - 기본 12개 Zone ID 조회
 - Install Command 생성
 - Placement Failure 기본 문구 변환
@@ -1291,7 +1299,7 @@ C++ 전용 고성능 API:
 - Rect Canonicalization
 - Rect Set Overlap
 - 압축 영역 면적
-- Footprint·Clearance·Queue·Reserved Rect 생성
+- Footprint·관람 공간·Queue·Reserved Rect 생성
 - Command Fingerprint
 
 ### 17.3 Actor와 Component API
@@ -1350,7 +1358,7 @@ Zone Actor는 기본 생성 시 100 m x 100 m 사각형 Spline을 제공하지�
 1. Content Browser에서 `UFFZSFacilityDefinition` Data Asset을 만든다.
 2. SchemaVersion 2와 Stable FacilityDefinitionId를 입력한다.
 3. 실제 cm 크기를 그대로 Footprint Cell 수에 적는다.
-4. Clearance와 반열림 QueueReservedRects를 작성한다.
+4. 반열림 QueueReservedRects를 작성하고, 관람이 필요한 시설만 Audience 영역을 설정한다. 시설 둘레 안전 여유는 사용하지 않는다.
 5. Queue Spline을 Service에서 Tail 방향으로 작성한다.
 6. Queue 가입 전 접근점 Entry[0], 퇴장점 Exit[0], Service[0..Capacity-1] Anchor를 만든다. Entry를 Slot 0과 같은 위치에 두지 않고, 모든 Anchor와 Queue Slot의 XY 간격이 도착 허용 지름과 프로젝트 NPC 몸체 지름을 모두 만족하게 한다.
 7. 외부 Cost·Revenue·Experience Key와 Soft Mesh를 설정한다.
@@ -1358,7 +1366,7 @@ Zone Actor는 기본 생성 시 100 m x 100 m 사각형 Spline을 제공하지�
 9. 이미 작성한 시설의 크기를 바꿀 때는 Footprint 필드를 직접 고치지 말고 `Facility Authoring Tools`의 `New Width (X)`·`New Depth (Y)`·`New Height (Z)`에 목표 값을 넣고 `Resize Facility (Keep Queue & Anchors)`를 누른다. 높이는 XY 배치에 영향을 주지 않으므로 보정 없이 값만 교체되며 최소 10cm다. QueueReservedRects는 건물 좌하단 기준이고 Queue Spline Point와 Anchor는 건물 중심 기준이라, 같은 크기 변경에도 필요한 이동량이 서로 다르다. 버튼은 중심보다 바깥쪽 예약 경계를 크기 변화량만큼, 경로 점과 Anchor를 변화량의 절반만큼 옮겨 각자 붙어 있던 건물 변까지의 거리를 유지하며, 결과 Spec이 전체 검증을 통과할 때만 적용한다. 구버전 `QueueReservedCells`가 남아 있으면 자동 보정을 제공하지 않으므로 먼저 QueueReservedRects로 변환한다.
 10. 대기열이 차지하는 공간을 줄일 때는 세 값이 검증으로 묶여 있으므로 `Queue Rules` → `Queue Spline Points` → `Queue Reserved Rects` 순서로 손댄다. 필요 경로 길이는 `(Max Waiting Agents - 1) × Slot Spacing`이므로 인원이나 간격을 줄이면 길이가 줄고, 정원을 유지한 채 면적만 줄이려면 Spline에 굴절점을 넣어 L자·ㄷ자로 접는다. 길이를 바꾼 뒤에는 `Queue Tail <- Max Capacity`로 경로를 맞추고, `Queue Margin (cm)`에 통행 여백을 넣고 `Queue Rects <- Queue Path`를 누르면 예약 영역이 경로를 따라가는 회랑으로 다시 만들어진다. 접힌 경로는 구간마다 사각형이 생겨 외접 박스보다 훨씬 작은 면적만 확보하고, 최대 정원이 쓰지 않는 꼬리 구간과 건물 본체를 침범하는 부분은 자동으로 제외된다.
 11. Details의 `Facility Authoring Tools`에서 `Show Korean Help`, `Validate Facility Definition`, `Footprint <- Loaded Mesh`, `Resize Facility (Keep Queue & Anchors)`, `Queue Rects <- Queue Path`, `Queue Tail <- Max Capacity`, `Max Capacity <- Queue Length`, `Fit Mesh to Placement Bounds` 버튼을 사용할 수 있다. 변경 버튼은 Undo/Redo transaction을 지원한다.
-12. 카테고리·필드·열거형·배열 요소·버튼처럼 항상 보이는 UI 이름은 영어를 사용한다. `Show Korean Help`를 누르면 핵심 사용법이 한국어 대화상자로 열리고, 개별 항목에 마우스를 올리면 단위, 좌표 원점, 포함/미포함 경계, 10,000,000셀 안전 예산, 활성 조건을 한국어 툴팁으로 확인할 수 있다. 버튼 실행 뒤 결과 알림과 검증 대화상자도 한국어로 표시한다.
+12. 카테고리·필드·열거형·배열 요소·버튼처럼 항상 보이는 UI 이름은 영어를 사용한다. `Show Korean Help`를 누르면 핵심 사용법이 한국어 대화상자로 열리고, 개별 항목에 마우스를 올리면 단위, 좌표 원점, 포함/미포함 경계, 설정된 시설 면적 안전 예산, 활성 조건을 한국어 툴팁으로 확인할 수 있다. 버튼 실행 뒤 결과 알림과 검증 대화상자도 한국어로 표시한다.
 13. Content Browser의 `Validate Assets`로 Spec 내부·중복 ID·경로·메시 bounds까지 검증한다.
 14. Asset Manager Scan과 Shipping Cook 포함 여부를 Host 프로젝트에서 검증한다.
 
@@ -1486,12 +1494,12 @@ Queue 또는 실제 NPC 이동 하네스가 아니므로 해당 통합 검증은
 | 식별자 | `DuplicateZoneId` | Zone ID 중복을 나타내기 위한 코드다. 현재 Zone 등록 경로는 `false`와 로그로 중복을 알리며, 일반 Command 실행에서 이 코드를 직접 반환하지는 않는다. |
 | 식별자 | `DuplicateFacilityId` | 새 시설 ID가 기존 시설과 겹친다. 자동 ID를 쓰거나 호출자가 유일한 ID를 보장해야 한다. |
 | Zone 규칙 | `CategoryNotAllowed` | Zone의 허용 Category에 시설 Category가 포함되지 않는다. |
-| Zone 규칙 | `OutsideZone` | Footprint·Clearance·Queue 전체 Reserved 영역이 한 Zone에 완전 포함되지 않거나 여러 Zone과 면적으로 겹친다. |
+| Zone 규칙 | `OutsideZone` | Footprint·관람 공간·Queue 전체 Reserved 영역이 설치 허용 경계에 완전히 포함되지 않는다. |
 | 지면 | `InvalidGround` | 지면 Trace가 유효한 지면을 찾지 못했다. Trace Channel과 지형 Collision을 확인한다. |
 | 지면 | `ExcessSlope` | 지면 경사가 허용 최대값보다 크다. |
 | 지면 | `HeightVarianceExceeded` | 여러 지면 표본의 높이 편차가 허용값을 넘었다. |
 | 점유 | `PlacementCollision` | 시설 배치 Footprint가 기존 시설 또는 차단 월드 Geometry와 충돌한다. |
-| 점유 | `InsufficientClearance` | Clearance 영역이 다른 점유 또는 장애물과 겹친다. |
+| 점유 | `InsufficientClearance` | 명시적 관람 공간이 다른 점유 또는 장애물과 겹친다. 제거된 안전 여유와는 무관한 호환용 코드명이다. |
 | 점유 | `QueueFootprintBlocked` | 대기열 Footprint를 확보할 수 없다. |
 | 보호 구역 | `ProtectedRouteBlocked` | 보호된 도로·출입구·비상 동선 등과 배치 영역이 충돌한다. |
 | Navigation | `RequiredRouteDisconnected` | 필수 Entry/Service/Exit 또는 Queue 목적지 사이의 경로가 연결되지 않는다. |
@@ -1649,7 +1657,7 @@ NavMesh 재빌드 비용은 별도 통합 시험이 필요하다.
   Tick에서 계속되지만, 그 호출의 남은 `DeltaSeconds`는 별도로 누적하지 않는다.
 - Zone, Protected Area, FacilityActor는 기본적으로 상시 Tick하지 않는다. Queue는
   `Closed`가 아닐 때, Preview Actor는 자동 갱신을 켰을 때만 Tick한다.
-- Debug Cell 전개는 최대 10,000개, 압축 영역의 이론적 안전 예산은 10,000,000셀이다.
+- Debug Cell 전개는 최대 10,000개, 압축 영역의 이론적 안전 예산은 20,000,000셀이다.
   이 값들은 정상 Gameplay 규모를 보장하는 벤치마크가 아니라 폭발적 입력을 막는 안전선이다.
 
 ### 21.2 스레드와 재진입

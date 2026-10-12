@@ -1117,6 +1117,17 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 
 void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const float DeltaTime)
 {
+	if (BuildToolsWidget && BuildToolsWidget->IsFeatureGuideOpen())
+	{
+		// The guide owns input even when the pointer is outside its card. Keep
+		// confirmation clicks and held keys from reaching the world after it closes.
+		EndDragPlacement();
+		ResetPlacementRotationInput();
+		bSuppressWorldClickUntilReleased = true;
+		bSuppressPlacementConfirmUntilReleased = true;
+		bSuppressBuildToggleUntilReleased = true;
+		return;
+	}
 	if (DragPlacementSession && (!Controller.IsInputKeyDown(EKeys::LeftMouseButton) ||
 		!IsPlacementPointerInsideViewport(Controller) || IsEditableSlateTextFocused()))
 	{
@@ -1264,6 +1275,8 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 		ToggleDirectPlacementAdjustment();
 		return;
 	}
+	if (Controller.WasInputKeyJustPressed(EKeys::N) &&
+		HandleNearbyPlacementShortcut(EKeys::N, bQueueModifierDown)) return;
 	if (HandlePlacementGizmoInput(Controller, bBlockWorldClickThisFrame || bPointerOverDebugPanel ||
 		bPointerOverTools || bPointerOverFacilityInfo || IsPointerBlockedByUi(&Controller))) return;
 	// 회전과 설치 입력은 독립적으로 검사하므로 같은 프레임에 들어오면 최신 회전을 포함한 배치를 설치한다.
@@ -1301,6 +1314,12 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 		ProcessDragPlacement();
 		RefreshDragPlacementPreview(false, false, &GroundHit);
 	}
+}
+
+bool UFF_BuildModeSubsystem::HandleNearbyPlacementShortcut(const FKey& Key, const bool bModifierDown, const bool bIsRepeat)
+{
+	return FFBuildModeModel::ShouldProcessNearbyPlacementShortcut(State, Key,
+		IsEditableSlateTextFocused(), bModifierDown, bIsRepeat, bInputSuspendedForPauseMenu) && FindNearbyPlacement();
 }
 
 void UFF_BuildModeSubsystem::TogglePlacementGrid()
@@ -2288,8 +2307,8 @@ bool UFF_BuildModeSubsystem::TraceGroundUnderCursor(
 		return false;
 	}
 
-	// Facility/ProtectedArea 범위 컴포넌트는 NoCollision이며 Zone은 Spline 표현뿐이다. 이전처럼 매 갱신마다
-	// 세 액터 종류를 전부 열거해 ignore 목록을 만들지 않고 실제 충돌 가능한 프리뷰와 Pawn만 제외한다.
+	// 타일의 수평 지지면과 실제 지형을 추적한다. 프리뷰와 조작 Pawn만 제외하고,
+	// 구역·점유·최종 지형 적합성은 공통 배치 검증기에 맡긴다.
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(FFBuildGroundTrace), false);
 	QueryParams.AddIgnoredActor(PlacementPreview);
 	if (Controller.GetPawn())
@@ -2298,9 +2317,13 @@ bool UFF_BuildModeSubsystem::TraceGroundUnderCursor(
 	}
 
 	const FVector RayEnd = RayOrigin + RayDirection * 500000.0f;
+	// 타일의 완화된 지형 정책이 기존 커서의 0.45 법선 제한에 먼저 막히지 않게 한다.
+	const double MinimumUpDot = SelectedSpec.Category == EFFZSFacilityCategory::Tile
+		? FMath::Cos(FMath::DegreesToRadians(GetDefault<UFFZSDeveloperSettings>()
+			->ResolveGroundValidationSettings(SelectedSpec.Category).MaxSlopeDegrees)) : 0.45;
 	return World->LineTraceSingleByChannel(
 		OutGroundHit, RayOrigin, RayEnd, ECC_Visibility, QueryParams) &&
-		OutGroundHit.ImpactNormal.Z >= 0.45f;
+		OutGroundHit.ImpactNormal.Z + UE_SMALL_NUMBER >= MinimumUpDot;
 }
 
 bool UFF_BuildModeSubsystem::InspectFacility(AFFZSFacilityActor* Facility)
@@ -2868,6 +2891,14 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 	return true;
 }
 
+void UFF_BuildModeSubsystem::SetPlacementDiagnosticIndex(const int32 ProblemIndex)
+{
+	if (!PlacementPreview) return;
+	const int32 Index = FMath::Clamp(ProblemIndex, 0, FMath::Max(0, LastValidation.Reasons.Num() - 1));
+	PlacementPreview->SetDisplayedFailureReason(LastValidation.Reasons.IsValidIndex(Index)
+		? LastValidation.Reasons[Index] : EFFZSPlacementFailure::None);
+}
+
 void UFF_BuildModeSubsystem::RefreshCurrentPlacementValidation()
 {
 	if (!PlacementPreview || !bHasPlacementTarget || !FFBuildModeModel::IsPreviewActive(State))
@@ -2883,9 +2914,9 @@ void UFF_BuildModeSubsystem::RefreshCurrentPlacementValidation()
 		? EFFZSPlacementFailure::None
 		: LastValidation.Reasons[0];
 	const FText UserFacingFailure =
-		UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
+		UFF_BuildPlacementFailureFeedback::MakeValidationReason(
 			PrimaryFailure,
-			LastValidation.Summary,
+			LastValidation,
 			bIsMoving);
 	ShowStatus(LastValidation.bIsValid
 		? bIsMoving

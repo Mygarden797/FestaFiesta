@@ -97,6 +97,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Facility Info")
 	bool HasSelection() const { return SelectedFacilityId.IsValid(); }
 
+	/** 점검 안내에서 선택한 시설의 배정 컨트롤로 이동한다. 자동 배정하지 않는다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
+	bool ShowSelectedStaffPage();
+
 	/** Used by raw build/camera input to prevent clicking through the visible card. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Facility Info")
 	bool IsPointerOverPanel() const;

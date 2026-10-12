@@ -437,7 +437,7 @@ namespace FFPrepHudWbpBuilder
 		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
 		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
 		UHorizontalBox* Header = MakePanelHeader(
-			Blueprint, Tree, *Palette, LOCTEXT("PrepStaff_TitlePreview", "인력"));
+			Blueprint, Tree, *Palette, LOCTEXT("PrepStaff_TitlePreview", "스태프"));
 
 		UTextBlock* CurrentStaff = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CurrentStaff"), true);
 		UTextBlock* MaxStaff = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_MaxStaff"), true);
@@ -1005,7 +1005,7 @@ namespace FFPrepHudWbpBuilder
 
 		StyleText(*EstimateNotice, 11, Palette->InGame.InkMuted, TEXT("Medium"));
 		EstimateNotice->SetText(LOCTEXT("PrepCheck_NoticePreview",
-			"부스 수수료와 미니게임 보상은 운영 결과에 따라 달라지므로 이 표에 넣지 않았습니다."));
+			"부스 매출과 미니게임 보상은 운영 결과에 따라 달라지므로 이 표에 넣지 않았습니다."));
 		EstimateNotice->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* Slot_Notice = EstimateTable->AddChildToVerticalBox(EstimateNotice))
 		{
@@ -1720,9 +1720,11 @@ namespace FFPrepHudWbpBuilder
 		UTextBlock* Label = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Label"), true);
 		UTextBlock* Cost = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Cost"), true);
 		UTextBlock* Effect = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Effect"), true);
+		UTextBlock* Buzz = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Buzz"), true);
+		UTextBlock* Forecast = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Forecast"), true);
 		UTextBlock* Badge = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Badge"), true);
 
-		if (!Root || !Frame || !Content || !Label || !Cost || !Effect || !Badge)
+		if (!Root || !Frame || !Content || !Label || !Cost || !Effect || !Buzz || !Forecast || !Badge)
 		{
 			return false;
 		}
@@ -1767,6 +1769,19 @@ namespace FFPrepHudWbpBuilder
 			Slot_Effect->SetPadding(FMargin(0.f, 2.f, 0.f, 0.f));
 		}
 
+		StyleText(*Buzz, 13, Palette->InGame.Ink, TEXT("Medium"));
+		Buzz->SetText(LOCTEXT("PrepPromotion_CardBuzzPreview", "화제성 +0"));
+		if (UVerticalBoxSlot* Slot_Buzz = Content->AddChildToVerticalBox(Buzz))
+		{
+			Slot_Buzz->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
+		}
+		StyleText(*Forecast, 13, Palette->InGame.Ink, TEXT("Medium"));
+		Forecast->SetAutoWrapText(true);
+		Forecast->SetText(LOCTEXT("PrepPromotion_CardForecastPreview", "예상 방문객 확인 중\n현재 입장료 기준"));
+		if (UVerticalBoxSlot* Slot_Forecast = Content->AddChildToVerticalBox(Forecast))
+		{
+			Slot_Forecast->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
+		}
 		StyleText(*Badge, 12, Palette->InGame.Teal, TEXT("SemiBold"));
 		Badge->SetText(LOCTEXT("PrepPromotion_CardBadgePreview", "✓ 구매함"));
 		if (UVerticalBoxSlot* Slot_Badge = Content->AddChildToVerticalBox(Badge))
@@ -1848,7 +1863,7 @@ namespace FFPrepHudWbpBuilder
 		// ★ 아직 안 먹는다는 안내는 `Amber` 다. 흘려보내면 안 되는 사실이라 본문보다 눈에 띄어야 한다.
 		StyleText(*NotApplied, 13, Palette->InGame.Amber, TEXT("Medium"));
 		NotApplied->SetText(LOCTEXT("PrepPromotion_NotAppliedPreview",
-			"예상 방문객에는 반영되며, 실제 입장 인원 연동은 준비 중입니다."));
+			"홍보 효과는 예상 방문객에 반영됩니다. 실제 입장 인원은 운영 상황에 따라 달라집니다."));
 		NotApplied->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* Slot_NotApplied = Content->AddChildToVerticalBox(NotApplied))
 		{

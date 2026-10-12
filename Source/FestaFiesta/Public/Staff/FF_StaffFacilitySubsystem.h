@@ -15,6 +15,8 @@ struct FESTAFIESTA_API FFF_StaffDispatchOrigin
 {
 	GENERATED_BODY()
 	UPROPERTY(BlueprintReadOnly, Category="Staff") int32 StaffId = INDEX_NONE;
+	// 선발한 순간의 원본 숙련도. 출동 후 승급은 다음 출동부터 반영한다.
+	UPROPERTY(BlueprintReadOnly, Category="Staff") int32 TrainingLevel = 1;
 	UPROPERTY(BlueprintReadOnly, Category="Staff") FGuid FacilityInstanceId;
 	UPROPERTY(BlueprintReadOnly, Category="Staff") FVector Location = FVector::ZeroVector;
 };
@@ -54,6 +56,8 @@ public:
 
 	// All-or-nothing reservation: no partial departure if any required member is unavailable.
 	bool TryReserveStaff(int32 Count, const FVector& Target, TArray<FFF_StaffDispatchOrigin>& OutOrigins);
+	// 예약을 바꾸지 않고 실제 출동과 같은 근거리/StaffId 순서로 후보를 선발한다.
+	bool PreviewStaffReservation(int32 Count, const FVector& Target, TArray<FFF_StaffDispatchOrigin>& OutOrigins) const;
 	void ReleaseStaff(const TArray<int32>& StaffIds);
 	bool GetStaffDispatchOrigin(int32 StaffId, FFF_StaffDispatchOrigin& OutOrigin) const;
 	void RefreshStaffing();

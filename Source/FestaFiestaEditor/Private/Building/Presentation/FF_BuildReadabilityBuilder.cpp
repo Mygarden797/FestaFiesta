@@ -6,6 +6,7 @@
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
+#include "Components/BorderSlot.h"
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
@@ -72,10 +73,10 @@ void Scroll(UWidgetTree& Tree, const TCHAR* Name)
 void Catalog(UWidgetBlueprint& BP)
 {
     auto& Tree = *BP.WidgetTree;
-    Height(Tree, TEXT("Size_ClarityCatalogDock"), 378.f);
+    Height(Tree, TEXT("Size_ClarityCatalogDock"), 324.f);
     Height(Tree, TEXT("Size_SubcategoryHeader"), 42.f);
     if (auto* Tiles = Find<UFF_PrepBuildTileView>(Tree, TEXT("TileView_Facilities")))
-        Tiles->SetEntryHeight(264.f);
+        Tiles->SetEntryHeight(210.f);
     // The subcategory selector yields space to search and ranking. Its contents
     // already scroll horizontally, so long category names cannot push actions out.
     if (auto* Size = Find<USizeBox>(Tree, TEXT("Size_SubcategoryViewport")))
@@ -93,12 +94,37 @@ void Catalog(UWidgetBlueprint& BP)
 void CatalogCard(UWidgetBlueprint& BP)
 {
     auto& Tree = *BP.WidgetTree;
-    Height(Tree, TEXT("SizeBox_Card"), 264.f);
-    Height(Tree, TEXT("Size_PearlFacilityName"), 96.f);
+    // Short names share a compact two-line area. Longer names can grow to their
+    // wrapped height instead of clipping, while leaving room for the price.
+    Height(Tree, TEXT("SizeBox_Card"), 210.f);
+    if (auto* NameBounds = Find<USizeBox>(Tree, TEXT("Size_PearlFacilityName")))
+    {
+        NameBounds->ClearHeightOverride();
+        NameBounds->SetMinDesiredHeight(56.f);
+    }
     Label(Tree, TEXT("Text_Name"), 15, true);
     if (auto* Name = Find<UTextBlock>(Tree, TEXT("Text_Name")))
+    {
         Name->SetWrapTextAt(158.f); // virtualized entries have a fixed 184px pitch
-    Label(Tree, TEXT("Text_Cost"), 17, false, FFBuildTypography::ERole::Number);
+        Name->SetLineHeightPercentage(1.f);
+    }
+    Label(Tree, TEXT("Text_Cost"), 15, false, FFBuildTypography::ERole::Number);
+    if (auto* Cost = Find<UTextBlock>(Tree, TEXT("Text_Cost")))
+    {
+        Cost->SetLineHeightPercentage(1.f);
+        Cost->SetJustification(ETextJustify::Left);
+        if (auto* Slot = Cast<UBorderSlot>(Cost->Slot)) Slot->SetPadding(FMargin(0));
+    }
+    if (auto* Price = Find<UBorder>(Tree, TEXT("Border_AuroraCardGold")))
+    {
+        Price->SetPadding(FMargin(0));
+        Price->SetHorizontalAlignment(HAlign_Left);
+        if (auto* Slot = Cast<UHorizontalBoxSlot>(Price->Slot))
+        {
+            Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+            Slot->SetPadding(FMargin(0));
+        }
+    }
     Label(Tree, TEXT("Text_State"), 14, true);
     for (const TCHAR* Name : {TEXT("Text_RequiredMissing"), TEXT("Text_RequiredSatisfied"), TEXT("Text_ProgramBadge")})
         Label(Tree, Name, 14);
@@ -277,7 +303,7 @@ void Apply()
     }
     auto* Defaults = Blueprints[0]->GeneratedClass->GetDefaultObject();
     if (auto* Property = FindFProperty<FFloatProperty>(Defaults->GetClass(), TEXT("CatalogHeight")))
-        Property->SetPropertyValue_InContainer(Defaults, 378.f);
+        Property->SetPropertyValue_InContainer(Defaults, 324.f);
     if (!SaveAssetPackage(Prefix, *Blueprints[0])) return;
     UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_BUILD_READABILITY_PASS assets=%d"), Blueprints.Num());
 }

@@ -11,6 +11,7 @@ class UButton;
 class UBorder;
 class UTextBlock;
 class UVerticalBox;
+class UFF_LiveDensityLegendRowWidget;
 
 /**
  * 범례 한 줄. 등급 하나에 대응한다.
@@ -86,12 +87,7 @@ struct FESTAFIESTA_API FFF_DensityRules
 /**
  * 라이브 `밀집` 패널 — 히트맵 토글 · 범례 · 지금 상태.
  *
- * === 현재 히트맵은 디버그 표시다 ===
- * 바닥에 깔리는 히트맵은 `FCrowdDensityGrid::DrawDebug()` 이고 그 안은 `DrawDebugSolidBox`
- * 다. `ENABLE_DRAW_DEBUG`가 켜진 에디터·개발 빌드에서만 지원하며 출시 빌드는 미지원이다.
- * 제품용 렌더링과 토글 API 를 `UI_API.md` 11번으로 요청해 뒀다 (이정원 님).
- *
- * 그때까지 `bDrawDebugDensity` 표시 플래그만 켠다. API가 오면 토글 경로를 교체한다.
+ * 바닥 히트맵은 `UFF_CrowdDensityHeatmapSubsystem`(데칼)이 그리며 출시 빌드에서도 켜진다.
  *
  * === UI 가 밀도를 계산하지 않는다 ===
  * 최댓값·혼잡 셀 수는 Crowd 가 이미 세어 둔 값을 그대로 읽는다 (C-009 규칙).
@@ -102,7 +98,66 @@ class FESTAFIESTA_API UFF_LivePanelDensity : public UFF_LivePanelBase
 {
 	GENERATED_BODY()
 
+public:
+	/** 범례 행의 크기·열 폭·글꼴을 Designer에서 편집할 수 있는 클래스. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Rows")
+	TSubclassOf<UFF_LiveDensityLegendRowWidget> LegendRowWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Rows")
+	FMargin LegendRowPadding = FMargin(0.f, 0.f, 0.f, 6.f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
+	FText MissingValueText = NSLOCTEXT("FestaFiestaLiveDensity", "MissingValue", "—");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
+	FText PendingGradeText = NSLOCTEXT("FestaFiestaLiveDensity", "PendingGrade", "집계 준비 중");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
+	FText InvalidGradeText = NSLOCTEXT("FestaFiestaLiveDensity", "InvalidGrade", "밀도 값 확인 필요");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text", meta = (ToolTip = "{Density}: 원본 최대 밀도"))
+	FText PeakValueTextFormat = NSLOCTEXT("FestaFiestaLiveDensity", "PeakValueFormat", "{Density}명/㎡");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text", meta = (ToolTip = "{Grade}: A~F, {Name}: 등급 이름"))
+	FText PeakGradeTextFormat = NSLOCTEXT("FestaFiestaLiveDensity", "PeakGradeFormat", "{Grade} · {Name}");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text", meta = (ToolTip = "{Count}: Crowd 원본 혼잡 칸 수. D등급 칸 수가 아닙니다."))
+	FText CongestedTextFormat = NSLOCTEXT("FestaFiestaLiveDensity", "CongestedFormat", "{Count}칸");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text", meta = (ToolTip = "{Size}: 격자 한 변의 실제 길이(m)"))
+	FText CellSizeTextFormat = NSLOCTEXT("FestaFiestaLiveDensity", "CellSizeFormat", "{Size} × {Size}m");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text", meta = (ToolTip = "{Area}: 실제 격자 면적(㎡)"))
+	FText CellAreaTextFormat = NSLOCTEXT("FestaFiestaLiveDensity", "CellAreaFormat", "한 칸 면적 {Area}㎡");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
+	FText ToggleOnText = NSLOCTEXT("FestaFiestaLiveDensity", "LiveDensity_ToggleOn", "히트맵 끄기");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
+	FText ToggleOffText = NSLOCTEXT("FestaFiestaLiveDensity", "LiveDensity_ToggleOff", "히트맵 켜기");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
+	FText HeatmapOnText = NSLOCTEXT("FestaFiestaLiveDensity", "HeatmapOn", "바닥 히트맵 · 켜짐");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
+	FText HeatmapOffText = NSLOCTEXT("FestaFiestaLiveDensity", "HeatmapOff", "바닥 히트맵 · 꺼짐");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
+	FText HeatmapPendingText = NSLOCTEXT("FestaFiestaLiveDensity", "HeatmapPending", "바닥 히트맵 · 준비 중");
+
+	/** 히트맵 표시 자료가 없어 켤 수 없을 때의 상태 줄. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
+	FText HeatmapUnavailableText = NSLOCTEXT("FestaFiestaLiveDensity", "HeatmapUnavailable", "바닥 히트맵 · 미지원");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
+	FText GridPendingNoteText = NSLOCTEXT("FestaFiestaLiveDensity", "LiveDensity_GridPendingNote", "밀도 격자가 준비되면 히트맵을 켤 수 있습니다.");
+
+	/** 히트맵 표시 자료(머티리얼)가 설정되지 않았을 때. 출시 빌드도 히트맵을 지원하므로 「빌드 미지원」 문구는 없앴다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Density|Text")
+	FText NoMaterialNoteText = NSLOCTEXT("FestaFiestaLiveDensity", "LiveDensity_NoMaterialNote", "히트맵 표시 자료가 설정되지 않았습니다. 밀도 수치와 등급은 계속 확인할 수 있습니다.");
+
 protected:
+	virtual void NativeDestruct() override;
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
@@ -138,6 +193,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Density")
 	TObjectPtr<UTextBlock> Text_CellSize;
 
+	/** 별도 면적 줄. 없는 구 WBP에는 Text_CellSize에 길이와 면적을 함께 표시한다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Density")
+	TObjectPtr<UTextBlock> Text_CellArea;
+
+	/** 토글 버튼의 동작명과 구분한 현재 켜짐/꺼짐/준비 중/미지원 상태. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Density")
+	TObjectPtr<UTextBlock> Text_HeatmapStatus;
+
 	/** 현재 빌드의 히트맵 지원 여부. 숫자 조회는 바닥 표시와 독립적이다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Density")
 	TObjectPtr<UTextBlock> Text_MissingNote;
@@ -151,6 +214,13 @@ private:
 	void RefreshSummary();
 	void RefreshToggleLabel();
 	void RefreshLegendHighlight(TOptional<ECrowdLOS> PeakGrade);
+
+	/** 패널 재오픈과 수치 갱신에서 같은 행 인스턴스를 재사용한다. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UFF_LiveDensityLegendRowWidget>> LegendRowWidgets;
+
+	UPROPERTY(Transient)
+	TSubclassOf<UFF_LiveDensityLegendRowWidget> CachedLegendRowWidgetClass;
 
 	/** 현재 최대 등급이 바뀔 때 위젯을 재생성하지 않고 행 강조만 갱신한다. */
 	UPROPERTY(Transient)

@@ -4,12 +4,14 @@
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
+#include "AI/Navigation/NavQueryFilter.h"
 #include "CrowdSystem/FF_SpawnActor.h"
 #include "CrowdSystem/Systems/FF_CrowdDecisionSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "Editor.h"
 #include "EngineUtils.h"
 #include "FileHelpers.h"
+#include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "NavigationSystem.h"
@@ -21,13 +23,28 @@
 namespace
 {
 bool HasCompleteNavigationPath(UNavigationSystemV1& Navigation, const ANavigationData& Data,
-    const FVector& Start, const FVector& End)
+    const FVector& Start, const FVector& End, FAutomationTestBase& Test)
 {
     FPathFindingQuery Query(nullptr, Data, Start, End);
     Query.SetAllowPartialPaths(false);
     const FPathFindingResult Result = Navigation.FindPathSync(Query);
-    return Result.IsSuccessful() && !Result.IsPartial() && Result.Path.IsValid()
+    const bool bComplete = Result.IsSuccessful() && !Result.IsPartial() && Result.Path.IsValid()
         && Result.Path->GetPathPoints().Num() > 0;
+    if (!bComplete)
+    {
+        // Preserve the release gate while distinguishing exhausted A* budgets,
+        // disconnected tiles/links, and failed endpoint projections.
+        const FNavigationPath* Path = Result.Path.Get();
+        Test.AddInfo(FString::Printf(TEXT("Navigation query failure: result=%d partial=%d searchLimit=%d pathValid=%d points=%d startProjectionError=%d endProjectionError=%d maxSearchNodes=%d start=(%s) end=(%s)"),
+            static_cast<int32>(Result.Result), Result.IsPartial(),
+            Path ? Path->DidSearchReachedLimit() : false, Path ? Path->IsValid() : false,
+            Path ? Path->GetPathPoints().Num() : 0,
+            Path ? Path->IsErrorStartLocationNonNavigable() : false,
+            Path ? Path->IsErrorEndLocationNonNavigable() : false,
+            Query.QueryFilter.IsValid() ? Query.QueryFilter->GetMaxSearchNodes() : -1,
+            *Start.ToString(), *End.ToString()));
+    }
+    return bComplete;
 }
 
 class FFF_CheckProductionNavigation final : public IAutomationLatentCommand
@@ -63,17 +80,51 @@ public:
         }
 
         const UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
+        Test->AddInfo(FString::Printf(TEXT("Production navigation query defaults: data=%s maxSearchNodes=%d projectionExtent=(%s)"),
+            *Data->GetPathName(), Data->GetDefaultQueryFilter().IsValid()
+                ? Data->GetDefaultQueryFilter()->GetMaxSearchNodes() : -1,
+            *Data->GetDefaultQueryExtent().ToString()));
         if (!Test->TestNotNull(TEXT("Runtime zone registry exists"), Zones))
         {
             return true;
         }
         const FFFZSReadModel ReadModel = Zones->BuildReadModel();
-        Test->TestEqual(TEXT("All 31 authored release-map zones are registered"), ReadModel.Zones.Num(), 31);
+        // The October 10 layout (c3d4a54b) replaces the old numbered 31-zone
+        // layout. Keep the approved identities independent of both configuration
+        // and runtime discovery so a shared deletion cannot silently pass.
+        const TCHAR* const ExpectedZoneNames[] = {
+            TEXT("GZ_Beach01"), TEXT("GZ_Beach02"), TEXT("GZ_Beach03"),
+            TEXT("GZ_Beach04"), TEXT("GZ_Beach05"), TEXT("GZ_DadaYajang"),
+            TEXT("GZ_DadaepoForest"), TEXT("GZ_FountainPirates"), TEXT("GZ_FleaMarket"),
+            TEXT("GZ_PublicParkingWest"), TEXT("GZ_TemporaryParkingEast"),
+            TEXT("GZ_Operations"), TEXT("GZ_Tutorial")
+        };
+        constexpr int32 ExpectedZoneCount = UE_ARRAY_COUNT(ExpectedZoneNames);
+        TSet<FName> ExpectedZoneIds;
+        const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+        if (!Test->TestNotNull(TEXT("Production zone settings exist"), Settings)) return true;
+        Test->TestTrue(TEXT("Release-map zone identities remain restricted to project presets"),
+            Settings->bRestrictZoneIdsToProjectPresets);
+        Test->TestEqual(TEXT("Project configuration retains the approved release-map zone count"),
+            Settings->ProjectZoneIds.Num(), ExpectedZoneCount);
+        for (const TCHAR* ZoneName : ExpectedZoneNames)
+        {
+            const FName ZoneId(ZoneName);
+            ExpectedZoneIds.Add(ZoneId);
+            Test->TestTrue(FString::Printf(TEXT("Approved release-map zone %s is configured"), ZoneName),
+                Settings->ProjectZoneIds.Contains(ZoneId));
+            Test->TestNotNull(FString::Printf(TEXT("Approved release-map zone %s is registered"), ZoneName),
+                Zones->FindZone(ZoneId));
+        }
+        Test->TestEqual(TEXT("All approved release-map zones are registered"),
+            ReadModel.Zones.Num(), ExpectedZoneCount);
         TSet<FName> UniqueIds;
         TArray<FVector> Points;
         TArray<FName> Ids;
         for (const FFFZSZoneReadModel& Zone : ReadModel.Zones)
         {
+            Test->TestTrue(FString::Printf(TEXT("Registered zone %s belongs to the approved layout"),
+                *Zone.ZoneId.ToString()), ExpectedZoneIds.Contains(Zone.ZoneId));
             Test->TestFalse(FString::Printf(TEXT("%s has a unique identity"), *Zone.ZoneId.ToString()),
                 UniqueIds.Contains(Zone.ZoneId));
             UniqueIds.Add(Zone.ZoneId);
@@ -109,6 +160,42 @@ public:
         if (!Test->TestNotNull(TEXT("Runtime crowd simulation exists"), CrowdSim))
         {
             return true;
+        }
+        // A gate rejected during GatherCrowdGates must fail this release-map
+        // contract explicitly, not disappear from the path checks below.
+        const FArrayProperty* GatesProperty = CastField<FArrayProperty>(
+            AFF_SpawnActor::StaticClass()->FindPropertyByName(TEXT("CrowdGates")));
+        const FStructProperty* GateElementProperty = GatesProperty
+            ? CastField<FStructProperty>(GatesProperty->Inner) : nullptr;
+        if (!Test->TestTrue(TEXT("Authored production gates retain their crowd-gate array type"),
+            GateElementProperty && GateElementProperty->Struct == FFF_CrowdGate::StaticStruct()))
+        {
+            return true;
+        }
+        const TArray<FFF_CrowdGate>& AuthoredGates =
+            *GatesProperty->ContainerPtrToValuePtr<TArray<FFF_CrowdGate>>(Spawn);
+        const TArray<FFF_CrowdGate>& RuntimeGates = CrowdSim->GetValidGates();
+        // Keep the authored release-map contract independent of runtime discovery.
+        // The redesigned Test_Main (158cad95) authors four entrances. Every
+        // entrance must survive validation; a disconnected one is still a fault.
+        const TCHAR* const ExpectedGateNames[] = { TEXT("1"), TEXT("2"), TEXT("3"), TEXT("4") };
+        constexpr int32 ExpectedGateCount = UE_ARRAY_COUNT(ExpectedGateNames);
+        Test->TestEqual(TEXT("Release map retains all expected authored crowd gates"), AuthoredGates.Num(), ExpectedGateCount);
+        Test->TestEqual(TEXT("All expected authored crowd gates survive runtime validation"), RuntimeGates.Num(), ExpectedGateCount);
+        Test->TestEqual(TEXT("All expected release-map gates remain selectable for spawning"), CrowdSim->GetSpawnGateCount(), ExpectedGateCount);
+        // Exact cardinality plus every expected distinct identity also rejects a
+        // duplicate identity, an unexpected gate, or a synthesized fallback.
+        for (const TCHAR* GateName : ExpectedGateNames)
+        {
+            const FName ExpectedId(GateName);
+            const FFF_CrowdGate* Authored = AuthoredGates.FindByPredicate(
+                [ExpectedId](const FFF_CrowdGate& Gate) { return Gate.GateId == ExpectedId; });
+            const FFF_CrowdGate* Runtime = RuntimeGates.FindByPredicate(
+                [ExpectedId](const FFF_CrowdGate& Gate) { return Gate.GateId == ExpectedId; });
+            Test->TestTrue(FString::Printf(TEXT("Authored release-map gate %s allows spawning"), GateName),
+                Authored && Authored->bAllowSpawn);
+            Test->TestTrue(FString::Printf(TEXT("Authored gate %s remains a valid runtime spawn gate"), GateName),
+                Runtime && Runtime->bAllowSpawn);
         }
         const FStructProperty* OffsetProperty = CastField<FStructProperty>(
             AFF_SpawnActor::StaticClass()->FindPropertyByName(TEXT("Temp_ExitOffsetFromOrigin")));
@@ -168,12 +255,12 @@ public:
             if (bSpawnProjects)
             {
                 Test->TestTrue(FString::Printf(TEXT("Actual spawn has a complete path to %s"), *ExitName),
-                    HasCompleteNavigationPath(*Navigation, *Data, SpawnNav.Location, ExitNav.Location));
+                    HasCompleteNavigationPath(*Navigation, *Data, SpawnNav.Location, ExitNav.Location, *Test));
             }
             for (int32 I = 0; I < Points.Num(); ++I)
             {
                 Test->TestTrue(FString::Printf(TEXT("%s can reach %s without a partial path"),
-                    *Ids[I].ToString(), *ExitName), HasCompleteNavigationPath(*Navigation, *Data, Points[I], ExitNav.Location));
+                    *Ids[I].ToString(), *ExitName), HasCompleteNavigationPath(*Navigation, *Data, Points[I], ExitNav.Location, *Test));
                 FPathFindingQuery ExitQuery(nullptr, *Data, Points[I], Exit);
                 ExitQuery.SetAllowPartialPaths(true);
                 ExitQuery.SetRequireNavigableEndLocation(false);
@@ -192,7 +279,7 @@ public:
                 {
                     Test->TestTrue(FString::Printf(TEXT("Complete directed path: %s -> %s"),
                         *Ids[I].ToString(), *Ids[J].ToString()),
-                        HasCompleteNavigationPath(*Navigation, *Data, Points[I], Points[J]));
+                        HasCompleteNavigationPath(*Navigation, *Data, Points[I], Points[J], *Test));
                 }
             }
         }

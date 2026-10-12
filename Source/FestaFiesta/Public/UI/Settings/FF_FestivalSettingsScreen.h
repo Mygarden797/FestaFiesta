@@ -23,15 +23,19 @@ class UFF_SettingSelectRow;
 class UFF_SettingSliderRow;
 class UFF_SettingToggleRow;
 
-/** ESC 옵션의 다섯 개 최상위 목적. 이름과 순서는 사용자에게 보이는 정보 구조의 계약이다. */
+/** 기존 다섯 분류의 직렬화 값을 유지하면서 공통 옵션 분류를 뒤에 추가한다. */
 UENUM(BlueprintType)
 enum class EFF_FestivalSettingsCategory : uint8
 {
 	Basic       UMETA(DisplayName = "기본설정"),
 	Account     UMETA(DisplayName = "계정정보"),
-	Keyboard    UMETA(DisplayName = "키보드 키 배치"),
+	Keyboard    UMETA(DisplayName = "조작"),
 	Graphics    UMETA(DisplayName = "그래픽"),
-	ExitGame    UMETA(DisplayName = "게임종료")
+	ExitGame    UMETA(DisplayName = "게임종료"),
+	Language    UMETA(DisplayName = "언어"),
+	Accessibility UMETA(DisplayName = "접근성"),
+	Sound       UMETA(DisplayName = "사운드"),
+	Credits     UMETA(DisplayName = "크레딧")
 };
 
 /** 키가 같은 상황마다 다른 일을 하므로 문맥을 함께 보여 주는 읽기 전용 조작 안내 행. */
@@ -94,6 +98,11 @@ protected:
 	void SelectCategory(EFF_FestivalSettingsCategory Category);
 	void RebuildRows();
 	void BuildBasicRows();
+	void BuildLanguageRows();
+	void BuildAccessibilityRows();
+	void BuildSoundRows();
+	void BuildCreditsRows();
+	void BuildCameraRows();
 	void BuildAccountRows();
 	void BuildKeyboardRows();
 	void PopulateDefaultKeyboardGuide();
@@ -139,6 +148,10 @@ protected:
 	UFUNCTION() void HandleKeyboardClicked();
 	UFUNCTION() void HandleGraphicsClicked();
 	UFUNCTION() void HandleExitGameClicked();
+	UFUNCTION() void HandleLanguageClicked();
+	UFUNCTION() void HandleAccessibilityClicked();
+	UFUNCTION() void HandleSoundClicked();
+	UFUNCTION() void HandleCreditsClicked();
 	UFUNCTION() void HandleBackClicked();
 	UFUNCTION() void HandleSaveClicked();
 	UFUNCTION() void HandleVSyncToggled(bool bEnabled);
@@ -166,6 +179,15 @@ protected:
 	TObjectPtr<UButton> Button_Graphics;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
 	TObjectPtr<UButton> Button_ExitGame;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
+	TObjectPtr<UButton> Button_Language;
+	/** 구형 화면에서는 그래픽 분류의 호환 버튼이므로 같은 버튼을 중복 구독하지 않는다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
+	TObjectPtr<UButton> Button_Accessibility;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
+	TObjectPtr<UButton> Button_Sound;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
+	TObjectPtr<UButton> Button_Credits;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
 	TObjectPtr<UTextBlock> Text_BasicCategory;
@@ -177,6 +199,14 @@ protected:
 	TObjectPtr<UTextBlock> Text_GraphicsCategory;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
 	TObjectPtr<UTextBlock> Text_ExitGameCategory;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
+	TObjectPtr<UTextBlock> Text_LanguageCategory;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
+	TObjectPtr<UTextBlock> Text_AccessibilityCategory;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
+	TObjectPtr<UTextBlock> Text_SoundCategory;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
+	TObjectPtr<UTextBlock> Text_CreditsCategory;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
 	TObjectPtr<UButton> Button_Close;
@@ -213,8 +243,6 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings|Legacy")
 	TObjectPtr<UButton> Button_Gameplay;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings|Legacy")
-	TObjectPtr<UButton> Button_Accessibility;
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings|Legacy")
 	TObjectPtr<UButton> Button_Reset;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings|Legacy")
 	TObjectPtr<UButton> Button_Done;
@@ -224,8 +252,6 @@ protected:
 	TObjectPtr<UTextBlock> Text_AudioCategory;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings|Legacy")
 	TObjectPtr<UTextBlock> Text_GameplayCategory;
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings|Legacy")
-	TObjectPtr<UTextBlock> Text_AccessibilityCategory;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rows")
 	TSubclassOf<UFF_SettingToggleRow> ToggleRowClass;

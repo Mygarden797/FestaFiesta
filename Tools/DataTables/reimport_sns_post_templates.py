@@ -14,7 +14,7 @@ CSV = ROOT / "data/unreal/sns_post_templates_v0.csv"
 DT = "/Game/FestaFiesta/Data/SNS/DT_SnsPostTemplates"
 
 # 반영됐는지 눈으로 확인할 행.
-WATCHED = ("sns_fee_high_01", "sns_fee_low_01")
+WATCHED = ("sns_fee_high_01", "sns_fee_low_01", "sns_finale_hype_01", "sns_finale_s_22")
 
 
 def main():

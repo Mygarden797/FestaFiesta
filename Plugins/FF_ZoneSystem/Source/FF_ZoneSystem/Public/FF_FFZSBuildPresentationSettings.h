@@ -66,24 +66,33 @@ public:
     float SelectionDetailPaddingCm = 250.0f;
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Ranges")
-    FLinearColor FootprintColor = FLinearColor(0.025f, 0.68f, 0.74f, 0.92f);
+    FLinearColor FootprintColor = FLinearColor(0.18f, 0.50f, 0.96f, 0.92f);
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Ranges")
-    FLinearColor QueueColor = FLinearColor(0.94f, 0.64f, 0.12f, 0.9f);
+    FLinearColor QueueColor = FLinearColor(0.03f, 0.74f, 0.64f, 0.95f);
+
+    // Retained only to read existing config; safety perimeter outlines are no longer drawn.
+    UPROPERTY(Config)
+    FLinearColor ClearanceColor = FLinearColor(0.96f, 0.66f, 0.12f, 0.92f);
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Ranges")
-    FLinearColor ClearanceColor = FLinearColor(0.36f, 0.68f, 0.29f, 0.78f);
+    FLinearColor AudienceColor = FLinearColor(0.68f, 0.35f, 0.96f, 0.95f);
+
+    // Exact construction boundary, independent of the optional placement grid.
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Ranges")
+    FLinearColor BuildBoundaryColor = FLinearColor(1.0f, 1.0f, 1.0f, 0.98f);
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Ranges")
     FLinearColor FailureColor = FLinearColor(0.86f, 0.12f, 0.08f, 0.95f);
 
+    // Screen pixels, rendered by UFFZSBuildRangeComponent independently of camera zoom.
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Ranges", meta = (ClampMin = "0.5", ClampMax = "6.0"))
     float RangeLineThickness = 1.5f;
 
-    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Ranges", meta = (ClampMin = "1.0", ClampMax = "200.0", Units = "cm"))
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Ranges", meta = (DisplayName = "Audience Dash Length", ClampMin = "1.0", ClampMax = "200.0", Units = "cm"))
     float ClearanceDashLengthCm = 35.0f;
 
-    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Ranges", meta = (ClampMin = "1.0", ClampMax = "200.0", Units = "cm"))
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Ranges", meta = (DisplayName = "Audience Dash Gap", ClampMin = "1.0", ClampMax = "200.0", Units = "cm"))
     float ClearanceDashGapCm = 25.0f;
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Ranges", meta = (ClampMin = "0.5", ClampMax = "20.0", Units = "cm"))

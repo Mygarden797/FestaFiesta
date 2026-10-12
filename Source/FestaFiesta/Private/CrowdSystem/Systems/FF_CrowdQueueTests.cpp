@@ -16,6 +16,7 @@
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
@@ -153,7 +154,7 @@ bool FFF_CrowdQueue_ArrivalAndAdvanceLifecycle::RunTest(const FString& Parameter
 	if (!Fixture.BeginPlayInTestWorld()) { Fixture.ForwardErrorMessages(this); return false; }
 	auto* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
-	if (!Zone || !Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+	if (!FFProjectZoneTest::RegisterZone(*this, Zone, Zones)) return false;
 	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
 	Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_Taco");
 	Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall.Taco");
@@ -195,19 +196,19 @@ bool FFF_CrowdQueue_ArrivalAndAdvanceLifecycle::RunTest(const FString& Parameter
 	Queue->FlushPendingEvents();
 	Queue->AdvanceFixedSteps(90);
 	TestEqual(TEXT("Walking toward the queue does not complete service"), Queue->GetQueueState(QueueId).CompletedPartyCount, 0);
+	Access::Unit(*Crowd, First).Position = Access::Unit(*Crowd, First).QueueSlotLocation
+		+ FVector(Crowd->QueueArrivalNotifyRadiusUU + 20.f, 0.f, 0.f);
+	Access::Arrive(*Crowd, First);
+	TestEqual(TEXT("A leader outside the notify radius does not confirm arrival"), Crowd->GetQueueArrivalNotifyCount(), 0);
 	Access::Unit(*Crowd, First).Position = Access::Unit(*Crowd, First).QueueSlotLocation + FVector(20.f, 0.f, 0.f);
 	Access::Arrive(*Crowd, First);
-	TestEqual(TEXT("Leader arrival waits for its companion"), Crowd->GetQueueArrivalNotifyCount(), 0);
-	Access::Unit(*Crowd, Member).Position = Access::Unit(*Crowd, Member).QueueSlotLocation;
-	Access::Arrive(*Crowd, First);
-	TestEqual(TEXT("The former 45cm tolerance cannot falsely confirm a leader still 20cm off its slot"), Crowd->GetQueueArrivalNotifyCount(), 0);
-	Access::Unit(*Crowd, First).Position = Access::Unit(*Crowd, First).QueueSlotLocation;
-	Access::Arrive(*Crowd, First);
+	TestEqual(TEXT("A leader inside the notify radius confirms without waiting for its companion"), Crowd->GetQueueArrivalNotifyCount(), 1);
+	TestEqual(TEXT("The companion still walks to its own precise slot"), Access::Unit(*Crowd, Member).ArrivalRadiusUU, Crowd->GetAssignedSlotArrivalRadius());
 	Access::Unit(*Crowd, Second).Position = Access::Unit(*Crowd, Second).QueueSlotLocation;
 	Access::Arrive(*Crowd, Second);
 	const FVector PreviousSecondSlot = Access::Unit(*Crowd, Second).QueueSlotLocation;
 	Queue->AdvanceFixedSteps(31);
-	TestEqual(TEXT("First party completes only after both members arrived"), Queue->GetQueueState(QueueId).CompletedPartyCount, 1);
+	TestEqual(TEXT("First party completes once its leader arrived"), Queue->GetQueueState(QueueId).CompletedPartyCount, 1);
 	TestFalse(TEXT("Next party receives a forward slot"), Access::Unit(*Crowd, Second).QueueSlotLocation.Equals(PreviousSecondSlot));
 	TestEqual(TEXT("Forward movement requests a fresh arrival"), Access::State(*Crowd, Second).QueuePhase, EFF_PartyQueuePhase::Joined);
 	Access::Arrive(*Crowd, Second);
@@ -335,7 +336,7 @@ bool FFF_CrowdQueue_ShortBlockedApproachStillQueriesPath::RunTest(const FString&
 	// the wall cache. A hand-injected wall would disappear during that rebuild.
 	auto* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
-	if (!Zone || !Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+	if (!FFProjectZoneTest::RegisterZone(*this, Zone, Zones)) return false;
 	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
 	Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_Taco");
 	Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall.Taco");
@@ -453,7 +454,7 @@ bool FFF_CrowdQueue_ValidSlotsBesideFacilityWall::RunTest(const FString& Paramet
 	if (!Fixture.BeginPlayInTestWorld()) { Fixture.ForwardErrorMessages(this); return false; }
 	auto* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
-	if (!Zone || !Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+	if (!FFProjectZoneTest::RegisterZone(*this, Zone, Zones)) return false;
 	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
 	Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_Taco");
 	Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall.Taco");
@@ -596,7 +597,7 @@ bool FFF_CrowdQueue_StartedServiceSurvivesWaitingImpatience::RunTest(const FStri
 	Queue->SetPaused(true);
 	Queue->SimulationStepSeconds = .05f;
 	auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
-	if (!Zone || !Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+	if (!FFProjectZoneTest::RegisterZone(*this, Zone, Zones)) return false;
 	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
 	Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_PatienceTest");
 	Spec.InstallCostKey = CostKey;
@@ -650,7 +651,7 @@ bool FFF_CrowdQueue_StartedServiceSurvivesWaitingImpatience::RunTest(const FStri
 	for (const int32 Leader : {UsingLeader, WaitingLeader})
 	{
 		// Their recorded queue wait now exceeds personal patience while the front team is using the booth.
-		Access::State(*Crowd, Leader).QueueEnteredSimTime = Crowd->GetSimTimeSeconds() - 2.f;
+		Access::State(*Crowd, Leader).QueueAtSlotSimTime = Crowd->GetSimTimeSeconds() - 2.f;
 	}
 	Access::Arrive(*Crowd, UsingLeader);
 	TestEqual(TEXT("Waiting impatience never cancels an already-started use"), Crowd->GetQueuePatienceAbandons(), 0);

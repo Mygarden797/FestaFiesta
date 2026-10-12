@@ -36,7 +36,9 @@ enum class EFF_FacilityInfoPage : uint8
 	Lighting,
 	/** Separate pages keep planning and operation facts visible without scrolling. */
 	Revenue,
-	Programs
+	Programs,
+	/** Staff assignment is separate from the basic facility facts. Append to preserve serialized pages. */
+	Staff
 };
 
 /** One authored combination; repeated nearby instances are summarized in this row. */
@@ -119,7 +121,7 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
 	bool bCanUnassignStaff = false;
 
-	/** Current settlement estimates by team size, visible even when the facility has no levels. */
+	/** Current ordinary-use estimates, empty when no positive settlement is available. Independent of levels. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
 	FText FacilityRevenueText;
 
@@ -134,6 +136,7 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText FootprintText;
 
+	/** Compatibility payload for older Blueprints; the removed safety margin is never presented. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText ClearanceText;
 
@@ -297,12 +300,12 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	/**
 	 * Revenue actually earned by this installed facility instance. Unlike the ledger's
 	 * per-definition rows, two booths of the same type are kept apart here.
-	 * Hidden for lighting and ground surfaces, which never take payments.
+	 * Hidden when the section is inapplicable or the facility has neither income capability nor past earnings.
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
 	bool bShowRevenueSection = false;
 
-	/** False for attraction-only facilities (rest, photo zone, performance) with no direct sales. */
+	/** False when the facility has neither direct income capability nor past earnings. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
 	bool bFacilityGeneratesRevenue = false;
 
@@ -334,7 +337,7 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
 	FText RevenueShareText;
 
-	/** Player-facing note (no sales yet, attraction-only facility, economy not ready). Empty hides it. */
+	/** Player-facing note (no sales yet, economy not ready). Empty hides it. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
 	FText RevenueStatusText;
 
@@ -360,6 +363,7 @@ namespace FFFacilityInfoModel
 	 * Projects one installed facility's actual earnings. A null Revenue means the festival economy
 	 * is not running yet; a zeroed record means no payment has been settled for this instance.
 	 * bSectionApplicable is false for lighting and ground surfaces, which never take payments.
+	 * Income capability or positive past earnings keeps the section visible even before today's first sale.
 	 */
 	FESTAFIESTA_API void ApplyFacilityRevenue(
 		const FFF_FacilityInstanceRevenue* Revenue,

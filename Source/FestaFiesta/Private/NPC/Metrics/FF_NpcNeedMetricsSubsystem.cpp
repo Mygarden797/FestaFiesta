@@ -2,6 +2,8 @@
 
 #include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h" // LogFestaFiestaNpc
+#include "Time/FF_FestivalStageSubsystem.h"
+#include "Engine/GameInstance.h"
 
 namespace
 {
@@ -97,15 +99,35 @@ float FFF_NeedMetricsAggregator::GetAverage(EFF_NeedType NeedType) const
 
 void UFF_NpcNeedMetricsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
+	Collection.InitializeDependency<UFF_FestivalStageSubsystem>();
 	Super::Initialize(Collection);
+
+	if (UFF_FestivalStageSubsystem* Stage = GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>())
+	{
+		Stage->OnFestivalStarted.AddUniqueDynamic(this, &UFF_NpcNeedMetricsSubsystem::HandleFestivalStarted);
+	}
 
 	UE_LOG(LogFestaFiestaNpc, Log,
 		TEXT("UFF_NpcNeedMetricsSubsystem 초기화. 표본은 Live 중 Crowd 가 1초마다 넣는다. ")
 		TEXT("UI는 GetSampleCount()==0 을 '데이터 없음'으로 처리할 것."));
 }
 
+void UFF_NpcNeedMetricsSubsystem::ResetForNewFestival()
+{
+	const float Threshold = Aggregator.GetUnmetThreshold();
+	Aggregator = FFF_NeedMetricsAggregator();
+	Aggregator.SetUnmetThreshold(Threshold);
+}
+
 void UFF_NpcNeedMetricsSubsystem::Deinitialize()
 {
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+		{
+			Stage->OnFestivalStarted.RemoveDynamic(this, &UFF_NpcNeedMetricsSubsystem::HandleFestivalStarted);
+		}
+	}
 	OnNeedUnmetRatioChanged.Clear();
 	Super::Deinitialize();
 }

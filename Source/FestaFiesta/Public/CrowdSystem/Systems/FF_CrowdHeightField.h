@@ -29,16 +29,32 @@ struct FESTAFIESTA_API FFF_CrowdHeightField
 		int32 HitCount = 0;			// 지면을 찾은 수
 		double MinHeightCm = 0.0;
 		double MaxHeightCm = 0.0;
+		int32 BoundaryProbeCount = 0; // Additional sampler calls, including rejected attempts.
+		int32 BoundaryCellCount = 0;
+		int32 UnknownBoundaryCellCount = 0;
 
 		double HeightSpanCm() const { return MaxHeightCm - MinHeightCm; }
 	};
 
 	bool Build(const FVector2D& CenterCm, double HalfSizeCm, double SpacingCm, FHeightSampler Sampler);
 
+	// Opt-in for small edge grids only. A discontinuity stores two height classes
+	// and a sampled boundary instead of interpolating a fictitious ramp between
+	// them. Unsupported/missing geometry and exhausted budgets remain unknown.
+	// The returned count includes every additional sampler attempt. A straight
+	// local boundary is validated at independent interior points; features hidden
+	// between all samples are outside this representation's spatial contract.
+	int32 RefineDiscontinuities(double MinimumHeightGapCm, double SpatialToleranceCm,
+		int32 MaximumAdditionalProbes, FHeightSampler Sampler);
+	// Compact rejection marker when a caller cannot afford an edge subgrid.
+	// Its bitset is bounded by the existing grid, with no additional sampling.
+	void MarkCellUnknown(const FVector2D& WorldXYCm);
+
 	void Reset();
 
 	bool IsValid() const { return NumX >= 2 && NumY >= 2 && Heights.Num() == NumX * NumY && Stats.HitCount > 0; }
 
+	// 통행 상한 위 표본은 높이 후보에서도 제외한다. 셀에 후보가 없으면 false다.
 	bool TryGetHeightCm(const FVector2D& WorldXYCm, double& OutHeightCm) const;
 
 	// 네 꼭짓점의 높이 차가 이 값을 넘으면 절벽으로 보고 보간 대신 가장 가까운 꼭짓점 값을 쓴다.
@@ -61,17 +77,39 @@ struct FESTAFIESTA_API FFF_CrowdHeightField
 
 	// 이 XY를 밟을 수 있는가.
 	//
-	// 둘러싼 네 꼭짓점 중 하나라도 상한을 넘으면 막는다. 보간값으로 판정하면 꼭짓점 간격의
-	// 절반쯤 경사를 올라간 뒤에야 막혀 개체가 언덕에 올라선 그림이 나온다. 대신 통행 경계가
-	// 실제 지형보다 한 칸 앞에 서므로, 경계를 조이려면 SpacingCm을 줄인다.
+	// 상한은 칸의 가장 낮은 꼭짓점으로 판정한다. 네 꼭짓점이 전부 상한을 넘어야 높은 지형이다.
+	// 최댓값으로 보면 나무·화분처럼 꼭짓점 하나에만 얹힌 물체의 높이가 칸 전체(SpacingCm 제곱)를
+	// 통행 불가로 만들어, 바닥이 상한보다 한참 낮은 길 위의 개체가 줄지어 멈춘다. 가장 가까운
+	// 꼭짓점으로 보는 것도 안 된다 — 물체 곁 2.5m 안은 여전히 막힌다.
+	// 대신 높은 지형의 통행 경계는 한 칸(SpacingCm) 늦게 선다. 경계를 조이려면 SpacingCm을 줄인다.
+	//
+	// 구멍 처리는 bBlockUnknownGround를 따른다. 켜면 칸의 네 꼭짓점 중 하나라도 지면이 없을 때 막는다.
 	//
 	// 상한이 없거나 격자가 없으면 true다 — 높이 격자를 끈 맵에서 전원이 못 움직이는 일을 막는다.
 	bool IsWalkable(const FVector2D& WorldXYCm) const;
+
+	struct FCellProbe
+	{
+		double CornerHeightCm[4] = { 0.0, 0.0, 0.0, 0.0 };	// 좌하, 우하, 좌상, 우상
+		bool bCornerValid[4] = { false, false, false, false };
+		FVector2D CornerXYCm[4] = { FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector };
+		bool bHasDiscontinuity = false;
+		bool bBoundaryResolved = false;
+		bool bQueryOnHighSide = false;
+		uint8 HighCornerMask = 0;
+		FVector2D BoundaryStartCm = FVector2D::ZeroVector;
+		FVector2D BoundaryEndCm = FVector2D::ZeroVector;
+		double BoundaryToleranceCm = 0.0;
+	};
+
+	// 진단용. IsWalkable이 보는 네 꼭짓점의 좌표·높이·유효 여부를 그대로 낸다. 격자가 없으면 false.
+	bool ProbeCell(const FVector2D& WorldXYCm, FCellProbe& OutProbe) const;
 
 	const FBuildStats& GetStats() const { return Stats; }
 
 	int32 GetNumX() const { return NumX; }
 	int32 GetNumY() const { return NumY; }
+	SIZE_T GetAllocatedSizeBytes() const { return Heights.GetAllocatedSize() + Valid.GetAllocatedSize() + Discontinuities.GetAllocatedSize() + UnknownCells.GetAllocatedSize(); }
 
 private:
 	// WorldXY가 속한 셀의 좌하단 꼭짓점 인덱스와 셀 안의 보간 계수를 낸다. 격자가 없으면 false.
@@ -85,6 +123,19 @@ private:
 
 	// 지면을 못 찾은 꼭짓점 표시. NaN을 센티넬로 쓰지 않는 이유는 NaN이 보간에 섞이면 결과가 조용히 NaN이 되어 개체가 사라지기 때문이다
 	TArray<uint8> Valid;
+
+	struct FDiscontinuityCell
+	{
+		FVector2D StartCm = FVector2D::ZeroVector;
+		FVector2D EndCm = FVector2D::ZeroVector;
+		FVector2D HighNormal = FVector2D::ZeroVector;
+		double ToleranceCm = 0.0;
+		uint8 HighCornerMask = 0;
+		bool bResolved = false;
+	};
+	// Keys use the lower-left vertex index. Empty for ordinary height fields.
+	TMap<int32, FDiscontinuityCell> Discontinuities;
+	TBitArray<> UnknownCells;
 
 	FVector2D MinCornerCm = FVector2D::ZeroVector;
 	double SpacingCm = 0.0;

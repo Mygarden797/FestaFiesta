@@ -2,7 +2,9 @@
 // 역할: 시설별 수입 순위를 표시하고 선택 시설로 이동하는 요청을 전달한다.
 
 #include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
+#include "UI/Core/FF_OutsideClickDismiss.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
+#include "Building/Presentation/FF_BuildingFeatureDiscoverySubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Components/Border.h"
@@ -22,6 +24,10 @@
 #include "UI/FacilityCodex/FF_FacilityCodexImage.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityRevenueRanking"
+namespace
+{
+	const FName RevenueRankingFeatureId(TEXT("FacilityRevenueRanking"));
+}
 int64 FFFacilityRevenueRanking::Rank(TArray<UFF_FacilityRevenueRankItem *> &Items, bool bCumulative)
 {
 	// 표시용 복사본에만 순위와 비율을 기록한다. 원본 수입 장부는 변경하지 않는다.
@@ -70,14 +76,15 @@ void UFF_FacilityRevenueRankRow::ApplyItem(const UFF_FacilityRevenueRankItem *It
 	Text_Rank->SetText(FText::AsNumber(Item->Rank));
 	Text_Name->SetText(Item->Name);
 	Text_Location->SetText(Item->Location);
-	Text_Amount->SetText(FText::Format(LOCTEXT("Gold", "{0} Gold"), FText::AsNumber(Item->Amount)));
+	Text_Amount->SetText(FText::AsNumber(Item->Amount));
+	SetToolTipText(FText::Format(LOCTEXT("FacilityTooltip", "{0}\n{1}"), Item->Name, Item->Location));
 	if (Text_Share)
 	{
 		FNumberFormattingOptions Format;
 		Format.MinimumFractionalDigits = Format.MaximumFractionalDigits = 1;
 		Text_Share->SetText(Item->bHasShare
-			? FText::Format(LOCTEXT("RowShare", "비중 {0}%"), FText::AsNumber(Item->Share * 100., &Format))
-			: LOCTEXT("RowShareUnavailable", "비중 —"));
+			? FText::Format(LOCTEXT("RowShareNumber", "{0}%"), FText::AsNumber(Item->Share * 100., &Format))
+			: LOCTEXT("RowShareNone", "—"));
 	}
 	Bar_Revenue->SetPercent(Item->RelativeRevenue);
 	Image_Thumbnail->ShowThumbnail(Item->Thumbnail, Text_ThumbnailFallback);
@@ -86,6 +93,8 @@ void UFF_FacilityRevenueRankRow::NativeOnItemSelectionChanged(bool bSelected)
 {
 	if (Border_Row)
 		Border_Row->SetBrushColor(bSelected ? SelectedTint : AuthoredTint);
+	if (Text_SelectionMark)
+		Text_SelectionMark->SetVisibility(bSelected ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	IUserObjectListEntry::NativeOnItemSelectionChanged(bSelected);
 }
 void UFF_FacilityRevenueRankRow::NativeOnEntryReleased()
@@ -94,25 +103,44 @@ void UFF_FacilityRevenueRankRow::NativeOnEntryReleased()
 		Border_Row->SetBrushColor(AuthoredTint);
 	if (Image_Thumbnail)
 		Image_Thumbnail->ShowThumbnail({}, Text_ThumbnailFallback);
+	if (Text_SelectionMark) Text_SelectionMark->SetVisibility(ESlateVisibility::Hidden);
 	IUserObjectListEntry::NativeOnEntryReleased();
 }
 void UFF_FacilityRevenueRankingPanel::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (Size_ClarityFrame && !bCapturedFrameSize)
+	{
+		// 디자이너의 크기를 기준으로 작은 화면에서만 줄인다.
+		AuthoredFrameSize = FVector2D(Size_ClarityFrame->GetWidthOverride(), Size_ClarityFrame->GetHeightOverride());
+		bCapturedFrameSize = true;
+	}
+	FFOutsideClickDismiss::Register(this,
+		[this] { return IsInViewport() && IsVisible(); },
+		[this](FVector2D Position)
+		{
+			return FFOutsideClickDismiss::IsInside(Border_Panel, Position)
+				|| FFOutsideClickDismiss::IsInside(Border_Introduction, Position);
+		},
+		FSimpleDelegate::CreateWeakLambda(this, [this] { OnCloseRequested.Broadcast(); }));
 	Button_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::CloseClicked);
 	Button_Today->OnClicked.AddUniqueDynamic(this, &ThisClass::Today);
 	Button_Total->OnClicked.AddUniqueDynamic(this, &ThisClass::Total);
 	Button_Inspect->OnClicked.AddUniqueDynamic(this, &ThisClass::InspectClicked);
+	if (Button_DismissIntroduction) Button_DismissIntroduction->OnClicked.AddUniqueDynamic(this, &ThisClass::DismissIntroduction);
 	List_Ranking->OnItemSelectionChanged().RemoveAll(this);
 	List_Ranking->OnItemSelectionChanged().AddUObject(this, &ThisClass::SelectionChanged);
 	UpdatePeriod();
 }
 void UFF_FacilityRevenueRankingPanel::NativeDestruct()
 {
+	FFOutsideClickDismiss::Unregister(this);
 	Button_Close->OnClicked.RemoveAll(this);
 	Button_Today->OnClicked.RemoveAll(this);
 	Button_Total->OnClicked.RemoveAll(this);
 	Button_Inspect->OnClicked.RemoveAll(this);
+	if (Button_DismissIntroduction) Button_DismissIntroduction->OnClicked.RemoveAll(this);
+	if (Border_Introduction) Border_Introduction->SetVisibility(ESlateVisibility::Collapsed);
 	List_Ranking->OnItemSelectionChanged().RemoveAll(this);
 	Super::NativeDestruct();
 }
@@ -124,10 +152,9 @@ void UFF_FacilityRevenueRankingPanel::NativeTick(const FGeometry& Geometry, floa
 void UFF_FacilityRevenueRankingPanel::UpdateFrameSize(const FVector2D& Viewport)
 {
 	if (!Size_ClarityFrame || Viewport.GetMin() <= 1.f) return;
-	// The frame is a right-side floating surface. Leave the upper and lower HUD clear;
-	// only the virtualized list uses the remaining space when there are many facilities.
-	const float Width = FMath::Min(600.f, FMath::Max(1.f, Viewport.X - 48.f));
-	const float Height = FMath::Min(DesiredFrameHeight, FMath::Max(1.f, Viewport.Y - 176.f));
+	// 중앙 패널의 크기는 WBP에서 정한다. 하단 HUD 여백은 남기고 목록만 스크롤한다.
+	const float Width = FMath::Min(AuthoredFrameSize.X, FMath::Max(1.f, Viewport.X - 48.f));
+	const float Height = FMath::Min(AuthoredFrameSize.Y, FMath::Max(1.f, Viewport.Y - 176.f));
 	if (!FMath::IsNearlyEqual(Size_ClarityFrame->GetWidthOverride(), Width)) Size_ClarityFrame->SetWidthOverride(Width);
 	if (!FMath::IsNearlyEqual(Size_ClarityFrame->GetHeightOverride(), Height)) Size_ClarityFrame->SetHeightOverride(Height);
 }
@@ -164,7 +191,39 @@ void UFF_FacilityRevenueRankingPanel::UpdatePeriod()
 }
 void UFF_FacilityRevenueRankingPanel::CloseClicked()
 {
+	if (IsIntroductionVisible())
+	{
+		DismissIntroduction();
+		return;
+	}
 	OnCloseRequested.Broadcast();
+}
+
+bool UFF_FacilityRevenueRankingPanel::ShowIntroduction()
+{
+	if (!Border_Introduction || !Button_DismissIntroduction) return false;
+	Border_Introduction->SetVisibility(ESlateVisibility::Visible);
+	Button_DismissIntroduction->SetKeyboardFocus();
+	return true;
+}
+
+bool UFF_FacilityRevenueRankingPanel::IsIntroductionVisible() const
+{
+	return Border_Introduction && Border_Introduction->IsVisible();
+}
+
+void UFF_FacilityRevenueRankingPanel::DismissIntroduction()
+{
+	if (Border_Introduction) Border_Introduction->SetVisibility(ESlateVisibility::Collapsed);
+	SetKeyboardFocus();
+}
+
+FReply UFF_FacilityRevenueRankingPanel::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
+{
+	if (!IsIntroductionVisible()) return Super::NativeOnPreviewKeyDown(Geometry, Event);
+	if (!Event.IsRepeat() && (Event.GetKey() == EKeys::Escape || Event.GetKey() == EKeys::Enter || Event.GetKey() == EKeys::SpaceBar))
+		DismissIntroduction();
+	return FReply::Handled();
 }
 void UFF_FacilityRevenueRankingPanel::InspectClicked()
 {
@@ -183,21 +242,15 @@ void UFF_FacilityRevenueRankingPanel::Present(const TArray<UFF_FacilityRevenueRa
 	for (UUserWidget *Entry : List_Ranking->GetDisplayedEntryWidgets())
 		if (auto *Row = Cast<UFF_FacilityRevenueRankRow>(Entry))
 			Row->ApplyItem(Row->GetListItem<UFF_FacilityRevenueRankItem>());
-	Text_Total->SetText(bAvailable ? FText::Format(LOCTEXT("Gold", "{0} Gold"), FText::AsNumber(Sum))
+	Text_Total->SetText(bAvailable ? FText::AsNumber(Sum)
 								   : LOCTEXT("Unavailable", "조회 불가"));
-	Text_Count->SetText(FText::Format(bCumulative ? LOCTEXT("TotalScope", "현재 설치 시설 {0}개 · 축제 누적")
-												  : LOCTEXT("TodayScope", "현재 설치 시설 {0}개 · 오늘"),
-									  FText::AsNumber(Rows.Num())));
+	Text_Count->SetText(FText::Format(LOCTEXT("FacilityCount", "{0}곳"), FText::AsNumber(Rows.Num())));
 	Text_Empty->SetText(bAvailable ? LOCTEXT("Empty", "설치된 수익 시설이 없습니다.")
 								   : LOCTEXT("NotReady", "매출 정보를 준비 중입니다."));
 	Text_Empty->SetVisibility(Rows.IsEmpty() ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	if (Border_FirstRevenue)
 		Border_FirstRevenue->SetVisibility(bAvailable && !Rows.IsEmpty() && Sum == 0
 			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
-	// The Pearl title, tabs, total, padding, and inspect action use 300 logical
-	// pixels. Leave two full 88px rows and a small rounding reserve in sparse lists.
-	DesiredFrameHeight = FMath::Min(600.f, 302.f + FMath::Clamp(Rows.Num(), 1, 4) * 88.f
-		+ (bAvailable && !Rows.IsEmpty() && Sum == 0 ? 60.f : 0.f));
 	UpdateFrameSize(GetCachedGeometry().GetLocalSize());
 	UFF_FacilityRevenueRankItem *Selected = nullptr;
 	for (auto *Item : Rows)
@@ -294,9 +347,44 @@ void UFF_FacilityRevenueRankingSubsystem::BindEconomy()
 		Progression->OnTodayRevenueChanged.AddUniqueDynamic(this, &ThisClass::AmountChanged);
 	}
 }
+
+void UFF_FacilityRevenueRankingSubsystem::RegisterIntroductionHint(UBorder* Hint)
+{
+	if (!IsValid(Hint)) return;
+	IntroductionHints.AddUnique(TWeakObjectPtr<UBorder>(Hint));
+	BindFeatureDiscovery();
+	RefreshIntroductionHints();
+}
+
+void UFF_FacilityRevenueRankingSubsystem::BindFeatureDiscovery()
+{
+	UGameInstance* Game = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	auto* Current = Game ? Game->GetSubsystem<UFF_BuildingFeatureDiscoverySubsystem>() : nullptr;
+	if (Current == FeatureDiscovery) return;
+	if (FeatureDiscovery) FeatureDiscovery->OnFeatureSeen.RemoveDynamic(this, &ThisClass::FeatureSeen);
+	FeatureDiscovery = Current;
+	if (FeatureDiscovery) FeatureDiscovery->OnFeatureSeen.AddUniqueDynamic(this, &ThisClass::FeatureSeen);
+}
+
+void UFF_FacilityRevenueRankingSubsystem::FeatureSeen(const FName FeatureId)
+{
+	if (FeatureId == RevenueRankingFeatureId) RefreshIntroductionHints();
+}
+
+void UFF_FacilityRevenueRankingSubsystem::RefreshIntroductionHints()
+{
+	const bool bUnseen = FeatureDiscovery && !FeatureDiscovery->HasSeenFeature(RevenueRankingFeatureId);
+	IntroductionHints.RemoveAll([](const TWeakObjectPtr<UBorder>& Hint) { return !Hint.IsValid(); });
+	for (const TWeakObjectPtr<UBorder>& Hint : IntroductionHints)
+		Hint->SetVisibility(bUnseen ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+}
+
 void UFF_FacilityRevenueRankingSubsystem::Deinitialize()
 {
 	Close();
+	if (FeatureDiscovery) FeatureDiscovery->OnFeatureSeen.RemoveDynamic(this, &ThisClass::FeatureSeen);
+	FeatureDiscovery = nullptr;
+	IntroductionHints.Reset();
 	if (auto *Info = GetWorld()->GetSubsystem<UFF_FacilityInfoSubsystem>())
 	{
 		Info->OnRevenueRankingRequested.RemoveAll(this);
@@ -365,7 +453,12 @@ void UFF_FacilityRevenueRankingSubsystem::Open()
 		}
 	}
 	Refresh();
-	Panel->SetKeyboardFocus();
+	BindFeatureDiscovery();
+	// A rejected open or a missing authored guide must not consume first-use state.
+	if (FeatureDiscovery && !FeatureDiscovery->HasSeenFeature(RevenueRankingFeatureId) && Panel->ShowIntroduction())
+		FeatureDiscovery->MarkFeatureSeen(RevenueRankingFeatureId);
+	else if (!Panel->IsIntroductionVisible())
+		Panel->SetKeyboardFocus();
 }
 void UFF_FacilityRevenueRankingSubsystem::Close()
 {

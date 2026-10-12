@@ -46,6 +46,7 @@ constexpr const TCHAR* ActionLanguageKey = TEXT("FF.BuildReferenceTools.ActionLa
 constexpr const TCHAR* KeyboardHelpKey = TEXT("FF.BuildReferenceTools.KeyboardHelpV9");
 constexpr const TCHAR* ConstructionHelpKey = TEXT("FF.BuildReferenceTools.ConstructionHelpV10");
 constexpr const TCHAR* QueueShortcutKey = TEXT("FF.BuildReferenceTools.QueueShortcutV11");
+constexpr const TCHAR* NearbyShortcutKey = TEXT("FF.BuildNearbyShortcut.20261001.v1");
 const FLinearColor White = FLinearColor::White;
 
 FSlateBrush Surface(const FLinearColor Color, const float Radius, const FLinearColor Outline = FLinearColor::Transparent)
@@ -915,7 +916,16 @@ bool ApplyPearlPolish(UWidgetBlueprint& BP)
         TEXT("Button_DirectAdjustment"), TEXT("Button_FindNearby"),
         TEXT("Button_NextPlacementProblem")})
         if (auto* Button = Cast<UFF_BuildToolsActionButton>(Tree.FindWidget(Name)))
+        {
             StyleDrawerAction(*Button, Cast<UTextBlock>(Button->GetContent()), false);
+            if (FCString::Strcmp(Name, TEXT("Button_FindNearby")) == 0)
+            {
+                if (auto* Caption = Cast<UTextBlock>(Button->GetContent()))
+                    Caption->SetText(LOCTEXT("NearbyShortcutButton", "[N] 가까운 빈자리"));
+                Button->SetToolTipText(LOCTEXT("NearbyShortcutTooltip",
+                    "N 또는 클릭으로 가까운 빈자리로 이동합니다. Enter로 배치를 확정하세요."));
+            }
+        }
     if (auto* Confirm = Cast<UFF_BuildToolsActionButton>(Tree.FindWidget(TEXT("Button_Confirm"))))
     {
         FButtonStyle Style = Confirm->GetStyle();
@@ -1167,12 +1177,22 @@ bool ApplyIconHelp(UWidgetBlueprint& BP)
         Text->SetShadowColorAndOpacity(FFBuildPearl::Color(20, 19, 33, .96f));
         AddRow(*Row, *Text, 0.f, true);
         AddColumn(*HelpColumn, *Row, 4.f);
+        if (Row->GetFName() == TEXT("Row_BuildHelpNearby"))
+        {
+            Row->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+            Row->bHiddenInDesigner = false;
+        }
         return true;
     };
+    // The keyboard refinement below fills this lane with the same physical N
+    // keycap used by the narrow shortcut migration for already-authored assets.
+    auto* NearbyLane = MakeWidget<USizeBox>(BP, Tree, TEXT("Size_BuildHelpNearbyIcon"));
     if (!AddHelpRow(TEXT("Row_BuildHelpPrimary"), TEXT("Text_BuildHelpPrimary"),
             HelpMouseIcon(BP, Tree), LOCTEXT("HelpPrimary", "클릭해 시설 배치")) ||
         !AddHelpRow(TEXT("Row_BuildHelpRotate"), TEXT("Text_BuildHelpRotate"),
             HelpRotateIcon(BP, Tree), LOCTEXT("HelpRotate", "시설 방향 회전")) ||
+        !AddHelpRow(TEXT("Row_BuildHelpNearby"), TEXT("Text_BuildHelpNearby"),
+            NearbyLane, LOCTEXT("HelpNearby", "가까운 빈자리로 이동")) ||
         !AddHelpRow(TEXT("Row_BuildHelpMove"), TEXT("Text_BuildHelpMove"),
             HelpArrowIcon(BP, Tree), LOCTEXT("HelpMove", "카메라 이동")) ||
         !AddHelpRow(TEXT("Row_BuildHelpPrecision"), TEXT("Text_BuildHelpPrecision"),
@@ -1271,7 +1291,8 @@ bool ApplyKeyboardHelp(UWidgetBlueprint& BP)
         Size->AddChild(Edge);
         return Size;
     };
-    auto Keys = [&](const TCHAR* IconName, const TArray<TPair<FString, FString>>& KeyList) -> bool
+    auto Keys = [&](const TCHAR* IconName, const TArray<TPair<FString, FString>>& KeyList,
+        const TCHAR* KeysRowName = nullptr) -> bool
     {
         auto* Icon = Cast<USizeBox>(Tree.FindWidget(IconName));
         if (!Icon) return false;
@@ -1287,7 +1308,8 @@ bool ApplyKeyboardHelp(UWidgetBlueprint& BP)
             Widget->RemoveFromParent();
             Widget->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional);
         }
-        auto* Row = MakeWidget<UHorizontalBox>(BP, Tree, FName(*(FString(IconName) + TEXT("Keys"))));
+        auto* Row = MakeWidget<UHorizontalBox>(BP, Tree,
+            KeysRowName ? FName(KeysRowName) : FName(*(FString(IconName) + TEXT("Keys"))));
         for (const auto& Key : KeyList) AddRow(*Row, *Keycap(*Key.Key, *Key.Value), 4.f);
         Icon->SetWidthOverride(124.f);
         Icon->SetHeightOverride(30.f);
@@ -1297,6 +1319,7 @@ bool ApplyKeyboardHelp(UWidgetBlueprint& BP)
         return true;
     };
     if (!Keys(TEXT("Size_BuildHelpRotateIcon"), {{TEXT("Q"), TEXT("Q")}, {TEXT("E"), TEXT("E")}}) ||
+        !Keys(TEXT("Size_BuildHelpNearbyIcon"), {{TEXT("N"), TEXT("N")}}, TEXT("Row_BuildHelpNearbyKeys")) ||
         !Keys(TEXT("Size_BuildHelpArrowsIcon"), {{TEXT("W"), TEXT("W")}, {TEXT("A"), TEXT("A")},
             {TEXT("S"), TEXT("S")}, {TEXT("D"), TEXT("D")}}) ||
         !Keys(TEXT("Size_BuildHelpPrecisionIcon"), {{TEXT("Ctrl"), TEXT("Ctrl")}}) ||
@@ -1325,6 +1348,7 @@ bool ApplyKeyboardHelp(UWidgetBlueprint& BP)
     AddColumn(*Column, *Hint, 10.f);
     Column->ShiftChild(1, Hint);
     for (const TCHAR* Name : {TEXT("Text_BuildHelpPrimary"), TEXT("Text_BuildHelpRotate"),
+        TEXT("Text_BuildHelpNearby"),
         TEXT("Text_BuildHelpMove"), TEXT("Text_BuildHelpPrecision"), TEXT("Text_BuildHelpGrid"),
         TEXT("Text_BuildHelpCatalog"), TEXT("Text_BuildHelpPause")})
         if (auto* Text = Cast<UTextBlock>(Tree.FindWidget(Name)))
@@ -1350,9 +1374,16 @@ bool ApplyKeyboardHelp(UWidgetBlueprint& BP)
     HelpSize->SetWidthOverride(360.f);
     HelpSize->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     if (auto* Slot = Cast<UCanvasPanelSlot>(HelpSize->Slot)) Slot->SetPosition(FVector2D(32.f, 104.f));
+    // Freshly rebuilt help satisfies the same one-time shortcut migration, so a
+    // later narrow command can reuse it without a conflicting duplicate row.
+    if (auto* NearbyButton = Cast<UButton>(Tree.FindWidget(TEXT("Button_FindNearby"))))
+        if (auto* Caption = Cast<UTextBlock>(NearbyButton->GetContent()))
+            if (Caption->GetText().ToString() == TEXT("[N] 가까운 빈자리"))
+                Metadata.SetValue(&BP, NearbyShortcutKey, TEXT("1"));
     Metadata.SetValue(&BP, KeyboardHelpKey, TEXT("1"));
     if (SaveNewBlueprint(TEXT("FF_BUILD_REFERENCE_TOOLS_KEYBOARD_HELP_V9"), BP)) return true;
     Metadata.RemoveValue(&BP, KeyboardHelpKey);
+    Metadata.RemoveValue(&BP, NearbyShortcutKey);
     return false;
 }
 

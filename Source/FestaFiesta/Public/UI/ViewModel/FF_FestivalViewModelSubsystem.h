@@ -12,6 +12,11 @@
 #include "NPC/Party/FF_NeedState.h"
 #include "NPC/Insights/FF_SnsTypes.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelSNS.h"
+#include "UI/Staff/FF_StaffPromotionTypes.h"
+#include "UI/Staff/FF_StaffManagementTypes.h"
+#include "UI/PrepHUD/Panels/FF_PrepRecommendedFacilities.h"
+#include "UI/ViewModel/FF_DailyReportComment.h"
+#include "UI/ViewModel/FF_SatisfactionBreakdown.h"
 
 #include "FF_FestivalViewModelSubsystem.generated.h"
 
@@ -19,6 +24,77 @@ class UFF_FestivalStageSubsystem;
 class UFF_FestivalProgressionSubsystem;
 class UFF_StageEconomyBridgeSubsystem;
 class UFF_SatisfactionMetricsSubsystem;
+class UFF_SaveSubsystem;
+class AFFZSFacilityActor;
+
+/** Report 진입 후 원본을 한 번 읽은 일일 표시 모델. UI 재생성/닫기로 숫자를 다시 계산하지 않는다. */
+struct FESTAFIESTA_API FFF_DailyReportView
+{
+	int32 Day = INDEX_NONE;
+	TArray<FFF_LedgerRow> EarnRows;
+	TArray<FFF_LedgerRow> SpendRows;
+	int64 Revenue = 0;
+	int64 Expense = 0;
+	int64 NetProfit = 0;
+	int32 Refund = 0;
+	int32 Gold = 0;
+	int32 TotalRevenue = 0;
+	// 원본의 날짜별 확정 기록. 아래 실측 분해 캐시와 달리 하루 경계 또는 축제 종료 뒤에 생긴다.
+	bool bHasDailySatisfaction = false;
+	int32 DailySatisfaction = INDEX_NONE;
+	bool bHasSatisfaction = false;
+	int32 SimSatisfaction = INDEX_NONE;
+	int32 ScoreSatisfaction = INDEX_NONE;
+	int32 WaitScore = INDEX_NONE;
+	int32 DensityScore = INDEX_NONE;
+	int32 PreferenceScore = INDEX_NONE;
+	int32 NeedScore = INDEX_NONE;
+	// 만족도를 100 에서 항목별로 깎인 점수로 나눈 것과 그 근거. 하위 점수와 같은 순간에 잡는다
+	FFF_SatisfactionBreakdown SatisfactionBreakdown;
+	int32 AdmittedVisitors = INDEX_NONE;
+	int32 DailyVisitorGoal = INDEX_NONE;
+	bool bDailyGoalAchieved = false;
+	int32 TotalStaff = INDEX_NONE;
+	int32 HiredStaff = INDEX_NONE;
+	int32 Programs = INDEX_NONE;
+	// 오늘 매출 1위 시설(배치된 시설 하나 단위). 매출이 없으면 이름이 비어 있다
+	FText TopFacilityName;
+	int32 TopFacilityGold = 0;
+	// 비서 한마디. FFF_DailyReportCommentRules 가 위 값으로 만든다
+	FText AssistantComment;
+	// 한마디가 고른 불만 1위. 다음 날 아침 비서 브리핑이 같은 판정을 말한다
+	FFF_DailyComplaint Complaint;
+};
+
+/** 종료된 축제의 날짜별 표시값. 원장이 없는 날과 수입이 0인 날을 구분한다. */
+struct FESTAFIESTA_API FFF_FinalReportDayView
+{
+	int32 Day = INDEX_NONE;
+	bool bHasLedger = false;
+	int64 Revenue = 0;
+	int64 Expense = 0;
+	int64 NetProfit = 0;
+	int32 Refund = 0;
+	int32 AdmittedVisitors = INDEX_NONE;
+	bool bHasDailySatisfaction = false;
+	int32 DailySatisfaction = INDEX_NONE;
+};
+
+/** 최종 화면 조회 결과. 평가는 원본의 동결된 값을 읽으며 UI에서 다시 산출하지 않는다. */
+struct FESTAFIESTA_API FFF_FinalReportView
+{
+	FText FestivalName;
+	int32 DaysPlayed = 0;
+	FFF_FestivalEvaluation Evaluation;
+	int64 Revenue = 0;
+	int64 Expense = 0;
+	int64 NetProfit = 0;
+	int32 Gold = 0;
+	int32 Refund = 0;
+	int32 TotalAdmittedVisitors = 0;
+	TArray<FFF_FinalReportDayView> Days;
+};
+
 class UFF_CrowdInsightsSubsystem;
 class UFF_FestivalBuzzSubsystem;
 class UFF_StaffFacilitySubsystem;
@@ -29,6 +105,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnWeatherViewChanged, EFF_Weathe
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnBoolViewChanged, bool, bNewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeViewChanged, EFF_FinaleGrade, NewGrade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsSocialPostChanged, FFF_LiveSocialPost, NewPost);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsReactionViewChanged, FGuid, PostId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnSnsFeedViewReset);
 
 // 편성 목록이 바뀌었다. 원본과 같이 인자를 싣지 않는다 — 무엇이 바뀌었는지는 다시 읽는다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
@@ -80,9 +158,21 @@ struct FESTAFIESTA_API FFF_PromotionOptionView
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
 	int32 CostGold = 0;
 
-	/** 일일 방문객에 곱한다. `안 함` 은 1.0. */
+	/** 일일 방문객에 곱한다. `안 함` 도 원본의 NoPromotionVisitorMultiplier를 따른다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
 	float VisitorMultiplier = 1.f;
+
+	/** 원본 홍보 등급에 설정된 구매 시 화제성 증가량. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
+	int32 StartingBuzz = 0;
+
+	/** 현재 입장료로 이 등급을 선택했을 때의 예상 방문객. 모르면 INDEX_NONE, 실제 0명과 구분한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
+	int32 ExpectedVisitors = INDEX_NONE;
+
+	/** 예상 방문객 계산에 사용한 입장료. 원본 예측 결과를 그대로 전달하며 모르면 INDEX_NONE이다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
+	int32 ForecastAdmissionFeeGold = INDEX_NONE;
 };
 
 /**
@@ -123,7 +213,12 @@ enum class EFF_LiveFacilityQueueState : uint8
 	Full		UMETA(DisplayName = "정원 참"),
 	Draining	UMETA(DisplayName = "비우는 중"),
 	Closed		UMETA(DisplayName = "닫힘"),
-	Blocked		UMETA(DisplayName = "막힘")
+	Blocked		UMETA(DisplayName = "막힘"),
+	/**
+	 * 메인 공연 직전·공연 중이라 일반 시설이 새 손님을 잠시 안 받는다.
+	 * 원본은 이때도 `접수 불가`만 알려 줘서 그대로 옮기면 `정원 참`으로 보인다 — 공연 휴지 구간으로 가른다.
+	 */
+	Paused		UMETA(DisplayName = "공연 중 중단")
 };
 
 /**
@@ -185,6 +280,20 @@ struct FESTAFIESTA_API FFF_LiveFacilityView
 	/** 자리가 겹치거나 존을 벗어나 다시 놓아야 한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	bool bNeedsRelocation = false;
+
+	/**
+	 * 줄이 아니라 관람석으로 손님을 받는 시설(메인 무대). 대기·이용 팀 수가 늘 0이라
+	 * 대기열 집계에 넣으면 "아무도 안 온다"로 읽힌다. 대기열 화면은 따로 표시한다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	bool bSeatedVenue = false;
+
+	/**
+	 * 손님 줄을 받는 시설인가. 조명·길·타일은 대기열이 없어 늘 `미접수` 로 보인다.
+	 * 대기열 화면은 이 값이 꺼진 시설을 빼고, 시설 화면은 그대로 보여 준다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	bool bUsesQueue = true;
 };
 
 /**
@@ -214,14 +323,24 @@ struct FESTAFIESTA_API FFF_PrepFacilityOption
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
 	FGuid FacilityInstanceId;
 
-	/**
-	 * 화면에 쓸 이름. 지금은 시설 식별자의 **고유 토큰**이다.
-	 *
-	 * ⚠️ 시설에 사람이 읽을 이름(`FText`)을 가진 필드가 아직 없다 — `UFFZSFacilityDefinition` 에는
-	 * 썸네일만 있다. 진짜 표시 이름이 생기면 여기만 바꾼다.
-	 */
+	/** 카탈로그에 저작된 시설 종류 이름. 인스턴스 번호는 InstanceLabel에만 붙인다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
 	FText DisplayName;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
+	FName FacilityDefinitionId = NAME_None;
+
+	/** 같은 월드 세션에서 유지하는 종류별 표시 번호. 철거된 번호는 재사용하지 않는다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
+	int32 InstanceNumber = 0;
+
+	/** 예: 모래공방 #01. 편성 명령의 실제 식별자는 위 FacilityInstanceId다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
+	FText InstanceLabel;
+
+	/** 저작된 구역명. 세부 위치는 좌표 대신 위치 보기로 확인한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
+	FText LocationText;
 
 	/** 어느 구역인지. 같은 종류 부스가 여러 개일 때 구분에 쓴다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
@@ -360,6 +479,22 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
 	FFF_OnSnsSocialPostChanged OnSnsPostAdded;
 
+	/** 공감은 원본 SNS 명령으로만 요청하며 화제성은 실제 지급 결과로 안내한다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_SnsReactionState GetSnsReactionState(FGuid PostId) const;
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_SnsReactionOutcome RequestSnsReaction(FGuid PostId);
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|SNS")
+	FText GetSnsReactionResultText(const FFF_SnsReactionOutcome& Outcome) const;
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_OnSnsReactionViewChanged OnSnsReactionChanged;
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_OnSnsFeedViewReset OnSnsFeedReset;
+
+	/** 피날레 연출 중 후기. 화면 위로 흘려보내는 용도라 목록을 들고 있지 않는다. 지난 글은 Insights 의 GetFinalePosts() 에 있다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_OnSnsSocialPostChanged OnFinaleSnsPostAdded;
+
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnScoreSatisfactionChanged;
 
@@ -380,6 +515,16 @@ public:
 	/** 오늘 하루 매출. Report의 "오늘 얼마 벌었나"에 쓴다. UI가 누적값에서 빼서 만들지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
 	int32 GetTodayRevenue() const { return TodayRevenue; }
+
+	/** 마감·결산 단계에서 오늘 날짜와 일치하는 확정 표시값. 원본 정산/저장 복원 중에는 nullptr. */
+	const FFF_DailyReportView* GetDailyReport() const;
+	/** 어제 결산 값. 아침 비서 브리핑이 결산과 같은 말을 하도록 읽는다. 어제 결산을 못 봤으면(이어하기 등) nullptr. */
+	const FFF_DailyReportView* GetPreviousDailyReport() const;
+	bool WasDailyReportAutoShown(int32 Day) const;
+	void MarkDailyReportAutoShown(int32 Day);
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Report")
+	FFF_OnIntMetricChanged OnDailyReportReady;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
 	FFF_OnIntMetricChanged OnGoldChanged;
@@ -461,6 +606,20 @@ public:
 	/** 개인별 명단(기본 팀 + 고용). 축제 전이면 빈 배열. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	TArray<FFF_StaffMember> GetStaffRoster() const;
+	/** 원본 규칙으로 읽은 개인별 현장 처리 능력. 출동 중 승급은 다음 출동부터 반영된다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	FText GetStaffIncidentEffectText(int32 StaffId) const;
+
+	/** 설치 시설을 개별 클릭하지 않고 배정/출동/숙련도를 읽는 공통 화면용 스냅샷. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	FFF_StaffManagementSnapshot GetStaffManagementSnapshot() const;
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	bool RequestAssignAvailableStaff(FGuid FacilityId);
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	bool RequestUnassignAvailableStaff(FGuid FacilityId);
+	/** 필수 배정 시설부터 빈자리를 채운다. 자동 고용·기존 배정 이동은 하지 않는다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	FFF_StaffAssignmentResult RequestFillStaffVacancies();
 
 	/**
 	 * 이 사람을 지금 승급시킬 수 있는지. 이미 Lv3 · 고용 당일 · 오늘 이미 승급했으면 false.
@@ -468,6 +627,10 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	bool CanPromoteStaff(int32 StaffId) const;
+
+	/** 가능 여부는 원본 규칙, 불가 안내는 같은 명단과 열린 날짜를 사용한다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	EFF_StaffPromotionState GetStaffPromotionState(int32 StaffId) const;
 
 	/**
 	 * 한 사람을 한 단계 승급해 달라고 **요청한다.** 거부되면 아무것도 바뀌지 않는다.
@@ -585,6 +748,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Buzz")
 	float GetBuzzChangeToday() const;
 
+	/** 원본 연결 여부를 함께 읽는다. 미연결 기본값 50을 실제 측정값으로 표시하지 않는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Buzz")
+	bool TryGetBuzzValues(float& OutBuzz, float& OutChangeToday) const;
+
 	/**
 	 * 화제성이 바뀔 때. SNS 글마다(수 초 간격) 온다 — 게이지는 보간해서 따라가게 한다.
 	 * 하루가 바뀌어 오늘 아침 기준만 바뀌어도 온다.
@@ -603,9 +770,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Evaluation")
 	FFF_FestivalEvaluation GetFestivalEvaluation() const;
 
-	/** 끝난 날의 만족도(1일차부터). 날짜별 그래프용. */
+	/** 종료 이벤트의 모든 구독자가 처리된 후에만 확정 평가와 전체 원장을 반환한다. */
+	bool GetFinalReport(FFF_FinalReportView& OutReport) const;
+
+	/** 원본의 마감 순서별 만족도. 건너뛴 날짜가 있으면 배열 인덱스와 일차가 일치하지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Evaluation")
 	TArray<int32> GetDailySatisfactionHistory() const;
+
+	/** 원본 마감 원장과 확정 기록이 대응하는 날짜만 반환한다. 미기록은 false와 INDEX_NONE, 실제 0점은 true다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Evaluation")
+	bool TryGetRecordedDailySatisfaction(int32 Day, int32& OutSatisfaction) const;
 
 	// --- 피날레 (점검 패널 요약 + U5 피날레 구매 패널) ---
 	//
@@ -700,6 +874,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
 	TArray<FFF_PrepFacilityOption> GetEligibleFacilitiesForProgram(FName ProgramId) const;
 
+	/** 프로그램 선택을 유지한 채 카메라를 옮기고 기존 시설 선택 테두리로 잠깐 표시한다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Program")
+	bool RequestLocateProgramFacility(FGuid FacilityInstanceId);
+
+	/** 시설 위치 표시 유지 시간. 시뮬레이션 배속과 무관한 실제 초다. */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|ViewModel|Program", meta = (ClampMin = "0.1", ClampMax = "10.0"))
+	float ProgramFacilityLocateSeconds = 3.f;
+
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Program")
 	FFF_OnProgramScheduleViewChanged OnScheduledProgramsChanged;
 
@@ -767,6 +949,10 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Facility")
 	TArray<FFF_LiveFacilityView> GetLiveFacilities() const;
+
+	/** 개장 전 권장 시설. 읽기 실패는 미설치와 구분하며 개장 조건을 변경하지 않는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Facility")
+	FFF_PrepRecommendedFacilitiesView GetPrepRecommendedFacilities(const FFF_PrepRecommendedFacilityRules& Rules) const;
 
 	// --- 홍보 (2026-08-27 추가 — U5 홍보 패널) ---
 	//
@@ -1116,6 +1302,18 @@ protected:
 	/** Insights가 쏘는 글 한 건을 변환해 목록 맨 앞에 얹고 위젯에 중계한다. */
 	UFUNCTION()
 	void HandleOwnerSnsPostAdded(FFF_SnsPostRow NewPost);
+	UFUNCTION()
+	void HandleOwnerSnsReactionChanged(FGuid PostId);
+	UFUNCTION()
+	void HandleOwnerSnsFeedReset();
+	UFUNCTION()
+	void HandleOwnerFinaleSnsPostAdded(FFF_SnsPostRow NewPost);
+
+	/** 새 축제가 시작되면 이전 판의 SNS 표시 캐시를 비운다(Insights 쪽 피드도 같은 시점에 비워진다). */
+	UFUNCTION()
+	void HandleOwnerFestivalStarted();
+	UFUNCTION()
+	void HandleReportSaveLoaded(FName SlotId);
 
 	/** `FFF_SnsPostRow`(값)를 `FFF_LiveSocialPost`(표현)로 바꾼다. 도메인↔표현 경계는 이 함수 하나뿐이다. */
 	static FFF_LiveSocialPost ConvertSnsPostToLiveSocialPost(const FFF_SnsPostRow& Row);
@@ -1123,6 +1321,15 @@ protected:
 private:
 	UFF_FestivalStageSubsystem* GetStageSubsystem() const;
 	UFF_FestivalProgressionSubsystem* GetProgressionSubsystem() const;
+
+	/** UI 표시용 캐시이며 저장/경제/배치 데이터에는 쓰지 않는다. */
+	mutable TWeakObjectPtr<UWorld> ProgramFacilityIdentityWorld;
+	mutable TMap<FGuid, int32> ProgramFacilityInstanceNumbers;
+	mutable TMap<FName, int32> ProgramFacilityNextNumbers;
+	void ResetProgramFacilityPresentation();
+	void ClearProgramFacilityHighlight();
+	TWeakObjectPtr<AFFZSFacilityActor> LocatedProgramFacility;
+	double ProgramFacilityHighlightUntil = 0.;
 
 	/** 피날레 구매 시점 판정의 소유자. Stage 와 경제를 함께 봐야 해서 브리지가 갖고 있다. */
 	UFF_StageEconomyBridgeSubsystem* GetStageEconomyBridgeSubsystem() const;
@@ -1132,6 +1339,31 @@ private:
 
 	/** 경제 시스템 구독을 시도한다. */
 	void TryBindProgressionSubsystem();
+	void TryBindReportSaveSubsystem();
+	UFUNCTION()
+	void ResetDailyReports();
+	void CaptureDailySatisfaction();
+	bool IsDailyReportSurface() const;
+	void CaptureDailyReportIfReady();
+	// 매출 1위 시설과 비서 한마디. 결산을 확정할 때 한 번 읽는다
+	void FillReportAssistantComment(FFF_DailyReportView& Report) const;
+	// DayAverage 가 있으면 그날 Live 평균으로, 없으면 지금 값으로 나눈다
+	FFF_SatisfactionBreakdown BuildSatisfactionBreakdown(const FFF_DailyReportView& Scores,
+		const struct FFF_DaySatisfactionAverage* DayAverage) const;
+	FFF_DailyReportView DailyReport;
+	FFF_DailyReportView LastDailySatisfaction;
+	TSet<int32> AutoShownReportDays;
+	/**
+	 * 날짜별 입장객. 원본은 오늘 값만 주고 다음 날 아침에 0으로 돌리므로, 그날 결산을
+	 * 확정할 때 읽은 값을 남겨 최종 결산의 지난 날짜 칸을 채운다. 저장하지 않는다 —
+	 * 축제 도중 불러온 경우 그 이전 날짜는 미기록(—)으로 남는다.
+	 */
+	TMap<int32, int32> AdmittedVisitorsByDay;
+	// 날짜별 관객 만족도와 방문객 목표 달성. 마지막 날 비서 한마디(축제 돌아보기)가 쓴다. 저장하지 않는 것도 위와 같다
+	TMap<int32, int32> SatisfactionByDay;
+	TMap<int32, bool> GoalMetByDay;
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_SaveSubsystem> ReportSaveSubsystem;
 	void TryBindStaffFacilitySubsystem();
 
 	/** 만족도 시스템 구독을 시도한다. */

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
+#include "Economy/Rules/FF_FestivalEvaluationRules.h"
 #include "FF_SaveTypes.generated.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogFestaFiestaSave, Log, All);
@@ -27,6 +28,14 @@ struct FESTAFIESTA_API FFF_FestivalRecord
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
 	int32 BestProfit = 0;
 
+	// 축제 평가 총점(0~100)과 그 등급. 같은 판의 최고 총점과 그때의 등급을 함께 남긴다.
+	// 등급 D 가 기본값이라 "기록 없음"과 구분하려면 PlayCount 를 본다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	int32 BestScore = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	EFF_FestivalEvaluationGrade BestGrade = EFF_FestivalEvaluationGrade::D;
+
 	// 몇 번 맡았는지. 두 번째부터는 안내를 줄이는 데 쓸 수 있다.
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
 	int32 PlayCount = 0;
@@ -47,6 +56,10 @@ struct FESTAFIESTA_API FFF_FestivalRecord
 		if (Other.BestProfit > BestProfit)
 		{
 			BestProfit = Other.BestProfit; bChanged = true;
+		}
+		if (Other.BestScore > BestScore)
+		{
+			BestScore = Other.BestScore; BestGrade = Other.BestGrade; bChanged = true;
 		}
 
 		PlayCount += FMath::Max(1, Other.PlayCount);

@@ -60,9 +60,13 @@ struct FFF_CrowdDecisionStats
 	UPROPERTY(BlueprintReadOnly, Category = "Decision")
 	int32 NoZoneSystem = 0;
 
-	// 파티가 어떤 Zone에도 속하지 않는다. Zone 경계 밖에 스폰됐다는 뜻
+	// 파티가 어떤 Zone에도 속하지 않고, 가까운 Zone 도 없다
 	UPROPERTY(BlueprintReadOnly, Category = "Decision")
 	int32 OutsideZone = 0;
+
+	// Zone 밖이었지만 가까운 Zone 을 현재 Zone 으로 보고 결정했다(입구·존 사이 길)
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 OutsideZoneUsedNearest = 0;
 
 	// Zone은 찾았는데 후보가 0개다. 현재·인접 Zone에 열린 시설이 없다
 	UPROPERTY(BlueprintReadOnly, Category = "Decision")
@@ -115,6 +119,34 @@ struct FFF_CrowdDecisionStats
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Decision")
 	int32 InTransitApplied = 0;
+
+	/**
+	 * 화장실이 급한(Restroom 이 못 채움 기준 이상) 파티의 결정. 결산의 "화장실을 못 찾은 손님"이 왜 생기는지 가른다.
+	 * 후보에 화장실이 있었는지 · 있었다면 가장 가까운 화장실까지 거리 · 실제로 화장실을 골랐는지.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 UrgentRestroom = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 UrgentRestroomToiletCandidate = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 UrgentRestroomChoseToilet = 0;
+
+	// 그중 메인 공연 줄 휴지 시간에 난 결정과, 그때 화장실이 후보에 없던 결정
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 UrgentRestroomDuringBreak = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 UrgentRestroomNoToiletDuringBreak = 0;
+
+	// 후보에 있던 가장 가까운 화장실까지 거리(m)의 합. UrgentRestroomToiletCandidate 로 나누면 평균
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	float UrgentRestroomNearestToiletMetersSum = 0.f;
+
+	// 화장실이 후보에 없었던 급한 결정이 어느 구역에서 났는지
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	TMap<FName, int32> UrgentRestroomNoToiletByZone;
 };
 
 /**
@@ -344,6 +376,10 @@ private:
 	 * 결정마다 지으면 프레임 예산이 통째로 날아간다. 끄면 행렬을 비우고 계수기도 되돌린다.
 	 */
 	void EnsureWalkDistanceMatrix(const UFFZSWorldSubsystem& ZoneSystem, const FFFZSReadModel& ReadModel);
+
+	// Zone 밖 위치에서 MaxOutsideZoneFallbackMeters 안의 가장 가까운 Zone(액터 원점 기준). 없으면 NAME_None
+	static FName FindNearestZoneId(const UFFZSWorldSubsystem& ZoneSystem, const FFFZSReadModel& ReadModel, const FVector& WorldLocation);
+	static constexpr float MaxOutsideZoneFallbackMeters = 200.f;
 
 	// 게이팅이 도는 구간인가. Live 안에서만 켠다.
 	bool bMainStageGatingActive = false;

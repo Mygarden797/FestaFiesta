@@ -70,6 +70,54 @@ function Get-FFProjectRoot {
     return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 }
 
+function Get-FFBuildDdcConfiguration {
+    [CmdletBinding()]
+    param()
+
+    $graph = 'FestaFiestaBuildDDC'
+    $root = Get-FFProjectRoot
+    $config = Join-Path $root 'Config\DefaultEngine.ini'
+    if (-not (Select-String -LiteralPath $config -Pattern "^\[$graph\]$" -Quiet)) {
+        throw "The project-owned build DDC graph is missing from $config."
+    }
+    $localPath = [System.IO.Path]::GetFullPath((Join-Path $root 'DerivedDataCache\BuildFileSystem'))
+    [System.IO.Directory]::CreateDirectory($localPath) | Out-Null
+    return [pscustomobject]@{
+        Graph = $graph
+        Argument = "-ddc=$graph"
+        LocalPath = $localPath
+    }
+}
+
+function Assert-FFBuildDdcSelection {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $LogPath
+    )
+
+    # Engine source: DerivedDataBackends.cpp falls back when a named graph
+    # cannot be opened; FileSystemCacheStore.cpp logs its actual writable path.
+    # Generic LogZenServiceInstance startup is not proof of a Zen DDC backend.
+    $log = Get-Content -LiteralPath $LogPath -Raw
+    if ($log -match "Unable to create or use cache graph 'FestaFiestaBuildDDC'" -or
+        $log -match 'LogDerivedDataCache[^\r\n]*Using ZenServer HTTP service') {
+        throw "Build DDC fell back or activated a Zen HTTP cache. See: $LogPath"
+    }
+    $cacheMatches = [regex]::Matches($log,
+        'LogDerivedDataCache[^\r\n]*FFBuildLocal: Using data cache path (.+?): Writable')
+    if ($cacheMatches.Count -eq 0) {
+        throw "Build DDC did not report its writable filesystem cache. See: $LogPath"
+    }
+    foreach ($match in $cacheMatches) {
+        $cachePath = $match.Groups[1].Value.Trim().Trim('"').Replace('\', '/')
+        if ($cachePath -notmatch '(?i)/DerivedDataCache/BuildFileSystem/?$') {
+            throw "Build DDC selected an unexpected filesystem path '$cachePath'. See: $LogPath"
+        }
+    }
+    return $cacheMatches[$cacheMatches.Count - 1].Groups[1].Value.Trim()
+}
+
 function Get-FFProjectFile {
     [CmdletBinding()]
     param()
@@ -174,6 +222,59 @@ function Get-FFEngineVersion {
 
     $buildVersion = Get-Content -LiteralPath $buildVersionFile -Raw | ConvertFrom-Json
     return '{0}.{1}.{2}' -f $buildVersion.MajorVersion, $buildVersion.MinorVersion, $buildVersion.PatchVersion
+}
+
+function Resolve-FFMsvcInstallation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')]
+        [string] $InstallVersion,
+
+        # Optional discovery paths also let a build worker use a supplied locator.
+        [string] $VsWherePath = (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'),
+
+        [string] $VisualStudio2022Root = (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\2022')
+    )
+
+    $installationRoots = New-Object System.Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $VsWherePath -PathType Leaf) {
+        # Do not use -latest: an older VS instance may hold the locked compiler.
+        # -products * includes standalone Build Tools and custom install paths.
+        # Validate the exact binaries below instead of requiring the component
+        # ID for the latest VC tools; a worker may install only a pinned version.
+        $discoveredRoots = @(& $VsWherePath -products '*' -version '[17.0,18.0)' -property installationPath)
+        if ($LASTEXITCODE -ne 0) {
+            throw "Visual Studio discovery failed with exit code ${LASTEXITCODE}: $VsWherePath"
+        }
+        foreach ($root in $discoveredRoots) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$root)) {
+                $installationRoots.Add(([string]$root).Trim())
+            }
+        }
+    }
+    # Preserve standard-location discovery on machines without vswhere.
+    if (Test-Path -LiteralPath $VisualStudio2022Root -PathType Container) {
+        foreach ($installation in (Get-ChildItem -LiteralPath $VisualStudio2022Root -Directory)) {
+            $installationRoots.Add($installation.FullName)
+        }
+    }
+
+    foreach ($root in ($installationRoots | Select-Object -Unique)) {
+        $toolchainRoot = Join-Path $root "VC\Tools\MSVC\$InstallVersion"
+        $compilerRoot = Join-Path $toolchainRoot 'bin\Hostx64\x64'
+        # A leftover version directory is not an installed Win64 compiler.
+        if ((Test-Path -LiteralPath (Join-Path $compilerRoot 'cl.exe') -PathType Leaf) -and
+            (Test-Path -LiteralPath (Join-Path $compilerRoot 'link.exe') -PathType Leaf)) {
+            return [System.IO.Path]::GetFullPath($toolchainRoot)
+        }
+    }
+
+    $checkedRoots = if ($installationRoots.Count -gt 0) {
+        ($installationRoots | Select-Object -Unique) -join ', '
+    }
+    else { "$VisualStudio2022Root (no installations discovered)" }
+    throw "Locked MSVC install $InstallVersion with Win64 cl.exe and link.exe was not found. Checked: $checkedRoots"
 }
 
 function Get-FFProjectVersion {
@@ -558,9 +659,12 @@ Export-ModuleMember -Function @(
     'Set-FFProjectFileOverride',
     'Get-FFProjectRoot',
     'Get-FFProjectFile',
+    'Get-FFBuildDdcConfiguration',
+    'Assert-FFBuildDdcSelection',
     'Assert-FFCookPathBudget',
     'Resolve-FFEngineRoot',
     'Get-FFEngineVersion',
+    'Resolve-FFMsvcInstallation',
     'Get-FFProjectVersion',
     'Get-FFGitMetadata',
     'Assert-FFAssetsMaterialized',

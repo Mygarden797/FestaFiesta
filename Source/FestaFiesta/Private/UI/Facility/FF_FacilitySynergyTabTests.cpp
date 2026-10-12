@@ -171,11 +171,17 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
         !TestNotNull(TEXT("Synergy summary"), Summary) || !TestNotNull(TEXT("Existing shared detail scroll"), Scroll)) return false;
     UPanelWidget* TabRow = Overview->GetParent();
     if (!TestNotNull(TEXT("Authored tab row"), TabRow)) return false;
-    TestTrue(TEXT("Tab order is overview, synergy, operation, upgrade"),
-        Synergy->GetParent() == TabRow && Operation->GetParent() == TabRow && Upgrade->GetParent() == TabRow &&
+    TestTrue(TEXT("Primary tabs retain overview, synergy, operation order"),
+        Synergy->GetParent() == TabRow && Operation->GetParent() == TabRow &&
         TabRow->GetChildIndex(Synergy) == TabRow->GetChildIndex(Overview) + 1 &&
-        TabRow->GetChildIndex(Operation) == TabRow->GetChildIndex(Synergy) + 1 &&
-        TabRow->GetChildIndex(Upgrade) == TabRow->GetChildIndex(Operation) + 1);
+        TabRow->GetChildIndex(Operation) == TabRow->GetChildIndex(Synergy) + 1);
+    UWidget* Staff = Panel->GetWidgetFromName(TEXT("Button_TabStaff"));
+    if (TestNotNull(TEXT("Staff has its direct primary tab"), Staff))
+        TestTrue(TEXT("Staff follows operation without displacing the core tabs"),
+            Staff->GetParent() == TabRow && TabRow->GetChildIndex(Staff) == TabRow->GetChildIndex(Operation) + 1);
+    TestTrue(TEXT("Upgrade remains available in the secondary facility actions"),
+        Upgrade->GetParent() && Upgrade->GetParent() != TabRow &&
+        Upgrade->GetParent() == Panel->GetWidgetFromName(TEXT("Reference_AdditionalFacilityPages")));
 
     FFF_FacilityInfoViewData Data;
     Data.FacilityInstanceId = FGuid::NewGuid();
@@ -376,7 +382,7 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
     };
     // Capture the shipped Burger rule alone; the second fixture row only exercises pooling.
     Data.SynergyEntries.SetNum(1);
-    Data.SynergySummaryText = FText::FromString(TEXT("조합 1개 · 적용 중 1개\n이 시설의 이용 수수료 보너스 +10%"));
+    Data.SynergySummaryText = FText::FromString(TEXT("조합 1개 · 적용 중 1개\n이 시설의 부스 매출 보너스 +10%"));
     Panel->ApplyViewData(Data);
     bool bSaved = Capture(TEXT("FacilitySynergyTab720.png"));
     const FFF_FacilitySynergyPreview EmptyPreview;

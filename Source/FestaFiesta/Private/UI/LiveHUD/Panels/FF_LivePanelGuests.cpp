@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/LiveHUD/Panels/FF_LivePanelGuests.h"
+#include "UI/LiveHUD/Panels/FF_LiveNeedRowWidget.h"
 
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -20,7 +21,7 @@ EFF_LiveNeedSeverity FFF_LiveGuestRules::ResolveSeverity(
 {
 	// 🔴 표본이 없으면 `모름` 이다. 집계는 표본이 0 일 때도 미해소율을 `0` 으로 돌려주는데,
 	// 그것을 `괜찮음` 으로 그리면 화면이 "아무도 불편하지 않다" 는 **틀린 사실**을 말한다.
-	if (SampleCount <= 0)
+	if (SampleCount <= 0 || !FMath::IsFinite(UnmetRatioPercent))
 	{
 		return EFF_LiveNeedSeverity::Unknown;
 	}
@@ -68,9 +69,11 @@ void FFF_LiveGuestRules::SortBySeverity(TArray<FFF_LiveNeedRow>& Rows)
 			return RankA > RankB;
 		}
 
-		if (!FMath::IsNearlyEqual(A.View.UnmetRatioPercent, B.View.UnmetRatioPercent))
+		const float PercentA = FMath::IsFinite(A.View.UnmetRatioPercent) ? A.View.UnmetRatioPercent : -1.f;
+		const float PercentB = FMath::IsFinite(B.View.UnmetRatioPercent) ? B.View.UnmetRatioPercent : -1.f;
+		if (!FMath::IsNearlyEqual(PercentA, PercentB))
 		{
-			return A.View.UnmetRatioPercent > B.View.UnmetRatioPercent;
+			return PercentA > PercentB;
 		}
 
 		// 값이 같으면 enum 순서로 고정한다. 안 그러면 갱신할 때마다 줄이 흔들려
@@ -87,9 +90,7 @@ void UFF_LivePanelGuests::NativeOnPanelOpened()
 {
 	Super::NativeOnPanelOpened();
 
-	// ★ 아직 못 보여주는 것을 적는다.
-	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveGuests_MissingNote",
-		"관객 그룹 구성과 오늘 누적 방문객 수는 아직 읽을 수 없습니다."));
+	SetTextOrHide(Text_MissingNote, FooterNoteText);
 
 	TimeSinceRefresh = 0.f;
 	RefreshAll();
@@ -129,31 +130,45 @@ void UFF_LivePanelGuests::RefreshAll()
 	const UFF_FestivalViewModelSubsystem* ViewModel =
 		GI ? GI->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
 
+	SetTextOrHide(Text_VisitorNote, VisitorNoteText);
+	SetTextOrHide(Text_AdmittedNote, AdmittedNoteText);
+
 	if (!ViewModel)
 	{
-		UE_LOG(LogFestaFiestaUI, Error,
-			TEXT("[%s] ViewModel 을 찾지 못했다. 관객 정보가 비어 보인다."), *GetName());
+		// 연결이 사라져도 이전 인원과 욕구를 현재 값처럼 남기지 않는다.
+		Rows.Reset();
+		SetTextOrHide(Text_VisitorCount, MissingValueText);
+		SetTextOrHide(Text_AdmittedCount, MissingValueText);
+		SetTextOrHide(Text_SampleCount, SampleUnknownText);
+		SetTextOrHide(Text_Summary, CheckingText);
+		RefreshRowWidgets();
+		SetTextOrHide(Text_Empty, CheckingText);
 		return;
 	}
 
 	// --- 인원 ---
 	const int32 Visitors = ViewModel->GetConcurrentVisitorCount();
-	SetTextOrHide(Text_VisitorCount, (Visitors != INDEX_NONE)
-		? FText::Format(LOCTEXT("LiveGuests_Visitors", "{0}명"), FText::AsNumber(Visitors))
-		: LOCTEXT("LiveGuests_VisitorsUnknown", "—"));
-
-	// ★ 동시 인원임을 밝힌다. 일일 목표(누적)와 다른 값이라 그냥 두면 목표 진행과
-	//   숫자가 안 맞는 것으로 오해한다.
-	SetTextOrHide(Text_VisitorNote, LOCTEXT("LiveGuests_VisitorNote",
-		"지금 축제장 안에 있는 인원입니다. 오늘 누적 방문객과는 다릅니다."));
+	const int32 Admitted = ViewModel->GetAdmittedVisitorsToday();
+	const auto CountText = [this](int32 Count)
+	{
+		return Count >= 0
+			? FText::Format(CountTextFormat, FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(Count)}})
+			: MissingValueText;
+	};
+	SetTextOrHide(Text_VisitorCount, CountText(Visitors));
+	SetTextOrHide(Text_AdmittedCount, CountText(Admitted));
 
 	// --- 욕구 ---
 	const TArray<FFF_LiveNeedView> Needs = ViewModel->GetNeedMetrics();
 	const int32 SampleCount = ViewModel->GetNeedSampleCount();
+	SetTextOrHide(Text_SampleCount, SampleCount > 0 && !Needs.IsEmpty()
+		? FText::Format(SampleCountTextFormat, FFormatNamedArguments{{TEXT("Count"), FText::AsNumber(SampleCount)}})
+		: SampleUnknownText);
 
 	Rows.Reset(Needs.Num());
 	int32 BadCount = 0;
 	int32 WatchCount = 0;
+	int32 UnknownCount = 0;
 
 	for (const FFF_LiveNeedView& Need : Needs)
 	{
@@ -170,69 +185,82 @@ void UFF_LivePanelGuests::RefreshAll()
 		{
 			++WatchCount;
 		}
+		else if (Row.Severity == EFF_LiveNeedSeverity::Unknown)
+		{
+			++UnknownCount;
+		}
 	}
 
 	FFF_LiveGuestRules::SortBySeverity(Rows);
 
-	// 🔴 표본이 없으면 그 사실을 크게 적는다. 숫자만 두면 전부 `0%` 로 보이고,
-	//    그것은 "아무도 불편하지 않다" 로 읽힌다.
-	SetTextOrHide(Text_Summary, (SampleCount <= 0)
-		? LOCTEXT("LiveGuests_NoSample",
-			"아직 관객 표본이 없어 욕구를 읽지 못했습니다. 아래 값은 실제가 아닙니다.")
-		: ((BadCount == 0 && WatchCount == 0)
-			? FText::Format(
-				LOCTEXT("LiveGuests_AllOk", "관객 {0}명 기준 · 급한 불편은 없습니다."),
-				FText::AsNumber(SampleCount))
-			: FText::Format(
-				LOCTEXT("LiveGuests_Summary", "관객 {0}명 기준 · 나쁨 {1} · 주의 {2}"),
-				FText::AsNumber(SampleCount),
-				FText::AsNumber(BadCount), FText::AsNumber(WatchCount))));
+	// 표본이나 항목이 없는 집계를 "급한 불편 없음"으로 오해하지 않도록 분리한다.
+	const FFormatNamedArguments SummaryArgs{
+		{TEXT("Sample"), FText::AsNumber(SampleCount)},
+		{TEXT("Bad"), FText::AsNumber(BadCount)},
+		{TEXT("Watch"), FText::AsNumber(WatchCount)},
+		{TEXT("Unknown"), FText::AsNumber(UnknownCount)}};
+	SetTextOrHide(Text_Summary, SampleCount <= 0 ? NoSampleText
+		: Rows.IsEmpty() ? EmptyText
+		: FText::Format(BadCount == 0 && WatchCount == 0 && UnknownCount == 0 ? AllOkTextFormat : SummaryTextFormat, SummaryArgs));
+	RefreshRowWidgets();
+	SetTextOrHide(Text_Empty, Rows.IsEmpty() ? EmptyText : FText::GetEmpty());
+}
 
-	// --- 목록 ---
+void UFF_LivePanelGuests::RefreshRowWidgets()
+{
 	if (!Box_Needs)
 	{
 		return;
 	}
 
-	Box_Needs->ClearChildren();
-
-	for (const FFF_LiveNeedRow& Row : Rows)
+	for (int32 Index = 0; Index < Rows.Num(); ++Index)
 	{
-		UTextBlock* Line = NewObject<UTextBlock>(this);
-		if (!Line)
+		if (RowWidgetClass)
 		{
+			if (!CachedRowWidgets.IsValidIndex(Index))
+			{
+				UFF_LiveNeedRowWidget* RowWidget = CreateWidget<UFF_LiveNeedRowWidget>(this, RowWidgetClass);
+				if (!RowWidget)
+				{
+					break;
+				}
+				CachedRowWidgets.Add(RowWidget);
+				if (UVerticalBoxSlot* RowSlot = Box_Needs->AddChildToVerticalBox(RowWidget))
+				{
+					RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+				}
+			}
+			CachedRowWidgets[Index]->SetRowData(Rows[Index]);
+			CachedRowWidgets[Index]->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 			continue;
 		}
 
-		const FText Name = UFF_UIDisplayTextLibrary::GetNeedTypeText(Row.View.NeedType);
-
-		if (Row.Severity == EFF_LiveNeedSeverity::Unknown)
+		if (!CachedFallbackLines.IsValidIndex(Index))
 		{
-			// 값을 지어내지 않는다. 못 읽었다고만 적는다.
-			Line->SetText(FText::Format(
-				LOCTEXT("LiveGuests_RowUnknown", "{0}  —  아직 읽지 못했습니다"), Name));
+			UTextBlock* Line = NewObject<UTextBlock>(this);
+			CachedFallbackLines.Add(Line);
+			if (UVerticalBoxSlot* LineSlot = Box_Needs->AddChildToVerticalBox(Line))
+			{
+				LineSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+			}
 		}
-		else
-		{
-			// 🔴 숫자 옆에 **할 일**을 붙인다. `배고픔 62%` 만 두면 무엇을 해야 할지 모른다.
-			//    괜찮은 줄에는 안 붙인다 — 전부에 붙으면 급한 줄이 안 도드라진다.
-			const FText Remedy = (Row.Severity == EFF_LiveNeedSeverity::Ok)
-				? FText::GetEmpty()
-				: FText::Format(
-					LOCTEXT("LiveGuests_RowRemedy", "  —  {0}"),
-					UFF_UIDisplayTextLibrary::GetNeedRemedyText(Row.View.NeedType));
+		UpdateFallbackLine(*CachedFallbackLines[Index], Rows[Index]);
+		CachedFallbackLines[Index]->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
 
-			Line->SetText(FText::Format(
-				LOCTEXT("LiveGuests_Row", "{0}  {1}%{2}"),
-				Name,
-				FText::AsNumber(FMath::RoundToInt(Row.View.UnmetRatioPercent)),
-				Remedy));
+	// 표시 순서별 행을 재사용해 매초 위젯 트리와 스크롤 위치를 초기화하지 않는다.
+	for (int32 Index = 0; Index < CachedRowWidgets.Num(); ++Index)
+	{
+		if (!RowWidgetClass || Index >= Rows.Num())
+		{
+			CachedRowWidgets[Index]->SetVisibility(ESlateVisibility::Collapsed);
 		}
-		Line->SetAutoWrapText(true);
-
-		if (UVerticalBoxSlot* LineSlot = Box_Needs->AddChildToVerticalBox(Line))
+	}
+	for (int32 Index = 0; Index < CachedFallbackLines.Num(); ++Index)
+	{
+		if (RowWidgetClass || Index >= Rows.Num())
 		{
-			LineSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+			CachedFallbackLines[Index]->SetVisibility(ESlateVisibility::Collapsed);
 		}
 	}
 
@@ -240,9 +268,26 @@ void UFF_LivePanelGuests::RefreshAll()
 		? ESlateVisibility::SelfHitTestInvisible
 		: ESlateVisibility::Collapsed);
 
-	SetTextOrHide(Text_Empty, (Rows.Num() > 0)
-		? FText::GetEmpty()
-		: LOCTEXT("LiveGuests_Empty", "욕구 집계를 읽을 수 없습니다."));
+}
+
+void UFF_LivePanelGuests::UpdateFallbackLine(UTextBlock& Line, const FFF_LiveNeedRow& Row) const
+{
+	const FText Name = UFF_UIDisplayTextLibrary::GetNeedTypeText(Row.View.NeedType);
+	if (Row.Severity == EFF_LiveNeedSeverity::Unknown || !FMath::IsFinite(Row.View.UnmetRatioPercent))
+	{
+		Line.SetText(FText::Format(LOCTEXT("LiveGuests_RowPreparing", "{0}  —  집계 준비 중"), Name));
+	}
+	else
+	{
+		const FText Status = Row.Severity == EFF_LiveNeedSeverity::Bad ? LOCTEXT("LiveGuests_Bad", "나쁨")
+			: Row.Severity == EFF_LiveNeedSeverity::Watch ? LOCTEXT("LiveGuests_Watch", "주의")
+			: LOCTEXT("LiveGuests_Ok", "괜찮음");
+		const FText Remedy = Row.Severity == EFF_LiveNeedSeverity::Ok ? FText::GetEmpty()
+			: FText::Format(LOCTEXT("LiveGuests_RowRemedy", "  —  {0}"), UFF_UIDisplayTextLibrary::GetNeedRemedyText(Row.View.NeedType));
+		Line.SetText(FText::Format(LOCTEXT("LiveGuests_RowWithStatus", "{0}  {1}% · {2}{3}"),
+			Name, FText::AsNumber(FMath::RoundToInt(FMath::Clamp(Row.View.UnmetRatioPercent, 0.f, 100.f))), Status, Remedy));
+	}
+	ApplyDynamicRowStyle(Line);
 }
 
 void UFF_LivePanelGuests::SetTextOrHide(UTextBlock* TextBlock, const FText& Value)

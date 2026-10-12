@@ -746,7 +746,7 @@ namespace FFLiveHudWbpBuilder
 
 		// --- 헤더 ---
 		StyleText(*Title, 18, Palette->InGame.Ink, TEXT("SemiBold"));
-		Title->SetText(LOCTEXT("LiveFac_TitlePreview", "시설"));
+		Title->SetText(LOCTEXT("LiveFac_TitlePreview", "시설 상태"));
 		if (UHorizontalBoxSlot* Slot_Title = Header->AddChildToHorizontalBox(Title))
 		{
 			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -1075,7 +1075,7 @@ namespace FFLiveHudWbpBuilder
 
 		// --- 헤더 ---
 		StyleText(*Title, 18, Palette->InGame.Ink, TEXT("SemiBold"));
-		Title->SetText(LOCTEXT("LiveGuests_TitlePreview", "관객"));
+		Title->SetText(LOCTEXT("LiveGuests_TitlePreview", "현황"));
 		if (UHorizontalBoxSlot* Slot_Title = Header->AddChildToHorizontalBox(Title))
 		{
 			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -1474,7 +1474,7 @@ namespace FFLiveHudWbpBuilder
 		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_MissingNote"),
 			Palette->InGame.InkFaint, 12,
 			LOCTEXT("LiveDensityPv_Missing",
-				"히트맵은 지금 디버그 표시라 에디터에서만 보입니다."), 0.f);
+				"밀도 격자가 준비되면 히트맵을 켤 수 있습니다."), 0.f);
 
 		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
 		{
@@ -1552,7 +1552,7 @@ namespace FFLiveHudWbpBuilder
 		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_SatisfactionNote"),
 			Palette->InGame.InkMuted, 12,
 			LOCTEXT("LiveReportPv_SatNote",
-				"평가 점수는 관객 만족도에 피날레·연출 보정을 더한 값입니다 (8 차이)."), 18.f);
+				"평가 만족도는 관객 만족도에 피날레 보너스를 반영한 값입니다."), 18.f);
 
 		// --- 운영 ---
 		const bool bOpsOk =
@@ -1574,7 +1574,7 @@ namespace FFLiveHudWbpBuilder
 		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_MissingNote"),
 			Palette->InGame.InkFaint, 12,
 			LOCTEXT("LiveReportPv_Missing",
-				"어느 시설이 만족도를 깎았는지는 아직 볼 수 없습니다. 원인 집계가 붙으면 여기에 들어갑니다."), 18.f);
+				"오늘의 정산을 마무리하고 있습니다."), 18.f);
 
 		// --- 다음 날로. 결과를 읽는 자리 **바로 아래**에 둔다 ---
 		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_AdvanceReason"),
@@ -1680,7 +1680,7 @@ namespace FFLiveHudWbpBuilder
 		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_MissingNote"),
 			Palette->InGame.InkFaint, 12,
 			LOCTEXT("LiveFinalePv_Missing",
-				"피날레는 셋업에서만 고를 수 있고 축제당 한 번입니다. 여기서는 결과만 봅니다."), 0.f);
+				"피날레는 마지막 날 아침 점검에서 한 번만 구매할 수 있습니다. 여기서는 결과만 봅니다."), 0.f);
 
 		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
 		{
@@ -1913,7 +1913,7 @@ namespace FFLiveHudWbpBuilder
 		//
 		// ★ 이름이 계약이다. `UFF_LiveHudScreen` 의 `BindWidgetOptional` 과 같아야 붙는다.
 		const TCHAR* TabWidgetNames[] = {
-			TEXT("Tab_Operations"), TEXT("Tab_Facilities"), TEXT("Tab_Guests"),
+			TEXT("Tab_Operations"), TEXT("Tab_Facilities"), TEXT("Tab_RevenueRanking"), TEXT("Tab_Guests"),
 			TEXT("Tab_Queues"), TEXT("Tab_SNS"), TEXT("Tab_Staff"), TEXT("Tab_Density"),
 			// 결산 탭. 마감·리포트에서만 보인다 (2026-09-02 통합).
 			TEXT("Tab_Report"), TEXT("Tab_Finale") };

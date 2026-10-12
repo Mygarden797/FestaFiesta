@@ -54,7 +54,7 @@ namespace
     }
 
     // CanEnumerateFacilityCells의 보수적 예산만 검증하는 작은 합성 사양.
-    // expanded footprint는 9x9=81, queue는 1이므로 필요한 작업 예산은 정확히 82다.
+    // Footprint is 7x7=49 and queue is 1; retired clearance contributes no area.
     
     FFFZSFacilitySpec MakeSmallBudgetSpec()
     {
@@ -256,6 +256,7 @@ bool FFFZSPassiveLightingDefinitionTest::RunTest(const FString& Parameters)
     (void)Parameters;
     FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::Info);
     Spec.Category = EFFZSFacilityCategory::Lighting;
+    Spec.ClearanceCells = 0;
     Spec.FacilityDefinitionId = TEXT("Lighting_Streetlamp_FestivalStreetlamp");
     Spec.QueueRules.MaxWaitingAgents = 0;
     Spec.QueueRules.ServiceCapacity = 0;
@@ -267,6 +268,9 @@ bool FFFZSPassiveLightingDefinitionTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("조명은 방문객 대기열과 서비스 앵커 없이 유효하다"), Spec.IsValid(Errors));
 
     FFFZSFacilitySpec Invalid = Spec;
+    Invalid.ClearanceCells = 25;
+    TestTrue(TEXT("Legacy clearance is ignored for lighting definitions"), Invalid.IsValid(Errors));
+    Invalid = Spec;
     Invalid.QueueRules.ServiceCapacity = 1;
     TestFalse(TEXT("조명에는 서비스 정원을 만들 수 없다"), Invalid.IsValid(Errors));
     // Lighting and roads share this non-service contract. Assert its stable
@@ -458,10 +462,10 @@ bool FFFZSOneCentimeterFacilityDefinitionValidationTest::RunTest(
     // 작은 합성 Spec으로만 담당자 예산과 하드 clamp를 검증한다. fixture는 펼치지 않는다.
     {
         TGuardValue<int32> LimitGuard(
-            MutableSettings->MaxEnumeratedCellsPerFacility, 64);
+            MutableSettings->MaxEnumeratedCellsPerFacility, 49);
         TestEqual(TEXT("담당자 설정이 유효 Region 작업 제한을 결정한다"),
-            UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility(), 64);
-        TestFalse(TEXT("작업 단위 82인 합성 Region은 제한 64를 초과한다"),
+            UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility(), 49);
+        TestFalse(TEXT("The 50-cell footprint and queue exceed a 49-cell budget"),
             UFFZSGridLibrary::CanEnumerateFacilityCells(MakeSmallBudgetSpec()));
     }
     {
@@ -475,7 +479,8 @@ bool FFFZSOneCentimeterFacilityDefinitionValidationTest::RunTest(
             MutableSettings->MaxEnumeratedCellsPerFacility,
             TNumericLimits<int32>::Max());
         TestEqual(TEXT("Region 작업 제한은 최대 안전 한도로 제한된다"),
-            UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility(), 10'000'000);
+            UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility(),
+            UFFZSDeveloperSettings::DefaultMaxEnumeratedCellsPerFacility);
     }
 
     FFFZSFacilitySpec Spec =
@@ -583,9 +588,9 @@ bool FFFZSOneCentimeterFacilityDefinitionValidationTest::RunTest(
     Spec = FFZSTest::MakeValidFacilitySpec(
         EFFZSTestFacilityVariant::FoodTruck);
     Spec.ClearanceCells = TNumericLimits<int32>::Max();
-    TestFalse(TEXT("오버플로 크기의 1센티미터 여유 영역은 Region 예산을 초과한다"),
+    TestTrue(TEXT("Unused legacy clearance cannot inflate the region budget"),
         UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
-    TestFalse(TEXT("오버플로 크기의 1센티미터 여유 영역은 유효하지 않다"),
+    TestTrue(TEXT("Unused legacy clearance cannot invalidate a facility"),
         Spec.IsValid(Errors));
 
     Spec = FFZSTest::MakeValidFacilitySpec(

@@ -77,6 +77,8 @@ def verify_queue(spec, entry):
     if entry["category"] in pipeline.NO_SERVICE:
         check(count == capacity == 0 and not anchors and not queue_points and not rects,
               "Nonservice facility has queue data")
+        check(not spec.get_editor_property("queue_reserved_cells"), "Nonservice facility has legacy queue cells")
+        check(spec.get_editor_property("clearance_cells") == 0, "Nonservice facility reserves extra clearance")
         check(not spec.get_editor_property("audience").get_editor_property("enabled"), "Nonservice audience enabled")
         return dict(waiting=0, service_capacity=0, anchors=[], reserved_rects=[])
     check(count > 0 and capacity == 1 and len(queue_points) >= 2, "Service queue missing")

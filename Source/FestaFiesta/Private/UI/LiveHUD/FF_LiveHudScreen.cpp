@@ -1,6 +1,10 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/LiveHUD/FF_LiveHudScreen.h"
+#include "UI/Core/FF_OutsideClickDismiss.h"
+
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Blueprint/WidgetTree.h"
 
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -12,16 +16,25 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "UI/FF_UILog.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
+#include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
 #include "Incident/FF_IncidentSubsystem.h"
+#include "Incident/Rules/FF_IncidentRules.h"
 #include "UI/LiveHUD/Incident/FF_IncidentDetailPanel.h"
 #include "UI/LiveHUD/Incident/FF_IncidentMarkerLayer.h"
+#include "UI/LiveHUD/Incident/FF_IncidentToast.h"
+#include "UI/LiveHUD/FF_FinaleSnsOverlay.h"
+#include "UI/LiveHUD/OperationAlert/FF_OperationAlertPanel.h"
+#include "UI/LiveHUD/OperationAlert/FF_OperationAlertSubsystem.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
+#include "UI/LiveHUD/FF_LiveUtilityDock.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelReport.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaLiveHud"
@@ -46,6 +59,60 @@ namespace FFLiveHudScreenLocal
 			OutDisplayName = FText::FromString(OutEnumName);
 		}
 	}
+}
+
+bool FFF_LivePanelLayout::UsesViewportCenter(EFF_LiveTab Tab) const
+{
+	if (Dock != EFF_LivePanelDock::Center) { return false; }
+	switch (Tab)
+	{
+	case EFF_LiveTab::Operations:
+	case EFF_LiveTab::Facilities:
+	case EFF_LiveTab::Guests:
+	case EFF_LiveTab::Queues:
+	case EFF_LiveTab::SNS:
+	case EFF_LiveTab::Staff:
+	case EFF_LiveTab::Density:
+	case EFF_LiveTab::Report:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool FFF_LivePanelLayout::TryResolveCenteredLayout(const FGeometry& ViewportGeometry,
+	const FGeometry& CanvasGeometry, float BottomReserve, float Margin,
+	FVector2D& OutPosition, FVector2D& OutSize) const
+{
+	const FVector2D ViewportSize = ViewportGeometry.GetLocalSize();
+	const FVector2D CanvasSize = CanvasGeometry.GetLocalSize();
+	if (ViewportSize.ContainsNaN() || CanvasSize.ContainsNaN() || Offset.ContainsNaN()
+		|| ViewportSize.X <= 0.0 || ViewportSize.Y <= 0.0 || CanvasSize.X <= 0.0 || CanvasSize.Y <= 0.0
+		|| !FMath::IsFinite(Width) || !FMath::IsFinite(Height) || Width <= 0.f || Height <= 0.f
+		|| !FMath::IsFinite(BottomReserve) || !FMath::IsFinite(Margin))
+	{
+		return false;
+	}
+	// 창 원점과 DPI는 Geometry에 포함된다. 별도 ViewportScale 나눗셈을 하지 않는다.
+	const FVector2D ViewMin = CanvasGeometry.AbsoluteToLocal(ViewportGeometry.LocalToAbsolute(FVector2D::ZeroVector));
+	const FVector2D ViewMax = CanvasGeometry.AbsoluteToLocal(ViewportGeometry.LocalToAbsolute(ViewportSize));
+	const FVector2D SafeMin = ViewMin + FVector2D(FMath::Max(0.f, Margin), FMath::Max(0.f, Margin));
+	const FVector2D SafeMax = ViewMax - FVector2D(FMath::Max(0.f, Margin),
+		FMath::Max(0.f, Margin) + FMath::Max(0.f, BottomReserve));
+	const FVector2D Available = SafeMax - SafeMin;
+	if (Available.ContainsNaN() || Available.X <= 0.0 || Available.Y <= 0.0) { return false; }
+	const FVector2D DisplaySize(FMath::Min(static_cast<double>(Width), Available.X),
+		FMath::Min(static_cast<double>(Height), Available.Y));
+	const FVector2D HalfSize = DisplaySize * 0.5;
+	const FVector2D RequestedCenter = (ViewMin + ViewMax) * 0.5 + Offset;
+	const FVector2D Center(FMath::Clamp(RequestedCenter.X, SafeMin.X + HalfSize.X, SafeMax.X - HalfSize.X),
+		FMath::Clamp(RequestedCenter.Y, SafeMin.Y + HalfSize.Y, SafeMax.Y - HalfSize.Y));
+	// 점 앵커 0.5를 유지해 높이가 작은 HUD 부모의 DesiredSize 재배치 피드백을 피한다.
+	const FVector2D Position = Center - CanvasSize * 0.5;
+	if (Position.ContainsNaN() || DisplaySize.ContainsNaN()) { return false; }
+	OutPosition = Position;
+	OutSize = DisplaySize;
+	return true;
 }
 
 // =============================================================================
@@ -122,6 +189,7 @@ void UFF_LiveHudScreen::EnsureIncidentMarkerLayer()
 	if (IncidentMarkerLayer)
 	{
 		IncidentMarkerLayer->OnIncidentMarkerClicked.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleIncidentMarkerClicked);
+		IncidentMarkerLayer->SetBottomReserve(GetBottomBarHeight());
 	}
 }
 
@@ -150,12 +218,26 @@ void UFF_LiveHudScreen::EnsureIncidentDetailPanel()
 	}
 }
 
+void UFF_LiveHudScreen::RequestOpenIncident(FFF_IncidentHandle Handle)
+{
+	HandleIncidentMarkerClicked(Handle);
+}
+
 void UFF_LiveHudScreen::HandleIncidentMarkerClicked(FFF_IncidentHandle Handle)
 {
+	const UFF_IncidentSubsystem* Incident = GetWorld() ? GetWorld()->GetSubsystem<UFF_IncidentSubsystem>() : nullptr;
+	if (!Incident || !Incident->IsHandleValid(Handle))
+	{
+		return;
+	}
 	EnsureIncidentDetailPanel();
 	if (IncidentDetailPanel)
 	{
 		IncidentDetailPanel->OpenFor(Handle);
+		if (IncidentDetailPanel->IsOpen())
+		{
+			ViewedIncidentHandles.Add(Handle);
+		}
 	}
 }
 
@@ -163,16 +245,112 @@ void UFF_LiveHudScreen::HandleIncidentDispatchRequested(FFF_IncidentHandle Handl
 {
 	const UWorld* World = GetWorld();
 	UFF_IncidentSubsystem* Incident = World ? World->GetSubsystem<UFF_IncidentSubsystem>() : nullptr;
-	const bool bAccepted = Incident && Incident->ResolveIncident(Handle, OptionIndex, StaffCount);
+	EFF_IncidentResolveResult Result = EFF_IncidentResolveResult::DispatchFailed;
+	bSuppressClosedToast = true;
+	const bool bAccepted = Incident && Incident->ResolveIncident(Handle, OptionIndex, StaffCount, &Result);
+	bSuppressClosedToast = false;
 
-	UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 사건 H=%d/%d Option=%d Staff=%d 요청 — %s"),
+	FString ResultName;
+	if (const UEnum* ResultEnum = StaticEnum<EFF_IncidentResolveResult>())
+	{
+		ResultName = ResultEnum->GetNameStringByValue(static_cast<int64>(Result));
+	}
+	UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 사건 H=%d/%d Option=%d Staff=%d 요청 — %s (%s)"),
 		*GetName(), Handle.Index, Handle.Serial, OptionIndex, StaffCount,
-		bAccepted ? TEXT("접수") : TEXT("거부(가용 스태프 부족·경로 없음 등)"));
+		bAccepted ? TEXT("접수") : TEXT("거부"), *ResultName);
+
+	EnsureIncidentToast();
+	if (IncidentToast)
+	{
+		IncidentToast->Show(UFF_UIDisplayTextLibrary::GetIncidentResolveResultLabel(Result),
+			UFF_UIDisplayTextLibrary::GetIncidentResolveResultText(Result),
+			UFF_UIDisplayTextLibrary::IsIncidentResolveAccepted(Result));
+	}
+}
+
+void UFF_LiveHudScreen::EnsureIncidentToast()
+{
+	if (!IncidentToast)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			IncidentToast = CreateWidget<UFF_IncidentToast>(PC, UFF_IncidentToast::StaticClass());
+		}
+		else if (UWorld* World = GetWorld())
+		{
+			IncidentToast = CreateWidget<UFF_IncidentToast>(World, UFF_IncidentToast::StaticClass());
+		}
+	}
+
+	if (IncidentToast && !IncidentToast->IsInViewport())
+	{
+		IncidentToast->AddToViewport(20);
+		UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 사건 토스트를 뷰포트에 올렸다 (Z=20) — 뷰포트=%d"),
+			*GetName(), IncidentToast->IsInViewport());
+	}
+	else if (!IncidentToast)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning, TEXT("[%s] 사건 토스트를 만들지 못했다 — 소유 플레이어도 월드도 없다"), *GetName());
+	}
+}
+
+void UFF_LiveHudScreen::BindIncidentFinished()
+{
+	const UWorld* World = GetWorld();
+	if (UFF_IncidentSubsystem* Incident = World ? World->GetSubsystem<UFF_IncidentSubsystem>() : nullptr)
+	{
+		Incident->OnIncidentFinished.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleIncidentFinished);
+	}
+}
+
+void UFF_LiveHudScreen::UnbindIncidentFinished()
+{
+	const UWorld* World = GetWorld();
+	if (UFF_IncidentSubsystem* Incident = World ? World->GetSubsystem<UFF_IncidentSubsystem>() : nullptr)
+	{
+		Incident->OnIncidentFinished.RemoveDynamic(this, &UFF_LiveHudScreen::HandleIncidentFinished);
+	}
+}
+
+void UFF_LiveHudScreen::HandleIncidentFinished(const FFF_IncidentClosedInfo& Info)
+{
+	const bool bWasViewed = ViewedIncidentHandles.Remove(Info.Handle) > 0;
+	if (!FFF_IncidentRules::ShouldToastClosed(Info, bWasViewed))
+	{
+		return;
+	}
+
+	// 토스트를 놓쳐도 통합 소식에서 종료 이유를 다시 확인할 수 있다.
+	if (UFF_OperationAlertSubsystem* Alerts = GetWorld() ? GetWorld()->GetSubsystem<UFF_OperationAlertSubsystem>() : nullptr)
+	{
+		Alerts->RecordIncidentFinished(Info);
+	}
+	if (bSuppressClosedToast)
+	{
+		return;
+	}
+
+	EnsureIncidentToast();
+	if (IncidentToast)
+	{
+		IncidentToast->Show(UFF_UIDisplayTextLibrary::GetIncidentFinishedLabel(Info),
+			UFF_UIDisplayTextLibrary::GetIncidentFinishedText(Info),
+			UFF_UIDisplayTextLibrary::GetIncidentClosedKind(Info.FinalState));
+	}
 }
 
 void UFF_LiveHudScreen::NativeConstruct()
 {
 	Super::NativeConstruct();
+	FFOutsideClickDismiss::Register(this,
+		[this] { return Selection.bHasSelection && !Selection.IsSelected(EFF_LiveTab::RevenueRanking); },
+		[this](FVector2D Position)
+		{
+			return FFOutsideClickDismiss::IsInside(Panel_PanelHost, Position)
+				|| FFOutsideClickDismiss::IsInside(Border_MenuRow, Position)
+				|| FFOutsideClickDismiss::IsInside(Border_StatusRow, Position);
+		},
+		FSimpleDelegate::CreateUObject(this, &ThisClass::CloseCurrentPanel));
 
 	// 🔴 전체 화면을 덮는 HUD 가 `Visible` 이면 월드 클릭을 전부 먹는다.
 	// 준비 단계 바에서 실제로 건축 배치가 죽었다 — 라이브는 월드 조작이 더 잦아 더 치명적이다.
@@ -182,11 +360,56 @@ void UFF_LiveHudScreen::NativeConstruct()
 	RefreshAll();
 	EnsureIncidentMarkerLayer();
 	EnsureIncidentDetailPanel();
+	BindIncidentFinished();
+	EnsureFinaleSnsOverlay();
+	EnsureOperationAlertPanel();
+	TryShowDailyReport();
+}
+
+void UFF_LiveHudScreen::EnsureOperationAlertPanel()
+{
+	if (!OperationAlertPanel)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			OperationAlertPanel = CreateWidget<UFF_OperationAlertPanel>(PC, UFF_OperationAlertPanel::StaticClass());
+		}
+	}
+	// 사건 알림(20)보다 아래, 피날레 후기(15)와 같은 층. 자리가 달라 겹치지 않는다
+	if (OperationAlertPanel && !OperationAlertPanel->IsInViewport())
+	{
+		OperationAlertPanel->AddToViewport(15);
+	}
+}
+
+void UFF_LiveHudScreen::EnsureFinaleSnsOverlay()
+{
+	if (!FinaleSnsOverlay)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			FinaleSnsOverlay = CreateWidget<UFF_FinaleSnsOverlay>(PC, UFF_FinaleSnsOverlay::StaticClass());
+		}
+	}
+	if (FinaleSnsOverlay && !FinaleSnsOverlay->IsInViewport())
+	{
+		FinaleSnsOverlay->AddToViewport(15);
+	}
 }
 
 void UFF_LiveHudScreen::NativeDestruct()
 {
+	FFOutsideClickDismiss::Unregister(this);
+	if (Selection.IsSelected(EFF_LiveTab::RevenueRanking))
+	{
+		if (UWorld* World = GetWorld())
+		{
+			if (auto* Ranking = World->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>()) { Ranking->Close(); }
+		}
+	}
 	UnbindViewModel();
+	UnbindIncidentFinished();
+	ViewedIncidentHandles.Reset();
 	if (IncidentMarkerLayer)
 	{
 		IncidentMarkerLayer->OnIncidentMarkerClicked.RemoveDynamic(this, &UFF_LiveHudScreen::HandleIncidentMarkerClicked);
@@ -198,12 +421,38 @@ void UFF_LiveHudScreen::NativeDestruct()
 		IncidentDetailPanel->Close();
 		IncidentDetailPanel->RemoveFromParent();
 	}
+	if (IncidentToast)
+	{
+		IncidentToast->RemoveFromParent();
+	}
+	if (FinaleSnsOverlay)
+	{
+		FinaleSnsOverlay->RemoveFromParent();
+	}
+	if (OperationAlertPanel)
+	{
+		OperationAlertPanel->RemoveFromParent();
+	}
 	Super::NativeDestruct();
 }
 
 void UFF_LiveHudScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	// 기존 순위 화면의 닫기/ESC/시설 정보 이동도 하단 탭 선택에 반영한다.
+	if (Selection.IsSelected(EFF_LiveTab::RevenueRanking))
+	{
+		const auto* Ranking = GetWorld() ? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr;
+		if (!Ranking || !Ranking->IsOpen()) { ApplySelection(FFF_LiveTabSelection::None()); }
+	}
+	if (Selection.bHasSelection)
+	{
+		const FFF_LivePanelLayout Layout = ResolveLayout(Selection.Tab);
+		if (Layout.UsesViewportCenter(Selection.Tab))
+		{
+			ApplyPanelLayout(Layout, &MyGeometry);
+		}
+	}
 	// 배속은 외부 시스템에서도 변경된다. 실제 값이 바뀔 때만 버튼 표시를 갱신한다.
 	if (const UFF_FestivalViewModelSubsystem* VM = GetViewModel())
 	{
@@ -253,6 +502,7 @@ void UFF_LiveHudScreen::BindViewModel()
 	}
 
 	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleStageViewChanged);
+	CachedViewModel->OnDailyReportReady.AddUniqueDynamic(this, &ThisClass::HandleDailyReportReady);
 	CachedViewModel->OnTimeScaleLockChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleTimeScaleLockChanged);
 
 	// 피날레 등급이 바뀌면 **탭이 생기거나 사라진다.** 값만 바뀌는 것이 아니다.
@@ -270,6 +520,7 @@ void UFF_LiveHudScreen::UnbindViewModel()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleStageViewChanged);
+		CachedViewModel->OnDailyReportReady.RemoveDynamic(this, &ThisClass::HandleDailyReportReady);
 		CachedViewModel->OnTimeScaleLockChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleTimeScaleLockChanged);
 		CachedViewModel->OnPurchasedFinaleGradeChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleFinaleGradeChanged);
 		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleRemainingSecondsChanged);
@@ -290,6 +541,7 @@ void UFF_LiveHudScreen::ForEachTabButton(TFunctionRef<void(EFF_LiveTab, UFF_Live
 	const TPair<EFF_LiveTab, UFF_LiveTabButton*> Bindings[] = {
 		{ EFF_LiveTab::Operations,	Tab_Operations },
 		{ EFF_LiveTab::Facilities,	Tab_Facilities },
+		{ EFF_LiveTab::RevenueRanking, Tab_RevenueRanking },
 		{ EFF_LiveTab::Guests,		Tab_Guests },
 		{ EFF_LiveTab::Queues,		Tab_Queues },
 		{ EFF_LiveTab::SNS,			Tab_SNS },
@@ -315,6 +567,12 @@ void UFF_LiveHudScreen::HandleTabButtonClicked(int32 TabId)
 
 void UFF_LiveHudScreen::ToggleTab(EFF_LiveTab Tab)
 {
+	// SNS의 실제 진입점은 위쪽 도크다. 외부의 기존 탭 호출도 같은 패널로 보낸다.
+	if (Tab == EFF_LiveTab::SNS && UFF_LiveUtilityDock::IsConfigured())
+	{
+		if (UFF_LiveUtilityDock* Dock = UFF_LiveUtilityDock::FindForPlayer(GetOwningPlayer())) Dock->ToggleSNS();
+		return;
+	}
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	const EFF_FestivalStage Stage = ViewModel ? ViewModel->GetCurrentStage() : EFF_FestivalStage::Live;
 
@@ -348,6 +606,13 @@ void UFF_LiveHudScreen::ApplySelection(const FFF_LiveTabSelection& NewSelection)
 	// 1) 열려 있던 것을 닫는다. **패널이 스스로 닫지 않는다** — 여기가 유일한 경로다.
 	if (Selection.bHasSelection)
 	{
+		if (Selection.IsSelected(EFF_LiveTab::RevenueRanking))
+		{
+			if (auto* Ranking = GetWorld() ? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
+			{
+				Ranking->Close();
+			}
+		}
 		if (TObjectPtr<UFF_LivePanelBase>* Previous = PanelWidgets.Find(Selection.Tab))
 		{
 			if (*Previous)
@@ -361,7 +626,14 @@ void UFF_LiveHudScreen::ApplySelection(const FFF_LiveTabSelection& NewSelection)
 	Selection = NewSelection;
 
 	// 2) 새 패널을 연다. 만들지 못하면 닫힌 상태로 되돌린다 — 탭만 눌린 채로 두지 않는다.
-	if (Selection.bHasSelection)
+	if (Selection.IsSelected(EFF_LiveTab::RevenueRanking))
+	{
+		// 순위/경제를 다시 계산하지 않고 시설 정보에서도 사용하는 같은 화면을 연다.
+		auto* Ranking = GetWorld() ? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr;
+		if (Ranking) { Ranking->Open(); }
+		if (!Ranking || !Ranking->IsOpen()) { Selection = FFF_LiveTabSelection::None(); }
+	}
+	else if (Selection.bHasSelection)
 	{
 		// 자리를 먼저 맞춘 뒤 패널을 넣는다. 순서가 반대면 이전 탭의 자리로 한 프레임 그려진다.
 		ApplyPanelLayout(ResolveLayout(Selection.Tab));
@@ -380,12 +652,7 @@ void UFF_LiveHudScreen::ApplySelection(const FFF_LiveTabSelection& NewSelection)
 
 	// 🔴 호스트를 함께 켜고 끈다. 생성기가 `Collapsed` 로 만들어 두기 때문에 패널만
 	// `Visible` 로 바꾸면 **접힌 부모 안에 들어가 아무것도 안 보인다** (2026-08-27 실기 확인).
-	if (Panel_PanelHost)
-	{
-		Panel_PanelHost->SetVisibility(Selection.bHasSelection
-			? ESlateVisibility::SelfHitTestInvisible
-			: ESlateVisibility::Collapsed);
-	}
+	RefreshPanelHostVisibility();
 
 	RefreshTabs();
 	OnTabSelectionChanged.Broadcast(Selection);
@@ -492,7 +759,8 @@ UFF_LivePanelBase* UFF_LiveHudScreen::EnsurePanel(EFF_LiveTab Tab)
 	}
 
 	// 제목과 탭을 함께 넣는다. 따로 두면 제목만 바뀌고 탭이 남는다.
-	Panel->InitializePanel(this, Tab, DisplayName);
+	Panel->InitializePanel(this, Tab, Tab == EFF_LiveTab::Facilities
+		? LOCTEXT("LiveFacilities_PanelTitle", "시설 상태") : DisplayName);
 
 	if (bIsPlaceholder)
 	{
@@ -603,7 +871,7 @@ void UFF_LiveHudScreen::LogPanelGeometryNextTick(UFF_LivePanelBase& Panel)
 
 bool UFF_LiveHudScreen::IsPanelDragAllowed() const
 {
-	if (!bAllowPanelDrag || !Panel_PanelHost || !Selection.bHasSelection)
+	if (!bAllowPanelDrag || !Panel_PanelHost || !Selection.bHasSelection || Selection.IsSelected(EFF_LiveTab::RevenueRanking))
 	{
 		return false;
 	}
@@ -658,8 +926,23 @@ FFF_LivePanelLayout UFF_LiveHudScreen::ResolveLayout(EFF_LiveTab Tab) const
 	return Layout;
 }
 
-void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout)
+FFF_LivePanelLayout UFF_LiveHudScreen::GetOpenPanelLayout() const
 {
+	return Selection.bHasSelection ? ResolveLayout(Selection.Tab) : DefaultPanelLayout;
+}
+
+void UFF_LiveHudScreen::RefreshPanelHostVisibility()
+{
+	if (Panel_PanelHost)
+	{
+		Panel_PanelHost->SetVisibility(!Selection.bHasSelection || Selection.IsSelected(EFF_LiveTab::RevenueRanking) ? ESlateVisibility::Collapsed
+			: bAwaitingCenteredLayout ? ESlateVisibility::Hidden : ESlateVisibility::SelfHitTestInvisible);
+	}
+}
+
+void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout, const FGeometry* CurrentHudGeometry)
+{
+	bAwaitingCenteredLayout = false;
 	if (!Panel_PanelHost)
 	{
 		return;
@@ -667,6 +950,7 @@ void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout)
 
 	if (Layout.Dock == EFF_LivePanelDock::Designer)
 	{
+		RefreshPanelHostVisibility();
 		return;
 	}
 
@@ -682,8 +966,36 @@ void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout)
 				 "WBP 에서 Canvas_Root 바로 아래에 두거나 디자이너에서 자리를 잡는다."),
 			*GetName(),
 			Panel_PanelHost->Slot ? *Panel_PanelHost->Slot->GetClass()->GetName() : TEXT("슬롯 없음"));
+		RefreshPanelHostVisibility();
 		return;
 	}
+
+	if (Selection.bHasSelection && Layout.UsesViewportCenter(Selection.Tab))
+	{
+		const UWidget* Canvas = Panel_PanelHost->GetParent();
+		const FGeometry HudGeometry = CurrentHudGeometry ? *CurrentHudGeometry : GetCachedGeometry();
+		const FGeometry CanvasGeometry = WidgetTree && WidgetTree->RootWidget == Canvas
+			? HudGeometry : Canvas->GetCachedGeometry();
+		const UWorld* World = GetWorld();
+		const FGeometry ViewportGeometry = World && World->IsGameWorld()
+			? UWidgetLayoutLibrary::GetViewportWidgetGeometry(this) : HudGeometry;
+		FVector2D Position, DisplaySize;
+		bAwaitingCenteredLayout = !Layout.TryResolveCenteredLayout(ViewportGeometry, CanvasGeometry,
+			GetBottomBarHeight(), PanelMargin, Position, DisplaySize);
+		if (!bAwaitingCenteredLayout)
+		{
+			const FAnchors Anchors(0.5f, 0.5f);
+			const FVector2D Alignment(0.5, 0.5);
+			const FMargin Offsets(Position.X, Position.Y, DisplaySize.X, DisplaySize.Y);
+			if (CanvasSlot->GetAutoSize()) { CanvasSlot->SetAutoSize(false); }
+			if (CanvasSlot->GetAnchors() != Anchors) { CanvasSlot->SetAnchors(Anchors); }
+			if (CanvasSlot->GetAlignment() != Alignment) { CanvasSlot->SetAlignment(Alignment); }
+			if (CanvasSlot->GetOffsets() != Offsets) { CanvasSlot->SetOffsets(Offsets); }
+		}
+		RefreshPanelHostVisibility();
+		return;
+	}
+	RefreshPanelHostVisibility();
 
 	// === CanvasPanelSlot 의 Offsets 는 앵커에 따라 뜻이 달라진다 ===
 	// 늘어난 축(min != max)이면 양쪽 **여백**이고, 점 앵커면 **위치와 크기**다.
@@ -748,11 +1060,12 @@ void UFF_LiveHudScreen::RefreshTabs()
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	const EFF_FestivalStage Stage = ViewModel ? ViewModel->GetCurrentStage() : EFF_FestivalStage::Live;
 	const bool bPurchasedFinale = HasPurchasedFinale();
+	const bool bSnsInDock = UFF_LiveUtilityDock::IsConfigured();
 
 	int32 VisibleTabCount = 0;
-	ForEachTabButton([this, Stage, bPurchasedFinale, &VisibleTabCount](EFF_LiveTab Tab, UFF_LiveTabButton& Button)
+	ForEachTabButton([this, Stage, bPurchasedFinale, bSnsInDock, &VisibleTabCount](EFF_LiveTab Tab, UFF_LiveTabButton& Button)
 	{
-		const bool bVisible = FFF_LiveHudRules::IsTabVisible(Tab, Stage, bPurchasedFinale);
+		const bool bVisible = !(bSnsInDock && Tab == EFF_LiveTab::SNS) && FFF_LiveHudRules::IsTabVisible(Tab, Stage, bPurchasedFinale);
 		Button.SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		Button.SetSelected(Selection.IsSelected(Tab));
 		VisibleTabCount += bVisible ? 1 : 0;
@@ -793,6 +1106,10 @@ void UFF_LiveHudScreen::RefreshTabs()
 			FMargin Offsets = BarSlot->GetOffsets();
 			Offsets.Bottom = TargetHeight;
 			BarSlot->SetOffsets(Offsets);
+		}
+		if (IncidentMarkerLayer)
+		{
+			IncidentMarkerLayer->SetBottomReserve(TargetHeight);
 		}
 	}
 	if (Text_SpeedReason)
@@ -978,6 +1295,29 @@ void UFF_LiveHudScreen::HandleStageViewChanged(EFF_FestivalStage NewStage, int32
 	LogBarGeometryNextTick(NewStage);
 }
 
+void UFF_LiveHudScreen::HandleDailyReportReady(int32 Day)
+{
+	TryShowDailyReport();
+}
+
+void UFF_LiveHudScreen::TryShowDailyReport()
+{
+	UFF_FestivalViewModelSubsystem* VM = GetViewModel();
+	const FFF_DailyReportView* Report = VM ? VM->GetDailyReport() : nullptr;
+	if (!Report || VM->WasDailyReportAutoShown(Report->Day)) return;
+	// ToggleTab이면 먼저 수동으로 열어 둔 결산이 닫힌다. 같은 선택은 그대로 유지한다.
+	FFF_LiveTabSelection ReportSelection;
+	ReportSelection.bHasSelection = true;
+	ReportSelection.Tab = EFF_LiveTab::Report;
+	ApplySelection(ReportSelection);
+	if (Selection.bHasSelection && Selection.Tab == EFF_LiveTab::Report
+		&& Cast<UFF_LivePanelReport>(PanelWidgets.FindRef(EFF_LiveTab::Report)))
+	{
+		// 기록은 GameInstance VM에 있어 HUD 재생성/재구독으로 자동 팝업을 반복하지 않는다.
+		VM->MarkDailyReportAutoShown(Report->Day);
+	}
+}
+
 void UFF_LiveHudScreen::HandleRemainingSecondsChanged(int32 NewValue)
 {
 	// 초마다 온다. 상태 행만 다시 쓴다 — 탭까지 돌리면 초당 갱신이 된다.
@@ -1044,7 +1384,7 @@ FText UFF_LiveHudScreen::GetCtaReasonText() const
 
 	case EFF_LiveCtaState::ReadyFinishFestival:
 		// 되돌릴 수 없는 마지막 버튼이라 무엇이 일어나는지 미리 적는다.
-		return LOCTEXT("LiveCta_FinishNote", "누르면 축제가 끝나고 나라 지도로 돌아갑니다.");
+		return LOCTEXT("LiveCta_FinishNote", "축제를 마치고 최종 결산을 확인합니다.");
 
 	default:
 		return FText::GetEmpty();
@@ -1100,10 +1440,10 @@ void UFF_LiveHudScreen::HandleCtaClicked()
 		return;
 
 	case EFF_LiveCtaState::ReadyFinishFestival:
-		// 나라 지도 복귀는 `UFF_UIFlowSubsystem` 이 소유한다 — UI 가 레벨을 직접 열지 않는다.
+		// 축제 종료와 나라 지도 복귀는 `UFF_UIFlowSubsystem` 이 소유한다 — UI 가 레벨을 직접 열지 않는다.
 		if (UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this))
 		{
-			Flow->ReturnToAtlas();
+			Flow->RequestFinishFestival();
 		}
 		else
 		{

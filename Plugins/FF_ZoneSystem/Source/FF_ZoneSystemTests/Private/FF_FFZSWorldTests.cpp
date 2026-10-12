@@ -43,6 +43,7 @@
 #include "FF_FFZSTestExternalPolicy.h"
 #include "FF_FFZSZoneActor.h"
 #include "Tests/FF_FFZSTestFixtures.h"
+#include "FF_FFZSProjectZoneTestFixture.h"
 
 namespace
 {
@@ -94,16 +95,13 @@ namespace
         TArray<FName> ProjectZoneIds;
     };
 
-    AFFZSGameplayZone* SpawnAcceptedZone(UWorld& World, const FName ZoneId, const FTransform& Transform = FTransform::Identity)
+    AFFZSGameplayZone* SpawnAcceptedZone(FAutomationTestBase& Test, UWorld& World, const FName ZoneId,
+        const FTransform& Transform = FTransform::Identity)
     {
         FActorSpawnParameters Parameters;
         Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
         AFFZSGameplayZone* Zone = World.SpawnActor<AFFZSGameplayZone>(AFFZSGameplayZone::StaticClass(), Transform, Parameters);
-        if (Zone)
-        {
-            Zone->ApplyAcceptedZonePreset(ZoneId);
-        }
-        return Zone;
+        return FFZSTest::ApplyZonePreset(Test, Zone, ZoneId) ? Zone : nullptr;
     }
 
     FFFZSCommand MakeFacilityCommand(const EFFZSCommandType Type, const FGuid FacilityId, const int64 ExpectedRevision = -1)
@@ -127,6 +125,64 @@ namespace
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSWorldRemovedSafetyClearanceTest,
+    "FF_ZoneSystem.Integration.World.RemovedSafetyClearance",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSWorldRemovedSafetyClearanceTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    UFFZSWorldSubsystem* Subsystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+    if (!TestNotNull(TEXT("World subsystem exists"), Subsystem)) return false;
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
+    if (!TestNotNull(TEXT("Zone exists"), Zone) ||
+        !TestTrue(TEXT("Zone registers"), Subsystem->RegisterZone(Zone))) return false;
+
+    FFFZSFacilitySpec Legacy = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    Legacy.ClearanceCells = 100;
+    FFFZSGridPlacement Placement;
+    Placement.OriginCell = FIntPoint(1000, 1000);
+    const FFFZSCommand First = UFFZSGridLibrary::MakeInstallCommand(Legacy, ZoneId, Placement);
+    if (!TestTrue(TEXT("Legacy facility installs"), Subsystem->ExecuteCommand(First).bSucceeded)) return false;
+    Placement.OriginCell.X += Legacy.FootprintSizeCells.X;
+    const FFFZSCommand Adjacent = UFFZSGridLibrary::MakeInstallCommand(Legacy, ZoneId, Placement);
+    const FFFZSPlacementValidation Preview = Subsystem->ValidatePlacement(Adjacent);
+    TestTrue(TEXT("Legacy clearance produces no extra preview regions"), Preview.ClearanceOrientedRects.IsEmpty());
+    if (!TestTrue(TEXT("Service facilities can touch along their actual footprint edges"),
+        Subsystem->ExecuteCommand(Adjacent).bSucceeded)) return false;
+
+    FFFZSCommand Overlap = MakeMoveCommand(Adjacent.FacilityInstanceId, ZoneId,
+        Placement.OriginCell - FIntPoint(1, 0), Subsystem->GetWorldRevision());
+    TestFalse(TEXT("A one-centimeter body overlap remains blocked"), Subsystem->ExecuteCommand(Overlap).bSucceeded);
+
+    FFFZSWorldSnapshot Snapshot = Subsystem->CaptureWorldSnapshot();
+    for (FFFZSFacilityInstanceSnapshot& Saved : Snapshot.Facilities)
+    {
+        TestEqual(TEXT("New snapshots contain no clearance"), Saved.FacilitySpec.ClearanceCells, 0);
+        Saved.FacilitySpec.ClearanceCells = 100;
+    }
+    TArray<FText> Errors;
+    if (!TestTrue(TEXT("Older snapshots restore adjacent facilities without clearance conflicts"),
+        Subsystem->RestoreWorldSnapshot(Snapshot, Errors))) return false;
+    const FFFZSWorldSnapshot Restored = Subsystem->CaptureWorldSnapshot();
+    for (const FFFZSFacilityInstanceSnapshot& Saved : Restored.Facilities)
+    {
+        TestEqual(TEXT("Restoring removes saved legacy clearance"), Saved.FacilitySpec.ClearanceCells, 0);
+    }
+
+    FFFZSFacilitySpec Blocker = Legacy;
+    Blocker.Category = EFFZSFacilityCategory::Lighting;
+    Blocker.NormalizeNonServiceGeometry();
+    Blocker.FootprintSizeCells = FIntPoint(50, 50);
+    Placement.OriginCell = First.Placement.OriginCell + FIntPoint(525, 325);
+    TestFalse(TEXT("The authored queue remains protected from other facility bodies"),
+        Subsystem->ExecuteCommand(UFFZSGridLibrary::MakeInstallCommand(Blocker, ZoneId, Placement)).bSucceeded);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FFFZSWorldCommandLifecycleSnapshotTest,
     "FF_ZoneSystem.Integration.World.CommandLifecycleQueueAndSnapshot",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -147,8 +203,8 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         return false;
     }
 
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
     if (!TestNotNull(TEXT("승인된 Gameplay Zone"), Zone) ||
         !TestTrue(TEXT("승인된 ID가 지정되면 Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
     {
@@ -492,8 +548,8 @@ bool FFFZSWorldFacilityLookupAtWorldPointTest::RunTest(const FString& Parameters
         UninitializedFacility->SelectionProxy->GetUnscaledBoxExtent().IsNearlyZero());
     UninitializedFacility->Destroy();
 
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
     if (!TestNotNull(TEXT("조회 테스트 Zone"), Zone) ||
         !TestTrue(TEXT("조회 테스트 Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
     {
@@ -794,8 +850,8 @@ bool FFFZSWorldChangePhasePermissionsTest::RunTest(const FString& Parameters)
         return false;
     }
 
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
     if (!TestNotNull(TEXT("승인된 Gameplay Zone"), Zone) ||
         !TestTrue(TEXT("Phase 테스트 Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
     {
@@ -899,9 +955,9 @@ bool FFFZSWorldZoneExclusivityProtectedAreaTest::RunTest(const FString& Paramete
         return false;
     }
 
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
-    AFFZSGameplayZone* OverlappingZone = SpawnAcceptedZone(*World, TEXT("GZ_DadaYajang"));
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
+    AFFZSGameplayZone* OverlappingZone = SpawnAcceptedZone(*this, *World, TEXT("GZ_DadaYajang"));
     if (!TestNotNull(TEXT("기본 Zone"), Zone) || !TestNotNull(TEXT("겹치는 Zone"), OverlappingZone))
     {
         return false;
@@ -1027,8 +1083,8 @@ bool FFFZSInvalidFacilitySpecStopsBeforeNavigationTest::RunTest(const FString& P
         return false;
     }
 
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
     if (!TestNotNull(TEXT("승인된 Gameplay Zone"), Zone) ||
         !TestTrue(TEXT("Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
     {
@@ -1144,8 +1200,8 @@ bool FFFZSSchema5FreeYawSnapshotRestoreTest::RunTest(const FString& Parameters)
         return false;
     }
 
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
     if (!TestNotNull(TEXT("자유 Yaw 대상 Gameplay Zone"), Zone) ||
         !TestTrue(TEXT("자유 Yaw 대상 Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
     {
@@ -1255,8 +1311,8 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
         return false;
     }
 
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
     if (!TestNotNull(TEXT("승인된 Gameplay Zone"), Zone))
     {
         return false;
@@ -1573,8 +1629,8 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
             MigratedSaved.FacilitySpec.SchemaVersion, 2);
         TestEqual(*FString::Printf(TEXT("%s: 6m x 3m Footprint를 보존한다"), *CaseLabel),
             MigratedSaved.FacilitySpec.FootprintSizeCells, FIntPoint(600, 300));
-        TestEqual(*FString::Printf(TEXT("%s: 1m Clearance를 보존한다"), *CaseLabel),
-            MigratedSaved.FacilitySpec.ClearanceCells, 100);
+        TestEqual(*FString::Printf(TEXT("%s: Legacy clearance is removed"), *CaseLabel),
+            MigratedSaved.FacilitySpec.ClearanceCells, 0);
         TestTrue(*FString::Printf(TEXT("%s: Legacy Queue Cell을 제거한다"), *CaseLabel),
             MigratedSaved.FacilitySpec.QueueReservedCells.IsEmpty());
 
@@ -1821,8 +1877,8 @@ bool FFFZSZoneReadModelSpatialMetadataTest::RunTest(const FString& Parameters)
         return false;
     }
 
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
     if (!TestNotNull(TEXT("Read Model 대상 Gameplay Zone"), Zone))
     {
         return false;
@@ -1928,8 +1984,8 @@ bool FFFZSFacilityUpgradeTransactionTest::RunTest(const FString& Parameters)
         return false;
     }
     UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
     if (!TestNotNull(TEXT("Upgrade subsystem"), Subsystem) ||
         !TestNotNull(TEXT("Upgrade zone"), Zone) ||
         !TestTrue(TEXT("Register upgrade zone"), Subsystem->RegisterZone(Zone)))
@@ -1941,6 +1997,7 @@ bool FFFZSFacilityUpgradeTransactionTest::RunTest(const FString& Parameters)
     Spec.bUsesFacilityLevels = true;
     FFFZSFacilityUpgradeTier Level2;
     FFFZSFacilityUpgradeTier Level3;
+    Level2.ServiceDurationMultiplier = 0.8f;
     Level2.RevenueMultiplier = 1.0f;
     Level3.RevenueMultiplier = 1.0f;
     Level3.TargetLevel = 3;
@@ -2149,9 +2206,11 @@ bool FFFZSFacilityFlexibleUpgradeTransactionTest::RunTest(const FString& Paramet
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
     if (!TestNotNull(TEXT("Flexible upgrade world"), World)) return false;
     UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
-    if (!Subsystem || !Zone || !Subsystem->RegisterZone(Zone)) return false;
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
+    if (!TestNotNull(TEXT("Synthetic world subsystem"), Subsystem) ||
+        !TestNotNull(TEXT("Accepted synthetic zone"), Zone) ||
+        !TestTrue(TEXT("Synthetic zone registers"), Subsystem->RegisterZone(Zone))) return false;
     FFFZSFacilitySpec Base = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
     Base.bUsesFacilityLevels = true;
     FFFZSFacilityUpgradeTier Level20;
@@ -2218,9 +2277,11 @@ bool FFFZSFacilityRevenueUpgradeTransactionTest::RunTest(const FString& Paramete
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
     if (!TestNotNull(TEXT("Revenue upgrade world"), World)) return false;
     UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
-    if (!Subsystem || !Zone || !Subsystem->RegisterZone(Zone)) return false;
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
+    if (!TestNotNull(TEXT("Synthetic world subsystem"), Subsystem) ||
+        !TestNotNull(TEXT("Accepted synthetic zone"), Zone) ||
+        !TestTrue(TEXT("Synthetic zone registers"), Subsystem->RegisterZone(Zone))) return false;
     FFFZSFacilitySpec Base = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
     Base.bUsesFacilityLevels = true;
     FFFZSFacilityUpgradeTier Level2;
@@ -2291,13 +2352,16 @@ bool FFFZSFacilityUpgradeSizeTransactionTest::RunTest(const FString& Parameters)
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
     if (!TestNotNull(TEXT("Size upgrade test world"), World)) return false;
     UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
-    if (!Subsystem || !Zone || !Subsystem->RegisterZone(Zone)) return false;
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
+    if (!TestNotNull(TEXT("Synthetic world subsystem"), Subsystem) ||
+        !TestNotNull(TEXT("Accepted synthetic zone"), Zone) ||
+        !TestTrue(TEXT("Synthetic zone registers"), Subsystem->RegisterZone(Zone))) return false;
 
     FFFZSFacilitySpec Base = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
     Base.bUsesFacilityLevels = true;
     FFFZSFacilityUpgradeTier Tier;
+    Tier.ServiceDurationMultiplier = 0.8f;
     Tier.SizeMultiplier = 2.f;
     Tier.RevenueMultiplier = 1.f;
     Base.UpgradeTiers = { Tier };
@@ -2329,7 +2393,10 @@ bool FFFZSFacilityUpgradeSizeTransactionTest::RunTest(const FString& Parameters)
         Collision.Reasons.Contains(EFFZSPlacementFailure::PlacementCollision) ||
         Collision.Reasons.Contains(EFFZSPlacementFailure::InsufficientClearance) ||
         Collision.Reasons.Contains(EFFZSPlacementFailure::QueueFootprintBlocked));
-    TestFalse(TEXT("Colliding enlargement cannot commit"), Subsystem->ExecuteCommand(Upgrade(FacilityId)).bSucceeded);
+    const FFFZSCommandResult CollidingUpgrade = Subsystem->ExecuteCommand(Upgrade(FacilityId));
+    TestFalse(TEXT("Colliding enlargement cannot commit"), CollidingUpgrade.bSucceeded);
+    TestTrue(TEXT("Colliding enlargement reaches spatial validation"),
+        Collision.Reasons.Contains(CollidingUpgrade.FailureReason));
     TestEqual(TEXT("Colliding enlargement preserves revision"), Subsystem->GetWorldRevision(), BeforeFailure);
     TestEqual(TEXT("Colliding enlargement preserves dimensions"), Facility->GetFacilitySpec().FootprintSizeCells, Base.FootprintSizeCells);
     TestTrue(TEXT("Colliding enlargement preserves actor placement"), Facility->GetActorTransform().Equals(OriginalTransform));
@@ -2343,7 +2410,10 @@ bool FFFZSFacilityUpgradeSizeTransactionTest::RunTest(const FString& Parameters)
     RejectingPolicy->bAllowTentativeApply = false;
     Subsystem->RegisterExternalPolicy(RejectingPolicy);
     const int64 BeforeRollback = Subsystem->GetWorldRevision();
-    TestFalse(TEXT("Late policy can reject a spatially valid enlargement"), Subsystem->ExecuteCommand(Upgrade(FacilityId)).bSucceeded);
+    const FFFZSCommandResult PolicyRejectedUpgrade = Subsystem->ExecuteCommand(Upgrade(FacilityId));
+    TestFalse(TEXT("Late policy can reject a spatially valid enlargement"), PolicyRejectedUpgrade.bSucceeded);
+    TestEqual(TEXT("Spatially valid enlargement reaches the external policy"),
+        PolicyRejectedUpgrade.FailureReason, EFFZSPlacementFailure::ExternalPolicyRejected);
     TestEqual(TEXT("Rejected size transaction invokes rollback"), RejectingPolicy->RollbackCount, 1);
     TestEqual(TEXT("Rollback preserves the old dimensions"), Facility->GetFacilitySpec().FootprintSizeCells, Base.FootprintSizeCells);
     TestEqual(TEXT("Rollback preserves the original revision"), Subsystem->GetWorldRevision(), BeforeRollback);
@@ -2397,9 +2467,11 @@ bool FFFZSPlacementObstructionFeedbackLifecycleTest::RunTest(const FString& Para
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
     if (!TestNotNull(TEXT("Transient world"), World)) return false;
     UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
-    const FName ZoneId(TEXT("GZ_DadaPocha"));
-    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
-    if (!Subsystem || !Zone || !Subsystem->RegisterZone(Zone)) return false;
+    const FName ZoneId(FFZSTest::ProjectZoneId());
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*this, *World, ZoneId);
+    if (!TestNotNull(TEXT("Synthetic world subsystem"), Subsystem) ||
+        !TestNotNull(TEXT("Accepted synthetic zone"), Zone) ||
+        !TestTrue(TEXT("Synthetic zone registers"), Subsystem->RegisterZone(Zone))) return false;
     FFFZSGridPlacement Placement;
     Placement.OriginCell = FIntPoint(1000, 1000);
     const FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommand(

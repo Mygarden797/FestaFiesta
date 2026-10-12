@@ -29,6 +29,9 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogCrowdDecision, Log, All);
 
+// 화장실 진단에서 "급하다"로 보는 Restroom 값. 만족도의 못 채움 기준(UFF_NpcNeedMetricsSubsystem 기본 0.7)과 같게 둔다
+static constexpr float UrgentRestroomThreshold = 0.7f;
+
 void UFF_CrowdDecisionSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
@@ -590,6 +593,28 @@ EFF_PartyFallbackAction UFF_CrowdDecisionSubsystem::ResolveFallbackAction(const 
 		return EFF_PartyFallbackAction::Wander;
 	}
 }
+FName UFF_CrowdDecisionSubsystem::FindNearestZoneId(
+	const UFFZSWorldSubsystem& ZoneSystem, const FFFZSReadModel& ReadModel, const FVector& WorldLocation)
+{
+	FName Nearest = NAME_None;
+	double BestDistSq = FMath::Square(static_cast<double>(MaxOutsideZoneFallbackMeters) * 100.0);
+	for (const FFFZSZoneReadModel& Zone : ReadModel.Zones)
+	{
+		const AFFZSGameplayZone* ZoneActor = ZoneSystem.FindZone(Zone.ZoneId);
+		if (!ZoneActor)
+		{
+			continue;
+		}
+		const double DistSq = FVector::DistSquared2D(ZoneActor->GetActorLocation(), WorldLocation);
+		if (DistSq < BestDistSq)
+		{
+			BestDistSq = DistSq;
+			Nearest = Zone.ZoneId;
+		}
+	}
+	return Nearest;
+}
+
 bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	const FFF_PartyDecisionContext& Context, FFF_PartyDecisionResult& OutResult)
 {
@@ -630,11 +655,19 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		return false;
 	}
 
-	const FName CurrentZoneId = ZoneSystem->ResolveZoneAtWorldLocation(Context.PartyWorldLocation);
+	FName CurrentZoneId = ZoneSystem->ResolveZoneAtWorldLocation(Context.PartyWorldLocation);
 	if (CurrentZoneId.IsNone())
 	{
-		++Stats.OutsideZone;
-		return false;
+		// 입구(3번 게이트 등)나 존 사이 길은 어느 존에도 속하지 않는다. 여기서 결정을 포기하면
+		// 그 파티는 배회만 하다가 존 안으로 우연히 들어설 때까지 시설을 못 본다 — 3일 시나리오에서
+		// 결정 요청의 45% 가 이 경우였다. 가까운 존을 현재 존으로 보고 후보를 찾는다.
+		CurrentZoneId = FindNearestZoneId(*ZoneSystem, ReadModel, Context.PartyWorldLocation);
+		if (CurrentZoneId.IsNone())
+		{
+			++Stats.OutsideZone;
+			return false;
+		}
+		++Stats.OutsideZoneUsedNearest;
 	}
 
 	EnsureWalkDistanceMatrix(*ZoneSystem, ReadModel);
@@ -650,7 +683,8 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
 	const UFF_FestivalStageSubsystem* Stage = GameInstance
 		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
-	if (Stage && Stage->IsMainProgramQueueBreakActive())
+	const bool bMainProgramQueueBreak = Stage && Stage->IsMainProgramQueueBreakActive();
+	if (bMainProgramQueueBreak)
 	{
 		const UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge =
 			GetWorld()->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>();
@@ -660,8 +694,9 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 			if (!QueueBridge || !FFF_ZoneSystemBridge::TryParseDestinationId(Candidate.DestinationId, FacilityId)
 				|| QueueBridge->FindQueueFacilityId(FacilityId) == INDEX_NONE) return false;
 			const AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(FacilityId);
-			// 공연 관람은 일반 FIFO 대기열을 사용하지 않는다.
-			return !Facility || !Facility->GetFacilitySpec().Audience.bEnabled;
+			// 공연 관람은 일반 FIFO 대기열을 사용하지 않는다. 화장실은 공연 중에도 연다
+			return !Facility || (!Facility->GetFacilitySpec().Audience.bEnabled
+				&& UFF_ZoneSystemQueueBridgeSubsystem::PausesForMainProgram(Facility->GetFacilitySpec()));
 		});
 	}
 	if (Reservations)
@@ -849,6 +884,34 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		// 비교 기준선을 만드는 용도이므로, 개체차가 섞이면 기준선이 아니게 된다.
 		bFullMode ? Context.NoveltySeekingMultiplier : 1.f);
 
+	if (bFullMode && Context.Needs.Restroom >= UrgentRestroomThreshold)
+	{
+		++Stats.UrgentRestroom;
+		float NearestToiletMeters = TNumericLimits<float>::Max();
+		bool bChoseToilet = false;
+		for (const FFF_DestinationCandidate& Candidate : Candidates)
+		{
+			if (Candidate.NeedRelief.bRelievesRestroom)
+			{
+				NearestToiletMeters = FMath::Min(NearestToiletMeters, Candidate.DistanceMeters);
+				bChoseToilet |= Candidate.DestinationId == Decision.ChosenDestinationId;
+			}
+		}
+		const bool bHadToilet = NearestToiletMeters < TNumericLimits<float>::Max();
+		if (bHadToilet)
+		{
+			++Stats.UrgentRestroomToiletCandidate;
+			Stats.UrgentRestroomNearestToiletMetersSum += NearestToiletMeters;
+		}
+		else
+		{
+			++Stats.UrgentRestroomNoToiletByZone.FindOrAdd(CurrentZoneId);
+		}
+		Stats.UrgentRestroomDuringBreak += bMainProgramQueueBreak ? 1 : 0;
+		Stats.UrgentRestroomNoToiletDuringBreak += bMainProgramQueueBreak && !bHadToilet ? 1 : 0;
+		Stats.UrgentRestroomChoseToilet += bChoseToilet ? 1 : 0;
+	}
+
 	if (Decision.bIsNoChoice || Decision.ChosenDestinationId.IsNone())
 	{
 		++Stats.NoChoice;
@@ -977,7 +1040,8 @@ static void DecisionStatsCommand(const TArray<FString>& Args, UWorld* World, FOu
 	Ar.Logf(TEXT("시설 좌표 지급   : %d   <- 0이면 Utility가 한 번도 안 먹었다"), S.Chosen);
 	Ar.Logf(TEXT("[폴백] 시설 없음     : %d   (인게임에 짓기 전에는 정상)"), S.NoFacility);
 	Ar.Logf(TEXT("[폴백] 개장 안 됨    : %d   <- FF.Decision.OpenFacilities"), S.NoOpenFacility);
-	Ar.Logf(TEXT("[폴백] Zone 밖       : %d   (Zone 경계 밖에 스폰됐다)"), S.OutsideZone);
+	Ar.Logf(TEXT("[폴백] Zone 밖       : %d   (가까운 Zone 도 없다)"), S.OutsideZone);
+	Ar.Logf(TEXT("[보정] Zone 밖→근처 : %d   (입구·길에서 가까운 Zone 으로 결정)"), S.OutsideZoneUsedNearest);
 	Ar.Logf(TEXT("[폴백] 후보 0개      : %d   (인접 Zone에 열린 시설이 없다)"), S.NoCandidate);
 	Ar.Logf(TEXT("[폴백] no_choice     : %d   (Choose의 정상 판단)"), S.NoChoice);
 	Ar.Logf(TEXT("[문제] ZoneSystem 없음: %d"), S.NoZoneSystem);

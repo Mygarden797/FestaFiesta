@@ -16,7 +16,7 @@ CSV = ROOT / "data/unreal/utility_coefficients_v0.csv"
 DT = "/Game/FestaFiesta/Data/UtilityAI/DT_UtilityCoefficients"
 
 # 값을 눈으로 확인하고 싶은 행. 갱신이 실제로 반영됐는지 여기서 갈린다.
-WATCHED = ("reservation_return_buffer_minutes", "reservation_exit_buffer_minutes")
+WATCHED = ("distance_ref_meters", "distance_cost_cap", "satisfaction_weight_personal_fit", "satisfaction_weight_personal_fit_need")
 
 
 def main():

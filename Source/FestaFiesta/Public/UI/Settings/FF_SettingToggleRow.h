@@ -31,10 +31,13 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativePreConstruct() override;
 	virtual void NativeDestruct() override;
 
 	UFUNCTION()
 	void HandleCheckStateChanged(bool bChecked);
+
+	void RefreshFestivalToggleState();
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|Settings")
 	TObjectPtr<UTextBlock> Text_Label;

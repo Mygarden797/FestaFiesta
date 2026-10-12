@@ -7,6 +7,7 @@
 
 #include "Building/UI/FF_BuildFacilityCard.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
+#include "Building/Presentation/FF_BuildLightingBadge.h"
 
 #include "Building/Presentation/FF_BuildFacilityCostTooltip.h"
 #include "CommonTextBlock.h"
@@ -106,6 +107,10 @@ FText UFF_BuildFacilityCard::MakeFacilityCostToolTip(
 FText UFF_BuildFacilityCard::MakeFacilityBuildLimitText(
 	const FFF_BuildCatalogEntry& CatalogEntry)
 {
+	if (CatalogEntry.bRequiredForSetup)
+	{
+		return MakeRequiredFacilityLabel(CatalogEntry.RequiredMinimumCount);
+	}
 	if (CatalogEntry.MaxInstancesPerWorld <= 0)
 	{
 		return LOCTEXT("FacilityBuildLimitUnlimited", "설치 제한 없음");
@@ -150,10 +155,33 @@ FText UFF_BuildFacilityCard::MakeRequiredFacilityToolTip(const bool bSatisfied,
 	{
 		return LOCTEXT("RequiredFacilityInvalidMinimum", "필수 시설 설정 확인 필요 · 최소 설치 개수는 1 이상이어야 합니다.");
 	}
-	return FText::Format(bSatisfied
-		? LOCTEXT("DayOneRequiredFacilitySatisfied", "1일차 필수 설치 완료 · 현재 {0}개 / 필요 최소 {1}개")
-		: LOCTEXT("DayOneRequiredFacilityMissing", "1일차 시작 전에 반드시 설치하세요 · 현재 {0}개 / 필요 최소 {1}개"),
-		FText::AsNumber(FMath::Max(0, CurrentCount)), FText::AsNumber(FMath::Max(1, MinimumCount)));
+	return FText::Format(LOCTEXT("DayOneRequiredFacilityInstall", "1일차 시작 전에 필수 시설 {0}개를 설치하세요."),
+		FText::AsNumber(MinimumCount));
+}
+
+FText UFF_BuildFacilityCard::MakeRequiredFacilityLabel(const int32 MinimumCount)
+{
+	return MinimumCount > 0
+		? FText::Format(LOCTEXT("RequiredInstallCount", "필수 · {0}개 설치"), FText::AsNumber(MinimumCount))
+		: LOCTEXT("RequiredInstall", "필수 설치");
+}
+
+FText UFF_BuildFacilityCard::MakeLightingToolTip()
+{
+	return LOCTEXT("LightingControlsGuide", "전구 표시가 있는 시설은 조명 색상과 밝기를 바꿀 수 있습니다.\n설치한 시설을 선택하고 ‘조명’ 탭을 여세요.");
+}
+
+FText UFF_BuildFacilityCard::MakeRequiredStaffToolTip(const int32 AssignedCount, const int32 RequiredCount)
+{
+	if (RequiredCount <= 0)
+	{
+		return FText::GetEmpty();
+	}
+	// 설치해도 자동 배정되지 않는다. 카드를 고르기 전에 다음 할 일(배정)을 알려 둔다.
+	return FText::Format(AssignedCount >= RequiredCount
+		? LOCTEXT("RequiredFacilityStaffSatisfied", "스태프 배정 완료 · 현재 {0}명 / 필요 최소 {1}명")
+		: LOCTEXT("RequiredFacilityStaffMissingWithTab", "설치 후 스태프 배정 필요 · 설치한 시설 선택 → 스태프 → + 배정 · 현재 {0}명 / 필요 최소 {1}명"),
+		FText::AsNumber(FMath::Max(0, AssignedCount)), FText::AsNumber(RequiredCount));
 }
 
 FText UFF_BuildFacilityCard::MakeProgramFacilityToolTip(const FFF_BuildCatalogEntry& CatalogEntry)
@@ -202,6 +230,17 @@ void UFF_BuildFacilityCard::ApplyRequiredFacilityStatus()
 	if (Border_RequiredSatisfied) { Border_RequiredSatisfied->SetVisibility(SatisfiedVisibility); }
 	if (Text_RequiredMissing) { Text_RequiredMissing->SetVisibility(MissingVisibility); }
 	if (Text_RequiredSatisfied) { Text_RequiredSatisfied->SetVisibility(SatisfiedVisibility); }
+	const FText Label = MakeRequiredFacilityLabel(RequiredFacilityMinimumCount);
+	if (Text_RequiredMissing) Text_RequiredMissing->SetText(Label);
+	if (Text_RequiredSatisfied) Text_RequiredSatisfied->SetText(Label);
+}
+
+int32 UFF_BuildFacilityCard::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
+	const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId,
+	const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+{
+	const int32 Layer = Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+	return Entry.bSupportsLighting ? FFBuildLightingBadge::Paint(AllottedGeometry, OutDrawElements, Layer) : Layer;
 }
 
 UTexture2D* UFF_BuildFacilityCard::ResolveLoadedThumbnail(
@@ -296,7 +335,7 @@ void UFF_BuildFacilityCard::RefreshFacilityCostTooltip()
 {
 	// The existing authored price tooltip has no requirement/program row.
 	// Keep price information alongside both catalog explanations in the text fallback.
-	if (bRequiredFacility || HasCompatiblePrograms())
+	if (bRequiredFacility || HasCompatiblePrograms() || Entry.bSupportsLighting)
 	{
 		ApplyFacilityCostTextFallback();
 		return;
@@ -359,10 +398,18 @@ void UFF_BuildFacilityCard::ApplyFacilityCostTextFallback()
 	const FText CostText = MakeFacilityCostToolTip(Entry);
 	FText Description = bRequiredFacility ? FText::Format(LOCTEXT("CostWithRequirement", "{0}\n{1}"), CostText,
 		MakeRequiredFacilityToolTip(bRequiredFacilitySatisfied, RequiredFacilityCurrentCount, RequiredFacilityMinimumCount)) : CostText;
+	if (bRequiredFacility && Entry.RequiredStaffCount > 0)
+	{
+		// 설치만으로 끝나지 않는 필수 시설은 배정 단계도 같은 툴팁에 적는다(Prep 타일과 같은 문구).
+		Description = FText::Format(LOCTEXT("CostWithStaffRequirement", "{0}\n{1}"), Description,
+			MakeRequiredStaffToolTip(Entry.RequiredAssignedStaffCount, Entry.RequiredStaffCount));
+	}
 	if (HasCompatiblePrograms())
 	{
 		Description = FText::Format(LOCTEXT("CostWithPrograms", "{0}\n{1}"), Description, MakeProgramFacilityToolTip(Entry));
 	}
+	if (Entry.bSupportsLighting)
+		Description = FText::Format(LOCTEXT("CostWithLighting", "{0}\n{1}"), Description, MakeLightingToolTip());
 	SetToolTipText(Description);
 }
 

@@ -14,6 +14,10 @@
 #include "Editor.h"
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Misc/Paths.h"
+#include "Misc/ScopeExit.h"
+#include "HAL/FileManager.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFAuroraColorPickerLifetimeTest,
     "FestaFiesta.UI.FacilityInfo.AuroraColorPickerLifetime",
@@ -29,7 +33,7 @@ bool FFFAuroraColorPickerLifetimeTest::RunTest(const FString&)
         {
             const TSharedRef<SWidget> Slate=Copy->TakeWidget();
             Copy->SetColor(FLinearColor::Red);
-            TestEqual(TEXT("A duplicated WBP leaf builds its own Slate control"),Slate->GetType(),FName(TEXT("SFFFacilityColorPicker")));
+            TestEqual(TEXT("A duplicated WBP leaf builds its own facility color wheel"),Slate->GetType(),FName(TEXT("SFFFacilityColorPicker")));
             Copy->ReleaseSlateResources(true);
         }
         TestFalse(TEXT("Leaf resources are released with their last external reference"),Copy->GetCachedWidget().IsValid());
@@ -142,6 +146,20 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFAuroraLightingPanelTest,
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 bool FFFAuroraLightingPanelTest::RunTest(const FString&)
 {
+    // Navigation regression uses an experienced player; never consume the real user's guide.
+    const FString PreviousProfile = GGameUserSettingsIni;
+    const FString TestProfile = FPaths::ConvertRelativePathToFull(FPaths::CreateTempFilename(
+        *FPaths::ProjectSavedDir(), TEXT("LightingNavigation"), TEXT(".ini")));
+    if (!TestNotNull(TEXT("Profile config"), GConfig)) return false;
+    GConfig->Add(TestProfile, FConfigFile());
+    GConfig->SetBool(TEXT("FestaFiesta.FacilityLighting"), TEXT("bHasSeenColorIntroduction"), true, TestProfile);
+    GGameUserSettingsIni = TestProfile;
+    ON_SCOPE_EXIT
+    {
+        GGameUserSettingsIni = PreviousProfile;
+        GConfig->UnloadFile(TestProfile);
+        IFileManager::Get().Delete(*TestProfile, false, true);
+    };
     UWorld* World=GEditor?GEditor->GetEditorWorldContext().World():nullptr;
     auto* Class=Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr,
         FFBuildUIAssetPaths::FacilityInfoPanelClass));
@@ -151,7 +169,7 @@ bool FFFAuroraLightingPanelTest::RunTest(const FString&)
     auto* Panel=CreateWidget<UFF_FacilityInfoPanel>(World,Class);
     Class->bCanCallInitializedWithoutPlayerContext=Previous;
     if(!TestNotNull(TEXT("Inspector"),Panel))return false;
-    Panel->TakeWidget();
+    const TSharedRef<SWidget> PanelSlate = Panel->TakeWidget();
     auto* Tab=Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_TabLighting")));
     auto* Fold=Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_LightingMinimize")));
     UWidget* Compact=Panel->GetWidgetFromName(TEXT("Panel_LightingCompact"));
@@ -162,15 +180,18 @@ bool FFFAuroraLightingPanelTest::RunTest(const FString&)
     FFF_FacilityInfoViewData View;
     View.FacilityInstanceId=FGuid::NewGuid(); View.Context=EFF_FacilityInfoContext::Live;
     View.bHasLightingRig=true; View.bCanEditLighting=true;
-    Panel->ApplyViewData(View); Panel->SetPanelOpen(true); Tab->OnClicked.Broadcast();
+    Panel->ApplyViewData(View); Panel->SetPanelOpen(true);
+    const float AuthoredWidth = Size->GetWidthOverride();
+    const float AuthoredHeight = Size->GetHeightOverride();
+    Tab->OnClicked.Broadcast();
     TestTrue(TEXT("Active lighting selection keeps enabled text contrast"),Tab->GetIsEnabled());
     const bool bClarityV2=Panel->GetWidgetFromName(TEXT("ClarityV2_Info"))!=nullptr;
     TestEqual(TEXT("Lighting uses authored compact width"),Size->GetWidthOverride(),bClarityV2?480.f:690.f);
     if(bClarityV2)
     {
-        TestEqual(TEXT("Lighting keeps the regular inspector height"),Size->GetHeightOverride(),620.f);
-        TestEqual(TEXT("Lighting gives its controls room without stacked navigation"),
-            Panel->GetWidgetFromName(TEXT("Panel_InspectorNavigation"))->GetVisibility(),ESlateVisibility::Collapsed);
+        TestEqual(TEXT("Lighting keeps the authored regular inspector height"),Size->GetHeightOverride(),AuthoredHeight);
+        TestEqual(TEXT("Lighting keeps direct navigation available until folded"),
+            Panel->GetWidgetFromName(TEXT("Panel_InspectorNavigation"))->GetVisibility(),ESlateVisibility::SelfHitTestInvisible);
     }
     Fold->OnClicked.Broadcast();
     TestEqual(TEXT("Observe folds detail controls"),Body->GetVisibility(),ESlateVisibility::Collapsed);
@@ -180,8 +201,7 @@ bool FFFAuroraLightingPanelTest::RunTest(const FString&)
     Panel->SetInfoPage(EFF_FacilityInfoPage::Operation);
     if(bClarityV2)TestEqual(TEXT("Leaving lighting restores direct section tabs"),
         Panel->GetWidgetFromName(TEXT("Panel_InspectorNavigation"))->GetVisibility(),ESlateVisibility::SelfHitTestInvisible);
-    TestEqual(TEXT("Leaving lighting restores regular inspector width"),Size->GetWidthOverride(),
-        Panel->GetWidgetFromName(TEXT("Clarity_InfoV1"))?456.f:592.f);
+    TestEqual(TEXT("Leaving lighting restores authored regular inspector width"),Size->GetWidthOverride(),AuthoredWidth);
     View.bHasLightingRig=false; View.bCanEditLighting=false; Panel->ApplyViewData(View);
     TestEqual(TEXT("Facilities without lights hide lighting tab"),Tab->GetVisibility(),ESlateVisibility::Collapsed);
     Panel->ReleaseSlateResources(true); return true;

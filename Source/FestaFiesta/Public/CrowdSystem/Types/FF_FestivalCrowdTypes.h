@@ -113,6 +113,10 @@ struct FUnitData
 
 	int32 UnstuckHoldSteps = 0;
 
+	int32 UnstuckCooldownSteps = 0;
+
+	int32 UnstuckAttemptCount = 0;
+
 	FVector FacingVelocity = FVector::ZeroVector;
 
 	bool bFacingFollowsVelocity = false;
@@ -155,6 +159,16 @@ struct FUnitData
 	
 	
 	
+};
+
+// BaseCrowd 가 소유하는 애니메이션 상태(보이는 모습만 정한다): Running=Simulation 배속, Holding=제자리 Idle, Dancing=제자리 춤, Stopped=정지
+UENUM(BlueprintType)
+enum class EFF_CrowdRunState : uint8
+{
+	Running,
+	Holding,
+	Dancing,
+	Stopped
 };
 
 /**
@@ -414,6 +428,12 @@ struct FPartyDecisionState
 	// 완료·폐쇄 취소)인데, 그 이벤트가 하나라도 유실되면 파티가 영원히 재평가되지 않는다.
 	// 그러면 화면에는 "이유 없이 굳은 NPC 무리"로만 보이고 로그에는 아무것도 안 남는다.
 	float QueueEnteredSimTime = 0.f;
+	// 줄에 들어갈 때의 공연 휴지 누적 시간. 탈출 타이머에서 쓰지 않고 기록만 한다.
+	float QueueBreakSecondsAtEnter = 0.f;
+	// 파티 전원이 배정 칸에 도착한 시각과 그때의 공연 휴지 누적 시간. 인내 판정의 기준이다 —
+	// 칸까지 걸어간 시간을 넣으면 먼 시설은 도착하자마자 인내를 넘겨 떠난다.
+	float QueueAtSlotSimTime = 0.f;
+	float QueueBreakSecondsAtSlot = 0.f;
 
 	// --- 예약 프로그램 -----------------------------------------------------------------
 	EFF_PartyProgramPhase ProgramPhase = EFF_PartyProgramPhase::None;

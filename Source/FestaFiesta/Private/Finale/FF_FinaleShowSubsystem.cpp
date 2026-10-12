@@ -2,6 +2,13 @@
 
 #include "Finale/FF_FinaleShowSubsystem.h"
 
+#include "Audio/FF_AudioEventLink.h"
+#include "Audio/FF_AudioSubsystem.h"
+#include "Camera/CameraComponent.h"
+#include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
+#include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
+#include "FF_FFZSTypes.h"
+#include "FF_FFZSWorldSubsystem.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Camera/FF_FinaleViewpoint.h"
 #include "Engine/GameInstance.h"
@@ -11,6 +18,8 @@
 #include "Camera/FF_FestivalGameMode.h"
 #include "Finale/FF_FinaleLaunchSite.h"
 #include "Finale/FF_FinaleSettings.h"
+#include "Finale/FF_FinaleShapeData.h"
+#include "Finale/FF_FinaleShellTracer.h"
 #include "GameFramework/GameModeBase.h"
 // GetPlayerViewPoint 를 직접 부른다. 컨트롤러 헤더가 끌고 오지만 명시해 둔다.
 #include "GameFramework/PlayerController.h"
@@ -19,6 +28,7 @@
 #include "NiagaraParameterStore.h"
 #include "NiagaraSystem.h"
 #include "DrawDebugHelpers.h"
+#include "EngineUtils.h"
 
 // 콘솔 명령의 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다(Debug/FF_DebugConsole.h).
 // 예전에는 이 파일에만 그 규칙이 있었고, 다른 모듈은 절반만 지켰다.
@@ -183,6 +193,35 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 			SkipCinematicCamera();
 		}));
 
+	DebugCommands.Add(
+		TEXT("FF.Finale.ResumeCamera"),
+		TEXT("끊었던 카메라 순회를 지금 막의 지금 자리에서 다시 잡는다."),
+		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+		{
+			ResumeCinematicCamera();
+		}));
+
+	/* 마지막 모양(태극기)만 지금 올린다. 마무리 막까지 70초 가까이 기다리지 않고 크기 · 색을 맞춰 보려고 둔다.
+
+	   이번 연출의 남은 발에서 가져가므로 그 연출은 발수가 줄어 일찍 끝난다. 다듬는 용도로만 쓴다.
+	*/
+	DebugCommands.Add(
+		TEXT("FF.Finale.FinalShape"),
+		TEXT("진행 중인 피날레에서 마지막 모양(태극기)을 지금 올린다. 사용법: FF.Finale.Play S 다음에 FF.Finale.FinalShape"),
+		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+		{
+			if (!bShowInProgress || !ActiveSpec.HasFinalShape() || bFinalShapeFired)
+			{
+				UE_LOG(LogFestaFiestaFinale, Warning,
+					TEXT("[피날레] 마지막 모양을 올릴 수 없다. 진행=%s 모양=%s 이미 올림=%s"),
+					bShowInProgress ? TEXT("예") : TEXT("아니오"),
+					ActiveSpec.HasFinalShape() ? TEXT("있음") : TEXT("없음"),
+					bFinalShapeFired ? TEXT("예") : TEXT("아니오"));
+				return;
+			}
+			FireFinalShape();
+		}));
+
 	/* 발사 위치를 월드에 그린다.
 
 	   바지선은 액터 하나에서 계산으로 펼쳐져 에디터 뷰포트에 따로 보이지 않는다.
@@ -216,6 +255,16 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 				TEXT("[피날레] 진행=%s 등급=%d 발사=%d/%d 경과=%.1fs"),
 				bShowInProgress ? TEXT("예") : TEXT("아니오"),
 				static_cast<int32>(ActiveGrade), FiredBursts, ActiveSpec.BurstCount, ElapsedSeconds);
+
+			// 쏘아 올리기 상태. 오르는 중인 발이 쌓이기만 하면 터뜨리는 쪽이 막힌 것이다.
+			const FFF_FinaleLaunchSpec Launch = bShowInProgress ? ActiveLaunch : ResolveLaunchSpec();
+			UE_LOG(LogFestaFiestaFinale, Display,
+				TEXT("  쏘아 올리기=%s 올린 발=%d 오르는 중=%d 상승 %.1f~%.1f초(기준 %.0fm %.1f초) 꼬리=%s 빛=%s"),
+				Launch.IsEnabled() ? TEXT("켬") : TEXT("끔"), LaunchedShells, InFlightBurstCount,
+				Launch.ResolveRiseSeconds(ActiveSpec.BurstHeightMin), Launch.ResolveRiseSeconds(ActiveSpec.BurstHeightMax),
+				Launch.ReferenceHeightCm / 100.f, Launch.ReferenceRiseSeconds,
+				(Launch.TrailMesh.IsNull() || Launch.TrailMaterial.IsNull()) ? TEXT("없음") : TEXT("있음"),
+				Launch.GlowMaterial.IsNull() ? TEXT("없음") : TEXT("있음"));
 
 			// 등급별 수치를 같이 찍는다. 데이터 애셋을 고치고 나서 반영됐는지 바로 확인할 수 있다.
 			for (const EFF_FinaleGrade Grade : FFF_FinaleGrades::GetAscendingOrder())
@@ -257,6 +306,20 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 				bActMode ? TEXT("예") : TEXT("아니오"),
 				*UEnum::GetDisplayValueAsText(CurrentAct).ToString(),
 				ActOneQuota, FiringClock);
+
+			if (SongPlan.IsValid())
+			{
+				UE_LOG(LogFestaFiestaFinale, Display,
+					TEXT("  곡 맞춤: 곡 %.1fs / 지금 %.1fs / 순회 %.1fs / 마무리 %.1fs / 마지막 모양 %.1fs / 일제 발사 %.1fs"),
+					SongPlan.SongSeconds, ElapsedSeconds, SongPlan.SiteTourAt, SongPlan.GrandFinaleAt,
+					SongPlan.FinalShapeAt, SongPlan.SalvoAt);
+			}
+
+			UE_LOG(LogFestaFiestaFinale, Display,
+				TEXT("  마지막 모양=%s %d발 / 올림=%s"),
+				ActiveSpec.HasFinalShape() ? TEXT("있음") : TEXT("없음"),
+				ActiveSpec.HasFinalShape() ? ActiveSpec.FinalShape.ShellCount : 0,
+				bFinalShapeFired ? TEXT("예") : TEXT("아니오"));
 		}));
 }
 
@@ -363,7 +426,11 @@ bool UFF_FinaleShowSubsystem::StartShowWithGrade(const EFF_FinaleGrade Grade)
 	bShowInProgress = true;
 	ElapsedSeconds = 0.f;
 	FiredBursts = 0;
+	LaunchedShells = 0;
 	PendingShells.Reset();
+	InFlightShells.Reset();
+	InFlightBurstCount = 0;
+	ActiveLaunch = ResolveLaunchSpec();
 	bWarnedHighShellCount = false;
 	FiredVolleys = 0;
 	ColorCursor = 0;
@@ -371,6 +438,8 @@ bool UFF_FinaleShowSubsystem::StartShowWithGrade(const EFF_FinaleGrade Grade)
 	bWarnedMissingEffect = false;
 	bWarnedDeadline = false;
 	FiringClock = 0.f;
+	bFinalShapeFired = false;
+	FinalShapeBloomEndAt = -1.f;
 
 	// 연출을 새로 시작하면 검사도 다시 한다. 데이터 애셋을 고치고 재생했을 때
 	// 바뀐 이펙트를 그대로 통과시키면 안 된다.
@@ -379,7 +448,13 @@ bool UFF_FinaleShowSubsystem::StartShowWithGrade(const EFF_FinaleGrade Grade)
 	// 첫 발은 바로 쏜다. 간격만큼 기다리면 시점 전환 뒤 정적이 생긴다.
 	NextVolleyAt = 0.f;
 
+	// 레벨에 발사 지점·시점이 없으면 데이터의 기본 배치를 세운다. 순회 목록을 만들기 전에 해야 잡힌다.
+	EnsureFallbackLayout();
+
 	BuildTour();
+
+	// 곡에 맞추는 등급이면 막과 순회 시간을 안 뒤에 시간표를 세운다. 지속 시간도 곡 길이로 바뀐다.
+	PrepareSongPlan();
 
 	// 1막 몫. 3막이 아니면 마무리 몫이 0 이라 전부가 된다.
 	ActOneQuota = ActiveSpec.BurstCount - (bActMode ? ActiveSpec.GetGrandFinaleReserve() : 0);
@@ -416,7 +491,17 @@ void UFF_FinaleShowSubsystem::StopShow()
 	bShowInProgress = false;
 
 	// 예약된 발사는 버린다. 연출이 끝난 뒤에 뒤늦게 터지면 이상하다.
+	// 오르던 발도 같다. 꼬리는 바로 지운다.
 	PendingShells.Reset();
+	for (const FInFlightShell& Shell : InFlightShells)
+	{
+		if (AFF_FinaleShellTracer* Tracer = Shell.Tracer.Get())
+		{
+			Tracer->Discard();
+		}
+	}
+	InFlightShells.Reset();
+	InFlightBurstCount = 0;
 
 	/* 순회 목록도 비운다.
 
@@ -425,6 +510,8 @@ void UFF_FinaleShowSubsystem::StopShow()
 	*/
 	TourViewpoints.Reset();
 	TourActs.Reset();
+	TourHoldOverrides.Reset();
+	SongPlan = FFF_FinaleSongPlan();
 	TourIndex = 0;
 	TourHeldSeconds = 0.f;
 	bActMode = false;
@@ -481,7 +568,7 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 		{
 			return;
 		}
-		SpawnShell(Due.Location, Due.Color, Due.Effect.Get(), Due.SizeScale);
+		LaunchShell(Due.Origin, Due.Location, Due.Color, Due.Effect.Get(), Due.SizeScale, Due.RiseSeconds);
 	}
 
 	if (!bShowInProgress)
@@ -489,20 +576,37 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 		return;
 	}
 
+	// 오르던 발을 옮기고 다 오른 발을 터뜨린다. 터지는 신호를 받은 쪽이 연출을 멈출 수 있다.
+	if (!TickInFlightShells(DeltaTime))
+	{
+		return;
+	}
+
 	/* 카메라 순회. 자리마다 정한 시간만큼 머물고 다음으로 넘어간다.
 
-	   스킵했으면 더 움직이지 않는다. 플레이어가 끊은 뒤에 다시 끌고 가면
-	   끊은 의미가 없다. 카메라를 넘겨받지 않는 연출이면 처음부터 돌지 않는다 —
-	   안 그러면 플레이어가 보던 시점을 순회가 빼앗아 간다.
+	   카메라를 놓아 줬어도(SkipCinematicCamera · Tab) 막은 시간대로 넘어간다. 화면에 다시 걸지만 않는다.
+	   플레이어가 끊은 뒤에 다시 끌고 가면 끊은 의미가 없고, 막이 멈추면 곡에 맞춘 마무리가 안 온다.
+	   카메라를 넘겨받지 않는 연출이면 처음부터 돌지 않는다 — 안 그러면 플레이어가 보던 시점을
+	   순회가 빼앗아 간다.
 	*/
-	if (bTakeOverCamera && !bTourSkipped && TourViewpoints.Num() > 1)
+	if (bTakeOverCamera && TourViewpoints.Num() > 1)
 	{
 		TourHeldSeconds += DeltaTime;
 
 		const AFF_FinaleViewpoint* Current = TourViewpoints.IsValidIndex(TourIndex)
 			? TourViewpoints[TourIndex].Get()
 			: nullptr;
-		const float Hold = Current ? FMath::Max(0.5f, Current->TourHoldSeconds) : 6.f;
+
+		// 축제장 순회 카메라는 머무는 동안 경로를 따라 날아간다. 카메라를 놓아 줬으면 움직일 까닭이 없다.
+		if (!bTourSkipped && Current && Current == SiteTourCamera)
+		{
+			UpdateSiteTourCamera(TourHeldSeconds, false);
+		}
+
+		// 곡에 맞출 때는 시간표가 정한 만큼 머문다(PrepareSongPlan).
+		const float Hold = TourHoldOverrides.IsValidIndex(TourIndex)
+			? TourHoldOverrides[TourIndex]
+			: (Current ? FMath::Max(0.5f, Current->TourHoldSeconds) : 6.f);
 
 		// 3막의 마지막 자리(마무리)에서는 넘어가지 않고 끝까지 머문다.
 		const bool bAtFinalSeat = bActMode && TourIndex >= TourViewpoints.Num() - 1;
@@ -547,7 +651,7 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 
 	if (!bPastDeadline && GetRemainingShells() > 0)
 	{
-		// 막이 발사를 막고 있다(축제장 순회 중이거나 1막 몫을 다 쐈다). 남은 발이 있으니 끝내지 않는다.
+		// 막이 발사를 막고 있다(마무리 막 전에 1막 몫을 다 쐈다). 남은 발이 있으니 끝내지 않는다.
 		if (!bGateOpen)
 		{
 			return;
@@ -555,15 +659,54 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 
 		/* 마무리 막의 마지막 한 방.
 
-		   예약된 발이 다 터진 뒤에 쏜다. 일렬 패턴이 아직 날아가는 중에 일제 발사가
+		   예약된 발이 다 나간 뒤에 쏜다. 일렬 패턴이 아직 날아가는 중에 일제 발사가
 		   겹치면 마지막이 어수선하다. 간격도 지킨다. 바로 앞 차례와 붙어 나가면 한 방으로 안 보인다.
+		   오르는 중인 발은 기다리지 않는다. 일제 발사도 오르는 데 몇 초 걸리므로, 앞서 오른 발이
+		   다 터지기를 기다리면 하늘이 비었다가 터진다. 실제 마무리도 앞 발이 터지는 사이에 올린다.
 		*/
-		const bool bFinalSalvoDue = bActMode
-			&& CurrentAct == EFF_FinaleTourAct::GrandFinale
-			&& ActiveSpec.FinalSalvoShells > 0
-			&& GetRemainingShells() <= ActiveSpec.FinalSalvoShells
+		const bool bClosingAct = bActMode && CurrentAct == EFF_FinaleTourAct::GrandFinale;
+		const bool bSalvoInPlay = bClosingAct && ActiveSpec.FinalSalvoShells > 0;
+		const int32 SalvoReserve = bSalvoInPlay ? ActiveSpec.FinalSalvoShells : 0;
+		const int32 ShapeReserve = GetFinalShapeReserve();
+
+		/* 곡에 맞출 때는 시간표의 시각에 쏜다(FFF_FinaleSongPlan 주석). 그때 남은 발을 전부 올린다 —
+		   곡이 끝나 가는데 발이 덜 나갔다고 기다리면 마지막이 곡보다 늦게 터진다.
+		*/
+		const bool bSongTimedSalvo = SongPlan.HasActs();
+
+		/* 마지막 모양(태극기)이 일제 발사보다 먼저다. 곡에 맞출 때는 시간표의 시각에, 아니면 남은 발이
+		   일제 발사 몫 + 모양 몫까지 내려오고 예약된 발이 다 나간 뒤에 올린다.
+		*/
+		if (bClosingAct && ShapeReserve > 0)
+		{
+			const bool bShapeDue = SongPlan.HasFinalShape()
+				? ElapsedSeconds >= SongPlan.FinalShapeAt
+				: PendingShells.Num() == 0
+					&& GetRemainingShells() <= SalvoReserve + ShapeReserve
+					&& FiringClock >= NextVolleyAt;
+			if (bShapeDue)
+			{
+				FireFinalShape();
+				return;
+			}
+		}
+
+		/* 마지막 모양을 올렸으면 다 피고 FinalShapeLeadSeconds 가 지나서 일제 발사의 첫 발이 터지게 늦춘다.
+		   곡에 맞출 때는 시간표가 이미 그렇게 짰다(FFF_FinaleSongPlan::PlaceFinalShape).
+		*/
+		const float SalvoFirstRise = ActiveLaunch.IsEnabled()
+			? ActiveLaunch.ResolveRiseSeconds(FMath::Min(ActiveSpec.BurstHeightMin, ActiveSpec.BurstHeightMax))
+			: 0.f;
+		const bool bShapeCleared = ShapeReserve == 0
+			&& (bSongTimedSalvo || !bFinalShapeFired
+				|| ElapsedSeconds + SalvoFirstRise >= FinalShapeBloomEndAt + ActiveSpec.FinalShapeLeadSeconds);
+
+		const bool bFinalSalvoDue = bSalvoInPlay
 			&& PendingShells.Num() == 0
-			&& FiringClock >= NextVolleyAt;
+			&& bShapeCleared
+			&& (bSongTimedSalvo
+				? ElapsedSeconds >= SongPlan.SalvoAt
+				: GetRemainingShells() <= ActiveSpec.FinalSalvoShells && FiringClock >= NextVolleyAt);
 
 		if (bFinalSalvoDue)
 		{
@@ -571,7 +714,23 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 			return;
 		}
 
-		const float Interval = ActiveSpec.GetIntervalSeconds() * GetActIntervalScale();
+		/* 마무리 몫(일제 발사 · 마지막 모양)만 남았으면 그 시각을 기다린다. 일반 차례가 그 몫을 쓰면
+		   일제 발사가 줄거나 모양이 성기게 솎인다. 곡에 맞추지 않고 마지막 모양도 없는 등급은 예전처럼
+		   기다리지 않는다(남은 발이 일제 발사 몫 이하로 내려오면 곧 쏜다).
+		*/
+		const int32 ClosingReserve = SalvoReserve + ShapeReserve;
+		const bool bHoldForClosing = bClosingAct
+			&& ClosingReserve > 0
+			&& GetRemainingShells() <= ClosingReserve
+			&& (bSongTimedSalvo || ActiveSpec.HasFinalShape());
+		if (bHoldForClosing)
+		{
+			return;
+		}
+
+		const float Interval = SongPlan.IsValid()
+			? ResolveSongVolleyInterval()
+			: ActiveSpec.GetIntervalSeconds() * GetActIntervalScale();
 
 		// 프레임이 크게 밀렸을 때 밀린 만큼 한꺼번에 쏘면 하늘이 갑자기 꽉 찬다.
 		// 한 프레임에 최대 두 차례까지만 따라잡는다.
@@ -604,8 +763,9 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 		return;
 	}
 
-	// 지연 발사가 남아 있으면 기다린다. 여운을 먼저 세면 줄지어 나가던 마지막 발들이 잘린다.
-	if (PendingShells.Num() > 0 && !bPastDeadline)
+	// 지연 발사나 오르는 발이 남아 있으면 기다린다. 여운을 먼저 세면 마지막 발들이 잘린다.
+	// 오르는 발은 상한을 넘겨도 기다린다. 이미 하늘에 떠 있는 알이 안 터지고 사라지면 이상하다.
+	if ((PendingShells.Num() > 0 && !bPastDeadline) || InFlightShells.Num() > 0)
 	{
 		return;
 	}
@@ -797,9 +957,21 @@ void UFF_FinaleShowSubsystem::BuildTour()
 	/* 3막은 카메라를 넘겨받을 때만 선다.
 
 	   막을 넘기는 건 카메라가 머문 시간이다. 카메라를 안 넘겨받으면 축제장 순회가
-	   화면에 안 나오는데 발사만 멈춰서, 플레이어는 이유 없이 빈 하늘을 보게 된다.
+	   화면에 안 나오므로 막을 나눌 까닭이 없다. 처음부터 하늘 시점으로만 돈다.
 	*/
 	const bool bWantActs = ActiveSpec.bSiteTour && bTakeOverCamera;
+
+	/* 축제장 순회는 플레이어가 지은 시설을 따라 날아가는 카메라가 먼저다(FFF_FinaleSiteTourSpec).
+
+	   입구도 시설도 없을 때만 레벨·데이터에 놓인 고정 순회 자리로 물러난다.
+	*/
+	const bool bFollowFacilities = bWantActs && SkySeats.Num() > 0 && PrepareSiteTour();
+	if (bFollowFacilities)
+	{
+		SiteSeats.Reset();
+		SiteSeats.Add(SiteTourCamera.Get());
+	}
+
 	if (bWantActs && SkySeats.Num() > 0 && SiteSeats.Num() > 0)
 	{
 		for (AFF_FinaleViewpoint* Seat : SkySeats)
@@ -826,8 +998,13 @@ void UFF_FinaleShowSubsystem::BuildTour()
 
 		bActMode = true;
 		UE_LOG(LogFestaFiestaFinale, Log,
-			TEXT("[피날레] 3막으로 진행한다. 불꽃 관람 %d / 축제장 순회 %d / 마무리 %d"),
-			SkySeats.Num(), SiteSeats.Num(), FinaleSeats.Num());
+			TEXT("[피날레] 3막으로 진행한다. 불꽃 관람 %d / 축제장 순회 %s / 마무리 %d"),
+			SkySeats.Num(),
+			*(bFollowFacilities
+				? FString::Printf(TEXT("시설 따라 %d곳 %.0fm %.1f초"),
+					SiteTourRoute.Stops.Num() - 1, SiteTourRoute.GetLength() / 100.f, SiteTourSeconds)
+				: FString::Printf(TEXT("고정 자리 %d"), SiteSeats.Num())),
+			FinaleSeats.Num());
 		return;
 	}
 
@@ -911,10 +1088,13 @@ void UFF_FinaleShowSubsystem::AdvanceTour()
 	TourHeldSeconds = 0.f;
 
 	// 다음 자리가 정한 전환 시간을 쓴다. 자리마다 컷으로 자를지 흐르게 할지 다르다.
-	const AFF_FinaleViewpoint* Next = TourViewpoints[TourIndex].Get();
-	const float Blend = Next ? Next->TourBlendSeconds : CameraBlendSeconds;
-
-	ApplyTourViewpoint(Blend);
+	// 카메라를 놓아 줬으면 막만 넘기고 화면은 다시 잡지 않는다.
+	if (!bTourSkipped)
+	{
+		const AFF_FinaleViewpoint* Next = TourViewpoints[TourIndex].Get();
+		const float Blend = Next ? Next->TourBlendSeconds : CameraBlendSeconds;
+		ApplyTourViewpoint(Blend);
+	}
 
 	if (bActMode && TourActs.IsValidIndex(TourIndex))
 	{
@@ -950,13 +1130,16 @@ bool UFF_FinaleShowSubsystem::IsFiringGateOpen() const
 
 	switch (CurrentAct)
 	{
-	case EFF_FinaleTourAct::SiteTour:
-		// 축제장을 보는 동안 하늘에서 터져봐야 화면에 없다. 그 발은 마무리에 쓴다.
-		return false;
+	/* 축제장을 순회하는 동안에도 쏜다(2026-10-06 피드백).
 
+	   예전에는 순회 동안 발사를 멈추고 그 발을 마무리에 몰았다. 카메라가 축제장을 비추는 동안 하늘이
+	   조용해지고, 카메라를 놓아 1인칭으로 하늘을 보는 사람에게는 불꽃놀이가 끊긴 것처럼 보였다.
+	   순회 막도 1막 몫에서 쏜다. 나머지는 그대로 마무리 몫이다.
+	*/
+	case EFF_FinaleTourAct::SiteTour:
 	case EFF_FinaleTourAct::Fireworks:
-		// 예약된 발까지 센다. 빼먹으면 일렬 패턴이 날아가는 동안 몫을 넘겨 또 쏜다.
-		return FiredBursts + PendingShells.Num() < ActOneQuota;
+		// 예약된 발과 오르는 발까지 센다. 빼먹으면 날아가는 동안 몫을 넘겨 또 쏜다.
+		return FiredBursts + PendingShells.Num() + InFlightBurstCount < ActOneQuota;
 
 	default:
 		return true;
@@ -996,7 +1179,8 @@ void UFF_FinaleShowSubsystem::FireFinalSalvo()
 		const FVector& Origin = Points[Shell % Points.Num()];
 		const FVector Location = PickBurstLocation(Origin);
 
-		SpawnShell(Location, PickColor(ColorCursor++),
+		// 높이마다 상승 시간이 달라 한꺼번에 올라가도 차례로 터진다. 실제 일제 발사도 그렇다.
+		LaunchShell(Origin, Location, PickColor(ColorCursor++),
 			ActiveSpec.PickEffect(ShowRandom.GetUnsignedInt()),
 			ActiveSpec.ResolveCaliberScale(Location.Z - Origin.Z));
 
@@ -1010,32 +1194,158 @@ void UFF_FinaleShowSubsystem::FireFinalSalvo()
 	++FiredVolleys;
 }
 
-void UFF_FinaleShowSubsystem::SkipCinematicCamera()
+int32 UFF_FinaleShowSubsystem::GetClosingReserve() const
 {
-	if (bTourSkipped || TourViewpoints.Num() <= 1)
+	// 1막 · 순회 막은 몫(ActOneQuota)이 따로 지킨다. 마무리 막에서만 센다.
+	if (!bActMode || CurrentAct != EFF_FinaleTourAct::GrandFinale)
+	{
+		return 0;
+	}
+	return FMath::Max(0, ActiveSpec.FinalSalvoShells) + GetFinalShapeReserve();
+}
+
+int32 UFF_FinaleShowSubsystem::GetFinalShapeReserve() const
+{
+	// 3막이 아니면 마무리 막이 없어 올릴 때가 오지 않는다. 떼어 두면 그 발이 끝까지 안 나간다.
+	return (bActMode && !bFinalShapeFired && ActiveSpec.HasFinalShape())
+		? FMath::Max(0, ActiveSpec.FinalShape.ShellCount)
+		: 0;
+}
+
+float UFF_FinaleShowSubsystem::ResolveFinalShapeRiseSeconds() const
+{
+	// 모양 가운데의 높이로 낸다. 모든 발이 같은 시간 동안 올라야 점 순서대로 핀다(FireVolley 의 모양 패턴과 같다).
+	return ActiveLaunch.IsEnabled() ? ActiveLaunch.ResolveRiseSeconds(ActiveSpec.GetFinalShapeHeight()) : 0.f;
+}
+
+void UFF_FinaleShowSubsystem::FireFinalShape()
+{
+	if (bFinalShapeFired || !ActiveSpec.HasFinalShape())
+	{
+		return;
+	}
+	bFinalShapeFired = true;
+
+	// 복사로 든다. 쏘면 OnBurst 가 울리고, 받는 쪽이 연출을 멈추거나 다시 틀면 ActiveSpec 이 바뀐다(FireVolley 와 같다).
+	const FFF_FinaleVolley Shape = ActiveSpec.FinalShape;
+	const int32 Count = FMath::Min(Shape.ShellCount, GetRemainingShells());
+	if (Count <= 0)
 	{
 		return;
 	}
 
-	bTourSkipped = true;
+	TArray<FVector> Points;
+	CollectLaunchPoints(Points);
 
-	/* 3막이면 곧장 마무리 막으로 넘긴다.
+	/* 발사 위치들의 가운데 위에 세운다. 흩뿌리지 않는다.
 
-	   막을 넘기는 건 카메라가 머문 시간인데, 끊으면 카메라가 더 움직이지 않는다.
-	   축제장 순회 중에 끊으면 발사가 닫힌 채로 남아 연출이 끝나지 않는다.
+	   수백 m 짜리 모양을 흩뿌림 반경 안에서 아무 데나 세우면 화면 밖으로 밀린다. 연출 시점은 발사 위치들을
+	   보도록 놓이므로 그 가운데가 가장 잘 보인다.
 	*/
-	if (bActMode)
+	FVector Base = FVector::ZeroVector;
+	for (const FVector& Point : Points)
 	{
-		TourIndex = TourViewpoints.Num() - 1;
-		SetCurrentAct(EFF_FinaleTourAct::GrandFinale);
+		Base += Point;
+	}
+	Base /= static_cast<float>(Points.Num());
 
+	FFF_FinaleLayoutContext Layout;
+	Layout.Center = Base + FVector(0.f, 0.f, ActiveSpec.GetFinalShapeHeight());
+	Layout.FacingDirection = ResolveAudienceDirection(Layout.Center);
+	Layout.ShellCount = Count;
+
+	TArray<FVector> Locations;
+	TArray<FLinearColor> Colors;
+	Shape.BuildShellLayout(Layout, Locations, &Colors);
+
+	if (Locations.Num() == 0)
+	{
+		// 모양 애셋이 비었거나 깨졌다(BuildShellLayout 이 이미 알렸다). 떼어 둔 발은 일제 발사가 가져간다.
+		return;
+	}
+
+	const float Rise = ResolveFinalShapeRiseSeconds();
+	const float Delay = FMath::Max(0.f, Shape.ShellDelaySeconds);
+	FinalShapeBloomEndAt = ElapsedSeconds + Rise + Delay * static_cast<float>(Locations.Num() - 1);
+
+	// 점마다 색이 없는 모양이면 한 색으로, 이펙트도 하나로 맞춘다(FireVolley 의 모양 패턴과 같다).
+	const FLinearColor UniformColor = PickColor(ColorCursor++);
+	UNiagaraSystem* Effect = ActiveSpec.PickEffect(ShowRandom.GetUnsignedInt());
+	const float SizeScale = FMath::Max(0.05f, Shape.SizeMultiplier);
+
+	const UFF_FinaleShapeData* ShapeData = Shape.Shape.Get();
+	UE_LOG(LogFestaFiestaFinale, Log,
+		TEXT("[피날레] 마지막 모양 %s %d발 (발사 위치 %d곳, 높이 %.0fm, %.1f초 올라 %.1f초 동안 핀다)"),
+		ShapeData ? *ShapeData->DisplayName.ToString() : TEXT("?"), Locations.Num(), Points.Num(),
+		ActiveSpec.GetFinalShapeHeight() / 100.f, Rise, Delay * static_cast<float>(Locations.Num() - 1));
+
+	for (int32 Shell = 0; Shell < Locations.Num(); ++Shell)
+	{
+		const FVector& Location = Locations[Shell];
+		const FLinearColor& Color = Colors.IsValidIndex(Shell) ? Colors[Shell] : UniformColor;
+
+		// 발마다 가장 가까운 발사 위치에서 올린다(선언부 주석).
+		int32 Nearest = 0;
+		float NearestDistance = TNumericLimits<float>::Max();
+		for (int32 Index = 0; Index < Points.Num(); ++Index)
+		{
+			const float Distance = FVector::DistSquared2D(Points[Index], Location);
+			if (Distance < NearestDistance)
+			{
+				NearestDistance = Distance;
+				Nearest = Index;
+			}
+		}
+		const FVector& ShellOrigin = Points[Nearest];
+		const float Fuse = Delay * static_cast<float>(Shell);
+
+		// 도화선으로 차례 터뜨리기: 다 같이 올라가되 뒤 발일수록 오래 올라 늦게 터진다(FireVolley 와 같다).
+		if (Shape.bStaggerByFuse && Fuse > 0.f && Rise > 0.f)
+		{
+			LaunchShell(ShellOrigin, Location, Color, Effect, SizeScale, Rise + Fuse);
+		}
+		else if (Fuse > 0.f)
+		{
+			FPendingShell& Pending = PendingShells.AddDefaulted_GetRef();
+			Pending.Location = Location;
+			Pending.Origin = ShellOrigin;
+			Pending.RiseSeconds = Rise;
+			Pending.Color = Color;
+			Pending.DelayRemaining = Fuse;
+			Pending.Effect = Effect;
+			Pending.SizeScale = SizeScale;
+			continue;
+		}
+		else
+		{
+			LaunchShell(ShellOrigin, Location, Color, Effect, SizeScale, Rise);
+		}
+
+		// OnBurst 를 받은 쪽이 연출을 멈췄다. 남은 발을 쏘지 않는다.
 		if (!bShowInProgress)
 		{
 			return;
 		}
 	}
 
-	// 카메라만 놓아준다. 연출은 그대로 둔다.
+	++FiredVolleys;
+}
+
+void UFF_FinaleShowSubsystem::SkipCinematicCamera()
+{
+	if (bTourSkipped || !bShowInProgress)
+	{
+		return;
+	}
+
+	bTourSkipped = true;
+
+	/* 카메라만 놓아준다. 연출은 그대로 둔다. 시점이 한 자리뿐인 연출도 카메라를 쥐고 있으므로 같이 놓아준다.
+
+	   막은 시간대로 계속 넘어간다(Tick). 예전에는 끊으면 곧장 마무리 막으로 넘겼다 — 순회 동안 발사를
+	   멈췄기 때문에 막이 안 넘어가면 연출이 끝나지 않았다. 지금은 순회 중에도 쏘므로 넘길 까닭이 없고,
+	   넘기면 곡에 맞춘 연출이 몇십 초 일찍 몰아쳐 끝난다(2026-10-06 Tab 1인칭 피드백).
+	*/
 	if (AFF_FestivalPlayerController* Controller = GetFestivalController())
 	{
 		if (Controller->IsInScriptedView())
@@ -1045,6 +1355,166 @@ void UFF_FinaleShowSubsystem::SkipCinematicCamera()
 	}
 
 	UE_LOG(LogFestaFiestaFinale, Log, TEXT("[피날레] 카메라 순회를 끊었다. 불꽃은 계속된다."));
+}
+
+void UFF_FinaleShowSubsystem::ResumeCinematicCamera()
+{
+	if (!CanResumeCinematicCamera())
+	{
+		return;
+	}
+
+	bTourSkipped = false;
+
+	/* 놓아 둔 동안 순회 카메라는 경로를 따라 날지 않았다(Tick). 지금 시각의 자리로 먼저 옮겨 놓고 잡는다.
+	   안 옮기면 놓았던 자리에서 시작해 다음 틱에 한 번에 튄다.
+	*/
+	const AFF_FinaleViewpoint* Current = TourViewpoints.IsValidIndex(TourIndex) ? TourViewpoints[TourIndex].Get() : nullptr;
+	if (Current && Current == SiteTourCamera)
+	{
+		UpdateSiteTourCamera(TourHeldSeconds, true);
+	}
+
+	ApplyTourViewpoint(CameraBlendSeconds);
+
+	// 잡을 자리가 없으면(시점이 사라진 레벨) 놓아 둔 상태로 되돌린다. 안 그러면 다음 Tab 이 기본 카메라로 간다.
+	const AFF_FestivalPlayerController* Controller = GetFestivalController();
+	if (!Controller || !Controller->IsInScriptedView())
+	{
+		bTourSkipped = true;
+		UE_LOG(LogFestaFiestaFinale, Warning, TEXT("[피날레] 다시 잡을 연출 시점이 없어 카메라를 놓아 둔 채로 둔다."));
+		return;
+	}
+
+	UE_LOG(LogFestaFiestaFinale, Log, TEXT("[피날레] 카메라 순회를 다시 잡았다. 지금 막=%s"),
+		*UEnum::GetDisplayValueAsText(CurrentAct).ToString());
+}
+
+float UFF_FinaleShowSubsystem::ResolveShowSongSeconds() const
+{
+	const UWorld* World = GetWorld();
+	const UFF_AudioSubsystem* Audio = World ? World->GetSubsystem<UFF_AudioSubsystem>() : nullptr;
+	if (!Audio)
+	{
+		return 0.f;
+	}
+
+	// 어느 곡을 틀지는 오디오 결선이 정한다. 같은 규칙으로 골라야 트는 곡과 길이가 어긋나지 않는다.
+	const EFF_AudioAmbience Song = UFF_AudioEventLink::ResolveShowAmbience(
+		ActiveGrade, Audio->HasAmbienceTrack(EFF_AudioAmbience::FinaleEnding));
+	return Audio->GetAmbienceTrackLength(Song);
+}
+
+void UFF_FinaleShowSubsystem::PrepareSongPlan()
+{
+	SongPlan = FFF_FinaleSongPlan();
+	TourHoldOverrides.Reset();
+
+	if (!ActiveSpec.bMatchSongLength)
+	{
+		return;
+	}
+
+	const float SongSeconds = ResolveShowSongSeconds();
+	if (SongSeconds <= 0.f)
+	{
+		UE_LOG(LogFestaFiestaFinale, Warning,
+			TEXT("[피날레] 곡 길이에 맞추도록 했지만 이 등급의 피날레 곡을 못 읽었다. 지속 시간 %.1f초로 돈다. ")
+			TEXT("오디오 뱅크의 피날레 곡 칸을 볼 것."),
+			ActiveSpec.DurationSeconds);
+		return;
+	}
+
+	// 막마다 자리 수와 순회 막 시간. 순회 막은 그 자리들이 머무는 시간의 합이다(따라 나는 카메라면 날아 들어옴 + 순회).
+	int32 SkySeats = 0;
+	int32 FinaleSeats = 0;
+	float SiteActSeconds = 0.f;
+	auto ActOf = [this](const int32 Index)
+	{
+		return TourActs.IsValidIndex(Index) ? TourActs[Index] : EFF_FinaleTourAct::Fireworks;
+	};
+	auto HoldOf = [this](const int32 Index)
+	{
+		const AFF_FinaleViewpoint* Seat = TourViewpoints.IsValidIndex(Index) ? TourViewpoints[Index].Get() : nullptr;
+		return Seat ? FMath::Max(0.5f, Seat->TourHoldSeconds) : 0.5f;
+	};
+	if (bActMode)
+	{
+		for (int32 Index = 0; Index < TourViewpoints.Num(); ++Index)
+		{
+			switch (ActOf(Index))
+			{
+			case EFF_FinaleTourAct::SiteTour:    SiteActSeconds += HoldOf(Index); break;
+			case EFF_FinaleTourAct::GrandFinale: ++FinaleSeats;                   break;
+			default:                             ++SkySeats;                      break;
+			}
+		}
+	}
+
+	// 가장 높은 발이 오르는 시간. 바지선에서 쏘지 않으면 제자리에서 터져 0 이다.
+	const float MaxRise = ActiveLaunch.IsEnabled()
+		? ActiveLaunch.ResolveRiseSeconds(FMath::Max(ActiveSpec.BurstHeightMin, ActiveSpec.BurstHeightMax))
+		: 0.f;
+
+	SongPlan = FFF_FinaleSongPlan::Make(SongSeconds, ActiveSpec.SongSiteTourAt, SiteActSeconds, MaxRise, TailSeconds);
+	ActiveSpec.DurationSeconds = SongSeconds;
+
+	// 마지막 모양(태극기)은 일제 발사의 첫 발에서 거꾸로 세어 자리를 잡는다.
+	if (bActMode && ActiveSpec.HasFinalShape())
+	{
+		const float SalvoFirstRise = ActiveLaunch.IsEnabled()
+			? ActiveLaunch.ResolveRiseSeconds(FMath::Min(ActiveSpec.BurstHeightMin, ActiveSpec.BurstHeightMax))
+			: 0.f;
+		SongPlan.PlaceFinalShape(ResolveFinalShapeRiseSeconds(), ActiveSpec.GetFinalShapeBloomSeconds(),
+			SalvoFirstRise, MaxRise, ActiveSpec.FinalShapeLeadSeconds);
+	}
+
+	// 자리마다 머무는 시간을 시간표에 맞춘다. 불꽃 관람 자리는 순회 전까지를 나눠 갖고, 마무리 자리는 곡 끝까지다.
+	if (SongPlan.HasActs() && SkySeats > 0)
+	{
+		TourHoldOverrides.Reserve(TourViewpoints.Num());
+		for (int32 Index = 0; Index < TourViewpoints.Num(); ++Index)
+		{
+			switch (ActOf(Index))
+			{
+			case EFF_FinaleTourAct::SiteTour:
+				TourHoldOverrides.Add(HoldOf(Index));
+				break;
+			case EFF_FinaleTourAct::GrandFinale:
+				TourHoldOverrides.Add(FMath::Max(0.5f, (SongSeconds - SongPlan.GrandFinaleAt) / FMath::Max(1, FinaleSeats)));
+				break;
+			default:
+				TourHoldOverrides.Add(FMath::Max(0.5f, SongPlan.SiteTourAt / SkySeats));
+				break;
+			}
+		}
+	}
+
+	UE_LOG(LogFestaFiestaFinale, Log,
+		TEXT("[피날레] 곡에 맞춘다. 곡 %.1f초 / 순회 %.1f초부터 / 마무리 %.1f초부터 / 마지막 모양 %.1f초 (일반 차례 %.1f초까지) / ")
+		TEXT("일제 발사 %.1f초 (가장 높은 발 상승 %.1f초)"),
+		SongPlan.SongSeconds, SongPlan.SiteTourAt, SongPlan.GrandFinaleAt, SongPlan.FinalShapeAt, SongPlan.VolleysEndAt,
+		SongPlan.SalvoAt, MaxRise);
+}
+
+float UFF_FinaleShowSubsystem::ResolveSongVolleyInterval() const
+{
+	// 한 프레임에 두 차례까지만 따라잡으므로(Tick) 이보다 촘촘히 잡아도 소용없다.
+	constexpr float MinInterval = 0.05f;
+
+	// 3막이 아니면 연출 전체가 한 구간이다. 일제 발사도 없다.
+	const bool bFinalStretch = !SongPlan.HasActs() || !bActMode || CurrentAct == EFF_FinaleTourAct::GrandFinale;
+	const int32 Salvo = SongPlan.HasActs() && bActMode ? FMath::Max(0, ActiveSpec.FinalSalvoShells) : 0;
+	const int32 Shape = GetFinalShapeReserve();
+	const int32 Committed = FiredBursts + PendingShells.Num() + InFlightBurstCount;
+
+	// 마지막 모양이 남아 있으면 그 앞(VolleysEndAt)까지 다 쏜다. 모양이 필 때 하늘이 비어 있어야 읽힌다.
+	const int32 Shells = bFinalStretch ? GetRemainingShells() - Salvo - Shape : ActOneQuota - Committed;
+	const float EndAt = bFinalStretch
+		? (Shape > 0 ? SongPlan.VolleysEndAt : SongPlan.SalvoAt)
+		: SongPlan.GrandFinaleAt;
+	return FFF_FinaleSongPlan::ResolveIntervalToFinish(
+		ElapsedSeconds, EndAt, Shells, ActiveSpec.GetExpectedShellsPerVolley(), MinInterval);
 }
 
 const FFF_FinaleVolley& UFF_FinaleShowSubsystem::PickVolley(const int32 RemainingShells) const
@@ -1065,9 +1535,18 @@ const FFF_FinaleVolley& UFF_FinaleShowSubsystem::PickVolley(const int32 Remainin
 
 	   자리를 안 정하는 패턴(단발·동시)은 발수가 줄어도 그냥 덜 터질 뿐이라 거른다.
 	*/
-	auto Fits = [RemainingShells](const FFF_FinaleVolley& Volley)
+	/* 진행률이 안 된 패턴도 거른다(ShowProgressFrom). 처음엔 기본 불꽃, 끝으로 갈수록 큰 모양이다.
+
+	   진행률은 쏜 발수(오르는 발 포함)로 잰다. 발수는 막마다 몫이 정해져 있어(1막 · 마무리) 큰 모양이
+	   마무리 막 몫에 들어서야 나온다. 시간으로 재면 막 길이를 바꿀 때마다 큰 모양이 나오는 자리가 흔들린다.
+	*/
+	const float Progress = ActiveSpec.BurstCount > 0
+		? 1.f - static_cast<float>(RemainingShells) / static_cast<float>(ActiveSpec.BurstCount)
+		: 1.f;
+	auto Fits = [RemainingShells, Progress](const FFF_FinaleVolley& Volley)
 	{
-		return !Volley.HasFixedLayout() || Volley.ShellCount <= RemainingShells;
+		return Volley.IsAvailableAt(Progress)
+			&& (!Volley.HasFixedLayout() || Volley.ShellCount <= RemainingShells);
 	};
 
 	float Total = 0.f;
@@ -1179,8 +1658,11 @@ void UFF_FinaleShowSubsystem::FireVolley()
 
 	   예약만 되고 아직 안 터진 발도 뺀다. 빼지 않으면 줄지어 나가는 패턴 뒤에서
 	   같은 발수를 또 쏴서 총 발수를 넘긴다.
+
+	   마무리 몫(마지막 모양 · 일제 발사)도 뺀다. 예전에는 일제 발사 직전 차례가 큰 모양(24발)을 뽑으면
+	   일제 발사 몫을 절반 넘게 써 버렸다. 마지막 모양 몫을 쓰면 태극기가 성기게 솎인다.
 	*/
-	const int32 Remaining = GetRemainingShells();
+	const int32 Remaining = FMath::Max(0, GetRemainingShells() - GetClosingReserve());
 
 	/* 남은 발수를 넘겨 고른다. 모양이 있는 패턴은 발수가 모자라면 모양이 깨진다.
 
@@ -1226,20 +1708,37 @@ void UFF_FinaleShowSubsystem::FireVolley()
 	*/
 	TArray<FVector> ShellLocations;
 
+	// 점마다 색을 가진 모양이면 그 색. 비어 있으면 볼리의 색 규칙을 쓴다.
+	TArray<FLinearColor> ShellColors;
+
 	// 발마다 어느 위치에서 올라갔는지. 크기 배수를 그 위치 기준 높이로 정한다.
 	TArray<FVector> ShellOrigins;
+
+	/* 모양 패턴은 차례 전체가 같은 시간 동안 오른다. 0 이면 발마다 높이로 정한다.
+
+	   모양은 발마다 높이가 다르다(수직면 하트는 위아래로 수십 m). 높이대로 시간을 주면
+	   아래쪽이 먼저 터져 하트가 한꺼번에 피지 않는다. 실제 불꽃도 모양을 낼 때는 도화선을 맞춘다.
+	*/
+	float VolleyRiseSeconds = 0.f;
+
+	// 모양을 제대로 그렸고 한꺼번에 피는 패턴이면 알 하나에 실어 올린다(LaunchCarrier).
+	FVector PatternCenter = Origin;
+	bool bPatternBuilt = false;
 
 	if (Volley.HasFixedLayout())
 	{
 		FFF_FinaleLayoutContext Layout;
 		Layout.Center = PickBurstLocation(Origin);
+		PatternCenter = Layout.Center;
+		VolleyRiseSeconds = ActiveLaunch.ResolveRiseSeconds(Layout.Center.Z - Origin.Z);
 		Layout.FacingDirection = ResolveAudienceDirection(Layout.Center);
 		Layout.ShellCount = ShellCount;
 
 		// 바닥면 모양만 돌린다. 수직면은 돌리면 관객에게서 비껴서 읽히지 않는다.
 		Layout.GroundYawDegrees = ShowRandom.FRandRange(0.f, 360.f);
 
-		Volley.BuildShellLayout(Layout, ShellLocations);
+		Volley.BuildShellLayout(Layout, ShellLocations, &ShellColors);
+		bPatternBuilt = ShellLocations.Num() > 0;
 
 		/* 모양을 못 그렸으면(애셋이 비었거나 깨짐) 이번 차례는 흩뿌린다.
 
@@ -1276,11 +1775,20 @@ void UFF_FinaleShowSubsystem::FireVolley()
 		}
 	}
 
+	/* 한 순간에 피는 모양(원·하트처럼 발 사이 간격이 0)은 알 하나가 올라가 터지며 그린다.
+
+	   줄지어 나가는 일렬·부챗살(간격이 있는 것)은 실제로도 연발통에서 차례로 쏘므로 발마다 올린다.
+	*/
+	const bool bCarrier = bPatternBuilt && Volley.ShellDelaySeconds <= 0.f;
+	TArray<FShellBurst> CarrierBursts;
+
 	for (int32 Shell = 0; Shell < ShellLocations.Num(); ++Shell)
 	{
 		const FVector& Location = ShellLocations[Shell];
 
-		const FLinearColor Color = Volley.bUniformColor ? UniformColor : PickColor(ColorCursor++);
+		const FLinearColor Color = ShellColors.IsValidIndex(Shell)
+			? ShellColors[Shell]
+			: (Volley.bUniformColor ? UniformColor : PickColor(ColorCursor++));
 
 		// 모양을 그리는 패턴은 이펙트도 하나로 맞춘다. 종류가 섞이면 모양이 안 보인다.
 		UNiagaraSystem* Effect = Volley.HasFixedLayout()
@@ -1288,15 +1796,43 @@ void UFF_FinaleShowSubsystem::FireVolley()
 			: ActiveSpec.PickEffect(ShowRandom.GetUnsignedInt());
 
 		// 모양 패턴은 크기를 맞춘다. 흩뿌린 발만 높이에 따라 구경을 바꾼다.
-		const float SizeScale = ShellOrigins.IsValidIndex(Shell)
+		const float SizeScale = (ShellOrigins.IsValidIndex(Shell)
 			? ActiveSpec.ResolveCaliberScale(Location.Z - ShellOrigins[Shell].Z)
-			: 1.f;
+			: 1.f) * FMath::Max(0.05f, Volley.SizeMultiplier);
+
+		if (bCarrier)
+		{
+			FShellBurst& Burst = CarrierBursts.AddDefaulted_GetRef();
+			Burst.Location = Location;
+			Burst.Color = Color;
+			Burst.Effect = Effect;
+			Burst.SizeScale = SizeScale;
+			continue;
+		}
+
+		// 흩뿌린 발은 제 위치에서, 모양 패턴은 차례의 위치에서 올라간다.
+		const FVector& ShellOrigin = ShellOrigins.IsValidIndex(Shell) ? ShellOrigins[Shell] : Origin;
+
+		// 도화선으로 차례 터뜨리기: 다 같이 올라가되 뒤 발일수록 오래 올라 늦게 터진다.
+		if (Volley.bStaggerByFuse && Volley.ShellDelaySeconds > 0.f && VolleyRiseSeconds > 0.f)
+		{
+			LaunchShell(ShellOrigin, Location, Color, Effect, SizeScale,
+				VolleyRiseSeconds + Volley.ShellDelaySeconds * static_cast<float>(Shell));
+			if (!bShowInProgress)
+			{
+				return;
+			}
+			continue;
+		}
 
 		if (Volley.ShellDelaySeconds > 0.f && Shell > 0)
 		{
 			// 줄지어 흐르는 느낌은 이 지연에서 나온다. 한꺼번에 쏘면 그냥 모양일 뿐이다.
+			// 상승 시간이 같으므로 쏘는 간격이 그대로 터지는 간격이 된다.
 			FPendingShell& Pending = PendingShells.AddDefaulted_GetRef();
 			Pending.Location = Location;
+			Pending.Origin = ShellOrigin;
+			Pending.RiseSeconds = VolleyRiseSeconds;
 			Pending.Color = Color;
 			Pending.DelayRemaining = Volley.ShellDelaySeconds * static_cast<float>(Shell);
 			Pending.Effect = Effect;
@@ -1304,9 +1840,18 @@ void UFF_FinaleShowSubsystem::FireVolley()
 			continue;
 		}
 
-		SpawnShell(Location, Color, Effect, SizeScale);
+		LaunchShell(ShellOrigin, Location, Color, Effect, SizeScale, VolleyRiseSeconds);
 
 		// OnBurst 를 받은 쪽이 연출을 멈췄다. 남은 발을 쏘지 않는다.
+		if (!bShowInProgress)
+		{
+			return;
+		}
+	}
+
+	if (bCarrier && CarrierBursts.Num() > 0)
+	{
+		LaunchCarrier(Origin, PatternCenter, MoveTemp(CarrierBursts), UniformColor, VolleyRiseSeconds);
 		if (!bShowInProgress)
 		{
 			return;
@@ -1318,7 +1863,8 @@ void UFF_FinaleShowSubsystem::FireVolley()
 
 int32 UFF_FinaleShowSubsystem::GetRemainingShells() const
 {
-	return FMath::Max(0, ActiveSpec.BurstCount - FiredBursts - PendingShells.Num());
+	// 오르는 발도 이미 쓴 발이다. 빼지 않으면 오르는 몇 초 동안 같은 발수를 또 쏜다.
+	return FMath::Max(0, ActiveSpec.BurstCount - FiredBursts - PendingShells.Num() - InFlightBurstCount);
 }
 
 FString UFF_FinaleShowSubsystem::DescribeEffects(const FFF_FinaleGradeSpec& Spec)
@@ -1340,4 +1886,400 @@ FString UFF_FinaleShowSubsystem::DescribeEffects(const FFF_FinaleGradeSpec& Spec
 		return FString::Printf(TEXT("%d종"), Assigned);
 	}
 	return FString::Printf(TEXT("%d칸 중 %d종 (빈 칸 %d)"), Slots, Assigned, Slots - Assigned);
+}
+
+FFF_FinaleLaunchSpec UFF_FinaleShowSubsystem::ResolveLaunchSpec() const
+{
+	// 데이터 애셋이 있으면 그쪽 값. 없으면 구조체 기본값이다(시간·궤적만 있고 꼬리 모습은 없다).
+	if (const UFF_FinaleShowData* Data = ResolveShowData())
+	{
+		return Data->Launch;
+	}
+	return FFF_FinaleLaunchSpec();
+}
+
+int32 UFF_FinaleShowSubsystem::CountActiveFlashLights() const
+{
+	// 번쩍임은 상승보다 훨씬 짧아서 오르는 발만 세면 된다.
+	int32 Count = 0;
+	for (const FInFlightShell& Shell : InFlightShells)
+	{
+		if (const AFF_FinaleShellTracer* Tracer = Shell.Tracer.Get())
+		{
+			Count += Tracer->IsFlashLightActive() ? 1 : 0;
+		}
+	}
+	return Count;
+}
+
+void UFF_FinaleShowSubsystem::LaunchShell(
+	const FVector& Origin, const FVector& Location, const FLinearColor& Color,
+	UNiagaraSystem* Effect, const float SizeScale, const float RiseSeconds)
+{
+	TArray<FShellBurst> Bursts;
+	FShellBurst& Burst = Bursts.AddDefaulted_GetRef();
+	Burst.Location = Location;
+	Burst.Color = Color;
+	Burst.Effect = Effect;
+	Burst.SizeScale = SizeScale;
+	LaunchCarrier(Origin, Location, MoveTemp(Bursts), Color, RiseSeconds);
+}
+
+void UFF_FinaleShowSubsystem::LaunchCarrier(
+	const FVector& Origin, const FVector& Target, TArray<FShellBurst>&& Bursts,
+	const FLinearColor& Color, const float RiseSeconds)
+{
+	UWorld* World = GetWorld();
+	if (!World || !ActiveLaunch.IsEnabled())
+	{
+		// 쏘아 올리기를 껐다. 예전처럼 그 자리에서 터진다.
+		for (const FShellBurst& Burst : Bursts)
+		{
+			SpawnShell(Burst.Location, Burst.Color, Burst.Effect.Get(), Burst.SizeScale);
+			if (!bShowInProgress)
+			{
+				return;
+			}
+		}
+		return;
+	}
+
+	FInFlightShell& Shell = InFlightShells.AddDefaulted_GetRef();
+	Shell.Origin = Origin;
+	Shell.Target = Target;
+	Shell.RiseSeconds = RiseSeconds > 0.f ? RiseSeconds : ActiveLaunch.ResolveRiseSeconds(Target.Z - Origin.Z);
+	Shell.WobblePhase = ShowRandom.FRandRange(0.f, 2.f * PI);
+	InFlightBurstCount += Bursts.Num();
+	Shell.Bursts = MoveTemp(Bursts);
+
+	// 모습은 따로 만든다. 못 만들어도(테스트 월드 등) 시간과 터지는 자리는 그대로 돈다.
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParameters.ObjectFlags |= RF_Transient;
+	if (AFF_FinaleShellTracer* Tracer = World->SpawnActor<AFF_FinaleShellTracer>(
+		AFF_FinaleShellTracer::StaticClass(), Origin, FRotator::ZeroRotator, SpawnParameters))
+	{
+		const bool bWithLight = CountActiveFlashLights() < FMath::Max(0, ActiveLaunch.MaxFlashLights);
+		Tracer->Launch(ActiveLaunch, Color, bWithLight, Shell.WobblePhase);
+		Shell.Tracer = Tracer;
+	}
+
+	++LaunchedShells;
+
+	// 배열이 늘어나 Shell 참조가 깨질 수 있어 값으로 넘긴다. 받는 쪽이 연출을 멈춰도 여기서는 할 일이 끝났다.
+	const float Rise = Shell.RiseSeconds;
+	OnLaunch.Broadcast(Origin, Target, Rise);
+}
+
+bool UFF_FinaleShowSubsystem::TickInFlightShells(const float DeltaTime)
+{
+	/* 다 오른 발을 먼저 빼낸 뒤에 터뜨린다.
+
+	   터뜨리면 OnBurst 가 울리는데, 받는 쪽이 연출을 멈추면 StopShow 가 배열을 비운다.
+	   배열을 돌면서 터뜨리면 그 순간 인덱스가 배열 밖을 가리킨다(지연 발사와 같은 이유).
+	*/
+	const float TrailSpan = FMath::Max(0.f, ActiveLaunch.TrailSeconds) * FMath::Max(0.1f, ActiveSpec.TrailLength);
+
+	TArray<FInFlightShell> Arrived;
+	for (int32 Index = InFlightShells.Num() - 1; Index >= 0; --Index)
+	{
+		FInFlightShell& Shell = InFlightShells[Index];
+		Shell.Elapsed += DeltaTime;
+
+		if (Shell.Elapsed >= Shell.RiseSeconds)
+		{
+			InFlightBurstCount -= Shell.Bursts.Num();
+			Arrived.Add(MoveTemp(Shell));
+			InFlightShells.RemoveAtSwap(Index);
+			continue;
+		}
+
+		if (AFF_FinaleShellTracer* Tracer = Shell.Tracer.Get())
+		{
+			const float Rise = FMath::Max(KINDA_SMALL_NUMBER, Shell.RiseSeconds);
+			const float HeadAlpha = Shell.Elapsed / Rise;
+			const float TailAlpha = FMath::Max(0.f, Shell.Elapsed - TrailSpan) / Rise;
+			Tracer->UpdateFlight(
+				ActiveLaunch.EvaluateRise(Shell.Origin, Shell.Target, HeadAlpha, Shell.WobblePhase),
+				ActiveLaunch.EvaluateRise(Shell.Origin, Shell.Target, TailAlpha, Shell.WobblePhase));
+		}
+	}
+
+	// 먼저 쏜 발이 먼저 터지게 오른 시간이 긴 순으로 터뜨린다. 소리 순서가 뒤집히지 않는다.
+	Arrived.Sort([](const FInFlightShell& A, const FInFlightShell& B)
+	{
+		return (A.Elapsed - A.RiseSeconds) > (B.Elapsed - B.RiseSeconds);
+	});
+
+	for (const FInFlightShell& Shell : Arrived)
+	{
+		if (AFF_FinaleShellTracer* Tracer = Shell.Tracer.Get())
+		{
+			Tracer->Burst();
+		}
+
+		// 모양 알은 품은 불꽃을 한 프레임에 다 터뜨린다. 그래야 모양이 한꺼번에 핀다.
+		for (const FShellBurst& Burst : Shell.Bursts)
+		{
+			if (!bShowInProgress)
+			{
+				break;
+			}
+			SpawnShell(Burst.Location, Burst.Color, Burst.Effect.Get(), Burst.SizeScale);
+		}
+	}
+
+	return bShowInProgress;
+}
+
+void UFF_FinaleShowSubsystem::EnsureFallbackLayout()
+{
+	if (bFallbackLayoutApplied)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	const UFF_FinaleShowData* Data = ResolveShowData();
+	if (!World || !Data || Data->LayoutLevel.IsNull()
+		|| (Data->FallbackLaunchSites.Num() == 0 && Data->FallbackViewpoints.Num() == 0))
+	{
+		return;
+	}
+
+	// 좌표는 그 레벨의 것이다. 다른 레벨에 세우면 엉뚱한 곳(땅속·바다 밖)에서 쏜다.
+	// PIE 에서는 패키지 이름에 UEDPIE_0_ 접두어가 붙어 떼고 비교한다.
+	const FString WorldPackage = UWorld::RemovePIEPrefix(World->GetOutermost()->GetName());
+	if (WorldPackage != Data->LayoutLevel.ToSoftObjectPath().GetLongPackageName())
+	{
+		return;
+	}
+	bFallbackLayoutApplied = true;
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParameters.ObjectFlags |= RF_Transient;
+
+	// 레벨에 놓은 발사 지점이 하나라도 있으면 그쪽을 쓴다. 섞으면 어느 쪽이 쏘는지 알 수 없다.
+	TArray<AFF_FinaleLaunchSite*> PlacedSites;
+	AFF_FinaleLaunchSite::CollectAll(World, PlacedSites);
+	int32 SpawnedSites = 0;
+	if (PlacedSites.Num() == 0)
+	{
+		for (int32 Index = 0; Index < Data->FallbackLaunchSites.Num(); ++Index)
+		{
+			const FFF_FinaleLayoutLaunchSite& Entry = Data->FallbackLaunchSites[Index];
+			if (AFF_FinaleLaunchSite* Site = World->SpawnActor<AFF_FinaleLaunchSite>(
+				AFF_FinaleLaunchSite::StaticClass(), Entry.Transform, SpawnParameters))
+			{
+				Site->BargeCount = Entry.BargeCount;
+				Site->BargeSpacingCm = Entry.BargeSpacingCm;
+				Site->Order = Index;
+				++SpawnedSites;
+			}
+		}
+	}
+
+	bool bHasPlacedViewpoint = false;
+	for (TActorIterator<AFF_FinaleViewpoint> It(World); It; ++It)
+	{
+		bHasPlacedViewpoint |= IsValid(*It);
+	}
+
+	int32 SpawnedViewpoints = 0;
+	if (!bHasPlacedViewpoint)
+	{
+		for (const FFF_FinaleLayoutViewpoint& Entry : Data->FallbackViewpoints)
+		{
+			// BeginPlay 전에 값을 넣어야 틱(흘러가기) 설정이 그 값으로 잡힌다.
+			AFF_FinaleViewpoint* Viewpoint = World->SpawnActorDeferred<AFF_FinaleViewpoint>(
+				AFF_FinaleViewpoint::StaticClass(), Entry.Transform, nullptr, nullptr,
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+			if (!Viewpoint)
+			{
+				continue;
+			}
+
+			Viewpoint->TourAct = Entry.TourAct;
+			Viewpoint->TourOrder = Entry.TourOrder;
+			Viewpoint->TourHoldSeconds = Entry.TourHoldSeconds;
+			Viewpoint->TourBlendSeconds = Entry.TourBlendSeconds;
+			Viewpoint->TourDriftOffset = Entry.TourDriftOffset;
+			Viewpoint->Priority = Entry.Priority;
+			if (UCameraComponent* Camera = Viewpoint->GetViewCamera())
+			{
+				Camera->SetFieldOfView(Entry.FieldOfView);
+			}
+			Viewpoint->FinishSpawning(Entry.Transform);
+			++SpawnedViewpoints;
+		}
+	}
+
+	UE_LOG(LogFestaFiestaFinale, Log,
+		TEXT("[피날레] 레벨에 놓인 액터가 없어 기본 배치를 세웠다. 발사 지점 %d / 연출 시점 %d (데이터 %s)"),
+		SpawnedSites, SpawnedViewpoints, *Data->GetName());
+}
+
+bool UFF_FinaleShowSubsystem::PrepareSiteTour()
+{
+	const UFF_FinaleShowData* Data = ResolveShowData();
+	ActiveSiteTour = Data ? Data->SiteTour : FFF_FinaleSiteTourSpec();
+	if (!ActiveSiteTour.bFollowPlacedFacilities)
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	/* 입구: 손님이 생겨나는 게이트. 게이트에는 방향이 없어 축제장 가운데(SimOrigin)를 안쪽으로 본다.
+
+	   게이트는 스폰 액터의 BeginPlay 에서 모이므로 연출 시점에는 이미 있다. 여럿이면 가중치가 큰 것.
+	*/
+	bool bHasEntrance = false;
+	FVector Entrance = FVector::ZeroVector;
+	FVector Inside = FVector::ZeroVector;
+	if (const UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>())
+	{
+		float BestWeight = -1.f;
+		for (const FFF_CrowdGate& Gate : Crowd->GetValidGates())
+		{
+			if (Gate.bAllowSpawn && Gate.GateWeight > BestWeight)
+			{
+				BestWeight = Gate.GateWeight;
+				Entrance = Gate.GateLocation;
+				bHasEntrance = true;
+			}
+		}
+		Inside = Crowd->SimOrigin;
+	}
+
+	// 시설: 길·바닥 타일·조명은 건물이 아니라 뺀다. 철거된 것도 뺀다.
+	TArray<FVector> Sites;
+	if (const UFFZSWorldSubsystem* Zone = World->GetSubsystem<UFFZSWorldSubsystem>())
+	{
+		const FFFZSReadModel Model = Zone->BuildReadModel();
+		for (const FFFZSFacilityReadModel& Facility : Model.Facilities)
+		{
+			if (Facility.State == EFFZSFacilityState::Removed
+				|| Facility.Category == EFFZSFacilityCategory::Road
+				|| Facility.Category == EFFZSFacilityCategory::Tile
+				|| Facility.Category == EFFZSFacilityCategory::Lighting)
+			{
+				continue;
+			}
+			Sites.Add(Facility.WorldLocation);
+		}
+	}
+
+	if (!bHasEntrance && Sites.Num() == 0)
+	{
+		return false;
+	}
+
+	// 입구를 못 찾았으면 첫 시설에서 시작한다. 그래도 지은 것은 다 지난다.
+	if (!bHasEntrance)
+	{
+		Entrance = Sites[0];
+	}
+
+	SiteTourRoute = FFF_FinaleSiteTourRoute::Build(
+		Entrance, Sites, ActiveSiteTour.ClusterCm, ActiveSiteTour.MaxStops);
+
+	// 시설이 하나도 없으면 입구에서 축제장 가운데로 들어가는 길만 보여 준다.
+	if (SiteTourRoute.Stops.Num() < 2 && !Inside.IsNearlyZero())
+	{
+		SiteTourRoute = FFF_FinaleSiteTourRoute::Build(Entrance, { Inside }, ActiveSiteTour.ClusterCm, 1);
+	}
+
+	const float MinSeconds = FMath::Max(1.f, FMath::Min(ActiveSiteTour.MinSeconds, ActiveSiteTour.MaxSeconds));
+	const float MaxSeconds = FMath::Max(MinSeconds, ActiveSiteTour.MaxSeconds);
+	SiteTourRoute.BuildTimeline(
+		FMath::Max(100.f, ActiveSiteTour.SpeedCmPerSecond), ActiveSiteTour.StopSeconds, MinSeconds, MaxSeconds);
+	SiteTourSeconds = SiteTourRoute.GetDuration();
+
+	// 빠르게 날수록 높이 난다(HeightPerSpeedSeconds 주석). 뒤로 떨어진 거리도 같은 비율로 늘려 각도를 지킨다.
+	const float AverageSpeed = SiteTourSeconds > 0.f ? SiteTourRoute.GetLength() / SiteTourSeconds : 0.f;
+	const float BaseHeight = FMath::Max(200.f, ActiveSiteTour.HeightCm);
+	SiteTourHeight = FMath::Max(BaseHeight, AverageSpeed * ActiveSiteTour.HeightPerSpeedSeconds);
+	SiteTourTrail = FMath::Max(100.f, ActiveSiteTour.TrailCm) * (SiteTourHeight / BaseHeight);
+
+	UE_LOG(LogFestaFiestaFinale, Log,
+		TEXT("[피날레] 순회 경로: 입구 %s → 시설 묶음 %d곳(첫 곳까지 %.0fm) · 높이 %.0fm · 뒤로 %.0fm · 날아 들어옴 %.1f초 + 순회 %.1f초"),
+		*SiteTourRoute.Stops[0].ToCompactString(), SiteTourRoute.Stops.Num() - 1,
+		SiteTourRoute.GetStopDistance(1) / 100.f, SiteTourHeight / 100.f, SiteTourTrail / 100.f,
+		ActiveSiteTour.FlyInSeconds, SiteTourSeconds);
+
+	if (!SiteTourCamera)
+	{
+		SiteTourCamera = World->SpawnActorDeferred<AFF_FinaleViewpoint>(
+			AFF_FinaleViewpoint::StaticClass(), FTransform(Entrance), nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!SiteTourCamera)
+		{
+			return false;
+		}
+		// 레벨의 고정 순회·고정 연출 자리 고르기에 섞이지 않게 한다.
+		SiteTourCamera->bIncludeInTour = false;
+		SiteTourCamera->TourAct = EFF_FinaleTourAct::SiteTour;
+		SiteTourCamera->TourDriftOffset = FVector::ZeroVector;
+		SiteTourCamera->FinishSpawning(FTransform(Entrance));
+	}
+
+	// 날아 들어오는 동안은 출발점에서 기다리므로 머무는 시간에 그만큼 더한다(UpdateSiteTourCamera).
+	SiteTourCamera->TourHoldSeconds = FMath::Max(0.f, ActiveSiteTour.FlyInSeconds) + SiteTourSeconds;
+	SiteTourCamera->TourBlendSeconds = FMath::Max(0.f, ActiveSiteTour.FlyInSeconds);
+	if (UCameraComponent* Camera = SiteTourCamera->GetViewCamera())
+	{
+		Camera->SetFieldOfView(ActiveSiteTour.FieldOfView);
+	}
+
+	// 경로 시작에 미리 놓는다. 해변에서 날아 들어오는 블렌드가 이 자리를 향한다.
+	UpdateSiteTourCamera(0.f, true);
+	return true;
+}
+
+void UFF_FinaleShowSubsystem::UpdateSiteTourCamera(const float HeldSeconds, const bool bSnap)
+{
+	if (!SiteTourCamera || !SiteTourRoute.IsValid())
+	{
+		return;
+	}
+
+	/* 날아 들어오는 동안(FlyInSeconds)은 출발점에 서서 입구를 본다. 블렌드가 끝난 뒤에 출발한다.
+
+	   예전에는 블렌드 중에 이미 경로를 따라 움직여서, 화면이 순회 카메라에 닿을 때쯤엔 입구 옆 시설을
+	   지나친 뒤였다(2026-10-05 피드백 "입구쪽 건물이 짤림").
+	*/
+	const float RouteSeconds = HeldSeconds - FMath::Max(0.f, ActiveSiteTour.FlyInSeconds);
+	const float FocusDistance = SiteTourRoute.DistanceAt(RouteSeconds);
+
+	FVector Eye;
+	FVector Focus;
+	SiteTourRoute.EvaluateView(FocusDistance, SiteTourTrail, SiteTourHeight, Eye, Focus);
+
+	// 물러선 방향은 천천히 따라간다. 경로가 꺾이는 곳에서 카메라가 한 번에 휙 돌아가지 않는다.
+	const FVector WantedDirection = (Focus - Eye).GetSafeNormal2D();
+	const UWorld* World = GetWorld();
+	const float DeltaSeconds = World ? World->GetDeltaSeconds() : 0.f;
+	if (bSnap || SiteTourBoomDirection.IsNearlyZero())
+	{
+		SiteTourBoomDirection = WantedDirection.IsNearlyZero() ? FVector::ForwardVector : WantedDirection;
+	}
+	else if (!WantedDirection.IsNearlyZero())
+	{
+		constexpr float BoomTurnDegreesPerSecond = 120.f;
+		SiteTourBoomDirection = FMath::VInterpNormalRotationTo(
+			SiteTourBoomDirection, WantedDirection, DeltaSeconds, BoomTurnDegreesPerSecond).GetSafeNormal2D();
+	}
+
+	Eye = Focus - SiteTourBoomDirection * SiteTourTrail + FVector(0.f, 0.f, SiteTourHeight);
+
+	// 땅이 아니라 시설 몸통쯤을 겨눈다. 바닥을 겨누면 건물 윗부분이 화면 위로 잘린다.
+	constexpr float AimAboveGroundCm = 400.f;
+	const FRotator Rotation = (Focus + FVector(0.f, 0.f, AimAboveGroundCm) - Eye).Rotation();
+	SiteTourCamera->SetActorLocationAndRotation(Eye, Rotation);
 }

@@ -271,8 +271,7 @@ void UFF_ZoneSystemQueueBridgeSubsystem::RefreshAllPlacementObstacles()
 bool UFF_ZoneSystemQueueBridgeSubsystem::RegisterOrRefreshFacility(AFFZSFacilityActor& Facility)
 {
 	// 조명·길·타일은 Party 서비스 시설이 아니므로 Queue ID나 이동 슬롯을 만들지 않는다.
-	if (!QueueSystem || Facility.GetFacilitySpec().Category == EFFZSFacilityCategory::Lighting ||
-		Facility.GetFacilitySpec().IsGroundSurface())
+	if (!QueueSystem || !Facility.GetFacilitySpec().UsesServiceQueue())
 	{
 		return false;
 	}
@@ -319,7 +318,8 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::RegisterOrRefreshFacility(AFFZSFacility
 	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
 	const UFF_FestivalStageSubsystem* Stage = GameInstance
 		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
-	QueueSystem->SetPerformanceBreak(QueueFacilityId, Stage && Stage->IsMainProgramQueueBreakActive());
+	QueueSystem->SetPerformanceBreak(QueueFacilityId,
+		Stage && Stage->IsMainProgramQueueBreakActive() && PausesForMainProgram(Facility.GetFacilitySpec()));
 
 	if (Facility.GetFacilityState() == EFFZSFacilityState::Active)
 	{
@@ -499,8 +499,7 @@ void UFF_ZoneSystemQueueBridgeSubsystem::HandleZoneWorldChanged(const FFFZSWorld
 	case EFFZSCommandType::Move:
 		if (AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(Event.FacilityInstanceId))
 		{
-			if (Facility->GetFacilitySpec().Category != EFFZSFacilityCategory::Lighting &&
-				!Facility->GetFacilitySpec().IsGroundSurface() &&
+			if (Facility->GetFacilitySpec().UsesServiceQueue() &&
 				!RegisterOrRefreshFacility(*Facility))
 			{
 				// Move는 Zone 권위 배치가 커밋된 뒤 이 이벤트를 방송한다. 새 Queue geometry를 만들지
@@ -616,9 +615,16 @@ void UFF_ZoneSystemQueueBridgeSubsystem::SynchronizeMainProgramQueueBreak()
 	FacilityIds.Sort();
 	for (const int32 FacilityId : FacilityIds)
 	{
-		QueueSystem->SetPerformanceBreak(FacilityId, bShouldBreak);
+		QueueSystem->SetPerformanceBreak(FacilityId, bShouldBreak && PausesForMainProgram(FacilityId));
 	}
 	QueueSystem->FlushPendingEvents();
+}
+
+bool UFF_ZoneSystemQueueBridgeSubsystem::PausesForMainProgram(const int32 QueueFacilityId) const
+{
+	const FGuid* ZoneFacilityId = QueueToZoneFacilityIds.Find(QueueFacilityId);
+	const AFFZSFacilityActor* Facility = ZoneFacilityId && ZoneSystem ? ZoneSystem->FindFacility(*ZoneFacilityId) : nullptr;
+	return !Facility || PausesForMainProgram(Facility->GetFacilitySpec());
 }
 
 FFF_QueueJoinResponse UFF_ZoneSystemQueueBridgeSubsystem::TryJoinZoneFacility(
@@ -631,13 +637,13 @@ FFF_QueueJoinResponse UFF_ZoneSystemQueueBridgeSubsystem::TryJoinZoneFacility(
 		return Response;
 	}
 	SynchronizeMainProgramQueueBreak();
-	if (bMainProgramQueueBreak)
+	AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(ZoneFacilityId);
+	if (bMainProgramQueueBreak && (!Facility || PausesForMainProgram(Facility->GetFacilitySpec())))
 	{
 		Response.Result = EFF_QueueJoinResult::RejectedClosed;
 		return Response;
 	}
 
-	AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(ZoneFacilityId);
 	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
 	const UFF_ProgramReservationSubsystem* Reservations = GameInstance
 		? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
@@ -647,8 +653,7 @@ FFF_QueueJoinResponse UFF_ZoneSystemQueueBridgeSubsystem::TryJoinZoneFacility(
 		return Response; // 예약자는 슬롯 좌표만 사용하고 일반 서비스 Queue에는 가입하지 않는다.
 	}
 	if (!Facility || Facility->GetFacilityState() != EFFZSFacilityState::Active ||
-		Facility->GetFacilitySpec().Category == EFFZSFacilityCategory::Lighting ||
-		Facility->GetFacilitySpec().IsGroundSurface())
+		!Facility->GetFacilitySpec().UsesServiceQueue())
 	{
 		Response.Result = EFF_QueueJoinResult::RejectedClosed;
 		return Response;

@@ -5,13 +5,18 @@
 
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
 #include "Building/Codex/FF_FacilityCodexSettings.h"
+#include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/Border.h"
+#include "Components/BorderSlot.h"
+#include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/Image.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Components/ProgressBar.h"
 #include "Components/SizeBox.h"
 #include "Components/StackBox.h"
@@ -38,6 +43,7 @@ void UFF_FacilityCodexScreen::NativeOnInitialized()
 	SetIsFocusable(true);
 	if (Button_Close) Button_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleClose);
 	if (Button_ExitCodex) Button_ExitCodex->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleExitCodex);
+	if (Button_DismissIntroduction) Button_DismissIntroduction->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDismissIntroduction);
 	if (Button_All) Button_All->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAll);
 	if (Button_Discovered) Button_Discovered->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDiscovered);
 	if (Button_Undiscovered) Button_Undiscovered->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUndiscovered);
@@ -89,6 +95,80 @@ void UFF_FacilityCodexScreen::NativeOnInitialized()
 			Bounds->ClearWidthOverride();
 			Bounds->ClearMinDesiredWidth();
 			Bounds->ClearMaxDesiredWidth();
+		}
+	}
+	EnsureCloseTargetLayer();
+}
+
+void UFF_FacilityCodexScreen::EnsureCloseTargetLayer()
+{
+	if (CloseTargetCanvas || !WidgetTree || !Button_ExitCodex || !Size_Dialog) return;
+	UWidget* ReferenceScale = GetWidgetFromName(TEXT("Scale_ApprovedCodexReference"));
+	auto* Shield = Cast<UBorder>(GetWidgetFromName(TEXT("Border_InputShield")));
+	auto* OriginalSlot = Cast<UCanvasPanelSlot>(Button_ExitCodex->Slot);
+	auto* ScaleSlot = ReferenceScale ? Cast<UBorderSlot>(ReferenceScale->Slot) : nullptr;
+	if (!Shield || Shield->GetContent() != ReferenceScale || !OriginalSlot || !ScaleSlot) return;
+	// Keep the authored button, its delegates and its styles, but let its hit area
+	// stay usable when the six-column reference composition scales down sharply.
+	// This layer remains inside the shield, below the separate introduction modal.
+	AuthoredClosePosition = OriginalSlot->GetPosition();
+	AuthoredCloseSize = OriginalSlot->GetSize();
+	const FMargin ContentPadding = ScaleSlot->GetPadding();
+	const EHorizontalAlignment Horizontal = ScaleSlot->GetHorizontalAlignment();
+	const EVerticalAlignment Vertical = ScaleSlot->GetVerticalAlignment();
+	ReferenceScale->RemoveFromParent();
+	auto* Layer = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("Overlay_ResponsiveCodexClose"));
+	Layer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	Shield->SetContent(Layer);
+	auto* LayerSlot = CastChecked<UBorderSlot>(Layer->Slot);
+	LayerSlot->SetPadding(ContentPadding);
+	LayerSlot->SetHorizontalAlignment(Horizontal);
+	LayerSlot->SetVerticalAlignment(Vertical);
+	auto* ReferenceSlot = Layer->AddChildToOverlay(ReferenceScale);
+	ReferenceSlot->SetHorizontalAlignment(HAlign_Fill);
+	ReferenceSlot->SetVerticalAlignment(VAlign_Fill);
+	CloseTargetCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Canvas_ResponsiveCodexClose"));
+	CloseTargetCanvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	auto* TargetSlot = Layer->AddChildToOverlay(CloseTargetCanvas);
+	TargetSlot->SetHorizontalAlignment(HAlign_Fill);
+	TargetSlot->SetVerticalAlignment(VAlign_Fill);
+	Button_ExitCodex->RemoveFromParent();
+	CloseTargetCanvas->AddChildToCanvas(Button_ExitCodex)->SetAutoSize(false);
+	// The parent canvas must paint once to establish its geometry. Keep the
+	// reparented button transparent until its initial position has been resolved.
+	AuthoredCloseOpacity = Button_ExitCodex->GetRenderOpacity();
+	bCloseTargetLayoutPending = true;
+	Button_ExitCodex->SetRenderOpacity(0.f);
+}
+
+void UFF_FacilityCodexScreen::UpdateCloseTargetLayout()
+{
+	if (!CloseTargetCanvas || !Button_ExitCodex || !Size_Dialog) return;
+	const FGeometry& Dialog = Size_Dialog->GetPaintSpaceGeometry();
+	const FGeometry& Layer = CloseTargetCanvas->GetPaintSpaceGeometry();
+	if (Dialog.GetLocalSize().GetMin() <= 1.f || Layer.GetLocalSize().GetMin() <= 1.f) return;
+	const FVector2D ReferencePosition(Dialog.GetLocalSize().X + AuthoredClosePosition.X, AuthoredClosePosition.Y);
+	const FVector2D OriginalTopLeft = Dialog.LocalToAbsolute(ReferencePosition);
+	const FVector2D OriginalBottomRight = Dialog.LocalToAbsolute(ReferencePosition + AuthoredCloseSize);
+	const FVector2D OriginalSize = OriginalBottomRight - OriginalTopLeft;
+	const FVector2D PixelSize(FMath::Max(32.0, OriginalSize.X), FMath::Max(32.0, OriginalSize.Y));
+	FVector2D PixelPosition = OriginalTopLeft + (OriginalSize - PixelSize) * .5;
+	// Reserve the authored filter row. In very narrow windows the button can
+	// extend slightly above the paper, inside its existing outer screen inset.
+	if (UWidget* Filters = GetWidgetFromName(TEXT("Horizontal_Toolbar")))
+		if (const auto* FilterSlot = Cast<UCanvasPanelSlot>(Filters->Slot))
+			PixelPosition.Y = FMath::Min(PixelPosition.Y,
+				Dialog.LocalToAbsolute(FVector2D(0, FilterSlot->GetPosition().Y)).Y - PixelSize.Y - 2.0);
+	const FVector2D Position = Layer.AbsoluteToLocal(PixelPosition);
+	const FVector2D Size = Layer.AbsoluteToLocal(PixelPosition + PixelSize) - Position;
+	if (auto* CloseCanvasSlot = Cast<UCanvasPanelSlot>(Button_ExitCodex->Slot))
+	{
+		if (!CloseCanvasSlot->GetPosition().Equals(Position, .01f)) CloseCanvasSlot->SetPosition(Position);
+		if (!CloseCanvasSlot->GetSize().Equals(Size, .01f)) CloseCanvasSlot->SetSize(Size);
+		if (bCloseTargetLayoutPending)
+		{
+			Button_ExitCodex->SetRenderOpacity(AuthoredCloseOpacity);
+			bCloseTargetLayoutPending = false;
 		}
 	}
 }
@@ -178,6 +258,7 @@ void UFF_FacilityCodexScreen::NativeDestruct()
 void UFF_FacilityCodexScreen::NativeTick(const FGeometry& Geometry, float DeltaTime)
 {
 	Super::NativeTick(Geometry, DeltaTime);
+	UpdateCloseTargetLayout();
 	if (IsDesignTime()) { UpdateResponsiveLayout(); return; }
 	UpdateRewardFeedback(DeltaTime);
 	// Layout-only resize handling. Gameplay data still refreshes exclusively through events.
@@ -348,6 +429,16 @@ void UFF_FacilityCodexScreen::UpdateResponsiveLayout()
 
 FReply UFF_FacilityCodexScreen::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
 {
+	if (IsIntroductionVisible())
+	{
+		if (!KeyEvent.IsRepeat() && (KeyEvent.GetKey() == EKeys::Escape ||
+			KeyEvent.GetKey() == EKeys::Enter || KeyEvent.GetKey() == EKeys::SpaceBar))
+		{
+			HandleDismissIntroduction();
+		}
+		// Keep keyboard navigation on the guide until it has been dismissed.
+		return FReply::Handled();
+	}
 	if (Column_CollectionCategories && !KeyEvent.IsRepeat())
 	{
 		if (bCollectionDetailOpen && (KeyEvent.GetKey() == EKeys::Left || KeyEvent.GetKey() == EKeys::Right))
@@ -576,7 +667,7 @@ void UFF_FacilityCodexScreen::RefreshDetail()
 	if (Text_DetailTitle) Text_DetailTitle->SetText(Entry.DisplayName);
 	if (Text_TargetName) Text_TargetName->SetText(Entry.TargetName);
 	if (Text_PartnerName) Text_PartnerName->SetText(Entry.PartnerName);
-	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("DetailBonus", "{0} 수수료 +{1}%"), Entry.TargetName, Number(Entry.ConfiguredBonusPercent)));
+	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("DetailBonus", "{0} 부스 매출 +{1}%"), Entry.TargetName, Number(Entry.ConfiguredBonusPercent)));
 	if (Text_Distance) Text_Distance->SetText(FText::Format(LOCTEXT("Distance", "시설 중심 사이 {0}m 이내에 배치"), Number(Entry.MaxDistanceMeters)));
 	if (Text_Discovery)
 	{
@@ -756,8 +847,32 @@ void UFF_FacilityCodexScreen::RefreshPreviewVisibility()
 		if (Button) Button->SetIsEnabled(bModelVisible);
 }
 
+bool UFF_FacilityCodexScreen::ShowIntroduction()
+{
+	if (!Border_Introduction || !Button_DismissIntroduction) return false;
+	Border_Introduction->SetVisibility(ESlateVisibility::Visible);
+	Button_DismissIntroduction->SetKeyboardFocus();
+	return true;
+}
+
+bool UFF_FacilityCodexScreen::IsIntroductionVisible() const
+{
+	return Border_Introduction && Border_Introduction->IsVisible();
+}
+
+void UFF_FacilityCodexScreen::HandleDismissIntroduction()
+{
+	if (Border_Introduction) Border_Introduction->SetVisibility(ESlateVisibility::Collapsed);
+	SetKeyboardFocus();
+}
+
 void UFF_FacilityCodexScreen::HandleClose()
 {
+	if (IsIntroductionVisible())
+	{
+		HandleDismissIntroduction();
+		return;
+	}
 	if (Column_CollectionCategories && bCollectionDetailOpen)
 	{
 		SetCollectionDetailOpen(false);

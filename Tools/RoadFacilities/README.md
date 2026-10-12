@@ -12,7 +12,7 @@
 | PDA 폴더 | `/Game/FestaFiesta/Building/FF_Data_Building/Road` | `/Game/FestaFiesta/Building/FF_Data_Building/Tile` |
 | PDA 이름 | `PDA_FFZS_Road_Surface_<종류>` | `PDA_FFZS_Tile_Surface_<종류>` |
 | 기본 비용 키 | `Cost.Road.Surface.<종류>` | `Cost.Tile.Surface.<종류>` |
-| 다른 시설과 겹침 | 본체·여유 공간·대기열 모두 차단 | 상부 시설의 배치 허용 |
+| 다른 시설과 겹침 | 본체·관람 공간·대기열 모두 차단 | 상부 시설의 배치 허용 |
 
 메시는 `/Game/Asset/FacilitiesAsset_HKH/Roads/SM_Road_<종류>`, 재질은 같은 폴더의
 `Materials/M_Road_Palette`를 공유한다. Tile은 Road의 메시와 썸네일을 재사용한다.
@@ -51,6 +51,13 @@ Road/Tile끼리는 겹칠 수 없고, 이미 설치된 일반 시설 아래에 �
 Tile을 먼저 설치한 뒤 시설을 올린다. 상부 시설을 지지하는 Tile은 해당 시설을 먼저 옮겨야
 이동·철거·크기 변경할 수 있다. 시설끼리의 충돌과 건설 구역 제한은 계속 적용한다.
 NPC는 두 바닥의 실제 영역과 높이를 반영하며 바닥 자체를 회피 벽으로 취급하지 않는다.
+
+허용 경사·높이 편차 안의 지면은 길·타일 설치를 막는 장애물로 취급하지 않는다.
+설치 검사는 실제로 샘플링한 지면 컴포넌트와 인스턴스를 구별하고, 해당 지면 위쪽을
+다시 검사한다. 메시 바닥은 Footprint 전체 표본을 받치는 경우에만 지면으로 인정하므로,
+일부 표본에 걸린 낮은 나무 받침도 계속 차단한다. 같은 액터의 다른 기둥, 다른 인스턴스,
+지면 메시와 합쳐진 벽도 계속 차단한다.
+이 동작은 `FF_ZoneSystem.Road.TerrainSupport` 자동화 테스트로 검증한다.
 
 PDA 최상위 `Placement > Enable Drag Placement`를 켜면 마우스 왼쪽 버튼을 누른 채
 같은 시설을 연속 설치할 수 있다. 새 Road는 기본적으로 켜지고 새 Tile은 원본 Road 설정을 복사한다.

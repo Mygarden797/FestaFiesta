@@ -7,6 +7,11 @@
 #include "CrowdSystem/Lane/FF_CrowdLane.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/GameInstance.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
+#include "Components/StaticMeshComponent.h"
 #include "EngineUtils.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
@@ -43,6 +48,20 @@ namespace
 {
 	constexpr int32 NoSpawnGeneration = 0;
 	constexpr double RoadSupportBucketSizeCm = 400.0;
+	const FName GroundRefinementTag(TEXT("FF_CrowdGroundRefinement"));
+	constexpr double GroundRefinementSpacingCm = 25.0;
+	constexpr double GroundRefinementApronCm = 500.0;
+	constexpr double GroundRefinementCoreSpacingCm = 5.0;
+	constexpr double GroundRefinementCoreApronCm = 125.0;
+	constexpr double GroundRefinementMaxSurfaceSpanCm = 2000.0;
+	constexpr double GateGroundMinimumRadiusCm = 500.0;
+	constexpr double GateGroundMaximumCoreRadiusCm = 1000.0;
+	constexpr int32 GateGroundMaximumPatches = 16;
+	constexpr int32 GateGroundMaximumSamples = 1600000;
+	constexpr double GateGroundEdgeSpacingCm = 1.0;
+	constexpr double GateGroundEdgeHeightSpanCm = 5.0;
+	constexpr double GateGroundBoundaryToleranceCm = .01;
+	constexpr int32 GateGroundMaximumEdgeCells = 4096;
 
 	// 서비스를 마친 파티는 시설의 퇴장 지점으로 보내진다.
 	constexpr float QueueExitMatchToleranceUU = 50.f;
@@ -132,12 +151,7 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin,
 
 	if (CachedCoefficientTable)
 	{
-		NeedRiseRates = FFF_NeedRules::LoadRiseRates(CachedCoefficientTable.Get());
-		NeedReliefAmounts = FFF_NeedRules::LoadReliefAmounts(CachedCoefficientTable.Get());
-		StayDrainMultiplierAtMaxNeed =
-			FFF_NeedRules::LoadStayDrainMultiplierAtMaxNeed(CachedCoefficientTable.Get());
-		FFF_NeedRules::LoadInitialNeedFractions(
-			CachedCoefficientTable.Get(), InitialNeedModeFraction, InitialNeedMaxFraction);
+		ReloadNeedCoefficients();
 
 		// 기존 멤버 값을 기본값으로 넘긴다: 행이 없거나 테이블이 없으면 저작값이 살아남고,
 		// 행이 있으면 CSV 가 이긴다. UPROPERTY 로 편집한 값도 여기서 덮이므로 그 의미를
@@ -342,22 +356,24 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	{
 		return;
 	}
-	
+
 	// 조회 시점에만 쓰이는 값이라 재빌드 없이 콘솔에서 바로 듣는다
-	HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
 	ApplyWalkableCeiling();
 
 	// OnTimeScaleChange는 사용자가 고른 raw 배속만 알린다. 공연/미니게임 잠금은 매 프레임
 	// Effective 값을 읽어야 Stage 시계와 Crowd 이동이 같은 속도로 흐른다.
 	float EffectiveSimulationTimeScale = SimulationTimeScale;
+	bool bQueueBreakThisFrame = false;
 	if (const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
 	{
 		if (const UFF_FestivalStageSubsystem* Stage =
 			GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
 		{
 			EffectiveSimulationTimeScale = Stage->GetEffectiveTimeScale();
+			bQueueBreakThisFrame = Stage->IsMainProgramQueueBreakActive();
 		}
 	}
+	ApplyCrowdAnimPlayRate(FMath::Max(0.f, EffectiveSimulationTimeScale));
 	const float Time = DeltaTime * EffectiveSimulationTimeScale;
 
 	float DiscardedSimSeconds = 0.f;
@@ -374,6 +390,16 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	{
 		StepSimulation(FixedStepSeconds);
 		SimTimeSeconds += FixedStepSeconds;
+		if (bQueueBreakThisFrame)
+		{
+			QueueBreakSimSeconds += FixedStepSeconds;
+		}
+		ToiletFrontSampleAccumulator += FixedStepSeconds;
+		if (ToiletFrontSampleAccumulator >= 0.25f)
+		{
+			SampleToiletFrontWaits(ToiletFrontSampleAccumulator);
+			ToiletFrontSampleAccumulator = 0.f;
+		}
 	}
 
 	ProcessPendingDespawns();
@@ -648,6 +674,7 @@ int32 UFF_CrowdSimulationSubsystem::PickSpawnGate(int32 InVisitorCursor) const
 void UFF_CrowdSimulationSubsystem::GatherCrowdGates(const TArray<FFF_CrowdGate>& InGates)
 {
 	ValidGates.Reset();
+	ValidatedAuthoredGateCount = 0;
 	RejectedGateCount = 0;
 	UnverifiedGateCount = 0;
 
@@ -681,6 +708,10 @@ void UFF_CrowdSimulationSubsystem::GatherCrowdGates(const TArray<FFF_CrowdGate>&
 
 	RebuildSpawnGateCdf();
 	bGatesGathered = true;
+	ValidatedAuthoredGateCount = ValidGates.Num();
+	// Initialization already baked the global field before gates were known.
+	// Only rebuild entrance patches here, including clearing removed gates.
+	RebuildHeightField(true);
 
 	// 폴백 합성은 BeginArrivalSchedule 이 한다. ArrivalSpawnCenter 가 아직 안 채워져 있다.
 	UE_LOG(LogTemp, Log,
@@ -759,7 +790,7 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 	int32 SpawnedCount = 0;
 	int32 PartiesFormed = 0;
 	int32 ChildrenSpawned = 0;
-	const float BaseSpeed = FUnitData().Speed;
+	const float BaseSpeed = FUnitData().Speed * FMath::Max(GuestWalkSpeedScale, 0.1f);
 	
 	while (VisitorCursor < CachedDistribution.Visitors.Num() && VisitorCursor < TargetCumulativeCount && !bAgentPoolExhausted)
 	{
@@ -1094,6 +1125,13 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 					RequestDecision(AgentIndex, EFF_DecisionReason::Arrived);
 				}
 			}
+			else if (State.QueuePhase == EFF_PartyQueuePhase::Joined && Unit.bHasQueueSlot
+				&& FVector::DistSquared2D(Unit.Position, Unit.QueueSlotLocation)
+					<= FMath::Square(QueueArrivalNotifyRadiusUU))
+			{
+				// 정밀 도착 전이라도 통지 반경 안이면 줄 단계를 진행한다. 걷기는 계속 칸 중심을 향한다.
+				AdvancePartyQueueOnArrival(AgentIndex);
+			}
 			else if ((State.AudiencePhase == EFF_PartyAudiencePhase::GoingToSlot
 					|| State.ProgramPhase == EFF_PartyProgramPhase::Returning)
 				&& !Unit.bUsePreciseSlotPosition
@@ -1166,13 +1204,18 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 					? FMath::Max(SimTimeSeconds - State.LastDecisionSimTime, 0.f)
 					: 0.f;
 
+				// ★ 시설로 걸어가는 중이면 주기를 늘린다. 200~300m 를 걷는 데 Live 의 절반이 걸리는데
+				//   같은 주기로 다시 고르게 하면 도착 전에 다른 시설로 돌아서 버려, 시설을 고른 파티의
+				//   96% 가 하루 동안 아무 줄에도 서지 못했다. 완전히 끄지 않는 것은 끝내 못 가는 파티의 안전장치다.
+				const float IntervalScale = State.CurrentDestinationId.IsNone() ? 1.f : FMath::Max(1.f, EnRouteReevaluateIntervalScale);
+
 				// 대기·밀집 항은 끈다 — 각각 큐 이탈과 조정자의 Relocate 경로가 맡는다.
 				const bool bReevaluate = (State.LastDecisionSimTime > 0.f)
 					&& FFF_UtilityDestinationSelector::ShouldReevaluate(
 						/*CurrentWaitMinutes=*/0.f, /*PersonalWaitThresholdMinutes=*/TNumericLimits<float>::Max(),
 						/*CurrentDensityRatio=*/0.f, /*PersonalDensityThresholdRatio=*/1.f,
 						SecondsSinceLastDecision,
-						AgentPersonalThresholds[AgentIndex].ReevaluateIntervalSeconds,
+						AgentPersonalThresholds[AgentIndex].ReevaluateIntervalSeconds * IntervalScale,
 						/*bDestinationOpenStateChanged=*/false, /*bLiveEventStateChanged=*/false);
 
 				if (bReevaluate)
@@ -1197,6 +1240,13 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 			}
 
 			UpdateFormationBlockState(AgentIndex, Unit);
+		}
+
+		// MoveFailed가 못 거두는 개체(파티원, 큐·관람·퇴장 중 리더)도 같은 임계에서 막힘 카운터를 비운다
+		if (DecisionStuckSteps > 0 && Unit.StuckSteps >= DecisionStuckSteps)
+		{
+			Unit.StuckSteps = 0;
+			++StuckCounterBackoffs;
 		}
 
 		// 공연 보러 갈 때는 걸음을 재촉한다. 리더·멤버 두 경로가 방금 Speed 를 세웠으므로
@@ -1262,8 +1312,7 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 
 		CrowdSteering::StepAgent(Unit, StepParams, VelocityAlpha, FixedDt);
 
-		if (!HeightField.IsWalkable(FVector2D(Unit.Position.X, Unit.Position.Y))
-			&& HeightField.IsWalkable(FVector2D(PreStepPosition.X, PreStepPosition.Y)))
+		if (!IsGroundWalkable(Unit.Position) && IsGroundWalkable(PreStepPosition))
 		{
 			Unit.Position = PreStepPosition;
 			Unit.PrevPosition = PreStepPosition;
@@ -1312,8 +1361,7 @@ FFF_CrowdFlowBreakdown UFF_CrowdSimulationSubsystem::GetFlowBreakdown() const
 			continue;
 		}
 
-		if (bUnstuckEnabled
-			&& (Unit.StuckSteps >= AvoidanceConfig.StuckDetectSteps || Unit.UnstuckHoldSteps > 0))
+		if (bUnstuckEnabled && Unit.UnstuckHoldSteps > 0)
 		{
 			++Out.UnstuckActive;
 		}
@@ -1420,6 +1468,7 @@ CrowdSteering::FStepParams UFF_CrowdSimulationSubsystem::MakeStepParams() const
 	Params.StuckSpeedThresholdUU = AvoidanceConfig.StuckSpeedThresholdUU;
 	Params.StuckDetectSteps = AvoidanceConfig.StuckDetectSteps;
 	Params.UnstuckHoldSteps = AvoidanceConfig.UnstuckHoldSteps;
+	Params.UnstuckCooldownSteps = AvoidanceConfig.UnstuckCooldownSteps;
 	Params.FacingSmoothSeconds = FacingSmoothTime;
 	Params.FacingEnterSpeedUU = FacingEnterSpeedUU;
 	Params.FacingExitSpeedUU = FacingExitSpeedUU;
@@ -1499,9 +1548,11 @@ void UFF_CrowdSimulationSubsystem::ComputeAvoidanceForces(const CrowdSteering::F
 	// 관람 중인 개체만 개인 공간을 좁힌다. 리더의 단계를 파티원 전원이 물려받는다 —
 	// 일행 중 리더만 붙어 서면 대열이 갈라진다.
 	ScratchSocialScale.SetNum(UnitDatas.Num(), EAllowShrinking::No);
+	ScratchPosture.SetNumZeroed(UnitDatas.Num(), EAllowShrinking::No);
 	for (int32 AgentIndex = 0; AgentIndex < UnitDatas.Num(); ++AgentIndex)
 	{
 		float Scale = 1.f;
+		EFF_CrowdPosture Posture = EFF_CrowdPosture::None;
 		const int32 LeaderIndex = UnitDatas[AgentIndex].LeaderAgentIndex;
 		if (UnitDatas[AgentIndex].bIsActive && PartyDecisionStates.IsValidIndex(LeaderIndex))
 		{
@@ -1510,17 +1561,21 @@ void UFF_CrowdSimulationSubsystem::ComputeAvoidanceForces(const CrowdSteering::F
 			case EFF_PartyAudiencePhase::Waiting:
 			case EFF_PartyAudiencePhase::Spectating:
 				Scale = FMath::Clamp(AudienceSocialForceScale, 0.f, 1.f);
+				Posture = EFF_CrowdPosture::Holding;
 				break;
 			case EFF_PartyAudiencePhase::GoingToSlot:
 				Scale = FMath::Clamp(AudienceApproachSocialForceScale, 0.f, 1.f);
+				Posture = EFF_CrowdPosture::Moving;
 				break;
 			default:
 				break;
 			}
 		}
 		ScratchSocialScale[AgentIndex] = Scale;
+		ScratchPosture[AgentIndex] = static_cast<uint8>(Posture);
 	}
 	Input.SocialScale = &ScratchSocialScale;
+	Input.Posture = &ScratchPosture;
 
 	Input.bApplyDrivingForce = Params.bDrivingForceInForce;
 	Input.FixedDtSeconds = FixedStepSeconds;
@@ -1551,11 +1606,13 @@ void UFF_CrowdSimulationSubsystem::ClearAvoidanceForces()
 		Unit.Force = FVector::ZeroVector;
 		Unit.StuckSteps = 0;
 		Unit.UnstuckHoldSteps = 0;
+		Unit.UnstuckCooldownSteps = 0;
 	}
 	AvoidanceNeighbourCounts.Reset();
 
 	ScratchDesiredVel2DMeters.Reset();
 	ScratchSocialScale.Reset();
+	ScratchPosture.Reset();
 }
 
 void UFF_CrowdSimulationSubsystem::RebuildAvoidanceWalls()
@@ -1565,29 +1622,48 @@ void UFF_CrowdSimulationSubsystem::RebuildAvoidanceWalls()
 	FacilityWallCount = AppendFacilityWalls();
 
 	bBuiltWithFacilityWalls = bAvoidanceUseFacilityWalls;
-	bBuiltWithClearance = bAvoidanceFacilityWallsIncludeClearance;
 }
 
 void UFF_CrowdSimulationSubsystem::ApplyWalkableCeiling()
 {
-	if (MaxWalkableHeightAboveOriginUU > 0.f)
+	const auto Apply = [this](FFF_CrowdHeightField& Field)
 	{
-		HeightField.SetWalkableCeilingCm(SimOrigin.Z + static_cast<double>(MaxWalkableHeightAboveOriginUU));
-	}
-	else
+		Field.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
+		if (MaxWalkableHeightAboveOriginUU > 0.f)
+			Field.SetWalkableCeilingCm(SimOrigin.Z + static_cast<double>(MaxWalkableHeightAboveOriginUU));
+		else
+			Field.ClearWalkableCeiling();
+		Field.SetBlockUnknownGround(bBlockUnknownGround);
+	};
+	Apply(HeightField);
+	for (FGroundRefinement& Refinement : GroundRefinements)
 	{
-		HeightField.ClearWalkableCeiling();
+		Apply(Refinement.Field);
+		Apply(Refinement.CoreField);
 	}
-
-	HeightField.SetBlockUnknownGround(bBlockUnknownGround);
+	for (FGroundRefinement& Refinement : GateGroundRefinements)
+	{
+		Apply(Refinement.Field);
+		Apply(Refinement.CoreField);
+	}
+	for (TPair<FIntPoint, FFF_CrowdHeightField>& Edge : GateGroundEdgeFields) Apply(Edge.Value);
 }
 
-void UFF_CrowdSimulationSubsystem::RebuildHeightField()
+void UFF_CrowdSimulationSubsystem::RebuildHeightField(const bool bOnlyGateRefinements)
 {
-	HeightField.Reset();
-	RoadSupportRevision = -1;
+	if (!bOnlyGateRefinements)
+	{
+		HeightField.Reset();
+		GroundRefinements.Reset();
+		GroundRefinementBuildSeconds = 0.0;
+		RoadSupportRevision = -1;
+	}
+	GateGroundRefinements.Reset();
+	GateGroundEdgeFields.Reset();
+	GateGroundRefinementProbeCount = 0;
+	GateGroundRefinementBuildSeconds = 0.0;
 
-	if (!bEnableHeightField)
+	if (!bEnableHeightField || (bOnlyGateRefinements && !HeightField.IsValid()))
 	{
 		return;
 	}
@@ -1647,44 +1723,267 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 	const double EndZ = FMath::Min(SimOrigin.Z, TopZ) - TraceBelowCm;
 
 	int32 TraceCount = 0;
+	int32 SkippedNonWalkableHits = 0;
+
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+	const ANavigationData* NavData = (bHeightFieldRequireNavMesh && NavSys) ? NavSys->GetDefaultNavDataInstance() : nullptr;
+	if (bHeightFieldRequireNavMesh && !NavData)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("높이 격자: NavMesh가 없어 걸을 수 있는 면 검사를 생략한다 — 아치·지붕 같은 물체도 지면으로 잡힌다"));
+	}
+
+	const FVector NavSnapExtentCm(100.0, 100.0, 60.0);
+	constexpr int32 MaxSkippedLayers = 4;
+
+	auto IsWalkableHit = [&](const FHitResult& Hit) -> bool
+	{
+		FNavLocation OnNav;
+		return NavSys->ProjectPointToNavigation(Hit.ImpactPoint, OnNav, NavSnapExtentCm, NavData);
+	};
 
 	auto Sampler = [&](const FVector2D& QueryCm, double& OutHeightCm) -> bool
 	{
+		const FVector TraceStart(QueryCm.X, QueryCm.Y, StartZ);
+		const FVector TraceEnd(QueryCm.X, QueryCm.Y, EndZ);
+
 		++TraceCount;
-
 		FHitResult Hit;
-		const bool bHit = World->LineTraceSingleByChannel(
-			Hit,
-			FVector(QueryCm.X, QueryCm.Y, StartZ),
-			FVector(QueryCm.X, QueryCm.Y, EndZ),
-			ECC_WorldStatic,
-			Params);
-
-		if (!bHit)
+		if (!World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, Params))
 		{
 			return false;
 		}
+		if (!NavData || IsWalkableHit(Hit))
+		{
+			OutHeightCm = Hit.ImpactPoint.Z;
+			return true;
+		}
 
-		OutHeightCm = Hit.ImpactPoint.Z;
-		return true;
+		FCollisionQueryParams LayerParams = Params;
+		for (int32 Layer = 0; Layer < MaxSkippedLayers; ++Layer)
+		{
+			++SkippedNonWalkableHits;
+			if (!Hit.GetComponent())
+			{
+				return false;
+			}
+			LayerParams.AddIgnoredComponent(Hit.GetComponent());
+
+			++TraceCount;
+			if (!World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, LayerParams))
+			{
+				return false;
+			}
+			if (IsWalkableHit(Hit))
+			{
+				OutHeightCm = Hit.ImpactPoint.Z;
+				return true;
+			}
+		}
+		return false;
 	};
 
 	const double SpacingCm = FMath::Max(static_cast<double>(HeightFieldSpacingUU), 10.0);
 
-	HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
-	ApplyWalkableCeiling();
-
-	const bool bBuilt = HeightField.Build(CenterCm, HalfSizeCm, SpacingCm, Sampler);
-
-	const FFF_CrowdHeightField::FBuildStats& Stats = HeightField.GetStats();
-
-	if (!bBuilt)
+	if (!bOnlyGateRefinements)
 	{
-		UE_LOG(LogTemp, Log,
-			TEXT("높이 격자: 지면을 찾지 못했다(트레이스 %d회) — 개체 Z는 스폰 값 그대로 유지된다"),
-			TraceCount);
-		return;
+		HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
+		ApplyWalkableCeiling();
+
+		const bool bBuilt = HeightField.Build(CenterCm, HalfSizeCm, SpacingCm, Sampler);
+
+		if (!bBuilt)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("높이 격자: 지면을 찾지 못했다(트레이스 %d회) — 개체 Z는 스폰 값 그대로 유지된다"),
+				TraceCount);
+			return;
+		}
+
+		int32 RefinementSamples = 0;
+		const double RefinementStartedAt = FPlatformTime::Seconds();
+		for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+		{
+			if (!It->ActorHasTag(GroundRefinementTag)) continue;
+			const UStaticMeshComponent* Surface = It->GetStaticMeshComponent();
+			const UStaticMesh* Mesh = Surface ? Surface->GetStaticMesh() : nullptr;
+			const FBox SurfaceBounds = Surface ? Surface->Bounds.GetBox() : FBox(ForceInit);
+			const FVector SurfaceScale = Surface ? Surface->GetComponentScale() : FVector::ZeroVector;
+			const bool bSupported = Surface && Mesh
+				&& Mesh->GetPathName() == TEXT("/Engine/BasicShapes/Cube.Cube")
+				&& Surface->Mobility == EComponentMobility::Static
+				&& Surface->IsQueryCollisionEnabled()
+				&& Surface->GetCollisionResponseToChannel(ECC_WorldStatic) == ECR_Block
+				&& !Surface->IsSimulatingPhysics() && !SurfaceScale.ContainsNaN() && SurfaceScale.GetMin() > 0.0
+				&& SurfaceBounds.IsValid && !SurfaceBounds.Min.ContainsNaN() && !SurfaceBounds.Max.ContainsNaN()
+				&& SurfaceBounds.GetSize().GetMax() <= GroundRefinementMaxSurfaceSpanCm
+				&& Surface->GetUpVector().Z >= FMath::Cos(FMath::DegreesToRadians(44.0));
+			if (!bSupported)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Crowd ground refinement rejected unsupported tagged surface: %s"), *It->GetPathName());
+				continue;
+			}
+			// Share a world-aligned 25 cm lattice, including in overlapping patches.
+			// Do not trace against the cube alone: the existing deck can be above it.
+			const FVector2D Minimum(
+				FMath::FloorToDouble((SurfaceBounds.Min.X - GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm,
+				FMath::FloorToDouble((SurfaceBounds.Min.Y - GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm);
+			const FVector2D Maximum(
+				FMath::CeilToDouble((SurfaceBounds.Max.X + GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm,
+				FMath::CeilToDouble((SurfaceBounds.Max.Y + GroundRefinementApronCm) / GroundRefinementSpacingCm) * GroundRefinementSpacingCm);
+			const double SideCm = FMath::Max(Maximum.X - Minimum.X, Maximum.Y - Minimum.Y);
+			FGroundRefinement Refinement;
+			Refinement.BoundsCm = FBox2D(Minimum, Minimum + FVector2D(SideCm));
+			if (Refinement.Field.Build(Minimum + FVector2D(SideCm * 0.5), SideCm * 0.5,
+				GroundRefinementSpacingCm, Sampler))
+			{
+				RefinementSamples += Refinement.Field.GetStats().SampleCount;
+				// Fine sampling is limited to the walkway and its immediate approaches.
+				// Keep the broad apron coarse; both tiers share fixed world lattices so
+				// authoring transforms cannot tune samples to a particular test point.
+				const FVector2D CoreMinimum(
+					FMath::FloorToDouble((SurfaceBounds.Min.X - GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm,
+					FMath::FloorToDouble((SurfaceBounds.Min.Y - GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm);
+				const FVector2D CoreMaximum(
+					FMath::CeilToDouble((SurfaceBounds.Max.X + GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm,
+					FMath::CeilToDouble((SurfaceBounds.Max.Y + GroundRefinementCoreApronCm) / GroundRefinementCoreSpacingCm) * GroundRefinementCoreSpacingCm);
+				const double CoreSideCm = FMath::Max(CoreMaximum.X - CoreMinimum.X, CoreMaximum.Y - CoreMinimum.Y);
+				if (Refinement.CoreField.Build(CoreMinimum + FVector2D(CoreSideCm * 0.5), CoreSideCm * 0.5,
+					GroundRefinementCoreSpacingCm, Sampler))
+				{
+					Refinement.CoreBoundsCm = FBox2D(CoreMinimum, CoreMinimum + FVector2D(CoreSideCm));
+					RefinementSamples += Refinement.CoreField.GetStats().SampleCount;
+				}
+				GroundRefinements.Add(MoveTemp(Refinement));
+			}
+		}
+		ApplyWalkableCeiling();
+		GroundRefinementBuildSeconds = FPlatformTime::Seconds() - RefinementStartedAt;
+		if (!GroundRefinements.IsEmpty())
+			UE_LOG(LogTemp, Log, TEXT("Crowd ground refinements: %d explicit static walkways, %d cached samples, %.0f cm core / %.0f cm apron, %.2f ms build, %.1f KiB sample payload"),
+				GroundRefinements.Num(), RefinementSamples, GroundRefinementCoreSpacingCm, GroundRefinementSpacingCm,
+				GroundRefinementBuildSeconds * 1000.0, RefinementSamples * (sizeof(double) + sizeof(uint8)) / 1024.0);
 	}
+
+	const double GateBuildStartedAt = FPlatformTime::Seconds();
+	int32 GateSamples = 0;
+	// Emergency fallback gates are appended after the authored prefix. Keep
+	// their global-ground policy stable across subsequent explicit rebuilds.
+	for (int32 GateIndex = 0; GateIndex < FMath::Min(ValidatedAuthoredGateCount, ValidGates.Num()); ++GateIndex)
+	{
+		const FFF_CrowdGate& Gate = ValidGates[GateIndex];
+		if ((!Gate.bAllowSpawn && !Gate.bAllowExit) || Gate.GateLocation.ContainsNaN()
+			|| !FMath::IsFinite(Gate.GateRadiusUU) || Gate.GateRadiusUU <= 0.f) continue;
+		// Same six-member formation envelope used by gate validation, plus a
+		// physical-foot/cache margin. No paths, audit coordinates or actor names.
+		const double Radius = FMath::Max(GateGroundMinimumRadiusCm,
+			static_cast<double>(Gate.GateRadiusUU) + GetPartyFormationOffset(5).Size2D())
+			+ GroundRefinementCoreApronCm;
+		if (!FMath::IsFinite(Radius) || Radius > GateGroundMaximumCoreRadiusCm
+			|| GateGroundRefinements.Num() >= GateGroundMaximumPatches)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Gate ground refinement exceeds bounded entrance budget: %s radius=%.1f cm"),
+				*Gate.GateId.ToString(), Radius);
+			continue;
+		}
+		const FVector2D Center(Gate.GateLocation.X, Gate.GateLocation.Y);
+		const auto AlignedBounds = [&Center](const double HalfSize, const double CellSize)
+		{
+			const FVector2D Minimum(FMath::FloorToDouble((Center.X - HalfSize) / CellSize) * CellSize,
+				FMath::FloorToDouble((Center.Y - HalfSize) / CellSize) * CellSize);
+			const FVector2D Maximum(FMath::CeilToDouble((Center.X + HalfSize) / CellSize) * CellSize,
+				FMath::CeilToDouble((Center.Y + HalfSize) / CellSize) * CellSize);
+			return FBox2D(Minimum, Minimum + FVector2D(FMath::Max(Maximum.X - Minimum.X, Maximum.Y - Minimum.Y)));
+		};
+		FGroundRefinement Refinement;
+		Refinement.CoreBoundsCm = AlignedBounds(Radius, GroundRefinementCoreSpacingCm);
+		Refinement.BoundsCm = AlignedBounds(Radius + GroundRefinementApronCm, GroundRefinementSpacingCm);
+		const auto SampleCount = [](const FBox2D& Bounds, const double CellSize)
+		{
+			const int32 Side = FMath::CeilToInt(Bounds.GetSize().X / CellSize) + 1;
+			return Side * Side;
+		};
+		const int32 RequiredSamples = SampleCount(Refinement.CoreBoundsCm, GroundRefinementCoreSpacingCm)
+			+ SampleCount(Refinement.BoundsCm, GroundRefinementSpacingCm);
+		if (RequiredSamples > GateGroundMaximumSamples - GateSamples)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Gate ground refinement sample budget exhausted before gate %s (%d/%d)"),
+				*Gate.GateId.ToString(), GateSamples, GateGroundMaximumSamples);
+			continue;
+		}
+		// Failed/empty bakes still consume the work budget; missing ground must
+		// not permit an unbounded number of expensive allocation/trace attempts.
+		GateSamples += RequiredSamples;
+		const bool bCoreBuilt = Refinement.CoreField.Build(Refinement.CoreBoundsCm.GetCenter(),
+			Refinement.CoreBoundsCm.GetSize().X * .5, GroundRefinementCoreSpacingCm, Sampler);
+		const bool bApronBuilt = Refinement.Field.Build(Refinement.BoundsCm.GetCenter(),
+			Refinement.BoundsCm.GetSize().X * .5, GroundRefinementSpacingCm, Sampler);
+		if (bCoreBuilt && bApronBuilt)
+		{
+			GateGroundRefinements.Add(MoveTemp(Refinement));
+		}
+	}
+	// A shallow curb can still be blended into a fake slope inside a 5 cm cell.
+	// Refine only those physical discontinuities, using a fixed world lattice.
+	// Smooth terrain keeps the original 5 cm cache, and unknown samples remain
+	// unknown instead of being replaced by an invented analytic floor.
+	bool bEdgeBudgetExhausted = false;
+	for (FGroundRefinement& Refinement : GateGroundRefinements)
+	{
+		const int32 CellsX = Refinement.CoreField.GetNumX() - 1;
+		const int32 CellsY = Refinement.CoreField.GetNumY() - 1;
+		for (int32 Y = 0; Y < CellsY; ++Y)
+		{
+			for (int32 X = 0; X < CellsX; ++X)
+			{
+				const FVector2D Minimum = Refinement.CoreBoundsCm.Min
+					+ FVector2D(X * GroundRefinementCoreSpacingCm, Y * GroundRefinementCoreSpacingCm);
+				FFF_CrowdHeightField::FCellProbe Probe;
+				if (!Refinement.CoreField.ProbeCell(Minimum + FVector2D(GroundRefinementCoreSpacingCm * .5), Probe)) continue;
+				int32 ValidCorners = 0;
+				double MinimumHeight = TNumericLimits<double>::Max(), MaximumHeight = TNumericLimits<double>::Lowest();
+				for (int32 Corner = 0; Corner < 4; ++Corner)
+				{
+					if (!Probe.bCornerValid[Corner]) continue;
+					++ValidCorners;
+					MinimumHeight = FMath::Min(MinimumHeight, Probe.CornerHeightCm[Corner]);
+					MaximumHeight = FMath::Max(MaximumHeight, Probe.CornerHeightCm[Corner]);
+				}
+				if (ValidCorners == 0 || (ValidCorners == 4 && MaximumHeight - MinimumHeight <= GateGroundEdgeHeightSpanCm)) continue;
+				const FIntPoint Key(FMath::RoundToInt(Minimum.X / GroundRefinementCoreSpacingCm),
+					FMath::RoundToInt(Minimum.Y / GroundRefinementCoreSpacingCm));
+				if (GateGroundEdgeFields.Contains(Key)) continue;
+				constexpr int32 EdgeSamples = 36; // A 5 cm cell sampled every 1 cm has 6 x 6 vertices.
+				if (bEdgeBudgetExhausted || GateGroundEdgeFields.Num() >= GateGroundMaximumEdgeCells
+					|| EdgeSamples > GateGroundMaximumSamples - GateSamples)
+				{
+					if (!bEdgeBudgetExhausted)
+						UE_LOG(LogTemp, Warning, TEXT("Gate ground edge refinement budget exhausted (%d cells, %d probes); remaining discontinuities are unknown"),
+							GateGroundEdgeFields.Num(), GateSamples);
+					bEdgeBudgetExhausted = true;
+					Refinement.CoreField.MarkCellUnknown(Minimum + FVector2D(GroundRefinementCoreSpacingCm * .5));
+					continue;
+				}
+				GateSamples += EdgeSamples;
+				FFF_CrowdHeightField& Edge = GateGroundEdgeFields.Add(Key);
+				// Preserve even an empty bake so a missing floor cannot fall back to
+				// the less accurate parent cell and silently fabricate support.
+				Edge.Build(Minimum + FVector2D(GroundRefinementCoreSpacingCm * .5),
+					GroundRefinementCoreSpacingCm * .5, GateGroundEdgeSpacingCm, Sampler);
+				GateSamples += Edge.RefineDiscontinuities(GateGroundEdgeHeightSpanCm,
+					GateGroundBoundaryToleranceCm, GateGroundMaximumSamples - GateSamples, Sampler);
+			}
+		}
+	}
+	GateGroundRefinementProbeCount = GateSamples;
+	GateGroundRefinementBuildSeconds = FPlatformTime::Seconds() - GateBuildStartedAt;
+	ApplyWalkableCeiling();
+	if (!GateGroundRefinements.IsEmpty())
+		UE_LOG(LogTemp, Log, TEXT("Crowd gate ground refinements: %d entrances, %d probes (including boundary attempts), %.2f ms build, %.1f KiB cache payload"),
+			GateGroundRefinements.Num(), GateSamples, GateGroundRefinementBuildSeconds * 1000.0,
+			GetGateGroundRefinementAllocatedBytes() / 1024.0);
+	if (bOnlyGateRefinements) return;
+	const FFF_CrowdHeightField::FBuildStats& Stats = HeightField.GetStats();
 
 	UE_LOG(LogTemp, Log,
 		TEXT("높이 격자: %dx%d, 적중 %d/%d, 높이 %.0f~%.0f (기복 %.0fcm), 시설 %d개 제외"),
@@ -1692,6 +1991,13 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		Stats.HitCount, Stats.SampleCount,
 		Stats.MinHeightCm, Stats.MaxHeightCm, Stats.HeightSpanCm(),
 		IgnoredFacilities);
+
+	if (NavData)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("높이 격자: NavMesh가 없는 면 %d개를 건너뛰었다 (아치·가로등·지붕 등, 트레이스 %d회)"),
+			SkippedNonWalkableHits, TraceCount);
+	}
 
 	UE_LOG(LogTemp, Log,
 		TEXT("높이 격자: 중심 (%.0f, %.0f) 반폭 %.0f (%s), 간격 %.0f, 트레이스 시작 Z=%.0f"),
@@ -1724,9 +2030,59 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 	}
 }
 
+const FFF_CrowdHeightField& UFF_CrowdSimulationSubsystem::GetHeightFieldAt(const FVector2D& WorldXYCm) const
+{
+	for (const FGroundRefinement& Refinement : GateGroundRefinements)
+	{
+		if (!Refinement.CoreBoundsCm.IsInsideOrOn(WorldXYCm)) continue;
+		const FIntPoint Key(FMath::FloorToInt(WorldXYCm.X / GroundRefinementCoreSpacingCm),
+			FMath::FloorToInt(WorldXYCm.Y / GroundRefinementCoreSpacingCm));
+		if (const FFF_CrowdHeightField* Edge = GateGroundEdgeFields.Find(Key)) return *Edge;
+	}
+	for (const FGroundRefinement& Refinement : GroundRefinements)
+		if (Refinement.CoreBoundsCm.bIsValid && Refinement.CoreBoundsCm.IsInsideOrOn(WorldXYCm)) return Refinement.CoreField;
+	for (const FGroundRefinement& Refinement : GateGroundRefinements)
+		if (Refinement.CoreBoundsCm.IsInsideOrOn(WorldXYCm)) return Refinement.CoreField;
+	for (const FGroundRefinement& Refinement : GroundRefinements)
+		if (Refinement.BoundsCm.IsInsideOrOn(WorldXYCm)) return Refinement.Field;
+	for (const FGroundRefinement& Refinement : GateGroundRefinements)
+		if (Refinement.BoundsCm.IsInsideOrOn(WorldXYCm)) return Refinement.Field;
+	return HeightField;
+}
+
+int32 UFF_CrowdSimulationSubsystem::GetGroundRefinementSampleCount() const
+{
+	int32 Count = 0;
+	for (const FGroundRefinement& Refinement : GroundRefinements)
+		Count += Refinement.Field.GetStats().SampleCount + Refinement.CoreField.GetStats().SampleCount;
+	return Count;
+}
+
+int32 UFF_CrowdSimulationSubsystem::GetGateGroundRefinementSampleCount() const
+{
+	return GateGroundRefinementProbeCount;
+}
+
+SIZE_T UFF_CrowdSimulationSubsystem::GetGateGroundRefinementAllocatedBytes() const
+{
+	SIZE_T Bytes = GateGroundRefinements.GetAllocatedSize() + GateGroundEdgeFields.GetAllocatedSize();
+	for (const FGroundRefinement& Refinement : GateGroundRefinements)
+		Bytes += Refinement.Field.GetAllocatedSizeBytes() + Refinement.CoreField.GetAllocatedSizeBytes();
+	for (const TPair<FIntPoint, FFF_CrowdHeightField>& Edge : GateGroundEdgeFields)
+		Bytes += Edge.Value.GetAllocatedSizeBytes();
+	return Bytes;
+}
+
+bool UFF_CrowdSimulationSubsystem::IsGroundWalkable(const FVector& WorldLocation) const
+{
+	const FVector2D WorldXYCm(WorldLocation.X, WorldLocation.Y);
+	return GetHeightFieldAt(WorldXYCm).IsWalkable(WorldXYCm);
+}
+
 bool UFF_CrowdSimulationSubsystem::TryGetGroundZ(const FVector& WorldLocation, double& OutZ) const
 {
-	bool bHasGround = HeightField.TryGetHeightCm(FVector2D(WorldLocation.X, WorldLocation.Y), OutZ);
+	const FVector2D WorldXYCm(WorldLocation.X, WorldLocation.Y);
+	bool bHasGround = GetHeightFieldAt(WorldXYCm).TryGetHeightCm(WorldXYCm, OutZ);
 	if (!bEnableHeightField || WorldLocation.ContainsNaN()) return bHasGround;
 	EnsureRoadSupportCache();
 	const FIntPoint Bucket(FMath::FloorToInt(WorldLocation.X / RoadSupportBucketSizeCm),
@@ -1860,15 +2216,8 @@ int32 UFF_CrowdSimulationSubsystem::AppendFacilityWalls()
 		const FFFZSFacilitySpec Spec = Actor->GetFacilitySpec();
 		if (Spec.IsGroundSurface()) continue;
 
-		float HalfXCm = static_cast<float>(Spec.FootprintSizeCells.X) * 0.5f;
-		float HalfYCm = static_cast<float>(Spec.FootprintSizeCells.Y) * 0.5f;
-
-		if (bAvoidanceFacilityWallsIncludeClearance)
-		{
-			const float ClearanceCm = static_cast<float>(Spec.ClearanceCells);
-			HalfXCm += ClearanceCm;
-			HalfYCm += ClearanceCm;
-		}
+		const float HalfXCm = static_cast<float>(Spec.FootprintSizeCells.X) * 0.5f;
+		const float HalfYCm = static_cast<float>(Spec.FootprintSizeCells.Y) * 0.5f;
 
 		const FVector2f CenterMeters(
 			static_cast<float>(Facility.WorldLocation.X) * FFF_CrowdUnits::MetersPerUU,
@@ -1895,9 +2244,7 @@ int32 UFF_CrowdSimulationSubsystem::AppendFacilityWalls()
 
 void UFF_CrowdSimulationSubsystem::EnsureFacilityWalls()
 {
-	const bool bKnobsChanged =
-		(bBuiltWithFacilityWalls != bAvoidanceUseFacilityWalls) ||
-		(bBuiltWithClearance != bAvoidanceFacilityWallsIncludeClearance);
+	const bool bKnobsChanged = bBuiltWithFacilityWalls != bAvoidanceUseFacilityWalls;
 
 	if (!bAvoidanceUseFacilityWalls)
 	{
@@ -2574,6 +2921,22 @@ void UFF_CrowdSimulationSubsystem::PushPresentationToActors(float DeltaTime, flo
 	}
 }
 
+void UFF_CrowdSimulationSubsystem::ApplyCrowdAnimPlayRate(float PlayRate)
+{
+	if (FMath::IsNearlyEqual(PlayRate, AppliedCrowdAnimPlayRate))
+	{
+		return;
+	}
+	AppliedCrowdAnimPlayRate = PlayRate;
+	for (AFF_BaseCrowd* Actor : CrowdPool)
+	{
+		if (IsValid(Actor))
+		{
+			Actor->SetAnimPlayRate(PlayRate);
+		}
+	}
+}
+
 void UFF_CrowdSimulationSubsystem::RequestDecision(int32 LeaderAgentIndex, EFF_DecisionReason Reason)
 {
 	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex))
@@ -2861,7 +3224,7 @@ bool UFF_CrowdSimulationSubsystem::BeginAudienceVisit(
 		return false;
 	}
 
-	// Utility로 무대에 먼저 도착해도 공연 3축제분 전보다 일찍 관람 잠금을 걸지 않는다.
+	// Utility로 무대에 먼저 도착해도 집결 창(AudienceGatherLeadSeconds)보다 일찍 관람 잠금을 걸지 않는다.
 	const UWorld* World = GetWorld();
 	const UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
 	const AFFZSFacilityActor* Facility = Zones ? Zones->FindFacility(FacilityId) : nullptr;
@@ -2870,7 +3233,10 @@ bool UFF_CrowdSimulationSubsystem::BeginAudienceVisit(
 	if (Facility && FFF_ZoneSystemBridge::IsMainStageFacility(
 		Facility->GetFacilitySpec().Category, Facility->GetFacilitySpec().FacilityDefinitionId))
 	{
-		if (!Stage || !Stage->IsMainProgramQueueBreakActive())
+		float WindowStart = 0.f;
+		float WindowEnd = 0.f;
+		if (!Stage || !Stage->TryGetMainProgramShowWindow(
+			FMath::Max(AudienceGatherLeadSeconds, 0.f), WindowStart, WindowEnd))
 		{
 			return false;
 		}
@@ -2982,6 +3348,7 @@ bool UFF_CrowdSimulationSubsystem::AssignAudienceSeats(
 		Member.FormationClearStreak = 0;
 		Member.StuckSteps = 0;
 		Member.UnstuckHoldSteps = 0;
+		Member.UnstuckCooldownSteps = 0;
 		if (PathFollowers.IsValidIndex(Members[MemberOffset]))
 		{
 			PathFollowers[Members[MemberOffset]].Reset();
@@ -3210,14 +3577,20 @@ int32 UFF_CrowdSimulationSubsystem::GatherPartiesToMainStageAudience()
 	const UWorld* World = GetWorld();
 	const UFF_FestivalStageSubsystem* Stage = World && World->GetGameInstance()
 		? World->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
-	if (!Stage || !Stage->IsMainProgramQueueBreakActive())
+	float WindowStart = 0.f;
+	float WindowEnd = 0.f;
+	if (!Stage || !Stage->TryGetMainProgramShowWindow(
+		FMath::Max(AudienceGatherLeadSeconds, 0.f), WindowStart, WindowEnd))
 	{
 		return 0;
 	}
+	const UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge = World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>();
 	if (UFF_ZoneSystemQueueBridgeSubsystem* Bridge = World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>())
 	{
+		// 대기열 중단 창(공연 3축제분 전) 안일 때만 실제로 닫힌다. 그 전에는 아무 일도 안 한다.
 		Bridge->SynchronizeMainProgramQueueBreak();
 	}
+	const UFF_QueueSubsystem* QueueSystem = World->GetSubsystem<UFF_QueueSubsystem>();
 
 	++AudienceGatherAttempts;
 	FGuid FacilityId;
@@ -3246,6 +3619,15 @@ int32 UFF_CrowdSimulationSubsystem::GatherPartiesToMainStageAudience()
 			&& State.AudiencePhase == EFF_PartyAudiencePhase::None
 			&& !AudiencePartiesExcludedThisShow.Contains(Unit.PartyID))
 		{
+			// 모두가 무대로 가지 않는다. 파티ID 와 공연 시각으로 정한 몫만 관람하러 간다.
+			// 매번 훑을 때마다 같은 답이 나와야 하므로 난수를 쓰지 않는다.
+			const uint32 AttendanceHash = GetTypeHash(
+				FIntPoint(Unit.PartyID, FMath::RoundToInt(MainProgramStartLiveSeconds)));
+			const float AttendanceRoll = static_cast<float>(AttendanceHash % 10000u) / 10000.f;
+			if (AttendanceRoll >= FMath::Clamp(AudienceAttendanceRatio, 0.f, 1.f))
+			{
+				continue;
+			}
 			Leaders.Add(LeaderIndex);
 		}
 	}
@@ -3278,6 +3660,14 @@ int32 UFF_CrowdSimulationSubsystem::GatherPartiesToMainStageAudience()
 		if (RemainingSeconds > DueSeconds)
 		{
 			++NotDueYet;
+			continue;
+		}
+		// 이용 중인 팀을 줄에서 빼면 서비스가 끊긴다. 대기열이 닫히기 전에는 다음 훑기로 미룬다.
+		const FPartyDecisionState& LeaderState = PartyDecisionStates[LeaderIndex];
+		if (QueueSystem && QueueBridge && LeaderState.QueuedFacilityId.IsValid()
+			&& QueueSystem->HasPartyStartedService(
+				QueueBridge->FindQueueFacilityId(LeaderState.QueuedFacilityId), UnitDatas[LeaderIndex].PartyID))
+		{
 			continue;
 		}
 		if (BeginAudienceVisit(LeaderIndex, FacilityId, Snapshot))
@@ -3318,6 +3708,75 @@ int32 UFF_CrowdSimulationSubsystem::GetAudiencePartyCount() const
 		}
 	}
 	return Count;
+}
+
+void UFF_CrowdSimulationSubsystem::GetAudienceWalkDiagnostics(
+	int32& OutWalkingLeaders, float& OutMeanRemainingMeters, float& OutMaxRemainingMeters,
+	float& OutMeanSpeedMetersPerSecond, float& OutMeanCruiseMetersPerSecond, int32& OutStalledLeaders,
+	int32& OutNoPathLeaders, int32& OutQueryFailedLeaders, float& OutStalledMeanRemainingMeters,
+	int32& OutStalledBlockedLine) const
+{
+	OutStalledBlockedLine = 0;
+	OutNoPathLeaders = 0;
+	OutQueryFailedLeaders = 0;
+	OutStalledMeanRemainingMeters = 0.f;
+	double StalledRemainingSum = 0.0;
+	OutWalkingLeaders = 0;
+	OutMeanRemainingMeters = 0.f;
+	OutMaxRemainingMeters = 0.f;
+	OutMeanSpeedMetersPerSecond = 0.f;
+	OutMeanCruiseMetersPerSecond = 0.f;
+	OutStalledLeaders = 0;
+
+	double RemainingSum = 0.0;
+	double SpeedSum = 0.0;
+	double CruiseSum = 0.0;
+	for (int32 LeaderIndex = 0; LeaderIndex < PartyDecisionStates.Num(); ++LeaderIndex)
+	{
+		if (!UnitDatas.IsValidIndex(LeaderIndex) || !UnitDatas[LeaderIndex].bIsActive
+			|| UnitDatas[LeaderIndex].LeaderAgentIndex != LeaderIndex
+			|| PartyDecisionStates[LeaderIndex].AudiencePhase != EFF_PartyAudiencePhase::GoingToSlot)
+		{
+			continue;
+		}
+		const FUnitData& Leader = UnitDatas[LeaderIndex];
+		const float RemainingMeters = static_cast<float>(
+			FVector::Dist2D(Leader.Position, Leader.TargetLocation)) * FFF_CrowdUnits::MetersPerUU;
+		const float SpeedMps = static_cast<float>(Leader.Velocity.Size2D()) * FFF_CrowdUnits::MetersPerUU;
+		++OutWalkingLeaders;
+		RemainingSum += RemainingMeters;
+		SpeedSum += SpeedMps;
+		CruiseSum += Leader.CruiseSpeed * FFF_CrowdUnits::MetersPerUU;
+		OutMaxRemainingMeters = FMath::Max(OutMaxRemainingMeters, RemainingMeters);
+		if (PathFollowers.IsValidIndex(LeaderIndex))
+		{
+			OutNoPathLeaders += PathFollowers[LeaderIndex].bHasPath ? 0 : 1;
+			OutQueryFailedLeaders += PathFollowers[LeaderIndex].bQueryFailed ? 1 : 0;
+		}
+		if (SpeedMps < 0.2f)
+		{
+			++OutStalledLeaders;
+			StalledRemainingSum += RemainingMeters;
+			// 정지한 파티의 목표까지 직선이 시설 벽에 막혀 있으면 경로 추종이 아니라 벽 쪽 문제다.
+			if (!FFF_CrowdWalls::IsSegmentClear(AvoidanceWalls,
+					FVector2f(Leader.Position.X, Leader.Position.Y) * FFF_CrowdUnits::MetersPerUU,
+					FVector2f(Leader.TargetLocation.X, Leader.TargetLocation.Y) * FFF_CrowdUnits::MetersPerUU,
+					Leader.Radius * FFF_CrowdUnits::MetersPerUU))
+			{
+				++OutStalledBlockedLine;
+			}
+		}
+	}
+	if (OutStalledLeaders > 0)
+	{
+		OutStalledMeanRemainingMeters = static_cast<float>(StalledRemainingSum / OutStalledLeaders);
+	}
+	if (OutWalkingLeaders > 0)
+	{
+		OutMeanRemainingMeters = static_cast<float>(RemainingSum / OutWalkingLeaders);
+		OutMeanSpeedMetersPerSecond = static_cast<float>(SpeedSum / OutWalkingLeaders);
+		OutMeanCruiseMetersPerSecond = static_cast<float>(CruiseSum / OutWalkingLeaders);
+	}
 }
 
 void UFF_CrowdSimulationSubsystem::GetScheduledPhaseCounts(
@@ -3783,10 +4242,9 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 	// ★ 판정은 AtSlot 에서만 한다. Joined(배정 슬롯으로 걸어가는 중)에 이탈시키면 걸어가다
 	//   포기하는 것이 되고, 그 구간에서 진척이 없는 경우는 MoveFailed 가 이미 맡고 있다.
 	//
-	// ★ 기준점은 QueueEnteredSimTime = **줄에 가입한 시각**이라, 슬롯까지 걸어간 시간이
-	//   대기 시간에 포함된다. 슬롯 도착 시각을 따로 들지 않은 것은 의도다 — 손님 입장에서
-	//   "이 시설에 매인 시간"은 가입 시점부터이고, 필드를 하나 더 늘릴 값어치가 없다.
-	//   순수 슬롯 대기만 재야 할 이유가 생기면 그때 타임스탬프를 추가할 것.
+	// ★ 기준점은 QueueAtSlotSimTime = **파티 전원이 칸에 도착한 시각**이다. 가입 시각을 쓰면
+	//   칸까지 걸어간 시간이 대기에 들어가는데, 시설까지 수십 m 를 걷는 동안 인내(15분 = 실제 15초)를
+	//   다 써서 칸에 닿자마자 떠나는 파티가 줄 이탈의 대부분이었다(3일 경제 시나리오 2일차 수락 181 중 84).
 	//
 	// ★ ClearPartyQueueState 를 bLeaveQueue=true 로 먼저 부른다. 이 순서가 중요하다 —
 	//   RequestDecision 이 내부에서 부르는 것은 bLeaveQueue=false 라 큐에 통지하지 않고,
@@ -3806,7 +4264,11 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 		&& !bHasStartedService
 		&& AgentPersonalThresholds.IsValidIndex(LeaderAgentIndex))
 	{
-		const float WaitedMinutes = FMath::Max(SimTimeSeconds - State.QueueEnteredSimTime, 0.f)
+		// 공연 휴지 구간에는 시설이 서비스를 멈춘다. 그 시간까지 기다린 것으로 치면 공연이 끝나기 전에
+		// 줄 선 손님이 거의 다 이탈했다(인내 15분 = 실제 15초, 휴지 구간 약 33초). 휴지 구간 시간은 뺀다.
+		const float PausedSeconds = Bridge->PausesForMainProgram(Bridge->FindQueueFacilityId(State.QueuedFacilityId))
+			? FMath::Max(QueueBreakSimSeconds - State.QueueBreakSecondsAtSlot, 0.f) : 0.f;
+		const float WaitedMinutes = FMath::Max(SimTimeSeconds - State.QueueAtSlotSimTime - PausedSeconds, 0.f)
 			* Temp_FestivalMinutesPerRealSecond;
 
 		// 대기 항만 켜서 부른다. 밀집은 조정자의 Relocate 경로가 이미 판정하고 있고,
@@ -3836,6 +4298,7 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 				AgentPersonalThresholds[LeaderAgentIndex].WaitThresholdMinutes);
 
 			++QueuePatienceAbandons;
+			ToiletPatienceAbandons += IsToiletFacility(State.QueuedFacilityId) ? 1 : 0;
 
 			// 큐에 먼저 통지하고(위 주석) 그 다음 재결정을 건다. 이 순서를 바꾸면 안 된다.
 			ClearPartyQueueState(LeaderAgentIndex, true);
@@ -3879,19 +4342,25 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 		Request.CauseId = State.CurrentDestinationId;
 
 		++QueueJoinAttempts;
+		const bool bToilet = IsToiletFacility(ZoneFacilityId);
+		ToiletJoinAttempts += bToilet ? 1 : 0;
 
 		const FFF_QueueJoinResponse Response = Bridge->TryJoinZoneFacility(ZoneFacilityId, Request);
 		if (!Response.bAccepted)
 		{
+			ToiletJoinRejectedFull += bToilet && Response.Result == EFF_QueueJoinResult::RejectedFull ? 1 : 0;
+			ToiletJoinRejectedClosed += bToilet && Response.Result == EFF_QueueJoinResult::RejectedClosed ? 1 : 0;
 			++QueueJoinRejected;
 			RequestDecision(LeaderAgentIndex, EFF_DecisionReason::JoinRejected);
 			return true;
 		}
 
 		++QueueJoinAccepted;
+		ToiletJoinAccepted += bToilet ? 1 : 0;
 		State.QueuePhase = EFF_PartyQueuePhase::Joined;
 		State.QueuedFacilityId = ZoneFacilityId;
 		State.QueueEnteredSimTime = SimTimeSeconds;
+		State.QueueBreakSecondsAtEnter = QueueBreakSimSeconds;
 		return true;
 	}
 
@@ -3899,20 +4368,25 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 	{
 		// 가입 이벤트와 자리 배정은 지연 전달된다. 아직 접근점을 목표로 삼거나
 		// 일행이 따라오는 동안에는 도착 확인을 보내지 않는다.
+		// 리더가 칸에 들어서면 알린다. 일행은 이용 중에 마저 들어선다.
 		for (const int32 MemberIndex : GetPartyMembers(Leader.PartyID))
 		{
-			const FUnitData& Member = UnitDatas[MemberIndex];
-			if (!Member.bHasQueueSlot
-				|| FVector::DistSquared2D(Member.Position, Member.QueueSlotLocation)
-					> FMath::Square(GetAssignedSlotArrivalRadius()))
+			if (!UnitDatas[MemberIndex].bHasQueueSlot)
 			{
 				return true;
 			}
 		}
+		if (FVector::DistSquared2D(Leader.Position, Leader.QueueSlotLocation) > FMath::Square(QueueArrivalNotifyRadiusUU))
+		{
+			return true;
+		}
 		Bridge->NotifyZoneFacilityPartyArrived(State.QueuedFacilityId, Leader.PartyID);
 		++QueueArrivalNotifies;
+		ToiletArrivals += IsToiletFacility(State.QueuedFacilityId) ? 1 : 0;
 
 		State.QueuePhase = EFF_PartyQueuePhase::AtSlot;
+		State.QueueAtSlotSimTime = SimTimeSeconds;
+		State.QueueBreakSecondsAtSlot = QueueBreakSimSeconds;
 		return true;
 	}
 
@@ -4094,7 +4568,7 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 
 		FVector Destination = Unit.Position + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
 
-		if (!HeightField.IsWalkable(FVector2D(Destination.X, Destination.Y)))
+		if (!IsGroundWalkable(Destination))
 		{
 			continue;
 		}
@@ -4220,7 +4694,7 @@ bool UFF_CrowdSimulationSubsystem::TryPickPatrolDestination(const int32 LeaderAg
 			continue;
 		}
 
-		if (!HeightField.IsWalkable(FVector2D(Destination.X, Destination.Y)))
+		if (!IsGroundWalkable(Destination))
 		{
 			continue;
 		}
@@ -4362,6 +4836,40 @@ void UFF_CrowdSimulationSubsystem::RebuildInTransitMemberCounts()
 
 		InTransitMemberCounts.FindOrAdd(State.CurrentDestinationId) += MemberCount;
 	}
+}
+
+void UFF_CrowdSimulationSubsystem::SetCrowdState(EFF_CrowdRunState NewState)
+{
+	for (AFF_BaseCrowd* Actor : CrowdPool)
+	{
+		if (IsValid(Actor))
+		{
+			Actor->SetState(NewState);
+		}
+	}
+}
+
+bool UFF_CrowdSimulationSubsystem::SetCrowdStateForAgent(int32 AgentIndex, EFF_CrowdRunState NewState)
+{
+	if (!UnitDatas.IsValidIndex(AgentIndex))
+	{
+		return false;
+	}
+
+	const int32 ActorSlot = PoolBinding.GetBoundSlot(AgentIndex);
+	if (ActorSlot == INDEX_NONE || !CrowdPool.IsValidIndex(ActorSlot))
+	{
+		return false;
+	}
+
+	AFF_BaseCrowd* Actor = CrowdPool[ActorSlot];
+	if (!IsValid(Actor))
+	{
+		return false;
+	}
+
+	Actor->SetState(NewState);
+	return true;
 }
 
 void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage)
@@ -4519,7 +5027,10 @@ void UFF_CrowdSimulationSubsystem::BeginMainStageGathering(const float ShowStart
 	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
 	const UFF_FestivalStageSubsystem* Stage = GameInstance
 		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
-	if (!Stage || !Stage->IsMainProgramQueueBreakActive())
+	float WindowStart = 0.f;
+	float WindowEnd = 0.f;
+	if (!Stage || !Stage->TryGetMainProgramShowWindow(
+		FMath::Max(AudienceGatherLeadSeconds, 0.f), WindowStart, WindowEnd))
 	{
 		return;
 	}
@@ -4562,10 +5073,11 @@ void UFF_CrowdSimulationSubsystem::UpdateAudienceShowState()
 		return;
 	}
 
-	// Queue와 같은 창구를 사용한다. 20:00 공연이면 19:57부터이며 배속 잠금과는 별개다.
+	// 집결은 대기열 중단(공연 3축제분 전 = 3초)보다 훨씬 일찍 시작한다. 걸어올 시간이 필요하다.
 	float ShowStartSeconds = 0.f;
 	float ShowEndSeconds = 0.f;
-	if (!Stage->TryGetMainProgramQueueBreakWindow(ShowStartSeconds, ShowEndSeconds))
+	if (!Stage->TryGetMainProgramShowWindow(
+		FMath::Max(AudienceGatherLeadSeconds, 0.f), ShowStartSeconds, ShowEndSeconds))
 	{
 		if (bMainProgramAudienceActive)
 		{
@@ -4605,6 +5117,7 @@ void UFF_CrowdSimulationSubsystem::UpdateAudienceShowState()
 		}
 	}
 	UE_LOG(LogTemp, Log, TEXT("[Audience] 공연 시작 — 대기 중이던 %d파티가 관람으로 넘어간다"), SeatedCount);
+	PendingShowStartSnapshot = CaptureShowRestroomSnapshot();
 	LogAudiencePhaseBreakdown(TEXT("공연 시각"));
 }
 
@@ -4618,6 +5131,12 @@ void UFF_CrowdSimulationSubsystem::HandleMainProgramStarted(FString EventLabel)
 void UFF_CrowdSimulationSubsystem::HandleMainProgramEnded(FString EventLabel)
 {
 	LogAudiencePhaseBreakdown(TEXT("공연 종료 직전"));
+	// 종료 신호는 한 공연에 두 번 올 수 있다. 시작을 본 공연만 남긴다
+	if (bMainProgramShowStarted)
+	{
+		ShowRestroomSnapshots.Emplace(PendingShowStartSnapshot, CaptureShowRestroomSnapshot());
+	}
+	PendingShowStartSnapshot = FShowRestroomSnapshot();
 	bMainProgramAudienceActive = false;
 	bMainProgramShowStarted = false;
 	MainProgramStartLiveSeconds = 0.f;
@@ -5362,6 +5881,7 @@ bool UFF_CrowdSimulationSubsystem::SetPartyQueueColumn(int32 PartyID, const TArr
 			Unit.FormationClearStreak = 0;
 			Unit.StuckSteps = 0;
 			Unit.UnstuckHoldSteps = 0;
+			Unit.UnstuckCooldownSteps = 0;
 		}
 		Unit.QueueSlotLocation = NewLocation;
 		Unit.TargetLocation = NewLocation;
@@ -5582,6 +6102,131 @@ int32 UFF_CrowdSimulationSubsystem::ApplySatisfactionPenaltyInArea(
 	return AffectedCount;
 }
 
+float UFF_CrowdSimulationSubsystem::GetNeedCoverage(EFF_NeedType NeedType) const
+{
+	const int32 Index = static_cast<int32>(NeedType);
+	return (Index >= 0 && Index < static_cast<int32>(EFF_NeedType::Count)) ? NeedCoverage[Index] : 1.f;
+}
+
+UFF_CrowdSimulationSubsystem::FShowRestroomSnapshot UFF_CrowdSimulationSubsystem::CaptureShowRestroomSnapshot() const
+{
+	static constexpr float UrgentRestroom = 0.7f;
+	FShowRestroomSnapshot Snapshot;
+	for (const FUnitData& Unit : UnitDatas)
+	{
+		if (!Unit.bIsActive)
+		{
+			continue;
+		}
+		const bool bInAudience = PartyDecisionStates.IsValidIndex(Unit.LeaderAgentIndex)
+			&& IsAudienceLocked(PartyDecisionStates[Unit.LeaderAgentIndex]);
+		const bool bUrgent = Unit.Needs.Restroom >= UrgentRestroom;
+		if (bInAudience)
+		{
+			++Snapshot.AudienceAgents;
+			Snapshot.AudienceUrgent += bUrgent ? 1 : 0;
+			Snapshot.AudienceRestroomSum += Unit.Needs.Restroom;
+		}
+		else
+		{
+			++Snapshot.OtherAgents;
+			Snapshot.OtherUrgent += bUrgent ? 1 : 0;
+		}
+	}
+	return Snapshot;
+}
+
+void UFF_CrowdSimulationSubsystem::ReloadNeedCoefficients()
+{
+	if (!CachedCoefficientTable)
+	{
+		return;
+	}
+	NeedRiseRates = FFF_NeedRules::LoadRiseRates(CachedCoefficientTable.Get());
+	NeedReliefAmounts = FFF_NeedRules::LoadReliefAmounts(CachedCoefficientTable.Get());
+	StayDrainMultiplierAtMaxNeed = FFF_NeedRules::LoadStayDrainMultiplierAtMaxNeed(CachedCoefficientTable.Get());
+	FFF_NeedRules::LoadInitialNeedFractions(CachedCoefficientTable.Get(), InitialNeedModeFraction, InitialNeedMaxFraction);
+}
+
+void UFF_CrowdSimulationSubsystem::SampleToiletFrontWaits(float ElapsedSeconds)
+{
+	UWorld* World = GetWorld();
+	const UFF_QueueSubsystem* Queue = World ? World->GetSubsystem<UFF_QueueSubsystem>() : nullptr;
+	const UFF_ZoneSystemQueueBridgeSubsystem* Bridge = World ? World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>() : nullptr;
+	if (!Queue || !Bridge)
+	{
+		return;
+	}
+	static constexpr float NearUU = 100.f;
+	static constexpr float StoppedSpeedUU = 10.f;
+	const float RadiusSquared = FMath::Square(QueueArrivalNotifyRadiusUU);
+	for (const TPair<int32, int32>& Pair : PartyLeaderByID)
+	{
+		const int32 LeaderIndex = Pair.Value;
+		if (!PartyDecisionStates.IsValidIndex(LeaderIndex) || !UnitDatas.IsValidIndex(LeaderIndex))
+		{
+			continue;
+		}
+		const FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
+		if (State.QueuePhase != EFF_PartyQueuePhase::Joined && State.QueuePhase != EFF_PartyQueuePhase::AtSlot)
+		{
+			continue;
+		}
+		const int32 QueueFacilityId = Bridge->FindQueueFacilityId(State.QueuedFacilityId);
+		bool bArrived = false;
+		int32 ServiceSlots = 0;
+		const int32 Index = Queue->GetPartyQueueIndex(QueueFacilityId, Pair.Key, &bArrived, &ServiceSlots);
+		if (Index == INDEX_NONE || Index >= ServiceSlots || bArrived
+			|| Queue->HasPartyStartedService(QueueFacilityId, Pair.Key)
+			|| !IsToiletFacility(State.QueuedFacilityId))
+		{
+			continue;
+		}
+
+		EToiletFrontWait Kind = EToiletFrontWait::AllInside;
+		if (State.QueuePhase == EFF_PartyQueuePhase::AtSlot)
+		{
+			Kind = EToiletFrontWait::NotifiedNotArrived;
+		}
+		else
+		{
+			const FUnitData& Leader = UnitDatas[LeaderIndex];
+			const float LeaderDistSquared = FVector::DistSquared2D(Leader.Position, Leader.QueueSlotLocation);
+			bool bAnyNoSlot = false;
+			for (const int32 MemberIndex : GetPartyMembers(Pair.Key))
+			{
+				bAnyNoSlot |= !UnitDatas[MemberIndex].bHasQueueSlot;
+			}
+			if (bAnyNoSlot)
+			{
+				Kind = EToiletFrontWait::NoSlot;
+			}
+			else if (LeaderDistSquared > FMath::Square(NearUU))
+			{
+				Kind = EToiletFrontWait::LeaderFar;
+			}
+			else if (LeaderDistSquared > RadiusSquared)
+			{
+				Kind = Leader.Velocity.Size2D() < StoppedSpeedUU ? EToiletFrontWait::LeaderNearStopped : EToiletFrontWait::LeaderNearMoving;
+			}
+		}
+		ToiletFrontWaitSeconds[static_cast<int32>(Kind)] += ElapsedSeconds;
+	}
+}
+
+bool UFF_CrowdSimulationSubsystem::IsToiletFacility(const FGuid& ZoneFacilityId) const
+{
+	const UFFZSWorldSubsystem* Zones = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const AFFZSFacilityActor* Facility = Zones ? Zones->FindFacility(ZoneFacilityId) : nullptr;
+	return Facility && Facility->GetFacilitySpec().Category == EFFZSFacilityCategory::Toilet;
+}
+
+int32 UFF_CrowdSimulationSubsystem::GetNeedReliefFacilityCount(EFF_NeedType NeedType) const
+{
+	const int32 Index = static_cast<int32>(NeedType);
+	return (Index >= 0 && Index < static_cast<int32>(EFF_NeedType::Count)) ? NeedReliefFacilityCounts[Index] : INDEX_NONE;
+}
+
 void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Needs);
@@ -5673,10 +6318,15 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 
 		// 대기: Zone 시설 전수의 평균 완료 대기시간(초). 완료자가 없는 시설(0.0)은 뺀다 —
 		// "아직 모름"과 "대기 없음"을 섞지 않는다(ViewModel::GetLiveFacilities와 같은 판단).
+		// 같은 순회에서 욕구별로 해소 시설을 센다(시설 커버리지). 메인 무대는 필수 시설이라 배치 차이를 만들지 않으므로 뺀다.
+		// Zone 이 없으면(시설 정보 없음) 커버리지를 1로 둔다 — "시설 0개"와 "모름"을 섞지 않는다.
+		int32 ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Count)] = {};
+		bool bHasFacilityReadModel = false;
 		if (const UWorld* World = GetWorld())
 		{
 			if (const UFFZSWorldSubsystem* Zone = World->GetSubsystem<UFFZSWorldSubsystem>())
 			{
+				bHasFacilityReadModel = true;
 				const FFFZSReadModel ReadModel = Zone->BuildReadModel();
 				for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
 				{
@@ -5688,8 +6338,33 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 					{
 						Satisfaction->AddWaitSample(Facility.AverageCompletedWaitSeconds);
 					}
+
+					if (Facility.State != EFFZSFacilityState::Active
+						|| Facility.bNeedsRelocation
+						|| FFF_ZoneSystemBridge::IsMainStageFacility(Facility.Category, Facility.FacilityDefinitionId))
+					{
+						continue;
+					}
+					const FFF_NeedReliefFlags Relief =
+						FFF_ZoneSystemBridge::GetNeedReliefFlags(Facility.Category, Facility.FacilityDefinitionId);
+					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Hunger)] += Relief.bRelievesHunger ? 1 : 0;
+					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Restroom)] += Relief.bRelievesRestroom ? 1 : 0;
+					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Stimulation)] += Relief.bRelievesStimulation ? 1 : 0;
 				}
 			}
+		}
+		if (bHasFacilityReadModel)
+		{
+			for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
+			{
+				NeedReliefFacilityCounts[Index] = ReliefFacilityCounts[Index];
+			}
+			NeedCoverage[static_cast<int32>(EFF_NeedType::Hunger)] = Coefficients.NeedCoverageMultiplier(
+				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Hunger)], Coefficients.NeedCoverageTargetHunger);
+			NeedCoverage[static_cast<int32>(EFF_NeedType::Restroom)] = Coefficients.NeedCoverageMultiplier(
+				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Restroom)], Coefficients.NeedCoverageTargetRestroom);
+			NeedCoverage[static_cast<int32>(EFF_NeedType::Stimulation)] = Coefficients.NeedCoverageMultiplier(
+				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Stimulation)], Coefficients.NeedCoverageTargetStimulation);
 		}
 
 		// 밀도: 점유 셀마다 LOS 등급 점수를 매겨 그 셀의 인원 수로 가중한다 — "사람이 몇 명이나
@@ -5703,7 +6378,7 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 			}
 			const ECrowdLOS Grade = FCrowdDensityGrid::DensityToLOS(Cell.DensityPerSqm);
 			const float GradeScore = Coefficients.ScoreForLOSGrade(static_cast<uint8>(Grade));
-			Satisfaction->AddDensitySample(GradeScore, Cell.Occupancy);
+			Satisfaction->AddDensitySample(GradeScore, Cell.Occupancy, Grade >= ECrowdLOS::D);
 		}
 
 		// 큐 가입 성공률
@@ -5738,7 +6413,8 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 			};
 			for (const EFF_NeedType NeedType : ActiveNeedTypes)
 			{
-				Satisfaction->AddNeedFulfillmentSample(100.f - NeedMetrics->GetNeedUnmetRatio(NeedType));
+				Satisfaction->AddNeedFulfillmentSample(
+					(100.f - NeedMetrics->GetNeedUnmetRatio(NeedType)) * GetNeedCoverage(NeedType));
 			}
 		}
 
@@ -5866,6 +6542,7 @@ void UFF_CrowdSimulationSubsystem::InitializeCrowdActorPool(UWorld& InWorld, FVe
 
 		NewCrowd->SetActorHiddenInGame(true);
 		NewCrowd->SetActorEnableCollision(false);
+		NewCrowd->SetAnimPlayRate(AppliedCrowdAnimPlayRate);
 		CrowdPool.Add(NewCrowd);
 	}
 }
@@ -5954,7 +6631,7 @@ void UFF_CrowdSimulationSubsystem::DrawDebugAgents() const
 
 		if (bIsLeader)
 		{
-			DrawDebugLine(World, Unit.Position, Unit.TargetLocation, FColor(60, 60, 60), false, -1.f, 0, 0.5f);
+			DrawDebugLine(World, Unit.Position, Unit.TargetLocation, FColor::White, false, -1.f, 0, 3.f);
 
 			if (PathFollowers.IsValidIndex(AgentIndex) && PathFollowers[AgentIndex].HasRemainingWaypoint())
 			{
@@ -6093,6 +6770,7 @@ void UFF_CrowdSimulationSubsystem::DespawnAllAgent()
 		}
 	}
 	PendingDespawnParty.Reset();
+	DensityGrid.Update(UnitDatas);
 }
 
 void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
@@ -6168,7 +6846,17 @@ void UFF_CrowdSimulationSubsystem::ApplyAgentAppearance(int32 AgentIndex)
 		return;
 	}
 
-	const FFF_CrowdAppearenceRow* Row = AppearenceTable->FindRow<FFF_CrowdAppearenceRow>(RowKey,TEXT("UFF_CrowdSimulationSubsystem::ApplyAgentAppearance"),false );
+	const FFF_CrowdAppearenceRow* Row = nullptr;
+	if (!Unit.bIsDependentChild && !Unit.ArchetypeID.IsNone())
+	{
+		const TCHAR* GenderSuffix = FFF_CrowdAppearenceRow::IsFemaleSeed(Unit.StableAgentID) ? TEXT("female") : TEXT("male");
+		const FName GenderRowKey(*FString::Printf(TEXT("%s_%s"), *Unit.ArchetypeID.ToString(), GenderSuffix));
+		Row = AppearenceTable->FindRow<FFF_CrowdAppearenceRow>(GenderRowKey,TEXT("UFF_CrowdSimulationSubsystem::ApplyAgentAppearance"),false );
+	}
+	if (Row == nullptr)
+	{
+		Row = AppearenceTable->FindRow<FFF_CrowdAppearenceRow>(RowKey,TEXT("UFF_CrowdSimulationSubsystem::ApplyAgentAppearance"),false );
+	}
 
 	if (Row == nullptr)
 	{
@@ -6176,7 +6864,7 @@ void UFF_CrowdSimulationSubsystem::ApplyAgentAppearance(int32 AgentIndex)
 		return;
 	}
 	
-	Actor->ApplyAppearance(Row->Mesh.LoadSynchronous(), Row->AnimClass.LoadSynchronous(), Row->MeshYawOffset, Row->MeshUniformScale);
+	Actor->ApplyAppearance(Row->PickMesh(Unit.StableAgentID).LoadSynchronous(), Row->AnimClass.LoadSynchronous(), Row->MeshYawOffset, Row->MeshUniformScale);
 	
 	
 	

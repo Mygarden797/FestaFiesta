@@ -288,7 +288,8 @@ namespace FFPrepBuildVirtualizedSlateTest
                 auto* Candidate = Cast<UButton>(Row->GetWidgetFromName(TEXT("Button_Favorite")));
                 if (!Candidate) { continue; }
                 const FSlateRect Rect = Candidate->GetCachedGeometry().GetLayoutBoundingRect();
-                if (Rect.Top >= ListRect.Top && Rect.Bottom <= ListRect.Bottom && Rect.GetSize().X > 10)
+                if (Rect.Left >= ListRect.Left && Rect.Right <= ListRect.Right &&
+                    Rect.Top >= ListRect.Top && Rect.Bottom <= ListRect.Bottom && Rect.GetSize().X > 10)
                 {
                     Favorite = Candidate;
                     break;
@@ -300,7 +301,12 @@ namespace FFPrepBuildVirtualizedSlateTest
             TArray<FWidgetAndPointer> Bubble = HitGrid.GetBubblePath(Point, 0.0f, false);
             FWidgetPath Path(MakeArrayView(Bubble));
             if (!Test.TestTrue(TEXT("The actual painted star is hit-testable"),
-                Path.IsValid() && Path.ContainsWidget(Favorite->GetCachedWidget().Get()))) { return false; }
+                Path.IsValid() && Path.ContainsWidget(Favorite->GetCachedWidget().Get())))
+            {
+                Test.AddInfo(FString::Printf(TEXT("Favorite point %.1f,%.1f, hit path %s, visibility %d"),
+                    Point.X, Point.Y, *Path.ToString(), int32(Favorite->GetVisibility())));
+                return false;
+            }
             Test.TestTrue(TEXT("The star retains its native action binding"), Favorite->OnClicked.IsBound());
             int32 PlacementActivations = 0;
             const FDelegateHandle ClickHandle = List->OnItemClicked().AddLambda(
@@ -804,8 +810,8 @@ namespace FFPrepBuildVirtualizedSlateTest
             auto* Card = Cast<UBorder>(RequiredRow->GetWidgetFromName(TEXT("Border_Card")));
             if (!Test.TestNotNull(TEXT("The existing status slot shows installation count"), State) ||
                 !Test.TestNotNull(TEXT("Required facility card frame"), Card)) { return false; }
-            Test.TestEqual(TEXT("The actual saved status slot changes from 0/1 to 1/1"),
-                State->GetText().ToString(), FString(bInstalled ? TEXT("1/1") : TEXT("0/1")));
+            Test.TestEqual(TEXT("Required state explains installation without a fraction"),
+                State->GetText().ToString(), FString(bInstalled ? TEXT("잠김") : TEXT("1개 설치")));
             Test.TestTrue(TEXT("The real row receives required/satisfied state"),
                 RequiredRow->IsRequiredFacility() && RequiredRow->IsRequiredFacilitySatisfied() == bInstalled);
             const FSlateRect CardRect = Card->GetCachedGeometry().GetLayoutBoundingRect();
@@ -823,7 +829,7 @@ namespace FFPrepBuildVirtualizedSlateTest
                     Border->GetVisibility() == Expected && Badge->GetVisibility() == Expected);
                 if (!bActive) { continue; }
                 Test.TestEqual(TEXT("Required badge retains the authored readable label"), Badge->GetText().ToString(),
-                    FString(bInstalled ? TEXT("필수 완료") : TEXT("필수 설치")));
+                    FString(TEXT("필수 · 1개 설치")));
                 for (const UWidget* Decoration : { static_cast<UWidget*>(Border), static_cast<UWidget*>(Badge) })
                 {
                     const FSlateRect Rect = Decoration->GetCachedGeometry().GetLayoutBoundingRect();
@@ -1201,17 +1207,47 @@ namespace FFPrepBuildVirtualizedSlateTest
                 Measurements.SeenItems.Add(Item);
                 const FString Label = FString::Printf(TEXT("%s / %s"), *Step, *Item->GetFacilityDefinitionId().ToString());
                 const bool bHasPrograms = Item->GetEntry().CompatibleProgramCount > 0;
-                const ESlateVisibility ProgramVisibility = bHasPrograms ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+                const ESlateVisibility ProgramVisibility = bHasPrograms && !Item->IsRequiredFacility()
+                    ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
                 Test.TestTrue(*FString::Printf(TEXT("%s: pooled program badge belongs to the current facility and cannot intercept input"), *Label),
                     Tile->HasCompatiblePrograms() == bHasPrograms && ProgramBorder->GetVisibility() == ProgramVisibility &&
                     ProgramLabel->GetVisibility() == ProgramVisibility);
-                UObject* SurfaceResource = ProgramBackdrop ? ProgramBackdrop->Background.GetResourceObject() : nullptr;
-                const FName SurfaceName = SurfaceResource ? SurfaceResource->GetFName() : NAME_None;
-                const bool bSurfaceMatchesItem = SurfaceName == TEXT("MI_UI_BuildPearl_Card") ||
-                    (Item->IsRequiredFacility() && SurfaceName == TEXT("MI_UI_BuildClarity_Required")) ||
-                    (!Item->IsRequiredFacility() && bHasPrograms && SurfaceName == TEXT("MI_UI_BuildClarity_Program"));
-                Test.TestTrue(*FString::Printf(TEXT("%s: recycled surface uses the pearl card or its valid facility accent"), *Label),
-                    ProgramBackdrop && bSurfaceMatchesItem);
+                // The saved style can use a material or a rounded Slate brush. Verify
+                // the authored state contract rather than a retired material filename.
+                const UWidgetTree* TileTree = CastChecked<UWidgetBlueprintGeneratedClass>(Row->GetClass())->GetWidgetTreeArchetype();
+                const auto* AuthoredBackdrop = TileTree ? Cast<UBorder>(TileTree->FindWidget(TEXT("Border_ThumbnailBackdrop"))) : nullptr;
+                FSlateBrush ExpectedBackdrop = AuthoredBackdrop ? AuthoredBackdrop->Background : FSlateBrush();
+                const bool bMissingRequired = Item->IsRequiredFacility() && !Item->IsRequiredFacilitySatisfied();
+                if (bMissingRequired || bHasPrograms)
+                {
+                    const auto* BrushProperty = FindFProperty<FStructProperty>(Row->GetClass(),
+                        bMissingRequired ? TEXT("RequiredThumbnailBrush") : TEXT("ProgramThumbnailBrush"));
+                    const auto* TintProperty = FindFProperty<FStructProperty>(Row->GetClass(),
+                        bMissingRequired ? TEXT("RequiredCardTint") : TEXT("ProgramCardTint"));
+                    if (BrushProperty && TintProperty)
+                    {
+                        const FSlateBrush& Accent = *BrushProperty->ContainerPtrToValuePtr<FSlateBrush>(Row);
+                        if (Accent.GetResourceObject()) ExpectedBackdrop = Accent;
+                        else ExpectedBackdrop.TintColor = *TintProperty->ContainerPtrToValuePtr<FLinearColor>(Row);
+                    }
+                    else Test.AddError(Label + TEXT(": authored facility accent properties are missing"));
+                }
+                const bool bLocked = Item->GetTileState() == EFF_PrepBuildTileState::BuildLimitReached;
+                if (bLocked)
+                {
+                    const auto* LockTintProperty = FindFProperty<FStructProperty>(Row->GetClass(), TEXT("LockedCardTint"));
+                    Test.TestTrue(*FString::Printf(TEXT("%s: a recycled capped row overrides required/program artwork with its authored lock color"), *Label),
+                        LockTintProperty && ProgramBackdrop && !ProgramBackdrop->Background.GetResourceObject() &&
+                        ProgramBackdrop->Background.TintColor == FSlateColor(*LockTintProperty->ContainerPtrToValuePtr<FLinearColor>(Row)) &&
+                        Card->Background.TintColor == ProgramBackdrop->Background.TintColor);
+                }
+                else
+                {
+                    Test.TestTrue(*FString::Printf(TEXT("%s: recycled unlocked thumbnail restores the current facility's authored style"), *Label),
+                        ProgramBackdrop && AuthoredBackdrop && ProgramBackdrop->Background == ExpectedBackdrop);
+                }
+                Test.TestTrue(*FString::Printf(TEXT("%s: only capped artwork is disabled and every card remains clickable"), *Label),
+                    Thumbnail->GetIsEnabled() == !bLocked && Tile->GetIsEnabled());
                 Test.TestTrue(*FString::Printf(TEXT("%s: pooled required and synergy flags belong to the current facility"), *Label),
                     Tile->IsRequiredFacility() == Item->IsRequiredFacility() &&
                     Tile->IsRequiredFacilitySatisfied() == Item->IsRequiredFacilitySatisfied() &&
@@ -1287,7 +1323,11 @@ namespace FFPrepBuildVirtualizedSlateTest
                     Measurements.ThumbnailSize = ThumbnailSize;
                 }
                 const auto* CardFrame = Cast<USizeBox>(Row->GetWidgetFromName(TEXT("SizeBox_Card")));
-                Test.TestTrue(*FString::Printf(TEXT("%s: card respects its authored height and allocated column width"), *Label),
+                Test.TestTrue(*FString::Printf(TEXT("%s: card respects its authored height and allocated column width (painted %.1fx%.1f, frame width %.1f enabled=%d height %.1f enabled=%d, list entry %.1fx%.1f)"),
+                    *Label, CardSize.X, CardSize.Y,
+                    CardFrame ? CardFrame->GetWidthOverride() : -1.f, CardFrame && CardFrame->IsWidthOverride(),
+                    CardFrame ? CardFrame->GetHeightOverride() : -1.f, CardFrame && CardFrame->IsHeightOverride(),
+                    List->GetEntryWidth(), List->GetEntryHeight()),
                     CardFrame && CardSize.X > 0.0 && CardSize.X <= List->GetEntryWidth() + 1.0 &&
                     (!CardFrame->IsWidthOverride() || FMath::IsNearlyEqual(CardSize.X, static_cast<double>(CardFrame->GetWidthOverride()), 1.0)) &&
                     (!CardFrame->IsHeightOverride() || FMath::IsNearlyEqual(CardSize.Y, static_cast<double>(CardFrame->GetHeightOverride()), 1.0)));
@@ -1309,17 +1349,20 @@ namespace FFPrepBuildVirtualizedSlateTest
                     Texture && ImageHeight > 0.0 && FMath::IsNearlyEqual(ImageWidth / ImageHeight,
                         static_cast<double>(Texture->GetSizeX()) / Texture->GetSizeY(), 0.01));
                 const FSlateRect NameRect = Name->GetCachedGeometry().GetLayoutBoundingRect();
-                Test.TestTrue(*FString::Printf(TEXT("%s: complete wrapped facility name fits its allocated area"), *Label),
-                    Name->GetDesiredSize().Y <= Name->GetCachedGeometry().GetLocalSize().Y + 1.0f &&
-                    Name->GetDesiredSize().X <= Name->GetCachedGeometry().GetLocalSize().X + 1.0f &&
-                    Name->GetTextOverflowPolicy() != ETextOverflowPolicy::Ellipsis);
+                const bool bNameFits = Name->GetDesiredSize().Y <= Name->GetCachedGeometry().GetLocalSize().Y + 1.0f &&
+                    Name->GetDesiredSize().X <= Name->GetCachedGeometry().GetLocalSize().X + 1.0f;
+                Test.TestTrue(*FString::Printf(TEXT("%s: name fits or uses authored ellipsis with the complete name in its tooltip"), *Label),
+                    bNameFits || (Name->GetTextOverflowPolicy() == ETextOverflowPolicy::Ellipsis &&
+                        Tile->GetToolTipText().ToString().Contains(Item->GetDisplayName().ToString())));
                 Test.TestTrue(*FString::Printf(TEXT("%s: name keeps visible space inside its card"), *Label),
                     NameRect.Right > NameRect.Left && NameRect.Bottom - NameRect.Top >= Name->GetFont().Size * DpiScale * 0.7 &&
                     NameRect.Top >= CardRect.Top - 1.0 && NameRect.Bottom <= CardRect.Bottom + 1.0);
                 if (const auto* Cost = Cast<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_Cost"))))
                 {
                     const FSlateRect CostRect = Cost->GetCachedGeometry().GetLayoutBoundingRect();
-                    Test.TestTrue(*FString::Printf(TEXT("%s: installation price stays below the name and inside the card"), *Label),
+                    Test.TestTrue(*FString::Printf(TEXT("%s: installation price stays below the name and inside the card (card LTRB %.1f,%.1f,%.1f,%.1f; name bottom %.1f; cost LTRB %.1f,%.1f,%.1f,%.1f)"),
+                        *Label, CardRect.Left, CardRect.Top, CardRect.Right, CardRect.Bottom, NameRect.Bottom,
+                        CostRect.Left, CostRect.Top, CostRect.Right, CostRect.Bottom),
                         CostRect.Top >= NameRect.Bottom - 1.0 && CostRect.Bottom <= CardRect.Bottom + 1.0 &&
                         CostRect.Left >= CardRect.Left - 1.0 && CostRect.Right <= CardRect.Right + 1.0);
                 }

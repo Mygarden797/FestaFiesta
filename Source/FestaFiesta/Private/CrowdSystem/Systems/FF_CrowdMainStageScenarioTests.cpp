@@ -26,7 +26,9 @@
 #include "FileHelpers.h"
 #include "Festival/FF_FestivalBuzzSubsystem.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
+#include "Staff/FF_StaffFacilitySubsystem.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -42,7 +44,15 @@ namespace FFMainStageScenario
 
 	// 배치는 `FF.Zone.SaveLayout` 으로 사람이 한 번 만들어 둔 것을 쓴다. Test_Main 은 빈 땅으로
 	// 시작하고, 여기서 재는 값은 전부 시설 위치에 달렸다 — 코드로 심은 배치를 재면 의미가 없다.
-	const TCHAR* LayoutSlot = TEXT("day1");
+	// 배치에는 축제 필수 시설(선셋 메인공연장·메인안내소)이 들어 있어야 Live 로 넘어간다.
+	// 메인안내소 스태프 배정은 슬롯에 저장되지 않으므로 AssignRequiredStaff 가 대신 한다.
+	// -FFScenarioLayout=econ_std 처럼 다른 슬롯을 고를 수 있다
+	FString GetLayoutSlot()
+	{
+		FString Slot = TEXT("day1");
+		FParse::Value(FCommandLine::Get(), TEXT("FFScenarioLayout="), Slot);
+		return Slot;
+	}
 
 	// Live 는 그날 마지막 이벤트 시각까지다. Day1 은 240초이고 공연은 180~210 이다.
 	constexpr float ObserveUntilLiveSeconds = 215.f;
@@ -95,15 +105,16 @@ public:
 		}
 
 		// 저장해 둔 배치를 먼저 붓는다.
+		const FString LayoutSlot = FFMainStageScenario::GetLayoutSlot();
 		if (UFF_ZoneLayoutSaveGame* Layout = Cast<UFF_ZoneLayoutSaveGame>(
-			UGameplayStatics::LoadGameFromSlot(FFMainStageScenario::LayoutSlot, 0)))
+			UGameplayStatics::LoadGameFromSlot(LayoutSlot, 0)))
 		{
 			UFFZSWorldSubsystem* MutableZones = World->GetSubsystem<UFFZSWorldSubsystem>();
 			TArray<FText> RestoreErrors;
 			if (MutableZones && MutableZones->RestoreWorldSnapshot(Layout->Snapshot, RestoreErrors))
 			{
 				Test->AddInfo(FString::Printf(TEXT("배치 슬롯 '%s' 복원 — 시설 %d개"),
-					FFMainStageScenario::LayoutSlot, Layout->Snapshot.Facilities.Num()));
+					*LayoutSlot, Layout->Snapshot.Facilities.Num()));
 			}
 			else
 			{
@@ -117,11 +128,12 @@ public:
 		{
 			Test->AddError(FString::Printf(
 				TEXT("배치 슬롯 '%s' 이 없다. PIE 에서 축제장을 짓고 `FF.Zone.SaveLayout %s` 를 한 번 실행할 것."),
-				FFMainStageScenario::LayoutSlot, FFMainStageScenario::LayoutSlot));
+				*LayoutSlot, *LayoutSlot));
 			return true;
 		}
 
 		ApplyVisitorConditions(Game);
+		ApplyCrowdOverrides(World);
 
 		// 편성 판정에 쓰는 목록이라 개장 전에 읽는다.
 		const FFFZSReadModel ReadModel = Zones->BuildReadModel();
@@ -198,6 +210,11 @@ public:
 			StageBridge->OpenEligibleFacilities(false);
 		}
 
+		// 배정까지 요구하는 필수 시설(메인안내소)은 플레이어가 시설 정보의 `+ 배정` 을 누른다.
+		// 배치 슬롯에는 시설만 있고 스태프 배정은 없으므로 여기서 대신 누른다. 시설 자체가 없으면
+		// 아래 Live 거부 사유가 무엇을 지어야 하는지 알려 준다.
+		AssignRequiredStaff(World);
+
 		// 거부 사유를 그대로 남긴다. 이게 없으면 "왜 Live 가 안 되는가"를 또 손으로 찾는다.
 		FText BlockingReason;
 		if (!Stage->CanTransitionTo(EFF_FestivalStage::Live, BlockingReason))
@@ -260,6 +277,53 @@ private:
 			Forecast.PromotionMultiplier, Forecast.AdmissionFeeMultiplier, Forecast.BuzzMultiplier));
 	}
 
+	// 군중 계수를 명령줄로 바꾼다. 같은 빌드로 값만 바꿔 비교하려는 것이다.
+	//   -FFScenarioMaxWalk=600 -FFScenarioHurry=1.5
+	void ApplyCrowdOverrides(UWorld* World)
+	{
+		UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
+		if (!Crowd)
+		{
+			return;
+		}
+		FParse::Value(FCommandLine::Get(), TEXT("FFScenarioMaxWalk="), Crowd->MaxWalkableHeightAboveOriginUU);
+		FParse::Value(FCommandLine::Get(), TEXT("FFScenarioHurry="), Crowd->ScheduledHurrySpeedMultiplier);
+		Test->AddInfo(FString::Printf(TEXT("[계수] 통행 상한 %.0f · 재촉 %.2f"),
+			Crowd->MaxWalkableHeightAboveOriginUU, Crowd->ScheduledHurrySpeedMultiplier));
+	}
+
+	// 필수 시설의 배정 부족분을 대기 스태프로 채운다. 판정은 필수 시설 경계가 준 부족 인원을 그대로 쓴다.
+	void AssignRequiredStaff(UWorld* World)
+	{
+		const UFF_RequiredFacilitiesSubsystem* Required = World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>();
+		UFF_StaffFacilitySubsystem* Staffing = World->GetSubsystem<UFF_StaffFacilitySubsystem>();
+		const UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
+		if (!Required || !Staffing || !Zones)
+		{
+			return;
+		}
+		const FFFZSReadModel Installed = Zones->BuildReadModel();
+		int32 AssignedNow = 0;
+		for (const FFF_RequiredFacilityRow& Row : Required->GetRequiredFacilitiesStatus().Facilities)
+		{
+			int32 Missing = Row.MissingStaffCount;
+			for (const FFFZSFacilityReadModel& Facility : Installed.Facilities)
+			{
+				if (Missing <= 0) { break; }
+				if (Facility.FacilityDefinitionId != Row.FacilityDefinitionId || Facility.bNeedsRelocation) { continue; }
+				while (Missing > 0 && Staffing->TryAssignAvailableStaff(Facility.FacilityInstanceId))
+				{
+					--Missing;
+					++AssignedNow;
+				}
+			}
+		}
+		if (AssignedNow > 0)
+		{
+			Test->AddInfo(FString::Printf(TEXT("필수 시설에 스태프 %d명을 배정했다."), AssignedNow));
+		}
+	}
+
 	FAutomationTestBase* Test;
 	double StartedAt = -1.0;
 };
@@ -293,6 +357,24 @@ public:
 		Crowd->GetScheduledPhaseCounts(Seated, Walking, AtVenue, ProgramWalking);
 		PeakSeated = FMath::Max(PeakSeated, Seated);
 		PeakProgramAtVenue = FMath::Max(PeakProgramAtVenue, AtVenue);
+
+		// 10초마다 걷는 관람 파티의 이동을 남긴다. 도착이 늦는 원인을 거리·속도·막힘으로 가른다.
+		if (Stage->ElapsedLiveSeconds >= NextWalkSampleLiveSeconds)
+		{
+			NextWalkSampleLiveSeconds = Stage->ElapsedLiveSeconds + 10.f;
+			int32 WalkingLeaders = 0, StalledLeaders = 0, NoPath = 0, QueryFailed = 0, BlockedLine = 0;
+			float MeanRemaining = 0.f, MaxRemaining = 0.f, MeanSpeed = 0.f, MeanCruise = 0.f, StalledRemaining = 0.f;
+			Crowd->GetAudienceWalkDiagnostics(
+				WalkingLeaders, MeanRemaining, MaxRemaining, MeanSpeed, MeanCruise, StalledLeaders,
+				NoPath, QueryFailed, StalledRemaining, BlockedLine);
+			if (WalkingLeaders > 0)
+			{
+				Test->AddInfo(FString::Printf(
+					TEXT("[도보] Live %.0f초 — 걷는 파티 %d · 남은 거리 평균 %.0fm 최대 %.0fm · 실제 속도 평균 %.2fm/s(기본 %.2f) · 정지 %d(남은 거리 평균 %.0fm) · 경로없음 %d · 쿼리실패 %d · 정지 중 벽에 막힌 직선 %d"),
+					Stage->ElapsedLiveSeconds, WalkingLeaders, MeanRemaining, MaxRemaining,
+					MeanSpeed, MeanCruise, StalledLeaders, StalledRemaining, NoPath, QueryFailed, BlockedLine));
+			}
+		}
 
 		// -NullRHI 로 돌리면 렌더 비용이 빠져 게임 스레드(군중 시뮬) 비용만 남는다.
 		PeakActive = FMath::Max(PeakActive, Crowd->GetActiveAgentCount());
@@ -334,6 +416,8 @@ public:
 		Test->AddInfo(FString::Printf(
 			TEXT("[군중] 활성 %d명 · 버려진 시뮬 시간 %.2f초 (0 이 아니면 위 수치를 믿지 말 것)"),
 			Crowd->GetActiveAgentCount(), Crowd->GetDroppedSimSeconds()));
+		Test->AddInfo(FString::Printf(
+			TEXT("[이동] 높이 격자에 막혀 되돌린 스텝 누적 %d"), Crowd->GetHeightBlockedSteps()));
 
 		const UFF_FestivalProgressionSubsystem* Progression =
 			Game ? Game->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
@@ -354,6 +438,7 @@ public:
 private:
 	FAutomationTestBase* Test;
 	double StartedAt = -1.0;
+	float NextWalkSampleLiveSeconds = 0.f;
 	int32 PeakSeated = 0;
 	int32 PeakProgramAtVenue = 0;
 	int32 PeakActive = 0;

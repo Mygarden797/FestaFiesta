@@ -6,6 +6,7 @@
 #include "CrowdSystem/Systems/FF_CrowdDecisionSubsystem.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_ProjectZoneTestFixture.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSAudienceLibrary.h"
 #include "FF_FFZSDeveloperSettings.h"
@@ -211,7 +212,7 @@ bool FFF_CrowdProgramNoCandidates::RunTest(const FString& Parameters)
 	UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
 	if (!TestNotNull(TEXT("Decision subsystem"), Decision) || !TestNotNull(TEXT("Zone"), Zone)) return false;
-	if (!TestTrue(TEXT("Zone preset"), Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")))
+	if (!TestTrue(TEXT("Zone preset"), Zone->ApplyAcceptedZonePreset(FFProjectZoneTest::ZoneId()))
 		|| !TestTrue(TEXT("Zone registration"), Zones->RegisterZone(Zone))) return false;
 	FVector2D Center = FVector2D::ZeroVector;
 	const TArray<FVector2D> Polygon = Zone->GetBoundaryPolygonLocalCm();
@@ -436,7 +437,7 @@ bool FFF_CrowdAudienceLifecycle::RunTest(const FString& Parameters)
 	auto* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
 	if (!TestNotNull(TEXT("Zones"), Zones) || !TestNotNull(TEXT("Zone"), Zone)) return false;
-	if (!Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+	if (!FFProjectZoneTest::RegisterZone(*this, Zone, Zones)) return false;
 
 	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::Performance);
 	Spec.FacilityDefinitionId = TEXT("Performance_MainStage_SunsetMainStage");
@@ -507,20 +508,29 @@ bool FFF_CrowdAudienceLifecycle::RunTest(const FString& Parameters)
 	ScheduleProperty->SetObjectPropertyValue_InContainer(Stage, Schedule);
 	Stage->CurrentDay = 1;
 	Stage->CurrentStage = EFF_FestivalStage::Live;
-	Stage->ElapsedLiveSeconds = 120.f;
+	// 집결은 대기열 중단(3축제분 = 3초)보다 일찍 시작해야 먼 손님이 공연 전에 앉는다.
+	// 집결 창은 AudienceGatherLeadSeconds 로 따로 정한다.
+	Crowd->AudienceGatherLeadSeconds = 10.f;
+	Stage->ElapsedLiveSeconds = 150.f;
 	Access::StartMainAudience(*Crowd);
-	TestFalse(TEXT("Speed lock at 19:00 does not start gathering"), Crowd->IsMainProgramAudienceActive());
-	TestFalse(TEXT("An early main stage arrival cannot bypass the gathering boundary"),
+	TestFalse(TEXT("Speed lock does not start gathering"), Crowd->IsMainProgramAudienceActive());
+	TestFalse(TEXT("An early main stage arrival cannot bypass the gathering window"),
 		Access::Audience(*Crowd, Leader, FacilityId, Snapshot));
 	TestEqual(TEXT("The early arrival holds no seats"), Crowd->GetOccupiedAudienceSlotCount(FacilityId), 0);
-	Stage->ElapsedLiveSeconds = 176.99f;
+	Stage->ElapsedLiveSeconds = 169.99f;
 	Access::TickShowState(*Crowd);
-	TestFalse(TEXT("Gathering is still closed immediately before 19:57"), Crowd->IsMainProgramAudienceActive());
-	Stage->ElapsedLiveSeconds = 177.f;
-	TestEqual(TEXT("The boundary is three displayed festival minutes before 20:00"),
-		Stage->GetCurrentLiveClockString(), FString(TEXT("19:57")));
+	TestFalse(TEXT("Gathering is still closed just before the gather window"), Crowd->IsMainProgramAudienceActive());
+	Stage->ElapsedLiveSeconds = 170.f;
+	// 참석 비율 0 이면 창이 열려도 아무도 관람하러 가지 않는다.
+	Crowd->AudienceAttendanceRatio = 0.f;
 	Access::TickShowState(*Crowd);
-	TestTrue(TEXT("The shared queue break starts audience gathering at 19:57"), Crowd->IsMainProgramAudienceActive());
+	TestTrue(TEXT("Gathering starts the gather lead before the show"), Crowd->IsMainProgramAudienceActive());
+	TestFalse(TEXT("The queue break is still closed while gathering"), Stage->IsMainProgramQueueBreakActive());
+	TestEqual(TEXT("Nobody attends at ratio 0"), Crowd->GetOccupiedAudienceSlotCount(FacilityId), 0);
+	// 비율 1 이면 전원이 간다(예전 동작). 같은 공연을 처음부터 다시 판정한다.
+	Crowd->AudienceAttendanceRatio = 1.f;
+	Access::EndMainAudience(*Crowd);
+	Access::TickShowState(*Crowd);
 	TestEqual(TEXT("The boundary assigns both party members"), Crowd->GetOccupiedAudienceSlotCount(FacilityId), 2);
 
 	// 좌석은 배정 시점에 바로 나눠 준다. 입구 좌표 하나를 수백 명이 공유하면 그 점에서 막힌다.
@@ -792,7 +802,7 @@ bool FFF_CrowdWanderZoneConfinement::RunTest(const FString& Parameters)
 	UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
 	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
 	if (!TestNotNull(TEXT("Zone subsystem"), Zones) || !TestNotNull(TEXT("Zone"), Zone)) { return false; }
-	if (!TestTrue(TEXT("Zone preset"), Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")))
+	if (!TestTrue(TEXT("Zone preset"), Zone->ApplyAcceptedZonePreset(FFProjectZoneTest::ZoneId()))
 		|| !TestTrue(TEXT("Zone registration"), Zones->RegisterZone(Zone))) { return false; }
 
 	const TArray<FVector2D> Polygon = Zone->GetBoundaryPolygonLocalCm();

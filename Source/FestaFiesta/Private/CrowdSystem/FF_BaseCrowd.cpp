@@ -30,7 +30,8 @@ AFF_BaseCrowd::AFF_BaseCrowd()
 
 	SkeletalMeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>("SkeletalMeshComponent");
 	SkeletalMeshComponent->SetupAttachment(RootSceneComponent);
-	
+	SkeletalMeshComponent->SetReceivesDecals(false);
+
 
 	// 대체 표시용 원기둥. 기본은 꺼 둔다 — SkeletalMesh가 없을 때만 BeginPlay에서 켠다.
 	ProxyMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>("ProxyMeshComponent");
@@ -44,6 +45,7 @@ AFF_BaseCrowd::AFF_BaseCrowd()
 	ProxyMeshComponent->SetCanEverAffectNavigation(false);
 	// 500개가 그림자를 던지면 표시 비용이 시뮬레이션 비용을 덮어 버린다. 확인용이므로 끈다.
 	ProxyMeshComponent->SetCastShadow(false);
+	ProxyMeshComponent->SetReceivesDecals(false);
 	ProxyMeshComponent->SetVisibility(false);
 
 	// 생성자에서 찾아야 쿠킹 시 참조로 잡혀 패키징 빌드에서도 빠지지 않는다.
@@ -132,7 +134,47 @@ void AFF_BaseCrowd::PushPresentation(FVector NewPosition, FRotator NewRotator, f
 	}
 }
 
-// AnimClass는 '클래스'를 받는다. 
+void AFF_BaseCrowd::SetAnimPlayRate(float PlayRate)
+{
+	RunningAnimPlayRate = PlayRate;
+	ApplyStateToAnimation();
+}
+
+void AFF_BaseCrowd::SetState(EFF_CrowdRunState NewState)
+{
+	CurrentState = NewState;
+	ApplyStateToAnimation();
+
+	// 제자리 상태에서 마지막 걷기 속도가 남으면 제자리 걷기가 되므로 Speed 를 0 으로 내린다
+	if (CrowdAnimInstance && (CurrentState == EFF_CrowdRunState::Holding || CurrentState == EFF_CrowdRunState::Dancing))
+	{
+		CrowdAnimInstance->SetSpeed(0.f);
+	}
+}
+
+void AFF_BaseCrowd::ApplyStateToAnimation()
+{
+	if (IsValid(SkeletalMeshComponent))
+	{
+		float PlayRate = 1.f;
+		if (CurrentState == EFF_CrowdRunState::Running)
+		{
+			PlayRate = RunningAnimPlayRate;
+		}
+		else if (CurrentState == EFF_CrowdRunState::Stopped)
+		{
+			PlayRate = 0.f;
+		}
+		SkeletalMeshComponent->GlobalAnimRateScale = PlayRate;
+	}
+
+	if (CrowdAnimInstance)
+	{
+		CrowdAnimInstance->SetState(CurrentState);
+	}
+}
+
+// AnimClass는 '클래스'를 받는다.
 void AFF_BaseCrowd::ApplyAppearance(USkeletalMesh* Mesh, UClass* AnimClass, float YawOffset, float UniformScale)
 {
 	if (!IsValid(SkeletalMeshComponent))
@@ -151,6 +193,7 @@ void AFF_BaseCrowd::ApplyAppearance(USkeletalMesh* Mesh, UClass* AnimClass, floa
 	}
 
 	CrowdAnimInstance = Cast<UFF_CrowdAnimInstance>(SkeletalMeshComponent->GetAnimInstance());
+	ApplyStateToAnimation();
 
 	// 메시가 있는데 인스턴스가 없다면 AnimClass의 대상 Skeleton과 메시의 Skeleton이 다른 것이다.
 	// InitAnim은 이 경우 조용히 아무것도 만들지 않으므로 여기서 짚어 주지 않으면 원인을 찾을 수 없다.

@@ -305,7 +305,7 @@ bool FFF_FacilityRevenueTable_ContentCoverage::RunTest(const FString& Parameters
 		TArray<FText> RowErrors;
 		TestTrue(*FString::Printf(TEXT("All authored income controls validate: %s"), *Id.ToString()), Row->IsRowValid(RowErrors));
 		for (const FText& Error : RowErrors) AddError(FString::Printf(TEXT("%s: %s"), *Id.ToString(), *Error.ToString()));
-		TestTrue(*FString::Printf(TEXT("The table owns this facility's commission rate: %s"), *Id.ToString()), Row->bOverrideCommissionRate);
+		TestFalse(*FString::Printf(TEXT("Commission rate comes from the festival definition: %s"), *Id.ToString()), Row->bOverrideCommissionRate);
 		TestTrue(*FString::Printf(TEXT("The table authors level-one income: %s"), *Id.ToString()), Row->RevenueMultiplierByLevel.Contains(1));
 		if (Definition->Spec.bUsesFacilityLevels)
 		{

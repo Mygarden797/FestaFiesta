@@ -72,6 +72,7 @@
 | `Rest_Cooling_*` | Fatigue, **Thirst** |
 | `Rest_Seating_*` / `Rest_Shade_*` / `Rest_Picnic_*` | Fatigue만 |
 | `Performance_*` / `PhotoSpot_*` | Stimulation |
+| `Booth_MarketGoods_*` / `Booth_CraftExperience_*` / `Booth_ActivityGame_*` | Stimulation (2026-10-09 변경. 전엔 아무 Need 도 해소하지 않았다) |
 | `Info_*` / `Safety_*` | 없음 (설계상 Need 대상이 아니다 — `FF_NeedState.h` 상단 주석) |
 
 ## 4. 안 지키면 무슨 일이 생기나

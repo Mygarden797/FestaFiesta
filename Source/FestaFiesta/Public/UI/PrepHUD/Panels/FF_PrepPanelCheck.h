@@ -6,11 +6,16 @@
 #include "Festival/FF_RequiredFacilityTypes.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
+#include "UI/PrepHUD/Panels/FF_PrepRecommendedFacilities.h"
 #include "FF_PrepPanelCheck.generated.h"
 
 class UButton;
+class USlider;
 class UTextBlock;
 class UWidget;
+class UVerticalBox;
+class UFF_BuildCatalogSubsystem;
+class UFF_PrepRecommendedFacilityRow;
 class UFF_FestivalViewModelSubsystem;
 class UFF_PrepChoiceButton;
 class UFF_RequiredFacilitiesSubsystem;
@@ -48,7 +53,7 @@ struct FESTAFIESTA_API FFF_PrepDayEstimate
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
 	int32 StaffHireCost = INDEX_NONE;
 
-	/** 예상 방문객 × 입장료. 예상 방문객을 모르면 `INDEX_NONE`. */
+	/** 경제 원본 예보의 예상 입장 수입. UI에서 곱셈으로 다시 계산하지 않는다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
 	int32 ExpectedAdmissionRevenue = INDEX_NONE;
 
@@ -97,7 +102,7 @@ struct FESTAFIESTA_API FFF_PrepCheckRules
 	static FFF_PrepDayEstimate BuildDayEstimate(
 		int32 TodayStaffHireCost,
 		int32 ExpectedVisitors,
-		int32 AdmissionFee,
+		int32 ExpectedAdmissionRevenue,
 		int32 DailyVisitorGoal,
 		int32 DailyGoalBonus);
 
@@ -146,11 +151,22 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
+	virtual void NativeDestruct() override;
+
+	UFUNCTION() void HandleAdmissionValueChanged(float NewValue);
+	UFUNCTION() void HandleAdmissionDecrease();
+	UFUNCTION() void HandleAdmissionIncrease();
+	UFUNCTION() void HandleAdmissionApply();
+	UFUNCTION() void HandleAdmissionReset();
+	UFUNCTION() void HandleAdmissionFeeChanged(int32 NewValue);
 
 	// --- 버튼 ---
 
 	UFUNCTION()
 	void HandleContinueBuildClicked();
+
+	UFUNCTION()
+	void HandleStaffAssignmentGuidanceClicked();
 
 	UFUNCTION()
 	void HandleOpenGateClicked();
@@ -186,7 +202,71 @@ protected:
 	UFUNCTION()
 	void HandleScheduledProgramsChanged();
 
+	UFUNCTION() void HandleRecommendedCatalogChanged();
+	void HandleRecommendedPlaceRequested(EFF_PrepRecommendedFacilityKind Kind);
+
 protected:
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
+	TObjectPtr<UWidget> Border_RecommendedFacilities;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
+	TObjectPtr<UVerticalBox> VerticalBox_RecommendedRows;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
+	TObjectPtr<UTextBlock> Text_RecommendedCount;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
+	TObjectPtr<UTextBlock> Text_RecommendedSummary;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities")
+	FFF_PrepRecommendedFacilityRules RecommendedFacilityRules;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText RecommendedCountFormat = NSLOCTEXT("FestaFiestaPrepCheck", "RecommendedCount", "권장 시설 {Count}종 없음");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText RecommendedSummaryFormat = NSLOCTEXT("FestaFiestaPrepCheck", "RecommendedSummary", "⚠ 권장 시설 {Count}종이 없습니다");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText RecommendedUnknownText = NSLOCTEXT("FestaFiestaPrepCheck", "RecommendedUnknown", "권장 시설 상태를 확인하고 있습니다.");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText RequiredReadyWithWarningsText = NSLOCTEXT("FestaFiestaPrepCheck", "RequiredReadyWithWarnings", "✓ 필수 시설 준비 완료");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText OpenWithWarningsFormat = NSLOCTEXT("FestaFiestaPrepCheck", "OpenWithWarnings", "이대로 Day {Day} 시작");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText RecommendedCatalogUnavailableText = NSLOCTEXT("FestaFiestaPrepCheck", "RecommendedCatalogUnavailable", "배치 가능한 시설 목록을 확인할 수 없습니다.");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recommended Facilities|Text")
+	FText RecommendedNavigationFailedText = NSLOCTEXT("FestaFiestaPrepCheck", "RecommendedNavigationFailed", "지금은 건축목록을 열 수 없습니다. 준비 단계에서 다시 시도해 주세요.");
+
+	// 입장료 초안과 적용값은 구분한다. 슬라이더 변경만으로 경제 명령을 호출하지 않는다.
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<USlider> Slider_AdmissionFee;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UButton> Button_AdmissionDecrease;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UButton> Button_AdmissionIncrease;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UButton> Button_AdmissionApply;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UButton> Button_AdmissionReset;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionFeeValue;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AppliedAdmissionFee;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionFeeRange;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionFeeState;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionPreviewDelta;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionPreviewRevenue;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionValueFormat;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AppliedAdmissionFormat;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionRangeFormat;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionAppliedText;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionDraftText;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionLockedText;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionUnavailableText;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionGateDraftText;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionDeltaFormat;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionNoChangeText;
+
 	// --- 카드 4장 ---
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
@@ -248,6 +328,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_RequiredFacilities;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UButton> Button_RequiredFacilities;
+
 	/** 마지막 날이 아니면 줄째 숨긴다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_FinaleSummary;
@@ -266,7 +349,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_ExpectedGoalBonus;
 
-	/** 부스 수수료처럼 운영 결과에 달린 값은 예측하지 않는다는 안내. */
+	/** 부스 매출처럼 운영 결과에 달린 값은 예측하지 않는다는 안내. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_EstimateNotice;
 
@@ -289,6 +372,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_OpenGateReason;
 
+	/** 안내 문구 오른쪽의 스태프 배정 바로가기. 배정할 대상이 없으면 숨긴다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UButton> Button_OpenGateReason;
+
 	// --- 설정 ---
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
@@ -302,6 +389,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
 	FText GoldValueFormat;
+
+	/** 보유 금화 카드. 옆에 금화 아이콘이 있어 단위 글자를 붙이지 않는다 (2026-10-06). {Amount}: 금액 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
+	FText HeldGoldValueFormat;
 
 	/** {Name}, {Installed}, {Required}, {State}. 각 시설은 한 줄씩 표시한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
@@ -352,10 +443,16 @@ private:
 	void RefreshAll();
 
 	void RefreshWeather();
+	void RefreshAdmission();
+	void SetAdmissionDraft(int32 NewFee);
+	bool HasAdmissionDraft() const;
 	void RefreshCapacity();
 	void RefreshSummary();
 	void RefreshEstimate();
 	void RefreshRequiredFacilities();
+	void RefreshStaffAssignmentLinks();
+	void RefreshRecommendedFacilities();
+	FName FindRecommendedCatalogTarget(EFF_PrepRecommendedFacilityKind Kind) const;
 
 	/**
 	 * 개장 버튼의 문구와 활성 상태를 바의 판정으로 맞춘다.
@@ -379,11 +476,14 @@ private:
 
 	/** 금액 칸 하나. `INDEX_NONE` 이면 `아직 알 수 없습니다`. */
 	FText FormatGoldOrUnknown(int32 Amount) const;
+	FText FormatGoldOrUnknown(int32 Amount, const FText& Format) const;
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
 
 	TWeakObjectPtr<UFF_RequiredFacilitiesSubsystem> BoundRequiredFacilities;
+	TWeakObjectPtr<UFF_BuildCatalogSubsystem> BoundRecommendedCatalog;
+	int32 MissingRecommendedCount = 0;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UFF_PrepChoiceButton>> WeatherChoices;
@@ -396,6 +496,15 @@ private:
 	 */
 	int32 ExpectedVisitorsMin = INDEX_NONE;
 	int32 ExpectedVisitorsMax = INDEX_NONE;
+	int32 ExpectedAdmissionRevenue = INDEX_NONE;
+	int32 AppliedAdmissionFee = INDEX_NONE;
+	int32 DraftAdmissionFee = INDEX_NONE;
+	int32 AdmissionMin = INDEX_NONE;
+	int32 AdmissionMax = INDEX_NONE;
+	bool bAdmissionRangeValid = false;
+	bool bRefreshingAdmission = false;
+	bool bAdmissionRequestInFlight = false;
+	FText AdmissionResultText;
 
 	friend class FFF_PrepCheckRules_CtaReasonRefresh;
 };

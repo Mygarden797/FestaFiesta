@@ -2,6 +2,7 @@
 #include "UI/PrepHUD/FF_PrepPanelSkyBuilder.h"
 
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/ProgressBar.h"
@@ -35,7 +36,7 @@ namespace FFPrepStaffSkyBuilder
 
 	bool Build(UWidgetBlueprint& BP, UWidgetTree& Tree)
 	{
-		const FPanelFrame Frame = MakeFrame(BP, Tree, LOCTEXT("Title", "인력"),
+		const FPanelFrame Frame = MakeFrame(BP, Tree, LOCTEXT("Title", "스태프"),
 			TEXT("/Game/FestaFiesta/UI/LiveHUD/Themes/LightTeal/Icons/Metrics/T_FF_LH_Icon_StaffCount_White_256"));
 		UHorizontalBox* Columns = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_StaffColumns"));
 		UVerticalBox* Current = MakeWidget<UVerticalBox>(BP, Tree, TEXT("VerticalBox_CurrentStaff"));
@@ -81,9 +82,17 @@ namespace FFPrepStaffSkyBuilder
 			const bool bMinus = Index == 0;
 			USizeBox* Size = MakeWidget<USizeBox>(BP, Tree, bMinus ? TEXT("SizeBox_Decrease") : TEXT("SizeBox_Increase"));
 			Size->SetWidthOverride(48.f); Size->SetHeightOverride(44.f);
-			Size->AddChild(Button(BP, Tree, bMinus ? TEXT("Button_Decrease") : TEXT("Button_Increase"),
-				*Text(BP, Tree, bMinus ? TEXT("Text_Decrease") : TEXT("Text_Increase"),
-					bMinus ? LOCTEXT("Minus", "−") : LOCTEXT("Plus", "+"), 25)));
+			UTextBlock* Glyph = Text(BP, Tree, bMinus ? TEXT("Text_Decrease") : TEXT("Text_Increase"),
+				bMinus ? LOCTEXT("Minus", "−") : LOCTEXT("Plus", "+"), 20);
+			Glyph->SetJustification(ETextJustify::Center);
+			UButton* StepButton = Button(BP, Tree, bMinus ? TEXT("Button_Decrease") : TEXT("Button_Increase"), *Glyph);
+			FButtonStyle StepStyle = StepButton->GetStyle();
+			StepStyle.NormalPadding = StepStyle.PressedPadding = FMargin(0.f);
+			StepButton->SetStyle(StepStyle);
+			UButtonSlot* GlyphSlot = CastChecked<UButtonSlot>(Glyph->Slot);
+			GlyphSlot->SetPadding(FMargin(0.f));
+			GlyphSlot->SetHorizontalAlignment(HAlign_Center); GlyphSlot->SetVerticalAlignment(VAlign_Center);
+			Size->AddChild(StepButton);
 			Column(*Stepper, *Size);
 		}
 		Row(*Hire, *Stepper, FMargin(0.f, 0.f, 0.f, 8.f));

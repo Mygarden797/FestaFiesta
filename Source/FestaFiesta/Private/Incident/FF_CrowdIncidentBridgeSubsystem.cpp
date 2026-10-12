@@ -54,8 +54,7 @@ void UFF_CrowdIncidentBridgeSubsystem::Deinitialize()
 	CongestionHandle.Reset();
 	MissingHandle.Reset();
 	ItemLostHandle.Reset();
-	CongestionStreakByCell.Reset();
-	OpenCongestionCells.Reset();
+	ResetCongestionTracking(false);
 	MissingKeyByAgent.Reset();
 	Crowd = nullptr;
 	Incident = nullptr;
@@ -65,6 +64,143 @@ void UFF_CrowdIncidentBridgeSubsystem::Deinitialize()
 
 void UFF_CrowdIncidentBridgeSubsystem::HandleCongestionSampled(const FFF_CrowdCongestionSnapshot& Snapshot)
 {
+	// 시작 직후의 미계측 스냅샷과 잘못된 입력은 해소 근거로 쓰지 않는다.
+	if (Incident == nullptr || Snapshot.SnapshotIndex < 0
+		|| !FMath::IsFinite(Snapshot.SimTimeMinutes)
+		|| !FMath::IsFinite(Snapshot.CellSizeMeters) || Snapshot.CellSizeMeters <= 0.f)
+	{
+		return;
+	}
+
+	if (LastCongestionSnapshotIndex != INDEX_NONE)
+	{
+		const bool bSessionReset = Snapshot.SnapshotIndex < LastCongestionSnapshotIndex
+			|| Snapshot.SimTimeMinutes < LastCongestionSimMinutes - KINDA_SMALL_NUMBER
+			|| !FMath::IsNearlyEqual(Snapshot.CellSizeMeters, LastCongestionCellSizeMeters);
+		if (bSessionReset)
+		{
+			ResetCongestionTracking(true);
+		}
+		else if (Snapshot.SnapshotIndex == LastCongestionSnapshotIndex)
+		{
+			return;
+		}
+		else if (static_cast<int64>(Snapshot.SnapshotIndex) > static_cast<int64>(LastCongestionSnapshotIndex) + 1)
+		{
+			// 빠진 계측 구간은 혼잡 또는 해소가 이어졌다고 가정하지 않는다.
+			CongestionStreakByCell.Reset();
+			CongestionClearStreakByCell.Reset();
+		}
+	}
+
+	LastCongestionSnapshotIndex = Snapshot.SnapshotIndex;
+	LastCongestionSimMinutes = Snapshot.SimTimeMinutes;
+	LastCongestionCellSizeMeters = Snapshot.CellSizeMeters;
+	const int32 RequiredClearSnapshots = FMath::Max(1, UFF_IncidentSettings::Get()->CongestionClearSnapshots);
+
+	TSet<FIntPoint> CurrentCells;
+	for (const FFF_CrowdCongestedCell& Cell : Snapshot.Cells)
+	{
+		if (CurrentCells.Contains(Cell.Cell))
+		{
+			continue;
+		}
+		CurrentCells.Add(Cell.Cell);
+		CongestionClearStreakByCell.Remove(Cell.Cell);
+		if (OpenCongestionHandles.Contains(Cell.Cell))
+		{
+			// 현장 처리로 닫혔어도 같은 혼잡이 이어지는 동안 다시 신고하지 않는다.
+			continue;
+		}
+
+		int32& Streak = CongestionStreakByCell.FindOrAdd(Cell.Cell);
+		Streak = FMath::Min(Streak + 1, CongestionSustainSnapShots);
+		if (Streak < CongestionSustainSnapShots)
+		{
+			continue;
+		}
+
+		FFF_IncidentReport Report;
+		Report.IncidentTag = FFIncidentTags::Crowd::Congestion;
+		Report.Anchor.Kind = EFF_IncidentAnchorKind::DensityCell;
+		Report.Anchor.DensityCell = Cell.Cell;
+		Report.Anchor.WorldPoint = Cell.CenterWorldUU;
+		Report.Intensity = 1.f;
+		const FFF_IncidentHandle Handle = Incident->ReportIncident(Report);
+		if (Handle.IsSet())
+		{
+			OpenCongestionHandles.Add(Cell.Cell, Handle);
+			FF_CI_BRIDGE_LOG("CONGESTION reported cell (%d,%d) density %.2f occupancy %d streak %d",
+				Cell.Cell.X, Cell.Cell.Y, Cell.DensityPerSqm, Cell.Occupancy, Streak);
+		}
+	}
+
+	for (auto It = CongestionStreakByCell.CreateIterator(); It; ++It)
+	{
+		if (!CurrentCells.Contains(It.Key()))
+		{
+			It.RemoveCurrent();
+		}
+	}
+
+	TArray<TPair<FIntPoint, FFF_IncidentHandle>> ClearedCells;
+	for (auto It = OpenCongestionHandles.CreateIterator(); It; ++It)
+	{
+		if (CurrentCells.Contains(It.Key()))
+		{
+			continue;
+		}
+		if (++CongestionClearStreakByCell.FindOrAdd(It.Key()) < RequiredClearSnapshots)
+		{
+			continue;
+		}
+		ClearedCells.Emplace(It.Key(), It.Value());
+		CongestionClearStreakByCell.Remove(It.Key());
+		It.RemoveCurrent();
+	}
+
+	// 종료 델리게이트가 다른 사건을 만들더라도 순회와 오래된 핸들 철회가 섞이지 않게 한다.
+	for (const TPair<FIntPoint, FFF_IncidentHandle>& Cleared : ClearedCells)
+	{
+		if (!Incident->IsHandleValid(Cleared.Value))
+		{
+			continue;
+		}
+		FFF_IncidentAnchor Anchor;
+		Anchor.Kind = EFF_IncidentAnchorKind::DensityCell;
+		Anchor.DensityCell = Cleared.Key;
+		Incident->WithdrawIncident(FFF_IncidentRules::MakeDedupeKey(FFIncidentTags::Crowd::Congestion, Anchor));
+		FF_CI_BRIDGE_LOG("CONGESTION withdrawn cell (%d,%d) after %d clear snapshots",
+			Cleared.Key.X, Cleared.Key.Y, RequiredClearSnapshots);
+	}
+}
+
+void UFF_CrowdIncidentBridgeSubsystem::ResetCongestionTracking(bool bWithdrawOpenIncidents)
+{
+	const TMap<FIntPoint, FFF_IncidentHandle> PreviousHandles = MoveTemp(OpenCongestionHandles);
+	OpenCongestionHandles.Reset();
+	CongestionStreakByCell.Reset();
+	CongestionClearStreakByCell.Reset();
+	LastCongestionSnapshotIndex = INDEX_NONE;
+	LastCongestionSimMinutes = 0.f;
+	LastCongestionCellSizeMeters = 0.f;
+
+	if (!bWithdrawOpenIncidents || !Incident)
+	{
+		return;
+	}
+	for (const TPair<FIntPoint, FFF_IncidentHandle>& Previous : PreviousHandles)
+	{
+		if (!Incident->IsHandleValid(Previous.Value))
+		{
+			continue;
+		}
+		FFF_IncidentAnchor Anchor;
+		Anchor.Kind = EFF_IncidentAnchorKind::DensityCell;
+		Anchor.DensityCell = Previous.Key;
+		Incident->WithdrawIncident(FFF_IncidentRules::MakeDedupeKey(FFIncidentTags::Crowd::Congestion, Anchor),
+			EFF_IncidentCloseReason::SessionReset);
+	}
 }
 
 void UFF_CrowdIncidentBridgeSubsystem::HandleMemberMissingChanged(const TArray<FFF_CrowdMemberMissingEvent>& Events)

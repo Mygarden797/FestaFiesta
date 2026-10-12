@@ -22,6 +22,15 @@ struct FESTAFIESTA_API FFF_DayLedger
 	// 하루 경계에서 호출
 	void Reset();
 
+	// 다른 날의 원장을 더한다. 축제 전체 합계를 만들 때 쓴다. int32 상한에서 포화한다.
+	void Accumulate(const FFF_DayLedger& Other);
+
+	// 저장·복원용 평탄한 표현. 배열 길이가 현재 enum 개수와 다르면(옛 저장) 겹치는 칸만 옮긴다.
+	void Export(TArray<int32>& OutSpend, TArray<int32>& OutEarn, int32& OutRefund,
+		TArray<FName>& OutFacilityIds, TArray<int32>& OutFacilityRevenue) const;
+	void Import(const TArray<int32>& InSpend, const TArray<int32>& InEarn, int32 InRefund,
+		const TArray<FName>& InFacilityIds, const TArray<int32>& InFacilityRevenue);
+
 	int32 GetSpendByReason(EFF_SpendReason Reason) const;
 	int32 GetEarnByReason(EFF_EarnReason Reason) const;
 	int32 GetTotalRefund() const { return TotalRefund; }

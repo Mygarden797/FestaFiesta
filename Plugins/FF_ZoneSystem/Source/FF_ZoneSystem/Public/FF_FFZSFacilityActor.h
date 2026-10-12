@@ -57,7 +57,11 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
     TObjectPtr<UStaticMeshComponent> VisualMesh;
-    // 기존 메시 콜리전으로 플레이어만 막는다. 배치 점유·NPC Nav는 FacilitySpec이 담당한다.
+    // 타일을 제외한 시설은 기존 메시 콜리전으로 플레이어를 막는다. 배치 점유·NPC Nav는 FacilitySpec이 담당한다.
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
+    TObjectPtr<UBoxComponent> TileSupportSurface;
+    // Tile의 사양 크기로 만든 평평한 지지면. 비주얼 적재·원본 메시 충돌과 무관하게 지면 추적과 플레이어를 받친다.
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
     TObjectPtr<UAudioComponent> FacilityAudioComponent;
@@ -334,6 +338,7 @@ private:
     void RebuildSelectionProxy(const FVector& SelectionExtent);
     void SetPlayerCollisionEnabled(bool bEnabled);
     void RefreshPlayerCollision();
+    void RefreshTileSupportSurface();
     void SetNavigationObstacleEnabled(bool bEnabled);
     void ApplyQueueLaneNavCostGeometry();
     void RequestVisualMesh();

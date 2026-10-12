@@ -301,7 +301,6 @@ bool FFFZSFacilityKoreanTooltipsTest::RunTest(const FString& Parameters)
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, Category),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, StaffCapacity),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, FootprintSizeCells),
-            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, ClearanceCells),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, QueueReservedRects),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, QueueReservedCells),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, QueueSplinePointsCm),
@@ -322,6 +321,15 @@ bool FFFZSFacilityKoreanTooltipsTest::RunTest(const FString& Parameters)
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, AudioSettings),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, PlacementObstacleHeightCm),
         });
+
+    const FProperty* LegacyClearance = FFFZSFacilitySpec::StaticStruct()->FindPropertyByName(
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, ClearanceCells));
+    if (TestNotNull(TEXT("Legacy clearance remains serializable"), LegacyClearance))
+    {
+        TestTrue(TEXT("Retired clearance is hidden from facility editing"),
+            LegacyClearance->HasMetaData(TEXT("EditConditionHides")) &&
+            LegacyClearance->GetMetaData(TEXT("EditCondition")) == TEXT("false"));
+    }
 
     for (const FName PropertyName : {
         GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, bOverrideRevenuePerUseGold),
