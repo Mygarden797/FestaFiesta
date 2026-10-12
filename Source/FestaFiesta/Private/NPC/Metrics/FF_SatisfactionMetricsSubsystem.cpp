@@ -3,6 +3,7 @@
 #include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h" // LogFestaFiestaNpc
+#include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Engine/GameInstance.h"
 
@@ -323,6 +324,7 @@ void UFF_SatisfactionMetricsSubsystem::Initialize(FSubsystemCollectionBase& Coll
 void UFF_SatisfactionMetricsSubsystem::ResetForNewFestival()
 {
 	Aggregator = FFF_SatisfactionAggregator();
+	DayAccumulator = FDayAccumulator();
 	OnSimSatisfactionChanged.Broadcast(Aggregator.GetSimSatisfaction());
 }
 
@@ -342,8 +344,82 @@ void UFF_SatisfactionMetricsSubsystem::Deinitialize()
 void UFF_SatisfactionMetricsSubsystem::CommitAggregation(const FFF_SatisfactionCoefficients& Coefficients)
 {
 	LastCoefficients = Coefficients;
-	if (Aggregator.Commit(Coefficients))
+	const bool bChanged = Aggregator.Commit(Coefficients);
+	AccumulateDayAverage();
+	if (bChanged)
 	{
 		OnSimSatisfactionChanged.Broadcast(Aggregator.GetSimSatisfaction());
 	}
+}
+
+void UFF_SatisfactionMetricsSubsystem::AccumulateDayAverage()
+{
+	// 손님 표본이 있는 Live 창만 하루 평균에 넣는다. 표본이 없는 창은 직전 값을 유지할 뿐이라 세면 한쪽으로 쏠린다
+	const UGameInstance* GameInstance = GetGameInstance();
+	const UFF_FestivalStageSubsystem* Stage = GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	if (!Stage || Stage->CurrentStage != EFF_FestivalStage::Live || Aggregator.GetSampleCount() <= 0)
+	{
+		return;
+	}
+	FDayAccumulator& Acc = DayAccumulator;
+	if (Acc.Day != Stage->CurrentDay)
+	{
+		Acc = FDayAccumulator();
+		Acc.Day = Stage->CurrentDay;
+	}
+	++Acc.Windows;
+	Acc.Satisfaction += Aggregator.GetSimSatisfaction();
+	Acc.Base += Aggregator.GetBaseSatisfaction();
+	Acc.Wait += Aggregator.GetWaitScore();
+	Acc.Density += Aggregator.GetDensityScore();
+	Acc.Preference += Aggregator.GetPreferenceScore();
+	Acc.Need += Aggregator.GetNeedFulfillmentScore();
+	if (Aggregator.GetAverageWaitSeconds() >= 0.f) { Acc.WaitSeconds += Aggregator.GetAverageWaitSeconds(); ++Acc.WaitSecondsCount; }
+	if (Aggregator.GetQueueSuccessRate() >= 0.f) { Acc.QueueSuccess += Aggregator.GetQueueSuccessRate(); ++Acc.QueueSuccessCount; }
+	if (Aggregator.GetCrowdedShare() >= 0.f) { Acc.Crowded += Aggregator.GetCrowdedShare(); ++Acc.CrowdedCount; }
+	if (Aggregator.GetPreferenceMatchShare() >= 0.f && Aggregator.GetPreferenceSampleCount() > 0)
+	{
+		Acc.PreferenceMatched += Aggregator.GetPreferenceMatchShare() * Aggregator.GetPreferenceSampleCount();
+		Acc.PreferenceSamples += Aggregator.GetPreferenceSampleCount();
+	}
+	if (const UFF_NpcNeedMetricsSubsystem* Needs = GameInstance->GetSubsystem<UFF_NpcNeedMetricsSubsystem>())
+	{
+		if (Needs->GetSampleCount() > 0)
+		{
+			for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
+			{
+				Acc.Unmet[Index] += Needs->GetNeedUnmetRatio(static_cast<EFF_NeedType>(Index));
+			}
+			++Acc.UnmetCount;
+		}
+	}
+}
+
+FFF_DaySatisfactionAverage UFF_SatisfactionMetricsSubsystem::GetDayAverage() const
+{
+	FFF_DaySatisfactionAverage Result;
+	const FDayAccumulator& Acc = DayAccumulator;
+	Result.Day = Acc.Day;
+	Result.WindowCount = Acc.Windows;
+	if (Acc.Windows <= 0)
+	{
+		return Result;
+	}
+	const auto Average = [&Acc](double Sum) { return FMath::Clamp(FMath::RoundToInt(static_cast<float>(Sum / Acc.Windows)), 0, 100); };
+	Result.Satisfaction = Average(Acc.Satisfaction);
+	Result.BaseSatisfaction = FMath::Max(Average(Acc.Base), Result.Satisfaction);
+	Result.WaitScore = Average(Acc.Wait);
+	Result.DensityScore = Average(Acc.Density);
+	Result.PreferenceScore = Average(Acc.Preference);
+	Result.NeedScore = Average(Acc.Need);
+	Result.AverageWaitSeconds = Acc.WaitSecondsCount > 0 ? static_cast<float>(Acc.WaitSeconds / Acc.WaitSecondsCount) : -1.f;
+	Result.QueueSuccessRate = Acc.QueueSuccessCount > 0 ? static_cast<float>(Acc.QueueSuccess / Acc.QueueSuccessCount) : -1.f;
+	Result.CrowdedShare = Acc.CrowdedCount > 0 ? static_cast<float>(Acc.Crowded / Acc.CrowdedCount) : -1.f;
+	Result.PreferenceMatchShare = Acc.PreferenceSamples > 0 ? static_cast<float>(Acc.PreferenceMatched / Acc.PreferenceSamples) : -1.f;
+	Result.PreferenceSampleCount = Acc.PreferenceSamples;
+	for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
+	{
+		Result.NeedUnmetPercent[Index] = Acc.UnmetCount > 0 ? static_cast<float>(Acc.Unmet[Index] / Acc.UnmetCount) : -1.f;
+	}
+	return Result;
 }

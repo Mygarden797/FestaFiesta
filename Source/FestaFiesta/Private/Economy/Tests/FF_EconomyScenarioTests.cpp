@@ -49,6 +49,7 @@
 #include "Zone/FF_ZoneLayoutSaveGame.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "Zone/FF_ZoneSystemStageBridgeSubsystem.h"
+#include "Queue/FF_QueueSubsystem.h"
 #include "Queue/FF_QueueTypes.h"
 
 namespace FFEconScenario
@@ -359,6 +360,13 @@ private:
 				Test->AddWarning(FString::Printf(TEXT("계수 '%s' 가 표에 없다."), *Override.Key.ToString()));
 			}
 		}
+		if (!Applied.IsEmpty())
+		{
+			if (UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>())
+			{
+				Crowd->ReloadNeedCoefficients();
+			}
+		}
 		Test->AddInfo(FString::Printf(TEXT("[실험] 보행 속도 배수 %.2f (0 = 기본값) · 계수 %s"), Options.WalkScale, *Applied));
 	}
 
@@ -536,12 +544,66 @@ private:
 				Day, Stats.Requests, Stats.Chosen, Stats.NoChoice, Stats.NoCandidate, Stats.OutsideZone, Stats.FailedDestinationPenalized));
 			Test->AddInfo(FString::Printf(TEXT("[Day %d 결정] Zone 밖→근처 Zone 보정 %d · 퇴장 체류소진 %d · 퇴장 갈곳없음 %d"),
 				Day, Stats.OutsideZoneUsedNearest, Decision->GetLeaveByStayExpiredCount(), Decision->GetLeaveByNoChoicePatienceCount()));
+			FString NoToiletZones;
+			for (const TPair<FName, int32>& Pair : Stats.UrgentRestroomNoToiletByZone)
+			{
+				NoToiletZones += FString::Printf(TEXT(" %s %d"), *Pair.Key.ToString(), Pair.Value);
+			}
+			Test->AddInfo(FString::Printf(TEXT("[Day %d 화장실] 급한 결정 %d · 후보에 화장실 %d(가장 가까운 곳 평균 %.0fm) · 화장실 고름 %d · 후보에 없던 구역:%s"),
+				Day, Stats.UrgentRestroom, Stats.UrgentRestroomToiletCandidate,
+				Stats.UrgentRestroomToiletCandidate > 0 ? Stats.UrgentRestroomNearestToiletMetersSum / Stats.UrgentRestroomToiletCandidate : 0.f,
+				Stats.UrgentRestroomChoseToilet, *NoToiletZones));
+			Test->AddInfo(FString::Printf(TEXT("[Day %d 화장실] 공연 줄 휴지 중 급한 결정 %d · 그중 화장실 후보 없음 %d"),
+				Day, Stats.UrgentRestroomDuringBreak, Stats.UrgentRestroomNoToiletDuringBreak));
 		}
 		if (const UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>())
 		{
 			Test->AddInfo(FString::Printf(TEXT("[Day %d 줄] 시도 %d · 수락 %d · 거절 %d · 인내초과 이탈 %d"),
 				Day, Crowd->GetQueueJoinAttemptCount(), Crowd->GetQueueJoinAcceptedCount(),
 				Crowd->GetQueueJoinRejectedCount(), Crowd->GetQueuePatienceAbandons()));
+			const auto& Shows = Crowd->GetShowRestroomSnapshots();
+			if (Shows.Num() > ReportedShowCount)
+			{
+				for (int32 Index = ReportedShowCount; Index < Shows.Num(); ++Index)
+				{
+					const auto& Start = Shows[Index].Key;
+					const auto& End = Shows[Index].Value;
+					const auto Percent = [](int32 Part, int32 Whole) { return Whole > 0 ? 100.f * Part / Whole : 0.f; };
+					Test->AddInfo(FString::Printf(
+						TEXT("[Day %d 공연 화장실] 시작: 관람 %d명 중 급함 %.0f%%(평균 %.2f) · 그 밖 %d명 중 %.0f%% → 끝: 관람 %d명 중 급함 %.0f%%(평균 %.2f) · 그 밖 %d명 중 %.0f%%"),
+						Day, Start.AudienceAgents, Percent(Start.AudienceUrgent, Start.AudienceAgents),
+						Start.AudienceAgents > 0 ? Start.AudienceRestroomSum / Start.AudienceAgents : 0.f,
+						Start.OtherAgents, Percent(Start.OtherUrgent, Start.OtherAgents),
+						End.AudienceAgents, Percent(End.AudienceUrgent, End.AudienceAgents),
+						End.AudienceAgents > 0 ? End.AudienceRestroomSum / End.AudienceAgents : 0.f,
+						End.OtherAgents, Percent(End.OtherUrgent, End.OtherAgents)));
+				}
+				ReportedShowCount = Shows.Num();
+			}
+			Test->AddInfo(FString::Printf(TEXT("[Day %d 화장실 줄] 시도 %d · 수락 %d · 꽉 차서 거절 %d · 닫혀서 거절 %d · 칸 도착 %d · 인내 이탈 %d"),
+				Day, Crowd->GetToiletJoinAttemptCount(), Crowd->GetToiletJoinAcceptedCount(), Crowd->GetToiletJoinRejectedFullCount(),
+				Crowd->GetToiletJoinRejectedClosedCount(), Crowd->GetToiletArrivalCount(), Crowd->GetToiletPatienceAbandonCount()));
+			{
+				// 화장실 줄이 어떻게 끝났는지(대기열 로그, 누적): 이용 완료 · 대기 포기 · 취소와 평균 대기
+				int32 Exits[3] = {};
+				double WaitSum = 0.0;
+				const UFF_QueueSubsystem* QueueSystem = World->GetSubsystem<UFF_QueueSubsystem>();
+				const UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge = World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>();
+				if (QueueSystem && QueueBridge)
+				{
+					for (const FFF_QueueLog& Log : QueueSystem->GetQueueLogsRef())
+					{
+						if (Crowd->IsToiletFacility(QueueBridge->FindZoneFacilityId(Log.FacilityId)))
+						{
+							++Exits[FMath::Clamp(static_cast<int32>(Log.ExitType), 0, 2)];
+							WaitSum += Log.ActualWaitSeconds;
+						}
+					}
+				}
+				const int32 LogCount = Exits[0] + Exits[1] + Exits[2];
+				Test->AddInfo(FString::Printf(TEXT("[Day %d 화장실 줄] 끝남: 이용 %d · 대기 포기 %d · 취소 %d · 평균 대기 %.1f초"),
+					Day, Exits[0], Exits[1], Exits[2], LogCount > 0 ? WaitSum / LogCount : 0.0));
+			}
 			Test->AddInfo(FString::Printf(TEXT("[Day %d 줄] 칸 도착 %d · 묶임 해제 %d"),
 				Day, Crowd->GetQueueArrivalNotifyCount(), Crowd->GetQueueHoldTimeoutCount()));
 		}
@@ -636,6 +698,7 @@ private:
 	int32 FacilityCount = 0;
 	int32 InstallCost = 0;
 	int32 ProgramsScheduled = 0;
+	int32 ReportedShowCount = 0;
 	int32 IncidentsSeen = 0;
 	int32 IncidentsDispatched = 0;
 	TSet<uint64> Attempted;

@@ -1305,7 +1305,9 @@ private:
 	void CaptureDailyReportIfReady();
 	// 매출 1위 시설과 비서 한마디. 결산을 확정할 때 한 번 읽는다
 	void FillReportAssistantComment(FFF_DailyReportView& Report) const;
-	FFF_SatisfactionBreakdown BuildSatisfactionBreakdown(const FFF_DailyReportView& Scores) const;
+	// DayAverage 가 있으면 그날 Live 평균으로, 없으면 지금 값으로 나눈다
+	FFF_SatisfactionBreakdown BuildSatisfactionBreakdown(const FFF_DailyReportView& Scores,
+		const struct FFF_DaySatisfactionAverage* DayAverage) const;
 	FFF_DailyReportView DailyReport;
 	FFF_DailyReportView LastDailySatisfaction;
 	TSet<int32> AutoShownReportDays;

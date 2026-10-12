@@ -26,6 +26,9 @@ struct FFF_QueuedParty
 	bool bServiceStarted = false;
 	// Crowd가 현재 이용 자리 도착을 확인했는지. 자리 이동 시 대기 팀의 확인은 초기화한다.
 	bool bArrivedAtServicePoint = false;
+
+	// 줄 자리에 처음 도착한 시각. 도착 확인을 쓰는 큐는 대기 포기 시간을 여기서부터 잰다(-1 = 아직 못 옴)
+	float FirstArrivalSimTime = -1.f;
 };
 
 /**
@@ -57,7 +60,7 @@ public:
 	bool LeaveQueue(int32 PartyId, float SimTimeSeconds);
 
 	/** Crowd가 이 Party의 리더가 현재 이용 자리에 도착했다고 알려줄 때. */
-	void NotifyPartyArrived(int32 PartyId);
+	void NotifyPartyArrived(int32 PartyId, float SimTimeSeconds = -1.f);
 
 	/**
 	 * DeltaSeconds만큼 서비스 타이머를 돌리고 이탈을 판정한다.

@@ -33,11 +33,12 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 	RequiredSetupFacilities.Add(MainInfo);
 
 	// 등급이 올라갈수록 비용과 보너스가 함께 커진다.
+	// 하루 만족도를 Live 평균으로 바꾸며 만족도가 15~20점 올라, 보너스를 비율대로 줄였다(3/6/10/15 → 2/3/5/8)
 	FinaleTiers = {
-		{ EFF_FinaleGrade::C, 1000,  3 },
-		{ EFF_FinaleGrade::B, 1800,  6 },
-		{ EFF_FinaleGrade::A, 2600, 10 },
-		{ EFF_FinaleGrade::S, 3500, 15 }
+		{ EFF_FinaleGrade::C, 1000, 2 },
+		{ EFF_FinaleGrade::B, 1800, 3 },
+		{ EFF_FinaleGrade::A, 2600, 5 },
+		{ EFF_FinaleGrade::S, 3500, 8 }
 	};
 	
 	RevenuePerUseByMinorToken = {
