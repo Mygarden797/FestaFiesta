@@ -65,7 +65,7 @@ namespace FFPrepPromotionSkyLayoutTest
 			{ TEXT("Text_GoldAfterLabel"), bPurchased ? TEXT("현재 잔액") : TEXT("구매 후 잔액") },
 			{ TEXT("Text_GoldAfterValue"), TEXT("8,300 Gold") },
 			{ TEXT("Text_OnceNotice"), TEXT("홍보는 축제당 한 번 선택하며 3일 전체에 적용됩니다.") },
-			{ TEXT("Text_NotAppliedNotice"), TEXT("예상 방문객에 반영됩니다. 실제 입장 인원 연동은 준비 중입니다.") },
+			{ TEXT("Text_NotAppliedNotice"), TEXT("홍보 효과는 예상 방문객에 반영됩니다. 실제 입장 인원은 운영 상황에 따라 달라집니다.") },
 			{ TEXT("Text_BlockReason"), bPurchased ? TEXT("이미 홍보를 구매했습니다. 축제당 한 번만 선택할 수 있습니다.") : TEXT("선택한 홍보의 비용을 확인한 뒤 구매하세요.") },
 			{ TEXT("Text_PurchaseAction"), bPurchased ? TEXT("구매 완료") : TEXT("구매하기") }
 		};

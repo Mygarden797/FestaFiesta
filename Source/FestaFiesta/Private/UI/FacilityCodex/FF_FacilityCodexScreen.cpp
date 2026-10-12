@@ -667,7 +667,7 @@ void UFF_FacilityCodexScreen::RefreshDetail()
 	if (Text_DetailTitle) Text_DetailTitle->SetText(Entry.DisplayName);
 	if (Text_TargetName) Text_TargetName->SetText(Entry.TargetName);
 	if (Text_PartnerName) Text_PartnerName->SetText(Entry.PartnerName);
-	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("DetailBonus", "{0} 수수료 +{1}%"), Entry.TargetName, Number(Entry.ConfiguredBonusPercent)));
+	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("DetailBonus", "{0} 부스 매출 +{1}%"), Entry.TargetName, Number(Entry.ConfiguredBonusPercent)));
 	if (Text_Distance) Text_Distance->SetText(FText::Format(LOCTEXT("Distance", "시설 중심 사이 {0}m 이내에 배치"), Number(Entry.MaxDistanceMeters)));
 	if (Text_Discovery)
 	{

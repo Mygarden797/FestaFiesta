@@ -523,8 +523,8 @@ private:
 	void EnsureIncidentToast();
 
 	/**
-	 * 사건이 닫힌 이유(완료·소멸·방치·놓침)를 같은 토스트에 띄운다. 표시 여부는 FFF_IncidentRules::ShouldToastClosed 가 정한다.
-	 * 즉시 해결은 [보내기] 결과 토스트가 이미 알리므로 ResolveIncident 를 부르는 동안만 bSuppressClosedToast 로 막는다.
+	 * 사건 종료 이유를 소식에 남기고 토스트로 알린다. 자연 해소는 열람했거나 출동했던 사건만 알린다.
+	 * 즉시 해결은 [보내기] 결과 토스트가 이미 알리므로 토스트만 억제하고 소식 기록은 유지한다.
 	 */
 	void BindIncidentFinished();
 
@@ -534,6 +534,8 @@ private:
 	void HandleIncidentFinished(const FFF_IncidentClosedInfo& Info);
 
 	bool bSuppressClosedToast = false;
+	// 열람은 UI에서만 기억한다. 사건의 Acknowledged 상태는 출동용이므로 변경하지 않는다.
+	TSet<FFF_IncidentHandle> ViewedIncidentHandles;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_IncidentToast> IncidentToast;

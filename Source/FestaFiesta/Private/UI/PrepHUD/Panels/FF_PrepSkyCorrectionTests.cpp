@@ -207,7 +207,7 @@ bool FFF_PrepSkyCorrectionRenderedLayout::RunTest(const FString& Parameters)
 	Rows.Add({ FText::FromString(TEXT("구매 후 잔액")), FText::FromString(TEXT("7,400 Gold")) });
 	const FText Title = GetDefault<UFF_PrepPanelPromotion>()->GetPurchaseConfirmationTitle(EFF_PromotionChoice::Influencer);
 	Dialog->Configure(Title,
-		FText::FromString(TEXT("홍보는 축제당 한 번뿐이고 되돌릴 수 없습니다. 3일 전체에 적용됩니다.\n예상 방문객에는 반영되고, 실제 입장 인원 연동은 준비 중입니다.")),
+		FText::FromString(TEXT("홍보는 축제당 한 번뿐이고 되돌릴 수 없습니다. 3일 전체에 적용됩니다.\n홍보 효과는 예상 방문객에 반영됩니다. 실제 입장 인원은 운영 상황에 따라 달라집니다.")),
 		Rows, FText::FromString(TEXT("구매하기")));
 	if (auto* TitleText = Cast<UTextBlock>(Dialog->GetWidgetFromName(TEXT("Text_Title"))))
 	{

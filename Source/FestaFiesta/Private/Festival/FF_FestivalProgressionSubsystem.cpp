@@ -420,6 +420,11 @@ void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason R
 	RecordRevenue(Amount, Reason, FacilityId, FGuid());
 }
 
+int32 UFF_FestivalProgressionSubsystem::AddRevenueWithReceipt(int32 Amount, EFF_EarnReason Reason, FName FacilityId)
+{
+	return RecordRevenue(Amount, Reason, FacilityId, FGuid());
+}
+
 void UFF_FestivalProgressionSubsystem::RecordAdmittedVisitorsForDailyGoal(int32 AdmittedCount)
 {
 	if (Definition == nullptr || LastProcessedDay <= 0 || AdmittedCount <= 0)
@@ -471,7 +476,7 @@ bool UFF_FestivalProgressionSubsystem::GetFacilityInstanceRevenue(
 	return FacilityRevenueBook.Find(FacilityInstanceId, OutRevenue);
 }
 
-void UFF_FestivalProgressionSubsystem::RecordRevenue(
+int32 UFF_FestivalProgressionSubsystem::RecordRevenue(
 	int32 Amount, EFF_EarnReason Reason, FName FacilityId, const FGuid& FacilityInstanceId)
 {
 	if (Amount > 0)
@@ -479,7 +484,7 @@ void UFF_FestivalProgressionSubsystem::RecordRevenue(
 		// 잔액과 누적 매출 중 먼저 상한에 닿는 값에 맞춰 동일한 수용액을 원장에도 기록한다.
 		const int32 Capacity = MAX_int32 - FMath::Max3(Funds.GetGold(), Funds.GetTotalRevenue(), Funds.GetTodayRevenue());
 		Amount = FMath::Min(Amount, Capacity);
-		if (Amount == 0) return;
+		if (Amount == 0) return 0;
 	}
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
@@ -498,6 +503,7 @@ void UFF_FestivalProgressionSubsystem::RecordRevenue(
 	{
 		OnFacilityRevenueChanged.Broadcast(FacilityInstanceId);
 	}
+	return FMath::Max(0, Amount);
 }
 
 void UFF_FestivalProgressionSubsystem::GrantDiscoveryGold(int32 Amount)

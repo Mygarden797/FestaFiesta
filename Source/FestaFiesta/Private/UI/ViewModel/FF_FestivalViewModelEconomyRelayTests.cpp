@@ -13,6 +13,7 @@
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Misc/AutomationTest.h"
+#include "Save/FF_SaveArchive.h"
 #include "Tests/AutomationCommon.h"
 
 // ViewModel 이 경제·화제성 소유자 값을 그대로 중계하는지 본다. 규칙 자체는 경제 쪽 테스트가 본다.
@@ -209,6 +210,64 @@ bool FFF_ViewModelRelay_Evaluation::RunTest(const FString& Parameters)
 	TestEqual(TEXT("날짜별 만족도가 소유자와 같다"),
 		Harness.ViewModel->GetDailySatisfactionHistory().Num(), Harness.Progression->GetDailySatisfactionHistory().Num());
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ViewModelRelay_RecordedDailySatisfaction,
+	"FestaFiesta.UI.ViewModel.EconomyRelay.RecordedDailySatisfaction",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ViewModelRelay_RecordedDailySatisfaction::RunTest(const FString& Parameters)
+{
+	using namespace FFF_ViewModelEconomyRelayTestHelpers;
+	FEconomyRelayHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(this))) return false;
+	Harness.StartFestival();
+	int32 Satisfaction = 77;
+	TestFalse(TEXT("진행 중인 첫날은 현재 실측값을 확정 기록으로 쓰지 않는다"),
+		Harness.ViewModel->TryGetRecordedDailySatisfaction(1, Satisfaction));
+	TestEqual(TEXT("미기록 값은 INDEX_NONE이다"), Satisfaction, INDEX_NONE);
+
+	// 원본 하루 경계로 1일차와 3일차만 마감한다. 인덱스 1은 2일차가 아니다.
+	Harness.Progression->BeginNewDay(3);
+	Harness.Progression->BeginNewDay(4);
+	TArray<uint8> Bytes;
+	Harness.Progression->WriteSaveData(Bytes);
+	FFF_ProgressionSave State;
+	if (!TestTrue(TEXT("원본 저장 표현을 읽는다"), UFF_SaveArchive::ReadStruct(Bytes, State))) return false;
+	TestEqual(TEXT("건너뛴 날을 제외한 두 기록만 존재한다"), State.DailySatisfaction.Num(), 2);
+	State.DailySatisfaction = {0, 73};
+	UFF_SaveArchive::WriteStruct(Bytes, State);
+	Harness.Progression->ReadSaveData(Bytes);
+
+	TestTrue(TEXT("복원된 실제 0점도 기록이 있다"),
+		Harness.ViewModel->TryGetRecordedDailySatisfaction(1, Satisfaction));
+	TestEqual(TEXT("0점을 중립값으로 바꾸지 않는다"), Satisfaction, 0);
+	TestFalse(TEXT("건너뛴 2일차는 미기록이다"),
+		Harness.ViewModel->TryGetRecordedDailySatisfaction(2, Satisfaction));
+	TestEqual(TEXT("이전 조회값이 남지 않는다"), Satisfaction, INDEX_NONE);
+	TestTrue(TEXT("두 번째 원본 기록을 실제 마감일인 3일차에 연결한다"),
+		Harness.ViewModel->TryGetRecordedDailySatisfaction(3, Satisfaction));
+	TestEqual(TEXT("3일차 만족도"), Satisfaction, 73);
+	TestFalse(TEXT("현재 날은 종료 확정 전까지 미기록이다"),
+		Harness.ViewModel->TryGetRecordedDailySatisfaction(4, Satisfaction));
+
+	// 기존 경제 종료 테스트처럼 원본 종료 핸들러만 실행해 UI 화면 전환을 일으키지 않는다.
+	UFunction* EndedHandler = Harness.Progression->FindFunction(TEXT("HandleFestivalEnded"));
+	if (!TestNotNull(TEXT("원본 종료 핸들러"), EndedHandler)) return false;
+	Harness.Progression->ProcessEvent(EndedHandler, nullptr);
+	TestTrue(TEXT("종료 동결 뒤 마지막 날 기록이 공개된다"),
+		Harness.ViewModel->TryGetRecordedDailySatisfaction(4, Satisfaction));
+	TestEqual(TEXT("마지막 날도 현재 UI 값이 아닌 원본 확정 기록이다"),
+		Satisfaction, Harness.Progression->GetDailySatisfactionHistory().Last());
+
+	// 원장 없는 옛 저장처럼 날짜 대응 근거가 빠지면 남은 값들을 임의 날짜에 붙이지 않는다.
+	State.LedgerHistory.Reset();
+	State.EndedDay = 0;
+	UFF_SaveArchive::WriteStruct(Bytes, State);
+	Harness.Progression->ReadSaveData(Bytes);
+	TestFalse(TEXT("원장과 기록 수가 다르면 날짜를 추측하지 않는다"),
+		Harness.ViewModel->TryGetRecordedDailySatisfaction(1, Satisfaction));
+	TestEqual(TEXT("불명확한 기록도 0점으로 보이지 않는다"), Satisfaction, INDEX_NONE);
 	return true;
 }
 

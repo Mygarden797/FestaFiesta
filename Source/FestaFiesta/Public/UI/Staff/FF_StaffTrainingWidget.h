@@ -42,6 +42,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Text")
 	FText RosterNoteText = NSLOCTEXT("FestaFiestaStaffTraining", "RosterNote", "직원별 현재 레벨과 오늘 승급 가능 여부를 확인하세요.");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Text")
+	FText IncidentEffectNoteText = NSLOCTEXT("FestaFiestaStaffTraining", "IncidentEffectNote", "숙련도가 높을수록 현장 처리가 빨라집니다. 승급 효과는 다음 출동부터 적용됩니다.");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Text")
 	FText RosterEmptyText = NSLOCTEXT("FestaFiestaStaffTraining", "RosterEmpty", "현재 보유한 스태프가 없습니다.");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Text")
 	FText RosterUnavailableText = NSLOCTEXT("FestaFiestaStaffTraining", "RosterUnavailable", "스태프 명단을 확인할 수 없습니다.");

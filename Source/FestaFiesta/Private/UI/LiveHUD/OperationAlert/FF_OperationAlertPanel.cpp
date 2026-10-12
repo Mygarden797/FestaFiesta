@@ -235,7 +235,7 @@ void UFF_OperationAlertPanel::AddAlert(const FFF_OperationAlert& Alert)
 		RefreshHistoryList();
 	}
 
-	if (!WidgetTree || !ToastList)
+	if (Alert.bHistoryOnly || !WidgetTree || !ToastList)
 	{
 		return;
 	}

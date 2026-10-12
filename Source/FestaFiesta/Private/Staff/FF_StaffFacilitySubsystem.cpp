@@ -229,12 +229,22 @@ bool UFF_StaffFacilitySubsystem::BuildDispatchOrigin(const FFF_StaffMember& Memb
 	if (!Facility->GetAnchorWorldTransform(EFFZSAnchorType::Exit, 0, Origin)
 		&& !Facility->GetAnchorWorldTransform(EFFZSAnchorType::Entry, 0, Origin)) return false;
 	OutOrigin.StaffId = Member.StaffId;
+	OutOrigin.TrainingLevel = Member.TrainingLevel;
 	OutOrigin.FacilityInstanceId = Member.AssignedFacilityId;
 	OutOrigin.Location = Origin.GetLocation();
 	return !OutOrigin.Location.ContainsNaN();
 }
 
 bool UFF_StaffFacilitySubsystem::TryReserveStaff(int32 Count, const FVector& Target, TArray<FFF_StaffDispatchOrigin>& OutOrigins)
+{
+	if (!PreviewStaffReservation(Count, Target, OutOrigins)) return false;
+	for (const FFF_StaffDispatchOrigin& Origin : OutOrigins) BusyStaff.Add(Origin.StaffId);
+	OnStaffingChanged.Broadcast();
+	return true;
+}
+
+bool UFF_StaffFacilitySubsystem::PreviewStaffReservation(int32 Count, const FVector& Target,
+	TArray<FFF_StaffDispatchOrigin>& OutOrigins) const
 {
 	EnsureFresh();
 	OutOrigins.Reset();
@@ -252,9 +262,7 @@ bool UFF_StaffFacilitySubsystem::TryReserveStaff(int32 Count, const FVector& Tar
 		return DA == DB ? A.StaffId < B.StaffId : DA < DB;
 	});
 	Candidates.SetNum(Count);
-	for (const FFF_StaffDispatchOrigin& Origin : Candidates) BusyStaff.Add(Origin.StaffId);
 	OutOrigins = MoveTemp(Candidates);
-	OnStaffingChanged.Broadcast();
 	return true;
 }
 

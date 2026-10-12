@@ -81,8 +81,25 @@ EFF_IncidentState FFF_IncidentRules::LapseStateFor(EFF_IncidentTone Tone)
 	return EFF_IncidentState::Expired;
 }
 
-bool FFF_IncidentRules::ShouldToastClosed(const FFF_IncidentClosedInfo& Info)
+bool FFF_IncidentRules::ShouldToastClosed(const FFF_IncidentClosedInfo& Info, bool bWasViewed)
 {
+	if (Info.FinalState == EFF_IncidentState::Active || Info.FinalState == EFF_IncidentState::Acknowledged)
+	{
+		return false;
+	}
+	switch (Info.CloseReason)
+	{
+	case EFF_IncidentCloseReason::NaturalResolution:
+		return bWasViewed || Info.bWasResponding;
+	case EFF_IncidentCloseReason::ResponseCompleted:
+	case EFF_IncidentCloseReason::TimedOut:
+		return true;
+	case EFF_IncidentCloseReason::SessionReset:
+		return false;
+	case EFF_IncidentCloseReason::Unknown:
+		break;
+	}
+
 	switch (Info.FinalState)
 	{
 	case EFF_IncidentState::Resolved:
