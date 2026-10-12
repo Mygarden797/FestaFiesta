@@ -73,7 +73,7 @@ enum class EFF_AudioAmbience : uint8
 	Setup           UMETA(DisplayName = "준비 - 개장 전"),
 	DayLive         UMETA(DisplayName = "축제 - 낮"),
 	NightLive       UMETA(DisplayName = "축제 - 밤"),
-	// A 등급 이하 피날레 곡. S 등급은 아래 전용곡을 쓴다.
+	// A 등급 이하 피날레 곡. S 등급은 아래 전용곡을 쓴다.w
 	Finale          UMETA(DisplayName = "피날레 (A등급 이하)"),
 	Closing         UMETA(DisplayName = "정리 - 폐장"),
 
