@@ -8,6 +8,8 @@
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Incident/FF_IncidentTypes.h"
+#include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/FF_UILog.h"
 
 namespace
@@ -139,11 +141,41 @@ void UFF_OperationAlertSubsystem::RaiseAlert(EFF_OperationAlertKind Kind)
 	Alert.Kind = Kind;
 	Alert.Message = FFF_OperationAlertRules::GetMessage(Kind);
 	Alert.Day = TrackedDay != INDEX_NONE ? TrackedDay : 1;
+	StoreAlert(Alert);
+}
 
-	History.Add(Alert);
-	if (History.Num() > MaxHistory)
+void UFF_OperationAlertSubsystem::RecordIncidentFinished(const FFF_IncidentClosedInfo& Info)
+{
+	if (Info.CloseReason == EFF_IncidentCloseReason::SessionReset)
 	{
-		History.RemoveAt(0, History.Num() - MaxHistory);
+		return;
+	}
+	const FText Label = UFF_UIDisplayTextLibrary::GetIncidentFinishedLabel(Info);
+	const FText Message = UFF_UIDisplayTextLibrary::GetIncidentFinishedText(Info);
+	if (Label.IsEmpty() || Message.IsEmpty())
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage =
+		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	FFF_OperationAlert Alert;
+	Alert.Kind = EFF_OperationAlertKind::IncidentFinished;
+	Alert.Message = FText::Format(NSLOCTEXT("FFOperationAlert", "IncidentFinished", "{0}. {1}"), Label, Message);
+	Alert.Day = Stage ? Stage->CurrentDay : (TrackedDay != INDEX_NONE ? TrackedDay : 1);
+	Alert.bHistoryOnly = true;
+	StoreAlert(Alert);
+}
+
+void UFF_OperationAlertSubsystem::StoreAlert(const FFF_OperationAlert& Alert)
+{
+	History.Add(Alert);
+	const int32 Limit = FMath::Max(1, MaxHistory);
+	if (History.Num() > Limit)
+	{
+		History.RemoveAt(0, History.Num() - Limit);
 	}
 
 	UE_LOG(LogFestaFiestaUI, Log, TEXT("[운영 알림] %d일차 %s"), Alert.Day, *Alert.Message.ToString());
@@ -161,6 +193,6 @@ static FAutoConsoleCommandWithWorldAndArgs GFF_OperationAlertTestCommand(
 			return;
 		}
 		const int32 Index = Args.Num() > 0 ? FCString::Atoi(*Args[0]) : 1;
-		const int32 Clamped = FMath::Clamp(Index, 0, static_cast<int32>(EFF_OperationAlertKind::Count) - 1);
+		const int32 Clamped = FMath::Clamp(Index, 0, static_cast<int32>(EFF_OperationAlertKind::NoChoiceLeave));
 		Alerts->RaiseAlert(static_cast<EFF_OperationAlertKind>(Clamped));
 	}));

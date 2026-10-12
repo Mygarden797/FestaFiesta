@@ -7,7 +7,11 @@
 class UTextBlock;
 class UBorder;
 class UImage;
+class UButton;
 class UTexture2D;
+class SFF_LiveSnsReadButton;
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnLiveSnsPostActivated, int64);
 
 /**
  * 데이터만 갱신하고 트리·폰트·여백은 WBP가 소유하는 게시물 한 행.
@@ -23,6 +27,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Live|SNS")
 	void ConfigurePost(const FFF_LiveSocialPost& Post);
+	/** 통합 소식의 도착 번호와 개별 읽음 입력을 연결한다. 행 재사용 시 매번 갱신한다. */
+	void ConfigureReadInteraction(int64 InSerial, bool bEnabled);
+	FOnLiveSnsPostActivated OnPostActivated;
+	/** 원본 명령의 성공 상태만 표시한다. 읽음과 공감 입력은 별개다. */
+	void ConfigureReaction(bool bVisible, bool bReacted, bool bCanReact, const FText& Status, const FText& Hint);
+	FOnLiveSnsPostActivated OnReactionRequested;
 	/** 새 글 빨간 점. `Image_NewDot` 이 없는 행(기존 카드형)은 아무것도 안 한다. */
 	void SetNewMark(bool bNew);
 	bool HasNewMark() const { return bNewMark; }
@@ -31,7 +41,11 @@ public:
 		const FLinearColor& Positive, const FLinearColor& Negative, const FLinearColor& Other);
 	void ConfigureNewsRowDefaults(UTexture2D* InSocialIcon, UTexture2D* InOperationIcon);
 protected:
+	virtual TSharedRef<SWidget> RebuildWidget() override;
+	virtual void ReleaseSlateResources(bool bReleaseChildren) override;
 	virtual void NativePreConstruct() override;
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI|Live|SNS")
 	TObjectPtr<UTextBlock> Text_Author;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI|Live|SNS")
@@ -52,6 +66,10 @@ protected:
 	TObjectPtr<UWidget> Image_NewDot;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UImage> Image_Avatar;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_Avatar;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Box_Reaction;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_React;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ReactLabel;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ReactStatus;
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Live|News") bool bShowSourceLabel = false;
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Live|News") TObjectPtr<UTexture2D> SocialIcon;
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Live|News") TObjectPtr<UTexture2D> OperationIcon;
@@ -77,7 +95,29 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|Style")
 	bool bTintSentimentIcon = true;
 private:
+#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_LiveSnsPostReadInteractionTest;
+	friend class FFF_LiveSnsPostReactionInteractionTest;
+#endif
 	void RefreshPost();
+	void RefreshReadToolTip();
+	void HandleReadPressed();
+	FReply HandleReadClicked();
+	void RefreshReaction();
+	UFUNCTION() void HandleReactionPressed();
+	UFUNCTION() void HandleReactionClicked();
+	TSharedPtr<SFF_LiveSnsReadButton> ReadButton;
+	int64 PostSerial = 0;
+	int64 PressedPostSerial = 0;
+	bool bReadInteractionEnabled = false;
+	bool bReadPressValid = false;
+	int64 ReactionPressedPostSerial = 0;
+	bool bReactionPressValid = false;
+	bool bReactionVisible = false;
+	bool bHasReacted = false;
+	bool bReactionAllowed = false;
+	FText ReactionStatus;
+	FText ReactionHint;
 	FFF_LiveSocialPost CurrentPost;
 	bool bHasPost = false;
 	bool bNewMark = false;

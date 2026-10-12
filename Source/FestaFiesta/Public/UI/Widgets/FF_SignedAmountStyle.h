@@ -29,6 +29,9 @@ struct FESTAFIESTA_API FFF_SignedAmountStyle
 	/** 양수만 `PositiveFormat`({Amount})으로 감싼다. 음수는 숫자의 `-` 를 그대로 쓴다. */
 	static FText Format(int64 Amount, const FText& PositiveFormat);
 
+	/** 원장의 양수 지출액에 음수를 표시한다. 이미 음수인 값과 0은 그대로 둔다. */
+	static FText FormatExpense(int64 Amount);
+
 	/** 금액 부호에 맞는 색을 칠한다. 금액을 모르면 기본색. */
 	void ApplyColor(UTextBlock* Text, TOptional<int64> Amount) const;
 };

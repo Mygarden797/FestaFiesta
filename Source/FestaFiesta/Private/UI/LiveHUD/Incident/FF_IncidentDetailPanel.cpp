@@ -137,8 +137,6 @@ void UFF_IncidentDetailPanel::BuildTree()
 	Text_OptionLabel = MakeText(*Box_Option, TEXT("Text_OptionLabel"), TEXT("SemiBold"), 13, Tokens.Ink);
 	Text_StaffRange = MakeText(*Box_Option, TEXT("Text_StaffRange"), TEXT("Regular"), 12, Tokens.InkMuted);
 	Text_WorkAmount = MakeText(*Box_Option, TEXT("Text_WorkAmount"), TEXT("Regular"), 12, Tokens.InkMuted);
-	Text_Cost = MakeText(*Box_Option, TEXT("Text_Cost"), TEXT("Regular"), 12, Tokens.InkMuted);
-	Text_CostStaff = MakeText(*Box_Option, TEXT("Text_CostStaff"), TEXT("Regular"), 12, Tokens.InkMuted);
 	Text_Reward = MakeText(*Box_Option, TEXT("Text_Reward"), TEXT("SemiBold"), 12, FFIncidentDetailLocal::GetAmber());
 
 	Row_Staff = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HBox_Staff"));
@@ -148,7 +146,7 @@ void UFF_IncidentDetailPanel::BuildTree()
 	}
 
 	UTextBlock* StaffCaption = MakeText(*Row_Staff, TEXT("Text_StaffCaption"), TEXT("Regular"), 12, Tokens.Ink);
-	StaffCaption->SetText(LOCTEXT("StaffCaption", "작업 인원"));
+	StaffCaption->SetText(LOCTEXT("StaffCaption", "출동 인원"));
 
 	UTextBlock* MinusLabel = nullptr;
 	Button_Minus = MakeButton(*Row_Staff, TEXT("Button_Minus"), LOCTEXT("Minus", "-"), false, MinusLabel);
@@ -361,6 +359,7 @@ void UFF_IncidentDetailPanel::Close()
 	CurrentHandle = FFF_IncidentHandle();
 	CurrentOption = FFF_IncidentOptionView();
 	SelectedStaff = 0;
+	TotalResponseWorkMinutes = 0.f;
 	ResponseStage = EFF_IncidentResponseStage::None;
 	SetVisibility(ESlateVisibility::Collapsed);
 }
@@ -379,6 +378,7 @@ bool UFF_IncidentDetailPanel::Refresh()
 	Text_Body->SetVisibility(View.Body.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
 	ResponseStage = View.ResponseStage;
+	TotalResponseWorkMinutes = View.TotalWorkMinutes;
 	const FText Status = BuildResponseStatusText(View.ResponseStage, View.RemainingWorkMinutes);
 	Text_Status->SetText(Status);
 	Border_Status->SetVisibility(Status.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
@@ -409,12 +409,6 @@ bool UFF_IncidentDetailPanel::Refresh()
 	Text_OptionLabel->SetText(CurrentOption.Label);
 	Text_OptionLabel->SetVisibility(CurrentOption.Label.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
-	Text_Cost->SetText(FText::Format(LOCTEXT("Cost", "비용: {0} G"), FText::AsNumber(CurrentOption.CostGold)));
-	Text_Cost->SetVisibility(CurrentOption.CostGold > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-
-	Text_CostStaff->SetText(FText::Format(LOCTEXT("CostStaff", "소모 인원: {0}명"), FText::AsNumber(CurrentOption.CostStaff)));
-	Text_CostStaff->SetVisibility(CurrentOption.CostStaff > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-
 	Text_Reward->SetText(FText::Format(LOCTEXT("Reward", "보상: {0}"), CurrentOption.RewardText));
 	Text_Reward->SetVisibility(CurrentOption.RewardText.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
@@ -430,19 +424,38 @@ void UFF_IncidentDetailPanel::RefreshStaff()
 		? CurrentOption.MinStaff
 		: FMath::Clamp(SelectedStaff, CurrentOption.MinStaff, MaxSelectable);
 
-	Text_StaffRange->SetText(FText::Format(LOCTEXT("StaffRange", "필요 인원: 최소 {0}명 · 가용 {1}명"),
+	Text_StaffRange->SetText(FText::Format(LOCTEXT("StaffRange", "최소 {0}명 · 출동 가능 {1}명"),
 		FText::AsNumber(CurrentOption.MinStaff), FText::AsNumber(Available)));
 	Text_StaffRange->SetVisibility(IsResponding() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
 	FNumberFormattingOptions WorkFormat;
 	WorkFormat.MinimumFractionalDigits = 0;
 	WorkFormat.MaximumFractionalDigits = 1;
-	Text_WorkAmount->SetText(CurrentOption.WorkAmount > 0.f && SelectedStaff > 0
-		? FText::Format(LOCTEXT("WorkAmountEstimate", "작업량: {0} 사람-분 · 예상 {1}분"),
-			FText::AsNumber(CurrentOption.WorkAmount, &WorkFormat),
-			FText::AsNumber(CurrentOption.WorkAmount / SelectedStaff, &WorkFormat))
-		: FText::Format(LOCTEXT("WorkAmount", "작업량: {0} 사람-분"),
-			FText::AsNumber(CurrentOption.WorkAmount, &WorkFormat)));
+	float WorkMinutes = TotalResponseWorkMinutes;
+	float Ability = 0.f;
+	const UFF_IncidentSubsystem* Incident = GetIncidentSubsystem();
+	const bool bHasEstimate = !IsResponding() && Incident
+		&& Incident->PreviewStaffWork(CurrentHandle, CurrentOption.OptionIndex, SelectedStaff, WorkMinutes, Ability);
+	if (CurrentOption.WorkAmount <= 0.f)
+	{
+		Text_WorkAmount->SetText(LOCTEXT("WorkOnArrival", "현장 도착 후 처리합니다."));
+	}
+	else if (IsResponding() || bHasEstimate)
+	{
+		Text_WorkAmount->SetText(FText::Format(IsResponding()
+			? LOCTEXT("WorkCommitted", "총 현장 작업 {0}분 (축제 시간)\n출동 시 숙련도 기준 · 이동 시간 별도")
+			: LOCTEXT("WorkPreview", "현장 작업 약 {0}분 (축제 시간)\n숙련도 반영 · 이동 시간 별도"),
+			FText::AsNumber(WorkMinutes, &WorkFormat)));
+	}
+	else
+	{
+		Text_WorkAmount->SetText(LOCTEXT("WorkPreviewUnavailable", "현장 작업 예상 —\n출동할 인원과 위치를 확인해 주세요."));
+	}
+	Text_WorkAmount->SetToolTipText(bHasEstimate
+		? FText::Format(LOCTEXT("WorkPreviewTip", "선발팀 능력 {0}. 최소 인원을 넘는 인원은 능력을 절반만 반영합니다. 출동할 때의 숙련도가 적용됩니다."),
+			FText::AsNumber(Ability, &WorkFormat))
+		: FText::GetEmpty());
+	Text_WorkAmount->SetVisibility(ESlateVisibility::Visible);
 
 	Text_StaffCount->SetText(FText::AsNumber(SelectedStaff));
 	Row_Staff->SetVisibility(IsResponding() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
@@ -494,7 +507,17 @@ void UFF_IncidentDetailPanel::HandlePlusClicked()
 
 void UFF_IncidentDetailPanel::HandleSendClicked()
 {
-	if (!IsOpen() || IsResponding())
+	if (!IsOpen())
+	{
+		return;
+	}
+	// 클릭 직전 사건 종료·출동·가용 인원 변화를 다시 읽는다. 오래된 핸들로 명령을 보내지 않는다.
+	if (!Refresh())
+	{
+		Close();
+		return;
+	}
+	if (IsResponding() || !Button_Send || !Button_Send->GetIsEnabled())
 	{
 		return;
 	}

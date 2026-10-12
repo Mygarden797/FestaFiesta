@@ -1215,7 +1215,7 @@ namespace FFFacilityInfoWbpBuilder
 		{
 			return nullptr;
 		}
-		Status->SetText(FText::FromString(TEXT("아직 결제가 없습니다. 손님이 이용을 마치면 수수료가 들어옵니다.")));
+		Status->SetText(FText::FromString(TEXT("아직 결제가 없습니다. 손님이 이용을 마치면 부스 매출이 들어옵니다.")));
 		Status->SetAutoWrapText(true);
 		StyleLightText(*Status, 11, Palette.InGame.InkMuted, TEXT("Medium"));
 		AddVertical(*Content, *Status, FMargin(2.0f, 0.0f, 2.0f, 0.0f));
@@ -1679,7 +1679,7 @@ namespace FFFacilityInfoWbpBuilder
 		};
 		if (!AddText(TEXT("Text_Title"), TEXT("Burger + Seating"), 12, P.InkMuted, TEXT("Medium")) ||
 			!AddText(TEXT("Text_Partner"), TEXT("함께 놓을 시설: Seating"), 16, P.Ink, TEXT("SemiBold")) ||
-			!AddText(TEXT("Text_Effect"), TEXT("Burger 이용 수수료 +10%"), 12, P.TealDeep, TEXT("SemiBold")) ||
+			!AddText(TEXT("Text_Effect"), TEXT("Burger 부스 매출 +10%"), 12, P.TealDeep, TEXT("SemiBold")) ||
 			!AddText(TEXT("Text_Condition"), TEXT("시설 중심 간 수평 거리 15m 이내"), 11, P.InkMuted, TEXT("Regular")) ||
 			!AddText(TEXT("Text_Status"), TEXT("성립 · 현재 조합 보너스 적용 중"), 11, P.Ink, TEXT("Medium"))) return false;
 		Card->AddChild(Content);

@@ -163,6 +163,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void AddRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId = NAME_None);
 
+	// 원장에 실제 수용한 금액을 반환한다. 알림 구독자가 다른 거래를 실행해도 이번 거래 영수증은 유지한다.
+	int32 AddRevenueWithReceipt(int32 Amount, EFF_EarnReason Reason, FName FacilityId = NAME_None);
+
 	// 실제 입장 인원을 하루 단위로 기록하고 목표를 처음 달성했을 때만 보너스를 지급한다.
 	void RecordAdmittedVisitorsForDailyGoal(int32 AdmittedCount);
 
@@ -597,7 +600,7 @@ private:
 	FFF_FacilityRevenueBook FacilityRevenueBook;
 
 	// AddRevenue·AddFacilityRevenue 의 유일한 구현. 자금·원장·시설별 장부를 한 번에 갱신하고 통지한다.
-	void RecordRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId, const FGuid& FacilityInstanceId);
+	int32 RecordRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId, const FGuid& FacilityInstanceId);
 
 	// EndedDayLedger 가 담고 있는 날짜. 0 = 아직 끝난 하루 없음.
 	// LastProcessedDay 와 하루 어긋난다 (닫힌 날 vs 열린 날). 둘을 섞어 쓰지 않는다.

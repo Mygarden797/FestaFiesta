@@ -12,7 +12,7 @@ class UTextBlock;
 /**
  * 준비 단계 `홍보` 패널의 카드 한 장.
  *
- * 상태·배지·색 재선언은 `UFF_PrepDetailCard` 가 갖는다. 여기는 비용과 효과 두 줄만 얹는다.
+ * 상태·배지·색 재선언은 `UFF_PrepDetailCard` 가 갖는다. 비용과 원본 홍보 효과·예측을 표시한다.
  *
  * === `안 함` 도 카드다 ===
  * 미구매는 데이터가 아니라 상태다. 그래도 카드로 두는 이유는 **안 사는 것도 선택지라는 사실**을
@@ -46,6 +46,14 @@ protected:
 	/** 실제 등급 데이터의 `예상 방문객 ×1.08`. 실제 입장 인원을 보장하지 않는다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
 	TObjectPtr<UTextBlock> Text_Effect;
+
+	/** 원본 등급의 시작 화제성 보너스. 구매 후 다시 더하는 값이 아니다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
+	TObjectPtr<UTextBlock> Text_Buzz;
+
+	/** 현재 입장료로 해당 등급을 적용했을 때의 일일 예상 방문객. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
+	TObjectPtr<UTextBlock> Text_Forecast;
 
 	/** 등급별 아이콘. 없는 등급은 WBP의 기본 아이콘을 사용한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion")

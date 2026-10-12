@@ -2,6 +2,7 @@
 
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Economy/Rules/FF_StaffEventRules.h"
 #include "Incident/FF_IncidentSubsystem.h"
 #include "Incident/Rules/FF_IncidentRules.h"
 #include "Staff/FF_StaffFacilitySubsystem.h"
@@ -122,16 +123,58 @@ bool UFF_StaffDispatchSubsystem::TryGetFestivalMinutes(float& OutMinutes) const
 	return Stage && Stage->TryGetLiveElapsedMinutes(OutMinutes);
 }
 
+bool UFF_StaffDispatchSubsystem::CalculateWork(const TArray<FFF_StaffDispatchOrigin>& Origins,
+	float WorkAmount, int32 MinStaff, float& OutMinutes, float& OutAbility)
+{
+	OutMinutes = 0.f;
+	OutAbility = 0.f;
+	if (Origins.Num() < FMath::Max(1, MinStaff) || !FMath::IsFinite(WorkAmount)) return false;
+	TArray<FFF_StaffMember> Members;
+	Members.Reserve(Origins.Num());
+	for (const FFF_StaffDispatchOrigin& Origin : Origins)
+	{
+		if (Origin.TrainingLevel < 1) return false;
+		FFF_StaffMember& Member = Members.AddDefaulted_GetRef();
+		Member.StaffId = Origin.StaffId;
+		Member.TrainingLevel = Origin.TrainingLevel;
+	}
+	const float Ability = FFF_StaffEventRules::CalcAbilitySum(Members, FMath::Max(1, MinStaff));
+	FFF_FestivalEventCard Card;
+	Card.WorkAmount = FMath::Max(0.f, WorkAmount);
+	// 원본 함수의 초는 축제 초다. 작업 시계는 축제 분이므로 여기서 한 번만 환산한다.
+	const float Minutes = FFF_StaffEventRules::CalcResolveSeconds(Card, Ability) / 60.f;
+	if (Ability <= 0.f || !FMath::IsFinite(Minutes)) return false;
+	OutAbility = Ability;
+	OutMinutes = Minutes;
+	return true;
+}
+
+bool UFF_StaffDispatchSubsystem::PreviewWork(int32 RequiredStaff, const FFF_IncidentAnchor& Anchor,
+	float WorkAmount, int32 MinStaff, float& OutMinutes, float& OutAbility) const
+{
+	OutMinutes = 0.f;
+	OutAbility = 0.f;
+	FVector Destination;
+	TArray<FFF_StaffDispatchOrigin> Origins;
+	return Staffing && TryGetLocation(Anchor, Destination)
+		&& Staffing->PreviewStaffReservation(RequiredStaff, Destination, Origins)
+		&& CalculateWork(Origins, WorkAmount, MinStaff, OutMinutes, OutAbility);
+}
+
 bool UFF_StaffDispatchSubsystem::TryDispatch(FFF_IncidentHandle Handle, int32 OptionIndex,
-	int32 RequiredStaff, const FFF_IncidentAnchor& Anchor, float WorkAmount, EFF_IncidentResolveResult* OutResult)
+	int32 RequiredStaff, const FFF_IncidentAnchor& Anchor, float WorkAmount, EFF_IncidentResolveResult* OutResult,
+	int32 MinStaff)
 {
 	EFF_IncidentResolveResult LocalResult = EFF_IncidentResolveResult::DispatchFailed;
 	EFF_IncidentResolveResult& Result = OutResult ? *OutResult : LocalResult;
 	Result = EFF_IncidentResolveResult::DispatchFailed;
-	if (!Staffing || !StaffBodies || !Incident || RequiredStaff <= 0)
+	if (bDispatchInFlight || !Staffing || !StaffBodies || !Incident || RequiredStaff < FMath::Max(1, MinStaff)
+		|| !FMath::IsFinite(WorkAmount))
 	{
 		return false;
 	}
+	// 예약 변경 방송 중 같은 출동 경로가 재진입해 중복 팀을 보내지 않게 한다.
+	TGuardValue<bool> DispatchGuard(bDispatchInFlight, true);
 	if (!Incident->IsHandleValid(Handle))
 	{
 		Result = EFF_IncidentResolveResult::InvalidIncident;
@@ -163,6 +206,20 @@ bool UFF_StaffDispatchSubsystem::TryDispatch(FFF_IncidentHandle Handle, int32 Op
 	{
 		Pending.StaffIds.Add(Origin.StaffId);
 	}
+	// 예약 방송에서 사건이 닫혔을 수도 있으므로 몸체 생성 전에 다시 확인한다.
+	if (!Incident->IsHandleValid(Handle))
+	{
+		Staffing->ReleaseStaff(Pending.StaffIds);
+		Result = EFF_IncidentResolveResult::InvalidIncident;
+		return false;
+	}
+	float Ability = 0.f;
+	if (!CalculateWork(Origins, WorkAmount, MinStaff, Pending.TotalWorkMinutes, Ability))
+	{
+		ReleaseDispatch(Pending);
+		return false;
+	}
+	Pending.RemainingWorkMinutes = Pending.TotalWorkMinutes;
 	TArray<FVector> SpreadOffsets;
 	UFF_StaffSubsystem::MakeSpreadOffsets(Origins.Num(), SpreadOffsets);
 	for (int32 Index = 0; Index < Origins.Num(); ++Index)
@@ -173,8 +230,6 @@ bool UFF_StaffDispatchSubsystem::TryDispatch(FFF_IncidentHandle Handle, int32 Op
 			return false;
 		}
 	}
-	Pending.RemainingWorkMinutes = WorkAmount > 0.f ? WorkAmount / static_cast<float>(Pending.StaffIds.Num()) : 0.f;
-	Pending.TotalWorkMinutes = Pending.RemainingWorkMinutes;
 	if (Dispatches.IsEmpty())
 	{
 		LastWorkClockMinutes = -1.f;

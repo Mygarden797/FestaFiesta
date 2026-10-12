@@ -104,6 +104,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
 	static FText GetIncidentClosedText(EFF_IncidentState State, const FText& Title);
 
+	/** 종료 원인을 구분하는 앞머리. 원인이 없는 이전 알림은 상태 기반 문구를 유지한다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetIncidentFinishedLabel(const FFF_IncidentClosedInfo& Info);
+
+	/** 자연 해소·처리 완료·시간 만료의 안내. 출동 중 자연 해소되면 스태프 복귀도 알린다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetIncidentFinishedText(const FFF_IncidentClosedInfo& Info);
+
 	/** 닫힘 토스트의 띠 색. 해소는 좋음, 방치는 나쁨, 소멸·놓침은 중립. */
 	static EFF_IncidentToastKind GetIncidentClosedKind(EFF_IncidentState State);
 };

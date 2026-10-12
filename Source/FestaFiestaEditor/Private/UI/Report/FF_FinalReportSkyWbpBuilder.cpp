@@ -26,6 +26,7 @@
 #include "UI/Report/FF_ReportScreen.h"
 #include "UObject/MetaData.h"
 #include "UObject/Package.h"
+#include "UObject/UnrealType.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaFinalReportSky"
 
@@ -122,6 +123,7 @@ namespace FFFinalReportSkyWbpBuilder
 		TableCell(BP, Tree, *Cells, TEXT("Text_Expense"), LOCTEXT("Unknown", "—"), false, false);
 		TableCell(BP, Tree, *Cells, TEXT("Text_NetProfit"), LOCTEXT("Unknown", "—"), false, false);
 		TableCell(BP, Tree, *Cells, TEXT("Text_AdmittedVisitors"), LOCTEXT("Unknown", "—"), false, false);
+		TableCell(BP, Tree, *Cells, TEXT("Text_Satisfaction"), LOCTEXT("Unknown", "—"), false, false);
 		CenterChildren(*Cells);
 		UBorder* Backdrop = Card(BP, Tree, TEXT("Border_DayRow"), *Cells, FMargin(0.f));
 		Backdrop->SetBrush(Brush(Paper, 0.f, 0.5f, SkyLine));
@@ -245,6 +247,7 @@ namespace FFFinalReportSkyWbpBuilder
 		TableCell(BP, Tree, *TableHeader, TEXT("Text_ExpenseHeader"), LOCTEXT("Expense", "지출"), true, false);
 		TableCell(BP, Tree, *TableHeader, TEXT("Text_NetProfitHeader"), LOCTEXT("NetProfit", "순이익"), true, false);
 		TableCell(BP, Tree, *TableHeader, TEXT("Text_VisitorsHeader"), LOCTEXT("Admitted", "입장객"), true, false);
+		TableCell(BP, Tree, *TableHeader, TEXT("Text_SatisfactionHeader"), LOCTEXT("Satisfaction", "만족도"), true, false);
 		Row(*DailyTable, *Card(BP, Tree, TEXT("Border_TableHeader"), *TableHeader, FMargin(0.f), SkyWash));
 		UVerticalBox* DayRows = MakeWidget<UVerticalBox>(BP, Tree, TEXT("Box_DayRows"), true);
 		USizeBox* DayRowsSize = Size(BP, Tree, TEXT("SizeBox_DayRows"),
@@ -329,6 +332,179 @@ namespace FFFinalReportSkyWbpBuilder
 		}
 		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_APPLIED: 최종 결산·일별 행 준비 완료. 기존 Designer/CDO 편집 보존, 최종 금화 아이콘 1개."), LogPrefix);
 	}
+
+	constexpr const TCHAR* SatisfactionPrefix = TEXT("FF_FINAL_REPORT_SATISFACTION");
+
+	struct FSatisfactionColumnTarget
+	{
+		UWidgetBlueprint* Blueprint = nullptr;
+		UHorizontalBox* Cells = nullptr;
+		UTextBlock* Style = nullptr;
+		UTextBlock* Existing = nullptr;
+		FName NewName;
+		FText Caption;
+		TArray<const FProperty*> StyleProperties;
+		bool bVariable = false;
+		bool bNeedsChange = false;
+	};
+
+	bool PrepareSatisfactionColumn(const FString& Package, UClass& Parent, const FName ContainerName,
+		const TArray<FName>& OriginalNames, const FName NewName, const FText& Caption,
+		bool bVariable, FSatisfactionColumnTarget& Out)
+	{
+		UWidgetBlueprint* BP = LoadExistingBlueprint(Package);
+		if (!BP || !BP->WidgetTree || !BP->ParentClass || !BP->ParentClass->IsChildOf(&Parent)
+			|| BP->GetOutermost()->IsDirty())
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 원본·부모 클래스 불일치 또는 미저장 변경: %s"), SatisfactionPrefix, *Package);
+			return false;
+		}
+		UHorizontalBox* Cells = Cast<UHorizontalBox>(BP->WidgetTree->FindWidget(ContainerName));
+		UWidget* ExistingObject = BP->WidgetTree->FindWidget(NewName);
+		if (!ExistingObject) ExistingObject = FindObjectFast<UWidget>(BP->WidgetTree, NewName);
+		UTextBlock* Existing = Cast<UTextBlock>(ExistingObject);
+		if (!Cells || (ExistingObject && !Existing)
+			|| (Existing && Existing->GetParent() && Existing->GetParent() != Cells))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 만족도 열의 타입·부모 또는 테이블 구조 불일치: %s"), SatisfactionPrefix, *Package);
+			return false;
+		}
+		const bool bAttached = Existing && Existing->GetParent() == Cells;
+		if (Cells->GetChildrenCount() != OriginalNames.Num() + (bAttached ? 1 : 0)
+			|| (bAttached && (Cells->GetChildAt(OriginalNames.Num()) != Existing || !Cast<UHorizontalBoxSlot>(Existing->Slot))))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 기존 열 수·순서가 달라 자동 변경하지 않습니다: %s"), SatisfactionPrefix, *Package);
+			return false;
+		}
+		for (int32 Index = 0; Index < OriginalNames.Num(); ++Index)
+		{
+			UWidget* Child = Cells->GetChildAt(Index);
+			if (!Child || Child->GetFName() != OriginalNames[Index] || !Cast<UTextBlock>(Child)
+				|| !Cast<UHorizontalBoxSlot>(Child->Slot))
+			{
+				UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 기존 열 타입·슬롯·순서 불일치: %s"), SatisfactionPrefix, *Package);
+				return false;
+			}
+		}
+		if (!Existing)
+		{
+			// UE 5.7의 UTextBlock 및 부모 UTextLayoutWidget에 선언된 표시 속성만 복사한다.
+			for (const FName PropertyName : {
+				FName(TEXT("Font")), FName(TEXT("ColorAndOpacity")), FName(TEXT("ShadowOffset")),
+				FName(TEXT("ShadowColorAndOpacity")), FName(TEXT("StrikeBrush")), FName(TEXT("MinDesiredWidth")),
+				FName(TEXT("TextTransformPolicy")), FName(TEXT("TextOverflowPolicy")), FName(TEXT("ShapedTextOptions")),
+				FName(TEXT("Justification")), FName(TEXT("WrappingPolicy")), FName(TEXT("AutoWrapText")),
+				FName(TEXT("ApplyLineHeightToBottomLine")), FName(TEXT("WrapTextAt")), FName(TEXT("Margin")),
+				FName(TEXT("LineHeightPercentage"))})
+			{
+				const FProperty* Property = FindFProperty<FProperty>(UTextBlock::StaticClass(), PropertyName);
+				if (!Property)
+				{
+					UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 설치 엔진에 표시 속성이 없습니다: %s"), SatisfactionPrefix, *PropertyName.ToString());
+					return false;
+				}
+				Out.StyleProperties.Add(Property);
+			}
+		}
+		Out.Blueprint = BP;
+		Out.Cells = Cells;
+		Out.Style = CastChecked<UTextBlock>(Cells->GetChildAt(OriginalNames.Num() - 1));
+		Out.Existing = Existing;
+		Out.NewName = NewName;
+		Out.Caption = Caption;
+		Out.bVariable = bVariable;
+		Out.bNeedsChange = !bAttached || (bVariable && !Existing->bIsVariable)
+			|| !BP->WidgetVariableNameToGuidMap.Contains(NewName);
+		return true;
+	}
+
+	void AddSatisfactionColumn(FSatisfactionColumnTarget& Target)
+	{
+		if (!Target.bNeedsChange) return;
+		UWidgetBlueprint& BP = *Target.Blueprint;
+		BP.Modify();
+		BP.WidgetTree->Modify();
+		Target.Cells->Modify();
+		UTextBlock* Cell = Target.Existing;
+		if (!Cell)
+		{
+			Cell = BP.WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Target.NewName);
+			// 새 열만 같은 행의 표시 스타일을 복사한다. 본문·바인딩·기존 위젯은 건드리지 않는다.
+			for (const FProperty* Property : Target.StyleProperties)
+			{
+				Property->CopyCompleteValue_InContainer(Cell, Target.Style);
+			}
+			Cell->SetVisibility(Target.Style->GetVisibility());
+			Cell->SetRenderOpacity(Target.Style->GetRenderOpacity());
+			Cell->SetText(Target.Caption);
+			Cell->bIsVariable = Target.bVariable;
+		}
+		Cell->Modify();
+		if (Target.bVariable) Cell->bIsVariable = true;
+		if (!BP.WidgetVariableNameToGuidMap.Contains(Target.NewName)) BP.OnVariableAdded(Target.NewName);
+		if (!Cell->GetParent())
+		{
+			const UHorizontalBoxSlot* StyleSlot = CastChecked<UHorizontalBoxSlot>(Target.Style->Slot);
+			UHorizontalBoxSlot* NewSlot = Target.Cells->AddChildToHorizontalBox(Cell);
+			NewSlot->SetSize(StyleSlot->GetSize());
+			NewSlot->SetPadding(StyleSlot->GetPadding());
+			NewSlot->SetHorizontalAlignment(StyleSlot->GetHorizontalAlignment());
+			NewSlot->SetVerticalAlignment(StyleSlot->GetVerticalAlignment());
+		}
+		Target.Existing = Cell;
+	}
+
+	void ApplySatisfactionColumn()
+	{
+		if (GEditor && GEditor->PlayWorld)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: PIE 종료 후 실행하세요."), SatisfactionPrefix);
+			return;
+		}
+		FSatisfactionColumnTarget Day, Header;
+		if (!PrepareSatisfactionColumn(RowPackage, *UFF_FinalReportDayRowWidget::StaticClass(), TEXT("HorizontalBox_DayCells"),
+			{TEXT("Text_Day"), TEXT("Text_Revenue"), TEXT("Text_Expense"), TEXT("Text_NetProfit"), TEXT("Text_AdmittedVisitors")},
+			TEXT("Text_Satisfaction"), LOCTEXT("Unknown", "—"), true, Day)
+			|| !PrepareSatisfactionColumn(PanelPackage, *UFF_ReportScreen::StaticClass(), TEXT("HorizontalBox_TableHeader"),
+				{TEXT("Text_DayHeader"), TEXT("Text_RevenueHeader"), TEXT("Text_ExpenseHeader"), TEXT("Text_NetProfitHeader"), TEXT("Text_VisitorsHeader")},
+				TEXT("Text_SatisfactionHeader"), LOCTEXT("Satisfaction", "만족도"), false, Header)) return;
+		if (!Day.bNeedsChange && !Header.bNeedsChange)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_REUSE: 만족도 열 2개와 기존 Designer 편집을 유지합니다."), SatisfactionPrefix);
+			return;
+		}
+		const FString Backup = FPaths::ProjectSavedDir() / TEXT("UIBackups/FinalReportSatisfaction") / FGuid::NewGuid().ToString(EGuidFormats::Digits);
+		if (!IFileManager::Get().MakeDirectory(*Backup, true))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 백업 폴더 생성 실패: %s"), SatisfactionPrefix, *Backup);
+			return;
+		}
+		for (const FSatisfactionColumnTarget* Target : {&Day, &Header})
+		{
+			const FString File = FPackageName::LongPackageNameToFilename(Target->Blueprint->GetOutermost()->GetName(), TEXT(".uasset"));
+			if (IFileManager::Get().Copy(*(Backup / FPaths::GetCleanFilename(File)), *File, false, false) != COPY_OK)
+			{
+				UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 원본 백업 실패: %s"), SatisfactionPrefix, *File);
+				return;
+			}
+		}
+		AddSatisfactionColumn(Day);
+		AddSatisfactionColumn(Header);
+		for (FSatisfactionColumnTarget* Target : {&Day, &Header})
+		{
+			if (Target->bNeedsChange && !SaveNewBlueprint(SatisfactionPrefix, *Target->Blueprint))
+			{
+				UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 컴파일·저장 실패: %s. 원본 백업=%s"),
+					SatisfactionPrefix, *Target->Blueprint->GetName(), *Backup);
+				return;
+			}
+		}
+		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_APPLIED: 기존 5열을 보존하고 마지막 만족도 열을 추가했습니다. 백업=%s"), SatisfactionPrefix, *Backup);
+	}
+
+	FAutoConsoleCommand SatisfactionCommand(TEXT("FF.ApplyFinalReportSatisfactionColumn"),
+		TEXT("기존 최종 결산 화면과 일별 행에 만족도 열만 추가한다. 재실행 시 Designer 편집을 보존한다."),
+		FConsoleCommandDelegate::CreateStatic(&ApplySatisfactionColumn));
 
 	FAutoConsoleCommand Command(TEXT("FF.ApplyFinalReportSkyDesign"),
 		TEXT("최종 결산 화면과 일별 행을 처음 한 번 생성한다. 기존 에디터 편집을 보존한다."),

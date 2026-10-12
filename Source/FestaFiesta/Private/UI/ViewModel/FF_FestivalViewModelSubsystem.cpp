@@ -111,6 +111,8 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 	if (CachedInsightsSubsystem)
 	{
 		CachedInsightsSubsystem->OnSnsPostAdded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded);
+		CachedInsightsSubsystem->OnSnsReactionChanged.RemoveDynamic(this, &ThisClass::HandleOwnerSnsReactionChanged);
+		CachedInsightsSubsystem->OnSnsFeedReset.RemoveDynamic(this, &ThisClass::HandleOwnerSnsFeedReset);
 		CachedInsightsSubsystem->OnFinalePostAdded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleSnsPostAdded);
 	}
 	CachedInsightsSubsystem = nullptr;
@@ -435,6 +437,8 @@ void UFF_FestivalViewModelSubsystem::TryBindInsightsSubsystem()
 
 	CachedInsightsSubsystem = Insights;
 	CachedInsightsSubsystem->OnSnsPostAdded.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded);
+	CachedInsightsSubsystem->OnSnsReactionChanged.AddUniqueDynamic(this, &ThisClass::HandleOwnerSnsReactionChanged);
+	CachedInsightsSubsystem->OnSnsFeedReset.AddUniqueDynamic(this, &ThisClass::HandleOwnerSnsFeedReset);
 	CachedInsightsSubsystem->OnFinalePostAdded.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleSnsPostAdded);
 
 	// SimSatisfaction과 다르게 "현재값 1개"가 아니라 "지금까지의 글 목록"이라, bind 시점에
@@ -476,6 +480,8 @@ void UFF_FestivalViewModelSubsystem::HandleReportSaveLoaded(FName SlotId)
 	ResetProgramFacilityPresentation();
 	// 같은 슬롯을 다시 읽어도 별도 플레이 흐름이다. 복원 완료 후 다음 Tick에서 원본을 읽는다.
 	ResetDailyReports();
+	// 피드 복원 중에는 공감 명령을 막는다. 모든 원본의 복원이 끝난 뒤 가능 상태를 다시 알린다.
+	HandleOwnerSnsFeedReset();
 }
 
 const FFF_DailyReportView* UFF_FestivalViewModelSubsystem::GetDailyReport() const
@@ -711,10 +717,16 @@ void UFF_FestivalViewModelSubsystem::CaptureDailyReportIfReady()
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	if (!Progression || !Progression->IsFestivalStarted() || Progression->GetLastProcessedDay() != Day
 		|| !Progression->HasLedgerForDay(Day)) return;
-	// 마감 중 늦게 들어온 정산이 있으면 보유 금화가 바뀐다. 그때만 같은 날 결산을 다시 읽는다.
-	if (DailyReport.Day == Day && DailyReport.Gold == Progression->GetGold()) return;
+	int32 RecordedSatisfaction = INDEX_NONE;
+	const bool bHasRecordedSatisfaction = TryGetRecordedDailySatisfaction(Day, RecordedSatisfaction);
+	// 마감 중 늦은 정산 또는 축제 종료의 만족도 확정이 있을 때 같은 날 결산을 다시 읽는다.
+	if (DailyReport.Day == Day && DailyReport.Gold == Progression->GetGold()
+		&& DailyReport.bHasDailySatisfaction == bHasRecordedSatisfaction
+		&& DailyReport.DailySatisfaction == RecordedSatisfaction) return;
 	FFF_DailyReportView Report = LastDailySatisfaction.Day == Day ? LastDailySatisfaction : FFF_DailyReportView();
 	Report.Day = Day;
+	Report.bHasDailySatisfaction = bHasRecordedSatisfaction;
+	Report.DailySatisfaction = RecordedSatisfaction;
 	// EndedDayLedger는 Report 안에서 어제 값이다. 반드시 표시 날짜로 원본을 요청한다.
 	Report.EarnRows = Progression->GetEarnRowsForDay(Day);
 	Report.SpendRows = Progression->GetSpendRowsForDay(Day);
@@ -767,9 +779,60 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerFinaleSnsPostAdded(FFF_SnsPostRo
 	OnFinaleSnsPostAdded.Broadcast(ConvertSnsPostToLiveSocialPost(NewPost));
 }
 
+FFF_SnsReactionState UFF_FestivalViewModelSubsystem::GetSnsReactionState(FGuid PostId) const
+{
+	return CachedInsightsSubsystem ? CachedInsightsSubsystem->GetReactionState(PostId) : FFF_SnsReactionState();
+}
+
+FFF_SnsReactionOutcome UFF_FestivalViewModelSubsystem::RequestSnsReaction(FGuid PostId)
+{
+	TryBindInsightsSubsystem();
+	return CachedInsightsSubsystem ? CachedInsightsSubsystem->TryReactToPost(PostId) : FFF_SnsReactionOutcome();
+}
+
+FText UFF_FestivalViewModelSubsystem::GetSnsReactionResultText(const FFF_SnsReactionOutcome& Outcome) const
+{
+	switch (Outcome.Result)
+	{
+	case EFF_SnsReactionResult::Success:
+		if (Outcome.AppliedBuzz > 0.f)
+		{
+			FNumberFormattingOptions Format;
+			Format.MaximumFractionalDigits = 2;
+			return FText::Format(NSLOCTEXT("FFSnsReaction", "Awarded", "화제성 +{0}"), FText::AsNumber(Outcome.AppliedBuzz, &Format));
+		}
+		return NSLOCTEXT("FFSnsReaction", "NoChange", "공감 완료 · 화제성 변동 없음");
+	case EFF_SnsReactionResult::AlreadyReacted:
+		return NSLOCTEXT("FFSnsReaction", "Already", "이미 공감한 글입니다.");
+	case EFF_SnsReactionResult::PostUnavailable:
+		return NSLOCTEXT("FFSnsReaction", "Expired", "더 이상 공감할 수 없는 글입니다.");
+	default:
+		return NSLOCTEXT("FFSnsReaction", "Unavailable", "지금은 공감할 수 없습니다.");
+	}
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerSnsReactionChanged(FGuid PostId)
+{
+	OnSnsReactionChanged.Broadcast(PostId);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerSnsFeedReset()
+{
+	RecentSnsPosts.Reset();
+	if (CachedInsightsSubsystem)
+	{
+		for (const FFF_SnsPostRow& Row : CachedInsightsSubsystem->GetRecentPosts())
+		{
+			RecentSnsPosts.Add(ConvertSnsPostToLiveSocialPost(Row));
+		}
+	}
+	OnSnsFeedReset.Broadcast();
+}
+
 FFF_LiveSocialPost UFF_FestivalViewModelSubsystem::ConvertSnsPostToLiveSocialPost(const FFF_SnsPostRow& Row)
 {
 	FFF_LiveSocialPost Converted;
+	Converted.PostId = Row.PostId;
 	Converted.Author = FText::FromString(Row.DisplayHandle);
 	Converted.Body = Row.Body;
 	// 강도 0 또는 -1도 실제 반응이다. 방향을 명시해 예전 미확정 센티널과 구분한다.
@@ -1057,6 +1120,7 @@ bool UFF_FestivalViewModelSubsystem::GetFinalReport(FFF_FinalReportView& OutRepo
 	{
 		FFF_FinalReportDayView& Row = OutReport.Days.AddDefaulted_GetRef();
 		Row.Day = Day;
+		Row.bHasDailySatisfaction = TryGetRecordedDailySatisfaction(Day, Row.DailySatisfaction);
 		Row.bHasLedger = Progression->HasLedgerForDay(Day);
 		if (Row.bHasLedger)
 		{
@@ -1077,6 +1141,40 @@ TArray<int32> UFF_FestivalViewModelSubsystem::GetDailySatisfactionHistory() cons
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	return Progression ? Progression->GetDailySatisfactionHistory() : TArray<int32>();
+}
+
+bool UFF_FestivalViewModelSubsystem::TryGetRecordedDailySatisfaction(int32 Day, int32& OutSatisfaction) const
+{
+	OutSatisfaction = INDEX_NONE;
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted()
+		|| (ReportSaveSubsystem && ReportSaveSubsystem->IsRestoring())) return false;
+	const int32 CurrentDay = Progression->GetLastProcessedDay();
+	if (Day <= 0 || Day > CurrentDay) return false;
+
+	// TryProcessNewDay는 단조 증가한 실제 처리일마다 만족도와 그날 원장을 함께 저장한다.
+	// 예를 들어 1→3→4로 건너뛰면 배열의 두 번째 값은 3일차다. Day-1로 읽으면 안 된다.
+	const TArray<int32> History = Progression->GetDailySatisfactionHistory();
+	int32 RecordedDays = 0;
+	int32 RecordIndex = INDEX_NONE;
+	for (int32 RecordedDay = 1; RecordedDay < CurrentDay; ++RecordedDay)
+	{
+		if (!Progression->HasLedgerForDay(RecordedDay)) continue;
+		if (RecordedDay == Day) RecordIndex = RecordedDays;
+		++RecordedDays;
+	}
+	// 마지막 날은 하루 경계를 넘지 않는다. 원본 평가가 동결된 후에만 마지막 기록을 쓴다.
+	if (Progression->IsFestivalEvaluationFrozen() && Progression->HasLedgerForDay(CurrentDay))
+	{
+		if (Day == CurrentDay) RecordIndex = RecordedDays;
+		++RecordedDays;
+	}
+	// 과거 원장이 빠진 저장 등으로 대응이 불명확하면 순서를 추측하거나 현재 실측값으로 채우지 않는다.
+	if (RecordedDays != History.Num() || !History.IsValidIndex(RecordIndex)) return false;
+	const int32 RecordedValue = History[RecordIndex];
+	if (RecordedValue < 0 || RecordedValue > MetricMax) return false;
+	OutSatisfaction = RecordedValue;
+	return true;
 }
 
 EFF_FinaleGrade UFF_FestivalViewModelSubsystem::GetPurchasedFinaleGrade() const
@@ -1635,8 +1733,9 @@ TArray<FFF_PromotionOptionView> UFF_FestivalViewModelSubsystem::GetPromotionOpti
 		return Options;
 	}
 
-	// 비용·배수는 경제의 GetPromotionTier 가 준다. `홍보 없음` 도 거기서 0 Gold · NoPromotionVisitorMultiplier(1.0 미만) 로 온다 —
-	// 숫자를 여기서 만들면 "안 사면 손해" 가 화면에 안 드러난다.
+	// 비용·배수·화제성은 경제의 GetPromotionTier가 준다. 홍보 없음도 원본 값을 그대로 전달한다.
+	// 방문객은 현재 입장료와 후보 등급을 원본 예측 API에 넘겨 읽는다.
+	const int32 AdmissionFeeGold = Progression->GetAdmissionFee();
 	const EFF_PromotionChoice Choices[] = {
 		EFF_PromotionChoice::None, EFF_PromotionChoice::Basic,
 		EFF_PromotionChoice::Focused, EFF_PromotionChoice::Influencer };
@@ -1647,6 +1746,13 @@ TArray<FFF_PromotionOptionView> UFF_FestivalViewModelSubsystem::GetPromotionOpti
 		Option.Choice = Choice;
 		Option.CostGold = Tier.CostGold;
 		Option.VisitorMultiplier = Tier.VisitorMultiplier;
+		Option.StartingBuzz = Tier.StartingBuzz;
+		if (AdmissionFeeGold != INDEX_NONE)
+		{
+			const FFF_VisitorForecast Forecast = PreviewVisitorForecast(Choice, AdmissionFeeGold);
+			Option.ExpectedVisitors = Forecast.ExpectedVisitors;
+			Option.ForecastAdmissionFeeGold = Forecast.AdmissionFeeGold;
+		}
 	}
 
 	return Options;
@@ -1869,6 +1975,20 @@ TArray<FFF_StaffMember> UFF_FestivalViewModelSubsystem::GetStaffRoster() const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	return Progression && Progression->IsFestivalStarted() ? Progression->GetStaffRoster() : TArray<FFF_StaffMember>();
+}
+
+FText UFF_FestivalViewModelSubsystem::GetStaffIncidentEffectText(int32 StaffId) const
+{
+	for (const FFF_StaffMember& Member : GetStaffRoster())
+	{
+		if (Member.StaffId != StaffId) { continue; }
+		// 개인의 기본 능력만 표시한다. 사건별 최소 인원과 실제 도착 인원 계산은 출동 원본이 맡는다.
+		const float Ability = FFF_StaffEventRules::CalcAbilitySum({Member}, 1);
+		return FText::Format(NSLOCTEXT("FestaFiestaStaffTraining", "IncidentAbility",
+			"현장 처리 능력 {Ability}\n승급 효과는 다음 출동부터 적용됩니다."),
+			FFormatNamedArguments{{TEXT("Ability"), FText::AsNumber(Ability)}});
+	}
+	return FText::GetEmpty();
 }
 
 bool UFF_FestivalViewModelSubsystem::CanPromoteStaff(int32 StaffId) const
