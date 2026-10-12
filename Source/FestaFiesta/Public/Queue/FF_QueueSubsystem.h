@@ -92,6 +92,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Queue")
 	FFF_QueueState GetQueueState(int32 FacilityId) const;
 
+	/** 시설 하나의 시간 사용 진단(이용 중 · 막힘 · 비어 있음, 누적). 없는 시설이면 nullptr */
+	const FFF_QueueFlowDiagnostics* GetFlowDiagnostics(int32 FacilityId) const;
+	/** 진단용: 이 팀이 줄의 몇 번째인지(0 = 맨 앞, 없으면 INDEX_NONE)와 이용 자리 도착 확인 여부, 동시 이용 자리 수 */
+	int32 GetPartyQueueIndex(int32 FacilityId, int32 PartyId, bool* bOutArrivedAtServicePoint = nullptr, int32* OutServiceSlots = nullptr) const;
+
 	/** True only while this admitted team is actually receiving service in the queue core. */
 	bool HasPartyStartedService(int32 FacilityId, int32 PartyId) const;
 
