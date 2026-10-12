@@ -46,6 +46,9 @@ public:
 
 	//성별 풀이 모두 비어 있으면 Mesh + MeshVariants 중에서, 아니면 성별 풀에서 Seed로 고정된 하나를 고른다. 후보가 없으면 빈 포인터
 	TSoftObjectPtr<USkeletalMesh> PickMesh(int32 Seed) const;
+
+	//Seed로 성별을 정한다. 행 이름의 _female/_male 접미사 조회와 PickMesh가 같은 규칙을 쓴다
+	static bool IsFemaleSeed(int32 Seed);
 	
 	
 	//아동 슬롯용

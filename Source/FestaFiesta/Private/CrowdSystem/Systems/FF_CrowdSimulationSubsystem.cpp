@@ -6846,7 +6846,17 @@ void UFF_CrowdSimulationSubsystem::ApplyAgentAppearance(int32 AgentIndex)
 		return;
 	}
 
-	const FFF_CrowdAppearenceRow* Row = AppearenceTable->FindRow<FFF_CrowdAppearenceRow>(RowKey,TEXT("UFF_CrowdSimulationSubsystem::ApplyAgentAppearance"),false );
+	const FFF_CrowdAppearenceRow* Row = nullptr;
+	if (!Unit.bIsDependentChild && !Unit.ArchetypeID.IsNone())
+	{
+		const TCHAR* GenderSuffix = FFF_CrowdAppearenceRow::IsFemaleSeed(Unit.StableAgentID) ? TEXT("female") : TEXT("male");
+		const FName GenderRowKey(*FString::Printf(TEXT("%s_%s"), *Unit.ArchetypeID.ToString(), GenderSuffix));
+		Row = AppearenceTable->FindRow<FFF_CrowdAppearenceRow>(GenderRowKey,TEXT("UFF_CrowdSimulationSubsystem::ApplyAgentAppearance"),false );
+	}
+	if (Row == nullptr)
+	{
+		Row = AppearenceTable->FindRow<FFF_CrowdAppearenceRow>(RowKey,TEXT("UFF_CrowdSimulationSubsystem::ApplyAgentAppearance"),false );
+	}
 
 	if (Row == nullptr)
 	{

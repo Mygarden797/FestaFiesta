@@ -37,6 +37,11 @@ namespace
 	}
 }
 
+bool FFF_CrowdAppearenceRow::IsFemaleSeed(int32 Seed)
+{
+	return (MixSeed(Seed, GenderSalt) & 1u) != 0u;
+}
+
 TSoftObjectPtr<USkeletalMesh> FFF_CrowdAppearenceRow::PickMesh(int32 Seed) const
 {
 	FMeshPool Female;
@@ -47,7 +52,7 @@ TSoftObjectPtr<USkeletalMesh> FFF_CrowdAppearenceRow::PickMesh(int32 Seed) const
 	FMeshPool Pool;
 	if (!Female.IsEmpty() || !Male.IsEmpty())
 	{
-		const bool bWantFemale = (MixSeed(Seed, GenderSalt) & 1u) != 0u;
+		const bool bWantFemale = IsFemaleSeed(Seed);
 		const bool bUseFemale = bWantFemale ? !Female.IsEmpty() : Male.IsEmpty();
 		Pool = bUseFemale ? Female : Male;
 	}
