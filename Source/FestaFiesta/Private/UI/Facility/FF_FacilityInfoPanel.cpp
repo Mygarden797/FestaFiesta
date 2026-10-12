@@ -242,7 +242,7 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	if (Text_FacilityRevenue)
 	{
 		Text_FacilityRevenue->SetToolTipText(LOCTEXT("TeamRevenueSettlementHint",
-			"현재 수수료율·시설 강화·시너지를 반영한 팀별 예상 수익입니다.\n이용 완료 시 실제 적립된 수익이 오늘 매출에 누적됩니다.\n유료 프로그램 참가비는 별도로 정산됩니다."));
+			"이용 요금·시설 강화·시너지를 반영한 팀별 예상 부스 매출입니다.\n이용 완료 시 실제 적립된 부스 매출이 오늘 매출에 누적됩니다.\n유료 프로그램 참가비는 별도로 정산됩니다."));
 		Text_FacilityRevenue->SetVisibility(bShowTeamRevenue
 			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}

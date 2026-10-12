@@ -26,6 +26,7 @@ public:
 	void SetStaffMember(const FFF_StaffMember& Member, EFF_StaffPromotionState State, bool bPending = false);
 	void SetRequestPending(bool bPending);
 	void SetAssignmentStatus(const FText& Facility, const FText& Duty);
+	void SetIncidentEffectText(const FText& Effect);
 	FText GetStaffDisplayName() const;
 	FText GetPromotionStatusText(EFF_StaffPromotionState State) const;
 	int32 GetTrainingLevel() const { return CurrentMember.TrainingLevel; }
@@ -99,6 +100,7 @@ private:
 	FFF_StaffMember CurrentMember;
 	FText AssignmentFacility;
 	FText AssignmentDuty;
+	FText IncidentEffectText;
 	bool bHasAssignmentStatus = false;
 	EFF_StaffPromotionState CurrentState = EFF_StaffPromotionState::Unavailable;
 	bool bHasMember = false;

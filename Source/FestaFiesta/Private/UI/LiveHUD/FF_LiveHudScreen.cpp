@@ -30,6 +30,7 @@
 #include "UI/LiveHUD/Incident/FF_IncidentToast.h"
 #include "UI/LiveHUD/FF_FinaleSnsOverlay.h"
 #include "UI/LiveHUD/OperationAlert/FF_OperationAlertPanel.h"
+#include "UI/LiveHUD/OperationAlert/FF_OperationAlertSubsystem.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 #include "UI/LiveHUD/FF_LiveUtilityDock.h"
@@ -224,10 +225,19 @@ void UFF_LiveHudScreen::RequestOpenIncident(FFF_IncidentHandle Handle)
 
 void UFF_LiveHudScreen::HandleIncidentMarkerClicked(FFF_IncidentHandle Handle)
 {
+	const UFF_IncidentSubsystem* Incident = GetWorld() ? GetWorld()->GetSubsystem<UFF_IncidentSubsystem>() : nullptr;
+	if (!Incident || !Incident->IsHandleValid(Handle))
+	{
+		return;
+	}
 	EnsureIncidentDetailPanel();
 	if (IncidentDetailPanel)
 	{
 		IncidentDetailPanel->OpenFor(Handle);
+		if (IncidentDetailPanel->IsOpen())
+		{
+			ViewedIncidentHandles.Add(Handle);
+		}
 	}
 }
 
@@ -304,7 +314,18 @@ void UFF_LiveHudScreen::UnbindIncidentFinished()
 
 void UFF_LiveHudScreen::HandleIncidentFinished(const FFF_IncidentClosedInfo& Info)
 {
-	if (bSuppressClosedToast || !FFF_IncidentRules::ShouldToastClosed(Info))
+	const bool bWasViewed = ViewedIncidentHandles.Remove(Info.Handle) > 0;
+	if (!FFF_IncidentRules::ShouldToastClosed(Info, bWasViewed))
+	{
+		return;
+	}
+
+	// 토스트를 놓쳐도 통합 소식에서 종료 이유를 다시 확인할 수 있다.
+	if (UFF_OperationAlertSubsystem* Alerts = GetWorld() ? GetWorld()->GetSubsystem<UFF_OperationAlertSubsystem>() : nullptr)
+	{
+		Alerts->RecordIncidentFinished(Info);
+	}
+	if (bSuppressClosedToast)
 	{
 		return;
 	}
@@ -312,8 +333,8 @@ void UFF_LiveHudScreen::HandleIncidentFinished(const FFF_IncidentClosedInfo& Inf
 	EnsureIncidentToast();
 	if (IncidentToast)
 	{
-		IncidentToast->Show(UFF_UIDisplayTextLibrary::GetIncidentClosedLabel(Info.FinalState),
-			UFF_UIDisplayTextLibrary::GetIncidentClosedText(Info.FinalState, Info.Title),
+		IncidentToast->Show(UFF_UIDisplayTextLibrary::GetIncidentFinishedLabel(Info),
+			UFF_UIDisplayTextLibrary::GetIncidentFinishedText(Info),
 			UFF_UIDisplayTextLibrary::GetIncidentClosedKind(Info.FinalState));
 	}
 }
@@ -388,6 +409,7 @@ void UFF_LiveHudScreen::NativeDestruct()
 	}
 	UnbindViewModel();
 	UnbindIncidentFinished();
+	ViewedIncidentHandles.Reset();
 	if (IncidentMarkerLayer)
 	{
 		IncidentMarkerLayer->OnIncidentMarkerClicked.RemoveDynamic(this, &UFF_LiveHudScreen::HandleIncidentMarkerClicked);

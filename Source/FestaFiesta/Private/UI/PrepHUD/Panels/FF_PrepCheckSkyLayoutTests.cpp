@@ -83,7 +83,7 @@ namespace FFPrepCheckSkyLayoutTest
 			{ TEXT("Text_StaffWageCost"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("0 Gold") },
 			{ TEXT("Text_ExpectedAdmission"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("2,125 Gold") },
 			{ TEXT("Text_ExpectedGoalBonus"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("0 Gold") },
-			{ TEXT("Text_EstimateNotice"), TEXT("부스 수수료와 미니게임 보상은 운영 결과에 따라 달라지므로 이 표에 넣지 않았습니다.") },
+			{ TEXT("Text_EstimateNotice"), TEXT("부스 매출과 미니게임 보상은 운영 결과에 따라 달라지므로 이 표에 넣지 않았습니다.") },
 			{ TEXT("Text_OpenGateReason"), bUnknown ? TEXT("아직 시작 가능 여부를 확인하지 못했습니다.") : bReady ? TEXT("✓ 준비가 완료되었습니다.") : TEXT("메인공연장: 1개 추가 설치가 필요합니다. (설치 0/1)") },
 			{ TEXT("Text_OpenGateLabel"), bMorning ? TEXT("개장하기") : TEXT("확정하고 Day 1 시작") }
 		};

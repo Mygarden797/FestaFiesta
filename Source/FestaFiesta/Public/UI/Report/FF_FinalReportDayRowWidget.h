@@ -33,11 +33,17 @@ protected:
 	TObjectPtr<UTextBlock> Text_NetProfit;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI|FinalReport")
 	TObjectPtr<UTextBlock> Text_AdmittedVisitors;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|FinalReport")
+	TObjectPtr<UTextBlock> Text_Satisfaction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|FinalReport|Text")
 	FText DayFormat;
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|FinalReport|Text")
 	FText VisitorCountFormat;
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|FinalReport|Text")
+	FText SatisfactionFormat;
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|FinalReport|Text")
+	FText NoSatisfactionRecordText;
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|FinalReport|Text")
 	FText PositiveAmountFormat;
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|FinalReport|Text")
@@ -54,5 +60,6 @@ private:
 	FText CurrentNetProfit;
 	TOptional<int64> CurrentNetProfitAmount;
 	FText CurrentAdmittedVisitors;
+	FText CurrentSatisfaction;
 	bool bHasDay = false;
 };

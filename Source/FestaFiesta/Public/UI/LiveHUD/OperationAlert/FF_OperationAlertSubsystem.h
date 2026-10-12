@@ -7,6 +7,8 @@
 #include "UI/LiveHUD/OperationAlert/FF_OperationAlertTypes.h"
 #include "FF_OperationAlertSubsystem.generated.h"
 
+struct FFF_IncidentClosedInfo;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnOperationAlertRaised, const FFF_OperationAlert&, Alert);
 
 /**
@@ -28,6 +30,9 @@ public:
 
 	/** 조건을 보지 않고 알림을 낸다. 쿨다운도 보지 않는다(콘솔 미리보기·테스트용). */
 	void RaiseAlert(EFF_OperationAlertKind Kind);
+
+	/** HUD가 알릴 대상으로 고른 사건 종료를 통합 소식에 기록한다. 운영 토스트는 추가하지 않는다. */
+	void RecordIncidentFinished(const FFF_IncidentClosedInfo& Info);
 
 	/** Live 경과 시간과 입력으로 한 번 판정한다. Tick 과 테스트가 같은 길을 쓴다. */
 	void EvaluateAt(float LiveSeconds, int32 Day, const FFF_OperationAlertInputs& Inputs);
@@ -57,11 +62,12 @@ private:
 	// 커버리지와 지난 판정 이후 늘어난 퇴장·이탈 수를 채운다. 군중 시뮬레이션이 없으면 false
 	bool ReadInputs(FFF_OperationAlertInputs& OutInputs);
 	void ResetDay(int32 Day);
+	void StoreAlert(const FFF_OperationAlert& Alert);
 
 	TArray<FFF_OperationAlert> History;
 
 	// 종류별 마지막으로 낸 Live 시각. 음수면 오늘 아직 안 냈다
-	float LastRaisedLiveSeconds[static_cast<int32>(EFF_OperationAlertKind::Count)] = { -1.f, -1.f, -1.f, -1.f, -1.f };
+	float LastRaisedLiveSeconds[static_cast<int32>(EFF_OperationAlertKind::Count)] = { -1.f, -1.f, -1.f, -1.f, -1.f, -1.f };
 
 	int32 TrackedDay = INDEX_NONE;
 	float LastEvaluatedLiveSeconds = -1.f;

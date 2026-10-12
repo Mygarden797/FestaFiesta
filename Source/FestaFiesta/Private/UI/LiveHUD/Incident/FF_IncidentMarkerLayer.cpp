@@ -177,6 +177,12 @@ void UFF_IncidentMarkerLayer::HandleClockSecond(int32 RemainingSeconds)
 
 void UFF_IncidentMarkerLayer::HandleMarkerClicked(FFF_IncidentHandle Handle)
 {
+	const UFF_IncidentSubsystem* Incident = GetIncidentSubsystem();
+	if (!Incident || !Incident->IsHandleValid(Handle))
+	{
+		RemoveMarker(Handle);
+		return;
+	}
 	OnIncidentMarkerClicked.Broadcast(Handle);
 }
 

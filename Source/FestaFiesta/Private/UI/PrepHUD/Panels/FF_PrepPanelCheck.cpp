@@ -181,7 +181,7 @@ void UFF_PrepPanelCheck::NativePreConstruct()
 	if (EstimateNoticeText.IsEmpty())
 	{
 		EstimateNoticeText = LOCTEXT("PrepCheck_EstimateNotice",
-			"부스 수수료와 미니게임 보상은 운영 결과에 따라 달라지므로 이 표에 넣지 않았습니다.");
+			"부스 매출과 미니게임 보상은 운영 결과에 따라 달라지므로 이 표에 넣지 않았습니다.");
 	}
 
 	if (Text_EstimateNotice)

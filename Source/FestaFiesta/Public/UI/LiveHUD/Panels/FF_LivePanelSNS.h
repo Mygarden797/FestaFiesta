@@ -52,6 +52,10 @@ struct FESTAFIESTA_API FFF_LiveSocialPost
 {
 	GENERATED_BODY()
 
+	/** 공감 명령에 사용하는 원본 식별자. 화면의 도착 번호와 구분한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
+	FGuid PostId;
+
 	/** 누가 썼는지. 현지화 대상이라 `FText` 다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	FText Author;
@@ -113,6 +117,7 @@ struct FESTAFIESTA_API FFF_LiveSnsFeedState
  * 새 글 (2026-10-07 사용자 결정): 버튼을 누르지 않아도 목록에 바로 들어간다. 열 때는 그동안 온 글을,
  * 열려 있을 때는 오는 즉시 맨 위에 넣고 이름 옆에 빨간 점을 단다. 아래로 내려 읽는 중이면 새 글 높이만큼
  * 스크롤을 맞춰 보던 글이 밀리지 않는다. `Auto Show New Posts` 를 끄면 예전처럼 `새 글 N개 보기` 버튼으로 알린다.
+ * 통합 소식은 클릭한 도착 번호만 읽음으로 처리한다. 열기·닫기·필터·자동 해제 설정은 읽음 상태를 바꾸지 않는다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Live Panel - SNS"))
 class FESTAFIESTA_API UFF_LivePanelSNS : public UFF_LivePanelBase
@@ -152,6 +157,10 @@ protected:
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	UFUNCTION()
 	void HandlePostAdded(FFF_LiveSocialPost NewPost);
+	UFUNCTION()
+	void HandleReactionChanged(FGuid PostId);
+	UFUNCTION()
+	void HandleSnsFeedReset();
 	UFUNCTION()
 	void HandleOperationAlert(const FFF_OperationAlert& Alert);
 	UFUNCTION()
@@ -205,7 +214,7 @@ protected:
 	/** 켜면 새 글을 버튼 없이 바로 목록에 넣는다(열 때·열려 있을 때). 끄면 `새 글 N개 보기` 버튼으로 알린다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|NewPosts")
 	bool bAutoShowNewPosts = true;
-	/** 새 글 빨간 점을 지우는 때. 점 크기·색은 글 행 WBP 의 `Image_NewDot` 에서 고친다. */
+	/** 기존 SNS 패널의 자동 해제 정책. 통합 소식은 이 값과 무관하게 글을 클릭해야 읽음이 된다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|NewPosts")
 	EFF_LiveSnsNewMarkClear NewMarkClear = EFF_LiveSnsNewMarkClear::OnPanelClose;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|SNS|NewPosts",
@@ -272,6 +281,8 @@ protected:
 	FText EntryUnavailableText = NSLOCTEXT("FestaFiestaLiveSNS", "EntryMissing", "반응 표시 위젯을 불러오지 못했습니다.");
 
 private:
+	friend class FFF_UnifiedNewsReadTest;
+	friend class FFF_UnifiedNewsReactionTest;
 	void BindControls();
 	void BindViewModel();
 	void Unbind();
@@ -294,7 +305,11 @@ private:
 	void TickNewMarks();
 	void TickScrollAnchor();
 	void RecordNews(const FFF_LiveSocialPost& Post);
-	void AcknowledgeNewsFilter();
+	void HandleNewsRead(int64 Serial);
+	void HandleReactionRequested(int64 Serial);
+	void RefreshRowReactions();
+	void SaveNewsReadingPosition();
+	void RestoreNewsReadingPosition();
 	int32 CountUnreadNews(bool bOperation) const;
 	static FFF_LiveSocialPost MakeOperationPost(const FFF_OperationAlert& Alert);
 
@@ -328,5 +343,18 @@ private:
 	TArray<FFF_LiveSocialPost> RecentNews;
 	TSet<int64> UnreadNewsSerials;
 	TSet<int64> NewNewsSerials;
+	/** 실제 명령 결과를 현재 보관 중인 글에만 잠시 표시한다. 지급 기록은 원본 SNS가 저장한다. */
+	TMap<FGuid, FText> ReactionFeedback;
 	bool bNewsInitialized = false;
+	// 미읽음 수와 목록에 아직 반영하지 않은 도착을 구분한다.
+	int64 NewsSyncedArrival = 0;
+	struct FNewsReadingPosition
+	{
+		int64 Serial = 0;
+		float OffsetInRow = 0.f;
+		float Offset = 0.f;
+		bool bHasRow = false;
+	};
+	TMap<EFF_LiveSnsFilter, FNewsReadingPosition> NewsReadingPositions;
+	int32 NewsRestoreFrames = 0;
 };

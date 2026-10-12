@@ -249,6 +249,52 @@ FText UFF_UIDisplayTextLibrary::GetIncidentClosedText(EFF_IncidentState State, c
 	return FText::GetEmpty();
 }
 
+FText UFF_UIDisplayTextLibrary::GetIncidentFinishedLabel(const FFF_IncidentClosedInfo& Info)
+{
+	switch (Info.CloseReason)
+	{
+	case EFF_IncidentCloseReason::NaturalResolution: return LOCTEXT("IncidentFinishedLabel_Natural", "자연 해소");
+	case EFF_IncidentCloseReason::ResponseCompleted: return LOCTEXT("IncidentFinishedLabel_Completed", "처리 완료");
+	case EFF_IncidentCloseReason::TimedOut: return LOCTEXT("IncidentFinishedLabel_TimedOut", "시간 만료");
+	case EFF_IncidentCloseReason::SessionReset: return FText::GetEmpty();
+	case EFF_IncidentCloseReason::Unknown: return GetIncidentClosedLabel(Info.FinalState);
+	}
+	return FText::GetEmpty();
+}
+
+FText UFF_UIDisplayTextLibrary::GetIncidentFinishedText(const FFF_IncidentClosedInfo& Info)
+{
+	FText Reason;
+	switch (Info.CloseReason)
+	{
+	case EFF_IncidentCloseReason::NaturalResolution:
+		Reason = Info.bWasResponding
+			? LOCTEXT("IncidentFinished_NaturalReturn", "상황이 해소되어 스태프가 복귀합니다")
+			: LOCTEXT("IncidentFinished_Natural", "상황이 해소되었습니다");
+		break;
+	case EFF_IncidentCloseReason::ResponseCompleted:
+		Reason = LOCTEXT("IncidentFinished_Completed", "처리를 마쳤습니다");
+		break;
+	case EFF_IncidentCloseReason::TimedOut:
+		Reason = Info.FinalState == EFF_IncidentState::Missed
+			? LOCTEXT("IncidentFinished_Missed", "대응 시간이 지나 기회를 놓쳤습니다")
+			: LOCTEXT("IncidentFinished_TimedOut", "대응 시간이 지나 종료되었습니다");
+		break;
+	case EFF_IncidentCloseReason::SessionReset:
+		return FText::GetEmpty();
+	case EFF_IncidentCloseReason::Unknown:
+		return GetIncidentClosedText(Info.FinalState, Info.Title);
+	}
+	FText Message = Info.Title.IsEmpty() ? Reason
+		: FText::Format(LOCTEXT("IncidentFinished_WithTitle", "{0} — {1}"), Info.Title, Reason);
+	if (Info.GrantedGold > 0)
+	{
+		Message = FText::Format(LOCTEXT("IncidentFinished_GrantedGold", "{0}\n금화 +{1}"),
+			Message, FText::AsNumber(Info.GrantedGold));
+	}
+	return Message;
+}
+
 EFF_IncidentToastKind UFF_UIDisplayTextLibrary::GetIncidentClosedKind(EFF_IncidentState State)
 {
 	switch (State)

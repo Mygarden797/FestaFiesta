@@ -104,6 +104,17 @@ struct FESTAFIESTA_API FFF_IncidentHandle
 };
 
 // 사건이 닫힌 순간의 값 복사본. 닫힌 뒤에는 Handle 로 조회할 수 없고 슬롯도 재사용되므로 방송 전에 채운다.
+// 기존 최종 상태와 분리한다. Expired는 자연 해소와 알림의 시간 만료 양쪽에서 쓰인다.
+UENUM(BlueprintType)
+enum class EFF_IncidentCloseReason : uint8
+{
+	Unknown = 0 UMETA(DisplayName = "기존 상태 기준"),
+	NaturalResolution = 1 UMETA(DisplayName = "자연 해소"),
+	ResponseCompleted = 2 UMETA(DisplayName = "처리 완료"),
+	TimedOut = 3 UMETA(DisplayName = "시간 만료"),
+	SessionReset = 4 UMETA(DisplayName = "이전 운영 정리")
+};
+
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_IncidentClosedInfo
 {
@@ -122,6 +133,9 @@ struct FESTAFIESTA_API FFF_IncidentClosedInfo
 	EFF_IncidentState FinalState = EFF_IncidentState::Resolved;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	EFF_IncidentCloseReason CloseReason = EFF_IncidentCloseReason::Unknown;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
 	EFF_IncidentTone Tone = EFF_IncidentTone::Problem;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
@@ -129,6 +143,10 @@ struct FESTAFIESTA_API FFF_IncidentClosedInfo
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
 	bool bWasResponding = false;
+
+	// 효과 실행 뒤 경제 원장이 확인한 이번 사건의 실제 지급액. 예상 보상과 구분한다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	int32 GrantedGold = 0;
 };
 
 // Kind 에 따라 아래 필드 중 하나만 의미를 갖는다.

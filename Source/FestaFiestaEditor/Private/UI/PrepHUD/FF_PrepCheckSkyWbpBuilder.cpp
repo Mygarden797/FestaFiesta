@@ -268,7 +268,7 @@ namespace FFPrepCheckSkyBuilder
 		DetailRow(BP, Tree, *Estimate, TEXT("Box_WageRow"), TEXT("Text_StaffWageCost"), LOCTEXT("HireCost", "고용비"), LOCTEXT("ZeroGold", "0 Gold"));
 		DetailRow(BP, Tree, *Estimate, TEXT("Box_AdmissionRow"), TEXT("Text_ExpectedAdmission"), LOCTEXT("Admission", "예상 입장료 수입"), LOCTEXT("AdmissionPreview", "2,125 Gold"));
 		DetailRow(BP, Tree, *Estimate, TEXT("Box_GoalBonusRow"), TEXT("Text_ExpectedGoalBonus"), LOCTEXT("Bonus", "일일 목표 보너스"), LOCTEXT("ZeroGold", "0 Gold"));
-		Row(*Estimate, *Wrapped(BP, Tree, TEXT("Text_EstimateNotice"), LOCTEXT("EstimateNotice", "부스 수수료와 미니게임 보상은 포함되지 않습니다."), 14, Muted));
+		Row(*Estimate, *Wrapped(BP, Tree, TEXT("Text_EstimateNotice"), LOCTEXT("EstimateNotice", "부스 매출과 미니게임 보상은 포함되지 않습니다."), 14, Muted));
 
 		UHorizontalBox* ReasonRow = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_OpenGateReason"));
 		AddInlineStaffAction(BP, Tree, *ReasonRow,
