@@ -104,19 +104,24 @@ void UFF_StaffManagementWidget::Sync()
 		? LOCTEXT("LiveSubtitle", "출동 현황을 확인하고 대기 인원을 배정하세요.")
 		: LOCTEXT("PrepSubtitle", "운영 전에 인원을 고용하고 안내시설에 배정하세요."));
 	SetManagementText(Text_TotalStaff, Count(Snapshot.Total));
-	SetManagementText(Text_StaffBreakdown, Snapshot.bAvailable && ViewModel
-		? FText::Format(LOCTEXT("Breakdown", "기본 {0} · 고용 {1}"), ViewModel->GetBaseStaffCount(), ViewModel->GetHiredStaffCount()) : Unknown);
+	// 셋업 지표는 제목과 인원만 표시한다. 공용 위젯을 라이브로 다시 열면 보조 설명을 복원한다.
+	SetManagementOptionalText(Text_StaffBreakdown, bLiveMode
+		? (Snapshot.bAvailable && ViewModel
+			? FText::Format(LOCTEXT("Breakdown", "기본 {0} · 고용 {1}"), ViewModel->GetBaseStaffCount(), ViewModel->GetHiredStaffCount()) : Unknown)
+		: FText::GetEmpty());
 	SetManagementText(Text_SecondLabel, bLiveMode ? LOCTEXT("ReadyLabel", "출동 대기") : LOCTEXT("AssignedLabel", "배정"));
 	SetManagementText(Text_SecondValue, Count(bLiveMode ? Snapshot.Dispatchable : Snapshot.Assigned));
-	SetManagementText(Text_SecondNote, bLiveMode ? LOCTEXT("ReadyNote", "지금 출동할 수 있는 인원") : LOCTEXT("AssignedNote", "안내시설에 소속된 인원"));
+	SetManagementOptionalText(Text_SecondNote, bLiveMode ? LOCTEXT("ReadyNote", "지금 출동할 수 있는 인원") : FText::GetEmpty());
 	SetManagementText(Text_ThirdLabel, bLiveMode ? LOCTEXT("BusyLabel", "출동 · 복귀") : LOCTEXT("UnassignedLabel", "미배정"));
 	SetManagementText(Text_ThirdValue, Count(bLiveMode ? Snapshot.Busy + Snapshot.Returning : Snapshot.Unassigned));
-	SetManagementText(Text_ThirdNote, bLiveMode && Snapshot.bAvailable
-		? FText::Format(LOCTEXT("BusyNote", "출동 {0} · 복귀 {1}"), Snapshot.Busy, Snapshot.Returning)
-		: LOCTEXT("UnassignedNote", "안내시설에 배정해 주세요"));
+	SetManagementOptionalText(Text_ThirdNote, bLiveMode
+		? (Snapshot.bAvailable
+			? FText::Format(LOCTEXT("BusyNote", "출동 {0} · 복귀 {1}"), Snapshot.Busy, Snapshot.Returning)
+			: LOCTEXT("UnassignedNote", "안내시설에 배정해 주세요"))
+		: FText::GetEmpty());
 	SetManagementText(Text_FourthLabel, bLiveMode ? LOCTEXT("UnassignedLabel", "미배정") : LOCTEXT("VacancyLabel", "빈자리"));
 	SetManagementText(Text_FourthValue, Count(bLiveMode ? Snapshot.Unassigned : Snapshot.Vacancies));
-	SetManagementText(Text_FourthNote, bLiveMode ? LOCTEXT("UnassignedNote", "안내시설에 배정해 주세요") : LOCTEXT("VacancyNote", "안내시설의 남은 배정 자리"));
+	SetManagementOptionalText(Text_FourthNote, bLiveMode ? LOCTEXT("UnassignedNote", "안내시설에 배정해 주세요") : FText::GetEmpty());
 	if (Button_FillVacancies)
 	{
 		const bool bHasTarget = Snapshot.Facilities.ContainsByPredicate([](const auto& F) { return F.bCanAssign; });
@@ -185,9 +190,9 @@ void UFF_StaffManagementWidget::Sync()
 	}
 	SetManagementText(Text_IncidentSummary, IncidentSummary);
 	if (Button_ViewIncident) Button_ViewIncident->SetIsEnabled(bLiveMode && !Snapshot.Incidents.IsEmpty());
-	SetManagementText(Text_ManagementNote, bLiveMode
+	SetManagementOptionalText(Text_ManagementNote, bLiveMode
 		? LOCTEXT("LiveNote", "고용은 셋업·아침 점검에서 가능합니다. 출동·복귀 중인 인원은 돌아온 뒤 배정을 바꿀 수 있습니다.")
-		: LOCTEXT("PrepNote", "고용한 스태프는 축제 종료까지 유지됩니다. 고용 후 빈자리에 배정하세요."));
+		: FText::GetEmpty());
 }
 
 void UFF_StaffManagementWidget::HandleAssign(FGuid FacilityId)
