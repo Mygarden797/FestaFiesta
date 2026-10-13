@@ -56,6 +56,11 @@ public:
 	// 카탈로그 썸네일 세션 참조를 하나 반환합니다. 마지막 참조가 사라질 때 프리로드 핸들을 해제합니다.
 	void ReleaseThumbnailPreload();
 
+	// 이미 획득한 썸네일 세션을 맵 로딩 화면 안에서만 동기적으로 마무리합니다. 참조를 추가하지 않습니다.
+	// 정의 목록이 미요청/실패면 한 번 새로고침하고, 현재 정의·썸네일 요청만 기다립니다.
+	// 게임 틱을 돌리지 않고 지연 완료 콜백의 상태만 반영합니다. Ready일 때만 true이며 완료 중 실패를 반복 재시도하지 않습니다.
+	bool CompleteThumbnailPreloadForLoadingScreen();
+
 	// `대분류 enum > 소분류 토큰 > 표시 이름 > 시설 정의 ID` 순으로 정렬된 평면 스냅샷입니다.
 	// Blueprint 호출자에게 배열 복사본을 반환하므로 내부 캐시는 수정되지 않습니다.
 	 
@@ -128,6 +133,8 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_AuroraCatalogSelectionTest;
 	friend class FFF_BuildCatalogRetiredDefinitionTest;
+	friend class FFF_BuildCatalogLoadingScreenCompletionTest;
+	friend class FFF_BuildCatalogLoadingScreenThumbnailHandleTest;
 	friend class FFF_BuildDragPlacementTest;
 	friend class FFF_BuildQueueLayoutDraftTest;
 	friend class FFF_PrepProgramFacilityNavigationTest;
@@ -202,6 +209,7 @@ private:
 	// 여러 월드/소비자가 같은 GameInstance 카탈로그를 사용할 수 있어 세션 소유권을 참조 수로 관리합니다.
 	int32 ThumbnailPreloadSessionRefs = 0;
 	bool bThumbnailPreloadStarted = false;
+	bool bCompletingThumbnailPreloadForLoadingScreen = false;
 
 	UPROPERTY(Transient)
 	EFF_BuildCatalogThumbnailLoadState ThumbnailLoadState = EFF_BuildCatalogThumbnailLoadState::NotRequested;

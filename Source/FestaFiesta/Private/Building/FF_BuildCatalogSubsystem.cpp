@@ -160,6 +160,85 @@ void UFF_BuildCatalogSubsystem::ReleaseThumbnailPreload()
 	ResetThumbnailPreloadRequest(false);
 }
 
+bool UFF_BuildCatalogSubsystem::CompleteThumbnailPreloadForLoadingScreen()
+{
+	check(IsInGameThread());
+	if (ThumbnailPreloadSessionRefs <= 0 || bCompletingThumbnailPreloadForLoadingScreen)
+	{
+		return false;
+	}
+	TGuardValue<bool> CompletingGuard(bCompletingThumbnailPreloadForLoadingScreen, true);
+
+	if (LoadState == EFF_BuildCatalogLoadState::NotRequested ||
+		LoadState == EFF_BuildCatalogLoadState::Failed)
+	{
+		RefreshCatalog();
+	}
+
+	const uint64 CatalogGeneration = RequestGeneration;
+	if (LoadState == EFF_BuildCatalogLoadState::Loading)
+	{
+		// 기다리는 동안 완료/취소 알림이 멤버 핸들을 바꿔도 요청 자체는 살아 있어야 한다.
+		const TSharedPtr<FStreamableHandle> CatalogHandle = ActiveLoadHandle;
+		if (CatalogHandle.IsValid() && !CatalogHandle->WasCanceled())
+		{
+			CatalogHandle->WaitUntilComplete();
+		}
+		if (ThumbnailPreloadSessionRefs <= 0 || RequestGeneration != CatalogGeneration ||
+			(LoadState == EFF_BuildCatalogLoadState::Loading && ActiveLoadHandle != CatalogHandle))
+		{
+			return false;
+		}
+
+		// UE 5.7 WaitUntilComplete는 에셋만 완료하며 기본 한 프레임 지연된 델리게이트를 실행하지 않는다.
+		// 이미 로드된 정의만 요청하면 null combined handle로 완료될 수도 있어 같은 완료 경로를 쓴다.
+		if (CatalogHandle.IsValid() && CatalogHandle->WasCanceled())
+		{
+			HandleCatalogLoadCanceled(CatalogHandle, CatalogGeneration);
+		}
+		else if (!CatalogHandle.IsValid() || CatalogHandle->HasLoadCompleted())
+		{
+			HandleCatalogLoadCompleted(CatalogHandle, CatalogGeneration);
+		}
+	}
+
+	if (ThumbnailPreloadSessionRefs <= 0 || RequestGeneration != CatalogGeneration ||
+		LoadState != EFF_BuildCatalogLoadState::Ready ||
+		ThumbnailLoadState == EFF_BuildCatalogThumbnailLoadState::Failed)
+	{
+		return false;
+	}
+
+	StartThumbnailPreloadIfReady();
+	const uint64 ThumbnailGeneration = ThumbnailRequestGeneration;
+	if (ThumbnailLoadState == EFF_BuildCatalogThumbnailLoadState::Loading)
+	{
+		const TSharedPtr<FStreamableHandle> ThumbnailHandle = ThumbnailPreloadHandle;
+		if (ThumbnailHandle.IsValid() && !ThumbnailHandle->WasCanceled())
+		{
+			ThumbnailHandle->WaitUntilComplete();
+		}
+		if (ThumbnailPreloadSessionRefs <= 0 || RequestGeneration != CatalogGeneration ||
+			ThumbnailRequestGeneration != ThumbnailGeneration || ThumbnailPreloadHandle != ThumbnailHandle)
+		{
+			return false;
+		}
+
+		if (ThumbnailHandle.IsValid() && ThumbnailHandle->WasCanceled())
+		{
+			HandleThumbnailPreloadCanceled(ThumbnailHandle, ThumbnailGeneration);
+		}
+		else if (!ThumbnailHandle.IsValid() || ThumbnailHandle->HasLoadCompleted())
+		{
+			HandleThumbnailPreloadCompleted(ThumbnailHandle, ThumbnailGeneration);
+		}
+	}
+
+	return ThumbnailPreloadSessionRefs > 0 && RequestGeneration == CatalogGeneration &&
+		ThumbnailRequestGeneration == ThumbnailGeneration &&
+		ThumbnailLoadState == EFF_BuildCatalogThumbnailLoadState::Ready;
+}
+
 bool UFF_BuildCatalogSubsystem::FindEntry(
 	const FName FacilityDefinitionId,
 	FFF_BuildCatalogEntry& OutEntry) const
@@ -221,8 +300,9 @@ void UFF_BuildCatalogSubsystem::HandleCatalogLoadCompleted(
 	TSharedPtr<FStreamableHandle> CompletedHandle,
 	const uint64 Generation)
 {
-	// 새로고침 또는 종료 후 뒤늦게 완료된 콜백은 어떤 상태도 건드리지 않습니다.
-	if (!FFBuildCatalogModel::IsCurrentRequest(Generation, RequestGeneration))
+	// 새로고침/종료 뒤의 이전 세대와 로딩 화면에서 이미 반영한 지연 콜백은 다시 처리하지 않습니다.
+	if (!FFBuildCatalogModel::IsCurrentRequest(Generation, RequestGeneration) ||
+		LoadState != EFF_BuildCatalogLoadState::Loading)
 	{
 		return;
 	}
@@ -240,7 +320,8 @@ void UFF_BuildCatalogSubsystem::HandleCatalogLoadCanceled(
 	const uint64 Generation)
 {
 	// 이전 요청을 새로고침 과정에서 의도적으로 취소한 경우 최신 Loading 상태를 Failed로 바꾸지 않습니다.
-	if (!FFBuildCatalogModel::IsCurrentRequest(Generation, RequestGeneration))
+	if (!FFBuildCatalogModel::IsCurrentRequest(Generation, RequestGeneration) ||
+		LoadState != EFF_BuildCatalogLoadState::Loading)
 	{
 		return;
 	}
@@ -335,7 +416,8 @@ void UFF_BuildCatalogSubsystem::HandleThumbnailPreloadCompleted(
 	const uint64 Generation)
 {
 	if (!FFBuildCatalogModel::IsCurrentRequest(Generation, ThumbnailRequestGeneration) ||
-		ThumbnailPreloadSessionRefs <= 0 || !bThumbnailPreloadStarted)
+		ThumbnailPreloadSessionRefs <= 0 || !bThumbnailPreloadStarted ||
+		ThumbnailLoadState != EFF_BuildCatalogThumbnailLoadState::Loading)
 	{
 		return;
 	}
@@ -352,7 +434,8 @@ void UFF_BuildCatalogSubsystem::HandleThumbnailPreloadCanceled(
 	const uint64 Generation)
 {
 	if (!FFBuildCatalogModel::IsCurrentRequest(Generation, ThumbnailRequestGeneration) ||
-		ThumbnailPreloadSessionRefs <= 0)
+		ThumbnailPreloadSessionRefs <= 0 ||
+		ThumbnailLoadState != EFF_BuildCatalogThumbnailLoadState::Loading)
 	{
 		return;
 	}
