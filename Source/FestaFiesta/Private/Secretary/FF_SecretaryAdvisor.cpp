@@ -263,7 +263,8 @@ namespace FFSecretaryAdvisor
 	TArray<FText> BuildFirstDayGreeting()
 	{
 		return {
-			LOCTEXT("FirstDay1", "오늘이 첫날이에요. 운영 중에 눈에 띄는 게 있으면 옆에서 짧게 말씀드릴게요."),
+			// {이름} 은 대사를 보여 줄 때 주인공 이름으로 바뀐다(UFF_TutorialSubsystem::ResolvePlayerNameTokens).
+			LOCTEXT("FirstDay1", "{이름} 님, 오늘이 첫날이에요. 운영 중에 눈에 띄는 게 있으면 옆에서 짧게 말씀드릴게요."),
 			LOCTEXT("FirstDay2", "아침마다 전날 운영도 짧게 정리해 드릴게요."),
 			// 해변 같은 바깥 구역에도 놓을 수 있다는 걸 첫날에 알린다(2026-10-13 사용자 요청).
 			// 앞 두 줄은 비서 자기 소개라 그 뒤에 덧붙이는 말로 둔다.

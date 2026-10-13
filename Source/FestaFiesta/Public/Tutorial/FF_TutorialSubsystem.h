@@ -160,6 +160,18 @@ public:
 	*/
 	bool TrySkipLobbyStory();
 
+	/* 이름 입력 줄(EFF_DialogueLineKind::NameInput)에서 받은 이름을 남기고 다음 줄로 간다. 받았으면 true.
+
+	   앞뒤 공백을 떼고, 비었거나 설정의 글자 수 한도를 넘으면 받지 않는다(입력 창이 막아 두지만 한 번 더 본다).
+	   이야기를 건너뛰다 이름을 물은 경우면 이름을 받은 뒤 실습장 가는 줄로 간다(TrySkipLobbyStory).
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
+	bool SubmitPlayerName(const FString& Name);
+
+	// 대사의 {이름} 자리에 들어갈 이름. 아직 안 받았으면 설정의 기본 호칭.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
+	FString GetPlayerDisplayName() const;
+
 	// 튜토리얼을 통째로 끝낸다.
 	//
 	// SkipNarration 과 다르다. 저쪽은 서사만 넘기고 조작 안내는 남기는데,
@@ -553,6 +565,19 @@ private:
 
 	int32 CurrentLineIndex = INDEX_NONE;
 	bool bDialogueActive = false;
+
+	/* 지금 줄의 {이름} 을 주인공 이름으로 바꾼 사본. GoToLine 이 만들고 GetCurrentLine 이 돌려준다.
+
+	   줄을 불러올 때가 아니라 보여 줄 때 바꾸는 이유: 로비 이야기는 처음에 전부 불러오는데,
+	   이름은 이야기 중간에 받는다. 불러올 때 바꾸면 이름을 받은 뒤의 줄에도 기본 호칭이 남는다.
+	*/
+	FFF_DialogueLine CurrentResolvedLine;
+
+	// 줄의 화자 · 대사 · 선택지에 든 {이름} 을 바꾼다.
+	FFF_DialogueLine ResolvePlayerNameTokens(const FFF_DialogueLine& Line) const;
+
+	// 이야기를 건너뛰다 이름부터 묻는 중이다. 이름을 받으면 실습장 가는 줄로 간다(TrySkipLobbyStory).
+	bool bSkipStoryAfterName = false;
 
 	FName CurrentAnchor = NAME_None;
 

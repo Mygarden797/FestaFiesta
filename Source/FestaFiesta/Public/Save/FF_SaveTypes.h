@@ -103,6 +103,14 @@ struct FESTAFIESTA_API FFF_MetaSave
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
 	bool bTutorialOptedOut = false;
 
+	/* 로비 이야기에서 받은 주인공 이름. 대사의 {이름} 자리에 들어간다.
+
+	   새 게임마다 다시 묻는다(판 단위). 비어 있으면 튜토리얼 설정의 기본 호칭을 쓴다 —
+	   이야기를 건너뛰었거나 이 칸이 생기기 전의 세이브다.
+	*/
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	FString PlayerName;
+
 	/* 튜토리얼을 끝까지 본 축제들.
 
 	   축제마다 배울 것이 다르므로 판정도 축제 단위다. 전역 bool 하나로 두면

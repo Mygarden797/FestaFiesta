@@ -1032,6 +1032,21 @@ void UFF_SaveSubsystem::MarkLobbyIntroSeen()
 	WriteRunMeta();
 }
 
+void UFF_SaveSubsystem::SetPlayerName(const FString& Name)
+{
+	const FString Trimmed = Name.TrimStartAndEnd();
+	if (Meta.PlayerName == Trimmed)
+	{
+		return;
+	}
+
+	Meta.PlayerName = Trimmed;
+	UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 주인공 이름을 '%s' 로 정했다."), *Trimmed);
+
+	// 보통은 아직 이 판의 세이브가 없다(로비 이야기 중). 그러면 첫 자동 저장에 같이 담긴다.
+	WriteRunMeta();
+}
+
 void UFF_SaveSubsystem::MarkFestivalTutorialSeen(const FName FestivalId)
 {
 	/* 축제를 식별하지 못했으면 기록하지 않는다.

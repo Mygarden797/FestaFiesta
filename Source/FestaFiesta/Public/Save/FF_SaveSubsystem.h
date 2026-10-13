@@ -220,6 +220,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void MarkLobbyIntroSeen();
 
+	// 로비 이야기에서 받은 주인공 이름. 아직 안 받았으면 빈 문자열이다(기본 호칭은 튜토리얼 쪽이 정한다).
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
+	FString GetPlayerName() const { return Meta.PlayerName; }
+
+	// 주인공 이름을 남긴다. 이 판의 세이브가 있으면 메타만 고쳐 쓴다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
+	void SetPlayerName(const FString& Name);
+
 	// 이 축제의 튜토리얼을 끝까지 봤다고 남긴다. FestivalId 가 비면 아무것도 하지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void MarkFestivalTutorialSeen(FName FestivalId);

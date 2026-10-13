@@ -161,7 +161,8 @@ const FFF_DialogueLine& UFF_TutorialSubsystem::GetCurrentLine() const
 	{
 		return GetEmptyLine();
 	}
-	return ActiveLines[CurrentLineIndex];
+	// {이름} 을 바꾼 사본. GoToLine 이 줄을 옮길 때 만든다.
+	return CurrentResolvedLine;
 }
 
 bool UFF_TutorialSubsystem::IsWaitingForAction() const
@@ -1102,13 +1103,14 @@ void UFF_TutorialSubsystem::GoToLine(const int32 LineIndex)
 	}
 
 	CurrentLineIndex = LineIndex;
+	CurrentResolvedLine = ResolvePlayerNameTokens(ActiveLines[CurrentLineIndex]);
 
 	/* 참조가 아니라 복사로 든다.
 
 	   아래 방송을 받은 쪽이 대사를 멈추거나 다른 대사를 틀 수 있다. 그러면
 	   ActiveLines 가 비거나 새로 채워져서, 참조로 들고 있던 줄이 사라진 메모리를 가리킨다.
 	*/
-	const FFF_DialogueLine Line = ActiveLines[CurrentLineIndex];
+	const FFF_DialogueLine Line = CurrentResolvedLine;
 
 	// 강조 방식을 먼저 정한다. 같은 대상을 이어서 가리켜도 줄마다 덮개 여부가 다를 수 있다.
 	bHighlightOutlineOnly = Line.bHighlightOutlineOnly;
@@ -1162,7 +1164,8 @@ void UFF_TutorialSubsystem::Advance()
 	}
 
 	// 선택지도 마찬가지다. 고르지 않고 넘어가면 분기가 무의미해진다.
-	if (Line.Kind == EFF_DialogueLineKind::Choice)
+	// 이름 입력도 이름을 넣어야 넘어간다(SubmitPlayerName).
+	if (Line.Kind == EFF_DialogueLineKind::Choice || Line.Kind == EFF_DialogueLineKind::NameInput)
 	{
 		return;
 	}
@@ -1788,12 +1791,129 @@ bool UFF_TutorialSubsystem::TrySkipLobbyStory()
 		return false;
 	}
 
+	/* 이름은 건너뛰어도 묻는다.
+
+	   이름은 이야기 뒤로도 비서 대사의 {이름} 자리에 계속 쓰인다. 건너뛴 사람만 기본 호칭으로 불리면
+	   이름을 넣을 기회가 없다. 아직 이름을 안 받았고 이름 입력 줄이 남아 있으면 거기로 먼저 가고,
+	   이름을 받으면 실습장 가는 줄로 간다(SubmitPlayerName). 이미 이름 입력 줄이면 그대로 둔다.
+	*/
+	const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this);
+	const bool bHasName = Save && !Save->GetPlayerName().IsEmpty();
+	if (!bHasName)
+	{
+		for (int32 Index = FMath::Max(0, CurrentLineIndex); Index < Target; ++Index)
+		{
+			if (ActiveLines[Index].Kind != EFF_DialogueLineKind::NameInput)
+			{
+				continue;
+			}
+			bSkipStoryAfterName = true;
+			UE_LOG(LogFestaFiestaTutorial, Log,
+				TEXT("[튜토리얼] 로비 이야기 건너뜀. 이름부터 묻고(%d) 실습장 가는 줄(%s)로 간다."),
+				Index, *Label.ToString());
+			if (Index != CurrentLineIndex)
+			{
+				GoToLine(Index);
+			}
+			return true;
+		}
+	}
+
 	UE_LOG(LogFestaFiestaTutorial, Log,
 		TEXT("[튜토리얼] 로비 이야기 건너뜀. %d → %d(%s), 건너뜀 기록 없음."),
 		CurrentLineIndex, Target, *Label.ToString());
 
 	GoToLine(Target);
 	return true;
+}
+
+bool UFF_TutorialSubsystem::SubmitPlayerName(const FString& Name)
+{
+	if (!bDialogueActive || bAwaitingSkipConfirm || GetCurrentLine().Kind != EFF_DialogueLineKind::NameInput)
+	{
+		return false;
+	}
+
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	const int32 MaxLength = Settings ? FMath::Max(1, Settings->PlayerNameMaxLength) : 8;
+	const FString Trimmed = Name.TrimStartAndEnd();
+	if (Trimmed.IsEmpty() || Trimmed.Len() > MaxLength)
+	{
+		UE_LOG(LogFestaFiestaTutorial, Log,
+			TEXT("[튜토리얼] 이름 '%s' 를 받지 않았다(비었거나 %d자 넘음)."), *Trimmed, MaxLength);
+		return false;
+	}
+
+	if (UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		Save->SetPlayerName(Trimmed);
+	}
+
+	// 이야기를 건너뛰다 이름을 물었으면 남은 이야기는 넘기고 실습장 가는 줄로 간다.
+	if (bSkipStoryAfterName)
+	{
+		bSkipStoryAfterName = false;
+		const int32 Target = Settings ? FindLineIndexByLabel(Settings->LobbyStorySkipLabel) : INDEX_NONE;
+		if (Target != INDEX_NONE && Target > CurrentLineIndex)
+		{
+			GoToLine(Target);
+			return true;
+		}
+	}
+
+	GoToLine(ResolveNextLineIndex());
+	return true;
+}
+
+FString UFF_TutorialSubsystem::GetPlayerDisplayName() const
+{
+	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		const FString Name = Save->GetPlayerName();
+		if (!Name.IsEmpty())
+		{
+			return Name;
+		}
+	}
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	return Settings ? Settings->DefaultPlayerName.ToString() : FString(TEXT("담당자"));
+}
+
+FFF_DialogueLine UFF_TutorialSubsystem::ResolvePlayerNameTokens(const FFF_DialogueLine& Line) const
+{
+	/* 대사 표 · 비서 대사에 {이름} 이라고 적으면 주인공 이름이 들어간다.
+
+	   조사(이/가, 을/를)는 이름 받침에 따라 달라져 자동으로 고르지 않는다. 대사는 "{이름} 님" 처럼
+	   뒤에 받침이 정해진 말을 붙여 쓴다.
+	*/
+	static const FString Token = TEXT("{이름}");
+
+	auto Contains = [](const FText& Text) { return Text.ToString().Contains(Token); };
+	bool bHasToken = Contains(Line.Text) || Contains(Line.Speaker);
+	for (const FFF_DialogueChoice& Choice : Line.Choices)
+	{
+		bHasToken |= Contains(Choice.Text);
+	}
+	if (!bHasToken)
+	{
+		return Line;
+	}
+
+	const FString Name = GetPlayerDisplayName();
+	auto Replace = [&Name](const FText& Text)
+	{
+		const FString Source = Text.ToString();
+		return Source.Contains(Token) ? FText::FromString(Source.Replace(*Token, *Name)) : Text;
+	};
+
+	FFF_DialogueLine Resolved = Line;
+	Resolved.Text = Replace(Line.Text);
+	Resolved.Speaker = Replace(Line.Speaker);
+	for (FFF_DialogueChoice& Choice : Resolved.Choices)
+	{
+		Choice.Text = Replace(Choice.Text);
+	}
+	return Resolved;
 }
 
 bool UFF_TutorialSubsystem::CanSkipTutorial() const
@@ -1925,6 +2045,8 @@ void UFF_TutorialSubsystem::StopScript()
 	bActionArrivedDuringSkipConfirm = false;
 	ResumeLineIndex = INDEX_NONE;
 	CurrentLineIndex = INDEX_NONE;
+	CurrentResolvedLine = FFF_DialogueLine();
+	bSkipStoryAfterName = false;
 	bDialogueActive = false;
 
 	ApplyHighlight(NAME_None);

@@ -7,6 +7,7 @@
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
+#include "Tutorial/FF_NameInputWidget.h"
 #include "Tutorial/FF_SkipConfirmWidget.h"
 #include "Tutorial/FF_TutorialSettings.h"
 #include "Tutorial/FF_TutorialSubsystem.h"
@@ -83,6 +84,7 @@ void UFF_DialogueBoxWidget::NativeDestruct()
 	}
 
 	ClearChoices();
+	RemoveNameInput();
 	Super::NativeDestruct();
 }
 
@@ -179,8 +181,39 @@ void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
 	ApplyBackground(Line);
 	ApplyPortrait(Line);
 	ApplySkipButton();
+	ApplyNameInput(Line);
 
 	BP_OnLineChanged(Line);
+}
+
+void UFF_DialogueBoxWidget::ApplyNameInput(const FFF_DialogueLine& Line)
+{
+	if (Line.Kind != EFF_DialogueLineKind::NameInput)
+	{
+		RemoveNameInput();
+		return;
+	}
+
+	if (NameInputWidget && NameInputWidget->IsInViewport())
+	{
+		return;
+	}
+
+	NameInputWidget = CreateWidget<UFF_NameInputWidget>(GetOwningPlayer(), UFF_NameInputWidget::StaticClass());
+	if (NameInputWidget)
+	{
+		const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+		NameInputWidget->AddToViewport(Settings ? Settings->NameInputZOrder : 150);
+	}
+}
+
+void UFF_DialogueBoxWidget::RemoveNameInput()
+{
+	if (NameInputWidget)
+	{
+		NameInputWidget->RemoveFromParent();
+		NameInputWidget = nullptr;
+	}
 }
 
 void UFF_DialogueBoxWidget::ApplySkipButton()
@@ -208,6 +241,7 @@ void UFF_DialogueBoxWidget::HandleDialogueActiveChanged(const bool bActive)
 	if (!bActive)
 	{
 		ClearChoices();
+		RemoveNameInput();
 
 		// 대사가 끝나면 배경도 치운다. 안 그러면 그림이 화면에 남는다.
 		if (BackgroundImage)
@@ -442,9 +476,9 @@ void UFF_DialogueBoxWidget::ApplyPortrait(const FFF_DialogueLine& Line)
 
 void UFF_DialogueBoxWidget::ApplyClickArea(const FFF_DialogueLine& Line)
 {
-	// 선택지가 있으면 클릭으로 넘길 수 없다. 조작을 기다리는 줄도 마찬가지다.
-	const bool bCanAdvance =
-		Line.Kind != EFF_DialogueLineKind::Choice && !Line.RequiresPlayerAction();
+	// 선택지가 있으면 클릭으로 넘길 수 없다. 조작을 기다리는 줄 · 이름 입력 줄도 마찬가지다.
+	const bool bCanAdvance = Line.Kind != EFF_DialogueLineKind::Choice
+		&& Line.Kind != EFF_DialogueLineKind::NameInput && !Line.RequiresPlayerAction();
 
 	const bool bFullScreen = bCanAdvance
 		&& Line.ClickArea == EFF_DialogueClickArea::FullScreen;
