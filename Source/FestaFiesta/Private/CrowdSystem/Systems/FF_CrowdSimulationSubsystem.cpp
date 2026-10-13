@@ -6864,7 +6864,10 @@ void UFF_CrowdSimulationSubsystem::ApplyAgentAppearance(int32 AgentIndex)
 		return;
 	}
 	
-	Actor->ApplyAppearance(Row->PickMesh(Unit.StableAgentID).LoadSynchronous(), Row->AnimClass.LoadSynchronous(), Row->MeshYawOffset, Row->MeshUniformScale);
+	TSoftObjectPtr<USkeletalMesh> PickedMesh;
+	TSoftClassPtr<UFF_CrowdAnimInstance> PickedAnimClass;
+	Row->PickAppearance(Unit.StableAgentID, PickedMesh, PickedAnimClass);
+	Actor->ApplyAppearance(PickedMesh.LoadSynchronous(), PickedAnimClass.LoadSynchronous(), Row->MeshYawOffset, Row->MeshUniformScale);
 	
 	
 	
