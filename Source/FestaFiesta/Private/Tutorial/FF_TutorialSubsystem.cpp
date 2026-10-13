@@ -523,8 +523,23 @@ void UFF_TutorialSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Even
 	   안내한 것과 다른 것을 놓은 채 다음 단계로 간다.
 	*/
 	const FFF_DialogueLine& Line = GetCurrentLine();
-	if (Line.WaitCondition == EFF_TutorialWaitCondition::FacilityPlaced && !Line.WaitTarget.IsNone()
-		&& ResolveFacilityDefinitionId(Event.FacilityInstanceId) != Line.WaitTarget)
+	const FName PlacedId = ResolveFacilityDefinitionId(Event.FacilityInstanceId);
+	if (bAwaitingSkipConfirm)
+	{
+		// 확인 창 중에는 NotifyAction 이 원래 줄을 보고 기억해 둔다.
+		NotifyAction(EFF_TutorialWaitCondition::FacilityPlaced);
+		return;
+	}
+	if (!bDialogueActive || !Line.RequiresPlayerAction() || Line.WaitCondition != EFF_TutorialWaitCondition::FacilityPlaced)
+	{
+		// 설치 대기 줄보다 먼저 놓았다. 그 줄이 오면 이미 놓은 것으로 친다(PrepareActionWatch).
+		if (!PlacedId.IsNone())
+		{
+			EarlyPlacedFacilityIds.Add(PlacedId);
+		}
+		return;
+	}
+	if (!Line.WaitTarget.IsNone() && PlacedId != Line.WaitTarget)
 	{
 		return;
 	}

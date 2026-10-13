@@ -28,6 +28,7 @@
 #include "Engine/World.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "TimerManager.h"
 #include "Staff/FF_StaffFacilitySubsystem.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildCategoryChoice.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
@@ -60,6 +61,20 @@ void UFF_TutorialSubsystem::PrepareActionWatch(const FFF_DialogueLine& Line)
 
 	// 미리보기 방향은 미리보기가 떠 있을 때 잡는다. 아직 카드를 안 눌렀으면 Tick 이 처음 볼 때 잡는다.
 	bPlacementYawBaselineValid = false;
+
+	// 기다릴 시설을 이 줄이 뜨기 전에 이미 놓았으면 바로 통과시킨다. 줄 전환 중이라 다음 틱에 알린다.
+	if (Line.WaitCondition == EFF_TutorialWaitCondition::FacilityPlaced
+		&& (Line.WaitTarget.IsNone() ? EarlyPlacedFacilityIds.Num() > 0 : EarlyPlacedFacilityIds.Contains(Line.WaitTarget)))
+	{
+		EarlyPlacedFacilityIds.Reset();
+		if (World)
+		{
+			World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+			{
+				NotifyAction(EFF_TutorialWaitCondition::FacilityPlaced);
+			}));
+		}
+	}
 
 	/* 카드를 눌러야 하는 줄이면 그 카드를 목록 앞으로 꺼낸다.
 
