@@ -45,14 +45,11 @@ public:
 	TSoftClassPtr<UFF_CrowdAnimInstance> AnimClass;
 	
 	
-	//같은 아키타입 내 외형 변주
+	//같은 아키타입 내 외형 변주. 메시와 AnimBP 를 한 쌍으로 든다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd")
-	TArray<TSoftObjectPtr<USkeletalMesh>> MeshVariants;
+	TArray<FFF_CrowdAppearanceVariant> Variants;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd")
-	TArray<FFF_CrowdAppearanceVariant> AnimVariants;
-
-	//Mesh + MeshVariants 중 Seed로 고정된 하나를 고른다. 후보가 없으면 빈 포인터
+	//Mesh + Variants 중 Seed로 고정된 하나를 고른다. 후보가 없으면 빈 포인터
 	TSoftObjectPtr<USkeletalMesh> PickMesh(int32 Seed) const;
 
 	void PickAppearance(int32 Seed, TSoftObjectPtr<USkeletalMesh>& OutMesh, TSoftClassPtr<UFF_CrowdAnimInstance>& OutAnimClass) const;

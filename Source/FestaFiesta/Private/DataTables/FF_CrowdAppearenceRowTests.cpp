@@ -71,7 +71,7 @@ bool FFF_CrowdAppearancePickKeepsMeshAndAnimClassPaired::RunTest(const FString& 
 	FFF_CrowdAppearanceVariant VariantB;
 	VariantB.Mesh = MeshPath(TEXT("/Game/Test/SK_B.SK_B"));
 	VariantB.AnimClass = ClassPath(TEXT("/Game/Test/ABP_B.ABP_B_C"));
-	Row.AnimVariants = { VariantA, VariantB };
+	Row.Variants = { VariantA, VariantB };
 
 	TSet<FString> PickedMeshes;
 	for (int32 Seed = 0; Seed < SeedCount; ++Seed)
@@ -105,7 +105,7 @@ bool FFF_CrowdAppearanceVariantWithoutAnimClassUsesRowAnimClass::RunTest(const F
 	Row.AnimClass = ClassPath(TEXT("/Game/Test/ABP_Base.ABP_Base_C"));
 	FFF_CrowdAppearanceVariant Variant;
 	Variant.Mesh = MeshPath(TEXT("/Game/Test/SK_A.SK_A"));
-	Row.AnimVariants = { Variant };
+	Row.Variants = { Variant };
 
 	TSoftObjectPtr<USkeletalMesh> Mesh;
 	TSoftClassPtr<UFF_CrowdAnimInstance> AnimClass;
@@ -124,10 +124,9 @@ bool FFF_CrowdAppearancePickMeshMatchesPickAppearanceAndIsStable::RunTest(const 
 
 	FFF_CrowdAppearenceRow Row;
 	Row.Mesh = MeshPath(TEXT("/Game/Test/SK_Base.SK_Base"));
-	Row.MeshVariants = { MeshPath(TEXT("/Game/Test/SK_V.SK_V")) };
 	FFF_CrowdAppearanceVariant Variant;
 	Variant.Mesh = MeshPath(TEXT("/Game/Test/SK_A.SK_A"));
-	Row.AnimVariants = { Variant };
+	Row.Variants = { Variant };
 
 	for (int32 Seed = 0; Seed < SeedCount; ++Seed)
 	{
@@ -164,10 +163,10 @@ bool FFF_CrowdAppearanceEmptyPoolReturnsNullMesh::RunTest(const FString& Paramet
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAppearanceTableAnimVariantsMatchMeshSkeleton,
-	"FestaFiesta.DataTables.CrowdAppearance.TableAnimVariantsMatchMeshSkeleton",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAppearanceTableVariantsMatchMeshSkeleton,
+	"FestaFiesta.DataTables.CrowdAppearance.TableVariantsMatchMeshSkeleton",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-bool FFF_CrowdAppearanceTableAnimVariantsMatchMeshSkeleton::RunTest(const FString& Parameters)
+bool FFF_CrowdAppearanceTableVariantsMatchMeshSkeleton::RunTest(const FString& Parameters)
 {
 	using namespace FFF_CrowdAppearenceRowTestHelpers;
 
@@ -183,12 +182,12 @@ bool FFF_CrowdAppearanceTableAnimVariantsMatchMeshSkeleton::RunTest(const FStrin
 	{
 		const FFF_CrowdAppearenceRow* Row = reinterpret_cast<const FFF_CrowdAppearenceRow*>(Pair.Value);
 		FString Reason;
-		for (const FFF_CrowdAppearanceVariant& Variant : Row->AnimVariants)
+		for (const FFF_CrowdAppearanceVariant& Variant : Row->Variants)
 		{
 			++Checked;
 			if (!SkeletonsMatch(Variant.Mesh, Variant.AnimClass.IsNull() ? Row->AnimClass : Variant.AnimClass, Reason))
 			{
-				AddError(FString::Printf(TEXT("행 %s 의 AnimVariants: %s"), *Pair.Key.ToString(), *Reason));
+				AddError(FString::Printf(TEXT("행 %s 의 Variants: %s"), *Pair.Key.ToString(), *Reason));
 			}
 		}
 	}
@@ -260,7 +259,7 @@ bool FFF_CrowdAppearanceTableVariantsAnimate::RunTest(const FString& Parameters)
 	for (const TPair<FName, uint8*>& Pair : Table->GetRowMap())
 	{
 		const FFF_CrowdAppearenceRow* Row = reinterpret_cast<const FFF_CrowdAppearenceRow*>(Pair.Value);
-		for (const FFF_CrowdAppearanceVariant& Variant : Row->AnimVariants)
+		for (const FFF_CrowdAppearanceVariant& Variant : Row->Variants)
 		{
 			USkeletalMesh* Mesh = Variant.Mesh.LoadSynchronous();
 			UClass* AnimClass = (Variant.AnimClass.IsNull() ? Row->AnimClass : Variant.AnimClass).LoadSynchronous();

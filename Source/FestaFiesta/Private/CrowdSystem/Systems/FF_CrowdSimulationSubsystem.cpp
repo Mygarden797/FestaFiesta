@@ -3744,6 +3744,31 @@ int32 UFF_CrowdSimulationSubsystem::GetAudiencePartyCount() const
 	return Count;
 }
 
+void UFF_CrowdSimulationSubsystem::GetSeatedAudienceAgents(TArray<FFF_CrowdSeatedAgent>& OutAgents) const
+{
+	OutAgents.Reset();
+	for (int32 AgentIndex = 0; AgentIndex < UnitDatas.Num(); ++AgentIndex)
+	{
+		const FUnitData& Unit = UnitDatas[AgentIndex];
+		if (!Unit.bIsActive || !PartyDecisionStates.IsValidIndex(Unit.LeaderAgentIndex))
+		{
+			continue;
+		}
+
+		const FPartyDecisionState& State = PartyDecisionStates[Unit.LeaderAgentIndex];
+		if (State.AudiencePhase != EFF_PartyAudiencePhase::Waiting
+			&& State.AudiencePhase != EFF_PartyAudiencePhase::Spectating)
+		{
+			continue;
+		}
+
+		FFF_CrowdSeatedAgent& Seated = OutAgents.AddDefaulted_GetRef();
+		Seated.AgentIndex = AgentIndex;
+		Seated.FacilityId = State.AudienceFacilityId;
+		Seated.Phase = State.AudiencePhase;
+	}
+}
+
 void UFF_CrowdSimulationSubsystem::GetAudienceWalkDiagnostics(
 	int32& OutWalkingLeaders, float& OutMeanRemainingMeters, float& OutMaxRemainingMeters,
 	float& OutMeanSpeedMetersPerSecond, float& OutMeanCruiseMetersPerSecond, int32& OutStalledLeaders,
@@ -4908,6 +4933,15 @@ bool UFF_CrowdSimulationSubsystem::SetCrowdStateForAgent(int32 AgentIndex, EFF_C
 
 void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage)
 {
+	if (CurrentStage == EFF_FestivalStage::Finale)
+	{
+		SetCrowdState(EFF_CrowdRunState::Holding);
+	}
+	else if (PreviousStage == EFF_FestivalStage::Finale)
+	{
+		SetCrowdState(EFF_CrowdRunState::Running);
+	}
+
 	if (PreviousStage == EFF_FestivalStage::Live && CurrentStage != EFF_FestivalStage::Live)
 	{
 		bMainProgramAudienceActive = false;
