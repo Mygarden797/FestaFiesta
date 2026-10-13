@@ -562,14 +562,14 @@ FFF_SatisfactionBreakdown UFF_FestivalViewModelSubsystem::BuildSatisfactionBreak
 	Inputs.PreferenceMatchShare = DayAverage ? DayAverage->PreferenceMatchShare : Satisfaction->GetPreferenceMatchShare();
 	Inputs.PreferenceSampleCount = DayAverage ? DayAverage->PreferenceSampleCount : Satisfaction->GetPreferenceSampleCount();
 	Inputs.CoverageFloor = Coefficients.NeedCoverageFloor;
-	Inputs.CoverageTarget[0] = Coefficients.NeedCoverageTargetHunger;
-	Inputs.CoverageTarget[1] = Coefficients.NeedCoverageTargetRestroom;
-	Inputs.CoverageTarget[2] = Coefficients.NeedCoverageTargetStimulation;
-
 	static const EFF_NeedType BreakdownNeeds[FFF_SatisfactionBreakdownInputs::NeedCount] =
 	{
-		EFF_NeedType::Hunger, EFF_NeedType::Restroom, EFF_NeedType::Stimulation
+		EFF_NeedType::Hunger, EFF_NeedType::Restroom, EFF_NeedType::Stimulation, EFF_NeedType::Thirst, EFF_NeedType::Fatigue
 	};
+	for (int32 Index = 0; Index < FFF_SatisfactionBreakdownInputs::NeedCount; ++Index)
+	{
+		Inputs.CoverageTarget[Index] = Coefficients.GetNeedCoverageTarget(BreakdownNeeds[Index]);
+	}
 	const UGameInstance* GI = GetGameInstance();
 	const UWorld* World = GI ? GI->GetWorld() : nullptr;
 	if (const UFF_CrowdSimulationSubsystem* Crowd = World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr)
@@ -665,6 +665,8 @@ void UFF_FestivalViewModelSubsystem::FillReportAssistantComment(FFF_DailyReportV
 		Inputs.HungerCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Hunger);
 		Inputs.RestroomCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Restroom);
 		Inputs.StimulationCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Stimulation);
+		Inputs.ThirstCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Thirst);
+		Inputs.FatigueCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Fatigue);
 	}
 	Inputs.AdmittedVisitors = Report.AdmittedVisitors;
 	Inputs.DailyVisitorGoal = Report.DailyVisitorGoal;

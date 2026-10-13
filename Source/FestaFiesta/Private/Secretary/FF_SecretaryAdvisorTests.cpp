@@ -46,4 +46,34 @@ bool FFF_SecretaryAdvisor_BriefingRepeatsReportVerdict::RunTest(const FString& P
 	return true;
 }
 
+// 못 채운 손님이 많아도 시설이 목표 개수만큼 있으면 "늘려 보세요"라고 하지 않는다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SecretaryAdvisor_UnmetNeedAsksMoreOnlyWhenShort,
+	"FestaFiesta.Secretary.Advisor.UnmetNeedAsksMoreOnlyWhenShort",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SecretaryAdvisor_UnmetNeedAsksMoreOnlyWhenShort::RunTest(const FString& Parameters)
+{
+	const auto NeverResting = [](EFF_SecretaryTipKind) { return false; };
+	const int32 Restroom = static_cast<int32>(EFF_NeedType::Restroom);
+	const int32 Hunger = static_cast<int32>(EFF_NeedType::Hunger);
+
+	FFF_SecretaryLiveSignals Signals;
+	Signals.bNeedSampled = true;
+	Signals.ToiletCount = 3;
+	Signals.NeedUnmetPercent[Restroom] = 80.f;
+	Signals.NeedCoverage[Restroom] = 0.5f;
+	FFF_SecretaryTip Tip = FFSecretaryAdvisor::ChooseLiveTip(Signals, FFF_SecretaryThresholds(), NeverResting);
+	TestTrue(TEXT("화장실이 목표보다 적으면 늘리라고 한다"), Tip.Text.ToString().Contains(TEXT("늘려")));
+
+	Signals.NeedCoverage[Restroom] = 1.f;
+	Tip = FFSecretaryAdvisor::ChooseLiveTip(Signals, FFF_SecretaryThresholds(), NeverResting);
+	TestFalse(TEXT("목표만큼 있으면 늘리라고 하지 않는다"), Tip.Text.ToString().Contains(TEXT("늘려")));
+	TestTrue(TEXT("대신 공연 뒤 몰림을 말한다"), Tip.Text.ToString().Contains(TEXT("몰려요")));
+
+	Signals.NeedUnmetPercent[Hunger] = 50.f;
+	Signals.NeedCoverage[Hunger] = 0.3f;
+	Tip = FFSecretaryAdvisor::ChooseLiveTip(Signals, FFF_SecretaryThresholds(), NeverResting);
+	TestTrue(TEXT("모자란 다른 필요가 있으면 그쪽을 늘리라고 한다"), Tip.Text.ToString().Contains(TEXT("먹을 곳")));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

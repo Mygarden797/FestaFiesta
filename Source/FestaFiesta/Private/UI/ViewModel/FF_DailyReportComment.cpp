@@ -36,6 +36,14 @@ namespace
 				return {
 					LOCTEXT("NeedFun", "즐길 거리가 모자랐어요. 체험 부스나 포토존을 더해 보세요."),
 					LOCTEXT("NeedFunFinal", "가장 아쉬운 점은 즐길 거리가 모자랐던 거예요. 다음 축제에서는 체험 부스나 포토존을 더해 보세요.") };
+			case EFF_NeedType::Fatigue:
+				return {
+					LOCTEXT("NeedRest", "쉴 곳이 모자랐어요. 벤치나 그늘막을 더 놓아 보세요."),
+					LOCTEXT("NeedRestFinal", "가장 아쉬운 점은 쉴 곳이 모자랐던 거예요. 다음 축제에서는 벤치나 그늘막을 더 놓아 보세요.") };
+			case EFF_NeedType::Thirst:
+				return {
+					LOCTEXT("NeedDrink", "마실 곳이 모자랐어요. 음료를 파는 부스를 더 지어 보세요."),
+					LOCTEXT("NeedDrinkFinal", "가장 아쉬운 점은 마실 곳이 모자랐던 거예요. 다음 축제에서는 음료를 파는 부스를 더 지어 보세요.") };
 			default:
 				break;
 			}
@@ -130,13 +138,15 @@ FFF_DailyComplaint FFF_DailyReportCommentRules::FindComplaint(const FFF_DailyRep
 {
 	FFF_DailyComplaint Complaint;
 
-	// 가장 모자란 시설. 커버리지가 같으면 화장실 → 음식 → 즐길 거리 순
+	// 가장 모자란 시설. 커버리지가 같으면 화장실 → 음식 → 즐길 거리 → 휴게 → 음료 순
 	float Lowest = 1.f;
 	const TPair<EFF_NeedType, float> Coverages[] =
 	{
 		{ EFF_NeedType::Restroom, Inputs.RestroomCoverage },
 		{ EFF_NeedType::Hunger, Inputs.HungerCoverage },
 		{ EFF_NeedType::Stimulation, Inputs.StimulationCoverage },
+		{ EFF_NeedType::Fatigue, Inputs.FatigueCoverage },
+		{ EFF_NeedType::Thirst, Inputs.ThirstCoverage },
 	};
 	for (const TPair<EFF_NeedType, float>& Coverage : Coverages)
 	{

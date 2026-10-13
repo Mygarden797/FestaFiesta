@@ -48,6 +48,9 @@ struct FFF_SecretaryLiveSignals
 	bool bNeedSampled = false;
 	float NeedUnmetPercent[static_cast<int32>(EFF_NeedType::Count)] = {};
 
+	// 필요별 시설 커버리지(열린 시설 수 ÷ 목표, 1 이면 목표 충족). 채우지 않으면 0 이라 모자란 것으로 본다.
+	float NeedCoverage[static_cast<int32>(EFF_NeedType::Count)] = {};
+
 	// 설치된 화장실 수.
 	int32 ToiletCount = 0;
 

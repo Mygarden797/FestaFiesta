@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "NPC/Insights/FF_SnsTypes.h"
+#include "NPC/Party/FF_NeedState.h"
 
 struct FFF_SnsPostTemplateRow;
 enum class EFF_FinaleGrade : uint8;
@@ -27,6 +28,10 @@ struct FFF_SnsFeedSignals
 
 	// UFF_CrowdSimulationSubsystem::GetCongestedCellCount()
 	int32 CongestedCellCount = 0;
+
+	// UFF_CrowdSimulationSubsystem::GetNeedCoverage — 필요별 시설 수 ÷ 목표. 1 이면 목표만큼 있다.
+	// 꺼진 필요는 1 이라 "그 시설이 없다" 문장이 나오지 않는다.
+	float NeedCoverage[static_cast<int32>(EFF_NeedType::Count)] = { 1.f, 1.f, 1.f, 1.f, 1.f };
 
 	bool bMainProgramLocked = false;
 	int32 CurrentDay = 1;
@@ -103,6 +108,18 @@ public:
 	static int32 GetFinaleVerdictTopicId(EFF_FinaleGrade Grade);
 
 	/**
+	 * 피날레 후기가 지금 시점에 맞는가. 태극기·마지막 일제 발사를 말하는 문장은 마지막 모양을 쏜 뒤에,
+	 * "끝났다·끝까지 보길 잘했다" 문장은 불꽃이 끝난 뒤에만 맞다. 태극기는 거의 끝에 한 번 터진다.
+	 */
+	static bool IsFinaleLineTimely(FName TemplateId, bool bFinalShapeFired, bool bShowEnded);
+
+	// StartCycle 부터 차례로 보아 아직 안 쓴(UsedCycles 에 없는) 차례 중 지금 시점에 맞는 첫 문장의 차례.
+	// 한 바퀴를 다 봐도 없으면 StartCycle. 건너뛴 문장은 쓰지 않은 채 남아 시점이 맞을 때 나온다.
+	static int32 FindTimelyFinaleCycle(int32 GlobalSimulationSeed, int32 TopicId, int32 StartCycle,
+		const TMap<int32, TArray<const FFF_SnsPostTemplateRow*>>& TemplatesByTopic,
+		const TSet<int32>& UsedCycles, bool bFinalShapeFired, bool bShowEnded);
+
+	/**
 	 * 문장 앞뒤에 추임새를 붙인 변형. Variant 0 은 원문이고, 1 부터는 (앞, 뒤) 추임새 조합을 하나씩 쓴다.
 	 * 피날레는 문장 수보다 글이 많이 나가서 같은 문장이 두 번 보이지 않게 하는 데 쓴다.
 	 * 긍정과 부정은 추임새가 다르다("최고"가 아쉬운 글에 붙으면 안 된다).
@@ -129,6 +146,12 @@ public:
 	 * 정할 신호가 아직 없어서 계속 뺀다(§13 참조).
 	 */
 	static bool ShouldIncludeTemplateRow(const FFF_SnsPostTemplateRow& Row);
+
+	/**
+	 * 지금 상황에 맞는 문장인가. 시설 부족 문장 중 특정 시설(먹을 곳·쉴 곳·음료)을 짚는 것은
+	 * 그 시설이 목표 개수보다 적을 때만 맞다. 음식 부스를 많이 지어도 "먹을 데가 없다"가 나오던 것.
+	 */
+	static bool IsTemplateRowRelevant(const FFF_SnsPostTemplateRow& Row, const FFF_SnsFeedSignals& Signals);
 
 	/**
 	 * 고른 문장의 `{시설}`을 실제 이름으로 채운다. 화제1·10이 아니거나 애초에 자리표시자가
@@ -171,7 +194,8 @@ private:
 	// 화제가 정해지면 그 화제의 문장 풀(TemplatesByTopic에서 찾음)에서 결정론적 인덱스 하나를 뽑아 실제 행(문장)을 리턴
 	static const FFF_SnsPostTemplateRow* PickTemplateRow(
 		int32 GlobalSimulationSeed, int32 PostSequenceIndex, int32 TopicId,
-		const TMap<int32, TArray<const FFF_SnsPostTemplateRow*>>& TemplatesByTopic);
+		const TMap<int32, TArray<const FFF_SnsPostTemplateRow*>>& TemplatesByTopic,
+		const FFF_SnsFeedSignals& Signals);
 	// 화제의 문장 풀을 바퀴마다 다른 순서로 섞어 CycleIndex 번째 문장을 고른다
 	static const FFF_SnsPostTemplateRow* PickCycledTemplateRow(
 		int32 GlobalSimulationSeed, int32 TopicId, int32 CycleIndex,

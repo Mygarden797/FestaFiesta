@@ -37,6 +37,10 @@ FFF_SatisfactionCoefficients FFF_SatisfactionCoefficients::LoadFromTable(const U
 		UtilityCoefficientTable, TEXT("need_coverage_target_restroom"), Coefficients.NeedCoverageTargetRestroom);
 	Coefficients.NeedCoverageTargetStimulation = FFF_UtilityCoefficientHelpers::GetCoefficient(
 		UtilityCoefficientTable, TEXT("need_coverage_target_stimulation"), Coefficients.NeedCoverageTargetStimulation);
+	Coefficients.NeedCoverageTargetThirst = FFF_UtilityCoefficientHelpers::GetCoefficient(
+		UtilityCoefficientTable, TEXT("need_coverage_target_thirst"), Coefficients.NeedCoverageTargetThirst);
+	Coefficients.NeedCoverageTargetFatigue = FFF_UtilityCoefficientHelpers::GetCoefficient(
+		UtilityCoefficientTable, TEXT("need_coverage_target_fatigue"), Coefficients.NeedCoverageTargetFatigue);
 	Coefficients.NeedCoverageFloor = FFF_UtilityCoefficientHelpers::GetCoefficient(
 		UtilityCoefficientTable, TEXT("need_coverage_floor"), Coefficients.NeedCoverageFloor);
 

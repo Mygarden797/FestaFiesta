@@ -83,6 +83,7 @@ void UFF_CrowdInsightsSubsystem::HandleFestivalStarted()
 	bFinaleFeedActive = false;
 	FinalePosts.Reset();
 	FinaleLineCycleByTopic.Reset();
+	FinaleUsedCyclesByTopic.Reset();
 	FinalePostCount = 0;
 	OnSnsFeedReset.Broadcast();
 }
@@ -197,6 +198,7 @@ void UFF_CrowdInsightsSubsystem::ReadSaveData(const TArray<uint8>& InBytes)
 	bFinaleFeedActive = false;
 	FinalePosts.Reset();
 	FinaleLineCycleByTopic.Reset();
+	FinaleUsedCyclesByTopic.Reset();
 	FinalePostCount = 0;
 	UsedFinaleBodies.Reset();
 	// PushPost는 생성 시 화제성 효과를 실행하므로 복원에는 사용하지 않는다.
@@ -237,6 +239,7 @@ void UFF_CrowdInsightsSubsystem::StartFinaleFeed(EFF_FinaleGrade Grade)
 	FinaleQuietSeconds = 0.f;
 	FinaleElapsedSeconds = 0.f;
 	FinaleLineCycleByTopic.Reset();
+	FinaleUsedCyclesByTopic.Reset();
 	UsedFinaleBodies.Reset();
 	TimeUntilNextFinalePostSeconds = NextFinaleIntervalSeconds(/*bHype=*/true);
 }
@@ -289,21 +292,31 @@ void UFF_CrowdInsightsSubsystem::MaybeGenerateFinalePost(float DeltaTime)
 		? FFF_SnsFeedGenerator::FinaleHypeTopicId
 		: FFF_SnsFeedGenerator::GetFinaleVerdictTopicId(FinaleGrade);
 	int32& LineCycle = FinaleLineCycleByTopic.FindOrAdd(TopicId);
+	TSet<int32>& UsedCycles = FinaleUsedCyclesByTopic.FindOrAdd(TopicId);
+
+	// 태극기·"끝났다" 같은 문장은 그 장면이 지난 뒤에만 쓴다. 건너뛴 문장은 남겨 두었다가 시점이 맞으면 나온다.
+	const bool bShowEnded = bFinaleShowSeen && !(Show && Show->IsShowInProgress());
+	const int32 Cycle = FFF_SnsFeedGenerator::FindTimelyFinaleCycle(GlobalSimulationSeed, TopicId, LineCycle,
+		TemplatesByTopic, UsedCycles, Show && Show->HasFiredFinalShape(), bShowEnded);
 
 	const UFF_FestivalStageSubsystem* Stage = GetStageSubsystem();
 	const FFF_SnsFeedSignals Signals; // 화제를 고정하므로 신호는 안 쓴다
 	FFF_SnsPostRow NewPost = FFF_SnsFeedGenerator::GeneratePost(
 		GlobalSimulationSeed, PostSequenceIndex, Signals, TemplatesByTopic,
-		Stage ? Stage->ElapsedLiveSeconds : 0.f, TopicId, LineCycle);
+		Stage ? Stage->ElapsedLiveSeconds : 0.f, TopicId, Cycle);
 	++PostSequenceIndex;
 
 	// 풀을 한 바퀴 다 쓰면 그다음 바퀴부터 추임새를 붙인다. 이미 나간 문장과 같으면 다음 조합으로 넘긴다.
 	const TArray<const FFF_SnsPostTemplateRow*>* Pool = TemplatesByTopic.Find(TopicId);
 	const int32 PoolSize = Pool ? FMath::Max(1, Pool->Num()) : 1;
 	NewPost.Body = FText::FromString(FFF_SnsFeedGenerator::MakeUniqueDecoratedBody(
-		NewPost.Body.ToString(), NewPost.Sentiment, LineCycle / PoolSize,
+		NewPost.Body.ToString(), NewPost.Sentiment, Cycle / PoolSize,
 		GetTypeHash(NewPost.MessageTemplateId), UsedFinaleBodies));
-	++LineCycle;
+	UsedCycles.Add(Cycle);
+	while (UsedCycles.Remove(LineCycle) > 0)
+	{
+		++LineCycle;
+	}
 
 	FinalePosts.Insert(NewPost, 0);
 	if (FinalePosts.Num() > FinalePostCapacity)
@@ -434,6 +447,10 @@ void UFF_CrowdInsightsSubsystem::FillLiveSignals(FFF_SnsFeedSignals& Signals)
 	if (UFF_CrowdSimulationSubsystem* Crowd = GetCrowdSimulationSubsystem())
 	{
 		Signals.CongestedCellCount = Crowd->GetCongestedCellCount();
+		for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
+		{
+			Signals.NeedCoverage[Index] = Crowd->GetNeedCoverage(static_cast<EFF_NeedType>(Index));
+		}
 	}
 	if (UFF_FestivalStageSubsystem* Stage = GetStageSubsystem())
 	{

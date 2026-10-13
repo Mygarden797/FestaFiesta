@@ -211,6 +211,8 @@ private:
 	int32 FinalePostCount = 0;
 	// 화제별로 지금까지 몇 번째 문장까지 썼는지. 한 바퀴 돌기 전에는 같은 문장이 다시 안 나온다
 	TMap<int32, int32> FinaleLineCycleByTopic;
+	// 시점이 안 맞아 건너뛰었다가 앞질러 쓴 차례. LineCycle 이 여기 닿으면 건너뛴다
+	TMap<int32, TSet<int32>> FinaleUsedCyclesByTopic;
 	// 이번 피날레에서 이미 나간 문장. 추임새를 붙여서라도 같은 문장이 두 번 보이지 않게 한다
 	TSet<FString> UsedFinaleBodies;
 	TArray<FFF_SnsPostRow> FinalePosts;

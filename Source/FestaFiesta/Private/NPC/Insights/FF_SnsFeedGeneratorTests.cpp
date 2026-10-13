@@ -542,4 +542,38 @@ bool FFF_Sns_CycledLinesDoNotRepeatWithinRound::RunTest(const FString& Parameter
 	return true;
 }
 
+// 시설 부족 문장 중 특정 시설을 짚는 것은 그 시설이 목표보다 적을 때만, 피날레 후기는 장면이 지난 뒤에만
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsFeedGenerator_LinesMatchSituation, "FestaFiesta.NPC.SnsFeedGenerator.LinesMatchSituation", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SnsFeedGenerator_LinesMatchSituation::RunTest(const FString& Parameters)
+{
+	FFF_SnsPostTemplateRow FoodLine;
+	FoodLine.TemplateId = TEXT("sns_lack_02");
+	FoodLine.TopicId = 2;
+	FFF_SnsPostTemplateRow RestLine;
+	RestLine.TemplateId = TEXT("sns_lack_06");
+	RestLine.TopicId = 2;
+	FFF_SnsPostTemplateRow GenericLine;
+	GenericLine.TemplateId = TEXT("sns_lack_08");
+	GenericLine.TopicId = 2;
+
+	FFF_SnsFeedSignals Signals;
+	TestFalse(TEXT("음식 시설이 목표만큼 있으면 먹을 데가 없다고 하지 않는다"), FFF_SnsFeedGenerator::IsTemplateRowRelevant(FoodLine, Signals));
+	TestFalse(TEXT("휴게 시설이 목표만큼 있으면 쉴 데가 없다고 하지 않는다"), FFF_SnsFeedGenerator::IsTemplateRowRelevant(RestLine, Signals));
+	TestTrue(TEXT("시설을 가리지 않는 문장은 쓴다"), FFF_SnsFeedGenerator::IsTemplateRowRelevant(GenericLine, Signals));
+	Signals.NeedCoverage[static_cast<int32>(EFF_NeedType::Hunger)] = 0.4f;
+	TestTrue(TEXT("음식 시설이 모자라면 먹을 데가 없다고 한다"), FFF_SnsFeedGenerator::IsTemplateRowRelevant(FoodLine, Signals));
+	Signals.NeedCoverage[static_cast<int32>(EFF_NeedType::Fatigue)] = 0.5f;
+	TestTrue(TEXT("휴게 시설이 모자라면 쉴 데가 없다고 한다"), FFF_SnsFeedGenerator::IsTemplateRowRelevant(RestLine, Signals));
+
+	const FName FlagLine(TEXT("sns_finale_s_03"));
+	const FName EndLine(TEXT("sns_finale_b_06"));
+	const FName AnyTimeLine(TEXT("sns_finale_s_01"));
+	TestFalse(TEXT("태극기를 쏘기 전에는 태극기 얘기를 하지 않는다"), FFF_SnsFeedGenerator::IsFinaleLineTimely(FlagLine, false, false));
+	TestTrue(TEXT("태극기를 쏜 뒤에는 한다"), FFF_SnsFeedGenerator::IsFinaleLineTimely(FlagLine, true, false));
+	TestFalse(TEXT("불꽃이 끝나기 전에는 끝났다고 하지 않는다"), FFF_SnsFeedGenerator::IsFinaleLineTimely(EndLine, true, false));
+	TestTrue(TEXT("끝난 뒤에는 한다"), FFF_SnsFeedGenerator::IsFinaleLineTimely(EndLine, true, true));
+	TestTrue(TEXT("시점과 무관한 문장은 언제든 쓴다"), FFF_SnsFeedGenerator::IsFinaleLineTimely(AnyTimeLine, false, false));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

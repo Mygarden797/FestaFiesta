@@ -28,6 +28,8 @@ struct FFF_DailyReportCommentInputs
 	float HungerCoverage = 1.f;
 	float RestroomCoverage = 1.f;
 	float StimulationCoverage = 1.f;
+	float ThirstCoverage = 1.f;
+	float FatigueCoverage = 1.f;
 
 	int32 AdmittedVisitors = INDEX_NONE;
 	int32 DailyVisitorGoal = INDEX_NONE;
