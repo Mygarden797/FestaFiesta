@@ -6,7 +6,9 @@
 
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Components/Button.h"
+#include "Components/Slider.h"
 #include "Components/TextBlock.h"
+#include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -15,6 +17,7 @@
 #include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Tests/AutomationCommon.h"
+#include "Misc/ScopeExit.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
 #include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
@@ -394,5 +397,144 @@ bool FFF_PrepCheckRules_CtaReasonRefresh::RunTest(const FString& Parameters)
 	Bar->OnCtaStateChanged.RemoveDynamic(Panel.Get(), &UFF_PrepPanelCheck::HandleCtaStateChanged);
 	return true;
 }
+
+#if WITH_EDITOR
+
+// 실제 저장 위젯의 버튼 → ViewModel → 경제 명령 경로로, 간소화된 입장료 표시를 검증한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepCheck_BalancedAdmissionPreview,
+	"FestaFiesta.UI.PrepCheck.BalancedAdmissionPreview",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+bool FFF_PrepCheck_BalancedAdmissionPreview::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FTestWorldWrapper Fixture;
+	if (!Fixture.CreateTestWorld(EWorldType::Game))
+	{
+		Fixture.ForwardErrorMessages(this);
+		return false;
+	}
+	UWorld* World = Fixture.GetTestWorld();
+	UGameInstance* Game = World->GetGameInstance();
+	auto* ViewModel = Game->GetSubsystem<UFF_FestivalViewModelSubsystem>();
+	auto* Progression = Game->GetSubsystem<UFF_FestivalProgressionSubsystem>();
+	auto* PanelClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepPanelCheck>(nullptr,
+		TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelCheck.WBP_FF_PrepPanelCheck_C")));
+	if (!TestNotNull(TEXT("점검 저장 WBP"), PanelClass) || !TestNotNull(TEXT("점검 ViewModel"), ViewModel) ||
+		!TestNotNull(TEXT("입장료 소유 경제 시스템"), Progression)) return false;
+	const bool bPreviouslyPlayerless = PanelClass->bCanCallInitializedWithoutPlayerContext;
+	PanelClass->bCanCallInitializedWithoutPlayerContext = true;
+	ON_SCOPE_EXIT { PanelClass->bCanCallInitializedWithoutPlayerContext = bPreviouslyPlayerless; };
+	TStrongObjectPtr<UFF_PrepPanelCheck> Panel(CreateWidget<UFF_PrepPanelCheck>(World, PanelClass));
+	if (!TestNotNull(TEXT("실제 점검 위젯"), Panel.Get()) ||
+		!TestTrue(TEXT("저장 WBP가 균형 레이아웃을 사용한다"), Panel->UsesBalancedLayout())) return false;
+	const TSharedRef<SWidget> PresentedPanel = Panel->TakeWidget();
+
+	auto* Definition = NewObject<UFF_FestivalDefinition>(Game);
+	auto* Costs = NewObject<UDataTable>(Game);
+	Costs->RowStruct = FFF_FacilityCostRow::StaticStruct();
+	Costs->AddRow(TEXT("Cost.Booth.FoodStall"), FFF_FacilityCostRow());
+	Definition->FacilityCostTable = Costs;
+	Definition->FestivalId = TEXT("BalancedAdmissionPreviewTest");
+	// 기본 0~15와 다른 범위를 사용해 끝점이 축제 설정을 따르는지 확인한다.
+	Definition->AdmissionFeeMinGold = 2;
+	Definition->AdmissionFeeMaxGold = 11;
+	Definition->AdmissionFeeGold = 5;
+	Progression->StartFestival(Definition);
+	Panel->HandlePanelOpened();
+	ON_SCOPE_EXIT { Panel->HandlePanelClosed(); };
+
+	auto* Minimum = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_AdmissionFeeMin")));
+	auto* Maximum = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_AdmissionFeeMax")));
+	auto* Amount = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_AdmissionFeeValue")));
+	auto* State = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_AdmissionFeeState")));
+	auto* Preview = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_AdmissionPreviewDelta")));
+	auto* Visitors = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_ExpectedVisitors")));
+	auto* Revenue = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_ExpectedAdmission")));
+	auto* Increase = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_AdmissionIncrease")));
+	auto* Decrease = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_AdmissionDecrease")));
+	auto* Apply = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_AdmissionApply")));
+	auto* Reset = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_AdmissionReset")));
+	auto* Slider = Cast<USlider>(Panel->GetWidgetFromName(TEXT("Slider_AdmissionFee")));
+	if (!TestNotNull(TEXT("최소 입장료 끝점"), Minimum) || !TestNotNull(TEXT("최대 입장료 끝점"), Maximum) ||
+		!TestNotNull(TEXT("입장료 표시"), Amount) || !TestNotNull(TEXT("입장료 상태"), State) ||
+		!TestNotNull(TEXT("상단 미리보기 표시"), Preview) || !TestNotNull(TEXT("상단 예상 방문객"), Visitors) ||
+		!TestNotNull(TEXT("예상 입장료 수입"), Revenue) || !TestNotNull(TEXT("입장료 증가"), Increase) ||
+		!TestNotNull(TEXT("입장료 감소"), Decrease) || !TestNotNull(TEXT("적용"), Apply) ||
+		!TestNotNull(TEXT("되돌리기"), Reset) || !TestNotNull(TEXT("입장료 슬라이더"), Slider)) return false;
+
+	TestEqual(TEXT("최소값은 경제 원본 범위"), Minimum->GetText().ToString(), FText::AsNumber(2).ToString());
+	TestEqual(TEXT("최대값은 경제 원본 범위"), Maximum->GetText().ToString(), FText::AsNumber(11).ToString());
+	const auto FormatFee = [](int32 Fee) { return FText::AsNumber(Fee).ToString() + TEXT(" Gold"); };
+	const auto CheckAppliedPresentation = [&]()
+	{
+		TestEqual(TEXT("적용된 값에서는 중복 상태 숨김"), State->GetVisibility(), ESlateVisibility::Collapsed);
+		TestEqual(TEXT("적용된 예보는 미리보기 안내 숨김"), Preview->GetVisibility(), ESlateVisibility::Collapsed);
+		TestFalse(TEXT("변경 전 적용 비활성"), Apply->GetIsEnabled());
+		TestFalse(TEXT("변경 전 되돌리기 비활성"), Reset->GetIsEnabled());
+	};
+	const auto CheckForecast = [&](const FFF_VisitorForecast& Forecast)
+	{
+		TestTrue(TEXT("상단 방문객은 소유자 예보와 일치"),
+			Visitors->GetText().ToString().Contains(FText::AsNumber(Forecast.ExpectedVisitors).ToString()));
+		TestTrue(TEXT("견적 수입은 소유자 예보와 일치"),
+			Revenue->GetText().ToString().Contains(FText::AsNumber(Forecast.ExpectedAdmissionRevenue).ToString()));
+	};
+	CheckAppliedPresentation();
+	CheckForecast(ViewModel->GetVisitorForecast());
+
+	Increase->OnClicked.Broadcast();
+	TestEqual(TEXT("증가는 미적용 초안만 표시"), Amount->GetText().ToString(), FormatFee(6));
+	TestEqual(TEXT("미리보기 중 경제 적용값 유지"), Progression->GetAdmissionFee(), 5);
+	TestTrue(TEXT("초안에 적용과 되돌리기 활성"), Apply->GetIsEnabled() && Reset->GetIsEnabled());
+	TestTrue(TEXT("초안은 상단 미리보기 안내를 표시"), Preview->IsVisible() && !Preview->GetText().IsEmpty());
+	CheckForecast(ViewModel->PreviewVisitorForecast(ViewModel->GetPurchasedPromotion(), 6));
+	Reset->OnClicked.Broadcast();
+	TestEqual(TEXT("되돌리면 원래 입장료 표시"), Amount->GetText().ToString(), FormatFee(5));
+	CheckAppliedPresentation();
+	CheckForecast(ViewModel->GetVisitorForecast());
+
+	Decrease->OnClicked.Broadcast();
+	TestEqual(TEXT("감소도 미적용 초안만 표시"), Amount->GetText().ToString(), FormatFee(4));
+	TestTrue(TEXT("감소 초안에 미리보기 안내"), Preview->IsVisible());
+	Apply->OnClicked.Broadcast();
+	TestEqual(TEXT("적용 버튼이 실제 경제 명령을 호출"), Progression->GetAdmissionFee(), 4);
+	CheckAppliedPresentation();
+	CheckForecast(ViewModel->GetVisitorForecast());
+
+	Slider->OnValueChanged.Broadcast(0.f);
+	TestEqual(TEXT("슬라이더 시작점은 소유 범위 최소"), Amount->GetText().ToString(), FormatFee(2));
+	TestFalse(TEXT("최소 입장료에서 감소 비활성"), Decrease->GetIsEnabled());
+	Slider->OnValueChanged.Broadcast(1.f);
+	TestEqual(TEXT("슬라이더 끝점은 소유 범위 최대"), Amount->GetText().ToString(), FormatFee(11));
+	TestFalse(TEXT("최대 입장료에서 증가 비활성"), Increase->GetIsEnabled());
+	Reset->OnClicked.Broadcast();
+	TestEqual(TEXT("끝점 미리보기는 적용값을 바꾸지 않는다"), Progression->GetAdmissionFee(), 4);
+	CheckAppliedPresentation();
+	if (auto* Stage = Game->GetSubsystem<UFF_FestivalStageSubsystem>())
+	{
+		TGuardValue<EFF_FestivalStage> LiveStage(Stage->CurrentStage, EFF_FestivalStage::Live);
+		Reset->OnClicked.Broadcast();
+		TestTrue(TEXT("운영 중에는 잠금 안내가 남는다"), State->IsVisible() && !State->GetText().IsEmpty());
+		TestFalse(TEXT("운영 중 입장료 조작 비활성"), Increase->GetIsEnabled() || Decrease->GetIsEnabled() || Apply->GetIsEnabled());
+	}
+
+	// 월드/경제를 소유하지 않는 실제 WBP는 방문객을 0명이나 여유로 꾸미지 않는다.
+	TStrongObjectPtr<UFF_PrepPanelCheck> UnknownPanel(NewObject<UFF_PrepPanelCheck>(GetTransientPackage(), PanelClass));
+	if (!TestTrue(TEXT("소유자 없는 WBP 초기화"), UnknownPanel->Initialize())) return false;
+	const TSharedRef<SWidget> UnknownSurface = UnknownPanel->TakeWidget();
+	UnknownPanel->Debug_SetExpectedVisitors(INDEX_NONE, INDEX_NONE);
+	auto* UnknownVisitors = Cast<UTextBlock>(UnknownPanel->GetWidgetFromName(TEXT("Text_ExpectedVisitors")));
+	auto* UnknownRisk = Cast<UTextBlock>(UnknownPanel->GetWidgetFromName(TEXT("Text_CapacityRisk")));
+	auto* UnknownApply = Cast<UButton>(UnknownPanel->GetWidgetFromName(TEXT("Button_AdmissionApply")));
+	if (!TestNotNull(TEXT("소유자 없는 방문객 표시"), UnknownVisitors) ||
+		!TestNotNull(TEXT("소유자 없는 수용 위험 표시"), UnknownRisk) ||
+		!TestNotNull(TEXT("소유자 없는 적용 버튼"), UnknownApply)) return false;
+	TestTrue(TEXT("소유자 없으면 예상 방문객 미확인 유지"), UnknownVisitors->GetText().ToString().Contains(TEXT("알 수")));
+	TestTrue(TEXT("소유자 없으면 수용 위험 판정 불가 유지"), UnknownRisk->GetText().ToString().Contains(TEXT("판정 불가")));
+	TestFalse(TEXT("소유자 없는 입장료 적용 비활성"), UnknownApply->GetIsEnabled());
+	return true;
+}
+
+#endif // WITH_EDITOR
 
 #endif // WITH_DEV_AUTOMATION_TESTS

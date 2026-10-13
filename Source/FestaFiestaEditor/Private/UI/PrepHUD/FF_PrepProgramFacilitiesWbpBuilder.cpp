@@ -120,12 +120,11 @@ namespace FFPrepProgramFacilitiesBuilder
 		auto* Select = Button(BP, Tree, TEXT("Button_Select"), *SelectContent);
 		FButtonStyle SelectStyle = Select->GetStyle();
 		SelectStyle.Normal = Brush(FLinearColor::Transparent, 6.f);
-		SelectStyle.Hovered = Brush(SkyWash, 6.f);
-		SelectStyle.Pressed = Brush(Color(225, 242, 248), 6.f);
+		SelectStyle.Hovered = Brush(FLinearColor::Transparent, 6.f);
+		SelectStyle.Pressed = Brush(FLinearColor::Transparent, 6.f);
 		SelectStyle.Disabled = Brush(FLinearColor::Transparent, 6.f);
 		SelectStyle.NormalPadding = SelectStyle.PressedPadding = FMargin(9.f, 8.f);
 		Select->SetStyle(SelectStyle);
-		Select->SetToolTipText(LOCTEXT("SelectTooltip", "편성할 시설로 선택"));
 		CastChecked<UButtonSlot>(SelectContent->Slot)->SetHorizontalAlignment(HAlign_Fill);
 		Column(*Content, *Select, FMargin(0.f), true);
 		auto* LocateCopy = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_Locate"));
@@ -134,6 +133,8 @@ namespace FFPrepProgramFacilitiesBuilder
 		CenterChildren(*LocateCopy);
 		auto* Locate = Button(BP, Tree, TEXT("Button_Locate"), *LocateCopy);
 		FButtonStyle LocateStyle = Locate->GetStyle();
+		for (FSlateBrush* State : { &LocateStyle.Normal, &LocateStyle.Hovered, &LocateStyle.Pressed, &LocateStyle.Disabled })
+			State->TintColor = FLinearColor::Transparent;
 		LocateStyle.NormalPadding = LocateStyle.PressedPadding = FMargin(6.f, 4.f);
 		Locate->SetStyle(LocateStyle);
 		Locate->SetToolTipText(LOCTEXT("LocateTooltip", "시설 위치를 확인합니다. 프로그램을 다시 열면 선택이 유지됩니다."));

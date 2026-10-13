@@ -122,10 +122,9 @@ struct FESTAFIESTA_API FFF_PrepCheckRules
  * 근거가 되는 화면에서 빈칸은 "문제 없음"으로 읽힌다.
  *
  * 구성 —
- *   카드 4장   날씨(선택 가능) · 일일 목표 · 예상 방문객 · 보유 금화
- *   수용 위험  예상 방문객 vs Zone 정원 합. 색 + 아이콘 + 문구
+ *   카드 3장   날씨(선택 가능) · 일일 목표 · 예상 방문객과 수용 위험
  *   요약       인력 · 프로그램 · (마지막 날) 피날레
- *   견적표     고용비 · 예상 입장료 수입 · 목표 보너스
+ *   견적표     고용비 · 예상 입장료 수입
  *   버튼       `배치 계속하기` · `개장하기`
  *
  * === ★ 날씨 선택이 여기 있는 이유 ===
@@ -142,6 +141,7 @@ public:
 	UFF_PrepPanelCheck(const FObjectInitializer& ObjectInitializer);
 
 	bool UsesCompactLayout() const { return bUseCompactLayout; }
+	bool UsesBalancedLayout() const { return bUseBalancedLayout; }
 
 	/**
 	 * 소유자 데이터가 없는 프리뷰에만 예상 방문객을 넣는다. 실제 게임에서는 ViewModel 값이 우선한다.
@@ -259,6 +259,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
 	TObjectPtr<UTextBlock> Text_AdmissionFeeRange;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionFeeMin;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionFeeMax;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
 	TObjectPtr<UTextBlock> Text_AdmissionFeeState;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
 	TObjectPtr<UTextBlock> Text_AdmissionPreviewDelta;
@@ -276,7 +280,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionDeltaFormat;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionNoChangeText;
 
-	// --- 카드 4장 ---
+	// --- 요약 카드 (금화 바인딩은 이전 WBP 호환용) ---
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_DayLabel;
@@ -393,6 +397,10 @@ protected:
 	/** 간소화한 점검 WBP에서만 중복 안내를 접는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check")
 	bool bUseCompactLayout = false;
+
+	/** 세 요약 카드와 가로 입장료 편집을 사용하는 WBP의 간결한 상태 표시. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check")
+	bool bUseBalancedLayout = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
 	FText DayLabelFormat;

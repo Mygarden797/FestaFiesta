@@ -523,9 +523,12 @@ void UFF_PrepPanelCheck::RefreshAdmission()
 		? FText::Format(AdmissionRangeFormat, FFormatNamedArguments{
 			{TEXT("Min"), FText::AsNumber(AdmissionMin)}, {TEXT("Max"), FText::AsNumber(AdmissionMax)},
 			{TEXT("Reference"), FText::AsNumber(Reference)}}) : FText::GetEmpty());
+	SetTextOrHide(Text_AdmissionFeeMin, bAdmissionRangeValid ? FText::AsNumber(AdmissionMin) : FText::GetEmpty());
+	SetTextOrHide(Text_AdmissionFeeMax, bAdmissionRangeValid ? FText::AsNumber(AdmissionMax) : FText::GetEmpty());
 	SetTextOrHide(Text_AdmissionFeeState, !bAdmissionRangeValid ? AdmissionUnavailableText
 		: (!AdmissionResultText.IsEmpty() ? AdmissionResultText
-			: (!VM->CanSetAdmissionFeeNow() ? AdmissionLockedText : (HasAdmissionDraft() ? AdmissionDraftText : AdmissionAppliedText))));
+			: (!VM->CanSetAdmissionFeeNow() ? AdmissionLockedText : (HasAdmissionDraft() ? AdmissionDraftText
+				: (bUseBalancedLayout ? FText::GetEmpty() : AdmissionAppliedText)))));
 	if (bAdmissionRangeValid)
 	{
 		// 입장료 이벤트 직후의 VM 방문객 캐시는 아직 이전 값일 수 있어 원본 예보를 읽는다.
@@ -539,6 +542,12 @@ void UFF_PrepPanelCheck::RefreshAdmission()
 			: FText::Format(AdmissionDeltaFormat, FFormatNamedArguments{
 				{TEXT("Sign"), FText::FromString(Delta > 0 ? TEXT("+") : TEXT("−"))},
 				{TEXT("Count"), FText::AsNumber(FMath::Abs(Delta))}}));
+		if (bUseBalancedLayout)
+		{
+			// 예상 방문객 카드가 상단으로 이동해도 미적용 예보임을 분명히 알린다.
+			SetTextOrHide(Text_AdmissionPreviewDelta, HasAdmissionDraft()
+				? LOCTEXT("BalancedForecastDraft", "변경 입장료 미리보기") : FText::GetEmpty());
+		}
 	}
 	else SetTextOrHide(Text_AdmissionPreviewDelta, Unknown);
 	SetTextOrHide(Text_AdmissionPreviewRevenue, ExpectedAdmissionRevenue >= 0
@@ -584,7 +593,8 @@ void UFF_PrepPanelCheck::HandleAdmissionApply()
 	bAdmissionRequestInFlight = false;
 	// 동일 값은 성공해도 이벤트가 없으므로 반환 뒤 확정 값을 다시 읽는다.
 	AppliedAdmissionFee = DraftAdmissionFee = VM->GetAdmissionFeeGold();
-	AdmissionResultText = UFF_EconomyDisplayTextLibrary::GetAdmissionFeeResultText(Result);
+	AdmissionResultText = bUseBalancedLayout && Result == EFF_AdmissionFeeResult::Success
+		? FText::GetEmpty() : UFF_EconomyDisplayTextLibrary::GetAdmissionFeeResultText(Result);
 	RefreshAll();
 }
 
@@ -671,6 +681,17 @@ void UFF_PrepPanelCheck::RefreshCapacity()
 		RiskText = LOCTEXT("PrepCheck_RiskUnknown", "? 판정 불가 — 예상 방문객이나 정원을 아직 읽지 못했습니다");
 		break;
 	}
+	if (bUseBalancedLayout)
+	{
+		if (Text_CapacityRisk) Text_CapacityRisk->SetToolTipText(RiskText);
+		switch (Risk)
+		{
+		case EFF_PrepCapacityRisk::Comfortable: break;
+		case EFF_PrepCapacityRisk::Caution: RiskText = LOCTEXT("BalancedCapacityCaution", "△ 주의"); break;
+		case EFF_PrepCapacityRisk::Danger: RiskText = LOCTEXT("BalancedCapacityDanger", "✕ 위험"); break;
+		default: RiskText = LOCTEXT("BalancedCapacityUnknown", "? 판정 불가"); break;
+		}
+	}
 	SetTextOrHide(Text_CapacityRisk, RiskText);
 
 	// 판정의 근거를 함께 보여준다. 결론만 있으면 왜 그런지 알 수 없다.
@@ -690,6 +711,13 @@ void UFF_PrepPanelCheck::RefreshCapacity()
 		Detail = FText::Format(
 			LOCTEXT("PrepCheck_CapacityDetail", "정원 {0}명 대비 예상 {1}명"),
 			FText::AsNumber(SoftCapacity), FText::AsNumber(WorstCaseVisitors));
+	}
+	if (bUseBalancedLayout)
+	{
+		if (Text_CapacityDetail) Text_CapacityDetail->SetToolTipText(Detail);
+		Detail = SoftCapacity >= 0
+			? FText::Format(LOCTEXT("BalancedCapacityDetail", "정원 {0}명"), FText::AsNumber(SoftCapacity))
+			: LOCTEXT("BalancedCapacityUnavailable", "정원 확인 불가");
 	}
 	SetTextOrHide(Text_CapacityDetail, Detail);
 }

@@ -9,10 +9,14 @@
 #include "Blueprint/WidgetTree.h"
 #include "CommonInputSettings.h"
 #include "CommonTextBlock.h"
+#include "Components/CanvasPanel.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Editor.h"
+#include "Engine/Engine.h"
+#include "Engine/LocalPlayer.h"
+#include "GameFramework/PlayerController.h"
 #include "Framework/Application/SlateApplication.h"
 #include "ICommonInputModule.h"
 #include "InputCoreTypes.h"
@@ -56,6 +60,15 @@ struct FFF_AtlasCountryInputTestAccess
 	}
 
 	static void Refresh(UFF_AtlasCountryScreen& Screen) { Screen.RefreshFestivalAvailability(); }
+	static void ConfigureMap(UFF_AtlasCountryScreen& Screen, UCanvasPanel* Map, UClass* PinClass)
+	{
+		Screen.CanvasPanel_Map = Map;
+		Screen.PinButtonClass = PinClass;
+	}
+	static UWidget* DesiredFocus(const UFF_AtlasCountryScreen& Screen)
+	{
+		return Screen.NativeGetDesiredFocusTarget();
+	}
 	static void ReleaseSlate(UFF_AtlasCountryScreen& Screen) { Screen.ReleaseSlateResources(true); }
 	static FName Selected(const UFF_AtlasCountryScreen& Screen) { return Screen.SelectedFestivalId; }
 	static UFF_AtlasPinButton* Pin(const UFF_AtlasCountryScreen& Screen, FName Id)
@@ -74,14 +87,18 @@ namespace FFAtlasCountryInputTests
 		UFF_AtlasPinButton* FirstPin = nullptr;
 		UFF_AtlasPinButton* SecondPin = nullptr;
 		UFF_AtlasPinButton* Start = nullptr;
+		UFF_AtlasPinButton* Back = nullptr;
 		UTextBlock* Reason = nullptr;
 		UImage* Lock = nullptr;
+		TStrongObjectPtr<ULocalPlayer> LocalPlayer;
+		TWeakObjectPtr<APlayerController> Controller;
 		TSharedPtr<SVirtualWindow> Window;
 		TSharedPtr<SWidget> PreviousFocus;
 		TUniquePtr<TGuardValue<TSoftObjectPtr<UFF_FestivalAtlasCatalog>>> CatalogSetting;
 
 		~FFixture()
 		{
+			if (Screen && Screen->IsActivated()) Screen->DeactivateWidget();
 			if (Window)
 			{
 				FSlateApplication::Get().ClearKeyboardFocus();
@@ -90,6 +107,13 @@ namespace FFAtlasCountryInputTests
 				Window.Reset();
 				if (Screen) FFF_AtlasCountryInputTestAccess::ReleaseSlate(*Screen);
 				if (PreviousFocus) FSlateApplication::Get().SetKeyboardFocus(PreviousFocus);
+			}
+			if (Controller.IsValid())
+			{
+				if (UWorld* World = Controller->GetWorld()) World->RemoveController(Controller.Get());
+				Controller->Player = nullptr;
+				if (LocalPlayer) LocalPlayer->PlayerController = nullptr;
+				Controller->Destroy();
 			}
 		}
 
@@ -108,7 +132,7 @@ namespace FFAtlasCountryInputTests
 			return Button;
 		}
 
-		bool Initialize(FAutomationTestBase& Test)
+		bool Initialize(FAutomationTestBase& Test, bool bRebuildMapOnActivation = false)
 		{
 			if (!Test.TestTrue(TEXT("Slate 초기화"), FSlateApplication::IsInitialized())) return false;
 			UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
@@ -124,6 +148,7 @@ namespace FFAtlasCountryInputTests
 				Entry.FestivalId = Index == 0 ? TEXT("InputTestFirst") : TEXT("InputTestSecond");
 				Entry.FestivalName = FText::FromName(Entry.FestivalId);
 				Entry.bUnlocked = true;
+				Entry.MapPosition = FVector2D(Index == 0 ? 0.25 : 0.75, 0.5);
 				Entry.Level = TSoftObjectPtr<UWorld>(FSoftObjectPath(TEXT("/Engine/Maps/Entry.Entry")));
 				Catalog->Entries.Add(Entry);
 			}
@@ -135,20 +160,49 @@ namespace FFAtlasCountryInputTests
 			UWidgetTree& Tree = *Screen->WidgetTree;
 			auto* Root = Tree.ConstructWidget<UVerticalBox>();
 			Tree.RootWidget = Root;
-			auto* Back = MakeButton(Tree, TEXT("Back"));
+			Back = MakeButton(Tree, TEXT("Back"));
 			Start = MakeButton(Tree, TEXT("Start"));
-			FirstPin = MakeButton(Tree, TEXT("FirstPin"));
-			SecondPin = MakeButton(Tree, TEXT("SecondPin"));
 			Reason = Tree.ConstructWidget<UTextBlock>();
 			Lock = Tree.ConstructWidget<UImage>();
 			Root->AddChildToVerticalBox(Back);
-			Root->AddChildToVerticalBox(FirstPin);
-			Root->AddChildToVerticalBox(SecondPin);
+			if (bRebuildMapOnActivation)
+			{
+				// 게임 인스턴스/저장 서브시스템을 시작하지 않고 SetFocus의 실제 소유자만 만든다.
+				// 컨트롤러는 현재 에디터 월드에 잠시 존재하는 Transient 액터이며 종료 시 제거한다.
+				LocalPlayer.Reset(NewObject<ULocalPlayer>(GEngine));
+				LocalPlayer->SetControllerId(0);
+				FActorSpawnParameters SpawnParameters;
+				SpawnParameters.ObjectFlags = RF_Transient;
+				Controller = World->SpawnActor<APlayerController>(SpawnParameters);
+				if (!Test.TestTrue(TEXT("포커스용 임시 로컬 컨트롤러"), Controller.IsValid())) return false;
+				Controller->Player = LocalPlayer.Get();
+				Controller->SetAsLocalPlayerController();
+				LocalPlayer->PlayerController = Controller.Get();
+				// 에디터 월드는 게임의 액터 초기화 단계를 거치지 않는다. FLocalPlayerContext는
+				// PlayerController 필드 대신 월드의 컨트롤러 목록을 조회하므로 직접 등록한다.
+				World->AddController(Controller.Get());
+				Screen->SetPlayerContext(FLocalPlayerContext(Controller.Get()));
+				if (!Test.TestTrue(TEXT("화면 생성 시 실제 로컬 소유 컨트롤러가 유효"),
+					Screen->GetOwningPlayer() == Controller.Get())) return false;
+				auto* Map = Tree.ConstructWidget<UCanvasPanel>();
+				Root->AddChildToVerticalBox(Map);
+				UClass* PinClass = LoadClass<UFF_AtlasPinButton>(nullptr,
+					TEXT("/Game/FestaFiesta/UI/Atlas/WBP_FF_AtlasPin_Natural.WBP_FF_AtlasPin_Natural_C"));
+				if (!Test.TestNotNull(TEXT("실제 국가 지도 핀 클래스"), PinClass)) return false;
+				FFF_AtlasCountryInputTestAccess::ConfigureMap(*Screen, Map, PinClass);
+			}
+			else
+			{
+				FirstPin = MakeButton(Tree, TEXT("FirstPin"));
+				SecondPin = MakeButton(Tree, TEXT("SecondPin"));
+				Root->AddChildToVerticalBox(FirstPin);
+				Root->AddChildToVerticalBox(SecondPin);
+			}
 			Root->AddChildToVerticalBox(Start);
 			Root->AddChildToVerticalBox(Reason);
 			Root->AddChildToVerticalBox(Lock);
 			FFF_AtlasCountryInputTestAccess::Configure(*Screen, Start, Back, Reason, Lock);
-			for (int32 Index = 0; Index < Catalog->Entries.Num(); ++Index)
+			for (int32 Index = 0; !bRebuildMapOnActivation && Index < Catalog->Entries.Num(); ++Index)
 			{
 				const FFF_FestivalAtlasEntry& Entry = Catalog->Entries[Index];
 				UFF_AtlasPinButton* Pin = Index == 0 ? FirstPin : SecondPin;
@@ -166,6 +220,15 @@ namespace FFAtlasCountryInputTests
 			FSlateApplication::Get().RegisterVirtualWindow(Window.ToSharedRef());
 			Window->SlatePrepass();
 			return true;
+		}
+
+		void ActivateMap()
+		{
+			if (Screen->IsActivated()) Screen->DeactivateWidget();
+			Screen->ActivateWidget();
+			Window->SlatePrepass();
+			FirstPin = FFF_AtlasCountryInputTestAccess::Pin(*Screen, Catalog->Entries[0].FestivalId);
+			SecondPin = FFF_AtlasCountryInputTestAccess::Pin(*Screen, Catalog->Entries[1].FestivalId);
 		}
 
 		bool FocusPin(FAutomationTestBase& Test, UFF_AtlasPinButton& Pin)
@@ -203,6 +266,69 @@ bool FFF_AtlasCountryEnterInputTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("키를 누른 채 유지해도 추가 시작 요청 없음"), Fixture.Observer->StartRequests, Before + 1);
 	}
 	TestEqual(TEXT("핀 확정이 뒤로 요청을 만들지 않음"), Fixture.Observer->BackRequests, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AtlasCountryInitialFocusTest,
+	"FestaFiesta.UI.AtlasCountryInput.InitialFestivalFocusRoutesKeyboard",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_AtlasCountryInitialFocusTest::RunTest(const FString& Parameters)
+{
+	FFAtlasCountryInputTests::FFixture Fixture;
+	if (!Fixture.Initialize(*this, /*bRebuildMapOnActivation=*/true)) return false;
+	Fixture.Catalog->Entries[0].bUnlocked = false;
+	Fixture.Catalog->Entries[0].LockReason = FText::FromString(TEXT("준비 중"));
+	FSlateApplication::Get().ClearKeyboardFocus();
+	Fixture.ActivateMap();
+	if (!TestNotNull(TEXT("Rebuild가 첫 번째 핀을 생성"), Fixture.FirstPin)
+		|| !TestNotNull(TEXT("Rebuild가 두 번째 핀을 생성"), Fixture.SecondPin)) return false;
+	TestTrue(TEXT("동적으로 생성한 핀도 화면의 로컬 소유자를 상속"),
+		Fixture.SecondPin->GetOwningPlayer() == Fixture.Controller.Get());
+	TestEqual(TEXT("첫 항목이 잠기면 첫 플레이 가능 축제를 자동 선택"),
+		FFF_AtlasCountryInputTestAccess::Selected(*Fixture.Screen), Fixture.SecondPin->GetPinId());
+	TestTrue(TEXT("CommonUI 초기 포커스 대상은 선택된 축제 핀"),
+		FFF_AtlasCountryInputTestAccess::DesiredFocus(*Fixture.Screen) == Fixture.SecondPin);
+	if (!TestTrue(TEXT("마우스 호버나 수동 FocusPin 없이 활성화만으로 실제 핀 자식에 포커스"),
+		Fixture.SecondPin->HasFocusedDescendants())) return false;
+
+	// 위젯의 Preview 함수를 직접 부르면 포커스가 끊긴 결함을 놓친다.
+	// Slate가 실제 포커스 경로를 찾아 국가 화면까지 키 이벤트를 전달하게 한다.
+	const auto RouteKey = [](FKey Key)
+	{
+		FSlateApplication& Slate = FSlateApplication::Get();
+		const bool bHandled = Slate.ProcessKeyDownEvent(FKeyEvent(Key, FModifierKeysState(), 0, false, 0, 0));
+		Slate.ProcessKeyUpEvent(FKeyEvent(Key, FModifierKeysState(), 0, false, 0, 0));
+		return bHandled;
+	};
+	TestTrue(TEXT("진입 직후 A 입력을 실제 Slate 경로에서 처리"), RouteKey(EKeys::A));
+	TestEqual(TEXT("첫 A부터 왼쪽 축제로 이동"),
+		FFF_AtlasCountryInputTestAccess::Selected(*Fixture.Screen), Fixture.FirstPin->GetPinId());
+	TestTrue(TEXT("이동 후 실제 포커스도 왼쪽 핀으로 이동"), Fixture.FirstPin->HasFocusedDescendants());
+	TestTrue(TEXT("D 입력도 실제 Slate 경로에서 처리"), RouteKey(EKeys::D));
+	TestEqual(TEXT("D로 플레이 가능 축제에 복귀"),
+		FFF_AtlasCountryInputTestAccess::Selected(*Fixture.Screen), Fixture.SecondPin->GetPinId());
+	TestTrue(TEXT("Enter 입력을 실제 Slate 경로에서 처리"), RouteKey(EKeys::Enter));
+	TestEqual(TEXT("선택한 플레이 가능 축제의 시작 요청"), Fixture.Observer->StartRequests, 1);
+	TestTrue(TEXT("Escape 입력을 실제 Slate 경로에서 처리"), RouteKey(EKeys::Escape));
+	TestEqual(TEXT("실제 Escape 경로의 뒤로 요청"), Fixture.Observer->BackRequests, 1);
+
+	Fixture.Catalog->Entries[1].bUnlocked = false;
+	Fixture.Catalog->Entries[1].LockReason = FText::FromString(TEXT("준비 중"));
+	Fixture.ActivateMap();
+	TestEqual(TEXT("재진입 시 전부 잠겼으면 첫 축제의 안내를 선택"),
+		FFF_AtlasCountryInputTestAccess::Selected(*Fixture.Screen), Fixture.FirstPin->GetPinId());
+	TestTrue(TEXT("잠긴 첫 축제에도 포커스하여 사유 확인 가능"), Fixture.FirstPin->HasFocusedDescendants());
+	TestEqual(TEXT("전부 잠긴 상태에서는 시작 버튼 숨김"), Fixture.Start->GetVisibility(), ESlateVisibility::Collapsed);
+
+	AddExpectedMessage(TEXT("국가 `InputTestEmptyCountry` 에 축제가 없다"),
+		ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 1);
+	Fixture.Screen->SetCountry(TEXT("InputTestEmptyCountry"));
+	TestTrue(TEXT("빈 국가로 전환하면 이전 축제 선택 제거"),
+		FFF_AtlasCountryInputTestAccess::Selected(*Fixture.Screen).IsNone());
+	TestTrue(TEXT("빈 국가의 포커스 대상은 지구본 복귀 버튼"),
+		FFF_AtlasCountryInputTestAccess::DesiredFocus(*Fixture.Screen) == Fixture.Back);
+	TestTrue(TEXT("빈 국가에서도 실제 복귀 버튼에 포커스"), Fixture.Back->HasFocusedDescendants());
 	return true;
 }
 

@@ -6,6 +6,7 @@
 #include "AssetCompilingManager.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Components/Button.h"
+#include "Components/PanelWidget.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Components/WrapBox.h"
@@ -79,6 +80,7 @@ namespace FFPrepCheckSkyLayoutTest
 		const bool bReady = Kind == EFixture::Ready || Kind == EFixture::Morning;
 		const bool bMorning = Kind == EFixture::Morning;
 		const bool bCompact = Panel.UsesCompactLayout();
+		const bool bBalanced = Panel.UsesBalancedLayout();
 		const TPair<const TCHAR*, const TCHAR*> Values[] = {
 			{ TEXT("Text_DayLabel"), bMorning ? TEXT("3일차") : TEXT("1일차") },
 			{ TEXT("Text_Weather"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("맑음") },
@@ -86,8 +88,8 @@ namespace FFPrepCheckSkyLayoutTest
 			{ TEXT("Text_DailyGoalBonus"), bUnknown ? TEXT("달성 보너스 미확인") : TEXT("달성 시 +300 Gold") },
 			{ TEXT("Text_ExpectedVisitors"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("425명") },
 			{ TEXT("Text_Gold"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("9,700") },
-			{ TEXT("Text_CapacityRisk"), bUnknown ? TEXT("? 판정 불가 — 예상 방문객이나 정원을 아직 읽지 못했습니다") : TEXT("○ 여유") },
-			{ TEXT("Text_CapacityDetail"), bUnknown ? TEXT("Zone 정원을 읽지 못했습니다. 시설을 놓으면 계산됩니다.") : TEXT("정원 62,887명 대비 최대 예상 425명") },
+			{ TEXT("Text_CapacityRisk"), bUnknown ? (bBalanced ? TEXT("? 판정 불가") : TEXT("? 판정 불가 — 예상 방문객이나 정원을 아직 읽지 못했습니다")) : TEXT("○ 여유") },
+			{ TEXT("Text_CapacityDetail"), bUnknown ? (bBalanced ? TEXT("정원 확인 불가") : TEXT("Zone 정원을 읽지 못했습니다. 시설을 놓으면 계산됩니다.")) : (bBalanced ? TEXT("정원 62,887명") : TEXT("정원 62,887명 대비 최대 예상 425명")) },
 			{ TEXT("Text_StaffSummary"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("6명 (기본 6 · 고용 0)") },
 			{ TEXT("Text_ProgramSummary"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("0개 편성") },
 			{ TEXT("Text_RequiredFacilities"), bUnknown ? TEXT("필수 시설 정보를 아직 읽지 못했습니다.") : bReady ? TEXT("메인공연장 · 1/1 · ✓ 설치 완료") : TEXT("메인공연장 · 0/1 · ! 추가 설치 필요") },
@@ -187,11 +189,13 @@ namespace FFPrepCheckSkyLayoutTest
 	{
 		const FString Context = FString::Printf(TEXT("Check_%s_%dx%d"), *Variant, Size.X, Size.Y);
 		const bool bCompact = Panel.UsesCompactLayout();
+		const bool bBalanced = Panel.UsesBalancedLayout();
 		auto* Scroll = Cast<UScrollBox>(Panel.GetWidgetFromName(TEXT("ScrollBox_Body")));
 		UWidget* Body = Panel.GetWidgetFromName(TEXT("VerticalBox_Body"));
 		UWidget* Header = Panel.GetWidgetFromName(TEXT("HorizontalBox_Header"));
 		UWidget* Footer = Panel.GetWidgetFromName(TEXT("Border_Footer"));
-		auto* Metrics = Cast<UWrapBox>(Panel.GetWidgetFromName(TEXT("WrapBox_Metrics")));
+		auto* Metrics = Cast<UPanelWidget>(Panel.GetWidgetFromName(bBalanced
+			? TEXT("HorizontalBox_BalancedMetrics") : TEXT("WrapBox_Metrics")));
 		const bool bHasAdmissionSection = Panel.GetWidgetFromName(TEXT("Border_AdmissionSection")) != nullptr;
 		if (!Test.TestNotNull(Context + TEXT(" 스크롤 본문"), Scroll) || !Test.TestNotNull(Context + TEXT(" 전체 본문"), Body) ||
 			!Test.TestNotNull(Context + TEXT(" 헤더"), Header) || !Test.TestNotNull(Context + TEXT(" 푸터"), Footer) ||
@@ -282,14 +286,22 @@ namespace FFPrepCheckSkyLayoutTest
 		{ Test.TestTrue(Context + TEXT(" 닫기는 고정 헤더 안에 남는다"), Contains(HeaderRect, Close->GetCachedGeometry().GetLayoutBoundingRect())); }
 		else { Test.AddError(Context + TEXT(" 닫기 버튼이 없다")); }
 		Test.TestEqual(Context + TEXT(" 입장료 영역 유무에 맞는 요약 카드 수"),
-			Metrics->GetChildrenCount(), bHasAdmissionSection ? 3 : 4);
+			Metrics->GetChildrenCount(), bBalanced || bHasAdmissionSection ? 3 : 4);
 		if (bHasAdmissionSection)
 		{
 			UWidget* ForecastCard = Panel.GetWidgetFromName(TEXT("SizeBox_ExpectedVisitorsCard"));
 			if (Test.TestNotNull(Context + TEXT(" 예상 방문객 카드"), ForecastCard))
 			{
-				Test.TestTrue(Context + TEXT(" 예상 방문객은 입장료 미리보기로 분리된다"), ForecastCard->GetParent() != Metrics);
+				Test.TestTrue(Context + TEXT(" 예상 방문객은 현재 레이아웃의 예보 영역에 놓인다"),
+					bBalanced ? ForecastCard->GetParent() == Metrics : ForecastCard->GetParent() != Metrics);
 			}
+		}
+		if (bBalanced)
+		{
+			UWidget* OldMetrics = Panel.GetWidgetFromName(TEXT("WrapBox_Metrics"));
+			if (!Test.TestNotNull(Context + TEXT(" 보존된 기존 요약 묶음"), OldMetrics)) return false;
+			Test.TestEqual(Context + TEXT(" 기존 요약 묶음은 여백을 남기지 않는다"),
+				OldMetrics->GetVisibility(), ESlateVisibility::Collapsed);
 		}
 		if (Size.X >= 1080)
 		{
