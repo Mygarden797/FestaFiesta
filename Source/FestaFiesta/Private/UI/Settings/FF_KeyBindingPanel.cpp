@@ -37,9 +37,14 @@ namespace
 		TEXT("/Game/FestaFiesta/UI/Fonts/F_UI_Pretendard.F_UI_Pretendard");
 	const FName FixedBuildModeBindingName(TEXT("FF.Fixed.BuildMode"));
 	const FName FixedNearbyPlacementBindingName(TEXT("FF.Fixed.NearbyPlacement"));
+	const FName FixedCharacterSprintBindingName(TEXT("FF.Fixed.CharacterSprint"));
 
 	FText GetFixedActionLabel(const FKey& Key)
 	{
+		if (Key == EKeys::LeftAlt)
+		{
+			return LOCTEXT("CharacterSprintFixedAction", "달리기 켜기 / 끄기 (캐릭터 시점)");
+		}
 		return Key == UFF_KeyBindingPanel::GetFixedNearbyPlacementKey()
 			? LOCTEXT("NearbyPlacementFixedAction", "가까운 빈자리로 이동 (시설 배치 중)")
 			: LOCTEXT("BuildModeFixedAction", "건축 모드 / 시설 목록 전환");
@@ -391,7 +396,7 @@ FKey UFF_KeyBindingPanel::GetFixedNearbyPlacementKey()
 
 bool UFF_KeyBindingPanel::IsFixedActionKey(const FKey& Key)
 {
-	return Key == GetFixedBuildModeKey() || Key == GetFixedNearbyPlacementKey();
+	return Key == GetFixedBuildModeKey() || Key == GetFixedNearbyPlacementKey() || Key == EKeys::LeftAlt;
 }
 
 FKey UFF_KeyBindingPanel::GetDefaultKeyForMapping(const FName MappingName)
@@ -912,7 +917,8 @@ void UFF_KeyBindingPanel::BuildFixedBindingRows()
 	};
 	const FFixedBindingRow FixedRows[] = {
 		{FixedBuildModeBindingName, TEXT("KeyBindingFixedAction_BuildMode"), GetFixedBuildModeKey()},
-		{FixedNearbyPlacementBindingName, TEXT("KeyBindingFixedAction_NearbyPlacement"), GetFixedNearbyPlacementKey()}
+		{FixedNearbyPlacementBindingName, TEXT("KeyBindingFixedAction_NearbyPlacement"), GetFixedNearbyPlacementKey()},
+		{FixedCharacterSprintBindingName, TEXT("KeyBindingFixedAction_CharacterSprint"), EKeys::LeftAlt}
 	};
 	for (const FFixedBindingRow& Fixed : FixedRows)
 	{
@@ -951,13 +957,15 @@ void UFF_KeyBindingPanel::HandleKeyChosen(const FKey Key)
 
 void UFF_KeyBindingPanel::HandleMappingChosen(const FName MappingName)
 {
-	if (MappingName == FixedBuildModeBindingName || MappingName == FixedNearbyPlacementBindingName)
+	if (MappingName == FixedBuildModeBindingName || MappingName == FixedNearbyPlacementBindingName
+		|| MappingName == FixedCharacterSprintBindingName)
 	{
 		SetCaptureInProgress(false);
 		SelectedMappingName = NAME_None;
 		RefreshBindings();
-		InspectKey(MappingName == FixedNearbyPlacementBindingName
-			? GetFixedNearbyPlacementKey() : GetFixedBuildModeKey());
+		InspectKey(MappingName == FixedCharacterSprintBindingName
+			? EKeys::LeftAlt
+			: (MappingName == FixedNearbyPlacementBindingName ? GetFixedNearbyPlacementKey() : GetFixedBuildModeKey()));
 		SetKeyboardFocus();
 		return;
 	}
@@ -1034,7 +1042,7 @@ FText UFF_KeyBindingPanel::GetCurrentBindingSummary(const FKey Key) const
 		Summary += TEXT("\n");
 		Summary += FText::Format(
 			LOCTEXT("FixedActionConflictWarning",
-				"주의: {0}의 고정 건축 입력과 사용자 동작이 함께 실행될 수 있습니다. 사용자 동작을 다른 키로 변경하거나 기본값을 복원하세요."),
+				"주의: {0}의 고정 입력과 사용자 동작이 함께 실행될 수 있습니다. 사용자 동작을 다른 키로 변경하거나 기본값을 복원하세요."),
 			KeyDisplayText(Key)).ToString();
 	}
 	return FText::FromString(MoveTemp(Summary));
@@ -1057,7 +1065,8 @@ void UFF_KeyBindingPanel::TryAssignKey(const FKey& NewKey)
 		SetStatus(LOCTEXT("SettingsUnavailable", "키 설정 서비스를 사용할 수 없습니다."), true);
 		return;
 	}
-	if (IsFixedActionKey(NewKey))
+	// The read-only Alt sprint guide does not change which keys users can assign.
+	if (NewKey == GetFixedBuildModeKey() || NewKey == GetFixedNearbyPlacementKey())
 	{
 		SetStatus(FText::Format(
 			LOCTEXT("FixedActionKeyRejected", "{0} 키는 {1}에 고정되어 다른 동작에 지정할 수 없습니다."),

@@ -341,6 +341,28 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
                     TestTrue(ContextName + TEXT(": physical keyboard key is visible: ") + Key,
                         IsRendered(Widget->GetWidgetFromName(FName(*Name))));
                 }
+                for (const TCHAR* Stem : {TEXT("ShiftLock"), TEXT("Sprint")})
+                {
+                    const FName RowName(*(FString(TEXT("Row_BuildHelp")) + Stem));
+                    const UWidget* Row = Widget->GetWidgetFromName(RowName);
+                    TestTrue(ContextName + TEXT(": character shortcut fits the visible guide: ") + Stem,
+                        IsRendered(Row) && Contains(HelpViewRect, Bounds(Row)));
+                    if (!Row) continue;
+                    const FName CaptionName(*(FString(TEXT("Text_BuildHelp")) + Stem));
+                    if (const UWidget* Caption = Widget->GetWidgetFromName(CaptionName))
+                        TestTrue(ContextName + TEXT(": character shortcut caption fits: ") + Stem,
+                            Contains(Bounds(Row), Bounds(Caption)) &&
+                            Caption->GetCachedGeometry().GetLocalSize().X + 1.f >= Caption->GetDesiredSize().X);
+                }
+                for (const TCHAR* Key : {TEXT("ShiftLock"), TEXT("SprintAlt")})
+                {
+                    const FName KeyName(*(FString(TEXT("Text_BuildHelpKey_")) + Key));
+                    const UWidget* KeyText = Widget->GetWidgetFromName(KeyName);
+                    TestTrue(ContextName + TEXT(": complete character key label fits its keycap: ") + Key,
+                        IsRendered(KeyText) && KeyText->GetParent() &&
+                        Contains(Bounds(KeyText->GetParent()), Bounds(KeyText)) &&
+                        KeyText->GetCachedGeometry().GetLocalSize().X + 1.f >= KeyText->GetDesiredSize().X);
+                }
                 for (FName Name : {TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo")})
                 {
                     const UWidget* Action = Widget->GetWidgetFromName(Name);

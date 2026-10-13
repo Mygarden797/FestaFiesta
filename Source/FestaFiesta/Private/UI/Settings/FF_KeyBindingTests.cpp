@@ -195,6 +195,13 @@ bool FFF_KeyBindingDefaultKeyFallbackContractTest::RunTest(const FString& Parame
 		UFF_KeyBindingPanel::GetDefaultKeyForMapping(TEXT("FF.Unknown.Unassigned")).IsValid());
 	TestFalse(TEXT("잘못 노출되던 Sprint는 변경 가능한 기본 동작으로 남지 않는다"),
 		UFF_KeyBindingPanel::GetDefaultKeyForMapping(TEXT("FF.Character.Sprint")).IsValid());
+	TestTrue(TEXT("달리기 안내의 LeftAlt는 실제 캐릭터 IMC의 IA_Sprint와 일치한다"),
+		CharacterContext && CharacterContext->GetMappings().ContainsByPredicate(
+			[](const FEnhancedActionKeyMapping& Mapping)
+			{
+				return Mapping.Action && Mapping.Action->GetFName() == TEXT("IA_Sprint")
+					&& Mapping.Key == EKeys::LeftAlt;
+			}));
 
 	const UFF_KeyBindingPanel* Panel = GetDefault<UFF_KeyBindingPanel>();
 	TestNotNull(TEXT("기본키 요약을 위한 키 배치 패널 CDO를 로드한다"), Panel);
@@ -212,6 +219,9 @@ bool FFF_KeyBindingDefaultKeyFallbackContractTest::RunTest(const FString& Parame
 			ShiftSummary.Contains(TEXT("시점 고정 켜기 / 끄기 (Shift Lock)")));
 		TestFalse(TEXT("LeftShift를 달리기로 잘못 안내하지 않는다"),
 			ShiftSummary.Contains(TEXT("달리기")) || ShiftSummary.Contains(TEXT("전력 질주")));
+		const FString AltSummary = Panel->GetCurrentBindingSummary(EKeys::LeftAlt).ToString();
+		TestTrue(TEXT("LeftAlt는 캐릭터 달리기 켜기/끄기로 안내한다"),
+			AltSummary.Contains(TEXT("달리기 켜기 / 끄기")) && AltSummary.Contains(TEXT("캐릭터 시점")));
 		TestTrue(TEXT("사용되지 않는 F2는 미지정 액션을 꾸며내지 않는다"),
 			Panel->GetCurrentBindingSummary(EKeys::F2).ToString().Contains(TEXT("연결된 동작이 없습니다")));
 	}
@@ -380,7 +390,8 @@ bool FFF_KeyBindingFixedBuildModeContractTest::RunTest(const FString& Parameters
 	RuntimePanel->RefreshBindings();
 	for (const TPair<const TCHAR*, FKey> Fixed : {
 		TPair<const TCHAR*, FKey>(TEXT("KeyBindingFixedAction_BuildMode"), EKeys::B),
-		TPair<const TCHAR*, FKey>(TEXT("KeyBindingFixedAction_NearbyPlacement"), EKeys::N)})
+		TPair<const TCHAR*, FKey>(TEXT("KeyBindingFixedAction_NearbyPlacement"), EKeys::N),
+		TPair<const TCHAR*, FKey>(TEXT("KeyBindingFixedAction_CharacterSprint"), EKeys::LeftAlt)})
 	{
 		const auto* Row = Cast<UFF_KeyBindingActionButton>(RuntimePanel->WidgetTree->FindWidget(Fixed.Key));
 		TestTrue(*FString::Printf(TEXT("%s is an inspectable read-only fixed row"), Fixed.Key),
@@ -395,6 +406,13 @@ bool FFF_KeyBindingFixedBuildModeContractTest::RunTest(const FString& Parameters
 	});
 	TestTrue(TEXT("the keyboard diagram marks N as a fixed action"),
 		NearbyKey && Cast<UFF_KeyBindingKeyButton>(*NearbyKey)->IsFixedActionKey());
+	const auto* SprintKey = Widgets.FindByPredicate([](const UWidget* Widget)
+	{
+		const auto* KeyButton = Cast<UFF_KeyBindingKeyButton>(Widget);
+		return KeyButton && KeyButton->GetConfiguredKey() == EKeys::LeftAlt;
+	});
+	TestTrue(TEXT("the keyboard diagram marks left Alt as a fixed action"),
+		SprintKey && Cast<UFF_KeyBindingKeyButton>(*SprintKey)->IsFixedActionKey());
 	for (const FKey FixedKey : {EKeys::B, EKeys::N})
 	{
 		RuntimePanel->SelectedMappingName = JumpName;
@@ -426,6 +444,10 @@ bool FFF_KeyBindingFixedBuildModeContractTest::RunTest(const FString& Parameters
 	TestFalse(TEXT("clicking the fixed N action inspects it instead of starting capture"), RuntimePanel->IsCapturingKey());
 	TestTrue(TEXT("the fixed N row shows the nearby placement action in the inspector"),
 		RuntimePanel->Text_CaptureStatus->GetText().ToString().Contains(TEXT("가까운 빈자리로 이동")));
+	RuntimePanel->HandleMappingChosen(TEXT("FF.Fixed.CharacterSprint"));
+	TestFalse(TEXT("clicking the fixed Alt sprint action never starts rebinding"), RuntimePanel->IsCapturingKey());
+	TestTrue(TEXT("the fixed Alt row shows the sprint action in the inspector"),
+		RuntimePanel->Text_CaptureStatus->GetText().ToString().Contains(TEXT("달리기 켜기 / 끄기")));
 
 	return true;
 }
