@@ -774,7 +774,7 @@ void UFF_FacilityCodexScreen::RefreshShowcase()
 	}
 	if (Text_DetailRewardAmount) Text_DetailRewardAmount->SetText(!Entry ? FText::GetEmpty()
 		: Entry->DiscoveryRewardGold > 0
-			? FText::Format(LOCTEXT("DetailRewardAmount", "{0} G"), FText::AsNumber(Entry->DiscoveryRewardGold))
+			? FText::Format(LOCTEXT("DetailRewardAmount", "{0} 골드"), FText::AsNumber(Entry->DiscoveryRewardGold))
 			: bClaimed ? LOCTEXT("DetailRewardCollected", "수령 완료")
 				: LOCTEXT("DetailRewardNone", "보상 없음"));
 	if (Image_DetailRewardGold) Image_DetailRewardGold->SetVisibility(Entry && Entry->DiscoveryRewardGold > 0

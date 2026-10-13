@@ -767,7 +767,7 @@ UFF_LivePanelBase* UFF_LiveHudScreen::EnsurePanel(EFF_LiveTab Tab)
 		if (UFF_LivePlaceholderPanel* Placeholder = Cast<UFF_LivePlaceholderPanel>(Panel))
 		{
 			Placeholder->SetPlaceholderMessage(FText::Format(
-				LOCTEXT("LivePanel_Placeholder", "`{0}` 패널은 U6 에서 만듭니다."), DisplayName));
+				LOCTEXT("LivePanel_Placeholder", "{0} 화면을 불러오지 못했습니다."), DisplayName));
 		}
 	}
 

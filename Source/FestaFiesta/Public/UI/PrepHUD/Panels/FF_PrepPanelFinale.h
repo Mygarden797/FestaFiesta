@@ -86,6 +86,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")
 	FText CurrentBalanceLabel = NSLOCTEXT("FestaFiestaFinale", "CurrentBalance", "현재 잔액");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")
+	FText ShortageLabel = NSLOCTEXT("FestaFiestaFinale", "Shortage", "부족한 금액");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")
 	FText MissingValueText = NSLOCTEXT("FestaFiestaFinale", "Missing", "—");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")
 	FText PurchaseLabel = NSLOCTEXT("FestaFiestaFinale", "Purchase", "피날레 구매하기");
