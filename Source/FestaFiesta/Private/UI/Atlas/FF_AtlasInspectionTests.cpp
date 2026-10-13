@@ -3,7 +3,9 @@
 #if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 #include "Engine/World.h"
 #include "Camera/CameraActor.h"
+#include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Misc/ScopeExit.h"
 #include "UObject/UnrealType.h"
 #include "UI/Atlas/FF_AtlasGlobeActor.h"
 #include "UI/Atlas/FF_AtlasCameraRig.h"
@@ -20,6 +22,11 @@ bool FFF_AtlasInspectionLifecycle::RunTest(const FString& Parameters)
 		.CreatePhysicsScene(false).CreateNavigation(false).CreateAISystem(false).ShouldSimulatePhysics(false).SetTransactional(false);
 	// CreateWorld가 한 번 초기화하므로 InitializeNewWorld를 다시 호출하지 않는다.
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr, true, ERHIFeatureLevel::Num, &Values);
+	// 이 테스트는 조형물 선택·크기를 본다. 조형물은 기본으로 꺼져 있으므로 이 테스트 동안만 켠다.
+	UFF_AtlasSettings* Settings = GetMutableDefault<UFF_AtlasSettings>();
+	const bool bPreviousLandmarks = Settings->bShowLandmarks;
+	Settings->bShowLandmarks = true;
+	ON_SCOPE_EXIT { Settings->bShowLandmarks = bPreviousLandmarks; };
 	AFF_AtlasGlobeActor* Globe = World->SpawnActor<AFF_AtlasGlobeActor>();
 	Globe->RebuildPins();
 	TArray<FFF_AtlasPinState> Pins;
@@ -199,4 +206,64 @@ bool FFF_AtlasAuthoredCountryView::RunTest(const FString& Parameters)
 	World->DestroyWorld(false);
 	return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AtlasLandmarksOff,
+	"FestaFiesta.UI.AtlasInspection.LandmarksOffSetting",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_AtlasLandmarksOff::RunTest(const FString& Parameters)
+{
+	UFF_AtlasSettings* Settings = GetMutableDefault<UFF_AtlasSettings>();
+	const bool bPreviousLandmarks = Settings->bShowLandmarks;
+	ON_SCOPE_EXIT { Settings->bShowLandmarks = bPreviousLandmarks; };
+	const UWorld::InitializationValues Values = UWorld::InitializationValues().AllowAudioPlayback(false).RequiresHitProxies(false)
+		.CreatePhysicsScene(false).CreateNavigation(false).CreateAISystem(false).ShouldSimulatePhysics(false).SetTransactional(false);
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr, true, ERHIFeatureLevel::Num, &Values);
+	AFF_AtlasGlobeActor* Globe = World->SpawnActor<AFF_AtlasGlobeActor>();
+	UFF_FestivalAtlasCatalog* Catalog = NewObject<UFF_FestivalAtlasCatalog>(Globe);
+	FFF_AtlasCountryEntry Country;
+	Country.CountryId = TEXT("KR");
+	Country.Location = FFF_AtlasLatLong(0.f, 0.f);
+	Catalog->Countries = { Country };
+	FindFProperty<FSoftObjectProperty>(AFF_AtlasGlobeActor::StaticClass(), TEXT("CatalogOverride"))
+		->SetObjectPropertyValue_InContainer(Globe, Catalog);
+	Globe->SetOrientation(FFF_AtlasGlobeOrientation());
+	Globe->SetAutoSpinPaused(true);
+
+	// 조형물이 붙은 메시·조명 수. 지구 자체 메시는 국가 위치(앵커)에 붙어 있지 않다.
+	const auto CountLandmarkParts = [Globe, &Country](int32& OutMeshes, int32& OutLights)
+	{
+		OutMeshes = OutLights = 0;
+		FVector PinLocation;
+		if (!Globe->GetCountryPinWorldLocation(Country.CountryId, PinLocation)) { return false; }
+		TInlineComponentArray<UStaticMeshComponent*> Meshes(Globe);
+		for (const UStaticMeshComponent* Mesh : Meshes)
+		{
+			if (Mesh->GetAttachParent() && Mesh->GetAttachParent()->GetComponentLocation().Equals(PinLocation, 0.01)) { ++OutMeshes; }
+		}
+		TInlineComponentArray<UPointLightComponent*> Lights(Globe);
+		OutLights = Lights.Num();
+		return true;
+	};
+
+	int32 MeshCount = 0, LightCount = 0;
+	Settings->bShowLandmarks = false;
+	Globe->RebuildPins();
+	TArray<FFF_AtlasPinState> Pins;
+	Globe->GetPinStates(Pins);
+	TestEqual(TEXT("조형물을 꺼도 국가 위치(핀)는 남는다"), Pins.Num(), 1);
+	TestTrue(TEXT("국가 위치를 찾는다"), CountLandmarkParts(MeshCount, LightCount));
+	TestEqual(TEXT("조형물 메시를 만들지 않는다"), MeshCount, 0);
+	TestEqual(TEXT("선택 조명을 만들지 않는다"), LightCount, 0);
+	TestTrue(TEXT("조형물 클릭이 없다"), Globe->PickLandmark(FVector(15000, 0, 0), FVector(-1, 0, 0)).IsNone());
+
+	Settings->bShowLandmarks = true;
+	Globe->RebuildPins();
+	CountLandmarkParts(MeshCount, LightCount);
+	TestEqual(TEXT("켜면 다시 조형물(대체 원뿔)을 세운다"), MeshCount, 1);
+	TestEqual(TEXT("켜면 선택 조명도 만든다"), LightCount, 1);
+
+	World->DestroyWorld(false);
+	return true;
+}
+
 #endif

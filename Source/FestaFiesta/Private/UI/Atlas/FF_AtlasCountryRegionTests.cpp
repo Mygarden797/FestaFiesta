@@ -237,7 +237,9 @@ bool FFF_AtlasCountryRegionTransforms::RunTest(const FString& Parameters)
 #include "Engine/World.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Misc/ScopeExit.h"
 #include "UI/Atlas/FF_AtlasGlobeActor.h"
+#include "UI/Atlas/FF_AtlasSettings.h"
 #include "UI/Atlas/FF_FestivalAtlasCatalog.h"
 #include "UObject/UnrealType.h"
 
@@ -251,6 +253,11 @@ bool FFF_AtlasCountryRegionLifecycle::RunTest(const FString& Parameters)
 	const UWorld::InitializationValues Values = UWorld::InitializationValues().AllowAudioPlayback(false).RequiresHitProxies(false)
 		.CreatePhysicsScene(false).CreateNavigation(false).CreateAISystem(false).ShouldSimulatePhysics(false).SetTransactional(false);
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr, true, ERHIFeatureLevel::Num, &Values);
+	// 영역 모드의 조형물 숨김·복원을 본다. 조형물은 기본으로 꺼져 있으므로 이 테스트 동안만 켠다.
+	UFF_AtlasSettings* Settings = GetMutableDefault<UFF_AtlasSettings>();
+	const bool bPreviousLandmarks = Settings->bShowLandmarks;
+	Settings->bShowLandmarks = true;
+	ON_SCOPE_EXIT { Settings->bShowLandmarks = bPreviousLandmarks; };
 	AFF_AtlasGlobeActor* Globe = World->SpawnActor<AFF_AtlasGlobeActor>();
 	UFF_FestivalAtlasCatalog* Catalog = NewObject<UFF_FestivalAtlasCatalog>(Globe);
 	FFF_AtlasCountryEntry KR, JP;

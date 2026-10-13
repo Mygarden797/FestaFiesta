@@ -858,6 +858,9 @@ void AFF_AtlasGlobeActor::RebuildPins()
 
 	Pins.Reserve(Countries.Num());
 
+	// 조형물(건물)은 설정으로 끈다(기본 끔). 끄면 메시를 읽지도, 조명을 만들지도 않는다.
+	// 앵커(국가 위치)는 목록·영역 선택·카메라 접근이 쓰므로 그대로 만든다.
+	const bool bCreateLandmarks = GetAtlasSettings().bShowLandmarks;
 	TSet<FName> SeenCountryIds;
 
 	for (const FFF_AtlasCountryEntry& Country : Countries)
@@ -900,8 +903,8 @@ void AFF_AtlasGlobeActor::RebuildPins()
 
 		// 조형물 메시. 실제 메시가 없으면 프리미티브로 대신 세운다 (2026-08-21 결정).
 		// `bUseFallbackLandmark` 를 끄면 계획서의 "비어 있으면 붙이지 않는다" 대로 동작한다.
-		UStaticMesh* LandmarkMesh = Country.LandmarkMesh.LoadSynchronous();
-		if (!LandmarkMesh && bUseFallbackLandmark)
+		UStaticMesh* LandmarkMesh = bCreateLandmarks ? Country.LandmarkMesh.LoadSynchronous() : nullptr;
+		if (!LandmarkMesh && bCreateLandmarks && bUseFallbackLandmark)
 		{
 			LandmarkMesh = FallbackLandmarkMesh;
 		}
