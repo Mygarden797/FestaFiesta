@@ -12,6 +12,7 @@
 #include "Save/FF_SaveSubsystem.h"
 #include "Save/FF_SaveTypes.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Tutorial/FF_TutorialSubsystem.h"
 
 EFF_SaveBeforeQuitResult UFF_SaveBeforeQuitLibrary::SaveBeforeQuit(
 	const UObject* WorldContextObject, FName& OutSlotId)
@@ -20,6 +21,12 @@ EFF_SaveBeforeQuitResult UFF_SaveBeforeQuitLibrary::SaveBeforeQuit(
 
 	// 판정을 저장 "전" 에 해 둔다. 저장이 실패한 뒤의 상태로 판정하면 원인과 판정이 섞인다.
 	const bool bFestivalInProgress = IsFestivalInProgress(WorldContextObject);
+
+	if (bFestivalInProgress && WillQuitWithoutSaving(WorldContextObject))
+	{
+		UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장 후 종료] 운영 중·실습장이라 담지 않는다. 그날 아침 자동 저장에서 이어진다."));
+		return EFF_SaveBeforeQuitResult::NothingToSave;
+	}
 
 	UFF_SaveSubsystem* SaveSubsystem = UFF_SaveSubsystem::Get(WorldContextObject);
 	if (!SaveSubsystem)
@@ -70,4 +77,25 @@ bool UFF_SaveBeforeQuitLibrary::IsFestivalInProgress(const UObject* WorldContext
 		: nullptr;
 
 	return Stage && Stage->CurrentDay > 0;
+}
+
+bool UFF_SaveBeforeQuitLibrary::WillQuitWithoutSaving(const UObject* WorldContextObject)
+{
+	if (!IsFestivalInProgress(WorldContextObject))
+	{
+		return false;
+	}
+
+	const UWorld* World = GEngine
+		? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull)
+		: nullptr;
+	if (const UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(World); Tutorial && Tutorial->IsTutorialLevel())
+	{
+		return true;
+	}
+
+	const UFF_FestivalStageSubsystem* Stage = World
+		? UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(World->GetGameInstance())
+		: nullptr;
+	return Stage && !FF::SaveBeforeQuit::CanSaveFestivalAt(Stage->CurrentStage);
 }

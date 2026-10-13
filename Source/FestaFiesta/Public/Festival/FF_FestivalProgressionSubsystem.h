@@ -77,6 +77,8 @@ struct FFF_ProgressionSave
 	// 시설별(인스턴스) 매출 장부. 시설 정보 패널의 누적 매출이 이어하기 뒤에도 이어진다.
 	UPROPERTY() TArray<FGuid> FacilityRevenueIds;
 	UPROPERTY() TArray<FFF_FacilityInstanceRevenue> FacilityRevenues;
+	// 오늘 산 프로그램. 저장은 셋업·모닝체크에만 일어나는데, 그때 산 편성이 빠지면 돈만 빠진다.
+	UPROPERTY() TArray<FFF_ScheduledProgram> ScheduledPrograms;
 };
  
 UCLASS()
@@ -623,6 +625,9 @@ private:
 
 	// 오늘 편성한 프로그램. 카드가 하루짜리라 하루 경계에서 비운다.
 	TArray<FFF_ScheduledProgram> ScheduledPrograms;
+
+	// 저장된 편성으로 갈아끼운다. 비용은 이미 잔액에 반영돼 있어 예약 슬롯만 다시 잡는다.
+	void RestoreScheduledPrograms(const TArray<FFF_ScheduledProgram>& Saved);
 
 	// 예약 슬롯의 소유자. GameInstance 스코프로 수명이 같아서 캐시해도 된다.
 	UPROPERTY()

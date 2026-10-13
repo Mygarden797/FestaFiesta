@@ -230,11 +230,25 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin,
 		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
 	{
 		Stage->OnStageChanged.AddUniqueDynamic(this, &UFF_CrowdSimulationSubsystem::HandleStageChanged);
-		Stage->OnTimeScaleChange.AddDynamic(this,&UFF_CrowdSimulationSubsystem::GetTimeScale);
+		Stage->OnTimeScaleChange.AddUniqueDynamic(this, &UFF_CrowdSimulationSubsystem::GetTimeScale);
 		Stage->OnMainProgramStarted.AddUniqueDynamic(this, &UFF_CrowdSimulationSubsystem::HandleMainProgramStarted);
 		Stage->OnMainProgramEnded.AddUniqueDynamic(this, &UFF_CrowdSimulationSubsystem::HandleMainProgramEnded);
 		SimulationTimeScale = Stage->GetEffectiveTimeScale();
 	}
+}
+
+void UFF_CrowdSimulationSubsystem::Deinitialize()
+{
+	const UWorld* World = GetWorld();
+	if (UFF_FestivalStageSubsystem* Stage = World && World->GetGameInstance()
+		? World->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	{
+		Stage->OnStageChanged.RemoveAll(this);
+		Stage->OnTimeScaleChange.RemoveAll(this);
+		Stage->OnMainProgramStarted.RemoveAll(this);
+		Stage->OnMainProgramEnded.RemoveAll(this);
+	}
+	Super::Deinitialize();
 }
 
 // 격자 범위의 우선순위는 직접 지정 > NavMesh 경계다. 통행 가능 영역이 곧 관측 대상이다
@@ -394,12 +408,15 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 		{
 			QueueBreakSimSeconds += FixedStepSeconds;
 		}
+#if !UE_BUILD_SHIPPING
+		// 진단 전용(경제 시나리오의 화장실 차례 대기). 출시 빌드에서는 돌리지 않는다.
 		ToiletFrontSampleAccumulator += FixedStepSeconds;
 		if (ToiletFrontSampleAccumulator >= 0.25f)
 		{
 			SampleToiletFrontWaits(ToiletFrontSampleAccumulator);
 			ToiletFrontSampleAccumulator = 0.f;
 		}
+#endif
 	}
 
 	ProcessPendingDespawns();
@@ -905,7 +922,7 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 				const float StayShare = FFF_UtilityCoefficientHelpers::GetCoefficient(
 					CachedCoefficientTable.Get(), TEXT("stay_duration_share_of_live_stage_mean"), 0.5f);
 				PartyRemainingStayMinutes[LeaderIndex] =
-					FMath::Max(Temp_LiveStageMinutes * StayShare * Traits.StayDurationMultiplier, 0.f);
+					FMath::Max(GetTodayLiveStageMinutes() * StayShare * Traits.StayDurationMultiplier, 0.f);
 			}
 
 			++SpawnedCount;
@@ -974,6 +991,23 @@ void UFF_CrowdSimulationSubsystem::UpdateArrivalSchedule()
 	
 	
 	
+}
+
+float UFF_CrowdSimulationSubsystem::GetTodayLiveStageMinutes() const
+{
+	// 1 Stage 초 = 1 축제분이다(UFF_FestivalStageSubsystem::StageSecondsToFestivalMinutes).
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	if (UFF_FestivalStageSubsystem* Stage =
+		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	{
+		const float LiveDurationSeconds = Stage->GetLiveDurationForCurrentDay();
+		if (LiveDurationSeconds > 0.f)
+		{
+			return LiveDurationSeconds;
+		}
+	}
+	return Temp_LiveStageMinutes;
 }
 
 float UFF_CrowdSimulationSubsystem::GetLiveProgress01() const

@@ -57,4 +57,11 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save", meta = (WorldContext = "WorldContextObject"))
 	static bool IsFestivalInProgress(const UObject* WorldContextObject);
+
+	/**
+	 * 축제 도중이지만 지금은 담지 않고 끄는가. 운영 중(셋업·모닝체크 밖)이거나 튜토리얼 실습장이면 참이다.
+	 * 운영 중이면 다음 실행은 그날 아침 자동 저장에서 이어진다. 종료 화면이 이 안내를 띄운다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save", meta = (WorldContext = "WorldContextObject"))
+	static bool WillQuitWithoutSaving(const UObject* WorldContextObject);
 };

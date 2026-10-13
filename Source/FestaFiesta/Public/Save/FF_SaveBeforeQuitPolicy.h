@@ -7,6 +7,7 @@
 
 #include "CoreMinimal.h"
 #include "Save/FF_SaveBeforeQuit.h"
+#include "Time/FF_FestivalStage.h"
 
 /**
  * 종료 직전 저장 정책. 판단만 하는 순수 함수라 엔진 없이 자동화 테스트로 고정한다.
@@ -29,5 +30,15 @@ namespace FF::SaveBeforeQuit
 	inline bool CanQuit(const EFF_SaveBeforeQuitResult Result)
 	{
 		return Result != EFF_SaveBeforeQuitResult::Failed;
+	}
+
+	/* 축제 세이브를 쓸 수 있는 단계. 하루 정산이 끝난 그날의 시작(셋업·모닝체크)뿐이다.
+
+	   운영 시간은 저장하지 않아서, 운영 중 세이브를 이어하면 그날이 처음부터 다시 돌고
+	   이미 번 돈 위에 하루를 또 번다. 그 밖의 단계에서는 그날 아침 자동 저장이 이어할 자리다.
+	*/
+	inline bool CanSaveFestivalAt(const EFF_FestivalStage Stage)
+	{
+		return Stage == EFF_FestivalStage::Setup || Stage == EFF_FestivalStage::MorningCheck;
 	}
 }
