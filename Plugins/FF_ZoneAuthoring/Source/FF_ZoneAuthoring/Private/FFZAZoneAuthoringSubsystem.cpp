@@ -44,9 +44,23 @@ namespace
         return Decision;
     }
 
+    // UMETA(DisplayName) 은 영문이고 패키징에서는 그마저 enum 이름으로 바뀐다. 게임 쪽 분류 이름과 맞춘다.
     FText GetCategoryText(const EFFZSFacilityCategory Category)
     {
-        return StaticEnum<EFFZSFacilityCategory>()->GetDisplayNameTextByValue(static_cast<int64>(Category));
+        switch (Category)
+        {
+        case EFFZSFacilityCategory::Booth: return LOCTEXT("CategoryBooth", "부스");
+        case EFFZSFacilityCategory::Toilet: return LOCTEXT("CategoryToilet", "화장실");
+        case EFFZSFacilityCategory::Info: return LOCTEXT("CategoryInfo", "안내");
+        case EFFZSFacilityCategory::Rest: return LOCTEXT("CategoryRest", "휴게");
+        case EFFZSFacilityCategory::Performance: return LOCTEXT("CategoryPerformance", "공연");
+        case EFFZSFacilityCategory::Safety: return LOCTEXT("CategorySafety", "안전");
+        case EFFZSFacilityCategory::PhotoSpot: return LOCTEXT("CategoryPhotoSpot", "포토스팟");
+        case EFFZSFacilityCategory::Lighting: return LOCTEXT("CategoryLighting", "조명");
+        case EFFZSFacilityCategory::Road: return LOCTEXT("CategoryRoad", "길");
+        case EFFZSFacilityCategory::Tile: return LOCTEXT("CategoryTile", "타일");
+        }
+        return LOCTEXT("CategoryUnknown", "기타");
     }
 }
 

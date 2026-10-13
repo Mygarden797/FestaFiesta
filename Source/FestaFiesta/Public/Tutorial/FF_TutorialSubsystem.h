@@ -497,6 +497,10 @@ private:
 	float PlacementYawBaseline = 0.f;
 	bool bPlacementYawBaselineValid = false;
 
+	// 설치 대기 줄이 오기 전에 이미 놓은 시설 정의. 회전 안내 줄에서 바로 클릭해 놓아 버리면
+	// 설치 이벤트가 그 줄에서 버려져, 하나만 짓는 시설(메인공연장)은 다음 줄에서 다시 놓을 수 없다.
+	TSet<FName> EarlyPlacedFacilityIds;
+
 	// 설정에 지정된 위젯을 화면에 띄운다. 이미 있으면 아무것도 하지 않는다.
 	//
 	// 대사만 자동으로 시작되고 위젯은 직접 띄워야 하면, 레벨마다 그 코드를 넣어야 한다.

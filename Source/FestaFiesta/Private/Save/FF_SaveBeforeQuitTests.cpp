@@ -35,6 +35,14 @@ bool FFF_SaveBeforeQuit_ClassifyAndCanQuit::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Saved 는 종료 허용"), CanQuit(EFF_SaveBeforeQuitResult::Saved));
 	TestTrue(TEXT("NothingToSave 는 종료 허용"), CanQuit(EFF_SaveBeforeQuitResult::NothingToSave));
 	TestFalse(TEXT("Failed 는 종료 보류"), CanQuit(EFF_SaveBeforeQuitResult::Failed));
+
+	// 축제는 그날의 시작에서만 담는다. 운영 중 세이브는 하루를 처음부터 다시 돌려 매출이 두 번 잡힌다.
+	TestTrue(TEXT("셋업 저장"), CanSaveFestivalAt(EFF_FestivalStage::Setup));
+	TestTrue(TEXT("모닝체크 저장"), CanSaveFestivalAt(EFF_FestivalStage::MorningCheck));
+	TestFalse(TEXT("라이브 저장 안 함"), CanSaveFestivalAt(EFF_FestivalStage::Live));
+	TestFalse(TEXT("마감 저장 안 함"), CanSaveFestivalAt(EFF_FestivalStage::Closing));
+	TestFalse(TEXT("리포트 저장 안 함"), CanSaveFestivalAt(EFF_FestivalStage::Report));
+	TestFalse(TEXT("피날레 저장 안 함"), CanSaveFestivalAt(EFF_FestivalStage::Finale));
 	return true;
 }
 

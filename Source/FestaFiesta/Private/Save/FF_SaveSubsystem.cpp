@@ -13,6 +13,7 @@
 #include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "Time/FF_FestivalStage.h"
 #include "Save/FF_SaveArchive.h"
+#include "Save/FF_SaveBeforeQuitPolicy.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Tutorial/FF_TutorialSubsystem.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
@@ -1203,6 +1204,18 @@ FName UFF_SaveSubsystem::SaveManual()
 		UE_LOG(LogFestaFiestaSave, Warning,
 			TEXT("[저장] 지금은 수동 저장을 할 수 없다. 축제 진행 중이거나, 판을 시작한 뒤의 로비에서만 된다."));
 		return NAME_None;
+	}
+
+	// 축제는 그날의 시작에서만 담는다. 운영 시간은 세이브에 없어서, 운영 중 세이브는 하루를 처음부터 다시 돌린다.
+	if (bFestival)
+	{
+		const UFF_FestivalStageSubsystem* Stage =
+			UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(GetGameInstance());
+		if (!Stage || !FF::SaveBeforeQuit::CanSaveFestivalAt(Stage->CurrentStage))
+		{
+			UE_LOG(LogFestaFiestaSave, Warning, TEXT("[저장] 셋업·모닝체크에서만 축제를 수동 저장한다."));
+			return NAME_None;
+		}
 	}
 
 	FName Target;

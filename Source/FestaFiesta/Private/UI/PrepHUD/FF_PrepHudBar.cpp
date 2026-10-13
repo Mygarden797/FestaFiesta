@@ -694,7 +694,7 @@ UFF_PrepPanelBase* UFF_PrepHudBar::EnsurePanel(EFF_PrepHudTab Tab)
 				(Custom && !Custom->IsEmpty())
 					? *Custom
 					: FText::Format(
-						LOCTEXT("PrepPanel_Placeholder", "{0} 패널은 아직 만드는 중입니다."),
+						LOCTEXT("PrepPanel_Placeholder", "{0} 화면을 불러오지 못했습니다."),
 						DisplayName));
 		}
 	}

@@ -310,7 +310,7 @@ UENUM(BlueprintType)
 enum class EFF_EarnReason : uint8
 {
 	AdmissionFee		= 0     UMETA(DisplayName = "NPC 입장료"),
-	FacilityCommission  = 1		UMETA(DisplayName = "부스 수수료"),
+	FacilityCommission  = 1		UMETA(DisplayName = "부스 매출"),
 	ProgramFee          = 2		UMETA(DisplayName = "유료 프로그램 체험비"),
 	DailyGoalBonus      = 3		UMETA(DisplayName = "일일 목표 보너스"),
 	MinigameReward      = 4		UMETA(DisplayName = "미니게임 보상"),

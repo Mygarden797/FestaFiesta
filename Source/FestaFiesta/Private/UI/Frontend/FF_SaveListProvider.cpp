@@ -11,6 +11,7 @@
 #include "Time/FF_FestivalStage.h"
 #include "UI/Atlas/FF_FestivalAtlasCatalog.h"
 #include "UI/Core/FF_UIFlowSettings.h"
+#include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/FF_UILog.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"
@@ -203,7 +204,8 @@ void UFF_SaveListProvider::BuildRealSlots()
 			const int64 Value = StageEnum->GetValueByNameString(Loaded->Session.StageId.ToString());
 			if (Value != INDEX_NONE)
 			{
-				Entry.StageName = StageEnum->GetDisplayNameTextByValue(Value);
+				// UMETA(DisplayName) 은 패키징에서 영문 이름으로 바뀐다. 한글은 표시 문자열 함수에서 가져온다.
+				Entry.StageName = UFF_UIDisplayTextLibrary::GetFestivalStageText(static_cast<EFF_FestivalStage>(Value));
 			}
 		}
 
