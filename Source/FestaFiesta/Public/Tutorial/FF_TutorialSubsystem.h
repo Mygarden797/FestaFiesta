@@ -15,6 +15,7 @@
 class AFF_OverviewCameraPawn;
 class UDataTable;
 class UFF_DialogueScriptData;
+class UFF_SaveSubsystem;
 class UFF_UIFlowSubsystem;
 class UUserWidget;
 class UWidget;
@@ -418,6 +419,21 @@ private:
 
 	// 카탈로그의 튜토리얼 칸을 원래 값으로 되돌린다. 월드가 내려갈 때 — 편집기에서 PIE 가 끝나도 애셋이 잠긴 채 남지 않게.
 	void RestoreTutorialLevelLock();
+
+	/* 판을 시작했는데 튜토리얼을 아직 지나지 않았으면 다른 축제를 지도에서 잠근다(2026-10-13 사용자 결정).
+
+	   튜토리얼은 새 게임 시작 직후에만 한다. 그 전에 다른 축제로 가면 튜토리얼 레벨이 그 판 내내 열린 채 남고,
+	   두 레벨의 저장이 섞였다(부산 → 튜토리얼 → 부산이면 부산이 처음부터). 그래서 실습장부터 가게 한다.
+	   '지났다' = 끝까지 봄 · 건너뜀 · 깬 축제가 있음. 튜토리얼 레벨 잠금과 같은 방식으로 실행 중에만 카탈로그 값을 바꾼다.
+
+	   이 기능 전의 세이브로 이어한 판처럼 기록 없이 튜토리얼이 아닌 축제에 들어와 있으면 '건너뜀'으로 남긴다.
+	   그래야 지도에서 튜토리얼은 잠기고 다른 축제는 열린다. 판을 시작하지 않은 개발 중(레벨을 바로 연 PIE)은 건드리지 않는다.
+	*/
+	void SyncFestivalsLockedUntilTutorial();
+	void RestoreFestivalsLockedUntilTutorial();
+
+	// 이 판이 튜토리얼을 지났는가(위 주석의 '지났다').
+	bool HasPassedTutorial(const UFF_SaveSubsystem& Save) const;
 
 	// 카메라 조작을 감시한다.
 	//

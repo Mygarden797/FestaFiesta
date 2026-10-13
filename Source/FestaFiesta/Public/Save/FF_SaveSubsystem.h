@@ -239,6 +239,10 @@ public:
 	   레벨은 마치면 지도에서 잠기므로(UFF_TutorialSubsystem::SyncTutorialLevelLock) 이어하기가 그 레벨을
 	   열려다 막힌다. 로비 세이브가 있으면 이어하기가 그 나라의 레벨 선택으로 간다.
 	   판을 시작하지 않았으면(흐름 밖에서 맵을 연 개발 중) 남기지 않는다.
+
+	   이 판에 진행 중인 축제 세이브가 있으면 로비 세이브로 덮지 않고 튜토리얼 기록(메타)만 그 세이브에 고쳐 쓴다
+	   (2026-10-13 피드백: 부산 → 튜토리얼 → 부산이면 부산이 처음부터 시작). 자동 저장은 두 칸을 번갈아 써서
+	   로비 세이브가 부산 세이브 칸을 덮을 수 있고, 덮이지 않아도 이 판의 마지막 세이브가 로비가 되어 이어하기가 끊긴다.
 	*/
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void WriteLobbyAutoSaveAfterTutorial();
@@ -248,6 +252,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
 	bool HasClearedFestival(FName FestivalId) const { return Meta.HasCleared(FestivalId); }
+
+	// 이 판에서 깬 축제가 하나라도 있는가. 튜토리얼을 지난 판으로 볼 때 쓴다(UFF_TutorialSubsystem).
+	bool HasClearedAnyFestival() const { return Meta.ClearedFestivals.Num() > 0; }
+
+	// 판을 시작했는가(새 게임 · 이어하기 뒤). 편집기에서 레벨을 바로 연 개발 중에는 거짓이다.
+	bool IsRunActive() const { return bRunActive; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
 	FFF_FestivalRecord GetRecord(FName FestivalId) const;
@@ -313,6 +323,16 @@ private:
 
 	// 나갈 때 저장 중인가. CaptureSession 이 축제 이름을 RunningFestivalId 로 담는다.
 	bool bSavingOnLeave = false;
+
+	/* 지금 월드가 튜토리얼 실습장인가. 실습장은 자동 저장 칸을 건드리지 않는다.
+
+	   실습은 끝나면 지도에서 잠기는 연습이라 이어할 일이 없다. 여기서 담으면 실습장이 '이 판의 마지막 세이브'가 되어
+	   다른 축제의 이어하기가 끊기고, 두 칸을 번갈아 쓰는 자동 저장이 그 축제 세이브 칸을 덮을 수 있다.
+	*/
+	bool IsInTutorialLevel() const;
+
+	// 이 판의 세이브가 진행 중인 축제인가(로비 · 끝난 축제가 아니다).
+	bool HasRunFestivalInProgress() const;
 
 	/* 같은 판에서 같은 축제를 다시 골랐으면, 이 판의 세이브(진행 중)에서 이어하기로 정한다.
 
