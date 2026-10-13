@@ -21,7 +21,9 @@ namespace FFF_NeedRulesTestHelpers
 		FFF_NeedRiseRates Rates;
 		Rates.HungerMinutesToLimit = HungerMinutes;
 		Rates.RestroomMinutesToLimit = RestroomMinutes;
-		// P0 외 3종은 기본값 0(안 쌓임)을 유지한다
+		// 갈증·피로는 끈다. 이 파일의 시나리오는 배고픔·화장실 두 성분만 본다
+		Rates.ThirstMinutesToLimit = 0.f;
+		Rates.FatigueMinutesToLimit = 0.f;
 		return Rates;
 	}
 
@@ -81,21 +83,24 @@ bool FFF_NeedRules_ClampsAtOne::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_ZeroRateNeedsStayFlat, "FestaFiesta.NPC.NeedRules.ZeroRateNeedsStayFlat", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_NeedRules_ZeroRateNeedsStayFlat::RunTest(const FString& Parameters)
 {
+	// 다섯 성분이 모두 켜져 있다. 어느 성분이 켜져 있는지 읽을 곳이 이 표뿐이라 같이 고정한다
 	const FFF_NeedRiseRates DefaultRates;
-	TestEqual(TEXT("기본값에서 갈증은 꺼져 있다"), DefaultRates.ThirstMinutesToLimit, 0.f);
-	TestEqual(TEXT("기본값에서 피로는 꺼져 있다"), DefaultRates.FatigueMinutesToLimit, 0.f);
+	TestTrue(TEXT("기본값에서 갈증은 켜져 있다"), DefaultRates.ThirstMinutesToLimit > 0.f);
+	TestTrue(TEXT("기본값에서 피로는 켜져 있다"), DefaultRates.FatigueMinutesToLimit > 0.f);
+	TestTrue(TEXT("기본값에서 자극은 켜져 있다"), DefaultRates.StimulationMinutesToLimit > 0.f);
+
+	// 0 이면 꺼짐이다 — 0 으로 나누지 않고 쌓이지도 않는다
+	FFF_NeedRiseRates Rates = DefaultRates;
+	Rates.ThirstMinutesToLimit = 0.f;
+	Rates.FatigueMinutesToLimit = 0.f;
 	TestEqual(TEXT("꺼진 Need 의 분당 증가량은 0 이다 — 0 으로 나누지 않는다"),
-		DefaultRates.GetRisePerMinute(EFF_NeedType::Thirst), 0.f);
+		Rates.GetRisePerMinute(EFF_NeedType::Thirst), 0.f);
 
-	// 자극은 Phase 2 로 켜졌다. 여기서 이 사실을 같이 고정하는 이유는, Phase 게이트가
-	// "코드 수정이 아니라 값 변경"이라 어느 성분이 켜져 있는지 읽을 곳이 이 표뿐이기 때문이다.
-	TestTrue(TEXT("기본값에서 자극은 켜져 있다(Phase 2)"), DefaultRates.StimulationMinutesToLimit > 0.f);
-
-	const FFF_NeedState After = FFF_NeedRules::Advance(FFF_NeedState(), 600.f, DefaultRates);
-	TestEqual(TEXT("갈증은 안 쌓인다(Phase 4)"), After.Thirst, 0.f);
-	TestEqual(TEXT("피로는 안 쌓인다(Phase 4)"), After.Fatigue, 0.f);
-	TestTrue(TEXT("자극은 쌓인다(Phase 2)"), After.Stimulation > 0.f);
-	TestTrue(TEXT("반면 P0 두 개는 쌓인다"), After.Hunger > 0.f && After.Restroom > 0.f);
+	const FFF_NeedState After = FFF_NeedRules::Advance(FFF_NeedState(), 600.f, Rates);
+	TestEqual(TEXT("꺼진 갈증은 안 쌓인다"), After.Thirst, 0.f);
+	TestEqual(TEXT("꺼진 피로는 안 쌓인다"), After.Fatigue, 0.f);
+	TestTrue(TEXT("자극은 쌓인다"), After.Stimulation > 0.f);
+	TestTrue(TEXT("배고픔·화장실은 쌓인다"), After.Hunger > 0.f && After.Restroom > 0.f);
 
 	// 음수 MinutesToLimit 도 안전하게 "꺼짐"으로 본다
 	FFF_NeedRiseRates NegativeRates;
@@ -163,12 +168,14 @@ bool FFF_NeedRules_ReliefNeverGoesNegative::RunTest(const FString& Parameters)
 		BarelyHungry, MakeNeedRulesTestFlags(true, false), FFF_NeedReliefAmounts());
 	TestEqual(TEXT("해소량보다 Need 가 작으면 0 이다(음수 아님)"), After.Hunger, 0.f);
 
-	// 해소량 0 인 성분(Phase 대기)은 플래그가 켜져 있어도 안 깎는다
+	// 해소량 0 인 성분은 플래그가 켜져 있어도 안 깎는다
 	FFF_NeedState Thirsty;
 	Thirsty.Thirst = 0.7f;
 	FFF_NeedReliefFlags ThirstFlags;
 	ThirstFlags.bRelievesThirst = true;
-	const FFF_NeedState AfterThirst = FFF_NeedRules::Relieve(Thirsty, ThirstFlags, FFF_NeedReliefAmounts());
+	FFF_NeedReliefAmounts NoThirstRelief;
+	NoThirstRelief.Thirst = 0.f;
+	const FFF_NeedState AfterThirst = FFF_NeedRules::Relieve(Thirsty, ThirstFlags, NoThirstRelief);
 	TestEqual(TEXT("해소량이 0 인 성분은 플래그가 켜져도 안 깎인다"), AfterThirst.Thirst, 0.7f, 0.001f);
 	return true;
 }
@@ -208,7 +215,7 @@ bool FFF_NeedRules_GroupAggregationKeepsUrgentMember::RunTest(const FString& Par
 	const FFF_NeedRiseRates Rates;
 
 	// 같은 시간을 보냈지만 한 명만 아까 화장실을 다녀왔다
-	FFF_NeedState MemberA = FFF_NeedRules::Advance(FFF_NeedState(), 140.f, Rates);
+	FFF_NeedState MemberA = FFF_NeedRules::Advance(FFF_NeedState(), Rates.RestroomMinutesToLimit * 0.95f, Rates);
 	FFF_NeedState MemberB = MemberA;
 	MemberB = FFF_NeedRules::Relieve(MemberB, MakeNeedRulesTestFlags(false, true), FFF_NeedReliefAmounts());
 
@@ -311,7 +318,9 @@ bool FFF_NeedRules_InitialNeedsStayWithinBounds::RunTest(const FString& Paramete
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_DisabledNeedsStartAtZero, "FestaFiesta.NPC.NeedRules.DisabledNeedsStartAtZero", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_NeedRules_DisabledNeedsStartAtZero::RunTest(const FString& Parameters)
 {
-	const FFF_NeedRiseRates Rates;  // Thirst/Fatigue 는 0(꺼짐), Stimulation 은 Phase 2 로 켜져 있다
+	FFF_NeedRiseRates Rates;
+	Rates.ThirstMinutesToLimit = 0.f;
+	Rates.FatigueMinutesToLimit = 0.f;
 
 	bool bAnyStimulation = false;
 	for (int32 AgentId = 1; AgentId <= 30; ++AgentId)

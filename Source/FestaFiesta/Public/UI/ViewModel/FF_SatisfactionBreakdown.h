@@ -50,13 +50,13 @@ struct FFF_SatisfactionBreakdownInputs
 	float PreferenceMatchShare = -1.f;
 	int32 PreferenceSampleCount = 0;
 
-	// 욕구 근거. 순서는 음식(Hunger) · 화장실(Restroom) · 즐길 거리(Stimulation)
-	static constexpr int32 NeedCount = 3;
-	int32 ReliefFacilityCount[NeedCount] = { INDEX_NONE, INDEX_NONE, INDEX_NONE };
-	float CoverageTarget[NeedCount] = { 0.f, 0.f, 0.f };
+	// 욕구 근거. 순서는 음식(Hunger) · 화장실(Restroom) · 즐길 거리(Stimulation) · 음료(Thirst) · 휴게(Fatigue)
+	static constexpr int32 NeedCount = 5;
+	int32 ReliefFacilityCount[NeedCount] = { INDEX_NONE, INDEX_NONE, INDEX_NONE, INDEX_NONE, INDEX_NONE };
+	float CoverageTarget[NeedCount] = { 0.f, 0.f, 0.f, 0.f, 0.f };
 	float CoverageFloor = 0.3f;
-	// 그 욕구를 못 채운 손님 비율(0~100)
-	float UnmetPercent[NeedCount] = { -1.f, -1.f, -1.f };
+	// 그 욕구를 못 채운 손님 비율(0~100). 음수면 꺼진 욕구라 근거에도 평균에도 넣지 않는다
+	float UnmetPercent[NeedCount] = { -1.f, -1.f, -1.f, -1.f, -1.f };
 };
 
 /** 항목 하나가 깎은 점수와 그 근거. */

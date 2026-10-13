@@ -30,6 +30,14 @@ TArray<EFF_OperationAlertKind> FFF_OperationAlertRules::Evaluate(
 	{
 		Kinds.Add(EFF_OperationAlertKind::FunShortage);
 	}
+	if (Inputs.FatigueCoverage < Thresholds.ShortageCoverageBelow)
+	{
+		Kinds.Add(EFF_OperationAlertKind::RestShortage);
+	}
+	if (Inputs.ThirstCoverage < Thresholds.ShortageCoverageBelow)
+	{
+		Kinds.Add(EFF_OperationAlertKind::DrinkShortage);
+	}
 	return Kinds;
 }
 
@@ -47,6 +55,10 @@ FText FFF_OperationAlertRules::GetMessage(EFF_OperationAlertKind Kind)
 		return LOCTEXT("QueueAbandon", "줄이 길어 떠나는 손님이 많아요");
 	case EFF_OperationAlertKind::NoChoiceLeave:
 		return LOCTEXT("NoChoiceLeave", "갈 곳이 없어 떠나는 손님이 늘고 있어요");
+	case EFF_OperationAlertKind::RestShortage:
+		return LOCTEXT("RestShortage", "쉴 곳이 부족해요. 벤치나 그늘막을 더 놓아 보세요");
+	case EFF_OperationAlertKind::DrinkShortage:
+		return LOCTEXT("DrinkShortage", "마실 곳이 부족해요. 음료를 파는 부스를 더 지어 보세요");
 	case EFF_OperationAlertKind::IncidentFinished:
 		return LOCTEXT("IncidentFinished", "사건이 종료됐어요. 소식에서 결과를 확인하세요");
 	default:

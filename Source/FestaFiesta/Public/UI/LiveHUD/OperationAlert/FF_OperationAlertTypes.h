@@ -15,6 +15,8 @@ enum class EFF_OperationAlertKind : uint8
 	QueueAbandon,
 	NoChoiceLeave,
 	IncidentFinished,
+	RestShortage,
+	DrinkShortage,
 
 	Count UMETA(Hidden)
 };
@@ -45,6 +47,8 @@ struct FFF_OperationAlertInputs
 	float HungerCoverage = 1.f;
 	float RestroomCoverage = 1.f;
 	float StimulationCoverage = 1.f;
+	float FatigueCoverage = 1.f;
+	float ThirstCoverage = 1.f;
 
 	int32 QueueAbandonsDelta = 0;
 	int32 NoChoiceLeavesDelta = 0;

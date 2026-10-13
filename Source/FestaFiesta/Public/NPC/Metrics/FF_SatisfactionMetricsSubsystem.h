@@ -64,7 +64,22 @@ struct FFF_SatisfactionCoefficients
 	float NeedCoverageTargetHunger = 7.f;
 	float NeedCoverageTargetRestroom = 2.f;
 	float NeedCoverageTargetStimulation = 10.f;
+	float NeedCoverageTargetThirst = 7.f;
+	float NeedCoverageTargetFatigue = 2.f;
 	float NeedCoverageFloor = 0.3f;
+
+	float GetNeedCoverageTarget(EFF_NeedType NeedType) const
+	{
+		switch (NeedType)
+		{
+		case EFF_NeedType::Hunger:      return NeedCoverageTargetHunger;
+		case EFF_NeedType::Thirst:      return NeedCoverageTargetThirst;
+		case EFF_NeedType::Restroom:    return NeedCoverageTargetRestroom;
+		case EFF_NeedType::Fatigue:     return NeedCoverageTargetFatigue;
+		case EFF_NeedType::Stimulation: return NeedCoverageTargetStimulation;
+		default:                        return 0.f;
+		}
+	}
 
 	// 0이면 시설이 하나도 없어도 하한만큼은 남긴다. 목표가 0 이하이면 커버리지를 보지 않는다
 	float NeedCoverageMultiplier(int32 OpenFacilityCount, float Target) const

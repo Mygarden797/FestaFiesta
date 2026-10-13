@@ -6418,6 +6418,8 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Hunger)] += Relief.bRelievesHunger ? 1 : 0;
 					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Restroom)] += Relief.bRelievesRestroom ? 1 : 0;
 					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Stimulation)] += Relief.bRelievesStimulation ? 1 : 0;
+					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Thirst)] += Relief.bRelievesThirst ? 1 : 0;
+					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Fatigue)] += Relief.bRelievesFatigue ? 1 : 0;
 				}
 			}
 		}
@@ -6427,12 +6429,14 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 			{
 				NeedReliefFacilityCounts[Index] = ReliefFacilityCounts[Index];
 			}
-			NeedCoverage[static_cast<int32>(EFF_NeedType::Hunger)] = Coefficients.NeedCoverageMultiplier(
-				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Hunger)], Coefficients.NeedCoverageTargetHunger);
-			NeedCoverage[static_cast<int32>(EFF_NeedType::Restroom)] = Coefficients.NeedCoverageMultiplier(
-				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Restroom)], Coefficients.NeedCoverageTargetRestroom);
-			NeedCoverage[static_cast<int32>(EFF_NeedType::Stimulation)] = Coefficients.NeedCoverageMultiplier(
-				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Stimulation)], Coefficients.NeedCoverageTargetStimulation);
+			for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
+			{
+				const EFF_NeedType NeedType = static_cast<EFF_NeedType>(Index);
+				// 꺼진 욕구(상승 0)는 시설 수와 상관없이 모자라지 않다
+				NeedCoverage[Index] = NeedRiseRates.GetMinutesToLimit(NeedType) > 0.f
+					? Coefficients.NeedCoverageMultiplier(ReliefFacilityCounts[Index], Coefficients.GetNeedCoverageTarget(NeedType))
+					: 1.f;
+			}
 		}
 
 		// 밀도: 점유 셀마다 LOS 등급 점수를 매겨 그 셀의 인원 수로 가중한다 — "사람이 몇 명이나
@@ -6469,18 +6473,18 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 		}
 
 		// Need 충족도
-		// 지금 켜져 있는 성분(Hunger·Restroom·Stimulation)만 평균한다. 
-		// Thirst·Fatigue는 Phase 게이트로 상승 계수가 0이라 넣으면 항상 100% 충족으로 왜곡된다
+		// 켜져 있는 성분(상승 계수가 0 보다 큰 것)만 평균한다. 꺼진 성분을 넣으면 항상 100% 충족으로 왜곡된다
 		// NeedMetrics 표본이 0이면(아직 아무도 안 들어왔거나 집계가 안 돌았으면) 넣지 않는다 —
 		// "미해소 0%"가 진짜 0%인지 데이터 없음인지 구분해야 한다.
 		if (NeedMetrics && NeedMetrics->GetSampleCount() > 0)
 		{
-			static const EFF_NeedType ActiveNeedTypes[] =
+			for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
 			{
-				EFF_NeedType::Hunger, EFF_NeedType::Restroom, EFF_NeedType::Stimulation
-			};
-			for (const EFF_NeedType NeedType : ActiveNeedTypes)
-			{
+				const EFF_NeedType NeedType = static_cast<EFF_NeedType>(Index);
+				if (NeedRiseRates.GetMinutesToLimit(NeedType) <= 0.f)
+				{
+					continue;
+				}
 				Satisfaction->AddNeedFulfillmentSample(
 					(100.f - NeedMetrics->GetNeedUnmetRatio(NeedType)) * GetNeedCoverage(NeedType));
 			}

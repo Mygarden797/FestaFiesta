@@ -24,17 +24,17 @@ struct FFF_NeedRiseRates
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
 	float HungerMinutesToLimit = 240.f;
 
-	// P0. 주간 배뇨 간격 2.5시간 가정 — draft_assumption. 축제라 음료 섭취가 많아 식사보다 짧게 잡았다
+	// 식사보다 짧게 잡는다(축제라 음료가 많다). 150 이면 공연 직후 관람객 대부분이 한꺼번에 급해져 화장실을 지어도 모자랐다
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
-	float RestroomMinutesToLimit = 150.f;
+	float RestroomMinutesToLimit = 200.f;
 
-	// Phase 4. 기온 공공데이터를 주입하면 동적으로 올릴 후보
+	// 음식·나이트라이프 부스와 쿨링 쉼터가 푼다. 마실 곳이 흔해 배고픔보다 짧게 잡는다
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
-	float ThirstMinutesToLimit = 0.f;
+	float ThirstMinutesToLimit = 180.f;
 
-	// Phase 4
+	// 휴게 시설(벤치·그늘막 등)이 푼다. 0 이면 벤치를 지어도 찾는 손님이 없다
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
-	float FatigueMinutesToLimit = 0.f;
+	float FatigueMinutesToLimit = 240.f;
 
 	/**
 	 * Phase 2 — 켜져 있다. Live 후반으로 갈수록 Performance·PhotoSpot·Booth(Nightlife) 쪽 끌림이
@@ -107,13 +107,12 @@ struct FFF_NeedReliefAmounts
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
 	float Restroom = 1.0f;
 
-	// 아래 2종은 대응하는 MinutesToLimit 이 0 이라 지금은 쓰이지 않는다.
-	// 값을 미리 넣어두면 "근거 있는 값"처럼 보이므로 Phase 를 켤 때 같이 정한다.
+	// 완전 해소. 상승 계수와 짝이다 — 0 이면 시설을 이용해도 풀리지 않는다
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
-	float Thirst = 0.f;
+	float Thirst = 1.0f;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
-	float Fatigue = 0.f;
+	float Fatigue = 1.0f;
 
 	// 완전 해소. 공연 관람은 배고픔과 달리 한 번에 끝나는 경험이다.
 	// 재방문은 StimulationMinutesToLimit 이 다시 쌓아주는 쪽에서 나온다.

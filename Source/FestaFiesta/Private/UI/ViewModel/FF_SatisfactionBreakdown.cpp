@@ -14,6 +14,8 @@ namespace
 		{
 		case 0: return LOCTEXT("NeedFood", "음식");
 		case 1: return LOCTEXT("NeedRestroom", "화장실");
+		case 3: return LOCTEXT("NeedDrink", "음료");
+		case 4: return LOCTEXT("NeedRest", "휴게");
 		default: return LOCTEXT("NeedFun", "즐길 거리");
 		}
 	}
@@ -25,6 +27,8 @@ namespace
 		{
 		case 0: return LOCTEXT("NeedFoodObject", "음식을");
 		case 1: return LOCTEXT("NeedRestroomObject", "화장실을");
+		case 3: return LOCTEXT("NeedDrinkObject", "마실 곳을");
+		case 4: return LOCTEXT("NeedRestObject", "쉴 곳을");
 		default: return LOCTEXT("NeedFunObject", "즐길 거리를");
 		}
 	}
@@ -49,7 +53,18 @@ namespace
 		return FText::Join(FText::FromString(TEXT(" · ")), Parts);
 	}
 
-	// 욕구 점수는 세 욕구의 (100 - 미충족률) × 커버리지 평균이다. 그 욕구가 100 에서 모자란 만큼
+	// 켜진 욕구 수. 꺼진 욕구는 못 채운 비율이 음수로 들어온다
+	int32 ActiveNeedCount(const FInputs& Inputs)
+	{
+		int32 Count = 0;
+		for (int32 Index = 0; Index < FInputs::NeedCount; ++Index)
+		{
+			Count += Inputs.UnmetPercent[Index] >= 0.f ? 1 : 0;
+		}
+		return FMath::Max(Count, 1);
+	}
+
+	// 욕구 점수는 켜진 욕구들의 (100 - 미충족률) × 커버리지 평균이다. 그 욕구가 100 에서 모자란 만큼
 	float NeedDeficit(const FInputs& Inputs, const int32 NeedIndex)
 	{
 		const float Unmet = FMath::Max(Inputs.UnmetPercent[NeedIndex], 0.f);
@@ -139,7 +154,7 @@ namespace
 			: FText::GetEmpty();
 	}
 
-	// 욕구 하나의 시설을 목표까지 채우면 오르는 만족도. Need 점수는 세 욕구의 (100 - 미충족률) × 커버리지 평균이다
+	// 욕구 하나의 시설을 목표까지 채우면 오르는 만족도. Need 점수는 켜진 욕구들의 (100 - 미충족률) × 커버리지 평균이다
 	float NeedGain(const FInputs& Inputs, const int32 NeedIndex, const float NeedWeight)
 	{
 		const float Current = Coverage(Inputs, NeedIndex);
@@ -147,7 +162,7 @@ namespace
 		{
 			return 0.f;
 		}
-		return NeedWeight * (100.f - Inputs.UnmetPercent[NeedIndex]) * (1.f - Current) / FInputs::NeedCount;
+		return NeedWeight * (100.f - Inputs.UnmetPercent[NeedIndex]) * (1.f - Current) / ActiveNeedCount(Inputs);
 	}
 
 	FText MakeHint(const FInputs& Inputs, const EFF_SatisfactionFactor Top, const float NeedWeight)
@@ -159,7 +174,7 @@ namespace
 			const int32 Worst = WorstNeed(Inputs);
 			if (Worst == INDEX_NONE)
 			{
-				return LOCTEXT("HintNeedGeneric", "손님이 필요한 시설을 제때 못 찾았어요. 먹을 곳 · 화장실 · 즐길 거리를 고루 두세요.");
+				return LOCTEXT("HintNeedGeneric", "손님이 필요한 시설을 제때 못 찾았어요. 먹을 곳 · 마실 곳 · 쉴 곳 · 화장실 · 즐길 거리를 고루 두세요.");
 			}
 			const float Gain = NeedGain(Inputs, Worst, NeedWeight);
 			if (Coverage(Inputs, Worst) < 1.f && FMath::RoundToInt(Gain) >= FFF_SatisfactionBreakdownRules::MinHintGain)
