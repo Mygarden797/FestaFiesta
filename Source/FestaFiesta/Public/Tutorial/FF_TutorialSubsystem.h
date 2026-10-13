@@ -68,6 +68,12 @@ enum class EFF_TutorialScope : uint8
 	   섞이면 아침 브리핑을 닫았을 뿐인데 튜토리얼까지 꺼진다.
 	*/
 	Briefing,
+
+	/* 로비에서 트는 이야기 장면(S 엔딩, 2026-10-14). 브리핑처럼 기록하지 않고, 건너뛰기는 이 장면만 닫는다.
+	   브리핑과 나눈 이유: 브리핑은 두세 줄이라 건너뛰기 단추를 숨기는데(UFF_DialogueBoxWidget::ApplySkipButton),
+	   장면은 열 줄 넘게 이어져 단추가 있어야 한다.
+	*/
+	Story,
 };
 
 // 튜토리얼 대사를 굴리고 조작을 기다린다.
@@ -120,6 +126,12 @@ public:
 	// 지금 비서 브리핑을 재생 중인가. 건너뛰기가 브리핑만 닫게 하는 데 쓴다.
 	bool IsBriefingActive() const { return bDialogueActive && ActiveScope == EFF_TutorialScope::Briefing; }
 
+	// 건너뛰면 그 대사만 닫는(튜토리얼을 끄지 않는) 대사인가. 비서 브리핑 · 로비 이야기 장면(S 엔딩).
+	bool IsCloseOnSkipActive() const
+	{
+		return bDialogueActive && (ActiveScope == EFF_TutorialScope::Briefing || ActiveScope == EFF_TutorialScope::Story);
+	}
+
 	// 다음 줄로. 대사창에서 클릭했을 때 부른다.
 	//
 	// 조작을 기다리는 줄에서는 아무 일도 하지 않는다. 그래야 클릭으로
@@ -151,6 +163,32 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
 	bool IsAwaitingSkipConfirm() const { return bAwaitingSkipConfirm; }
+
+	/* 로비 이야기에서 건너뛰기를 눌렀으면 이야기만 넘기고 실습장으로 가는 줄부터 잇는다. 넘겼으면 true.
+
+	   건너뛰기 버튼은 확인 창을 띄우기 전에 이걸 먼저 부른다. 이야기 부분은 되돌릴 것이 없어 묻지 않고,
+	   건너뜀으로 기록하지 않는다(실습장이 열린 채로 남는다). 실습장으로 가는 줄(설정의 LobbyStorySkipLabel)부터는
+	   false — 그때 누른 건 실습장 안과 같은 진짜 건너뛰기라 원래대로 확인 창을 거친다.
+	*/
+	bool TrySkipLobbyStory();
+
+	/* 이름 입력 줄(EFF_DialogueLineKind::NameInput)에서 받은 이름을 남기고 다음 줄로 간다. 받았으면 true.
+
+	   앞뒤 공백을 떼고, 비었거나 설정의 글자 수 한도를 넘으면 받지 않는다(입력 창이 막아 두지만 한 번 더 본다).
+	   이야기를 건너뛰다 이름을 물은 경우면 이름을 받은 뒤 실습장 가는 줄로 간다(TrySkipLobbyStory).
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
+	bool SubmitPlayerName(const FString& Name);
+
+	/* S 엔딩 장면(튜토리얼 설정 S Grade Ending Table)을 지금 튼다. 틀었으면 true.
+	   보통은 축제를 S 등급으로 끝내고 로비에 돌아왔을 때 저절로 튼다(TryStartPendingSGradeEnding). 개발 명령 · 시험에서도 부른다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
+	bool PlaySGradeEnding();
+
+	// 대사의 {이름} 자리에 들어갈 이름. 아직 안 받았으면 설정의 기본 호칭.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
+	FString GetPlayerDisplayName() const;
 
 	// 튜토리얼을 통째로 끝낸다.
 	//
@@ -386,6 +424,11 @@ private:
 	// 레벨 선택 화면이 떠 있으면 로비 인트로를 튼다. 새 게임을 누른 뒤 Tick 에서 부른다.
 	void TryStartPendingLobbyIntro();
 
+	/* 축제를 S 등급으로 끝내고 로비(국가 지도)에 돌아왔으면 S 엔딩 장면을 튼다(UFF_SaveSubsystem::GetPendingSGradeEnding).
+	   비서 브리핑 범위로 튼다 — 건너뛰기는 그 장면만 닫고, 끝까지 봤다는 기록은 남기지 않는다.
+	*/
+	void TryStartPendingSGradeEnding();
+
 	// 새 게임을 눌렀고 아직 로비 인트로를 틀지 않았다. 레벨 선택 화면이 뜨면 튼다.
 	bool bLobbyIntroPending = false;
 
@@ -546,6 +589,19 @@ private:
 	int32 CurrentLineIndex = INDEX_NONE;
 	bool bDialogueActive = false;
 
+	/* 지금 줄의 {이름} 을 주인공 이름으로 바꾼 사본. GoToLine 이 만들고 GetCurrentLine 이 돌려준다.
+
+	   줄을 불러올 때가 아니라 보여 줄 때 바꾸는 이유: 로비 이야기는 처음에 전부 불러오는데,
+	   이름은 이야기 중간에 받는다. 불러올 때 바꾸면 이름을 받은 뒤의 줄에도 기본 호칭이 남는다.
+	*/
+	FFF_DialogueLine CurrentResolvedLine;
+
+	// 줄의 화자 · 대사 · 선택지에 든 {이름} 을 바꾼다.
+	FFF_DialogueLine ResolvePlayerNameTokens(const FFF_DialogueLine& Line) const;
+
+	// 이야기를 건너뛰다 이름부터 묻는 중이다. 이름을 받으면 실습장 가는 줄로 간다(TrySkipLobbyStory).
+	bool bSkipStoryAfterName = false;
+
 	FName CurrentAnchor = NAME_None;
 
 	// 지금 강조가 테두리만인지. 줄이 바뀔 때 그 줄의 값으로 바꾼다.
@@ -634,6 +690,28 @@ private:
 
 	// 나가기 버튼을 띄운다. 이미 떠 있으면 그대로 둔다.
 	void ShowExitButton();
+
+	// 실습장을 지나기 전 국가 지도에 남는 "튜토리얼 건너뛰기" 버튼. FF_TutorialSkipWidget 참고.
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> MapSkipWidget;
+
+	/* 대사 밖에서(국가 지도) 튜토리얼을 건너뛸 수 있는가. 지도 건너뛰기 버튼을 띄우는 조건이자 SkipTutorial 의 허용 조건이다.
+
+	   대사 중이 아니고 · 국가 지도 화면이고 · 다른 축제를 실습장 때문에 잠가 둔 동안(SyncFestivalsLockedUntilTutorial)이다.
+	   잠가 둔 동안만 보는 이유: 그 조건(판 시작 · 튜토리얼 미통과 · 지도에 튜토리얼 칸 있음)이 곧 "건너뛸 튜토리얼이 남았다" 이고,
+	   끝까지 본 사람의 안내를 대사 밖에서 끄는 일이 없어야 한다(SkipTutorial 의 대사 검사 주석).
+	*/
+	bool IsMapSkipAvailable() const;
+
+	// 지도 건너뛰기 버튼을 조건에 맞춰 띄우거나 내린다. Tick 이 부른다.
+	void UpdateMapSkipButton();
+
+	/* 건너뛴 결과를 지도에 바로 반영한다 — 잠금 값을 맞추고 떠 있는 국가 지도의 핀을 다시 그린다.
+
+	   핀은 화면이 뜰 때 잠금 값을 받아 그린다. 지도 위에서 건너뛰면(지도 버튼 · 로비 이야기의 실습장 가는 줄) 화면이 그대로라,
+	   다시 그리지 않으면 실습장 핀은 열린 채 · 다대포 핀은 잠긴 채로 보인다.
+	*/
+	void RefreshAtlasLocks();
 
 	// 개발용 콘솔 명령. 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
 	FFF_DebugConsoleCommands DebugCommands;

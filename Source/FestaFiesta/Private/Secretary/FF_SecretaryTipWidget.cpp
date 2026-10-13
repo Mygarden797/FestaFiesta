@@ -143,14 +143,14 @@ void UFF_SecretaryTipWidget::NativeConstruct()
 	ApplyPhaseLook();
 }
 
-void UFF_SecretaryTipWidget::ShowTip(const FText& Text)
+void UFF_SecretaryTipWidget::ShowTip(const FText& Text, const float VisibleOverride)
 {
 	if (Text_Tip)
 	{
 		Text_Tip->SetText(Text);
 	}
 	const UFF_SecretarySettings* Settings = UFF_SecretarySettings::Get();
-	VisibleSeconds = Settings ? Settings->TipVisibleSeconds : 7.f;
+	VisibleSeconds = VisibleOverride > 0.f ? VisibleOverride : (Settings ? Settings->TipVisibleSeconds : 7.f);
 
 	// 이미 떠 있으면 다시 나타나는 모양 없이 시간만 처음부터.
 	Phase = (Phase == EPhase::Visible) ? EPhase::Visible : EPhase::FadingIn;

@@ -1,10 +1,10 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 /**
- * PickMesh 선택 규칙
- *  1. Seed 한 비트로 성별을 정한다. 뽑힌 성별의 풀(FemaleMeshVariants / MaleMeshVariants)이 비어 있으면 반대 성별 풀로 간다.
- *  2. 두 성별 풀이 모두 비어 있으면 성별 구분 없는 풀(Mesh + MeshVariants)에서 고른다.
- *  3. 풀 안에서의 인덱스는 성별 비트와 다른 해시로 고른다. 같은 Seed는 항상 같은 결과를 낸다.
+ * 성별과 PickMesh 규칙
+ *  1. 성별은 행 이름으로 나눈다. IsFemaleSeed 가 Seed 한 비트로 정하고, 호출부가 {ArchetypeID}_female / _male 행을 찾는다.
+ *  2. PickMesh / PickAppearance 는 한 행 안에서 Mesh + Variants 를 후보 풀로 삼아 Seed 로 하나를 고른다. Variants 는 메시와 AnimClass 를 한 쌍으로 들고, AnimClass 가 비면 행의 AnimClass 를 쓴다.
+ *  3. 같은 Seed 는 항상 같은 결과를 낸다.
  */
 
 #include "DataTables/FF_CrowdAppearenceRow.h"
@@ -22,19 +22,6 @@ namespace
 		Hash ^= Hash >> 15;
 		return Hash;
 	}
-
-	using FMeshPool = TArray<const TSoftObjectPtr<USkeletalMesh>*, TInlineAllocator<32>>;
-
-	void AppendValid(FMeshPool& Pool, const TArray<TSoftObjectPtr<USkeletalMesh>>& Source)
-	{
-		for (const TSoftObjectPtr<USkeletalMesh>& Entry : Source)
-		{
-			if (!Entry.IsNull())
-			{
-				Pool.Add(&Entry);
-			}
-		}
-	}
 }
 
 bool FFF_CrowdAppearenceRow::IsFemaleSeed(int32 Seed)
@@ -42,33 +29,43 @@ bool FFF_CrowdAppearenceRow::IsFemaleSeed(int32 Seed)
 	return (MixSeed(Seed, GenderSalt) & 1u) != 0u;
 }
 
-TSoftObjectPtr<USkeletalMesh> FFF_CrowdAppearenceRow::PickMesh(int32 Seed) const
+void FFF_CrowdAppearenceRow::PickAppearance(int32 Seed, TSoftObjectPtr<USkeletalMesh>& OutMesh, TSoftClassPtr<UFF_CrowdAnimInstance>& OutAnimClass) const
 {
-	FMeshPool Female;
-	FMeshPool Male;
-	AppendValid(Female, FemaleMeshVariants);
-	AppendValid(Male, MaleMeshVariants);
+	struct FCandidate
+	{
+		const TSoftObjectPtr<USkeletalMesh>* MeshPtr;
+		const TSoftClassPtr<UFF_CrowdAnimInstance>* AnimClassPtr;
+	};
 
-	FMeshPool Pool;
-	if (!Female.IsEmpty() || !Male.IsEmpty())
+	TArray<FCandidate, TInlineAllocator<32>> Pool;
+	if (!Mesh.IsNull())
 	{
-		const bool bWantFemale = IsFemaleSeed(Seed);
-		const bool bUseFemale = bWantFemale ? !Female.IsEmpty() : Male.IsEmpty();
-		Pool = bUseFemale ? Female : Male;
+		Pool.Add({ &Mesh, &AnimClass });
 	}
-	else
+	for (const FFF_CrowdAppearanceVariant& Entry : Variants)
 	{
-		if (!Mesh.IsNull())
+		if (!Entry.Mesh.IsNull())
 		{
-			Pool.Add(&Mesh);
+			Pool.Add({ &Entry.Mesh, Entry.AnimClass.IsNull() ? &AnimClass : &Entry.AnimClass });
 		}
-		AppendValid(Pool, MeshVariants);
 	}
 
 	if (Pool.IsEmpty())
 	{
-		return TSoftObjectPtr<USkeletalMesh>();
+		OutMesh = TSoftObjectPtr<USkeletalMesh>();
+		OutAnimClass = AnimClass;
+		return;
 	}
 
-	return *Pool[MixSeed(Seed, PickSalt) % static_cast<uint32>(Pool.Num())];
+	const FCandidate& Picked = Pool[MixSeed(Seed, PickSalt) % static_cast<uint32>(Pool.Num())];
+	OutMesh = *Picked.MeshPtr;
+	OutAnimClass = *Picked.AnimClassPtr;
+}
+
+TSoftObjectPtr<USkeletalMesh> FFF_CrowdAppearenceRow::PickMesh(int32 Seed) const
+{
+	TSoftObjectPtr<USkeletalMesh> PickedMesh;
+	TSoftClassPtr<UFF_CrowdAnimInstance> PickedAnimClass;
+	PickAppearance(Seed, PickedMesh, PickedAnimClass);
+	return PickedMesh;
 }

@@ -115,7 +115,8 @@ def verify(state):
     children = state["columnChildren"]
     assert tree[ROW]["parent"] == "Column_BuildIconHelp", "TAB row must use the existing guide column"
     assert children.index(ROW) == children.index(HINT) + 1, "TAB row must immediately follow the guide hint"
-    assert children.index("Button_BuildHelpUndo") == children.index(ROW) + 1, "TAB row must precede Ctrl+Z"
+    following = children[children.index(ROW) + 1:children.index("Button_BuildHelpUndo")]
+    assert following in ([], ["Row_BuildHelpShiftLock", "Row_BuildHelpSprint"]), "TAB and character shortcuts must precede Ctrl+Z"
     assert appearance[ROW]["visibility"] == str(unreal.SlateVisibility.SELF_HIT_TEST_INVISIBLE), "TAB row must be visible"
     # bHiddenInDesigner is not reflected to Python; the new native row uses its visible default.
     assert tree[ROW]["children"] == ["Size_BuildHelpViewToggleIcon", "Text_BuildHelpViewToggle"]

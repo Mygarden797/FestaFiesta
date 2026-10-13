@@ -80,6 +80,20 @@ public:
 	UPROPERTY(EditAnywhere, Config, Category = "Secretary|Briefing", meta = (ClampMin = "0.0"))
 	float BriefingDelaySeconds = 1.5f;
 
+	// ── 결산 반응(2026-10-14) ──────────────────────────────────────────────
+
+	// 결산 때 그날 성적에 따라 비서가 말풍선으로 한마디 한다. 신뢰도도 이때 오르내린다.
+	UPROPERTY(EditAnywhere, Config, Category = "Secretary|Report")
+	bool bEnableReportReaction = true;
+
+	// 결산이 시작되고 한마디까지(초). 결산 화면이 먼저 다 뜨게 한다.
+	UPROPERTY(EditAnywhere, Config, Category = "Secretary|Report", meta = (ClampMin = "0.0"))
+	float ReportReactionDelaySeconds = 1.5f;
+
+	// 결산 한마디가 떠 있는 시간(초). 결산 화면을 읽는 동안 남아 있게 운영 중 훈수보다 길다. 누르면 닫힌다.
+	UPROPERTY(EditAnywhere, Config, Category = "Secretary|Report", meta = (ClampMin = "1.0"))
+	float ReportReactionVisibleSeconds = 10.f;
+
 	// ── 말풍선 모양 ────────────────────────────────────────────────────────
 
 	// 초상화에서 얼굴만 쓰는 영역(UV). 동그랗게 잘라 말풍선 옆에 띄운다.

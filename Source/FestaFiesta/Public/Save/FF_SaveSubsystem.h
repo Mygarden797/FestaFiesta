@@ -220,6 +220,34 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void MarkLobbyIntroSeen();
 
+	// 로비 이야기에서 받은 주인공 이름. 아직 안 받았으면 빈 문자열이다(기본 호칭은 튜토리얼 쪽이 정한다).
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
+	FString GetPlayerName() const { return Meta.PlayerName; }
+
+	// 주인공 이름을 남긴다. 이 판의 세이브가 있으면 메타만 고쳐 쓴다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
+	void SetPlayerName(const FString& Name);
+
+	// 비서 신뢰도(0~100).
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
+	int32 GetSecretaryTrust() const { return Meta.SecretaryTrust; }
+
+	/* 비서 신뢰도를 더한다(빼려면 음수). 0~100 으로 묶고 바뀐 값을 돌려준다.
+
+	   세이브에 바로 고쳐 쓰지 않는다. 결산 때 바뀌는 값이라, 이 판의 세이브(그날 아침)에 고쳐 쓰면 그 세이브로
+	   하루를 다시 할 때 같은 결산의 신뢰도가 두 번 붙는다. 다음 자동 저장(다음 날 아침 · 로비)에 담긴다.
+	*/
+	int32 AddSecretaryTrust(int32 Delta, const TCHAR* Reason);
+
+	// 신뢰도가 '높음'에 처음 닿았다고 남긴다. 처음이면 true(비서가 그 순간에만 하는 말이 있다).
+	bool MarkSecretaryTrustReachedHigh();
+
+	// S 등급으로 끝낸 축제가 로비 장면을 기다리면 그 축제 이름, 아니면 None.
+	FName GetPendingSGradeEnding() const { return Meta.PendingSGradeEnding; }
+
+	// S 엔딩을 틀었다. 기다림을 비우고 이 판의 세이브(로비)에 고쳐 쓴다 — 이어하기로 다시 나오지 않게.
+	void ClearPendingSGradeEnding();
+
 	// 이 축제의 튜토리얼을 끝까지 봤다고 남긴다. FestivalId 가 비면 아무것도 하지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void MarkFestivalTutorialSeen(FName FestivalId);

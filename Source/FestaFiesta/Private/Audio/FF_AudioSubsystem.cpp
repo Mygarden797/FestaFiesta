@@ -31,11 +31,26 @@ namespace
 	constexpr float PlaylistPreviousRestartSeconds = 3.f;
 
 	// 끝났다는 알림이 곡 끝에서 이만큼 안쪽이면 끝까지 간 것으로 본다(IsAmbienceCutShort).
-	// 오디오 시각과 실제 재생 사이에는 작은 어긋남이 있다.
+	// 재는 시각과 실제 재생 사이에는 작은 어긋남이 있다(소리를 불러와 틀기까지의 지연 등).
 	constexpr float AmbienceEndToleranceSeconds = 1.f;
 
 	// 끊긴 곡을 이을 때 소리를 올리는 시간. 0 이면 툭 하고 들어온다.
 	constexpr float AmbienceResumeFadeSeconds = 0.3f;
+
+	// 플레이리스트가 알림 없이 멈췄는지 보는 간격(CheckPlaylistStalled).
+	constexpr float PlaylistWatchdogIntervalSeconds = 1.f;
+
+	/* 배경음 위치를 재는 시계. 게임을 멈춰도 가는 실제 시각이다.
+
+	   배경음은 2D 로 만들어 UI 소리가 되고(UGameplayStatics::CreateSound2D 가 bIsUISound 를 켠다), UI 소리는
+	   ESC 메뉴로 게임을 멈춰도 계속 난다. 예전에는 오디오 시각(GetAudioTimeSeconds)으로 쟀는데 그건 게임과 같이
+	   멈춘다. 멈춘 시간만큼 위치가 뒤처져 곡이 실제로 끝나면 '중간에 끊겼다'로 보고 끝부분을 다시 틀었고,
+	   다음 곡으로 안 넘어가고 '재생 중'만 보였다(2026-10-13 테스터, PIE 에서 10초 멈춤 → 117.7/127.6초에서 끊김으로 봄).
+	*/
+	double GetMusicClockSeconds(const UWorld& World)
+	{
+		return World.GetRealTimeSeconds();
+	}
 
 	// 플레이리스트 설정을 남기는 자리(GameUserSettings.ini).
 	const TCHAR* const PlaylistConfigSection = TEXT("FestaFiesta.Playlist");
@@ -67,6 +82,12 @@ void UFF_AudioSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	RegisterDebugConsoleCommands();
 	BindRuntimeSettings();
 	LoadPlaylistPreferences();
+
+	// 월드 타이머라 게임이 멈추면 같이 멈춘다. 그동안은 곡도 멈춰 있어 볼 것이 없다.
+	InWorld.GetTimerManager().SetTimer(
+		PlaylistWatchdogTimer,
+		FTimerDelegate::CreateWeakLambda(this, [this]() { CheckPlaylistStalled(); }),
+		PlaylistWatchdogIntervalSeconds, true);
 }
 
 void UFF_AudioSubsystem::Deinitialize()
@@ -426,7 +447,7 @@ void UFF_AudioSubsystem::SpawnAmbienceComponent(
 		// 반복 곡은 GetDuration 이 "무한" 을 돌려준다. 파형이면 실제 길이를 읽는다.
 		const USoundWave* Wave = Cast<USoundWave>(Sound);
 		AmbienceLength = Wave ? Wave->Duration : (Sound->IsLooping() ? 0.f : Sound->GetDuration());
-		AmbienceStartAudioTime = World->GetAudioTimeSeconds();
+		AmbienceStartClockSeconds = GetMusicClockSeconds(*World);
 		AmbienceStartOffset = StartSeconds;
 	}
 }
@@ -451,7 +472,7 @@ float UFF_AudioSubsystem::GetAmbiencePlaybackSeconds() const
 	}
 
 	const float Position = AmbienceStartOffset
-		+ static_cast<float>(World->GetAudioTimeSeconds() - AmbienceStartAudioTime);
+		+ static_cast<float>(GetMusicClockSeconds(*World) - AmbienceStartClockSeconds);
 	return AmbienceLength > 0.f ? FMath::Clamp(Position, 0.f, AmbienceLength) : FMath::Max(0.f, Position);
 }
 
@@ -588,7 +609,7 @@ bool UFF_AudioSubsystem::StartPlaylistTrack()
 
 		const float StartSeconds = FMath::Max(0.f, PlaylistResumeSeconds);
 		SpawnAmbienceComponent(Sound, Track, StartSeconds);
-		PlaylistTrackStartAudioTime = World->GetAudioTimeSeconds();
+		PlaylistTrackStartClockSeconds = GetMusicClockSeconds(*World);
 		PlaylistTrackStartOffset = StartSeconds;
 
 		// 반복 곡은 끝났다는 알림이 오지 않는다. 길이만큼 지나면 넘긴다.
@@ -658,6 +679,29 @@ void UFF_AudioSubsystem::HandlePlaylistTrackEnded()
 	{
 		RestartPlaylistAt(PlaylistCursor);
 	}
+}
+
+void UFF_AudioSubsystem::CheckPlaylistStalled()
+{
+	const UWorld* World = GetWorld();
+	if (!World || World->IsPaused() || CurrentAmbience != EFF_AudioAmbience::Playlist || bPlaylistPaused
+		|| !bAudioEnabled || !AmbienceComponent || AmbienceComponent->IsPlaying())
+	{
+		PlaylistStalledChecks = 0;
+		return;
+	}
+
+	if (++PlaylistStalledChecks < 2)
+	{
+		return;
+	}
+	PlaylistStalledChecks = 0;
+
+	UE_LOG(LogFestaFiestaAudio, Warning,
+		TEXT("[사운드] 플레이리스트 곡 %s 이 끝났다는 알림 없이 멈춰 있다(%.1f/%.1f초). 알림이 온 것처럼 잇거나 넘긴다."),
+		AmbienceComponent->Sound ? *AmbienceComponent->Sound->GetName() : TEXT("?"),
+		GetPlaylistPlaybackSeconds(), PlaylistTrackLength);
+	HandleAmbienceFinished(AmbienceComponent);
 }
 
 void UFF_AudioSubsystem::RestartPlaylistAt(const int32 Cursor, const bool bReshuffle, const int32 AvoidFirstTrack)
@@ -792,7 +836,7 @@ void UFF_AudioSubsystem::SetPlaylistPaused(const bool bPaused)
 	{
 		bPlaylistPaused = false;
 		AmbienceComponent->SetPaused(false);
-		PlaylistTrackStartAudioTime = World->GetAudioTimeSeconds();
+		PlaylistTrackStartClockSeconds = GetMusicClockSeconds(*World);
 		PlaylistTrackStartOffset = PlaylistResumeSeconds;
 		World->GetTimerManager().UnPauseTimer(PlaylistAdvanceTimer);
 	}
@@ -858,7 +902,7 @@ float UFF_AudioSubsystem::GetPlaylistPlaybackSeconds() const
 	}
 
 	const float Position = PlaylistTrackStartOffset
-		+ static_cast<float>(World->GetAudioTimeSeconds() - PlaylistTrackStartAudioTime);
+		+ static_cast<float>(GetMusicClockSeconds(*World) - PlaylistTrackStartClockSeconds);
 	return PlaylistTrackLength > 0.f
 		? FMath::Clamp(Position, 0.f, PlaylistTrackLength)
 		: FMath::Max(0.f, Position);
@@ -911,7 +955,7 @@ void UFF_AudioSubsystem::CapturePlaylistPosition()
 	}
 
 	float Position = PlaylistTrackStartOffset
-		+ static_cast<float>(World->GetAudioTimeSeconds() - PlaylistTrackStartAudioTime);
+		+ static_cast<float>(GetMusicClockSeconds(*World) - PlaylistTrackStartClockSeconds);
 	if (PlaylistTrackLength > 0.f)
 	{
 		Position = FMath::Clamp(Position, 0.f, PlaylistTrackLength);
@@ -948,7 +992,7 @@ void UFF_AudioSubsystem::HandleAmbienceFinished(UAudioComponent* Component)
 		Component->FadeIn(AmbienceResumeFadeSeconds, 1.f, Played);
 		if (const UWorld* World = GetWorld())
 		{
-			AmbienceStartAudioTime = World->GetAudioTimeSeconds();
+			AmbienceStartClockSeconds = GetMusicClockSeconds(*World);
 		}
 		AmbienceStartOffset = Played;
 		return;
@@ -986,7 +1030,7 @@ void UFF_AudioSubsystem::HandleAmbienceFinished(UAudioComponent* Component)
 	Component->Play(0.f);
 	if (const UWorld* World = GetWorld())
 	{
-		AmbienceStartAudioTime = World->GetAudioTimeSeconds();
+		AmbienceStartClockSeconds = GetMusicClockSeconds(*World);
 	}
 	AmbienceStartOffset = 0.f;
 }
@@ -1195,6 +1239,22 @@ void UFF_AudioSubsystem::RegisterDebugConsoleCommands()
 				return;
 			}
 			SkipPlaylistTrack();
+		}));
+
+	DebugCommands.Add(
+		TEXT("FF.Audio.Stall"),
+		TEXT("플레이리스트 곡을 끝 알림 없이 멈춘다. 알림 없이 멈춘 곡을 잇는지(CheckPlaylistStalled) 볼 때 쓴다."),
+		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+		{
+			if (CurrentAmbience != EFF_AudioAmbience::Playlist || !AmbienceComponent)
+			{
+				UE_LOG(LogFestaFiestaAudio, Display, TEXT("[사운드] 흐르는 플레이리스트 곡이 없다."));
+				return;
+			}
+			// 알림을 떼고 세운다. 엔진이 소리를 틀지 못하고 내린 경우와 같은 모양이 된다.
+			AmbienceComponent->OnAudioFinishedNative.RemoveAll(this);
+			AmbienceComponent->Stop();
+			UE_LOG(LogFestaFiestaAudio, Display, TEXT("[사운드] 플레이리스트 곡을 끝 알림 없이 멈췄다."));
 		}));
 
 	DebugCommands.Add(
