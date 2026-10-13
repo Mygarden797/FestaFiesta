@@ -1268,6 +1268,15 @@ TArray<FName> UFF_FestivalViewModelSubsystem::GetScheduledProgramIds() const
 	return Ids;
 }
 
+bool UFF_FestivalViewModelSubsystem::TryGetScheduledPrograms(TArray<FFF_ScheduledProgram>& OutPrograms) const
+{
+	OutPrograms.Reset();
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->GetDefinition()) return false;
+	OutPrograms = Progression->GetScheduledPrograms();
+	return true;
+}
+
 EFF_ProgramPurchaseResult UFF_FestivalViewModelSubsystem::CanScheduleProgram(FName ProgramId) const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();

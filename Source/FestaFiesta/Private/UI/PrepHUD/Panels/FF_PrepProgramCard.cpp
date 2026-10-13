@@ -35,11 +35,19 @@ void UFF_PrepProgramCard::ConfigureCard(int32 InIndex, const FFF_ProgramCard& In
 	ApplyContentColor();
 }
 
-void UFF_PrepProgramCard::SetRevenuePreview(const FFF_ProgramCard* FacilityCard)
+void UFF_PrepProgramCard::SetRevenuePreview(const FFF_ProgramCard* FacilityCard, bool bCompact)
 {
 	if (Card.Capacity <= 0)
 	{
 		SetTextOrHide(Text_Capacity, FText::GetEmpty());
+		return;
+	}
+	if (bCompact)
+	{
+		SetTextOrHide(Text_Capacity, FText::Format(LOCTEXT("CompactCapacity", "정원 {0}명"), FText::AsNumber(Card.Capacity)));
+		if (Button_Root) Button_Root->SetToolTipText(FacilityCard
+			? FText::Format(LOCTEXT("CompactRevenueTooltip", "선택 시설 최대 매출 {0} Gold"), FText::AsNumber(FacilityCard->CalcMaxRevenue()))
+			: LOCTEXT("CompactRevenueBeforeFacility", "시설을 선택하면 최대 매출을 확인할 수 있습니다."));
 		return;
 	}
 	SetTextOrHide(Text_Capacity, FacilityCard
@@ -56,15 +64,16 @@ void UFF_PrepProgramCard::CollectStateTexts(TArray<UTextBlock*>& OutTexts) const
 	OutTexts.Add(Text_TimeRange);
 }
 
-void UFF_PrepProgramCard::SetScheduledFacilityCount(int32 InCount)
+void UFF_PrepProgramCard::SetScheduledFacilityCount(int32 InCount, bool bCompact)
 {
 	ScheduledFacilityCount = FMath::Max(0, InCount);
 	if (Text_CompletionBadge)
 	{
 		FFormatNamedArguments Args;
 		Args.Add(TEXT("Count"), FText::AsNumber(ScheduledFacilityCount));
-		Text_CompletionBadge->SetText(ScheduledFacilityCount > 1
-			? FText::Format(ScheduledCountFormat, Args) : ScheduledBadgeText);
+		Text_CompletionBadge->SetText(bCompact
+			? FText::Format(LOCTEXT("CompactCompletedFacilities", "✓ {Count}곳 편성"), Args)
+			: ScheduledFacilityCount > 1 ? FText::Format(ScheduledCountFormat, Args) : ScheduledBadgeText);
 		Text_CompletionBadge->SetVisibility(ScheduledFacilityCount > 0
 			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	}

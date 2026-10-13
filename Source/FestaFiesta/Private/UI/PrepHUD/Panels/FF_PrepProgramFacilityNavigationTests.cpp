@@ -54,6 +54,7 @@
 #include "UI/PrepHUD/Panels/FF_PrepPanelProgram.h"
 #include "UI/PrepHUD/Panels/FF_PrepProgramCatalogChoice.h"
 #include "UI/PrepHUD/Panels/FF_PrepProgramFacilityRow.h"
+#include "UI/PrepHUD/Panels/FF_PrepScheduledProgramRow.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UnrealClient.h"
 #include "Widgets/SOverlay.h"
@@ -263,6 +264,52 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	Panel->InitializePanel(nullptr, EFF_PrepHudTab::Program, FText::FromString(TEXT("프로그램")));
 	Panel->HandlePanelOpened();
 	ON_SCOPE_EXIT { Panel->HandlePanelClosed(); Build->ExitBuildMode(); };
+	if (!TestTrue(TEXT("저장된 프로그램 패널은 오늘 편성 목록을 사용한다"), Panel->UsesCompactLayout()) ||
+		!TestNotNull(TEXT("오늘 편성 건수 바인딩"), Panel->Text_ScheduledCount.Get()) ||
+		!TestNotNull(TEXT("오늘 편성 빈 목록 바인딩"), Panel->Text_ScheduledEmpty.Get()) ||
+		!TestNotNull(TEXT("오늘 편성 목록 바인딩"), Panel->VerticalBox_ScheduledPrograms.Get())) return false;
+	// 실제 편성 원본과 WBP의 행을 비교한다. 선택한 카드의 견적을 완료 목록으로 오인하면 안 된다.
+	auto CheckScheduledRows = [&](int32 ExpectedCount, const TCHAR* State)
+	{
+		const FString Label(State);
+		const TArray<FFF_ScheduledProgram> Current = Progression->GetScheduledPrograms();
+		if (!TestEqual(Label + TEXT(" / 원본 편성 수"), Current.Num(), ExpectedCount) ||
+			!TestEqual(Label + TEXT(" / 화면 편성 행 수"), Panel->ScheduledRowWidgets.Num(), ExpectedCount) ||
+			!TestEqual(Label + TEXT(" / 실제 목록 자식 수"), Panel->VerticalBox_ScheduledPrograms->GetChildrenCount(), ExpectedCount)) return false;
+		TestEqual(Label + TEXT(" / 총 편성 건수"), Panel->Text_ScheduledCount->GetText().ToString(),
+			FText::Format(NSLOCTEXT("FestaFiestaPrepProgramTest", "ExpectedScheduledCount", "총 {0}건"), FText::AsNumber(ExpectedCount)).ToString());
+		TestEqual(Label + TEXT(" / 빈 목록 안내 상태"), Panel->Text_ScheduledEmpty->GetVisibility() == ESlateVisibility::Collapsed, ExpectedCount > 0);
+		if (ExpectedCount == 0) TestFalse(Label + TEXT(" / 빈 목록 안내 문구"), Panel->Text_ScheduledEmpty->GetText().IsEmpty());
+		TSet<FString> FacilityNames;
+		for (int32 Index = 0; Index < ExpectedCount; ++Index)
+		{
+			UFF_PrepScheduledProgramRow* Row = Panel->ScheduledRowWidgets[Index];
+			if (!TestNotNull(Label + TEXT(" / 저장된 편성 행"), Row)) return false;
+			UTextBlock* ProgramText = Cast<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_ProgramName")));
+			UTextBlock* FacilityText = Cast<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_FacilityName")));
+			UTextBlock* TimeText = Cast<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_TimeRange")));
+			const FFF_ProgramCard* Card = Panel->Catalog.FindByPredicate([&](const FFF_ProgramCard& Entry)
+			{
+				return Entry.ProgramId == Current[Index].ProgramId;
+			});
+			const TArray<FFF_PrepFacilityOption> Options = ViewModel->GetEligibleFacilitiesForProgram(Current[Index].ProgramId);
+			const FFF_PrepFacilityOption* Facility = Options.FindByPredicate([&](const FFF_PrepFacilityOption& Entry)
+			{
+				return Entry.FacilityInstanceId == Current[Index].FacilityInstanceId;
+			});
+			if (!TestNotNull(Label + TEXT(" / 프로그램명"), ProgramText) || !TestNotNull(Label + TEXT(" / 시설명"), FacilityText) ||
+				!TestNotNull(Label + TEXT(" / 운영 시간"), TimeText) || !TestNotNull(Label + TEXT(" / 원본 프로그램"), Card) ||
+				!TestNotNull(Label + TEXT(" / 원본 시설"), Facility)) return false;
+			TestEqual(Label + TEXT(" / 편성한 프로그램 이름"), ProgramText->GetText().ToString(), Card->DisplayName.ToString());
+			TestEqual(Label + TEXT(" / 편성한 시설 고정 이름"), FacilityText->GetText().ToString(), Facility->InstanceLabel.ToString());
+			TestFalse(Label + TEXT(" / 운영 시간 내용"), TimeText->GetText().IsEmpty());
+			TestNotEqual(Label + TEXT(" / 운영 시간 표시"), TimeText->GetVisibility(), ESlateVisibility::Collapsed);
+			FacilityNames.Add(FacilityText->GetText().ToString());
+		}
+		TestEqual(Label + TEXT(" / 같은 종류의 시설도 이름으로 구분"), FacilityNames.Num(), ExpectedCount);
+		return true;
+	};
+	if (!CheckScheduledRows(0, TEXT("첫 진입"))) return false;
 	const int32 WorkshopIndex = Panel->Catalog.IndexOfByPredicate([](const FFF_ProgramCard& Card)
 	{
 		return Card.ProgramId == TEXT("Program_SandArtWorkshop");
@@ -280,7 +327,8 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Clicking the real card selects its program"), Panel->SelectedCardIndex, WorkshopIndex);
 	TestEqual(TEXT("Only compatible workshop facilities are offered"), Guide->GetChildrenCount(), 1);
 	TestEqual(TEXT("Workshop guide becomes visible"), Guide->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
-	TestFalse(TEXT("시설이 없을 때 안내 설명이 보임"), Notice->GetText().IsEmpty());
+	TestEqual(TEXT("간소화 화면은 반복 시설 설명을 접는다"), Notice->GetVisibility(), ESlateVisibility::Collapsed);
+	TestFalse(TEXT("시설이 없어도 다음 행동 제목은 남는다"), Panel->Text_FacilityGuideTitle->GetText().IsEmpty());
 	UTextBlock* WorkshopShortcut = Cast<UTextBlock>(Panel->CatalogChoiceWidgets[0]->GetWidgetFromName(TEXT("Text_Label")));
 	if (!TestNotNull(TEXT("시설 바로가기 이름"), WorkshopShortcut)) return false;
 	TestEqual(TEXT("버튼에 실제 시설 이름을 표시"), WorkshopShortcut->GetText().ToString(), WorkshopFacility->Spec.DisplayName.ToString());
@@ -383,7 +431,8 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 		!TestNotNull(TEXT("Actual day label"), DayText) ||
 		!TestNotNull(TEXT("Empty catalog explanation"), EmptyText)) return false;
 	TestEqual(TEXT("One available facility is also selected in the actual dropdown"), FacilityCombo->GetSelectedIndex(), 1);
-	TestEqual(TEXT("Summary follows the selected catalog name"), SelectedProgram->GetText().ToString(), Panel->Catalog[YogaIndex].DisplayName.ToString());
+	TestEqual(TEXT("선택 프로그램 중복 요약을 표시하지 않는다"), SelectedProgram->GetVisibility(), ESlateVisibility::Collapsed);
+	if (!CheckScheduledRows(0, TEXT("프로그램과 시설만 선택"))) return false;
 	const int32 YogaCapacity = Panel->Catalog[YogaIndex].Capacity;
 	TestEqual(TEXT("The open panel initially quotes the facility's authored fee"), Panel->GetQuote().MaxRevenue, YogaCapacity * 25);
 	RevenueRow.ProgramFeesPerPerson.Add(TEXT("Program_SunsetYoga"), 45);
@@ -408,6 +457,7 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Failed scheduling displays a reason"), Panel->Text_BlockReason->GetText().IsEmpty());
 	if (!TestNotNull(TEXT("새 완료 알림 영역"), Panel->Border_ScheduleToast.Get())) return false;
 	TestEqual(TEXT("편성 실패는 성공 알림을 띄우지 않음"), Panel->Border_ScheduleToast->GetVisibility(), ESlateVisibility::Collapsed);
+	if (!CheckScheduledRows(0, TEXT("편성 명령 실패"))) return false;
 
 	// 같은 이름의 시설 두 곳이 있어도 콤보 순번은 실제 GUID에 연결되어야 한다.
 	// Zone 셀은 1cm다. 고정 200셀 간격은 실제 무대와 대기열에 겹칠 수 있으므로
@@ -526,14 +576,15 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	if (!TestEqual(TEXT("Dropdown submission creates exactly one schedule"), Scheduled.Num(), 1)) return false;
 	TestEqual(TEXT("Schedule command uses the dropdown facility GUID"), Scheduled[0].FacilityInstanceId, InstallSecondYoga.FacilityInstanceId);
 	TestEqual(TEXT("성공 후 방금 편성한 프로그램을 요약에서 확인"), Panel->SelectedCardIndex, YogaIndex);
-	TestEqual(TEXT("완료 요약은 해당 프로그램 이름"), SelectedProgram->GetText().ToString(), Panel->Catalog[YogaIndex].DisplayName.ToString());
+	TestEqual(TEXT("완료 후에도 선택 프로그램 중복 요약은 숨긴다"), SelectedProgram->GetVisibility(), ESlateVisibility::Collapsed);
+	if (!CheckScheduledRows(1, TEXT("첫 시설 편성 성공"))) return false;
 	TestFalse(TEXT("이미 편성한 시설에서 중복 구매 차단"), Panel->Button_Schedule->GetIsEnabled());
 	TestTrue(TEXT("성공 알림에 정확한 프로그램 이름 표시"),
 		(Panel->Text_ScheduleToastTitle->GetText().ToString() + Panel->Text_ScheduleToastDetail->GetText().ToString())
 		.Contains(Panel->Catalog[YogaIndex].DisplayName.ToString()));
 	TestNotEqual(TEXT("편성 성공 알림이 나타남"), Panel->Border_ScheduleToast->GetVisibility(), ESlateVisibility::Collapsed);
-	TestTrue(TEXT("고정 완료 문구도 프로그램을 명시"),
-		Panel->Text_ProgramCompletion->GetText().ToString().Contains(Panel->Catalog[YogaIndex].DisplayName.ToString()));
+	TestEqual(TEXT("오늘 편성 목록과 겹치는 고정 완료 문구는 숨긴다"),
+		Panel->Text_ProgramCompletion->GetVisibility(), ESlateVisibility::Collapsed);
 	UTextBlock* CompletionBadge = Cast<UTextBlock>(Panel->CardWidgets[YogaIndex]->GetWidgetFromName(TEXT("Text_CompletionBadge")));
 	if (!TestNotNull(TEXT("프로그램별 완료 배지"), CompletionBadge) ||
 		!TestNotNull(TEXT("완료 알림 닫기 버튼"), Panel->Button_DismissScheduleToast.Get())) return false;
@@ -546,6 +597,7 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("요가를 편성해도 다른 프로그램 카드는 활성"), CurrentWorkshopButton->GetIsEnabled());
 	CurrentWorkshopButton->OnClicked.Broadcast();
 	TestEqual(TEXT("완료 후 다른 프로그램 선택 가능"), Panel->SelectedCardIndex, WorkshopIndex);
+	if (!CheckScheduledRows(1, TEXT("다른 프로그램 카드 선택"))) return false;
 	TestTrue(TEXT("다른 프로그램에 이전 완료 문구가 붙지 않음"),
 		Panel->Text_ProgramCompletion->GetVisibility() == ESlateVisibility::Collapsed
 		|| Panel->Text_ProgramCompletion->GetText().IsEmpty());
@@ -558,9 +610,11 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	if (!TestTrue(TEXT("미편성 시설을 다시 선택할 수 있음"), FirstYogaIndex != INDEX_NONE)) return false;
 	Panel->HandleFacilityClicked(FirstYogaIndex);
 	TestTrue(TEXT("다른 시설에는 같은 프로그램 추가 편성 가능"), Panel->Button_Schedule->GetIsEnabled());
+	if (!CheckScheduledRows(1, TEXT("다음 시설만 선택"))) return false;
 	Panel->HandleScheduleClicked();
 	TestEqual(TEXT("추가 시설 편성 성공"), Progression->GetScheduledPrograms().Num(), 2);
 	TestTrue(TEXT("프로그램 카드에 완료한 시설 수 반영"), CompletionBadge->GetText().ToString().Contains(TEXT("2")));
+	if (!CheckScheduledRows(2, TEXT("같은 프로그램 두 시설 편성"))) return false;
 
 	// 편성된 시설은 소유자 정책상 철거할 수 없다. 번호 검증 때문에 실제 편성 규칙을 우회하지 않는다.
 	TMap<FGuid, int32> ScheduledFacilityNumbers;
@@ -621,6 +675,8 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	UFF_FestivalStageSubsystem* Stage = Game->GetSubsystem<UFF_FestivalStageSubsystem>();
 	if (!TestNotNull(TEXT("Fixture stage provides the current day"), Stage)) return false;
 	Stage->CurrentDay = 2;
+	Progression->BeginNewDay(2);
+	if (!CheckScheduledRows(0, TEXT("다음 날 원본 초기화 이벤트"))) return false;
 	Panel->HandleStageViewChanged(Stage->CurrentStage, Stage->CurrentDay);
 	TestEqual(TEXT("Day label reads the current stage day"), DayText->GetText().ToString(),
 		FText::Format(Panel->DayTextFormat, FText::AsNumber(2)).ToString());

@@ -26,6 +26,7 @@
 #include "UI/PrepHUD/Panels/FF_ProgramFacilityGuide.h"
 #include "UI/PrepHUD/Panels/FF_PrepProgramCatalogChoice.h"
 #include "UI/PrepHUD/Panels/FF_PrepProgramFacilityRow.h"
+#include "UI/PrepHUD/Panels/FF_PrepScheduledProgramRow.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaPrepProgram"
 
@@ -157,7 +158,12 @@ void UFF_PrepPanelProgram::NativeOnInitialized()
 		DailyNoticeText = LOCTEXT("PrepProgram_DailyNotice",
 			"프로그램은 하루짜리입니다. 다음 날에는 다시 편성해야 합니다.");
 	}
-	SetTextOrHide(Text_DailyNotice, DailyNoticeText);
+	SetTextOrHide(Text_DailyNotice, bUseCompactLayout ? LOCTEXT("CompactDailyRule", "오늘만 운영") : DailyNoticeText);
+	if (Text_DailyNotice && bUseCompactLayout)
+	{
+		Text_DailyNotice->SetVisibility(ESlateVisibility::Visible);
+		Text_DailyNotice->SetToolTipText(DailyNoticeText);
+	}
 	if (Combo_Facilities)
 	{
 		Combo_Facilities->OnSelectionChanged.AddUniqueDynamic(this, &ThisClass::HandleFacilitySelectionChanged);
@@ -679,6 +685,8 @@ void UFF_PrepPanelProgram::RefreshFacilityGuide()
 	{
 		Text_FacilityGuideTitle->SetColorAndOpacity(bNeedsFacility ? FSlateColor(MissingGuideTitleColor) : NormalFacilityGuideTitleColor);
 	}
+	// 정상 상태의 반복 설명은 접되, 로드 실패·진행 중·호환 시설 없음은 남긴다.
+	if (bUseCompactLayout && Card && bCatalogReady && !CompatibleCatalogEntries.IsEmpty()) Description = FText::GetEmpty();
 	SetTextOrHide(Text_FacilityNotice, Description);
 	if (Box_CatalogChoices)
 	{
@@ -744,7 +752,7 @@ void UFF_PrepPanelProgram::RefreshAll()
 	const bool bCanScheduleNow = ViewModel ? ViewModel->CanScheduleProgramNow() : false;
 	const int32 Gold = ViewModel ? ViewModel->GetGold() : INDEX_NONE;
 	const int32 Day = ViewModel ? ViewModel->GetCurrentDay() : INDEX_NONE;
-	SetTextOrHide(Text_SelectedProgram, SelectedCard ? SelectedCard->DisplayName : NoSelectionText);
+	SetTextOrHide(Text_SelectedProgram, !bUseCompactLayout ? (SelectedCard ? SelectedCard->DisplayName : NoSelectionText) : FText::GetEmpty());
 	SetTextOrHide(Text_Day, Day > 0 ? FText::Format(DayTextFormat, FText::AsNumber(Day)) : FText::GetEmpty());
 	SetTextOrHide(Text_EmptyCatalog, Catalog.IsEmpty() ? EmptyCatalogText : FText::GetEmpty());
 
@@ -791,11 +799,11 @@ void UFF_PrepPanelProgram::RefreshAll()
 		}
 
 		const FFF_ProgramCard& Card = Catalog[Index];
-		CardWidget->SetRevenuePreview(Index == SelectedCardIndex ? FacilityCard : nullptr);
+		CardWidget->SetRevenuePreview(Index == SelectedCardIndex ? FacilityCard : nullptr, bUseCompactLayout);
 		CardWidget->SetScheduledFacilityCount(AllScheduledIds.FilterByPredicate([&Card](FName ProgramId)
 		{
 			return ProgramId == Card.ProgramId;
-		}).Num());
+		}).Num(), bUseCompactLayout);
 
 		// 단계 제한만 카드를 잠근다. 완료 카드는 읽고 다른 시설을 고를 수 있다.
 		if (!bCanScheduleNow)
@@ -849,11 +857,11 @@ void UFF_PrepPanelProgram::RefreshAll()
 		CompletionArgs.Add(TEXT("Facility"), FacilityOptions[SelectedFacilityIndex].InstanceLabel);
 		CompletionText = FText::Format(ProgramCompletionFormat, CompletionArgs);
 	}
-	SetTextOrHide(Text_ProgramCompletion, CompletionText);
-	SetTextOrHide(Text_SummaryStatus, bSelectedScheduled ? SummaryScheduledText : FText::GetEmpty());
+	SetTextOrHide(Text_ProgramCompletion, bUseCompactLayout ? FText::GetEmpty() : CompletionText);
+	SetTextOrHide(Text_SummaryStatus, !bUseCompactLayout && bSelectedScheduled ? SummaryScheduledText : FText::GetEmpty());
 
 	// --- 견적 ---
-	SetTextOrHide(Text_CostPreview, (Quote.CostGold != INDEX_NONE)
+	SetTextOrHide(Text_CostPreview, (!bUseCompactLayout && Quote.CostGold != INDEX_NONE)
 		? FText::Format(
 			LOCTEXT("PrepProgram_CostPreview", "{0} Gold"),
 			FText::AsNumber(Quote.CostGold))
@@ -867,11 +875,11 @@ void UFF_PrepPanelProgram::RefreshAll()
 			FText::AsNumber(Quote.GoldAfterSchedule))
 		: FText::GetEmpty());
 
-	SetTextOrHide(Text_RevenuePreview, (Quote.MaxRevenue != INDEX_NONE)
+	SetTextOrHide(Text_RevenuePreview, bUseCompactLayout ? FText::GetEmpty() : ((Quote.MaxRevenue != INDEX_NONE)
 		? FText::Format(
 			LOCTEXT("PrepProgram_FacilityRevenue", "선택 시설 최대 매출 {0} Gold"),
 			FText::AsNumber(Quote.MaxRevenue))
-		: (SelectedCard ? LOCTEXT("PrepProgram_RevenueAfterFacility", "시설 선택 후 매출을 확인할 수 있습니다.") : FText::GetEmpty()));
+		: (SelectedCard ? LOCTEXT("PrepProgram_RevenueAfterFacility", "시설 선택 후 매출을 확인할 수 있습니다.") : FText::GetEmpty())));
 
 	// --- 편성 버튼 ---
 	// 시설을 골랐는지는 규칙 struct 가 모른다 — 그건 화면의 상태이지 경제 판정이 아니다.
@@ -879,7 +887,10 @@ void UFF_PrepPanelProgram::RefreshAll()
 	{
 		Button_Schedule->SetIsEnabled(Quote.CanSchedule() && bHasFacility && !bSelectedScheduled);
 	}
-	SetTextOrHide(Text_ScheduleAction, bSelectedScheduled ? ScheduledActionText : ScheduleActionText);
+	SetTextOrHide(Text_ScheduleAction, bSelectedScheduled ? ScheduledActionText
+		: bUseCompactLayout && Quote.CostGold != INDEX_NONE
+			? FText::Format(LOCTEXT("CompactScheduleAction", "{0} Gold · {1}"), FText::AsNumber(Quote.CostGold), ScheduleActionText)
+			: ScheduleActionText);
 
 	FText BlockReason = BuildBlockReasonText();
 	if (bSelectedScheduled && bCanScheduleNow && Text_ProgramCompletion)
@@ -906,6 +917,73 @@ void UFF_PrepPanelProgram::RefreshAll()
 		Text_BlockReason->SetVisibility(BlockReason.IsEmpty()
 			? ESlateVisibility::Hidden
 			: ESlateVisibility::SelfHitTestInvisible);
+	}
+	RefreshScheduledPrograms();
+}
+
+void UFF_PrepPanelProgram::RefreshScheduledPrograms()
+{
+	if (!bUseCompactLayout || !VerticalBox_ScheduledPrograms) return;
+	const UFF_FestivalViewModelSubsystem* VM = GetViewModel();
+	TArray<FFF_ScheduledProgram> Scheduled;
+	const bool bKnown = VM && VM->TryGetScheduledPrograms(Scheduled);
+	SetTextOrHide(Text_ScheduledCount, bKnown
+		? FText::Format(LOCTEXT("CompactScheduledCount", "총 {0}건"), FText::AsNumber(Scheduled.Num()))
+		: LOCTEXT("CompactScheduledUnknownCount", "—"));
+	SetTextOrHide(Text_ScheduledEmpty, !bKnown
+		? LOCTEXT("CompactScheduleUnknown", "편성 정보를 확인할 수 없습니다.")
+		: Scheduled.IsEmpty() ? LOCTEXT("CompactScheduleEmpty", "아직 편성한 프로그램이 없습니다.") : FText::GetEmpty());
+	UClass* RowClass = Scheduled.IsEmpty() ? nullptr : ResolveWidgetClass(SummaryRowClass, SummaryRowFallbackPath);
+	if (!Scheduled.IsEmpty() && !RowClass)
+	{
+		ScheduledRowWidgets.Reset();
+		VerticalBox_ScheduledPrograms->ClearChildren();
+		SetTextOrHide(Text_ScheduledEmpty, LOCTEXT("CompactScheduleRowsUnavailable", "편성 목록을 표시할 수 없습니다."));
+		return;
+	}
+	// 금화나 선택만 바뀔 때 행을 새로 만들지 않아 스크롤과 위젯을 보존한다.
+	while (ScheduledRowWidgets.Num() > Scheduled.Num())
+	{
+		if (UFF_PrepScheduledProgramRow* Row = ScheduledRowWidgets.Last()) Row->RemoveFromParent();
+		ScheduledRowWidgets.Pop();
+	}
+	while (ScheduledRowWidgets.Num() < Scheduled.Num())
+	{
+		auto* Row = CreateWidget<UFF_PrepScheduledProgramRow>(this, RowClass);
+		if (!Row)
+		{
+			SetTextOrHide(Text_ScheduledEmpty, LOCTEXT("CompactScheduleRowsUnavailable", "편성 목록을 표시할 수 없습니다."));
+			break;
+		}
+		if (auto* RowSlot = Cast<UVerticalBoxSlot>(VerticalBox_ScheduledPrograms->AddChild(Row)))
+		{
+			RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
+			RowSlot->SetHorizontalAlignment(HAlign_Fill);
+		}
+		ScheduledRowWidgets.Add(Row);
+	}
+	TMap<FName, TArray<FFF_PrepFacilityOption>> FacilitiesByProgram;
+	for (int32 Index = 0; Index < ScheduledRowWidgets.Num(); ++Index)
+	{
+		const FFF_ScheduledProgram& Entry = Scheduled[Index];
+		const FFF_ProgramCard* Card = FFF_ProgramScheduleRules::FindCard(Catalog, Entry.ProgramId);
+		FText FacilityName = LOCTEXT("CompactScheduledFacilityUnknown", "시설 정보 확인 불가");
+		FText TimeRange;
+		if (Card)
+		{
+			if (!FacilitiesByProgram.Contains(Entry.ProgramId))
+				FacilitiesByProgram.Add(Entry.ProgramId, VM->GetEligibleFacilitiesForProgram(Entry.ProgramId));
+			const auto* Facility = FacilitiesByProgram[Entry.ProgramId].FindByPredicate([&Entry](const FFF_PrepFacilityOption& Option)
+			{
+				return Option.FacilityInstanceId == Entry.FacilityInstanceId;
+			});
+			if (Facility) FacilityName = Facility->InstanceLabel;
+			TimeRange = FText::Format(LOCTEXT("PrepProgram_TimeRange", "{0} ~ {1}"),
+				VM->GetLiveClockTextAtMinutes(FMath::RoundToInt(Card->StartMinutes)),
+				VM->GetLiveClockTextAtMinutes(FMath::RoundToInt(Card->EndMinutes)));
+		}
+		ScheduledRowWidgets[Index]->ConfigureProgram(Card ? Card->DisplayName
+			: LOCTEXT("CompactScheduledProgramUnknown", "프로그램 정보 확인 불가"), FacilityName, TimeRange);
 	}
 }
 
