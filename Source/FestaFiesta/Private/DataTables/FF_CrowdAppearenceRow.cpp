@@ -3,7 +3,7 @@
 /**
  * 성별과 PickMesh 규칙
  *  1. 성별은 행 이름으로 나눈다. IsFemaleSeed 가 Seed 한 비트로 정하고, 호출부가 {ArchetypeID}_female / _male 행을 찾는다.
- *  2. PickMesh / PickAppearance 는 한 행 안에서 Mesh + MeshVariants + AnimVariants 를 후보 풀로 삼아 Seed 로 하나를 고른다. AnimVariants 는 메시와 AnimClass 를 한 쌍으로 들고, AnimClass 가 비면 행의 AnimClass 를 쓴다.
+ *  2. PickMesh / PickAppearance 는 한 행 안에서 Mesh + Variants 를 후보 풀로 삼아 Seed 로 하나를 고른다. Variants 는 메시와 AnimClass 를 한 쌍으로 들고, AnimClass 가 비면 행의 AnimClass 를 쓴다.
  *  3. 같은 Seed 는 항상 같은 결과를 낸다.
  */
 
@@ -42,14 +42,7 @@ void FFF_CrowdAppearenceRow::PickAppearance(int32 Seed, TSoftObjectPtr<USkeletal
 	{
 		Pool.Add({ &Mesh, &AnimClass });
 	}
-	for (const TSoftObjectPtr<USkeletalMesh>& Variant : MeshVariants)
-	{
-		if (!Variant.IsNull())
-		{
-			Pool.Add({ &Variant, &AnimClass });
-		}
-	}
-	for (const FFF_CrowdAppearanceVariant& Entry : AnimVariants)
+	for (const FFF_CrowdAppearanceVariant& Entry : Variants)
 	{
 		if (!Entry.Mesh.IsNull())
 		{
