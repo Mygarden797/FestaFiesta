@@ -145,6 +145,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Promotion")
 	FFF_PrepPromotionQuote GetQuote() const { return Quote; }
 
+	bool UsesCompactLayout() const { return bUseCompactLayout; }
+
 	/** 저장된 제목 형식에 실제 홍보 등급을 넣는다. 확인창·미리보기가 같은 문구를 쓴다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Promotion")
 	FText GetPurchaseConfirmationTitle(EFF_PromotionChoice Choice) const;
@@ -200,6 +202,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
 	TObjectPtr<UTextBlock> Text_OnceNotice;
 
+	/** 카드마다 반복하지 않고 한 번만 표시하는 예상 방문객 기준. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
+	TObjectPtr<UTextBlock> Text_ForecastBasis;
+
 	/** `1,200 Gold · 방문객 ×1.18`. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
 	TObjectPtr<UTextBlock> Text_CostPreview;
@@ -225,11 +231,18 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
 	TObjectPtr<UButton> Button_Purchase;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
+	TObjectPtr<UTextBlock> Text_PurchaseAction;
+
 	/** 못 누르는 이유. **비활성 흐려짐만으로는 알 수 없다** (AT-011). */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Promotion")
 	TObjectPtr<UTextBlock> Text_BlockReason;
 
 	// --- 설정 ---
+
+	/** 간소화 WBP에만 적용한다. 기존 화면은 원래 견적 표시를 유지한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion")
+	bool bUseCompactLayout = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion")
 	TSubclassOf<UFF_PrepPromotionCard> CardWidgetClass;

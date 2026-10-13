@@ -78,8 +78,25 @@ namespace FFPrepProgramSkyLayoutTest
 		{
 			UTextBlock* Text = Cast<UTextBlock>(Panel.GetWidgetFromName(Pair.Key));
 			if (!Test.TestNotNull(FString(TEXT("표시 fixture / ")) + Pair.Key, Text)) { return false; }
+			if (Panel.UsesCompactLayout() && (FCString::Strcmp(Pair.Key, TEXT("Text_SelectedProgram")) == 0 ||
+				FCString::Strcmp(Pair.Key, TEXT("Text_CostPreview")) == 0 || FCString::Strcmp(Pair.Key, TEXT("Text_RevenuePreview")) == 0))
+			{
+				// 완료 목록으로 바뀐 우측에 이전 견적을 다시 켜지 않는다.
+				Text->SetVisibility(ESlateVisibility::Collapsed);
+				continue;
+			}
 			Text->SetText(FText::FromString(Pair.Value));
 			Text->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		}
+		if (Panel.UsesCompactLayout())
+		{
+			UTextBlock* CountText = Cast<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_ScheduledCount")));
+			UTextBlock* EmptyText = Cast<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_ScheduledEmpty")));
+			if (!Test.TestNotNull(TEXT("오늘 편성 건수"), CountText) || !Test.TestNotNull(TEXT("편성 빈 목록 안내"), EmptyText)) return false;
+			CountText->SetText(FText::FromString(TEXT("총 0건")));
+			CountText->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			EmptyText->SetText(FText::FromString(TEXT("아직 편성한 프로그램이 없습니다.")));
+			EmptyText->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		}
 		for (const TCHAR* Name : { TEXT("Text_EmptyCatalog"), TEXT("Text_FacilityNotice"), TEXT("Text_FacilityEmpty"), TEXT("Box_CatalogChoices") })
 		{
@@ -127,7 +144,7 @@ namespace FFPrepProgramSkyLayoutTest
 			Data.Capacity = Index == 0 ? 12 : 16;
 			Data.FeePerPerson = 30;
 			Card->ConfigureCard(Index, Data, FText::FromString(TEXT("18:30 ~ 19:00")));
-			Card->SetRevenuePreview(Index == 0 ? &Data : nullptr);
+			Card->SetRevenuePreview(Index == 0 ? &Data : nullptr, Panel.UsesCompactLayout());
 			if (Index == 0)
 			{
 				UButton* Root = Cast<UButton>(Card->GetWidgetFromName(TEXT("Button_Root")));
@@ -204,7 +221,8 @@ namespace FFPrepProgramSkyLayoutTest
 		CheckText(Test, Panel, TEXT("Text_PanelTitle"), HeaderRect, Context);
 		CheckText(Test, Panel, TEXT("Text_Day"), PanelRect, Context);
 		CheckText(Test, Panel, TEXT("Text_ScheduleAction"), Schedule->GetCachedGeometry().GetLayoutBoundingRect(), Context);
-		CheckText(Test, Panel, TEXT("Text_DailyNotice"), FooterRect, Context);
+		CheckText(Test, Panel, TEXT("Text_DailyNotice"), Panel.UsesCompactLayout() ? PanelRect : FooterRect, Context);
+		if (Panel.UsesCompactLayout()) CheckText(Test, Panel, TEXT("Text_GoldAfter"), FooterRect, Context);
 		if (!bOverflow && Size.Y >= 600)
 		{
 			for (UWidget* Card : Cards->GetAllChildren())
@@ -242,9 +260,17 @@ namespace FFPrepProgramSkyLayoutTest
 				Contains(Scroll->GetCachedGeometry().GetLayoutBoundingRect(), Text->GetCachedGeometry().GetLayoutBoundingRect()));
 			CheckText(Test, Owner, Name, Container->GetCachedGeometry().GetLayoutBoundingRect(), Label);
 		};
-		for (const TCHAR* Name : { TEXT("Text_SelectedProgram"), TEXT("Text_CostPreview"), TEXT("Text_GoldAfter"), TEXT("Text_RevenuePreview") })
+		if (Panel.UsesCompactLayout())
 		{
-			RevealAndCheckText(Panel, Name, Summary, Context);
+			RevealAndCheckText(Panel, TEXT("Text_ScheduledCount"), Summary, Context);
+			RevealAndCheckText(Panel, TEXT("Text_ScheduledEmpty"), Summary, Context);
+		}
+		else
+		{
+			for (const TCHAR* Name : { TEXT("Text_SelectedProgram"), TEXT("Text_CostPreview"), TEXT("Text_GoldAfter"), TEXT("Text_RevenuePreview") })
+			{
+				RevealAndCheckText(Panel, Name, Summary, Context);
+			}
 		}
 		// 현재 시설 선택은 최대 높이가 있는 중첩 목록이다. 본문에 목록을 드러낸 뒤
 		// 각 행을 내부 스크롤로 찾아 두 클리핑 영역 모두에서 버튼과 글자가 보이는지 확인한다.

@@ -839,6 +839,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
 	TArray<FName> GetScheduledProgramIds() const;
 
+	/** 오늘의 시설별 편성 원본. 미연결과 실제 0건을 구분하며 원본 순서를 유지한다. */
+	bool TryGetScheduledPrograms(TArray<FFF_ScheduledProgram>& OutPrograms) const;
+
 	/**
 	 * 이 카드를 편성할 수 있는지. 상태를 바꾸지 않으므로 카드 잠금·사유 표시에 그대로 쓴다.
 	 *

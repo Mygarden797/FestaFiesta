@@ -3,6 +3,7 @@
 #include "UI/Core/FF_UIFlowSubsystem.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Building/FF_BuildCatalogSubsystem.h"
 #include "Components/OverlaySlot.h"
 #include "Components/PanelWidget.h"
 #include "Engine/Engine.h"
@@ -13,6 +14,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "MoviePlayer.h"
+#include "Misc/ScopeExit.h"
 #include "Save/FF_SaveSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Frontend/FF_SaveListProvider.h"
@@ -46,6 +48,7 @@ void UFF_UIFlowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	// Stage 서브시스템이 먼저 살아 있어야 델리게이트를 붙일 수 있다.
 	// 초기화 순서를 운에 맡기지 않는다.
 	Collection.InitializeDependency<UFF_FestivalStageSubsystem>();
+	Collection.InitializeDependency<UFF_BuildCatalogSubsystem>();
 
 	Super::Initialize(Collection);
 
@@ -62,8 +65,15 @@ void UFF_UIFlowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	if (IGameMoviePlayer* MoviePlayer = GetMoviePlayer())
 	{
+		MoviePlaybackStartedHandle = MoviePlayer->OnMoviePlaybackStarted().AddUObject(
+			this, &UFF_UIFlowSubsystem::HandleLoadingScreenStarted);
 		MoviePlaybackFinishedHandle = MoviePlayer->OnMoviePlaybackFinished().AddUObject(
 			this, &UFF_UIFlowSubsystem::HandleLoadingScreenFinished);
+	}
+	if (GEngine)
+	{
+		FestivalTravelFailureHandle = GEngine->OnTravelFailure().AddUObject(
+			this, &UFF_UIFlowSubsystem::HandleFestivalTravelFailure);
 	}
 
 	if (UFF_FestivalStageSubsystem* Stage = GetGameInstance()
@@ -84,6 +94,18 @@ void UFF_UIFlowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UFF_UIFlowSubsystem::Deinitialize()
 {
+	ReleaseFestivalThumbnailPreload();
+	if (GEngine && FestivalTravelFailureHandle.IsValid())
+	{
+		GEngine->OnTravelFailure().Remove(FestivalTravelFailureHandle);
+	}
+	FestivalTravelFailureHandle.Reset();
+	if (IGameMoviePlayer* MoviePlayer = GetMoviePlayer())
+	{
+		MoviePlayer->OnMoviePlaybackStarted().Remove(MoviePlaybackStartedHandle);
+	}
+	MoviePlaybackStartedHandle.Reset();
+
 	if (UFF_UIRootLayout* Layout = RootLayout.Get())
 	{
 		Layout->CancelAtlasTransition();
@@ -308,7 +330,7 @@ void UFF_UIFlowSubsystem::HandlePostLogin(AGameModeBase* GameMode, APlayerContro
 	}
 
 	const UWorld* World = NewPlayer->GetWorld();
-	if (!World)
+	if (!World || World->GetGameInstance() != GetGameInstance())
 	{
 		return;
 	}
@@ -316,6 +338,8 @@ void UFF_UIFlowSubsystem::HandlePostLogin(AGameModeBase* GameMode, APlayerContro
 	// --- 1) 우리가 직접 열어 온 축제 레벨 ---
 	if (Mode == EFF_UIFlowMode::Festival)
 	{
+		// MoviePlayer가 없거나 재생 시작 알림을 못 받은 경우에도 HUD 표시 전에 마친다.
+		CompleteFestivalThumbnailPreload();
 		if (!EnsureRootLayout(NewPlayer))
 		{
 			return;
@@ -369,6 +393,7 @@ void UFF_UIFlowSubsystem::HandlePostLogin(AGameModeBase* GameMode, APlayerContro
 	// --- 2) 프론트엔드 레벨 ---
 	if (IsFrontendWorld(World))
 	{
+		ReleaseFestivalThumbnailPreload();
 		Mode = EFF_UIFlowMode::Frontend;
 		if (!EnsureRootLayout(NewPlayer))
 		{
@@ -506,6 +531,7 @@ bool UFF_UIFlowSubsystem::EnsureRootLayout(APlayerController* Controller)
 
 void UFF_UIFlowSubsystem::StartFrontend()
 {
+	ReleaseFestivalThumbnailPreload();
 	if (UFF_UIRootLayout* Layout = RootLayout.Get())
 	{
 		Layout->CancelAtlasTransition();
@@ -1101,6 +1127,16 @@ void UFF_UIFlowSubsystem::HandlePreLoadMapWithContext(
 	TSubclassOf<UFF_LoadingScreenWidget> LoadingClass = PendingLoadingScreenClass;
 	PendingLoadingScreenClass = nullptr;
 
+	// 사용자 입력 직후가 아닌 맵 로드 구간에서 시작한다. 이 참조는 축제를 나갈 때 반환한다.
+	AcquireFestivalThumbnailPreload();
+	bPendingFestivalThumbnailWarmup = FestivalThumbnailCatalog.IsValid();
+	bool bWaitForMovieStart = false;
+	ON_SCOPE_EXIT
+	{
+		// PIE/NullRHI/로딩 WBP 누락에서도 첫 배치 탭에 로딩을 미루지 않는다.
+		if (!bWaitForMovieStart) CompleteFestivalThumbnailPreload();
+	};
+
 	if (!LoadingClass)
 	{
 		PendingLoadingFestivalName = FText::GetEmpty();
@@ -1151,6 +1187,66 @@ void UFF_UIFlowSubsystem::HandlePreLoadMapWithContext(
 	Attributes.bAllowEngineTick = false;
 
 	MoviePlayer->SetupLoadingScreen(Attributes);
+	bWaitForMovieStart = true;
+}
+
+void UFF_UIFlowSubsystem::AcquireFestivalThumbnailPreload()
+{
+	if (FestivalThumbnailCatalog.IsValid()) return;
+	UFF_BuildCatalogSubsystem* Catalog = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+	if (!Catalog) return;
+	FestivalThumbnailCatalog = Catalog;
+	Catalog->AcquireThumbnailPreload();
+}
+
+void UFF_UIFlowSubsystem::HandleLoadingScreenStarted()
+{
+	// 전역 MoviePlayer의 다른 영상/다른 GameInstance 재생 알림은 처리하지 않는다.
+	if (ActiveLoadingScreenWidget && Mode == EFF_UIFlowMode::Festival)
+	{
+		CompleteFestivalThumbnailPreload();
+	}
+}
+
+void UFF_UIFlowSubsystem::CompleteFestivalThumbnailPreload()
+{
+	if (!bPendingFestivalThumbnailWarmup) return;
+	bPendingFestivalThumbnailWarmup = false;
+	if (UFF_BuildCatalogSubsystem* Catalog = FestivalThumbnailCatalog.Get())
+	{
+		const double StartedAt = FPlatformTime::Seconds();
+		if (Catalog->CompleteThumbnailPreloadForLoadingScreen())
+		{
+			UE_LOG(LogFestaFiestaUI, Log, TEXT("축제 진입 시설 이미지 준비 완료: %d개 목록, %.3f초"),
+				Catalog->GetEntriesView().Num(), FPlatformTime::Seconds() - StartedAt);
+		}
+		else
+		{
+			// 이미지 실패로 축제 진입까지 막지 않는다. 기존 카드의 자리표시자/오류 상태를 사용한다.
+			UE_LOG(LogFestaFiestaUI, Warning, TEXT("축제 진입 시설 이미지 일부를 준비하지 못했습니다. 기본 이미지로 계속합니다."));
+		}
+	}
+}
+
+void UFF_UIFlowSubsystem::ReleaseFestivalThumbnailPreload()
+{
+	bPendingFestivalThumbnailWarmup = false;
+	UFF_BuildCatalogSubsystem* Catalog = FestivalThumbnailCatalog.Get();
+	FestivalThumbnailCatalog.Reset();
+	if (Catalog) Catalog->ReleaseThumbnailPreload();
+}
+
+void UFF_UIFlowSubsystem::HandleFestivalTravelFailure(
+	UWorld* World, ETravelFailure::Type FailureType, const FString& Error)
+{
+	(void)FailureType;
+	(void)Error;
+	if (!World || World->GetGameInstance() != GetGameInstance()) return;
+	ReleaseFestivalThumbnailPreload();
+	PendingLoadingScreenClass = nullptr;
+	PendingLoadingFestivalName = FText::GetEmpty();
+	PendingLoadingMapPackage.Reset();
 }
 
 void UFF_UIFlowSubsystem::HandleLoadingScreenFinished()
@@ -1174,6 +1270,7 @@ void UFF_UIFlowSubsystem::ReturnToAtlas()
 	}
 
 	// 한 사이클이 국가 지도에서 닫힌다. 타이틀로 되돌리지 않는다.
+	ReleaseFestivalThumbnailPreload();
 	Mode = EFF_UIFlowMode::Frontend;
 	PendingFrontendScreen = EFF_UIFlowScreen::AtlasCountry;
 	ActiveFestivalId = NAME_None;

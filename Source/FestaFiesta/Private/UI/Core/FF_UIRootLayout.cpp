@@ -377,6 +377,13 @@ bool UFF_UIRootLayout::TickAtlasTransition(float DeltaTime)
 		if (AtlasTransitionOpacity <= 0.f)
 		{
 			CancelAtlasTransition();
+			// 새 화면의 위젯 경로가 준비되고 입력 잠금도 풀린 뒤 초기 포커스를 다시 요청한다.
+			// CommonUI가 현재 활성 루트의 권한을 확인하므로 위에 열린 패널의 포커스는 빼앗지 않는다.
+			if (UCommonActivatableWidget* ActiveScreen = ScreenStack ? ScreenStack->GetActiveWidget() : nullptr;
+				ActiveScreen && ActiveScreen->IsActivated())
+			{
+				ActiveScreen->RequestRefreshFocus();
+			}
 			return false;
 		}
 		break;

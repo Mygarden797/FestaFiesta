@@ -59,22 +59,32 @@ namespace FFPrepPromotionSkyLayoutTest
 		UWidgetBlueprintGeneratedClass* CardClass, bool bPurchased, bool bLongLabels)
 	{
 		// GI 없는 표시 인스턴스다. 실제 구매 명령, 경제 상태, 카탈로그 에셋은 변경하지 않는다.
+		const bool bCompact = Panel.UsesCompactLayout();
 		const TPair<const TCHAR*, const TCHAR*> Values[] = {
 			{ TEXT("Text_SelectedPromotion"), TEXT("전국 홍보") },
 			{ TEXT("Text_PurchaseCost"), TEXT("1,400 Gold") },
 			{ TEXT("Text_GoldAfterLabel"), bPurchased ? TEXT("현재 잔액") : TEXT("구매 후 잔액") },
 			{ TEXT("Text_GoldAfterValue"), TEXT("8,300 Gold") },
-			{ TEXT("Text_OnceNotice"), TEXT("홍보는 축제당 한 번 선택하며 3일 전체에 적용됩니다.") },
-			{ TEXT("Text_NotAppliedNotice"), TEXT("홍보 효과는 예상 방문객에 반영됩니다. 실제 입장 인원은 운영 상황에 따라 달라집니다.") },
-			{ TEXT("Text_BlockReason"), bPurchased ? TEXT("이미 홍보를 구매했습니다. 축제당 한 번만 선택할 수 있습니다.") : TEXT("선택한 홍보의 비용을 확인한 뒤 구매하세요.") },
-			{ TEXT("Text_PurchaseAction"), bPurchased ? TEXT("구매 완료") : TEXT("구매하기") }
+			{ TEXT("Text_OnceNotice"), bCompact ? TEXT("축제당 1회 · 셋업에서 구매 · 3일간 적용") : TEXT("홍보는 축제당 한 번 선택하며 3일 전체에 적용됩니다.") },
+			{ TEXT("Text_NotAppliedNotice"), bCompact ? TEXT("예상 인원이며 실제 입장객은 달라질 수 있습니다.") : TEXT("홍보 효과는 예상 방문객에 반영됩니다. 실제 입장 인원은 운영 상황에 따라 달라집니다.") },
+			{ TEXT("Text_BlockReason"), bCompact
+				? (bPurchased ? TEXT("홍보 구매 완료") : TEXT(""))
+				: (bPurchased ? TEXT("이미 홍보를 구매했습니다. 축제당 한 번만 선택할 수 있습니다.") : TEXT("선택한 홍보의 비용을 확인한 뒤 구매하세요.")) },
+			{ TEXT("Text_PurchaseAction"), bPurchased ? TEXT("구매 완료") : (bCompact ? TEXT("1,400 Gold · 구매하기") : TEXT("구매하기")) }
 		};
 		for (const auto& Pair : Values)
 		{
 			UTextBlock* Text = Cast<UTextBlock>(Panel.GetWidgetFromName(Pair.Key));
 			if (!Test.TestNotNull(FString(TEXT("표시 fixture / ")) + Pair.Key, Text)) { return false; }
 			Text->SetText(FText::FromString(Pair.Value));
-			Text->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			Text->SetVisibility(Text->GetText().IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+		}
+		if (bCompact)
+		{
+			UTextBlock* Basis = Cast<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_ForecastBasis")));
+			if (!Test.TestNotNull(TEXT("간소화 표시의 공통 예측 기준"), Basis)) { return false; }
+			Basis->SetText(FText::FromString(TEXT("예상 방문객 · 입장료 3 기준")));
+			Basis->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		}
 		UWrapBox* Cards = Cast<UWrapBox>(Panel.GetWidgetFromName(TEXT("Box_PromotionCards")));
 		UButton* Purchase = Cast<UButton>(Panel.GetWidgetFromName(TEXT("Button_Purchase")));
@@ -86,6 +96,8 @@ namespace FFPrepPromotionSkyLayoutTest
 		};
 		const int32 Costs[] = { 0, 600, 1400, 2600 };
 		const float Multipliers[] = { .85f, 1.f, 1.12f, 1.25f };
+		const int32 Forecasts[] = { 850, 1018, 1167, 1347 };
+		const int32 StartingBuzz[] = { 0, 6, 14, 26 };
 		const TCHAR* Labels[] = { TEXT("홍보 없음"), TEXT("지역 SNS"), TEXT("전국 홍보"), TEXT("인플루언서") };
 		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Choices); ++Index)
 		{
@@ -95,17 +107,31 @@ namespace FFPrepPromotionSkyLayoutTest
 			Data.Choice = Choices[Index];
 			Data.CostGold = Costs[Index];
 			Data.VisitorMultiplier = Multipliers[Index];
+			Data.ExpectedVisitors = Forecasts[Index];
+			Data.ForecastAdmissionFeeGold = 3;
+			Data.StartingBuzz = StartingBuzz[Index];
 			Card->ConfigureOption(Data, FText::FromString(bLongLabels
-				? TEXT("함께 즐기는 축제 전국 온라인 홍보") : Labels[Index]));
-			if (Index == 0)
+				? TEXT("함께 즐기는 축제 전국 온라인 홍보") : Labels[Index]), bCompact);
+			UButton* Root = Cast<UButton>(Card->GetWidgetFromName(TEXT("Button_Root")));
+			if (!Test.TestNotNull(TEXT("홍보 카드 버튼"), Root)) { return false; }
+			if (bCompact)
+			{
+				UTextBlock* Effect = Cast<UTextBlock>(Card->GetWidgetFromName(TEXT("Text_Effect")));
+				if (!Test.TestNotNull(TEXT("홍보 배수의 기존 위젯"), Effect)) { return false; }
+				Test.TestEqual(TEXT("간소화 카드에서 배수 본문은 접는다"), Effect->GetVisibility(), ESlateVisibility::Collapsed);
+				FNumberFormattingOptions MultiplierFormat;
+				MultiplierFormat.SetMinimumFractionalDigits(2);
+				MultiplierFormat.SetMaximumFractionalDigits(2);
+				Test.TestTrue(TEXT("실제 마우스를 받는 카드 버튼의 툴팁에 데이터 배수를 남긴다"),
+					Root->GetToolTipText().ToString().Contains(FText::AsNumber(Data.VisitorMultiplier, &MultiplierFormat).ToString()));
+			}
+			else if (Index == 0)
 			{
 				UTextBlock* Effect = Cast<UTextBlock>(Card->GetWidgetFromName(TEXT("Text_Effect")));
 				if (!Test.TestNotNull(TEXT("홍보 없음 효과 표시"), Effect)) { return false; }
 				Test.TestTrue(TEXT("홍보 없음도 고정된 그대로 문구 대신 데이터 배수 0.85를 표시한다"),
 					Effect->GetText().ToString().Contains(TEXT("0.85")));
 			}
-			UButton* Root = Cast<UButton>(Card->GetWidgetFromName(TEXT("Button_Root")));
-			if (!Test.TestNotNull(TEXT("홍보 카드 버튼"), Root)) { return false; }
 			if (bPurchased)
 			{
 				Card->ApplyCardState(Index == 2 ? EFF_PrepCardState::Committed : EFF_PrepCardState::Locked,
@@ -131,6 +157,7 @@ namespace FFPrepPromotionSkyLayoutTest
 		const TSharedRef<SWidget>& Surface, FIntPoint Size, const FString& Variant, bool bOverflow, bool bPurchased)
 	{
 		const FString Context = FString::Printf(TEXT("%s %dx%d"), *Variant, Size.X, Size.Y);
+		const bool bCompact = Panel.UsesCompactLayout();
 		FWidgetRenderer Renderer(false, true);
 		TStrongObjectPtr<UTextureRenderTarget2D> Target(
 			FWidgetRenderer::CreateTargetFor(FVector2D(Size.X, Size.Y), TF_Bilinear, true));
@@ -173,10 +200,28 @@ namespace FFPrepPromotionSkyLayoutTest
 			Contains(FooterRect, Summary->GetCachedGeometry().GetLayoutBoundingRect()));
 		CheckText(Test, Panel, TEXT("Text_PanelTitle"), HeaderRect, Context);
 		CheckText(Test, Panel, TEXT("Text_PurchaseAction"), Purchase->GetCachedGeometry().GetLayoutBoundingRect(), Context);
-		for (const TCHAR* Name : { TEXT("Text_SelectedPromotion"), TEXT("Text_PurchaseCost"), TEXT("Text_GoldAfterLabel"), TEXT("Text_GoldAfterValue"), TEXT("Text_BlockReason") })
+		for (const TCHAR* Name : { TEXT("Text_GoldAfterLabel"), TEXT("Text_GoldAfterValue") })
 		{
 			CheckText(Test, Panel, Name, FooterRect, Context);
 		}
+		if (bCompact)
+		{
+			for (const TCHAR* Name : { TEXT("VerticalBox_SelectedPromotion"), TEXT("VerticalBox_PurchaseCost") })
+			{
+				UWidget* Group = Panel.GetWidgetFromName(Name);
+				if (!Test.TestNotNull(Context + TEXT(" / ") + Name, Group)) { return false; }
+				Test.TestEqual(Context + TEXT(" 중복 구매 요약을 접는다 / ") + Name,
+					Group->GetVisibility(), ESlateVisibility::Collapsed);
+			}
+		}
+		else
+		{
+			for (const TCHAR* Name : { TEXT("Text_SelectedPromotion"), TEXT("Text_PurchaseCost") })
+			{
+				CheckText(Test, Panel, Name, FooterRect, Context);
+			}
+		}
+		if (!bCompact || bPurchased) { CheckText(Test, Panel, TEXT("Text_BlockReason"), FooterRect, Context); }
 		Test.TestEqual(Context + TEXT(" 카드 네 장을 유지한다"), Cards->GetChildrenCount(), 4);
 		if (!bOverflow)
 		{
@@ -214,14 +259,23 @@ namespace FFPrepPromotionSkyLayoutTest
 		{
 			RevealAndCheckText(Panel, Name, Scroll, Context);
 		}
+		if (bCompact) { RevealAndCheckText(Panel, TEXT("Text_ForecastBasis"), Scroll, Context); }
 		for (int32 Index = 0; Index < Cards->GetChildrenCount(); ++Index)
 		{
 			UFF_PrepPromotionCard* Card = Cast<UFF_PrepPromotionCard>(Cards->GetChildAt(Index));
 			if (!Test.TestNotNull(Context + TEXT(" 렌더된 카드"), Card)) { return false; }
-			for (const TCHAR* Name : { TEXT("Text_Label"), TEXT("Text_Cost"), TEXT("Text_Effect") })
+			for (const TCHAR* Name : { TEXT("Text_Label"), TEXT("Text_Cost") })
 			{
 				RevealAndCheckText(*Card, Name, Card, Context + FString::Printf(TEXT(" 카드 %d"), Index));
 			}
+			if (bCompact)
+			{
+				for (const TCHAR* Name : { TEXT("Text_Forecast"), TEXT("Text_Buzz") })
+				{
+					RevealAndCheckText(*Card, Name, Card, Context + FString::Printf(TEXT(" 카드 %d"), Index));
+				}
+			}
+			else { RevealAndCheckText(*Card, TEXT("Text_Effect"), Card, Context + FString::Printf(TEXT(" 카드 %d"), Index)); }
 			if (Index == 2 || bPurchased) { RevealAndCheckText(*Card, TEXT("Text_Badge"), Card, Context); }
 		}
 		if (bOverflow)

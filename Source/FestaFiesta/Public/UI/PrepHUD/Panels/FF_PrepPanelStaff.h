@@ -123,10 +123,7 @@ struct FESTAFIESTA_API FFF_PrepStaffRules
  *   현재 인원 `6명 (기본 6 · 고용 0)` · 최대 `12명 (기본 6 + 고용 6)`
  *   인원 고용 `[-] 3 [+]` → `3명 × 450 = 1,350 Gold` · `고용 후 잔액 8,650`
  *   고용비 표 `1,350 (누계)` — "오늘" 이 아니라 축제 누계다
- *   ★ `고용한 인원은 축제가 끝날 때까지 남습니다.`
- *
- * === ★ 영구 고용이라는 것을 반드시 화면에 쓴다 ===
- * 안 쓰면 "내일 또 뽑아야 하나" 를 플레이어가 알 수 없다. 일찍 뽑을수록 오래 쓰는 것이 규칙이다.
+ *   고용 기간은 고용 버튼 툴팁으로 안내한다. 반복 설명을 본문에 표시하지 않는다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Prep Panel - Staff"))
 class FESTAFIESTA_API UFF_PrepPanelStaff : public UFF_PrepPanelBase
@@ -269,16 +266,15 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_HireSpentValue;
 
-	/** 축제 끝까지 남는다는 안내. 문구를 바꿀 수 있게 값으로 뺀다. */
+	/** 기존 WBP 바인딩을 보존한다. 본문에서는 접고 고용 버튼 툴팁으로 안내한다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_DailyNotice;
 
 	// --- 설정 ---
 
 	/**
-	 * ★ 이 문구를 비우지 않는다. 안 쓰면 "내일 또 뽑아야 하나" 를 플레이어가 알 수 없고,
-	 * 일찍 뽑을수록 이득이라는 규칙이 화면에서 사라진다.
-	 * WBP 에 박지 않고 값으로 두는 이유는 현지화와 문구 수정 때문이다.
+	 * 고용 버튼 툴팁에 표시할 고용 기간 안내. 비어 있으면 기본 안내를 사용한다.
+	 * WBP 값은 현지화와 문구 편집을 위해 유지한다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Staff")
 	FText DailyNoticeText;

@@ -34,6 +34,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recommended Facility")
 	FText ActionText;
 
+	/** 작은 카드에서는 설명을 배치 버튼의 툴팁으로 옮긴다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recommended Facility")
+	bool bCompactPresentation = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recommended Facility", meta = (EditCondition = "bCompactPresentation"))
+	FText CompactTitleText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recommended Facility", meta = (EditCondition = "bCompactPresentation"))
+	FText CompactActionText = NSLOCTEXT("FestaFiestaPrepCheck", "RecommendedCompactAction", "배치하기 ›");
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recommended Facility")
 	FSlateBrush IconBrush;
 
@@ -55,4 +65,9 @@ protected:
 
 private:
 	void ApplyPresentation();
+	void ApplyPlacementState();
+
+	bool bHasPlacementState = false;
+	bool bPlacementAllowed = true;
+	FText PlacementDisabledReason;
 };

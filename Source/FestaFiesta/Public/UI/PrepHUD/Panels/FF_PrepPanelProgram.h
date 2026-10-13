@@ -21,6 +21,7 @@ class UDataTable;
 class UFF_FestivalProgressionSubsystem;
 class UFF_PrepProgramCatalogChoice;
 class UFF_PrepProgramFacilityRow;
+class UFF_PrepScheduledProgramRow;
 class UFFZSWorldSubsystem;
 
 /**
@@ -183,6 +184,7 @@ public:
 	/** 현재 견적. 표시용이고 이 값으로 편성을 막지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Program")
 	FFF_PrepProgramQuote GetQuote() const { return Quote; }
+	bool UsesCompactLayout() const { return bUseCompactLayout; }
 
 protected:
 	virtual void NativeOnInitialized() override;
@@ -329,7 +331,22 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_EmptyCatalog;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UTextBlock> Text_ScheduledCount;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UPanelWidget> VerticalBox_ScheduledPrograms;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UTextBlock> Text_ScheduledEmpty;
+
 	// --- 설정 ---
+
+	/** 오늘 편성 목록을 사용하는 새 WBP에서만 중복 설명을 접는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program")
+	bool bUseCompactLayout = false;
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program")
+	TSubclassOf<UFF_PrepScheduledProgramRow> SummaryRowClass;
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Program")
+	FString SummaryRowFallbackPath = TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepScheduledProgramRow");
 
 	/**
 	 * 카드 위젯 클래스. 비워 두면 아래 경로에서 이름으로 찾는다.
@@ -456,6 +473,7 @@ private:
 
 	/** 견적을 다시 만들고 화면 전체를 다시 그린다. 부분 갱신하지 않는다. */
 	void RefreshAll();
+	void RefreshScheduledPrograms();
 
 	/** 지금 고른 카드. 없으면 `nullptr`. */
 	const FFF_ProgramCard* FindSelectedCard() const;
@@ -484,6 +502,9 @@ private:
 
 	UPROPERTY()
 	TArray<TObjectPtr<UFF_PrepProgramFacilityRow>> FacilityRowWidgets;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UFF_PrepScheduledProgramRow>> ScheduledRowWidgets;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UFF_PrepChoiceButton>> CatalogChoiceWidgets;

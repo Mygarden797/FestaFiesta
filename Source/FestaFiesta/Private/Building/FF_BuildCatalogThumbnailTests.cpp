@@ -15,6 +15,7 @@
 #include "Components/Image.h"
 #include "Engine/AssetManager.h"
 #include "Engine/GameInstance.h"
+#include "Engine/StreamableManager.h"
 #include "Engine/Texture2D.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Misc/AutomationTest.h"
@@ -208,6 +209,130 @@ bool FFF_BuildCatalogThumbnailSessionLifetimeTest::RunTest(const FString& Parame
 		Catalog->GetThumbnailLoadState(),
 		EFF_BuildCatalogThumbnailLoadState::NotRequested);
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_BuildCatalogLoadingScreenCompletionTest,
+	"FestaFiesta.Building.Catalog.LoadingScreenCompletion",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildCatalogLoadingScreenCompletionTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	TStrongObjectPtr<UGameInstance> TestGameInstance(NewObject<UGameInstance>());
+	TStrongObjectPtr<UFF_BuildCatalogSubsystem> Catalog(
+		NewObject<UFF_BuildCatalogSubsystem>(TestGameInstance.Get()));
+
+	TestFalse(TEXT("세션을 획득하지 않은 로딩 완료 요청은 로드를 시작하지 않는다"),
+		Catalog->CompleteThumbnailPreloadForLoadingScreen());
+	TestEqual(TEXT("완료 API가 숨은 세션 참조를 추가하지 않는다"), Catalog->ThumbnailPreloadSessionRefs, 0);
+	TestEqual(TEXT("획득 전에는 정의 목록 상태도 유지한다"), Catalog->GetLoadState(),
+		EFF_BuildCatalogLoadState::NotRequested);
+
+	Catalog->AcquireThumbnailPreload();
+	Catalog->LoadState = EFF_BuildCatalogLoadState::Loading;
+	const uint64 Generation = Catalog->RequestGeneration;
+	// 엔진도 할 일이 없는 combined 요청에 null 핸들을 반환하고 완료 알림만 다음 틱으로 미룬다.
+	FStreamableAsyncLoadParams LoadParams;
+	LoadParams.OnComplete = FStreamableDelegateWithHandle::CreateUObject(Catalog.Get(),
+		&UFF_BuildCatalogSubsystem::HandleCatalogLoadCompleted, Generation);
+	const TArray<TSharedPtr<FStreamableHandle>> EmptyHandles;
+	Catalog->ActiveLoadHandle = UAssetManager::GetStreamableManager().CreateCombinedHandle(
+		EmptyHandles, TEXT("CatalogLoadingScreenEmptyTest"),
+		EStreamableManagerCombinedHandleOptions::None, MoveTemp(LoadParams));
+
+	TestTrue(TEXT("게임 틱 없이 빈 정의 목록과 썸네일 준비를 마무리한다"),
+		Catalog->CompleteThumbnailPreloadForLoadingScreen());
+	TestEqual(TEXT("완료 뒤에도 로딩 소유자의 세션 참조 하나를 유지한다"), Catalog->ThumbnailPreloadSessionRefs, 1);
+	const uint64 CompletedRevision = Catalog->GetCatalogRevision();
+	Catalog->HandleCatalogLoadCompleted(nullptr, Generation);
+	Catalog->HandleCatalogLoadCanceled(nullptr, Generation);
+	TestEqual(TEXT("뒤늦은 같은 세대 완료/취소가 이미 완료된 목록을 다시 구성하지 않는다"),
+		Catalog->GetCatalogRevision(), CompletedRevision);
+	TestTrue(TEXT("중복 완료/취소 후에도 준비 상태를 유지한다"), Catalog->IsCatalogReady());
+	TestTrue(TEXT("반복 완료 요청은 이미 준비된 결과를 재사용한다"),
+		Catalog->CompleteThumbnailPreloadForLoadingScreen());
+	TestEqual(TEXT("반복 완료 요청은 정의 목록을 새로고침하지 않는다"),
+		Catalog->GetCatalogRevision(), CompletedRevision);
+
+	Catalog->ReleaseThumbnailPreload();
+	TestFalse(TEXT("마지막 참조 반환 뒤에는 완료 API가 세션을 되살리지 않는다"),
+		Catalog->CompleteThumbnailPreloadForLoadingScreen());
+	TestEqual(TEXT("마지막 참조 반환 뒤에는 썸네일 준비 상태도 해제된다"), Catalog->GetThumbnailLoadState(),
+		EFF_BuildCatalogThumbnailLoadState::NotRequested);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_BuildCatalogLoadingScreenThumbnailHandleTest,
+	"FestaFiesta.Building.Catalog.LoadingScreenThumbnailHandle",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildCatalogLoadingScreenThumbnailHandleTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	TStrongObjectPtr<UGameInstance> TestGameInstance(NewObject<UGameInstance>());
+	TStrongObjectPtr<UFF_BuildCatalogSubsystem> Catalog(
+		NewObject<UFF_BuildCatalogSubsystem>(TestGameInstance.Get()));
+	TStrongObjectPtr<UTexture2D> Thumbnail(MakeTransientThumbnail(TEXT("CatalogLoadingScreenThumbnail")));
+	if (!TestNotNull(TEXT("썸네일 핸들 검증용 임시 텍스처를 만든다"), Thumbnail.Get()))
+	{
+		return false;
+	}
+
+	Catalog->AcquireThumbnailPreload();
+	Catalog->LoadState = EFF_BuildCatalogLoadState::Ready;
+	Catalog->bThumbnailPreloadStarted = true;
+	Catalog->ThumbnailLoadState = EFF_BuildCatalogThumbnailLoadState::Loading;
+	const uint64 Generation = Catalog->ThumbnailRequestGeneration;
+	FStreamableAsyncLoadParams LoadParams;
+	LoadParams.TargetsToStream.Add(FSoftObjectPath(Thumbnail.Get()));
+	LoadParams.OnComplete = FStreamableDelegateWithHandle::CreateUObject(Catalog.Get(),
+		&UFF_BuildCatalogSubsystem::HandleThumbnailPreloadCompleted, Generation);
+	LoadParams.OnCancel = FStreamableDelegateWithHandle::CreateUObject(Catalog.Get(),
+		&UFF_BuildCatalogSubsystem::HandleThumbnailPreloadCanceled, Generation);
+	const TSharedPtr<FStreamableHandle> Handle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		MoveTemp(LoadParams), TEXT("CatalogLoadingScreenThumbnailTest"));
+	Catalog->ThumbnailPreloadHandle = Handle;
+	if (!TestTrue(TEXT("실제 Streamable 썸네일 요청 핸들이 만들어진다"), Handle.IsValid()))
+	{
+		Catalog->ReleaseThumbnailPreload();
+		return false;
+	}
+
+	TestTrue(TEXT("게임 틱 없이 썸네일 핸들의 완료를 표시 상태에 반영한다"),
+		Catalog->CompleteThumbnailPreloadForLoadingScreen());
+	TestTrue(TEXT("로딩 완료 뒤에도 핸들이 텍스처를 잡고 있다"), Handle->IsActive());
+	Catalog->HandleThumbnailPreloadCompleted(Handle, Generation);
+	Catalog->HandleThumbnailPreloadCanceled(Handle, Generation);
+	TestEqual(TEXT("같은 세대의 늦은 완료/취소가 준비된 썸네일을 되돌리지 않는다"),
+		Catalog->GetThumbnailLoadState(), EFF_BuildCatalogThumbnailLoadState::Ready);
+	TestTrue(TEXT("중복 알림 뒤에도 소유한 핸들을 유지한다"), Catalog->ThumbnailPreloadHandle == Handle);
+
+	Catalog->ReleaseThumbnailPreload();
+	TestFalse(TEXT("마지막 세션 해제에서만 핸들의 강한 참조를 반환한다"), Handle->IsActive());
+	Catalog->HandleThumbnailPreloadCompleted(Handle, Generation);
+	TestEqual(TEXT("해제 뒤 도착한 이전 세대 완료를 무시한다"), Catalog->GetThumbnailLoadState(),
+		EFF_BuildCatalogThumbnailLoadState::NotRequested);
+
+	Catalog->AcquireThumbnailPreload();
+	Catalog->bThumbnailPreloadStarted = true;
+	Catalog->ThumbnailLoadState = EFF_BuildCatalogThumbnailLoadState::Loading;
+	FStreamableAsyncLoadParams CanceledLoadParams;
+	CanceledLoadParams.TargetsToStream.Add(FSoftObjectPath(Thumbnail.Get()));
+	CanceledLoadParams.bStartStalled = true;
+	Catalog->ThumbnailPreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		MoveTemp(CanceledLoadParams), TEXT("CatalogLoadingScreenCanceledTest"));
+	if (TestTrue(TEXT("취소 경로 검증용 정지된 요청 핸들이 만들어진다"), Catalog->ThumbnailPreloadHandle.IsValid()))
+	{
+		Catalog->ThumbnailPreloadHandle->CancelHandle();
+		TestFalse(TEXT("취소된 요청은 기다리거나 재시도하지 않고 실패로 마무리한다"),
+			Catalog->CompleteThumbnailPreloadForLoadingScreen());
+		TestEqual(TEXT("취소된 썸네일은 폴백 상태를 노출한다"), Catalog->GetThumbnailLoadState(),
+			EFF_BuildCatalogThumbnailLoadState::Failed);
+	}
+	Catalog->ReleaseThumbnailPreload();
 	return true;
 }
 

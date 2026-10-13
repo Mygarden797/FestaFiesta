@@ -41,12 +41,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnAtlasCountryScreenRequest);
  * `MapImage` 가 비면 **네모 박스 + 팔레트 색**으로 대신 그린다. 2.5D 국가 지도 이미지는
  * 아직 없고, 없다고 화면이 죽으면 그 이미지가 생길 때까지 흐름을 확인할 수 없다.
  *
- * === 🔴 고르기 전에는 카드가 없다 (2026-08-27 결정) ===
- * 진입할 때 축제를 **자동으로 고르지 않는다.** 예전에는 첫 플레이 가능 축제를 미리 선택해서
- * "부산을 누르지도 않았는데 다대포 카드가 떠 있는" 화면이 나왔다. 지금은 이렇게 간다.
- *
- *   진입 → 선택 없음 · 카드 숨김 · 포커스는 `Button_Back`(브레드크럼)
- *   → 핀 호버 또는 `WASD`/`Enter` → 그 핀이 선택되고 카드가 뜬다
+ * === 진입 즉시 축제 핀에 포커스 (2026-10-13 결정) ===
+ * 첫 플레이 가능 축제를 선택하고 카드를 보여준다. 모두 잠겼으면 첫 항목의 잠금 사유를
+ * 보여주며, 핀이 없을 때만 `Button_Back`으로 이동한다. 마우스 호버 없이 `WASD`로
+ * 이웃 핀을 고르고 `Enter`로 시작할 수 있다.
  *
  * ★ 마우스 호버를 따로 다루지 않는다. `UFF_CommonButtonBase` 가 `bFocusOnHover` 로 호버를
  *   포커스로 바꾸므로, 핀의 `OnPinFocusReceived` 하나가 마우스·키보드·패드를 모두 받는다.
@@ -76,6 +74,7 @@ protected:
 	virtual void NativeOnActivated() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual bool NativeOnHandleBackAction() override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 
@@ -217,6 +216,8 @@ protected:
 	bool bUseDesignerTextAndColors = false;
 
 private:
+	friend struct FFF_AtlasCountryInputTestAccess;
+
 	/** 지도 이미지는 남기고 동적으로 만든 축제 핀만 제거한다. */
 	void ClearPinButtons();
 
@@ -229,12 +230,10 @@ private:
 	/** 고른 축제로 오른쪽 카드를 채운다. 없으면 카드를 통째로 숨기고 안내만 남긴다. */
 	void RefreshFestivalCard();
 
-	/**
-	 * 이 국가에서 처음 고를 만한 축제. 첫 플레이 가능 축제, 없으면 첫 항목이다.
-	 *
-	 * ★ **진입할 때 부르지 않는다.** `WASD`·`Enter` 로 플레이어가 지도에 들어올 때만 쓴다.
-	 *   진입 시 자동 선택은 2026-08-27 에 없앴다.
-	 */
+	/** 런타임 해금 변경을 핀과 카드에 반영하되 현재 선택·포커스는 보존한다. */
+	void RefreshFestivalAvailability();
+
+	/** 진입 시 선택할 축제. 첫 플레이 가능 축제, 모두 잠겼으면 첫 항목이다. */
 	FName FindDefaultFestivalId() const;
 
 	/** 아직 아무 핀도 고르지 않은 상태에서 지도로 들어간다. 성공하면 true. */
@@ -249,7 +248,7 @@ private:
 	/** 현재 선택이 이 국가에 속하고, 잠금 해제됐으며, 열 레벨도 있는지 재검증한다. */
 	bool CanStartSelectedFestival() const;
 
-	/** 지금 키보드·패드 포커스를 가진 축제 핀. */
+	/** 자신 또는 내부 CommonButton에 키보드·패드 포커스를 가진 축제 핀. */
 	UFF_AtlasPinButton* FindFocusedPin() const;
 
 	UFUNCTION()
