@@ -4933,6 +4933,15 @@ bool UFF_CrowdSimulationSubsystem::SetCrowdStateForAgent(int32 AgentIndex, EFF_C
 
 void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage)
 {
+	if (CurrentStage == EFF_FestivalStage::Finale)
+	{
+		SetCrowdState(EFF_CrowdRunState::Holding);
+	}
+	else if (PreviousStage == EFF_FestivalStage::Finale)
+	{
+		SetCrowdState(EFF_CrowdRunState::Running);
+	}
+
 	if (PreviousStage == EFF_FestivalStage::Live && CurrentStage != EFF_FestivalStage::Live)
 	{
 		bMainProgramAudienceActive = false;
