@@ -64,6 +64,10 @@ namespace FFBuildToolsModel
     /** Top and height of the guide, bounded above the measured catalog edge. */
     FESTAFIESTA_API FVector2D ResolveHelpVerticalBounds(float ContentHeight, float AvailableBottom,
         float PreferredTop = 525.f, float ReservedTop = 104.f);
+    /** A nearby label position clear of projected reservations and persistent HUD surfaces. */
+    FESTAFIESTA_API bool ResolveContextPingPosition(const FVector2D& Marker, const FVector2D& PingSize,
+        const FVector2D& ViewSize, const FBox2D& PreviewBounds, const TArray<FBox2D>& Occupied,
+        float Gap, FVector2D& OutPosition);
     /** Required local dimensions, not a measurement of remaining free space. */
     FESTAFIESTA_API void FormatRequiredSpace(const FFFZSFacilitySpec& Spec, FText& OutFootprint, FText& OutQueue);
 }

@@ -612,6 +612,8 @@ public:
 	void RefreshBuildToolsOcclusion();
 	bool HasPlacementTarget() const { return bHasPlacementTarget; }
 	bool GetPlacementMarkerLocation(FVector& OutLocation) const;
+	/** Displayed reservation corners, in world space, for keeping HUD labels off the preview. */
+	bool GetPlacementPreviewWorldCorners(TArray<FVector>& OutCorners) const;
 	bool IsCurrentPlacementValid() const { return bHasPlacementTarget && LastValidation.bIsValid; }
 	FText GetPlacementStatusText() const;
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")

@@ -19,6 +19,7 @@ FText UFF_BuildModeGuide::MakeBuildOverviewHelpText()
 		"구역 밖, 다른 시설이 쓰는 공간, 보호된 길에는 격자가 나타나지 않습니다.\n"
 		"먼 곳은 커서나 카메라를 옮겨 확인하세요.\n"
 		"[G] 격자 표시/숨기기 · [WASD] 카메라 이동 · [Q/E] 카메라 회전\n"
+		"[TAB] 시점 전환\n"
 		"설치된 시설을 선택해 이동하거나 철거할 수 있습니다.\n"
 		"[Ctrl+Z] 실행 취소 · [Ctrl+Y] 다시 실행\n"
 		"시설 선택 후 [7] 기본 · [8] 좌측 · [9] 우측 · [0] U자 대기열");
@@ -34,6 +35,7 @@ FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving, const bool
 			"[Ctrl] 정밀 맞춤 · [Alt] 자유 배치는 첫 시설의 시작 위치에 적용됩니다.\n"
 			"[Q/E] 회전 · [Shift+Q/E] 부드럽게 회전하면 드래그가 끝납니다. 다시 클릭해 시작하세요.\n"
 			"[Enter/배치 확정] 한 개 설치 · [G] 격자 표시/숨기기\n"
+			"[TAB] 시점 전환\n"
 			"[우클릭] 건축모드 UI 다시 표시 (시설 목록으로 돌아가기)\n"
 			"[Ctrl+Z] 실행 취소 · [Ctrl+Y] 다시 실행\n"
 			"[7] 기본 · [8] 좌측 · [9] 우측 · [0] U자 대기열\n"
@@ -48,6 +50,7 @@ FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving, const bool
 			"시설·대기열·보라색 관객석 전체가 흰색 건축 경계 안에 들어가야 합니다. 구역 사이 빈틈도 피하세요.\n"
 			"붉은 사선은 문제가 있는 부분입니다. 배치 안내에서 정확한 원인을 확인하세요.\n"
 			"[G] 격자 표시/숨기기 · 먼 곳은 커서를 옮겨 확인\n"
+			"[TAB] 시점 전환\n"
 			"[Q/E] 일정 각도로 회전 · [Shift+Q/E] 누르는 동안 부드럽게 회전\n"
 			"[Ctrl] 누르는 동안 정밀 위치 맞춤 · [Alt] 누르는 동안 자유 배치\n"
 			"{0}\n"
@@ -115,7 +118,7 @@ void UFF_BuildModeGuide::ApplyGuideText()
 			TextBlock->SetText(Text);
 		}
 	};
-	SetNamedText(TEXT("TXT_GuideRow_0"), LOCTEXT("CameraAndPause", "카메라 이동 · 일시정지"));
+	SetNamedText(TEXT("TXT_GuideRow_0"), LOCTEXT("CameraAndPause", "카메라 이동 · 일시정지 · [TAB] 시점 전환"));
 	SetNamedText(TEXT("TXT_GuideRow_1"), bPlacementGridVisible
 		? (bPlacementPreviewActive
 			? LOCTEXT("PlacementGridLegend", "격자: 후보 바닥 · 흰선: 건축 경계 · 붉은 사선: 문제 부분")
