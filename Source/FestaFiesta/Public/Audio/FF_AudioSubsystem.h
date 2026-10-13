@@ -315,8 +315,8 @@ private:
 
 	FTimerHandle FadingCleanupTimer;
 
-	// 지금 배경음을 튼 순간의 오디오 시각 · 시작 위치 · 곡 길이(모르면 0). 끊겼을 때 이을 자리를 잰다.
-	double AmbienceStartAudioTime = 0.0;
+	// 지금 배경음을 튼 순간의 시각(cpp 의 GetMusicClockSeconds) · 시작 위치 · 곡 길이(모르면 0). 끊겼을 때 이을 자리를 잰다.
+	double AmbienceStartClockSeconds = 0.0;
 	float AmbienceStartOffset = 0.f;
 	float AmbienceLength = 0.f;
 
@@ -329,12 +329,13 @@ private:
 	// 다시 돌아왔을 때 이어 틀 위치(초). 곡이 바뀌면 0 이다.
 	float PlaylistResumeSeconds = 0.f;
 
-	/* 지금 곡을 튼 순간의 오디오 시각과 시작 위치. 들은 위치를 계산한다.
+	/* 지금 곡을 튼 순간의 시각과 시작 위치. 들은 위치를 계산한다.
 
-	   오디오 시각(GetAudioTimeSeconds)은 게임이 멈추면 같이 멈춘다. 배경음도 멈추므로
-	   일시정지 동안 위치가 앞서 가지 않는다.
+	   시각은 게임을 멈춰도 가는 실제 시각이다(cpp 의 GetMusicClockSeconds). 배경음은 UI 소리라 ESC 메뉴에서도
+	   계속 나서, 게임과 같이 멈추는 오디오 시각으로 재면 멈춘 만큼 위치가 뒤처졌다. 플레이리스트만 멈추는 것
+	   (SetPlaylistPaused)은 시작 위치를 다시 잡아 따로 처리한다.
 	*/
-	double PlaylistTrackStartAudioTime = 0.0;
+	double PlaylistTrackStartClockSeconds = 0.0;
 	float PlaylistTrackStartOffset = 0.f;
 
 	// 지금 곡 길이(초). 모르면 0.
@@ -345,6 +346,20 @@ private:
 
 	// 반복 곡 경고를 한 번만 남긴다.
 	bool bWarnedLoopingPlaylistTrack = false;
+
+	/* 플레이리스트 곡이 "끝났다" 알림 없이 멈췄는지 1초마다 본다(2026-10-13 테스터: 곡이 끝나도 안 넘어가고 '재생 중'만 뜸).
+
+	   다음 곡은 곡 컴포넌트의 끝 알림(HandleAmbienceFinished)으로만 넘어간다. 엔진은 소리를 틀지 못했을 때
+	   (동시 재생 한도 등) 컴포넌트를 그냥 내리고 그 알림을 보내지 않는다. 그러면 화면은 '재생 중'인데 소리가 없고
+	   다음 곡으로도 안 간다. 컴포넌트가 섰는데 알림이 없으면 알림이 온 것처럼 처리한다 — 중간이면 그 자리부터 잇고,
+	   끝이면 다음 곡으로 간다.
+	*/
+	void CheckPlaylistStalled();
+
+	FTimerHandle PlaylistWatchdogTimer;
+
+	// 멈춘 채로 본 횟수. 한 번은 넘어가는 순간일 수 있어 두 번 연속일 때 처리한다.
+	int32 PlaylistStalledChecks = 0;
 
 	// 플레이어 UI 에서 고르는 설정. LoadPlaylistPreferences 가 채운다.
 	bool bPlaylistPaused = false;
