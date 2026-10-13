@@ -189,7 +189,9 @@ void UFF_FestivalSettingsScreen::PopulateDefaultKeyboardGuide()
 	AddGuide(Build, LOCTEXT("KeyBuildGrid", "G"), LOCTEXT("KeyBuildGridAction", "배치 격자 표시 / 숨기기"));
 	AddGuide(Build, LOCTEXT("KeyBuildPrecision", "Ctrl"), LOCTEXT("KeyBuildPrecisionAction", "누르는 동안 정밀 배치"));
 	AddGuide(Build, LOCTEXT("KeyBuildFree", "Alt"), LOCTEXT("KeyBuildFreeAction", "누르는 동안 자유 배치"));
-	AddGuide(Character, LOCTEXT("KeyCharacterMove", "WASD · Shift · Space"), LOCTEXT("KeyCharacterMoveAction", "이동 · 달리기 · 점프"));
+	AddGuide(Character, LOCTEXT("KeyCharacterMove", "WASD · Space"), LOCTEXT("KeyCharacterMoveAction", "이동 · 점프"));
+	AddGuide(Character, LOCTEXT("KeyCharacterShiftLock", "Shift"), LOCTEXT("KeyCharacterShiftLockAction", "시점 고정 켜기 / 끄기"));
+	AddGuide(Character, LOCTEXT("KeyCharacterSprint", "Alt"), LOCTEXT("KeyCharacterSprintAction", "달리기 켜기 / 끄기"));
 	AddGuide(Character, LOCTEXT("KeyCharacterLook", "마우스 이동"), LOCTEXT("KeyCharacterLookAction", "캐릭터 시점 조작"));
 }
 
