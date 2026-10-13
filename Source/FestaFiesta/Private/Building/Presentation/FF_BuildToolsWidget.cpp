@@ -53,6 +53,47 @@ FVector2D FFBuildToolsModel::ResolveHelpVerticalBounds(const float ContentHeight
     return FVector2D(FMath::Clamp(PreferredTop, MinimumTop, Bottom - Height), Height);
 }
 
+bool FFBuildToolsModel::ResolveContextPingPosition(const FVector2D& Marker, const FVector2D& PingSize,
+    const FVector2D& ViewSize, const FBox2D& PreviewBounds, const TArray<FBox2D>& Occupied,
+    const float Gap, FVector2D& OutPosition)
+{
+    const FVector2D Minimum(24, 40);
+    const FVector2D Maximum = ViewSize - FVector2D(24, 100) - PingSize;
+    if (Maximum.X < Minimum.X || Maximum.Y < Minimum.Y) return false;
+    TArray<FVector2D, TInlineAllocator<12>> Candidates = {
+        Marker + FVector2D(Gap, -PingSize.Y - 24),
+        Marker + FVector2D(-PingSize.X - Gap, -PingSize.Y - 24),
+        Marker + FVector2D(Gap, 64), Marker + FVector2D(-PingSize.X - Gap, 64)};
+    if (PreviewBounds.bIsValid)
+    {
+        // Long and rotated queues can cover all four marker offsets. Try the
+        // outside edges of the complete projected reservation as well.
+        Candidates.Add(FVector2D(PreviewBounds.Max.X + 16, Marker.Y - PingSize.Y - 24));
+        Candidates.Add(FVector2D(PreviewBounds.Min.X - PingSize.X - 16, Marker.Y - PingSize.Y - 24));
+        Candidates.Add(FVector2D(Marker.X - PingSize.X * .5, PreviewBounds.Min.Y - PingSize.Y - 16));
+        Candidates.Add(FVector2D(Marker.X - PingSize.X * .5, PreviewBounds.Max.Y + 16));
+        // The centered positions may cross the left guide or right inspector.
+        // Align to either end of the reservation before giving up its clear edges.
+        for (const double X : {PreviewBounds.Min.X, PreviewBounds.Max.X - PingSize.X})
+        {
+            Candidates.Add(FVector2D(X, PreviewBounds.Min.Y - PingSize.Y - 16));
+            Candidates.Add(FVector2D(X, PreviewBounds.Max.Y + 16));
+        }
+    }
+    for (FVector2D Position : Candidates)
+    {
+        Position.X = FMath::Clamp(Position.X, Minimum.X, Maximum.X);
+        Position.Y = FMath::Clamp(Position.Y, Minimum.Y, Maximum.Y);
+        const FBox2D Candidate(Position, Position + PingSize);
+        if (PreviewBounds.bIsValid && Candidate.Intersect(PreviewBounds.ExpandBy(12))) continue;
+        if (Occupied.ContainsByPredicate([&](const FBox2D& Bounds)
+            { return Bounds.bIsValid && Candidate.Intersect(Bounds); })) continue;
+        OutPosition = Position;
+        return true;
+    }
+    return false;
+}
+
 void FFBuildToolsModel::FormatRequiredSpace(const FFFZSFacilitySpec& Spec, FText& OutFootprint, FText& OutQueue)
 {
     OutFootprint = FText::Format(LOCTEXT("RequiredFootprint", "시설 크기  {0} × {1} m"),
@@ -846,30 +887,34 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
     // the same status remains readable in the summary, never covering another control.
     const FVector2D PingSize = System->IsCurrentPlacementValid() ? FVector2D(280, 40) : FVector2D(360, 60);
     PingSlot->SetSize(PingSize);
-    const float Gap = System->IsDirectPlacementAdjustment() ? 100.f : 52.f;
-    const FVector2D Offsets[] = { FVector2D(Gap, -PingSize.Y - 24), FVector2D(-PingSize.X - Gap, -PingSize.Y - 24),
-        FVector2D(Gap, 64), FVector2D(-PingSize.X - Gap, 64) };
-    for (const FVector2D& Offset : Offsets)
+    TArray<FVector> WorldCorners;
+    if (!System->GetPlacementPreviewWorldCorners(WorldCorners)) return;
+    FBox2D PreviewBounds(EForceInit::ForceInit);
+    for (const FVector& Corner : WorldCorners)
     {
-        const FVector2D Pos = Projected + Offset;
-        if (Pos.X < 24 || Pos.Y < 40 || Pos.X + PingSize.X > Size.X - 24 || Pos.Y + PingSize.Y > Size.Y - 100) continue;
-        const FSlateRect Candidate(Pos.X, Pos.Y, Pos.X + PingSize.X, Pos.Y + PingSize.Y);
-        // Reserve the left combination card; the measured inspector and dock follow below.
-        if (Candidate.IntersectionWith(FSlateRect(20, 92, 490, 520)).GetArea() > 0) continue;
-        bool bOccupied = false;
-        for (const UBorder* Panel : { Border_Tools.Get(), Border_PlacementInfo.Get(),
-            Border_BuildTopBar.Get(), Border_BuildBack.Get(), Border_BuildToolbarGold.Get(), Panel_BuildSettings.Get() })
-        {
-            if (!Panel || !Panel->IsVisible()) continue;
-            const FGeometry& Bounds = Panel->GetCachedGeometry();
-            const FVector2D Min = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(FVector2D::ZeroVector)) - FVector2D(12);
-            const FVector2D Max = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(Bounds.GetLocalSize())) + FVector2D(12);
-            if (Candidate.IntersectionWith(FSlateRect(Min.X, Min.Y, Max.X, Max.Y)).GetArea() > 0) { bOccupied = true; break; }
-        }
-        if (bOccupied) continue;
-        PingSlot->SetPosition(Pos);
+        FVector2D Point;
+        // A reservation crossing behind the camera cannot be safely bounded by
+        // its remaining projected corners; keep the summary as the status source.
+        if (!UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(GetOwningPlayer(), Corner, Point, true)) return;
+        PreviewBounds += Geometry.AbsoluteToLocal(Screen.LocalToAbsolute(Point));
+    }
+    // Reserve the left combination card and the measured inspector, help and dock.
+    TArray<FBox2D> Occupied = {FBox2D(FVector2D(20, 92), FVector2D(490, 520))};
+    for (const UBorder* Panel : { Border_Tools.Get(), Border_PlacementInfo.Get(), Border_PlacementHelp.Get(),
+        Border_BuildTopBar.Get(), Border_BuildBack.Get(), Border_BuildToolbarGold.Get(), Panel_BuildSettings.Get() })
+    {
+        if (!Panel || !Panel->IsVisible()) continue;
+        const FGeometry& Bounds = Panel->GetCachedGeometry();
+        const FVector2D Min = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(FVector2D::ZeroVector)) - FVector2D(12);
+        const FVector2D Max = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(Bounds.GetLocalSize())) + FVector2D(12);
+        Occupied.Add(FBox2D(Min, Max));
+    }
+    FVector2D Position;
+    if (FFBuildToolsModel::ResolveContextPingPosition(Projected, PingSize, Size, PreviewBounds, Occupied,
+        System->IsDirectPlacementAdjustment() ? 100.f : 52.f, Position))
+    {
+        PingSlot->SetPosition(Position);
         Border_ContextPing->SetVisibility(ESlateVisibility::HitTestInvisible);
-        break;
     }
 }
 
@@ -1308,13 +1353,14 @@ void UFF_BuildToolsWidget::RefreshTools()
             const TPair<const TCHAR*, const TCHAR*> Keys[] = {
                 {TEXT("W"), TEXT("FF.Camera.Move.Forward")}, {TEXT("A"), TEXT("FF.Camera.Move.Left")},
                 {TEXT("S"), TEXT("FF.Camera.Move.Backward")}, {TEXT("D"), TEXT("FF.Camera.Move.Right")},
-                {TEXT("Esc"), TEXT("FF.System.Options.Primary")}};
+                {TEXT("Esc"), TEXT("FF.System.Options.Primary")}, {TEXT("Tab"), TEXT("FF.Camera.ToggleView")}};
             for (const auto& Key : Keys)
                 if (auto* Text = Cast<UTextBlock>(GetWidgetFromName(
                     FName(*(FString(TEXT("Text_BuildHelpKey_")) + Key.Key)))))
                 {
                     const FKey Current = Bindings->GetCurrentKey(FName(Key.Value));
-                    Text->SetText(Current == EKeys::Escape ? FText::FromString(TEXT("Esc")) : Current.GetDisplayName());
+                    Text->SetText(Current == EKeys::Escape ? FText::FromString(TEXT("Esc")) :
+                        Current == EKeys::Tab ? FText::FromString(TEXT("TAB")) : Current.GetDisplayName());
                 }
         }
     if (Row_BuildHelpRotate)

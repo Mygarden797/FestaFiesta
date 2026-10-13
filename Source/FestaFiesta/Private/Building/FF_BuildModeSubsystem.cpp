@@ -33,6 +33,8 @@
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSBuildPresentationSettings.h"
+#include "FF_FFZSOrientedGeometry.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSBuildableGridActor.h"
 #include "FF_FFZSPlacementPreviewActor.h"
@@ -1526,6 +1528,34 @@ bool UFF_BuildModeSubsystem::GetPlacementMarkerLocation(FVector& OutLocation) co
 	return !OutLocation.ContainsNaN();
 }
 
+bool UFF_BuildModeSubsystem::GetPlacementPreviewWorldCorners(TArray<FVector>& OutCorners) const
+{
+	OutCorners.Reset();
+	if (!bHasPlacementTarget || !FFBuildModeModel::IsPreviewActive(State) || !PlacementPreview ||
+		PlacementPreview->HasUnvalidatedPreviewTransform()) return false;
+	const UFFZSWorldSubsystem* ZoneSystem = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const AFFZSGameplayZone* Zone = ZoneSystem ? ZoneSystem->FindZone(PlacementPreview->PreviewCommand.ZoneId) : nullptr;
+	if (!Zone) return false;
+	const double BaseZ = LastValidation.PlacementTransform.GetLocation().Z +
+		FMath::Clamp(GetDefault<UFFZSBuildPresentationSettings>()->RangeSurfaceLiftCm, 0.5f, 20.0f);
+	const auto Append = [&](const TArray<FFFZSOrientedRect>& Regions)
+	{
+		for (const FFFZSOrientedRect& Region : Regions)
+			if (Region.IsValid())
+				for (const FVector2D& Corner : FFZSOrientedGeometry::GetCorners(Region))
+				{
+					FVector WorldCorner = Zone->GetActorTransform().TransformPosition(
+						FVector(Corner * UFFZSDeveloperSettings::DefaultPlacementCellSizeCm, 0));
+					WorldCorner.Z = BaseZ;
+					OutCorners.Add(WorldCorner);
+				}
+	};
+	Append(LastValidation.FootprintOrientedRects);
+	Append(LastValidation.ClearanceOrientedRects);
+	Append(LastValidation.QueueOrientedRects);
+	return !OutCorners.IsEmpty();
+}
+
 FText UFF_BuildModeSubsystem::GetPlacementStatusText() const
 {
 	if (!FFBuildModeModel::IsPreviewActive(State))
@@ -2200,6 +2230,13 @@ void UFF_BuildModeSubsystem::RestoreInputMode(APlayerController& Controller)
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		InputMode.SetHideCursorDuringCapture(false);
 		Controller.SetInputMode(InputMode);
+	}
+	else if (AFF_FestivalPlayerController* FestivalController = Cast<AFF_FestivalPlayerController>(&Controller))
+	{
+		// 축제 컨트롤러는 지금 시점(관찰 · 캐릭터 · 시야 고정)에 맞는 입력 모드를 스스로 정한다.
+		// GameOnly 를 그대로 걸면 캐릭터 시점에서 첫 클릭에 마우스가 계속 잡혀 커서가 숨고,
+		// 마우스 이동이 시점 회전으로 들어간다(2026-10-13 제보: 1인칭에서 B → 다른 탭 클릭 시 카메라가 마우스를 따라 돎).
+		FestivalController->RefreshViewInputMode();
 	}
 	else
 	{

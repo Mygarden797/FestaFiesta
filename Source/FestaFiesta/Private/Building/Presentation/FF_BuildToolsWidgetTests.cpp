@@ -104,6 +104,48 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsAngleInputTest,
     "FestaFiesta.Building.BuildTools.AngleInput",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsContextPingClearanceTest,
+    "FestaFiesta.Building.BuildTools.ContextPingPreviewClearance",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFBuildToolsContextPingClearanceTest::RunTest(const FString& Parameters)
+{
+    // The old marker offset lands directly on the queue to the facility's right.
+    const FVector2D Marker(600, 350);
+    const FVector2D PingSize(280, 40);
+    const FBox2D QueueAndFootprint(FVector2D(560, 240), FVector2D(990, 420));
+    const FBox2D OldPing(Marker + FVector2D(52, -64), Marker + FVector2D(52, -64) + PingSize);
+    TestTrue(TEXT("Fixture reproduces the queue obscured by the old label"), OldPing.Intersect(QueueAndFootprint));
+    const TArray<FBox2D> Panels = {FBox2D(FVector2D(20, 92), FVector2D(490, 520)),
+        FBox2D(FVector2D(490, 420), FVector2D(1000, 620))};
+    for (const FVector2D Size : {FVector2D(1280, 720), FVector2D(1920, 1080)})
+    {
+        FVector2D Position;
+        if (TestTrue(TEXT("A long queue retains a clear label outside its reservation"),
+            FFBuildToolsModel::ResolveContextPingPosition(Marker, PingSize, Size, QueueAndFootprint, Panels, 52, Position)))
+        {
+            const FBox2D Ping(Position, Position + PingSize);
+            TestFalse(TEXT("Label leaves the entire queue and facility visible"), Ping.Intersect(QueueAndFootprint.ExpandBy(12)));
+            for (const FBox2D& Panel : Panels)
+                TestFalse(TEXT("Label does not move onto another HUD surface"), Ping.Intersect(Panel));
+            TestTrue(TEXT("Label stays within the usable viewport"), Position.X >= 24 && Position.Y >= 40 &&
+                Ping.Max.X <= Size.X - 24 && Ping.Max.Y <= Size.Y - 100);
+        }
+    }
+    // Rotation, zoom and viewport edges can project a much wider reservation.
+    FVector2D Position;
+    const FBox2D WidePreview(FVector2D(650, 80), FVector2D(1260, 500));
+    TestTrue(TEXT("A preview at the screen edge still offers a clear side"),
+        FFBuildToolsModel::ResolveContextPingPosition(FVector2D(1240, 320), PingSize, FVector2D(1280, 720),
+            WidePreview, {}, 100, Position));
+    TestFalse(TEXT("Clamping at the viewport edge never pushes the label onto the preview"),
+        FBox2D(Position, Position + PingSize).Intersect(WidePreview.ExpandBy(12)));
+    TestFalse(TEXT("Hide the floating label when the preview occupies the whole usable viewport"),
+        FFBuildToolsModel::ResolveContextPingPosition(Marker, PingSize, FVector2D(1280, 720),
+            FBox2D(FVector2D::ZeroVector, FVector2D(1280, 720)), {}, 52, Position));
+    return true;
+}
+
 bool FFFBuildToolsAngleInputTest::RunTest(const FString& Parameters)
 {
     float Yaw = 42.0f;
