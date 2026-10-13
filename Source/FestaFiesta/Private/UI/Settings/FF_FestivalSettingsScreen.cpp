@@ -29,6 +29,7 @@
 #include "InputCoreTypes.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/App.h"
+#include "Save/FF_SaveBeforeQuitPolicy.h"
 #include "UI/Core/FF_UIAccessibilitySubsystem.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/FF_UILog.h"
@@ -616,7 +617,7 @@ void UFF_FestivalSettingsScreen::RebuildRows()
 	VerticalBox_Rows->ClearChildren();
 	Button_QuitAction = nullptr;
 	Button_QuitCancel = nullptr;
-	Button_QuitConfirm = nullptr;
+	Button_QuitWithoutSave = nullptr;
 	Row_WindowMode = nullptr;
 	Row_GraphicsPreset = nullptr;
 
@@ -651,30 +652,45 @@ void UFF_FestivalSettingsScreen::RebuildRows()
 		break;
 	case EFF_FestivalSettingsCategory::ExitGame:
 		AddSectionHeader(LOCTEXT("ExitSection", "게임 세션"));
-		AddInfoRow(
-			bExitConfirmationArmed ? LOCTEXT("ExitConfirmTitle", "종료 확인") : LOCTEXT("ExitTitle", "바탕화면으로 종료"),
-			bExitConfirmationArmed ? LOCTEXT("ExitConfirmValue", "저장되지 않은 진행 상황이 사라질 수 있습니다") : LOCTEXT("ExitValue", "Festa Fiesta! 종료"),
-			LOCTEXT("ExitDescription", "옵션 변경은 먼저 저장할 수 있으며, 게임 진행 저장 여부는 현재 세션 상태를 따릅니다."));
-		if (bExitConfirmationArmed)
+		/* 확인 단계 없이 두 버튼으로 바로 동작한다.
+
+		   계속하기는 X·이전으로와 같은 닫기 경로(RequestNavigateBack)를 탄다. 저장하지 않은 옵션
+		   변경이 있으면 그쪽의 폐기 확인을 그대로 거친다.
+
+		   예외는 축제 도중 저장 실패 하나다. 그대로 끄면 진행이 사라지므로 실패 안내를 띄운다.
+		   이 안내는 bExitConfirmationArmed 를 같이 세워, ESC/이전으로·하단 저장이 기존 규칙대로
+		   안내만 닫고 기본 두 버튼으로 돌아오게 한다. 안내 안의 계속하기는 바로 게임으로 돌아간다.
+		*/
+		if (bExitConfirmationArmed && bSaveBeforeQuitFailed)
 		{
-			Button_QuitCancel = AddActionButton(LOCTEXT("ExitCancel", "계속 플레이"), false);
-			Button_QuitConfirm = AddActionButton(LOCTEXT("ExitConfirm", "게임 종료"), true);
+			AddInfoRow(
+				LOCTEXT("ExitSaveFailedTitle", "저장 실패"),
+				LOCTEXT("ExitSaveFailedValue", "진행 상황을 저장하지 못했습니다"),
+				LOCTEXT("ExitSaveFailedDescription", "다시 시도하거나, 마지막 저장 이후의 진행을 포기하고 종료할 수 있습니다."));
+			Button_QuitCancel = AddActionButton(LOCTEXT("ExitCancel", "계속하기"), false);
+			Button_QuitAction = AddActionButton(LOCTEXT("ExitRetry", "다시 저장 후 종료"), true);
+			Button_QuitWithoutSave = AddActionButton(LOCTEXT("ExitWithoutSave", "저장하지 않고 종료"), true);
 			if (Button_QuitCancel)
 			{
 				Button_QuitCancel->OnClicked.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleQuitGameCancelled);
 			}
-			if (Button_QuitConfirm)
+			if (Button_QuitWithoutSave)
 			{
-				Button_QuitConfirm->OnClicked.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleQuitGameConfirmed);
+				Button_QuitWithoutSave->OnClicked.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleQuitWithoutSaveConfirmed);
 			}
 		}
 		else
 		{
-			Button_QuitAction = AddActionButton(LOCTEXT("ExitAction", "게임 종료"), true);
-			if (Button_QuitAction)
+			Button_QuitCancel = AddActionButton(LOCTEXT("ExitContinue", "계속하기"), false);
+			Button_QuitAction = AddActionButton(LOCTEXT("ExitAction", "게임 저장 후 종료"), true);
+			if (Button_QuitCancel)
 			{
-				Button_QuitAction->OnClicked.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleQuitGameClicked);
+				Button_QuitCancel->OnClicked.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleBackClicked);
 			}
+		}
+		if (Button_QuitAction)
+		{
+			Button_QuitAction->OnClicked.AddUniqueDynamic(this, &UFF_FestivalSettingsScreen::HandleQuitGameClicked);
 		}
 		break;
 	}
@@ -1385,7 +1401,7 @@ void UFF_FestivalSettingsScreen::RefreshButtonFocusPresentation()
 	RefreshButton(GetSaveButton());
 	RefreshButton(Button_QuitAction);
 	RefreshButton(Button_QuitCancel);
-	RefreshButton(Button_QuitConfirm);
+	RefreshButton(Button_QuitWithoutSave);
 }
 
 void UFF_FestivalSettingsScreen::HandleSaveClicked()
@@ -1807,31 +1823,57 @@ void UFF_FestivalSettingsScreen::HandleReduceMotionToggled(const bool bEnabled)
 
 void UFF_FestivalSettingsScreen::HandleQuitGameClicked()
 {
-	bExitConfirmationArmed = true;
-	RebuildRows();
-	if (Button_QuitCancel)
-	{
-		Button_QuitCancel->SetKeyboardFocus();
-	}
-}
-
-void UFF_FestivalSettingsScreen::HandleQuitGameCancelled()
-{
-	bExitConfirmationArmed = false;
-	RebuildRows();
-	if (Button_QuitAction)
-	{
-		Button_QuitAction->SetKeyboardFocus();
-	}
-}
-
-void UFF_FestivalSettingsScreen::HandleQuitGameConfirmed()
-{
-	if (bQuitRequested || !bExitConfirmationArmed)
+	// 저장은 동기라 이 함수 안에서 끝나지만, 같은 프레임의 중복 입력(마우스+키보드)을 막는다.
+	if (bQuitRequested)
 	{
 		return;
 	}
 	bQuitRequested = true;
+
+	FName SavedSlotId;
+	const EFF_SaveBeforeQuitResult Result = UFF_SaveBeforeQuitLibrary::SaveBeforeQuit(this, SavedSlotId);
+	if (!FF::SaveBeforeQuit::CanQuit(Result))
+	{
+		// 축제 도중 저장 실패. 진행을 잃지 않도록 종료하지 않고 실패 안내로 바꾼다.
+		bQuitRequested = false;
+		bExitConfirmationArmed = true;
+		bSaveBeforeQuitFailed = true;
+		RebuildRows();
+		if (Button_QuitAction)
+		{
+			Button_QuitAction->SetKeyboardFocus();
+		}
+		return;
+	}
+
+	QuitApplication();
+}
+
+void UFF_FestivalSettingsScreen::HandleQuitGameCancelled()
+{
+	// 실패 안내의 "계속하기". 기본 화면의 계속하기와 같은 의미(게임으로 복귀)가 되도록
+	// 안내를 접은 뒤 같은 닫기 경로를 탄다. 안내를 먼저 접지 않으면 RequestNavigateBack 이
+	// 안내만 닫고 멈춰 한 번 더 눌러야 한다.
+	bExitConfirmationArmed = false;
+	bSaveBeforeQuitFailed = false;
+	RebuildRows();
+	RequestNavigateBack();
+}
+
+void UFF_FestivalSettingsScreen::HandleQuitWithoutSaveConfirmed()
+{
+	// 실패 안내에서만 보이는 버튼이다. 다른 상태에서 들어오면 저장을 건너뛰는 우회로가 된다.
+	if (bQuitRequested || !bExitConfirmationArmed || !bSaveBeforeQuitFailed)
+	{
+		return;
+	}
+	bQuitRequested = true;
+	UE_LOG(LogFestaFiestaUI, Warning, TEXT("UFF_FestivalSettingsScreen: 저장 실패 후 사용자가 저장 없이 종료를 선택했다."));
+	QuitApplication();
+}
+
+void UFF_FestivalSettingsScreen::QuitApplication()
+{
 	if (UFF_KeyBindingRuntimeSubsystem* Runtime = ResolveKeyBindingRuntime())
 	{
 		Runtime->RollbackKeyBindingEdit();

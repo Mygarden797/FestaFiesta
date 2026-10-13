@@ -166,7 +166,10 @@ protected:
 	UFUNCTION() void HandleReduceMotionToggled(bool bEnabled);
 	UFUNCTION() void HandleQuitGameClicked();
 	UFUNCTION() void HandleQuitGameCancelled();
-	UFUNCTION() void HandleQuitGameConfirmed();
+	/** 저장 실패 후 사용자가 진행 손실을 감수하고 종료를 고른 경우. */
+	UFUNCTION() void HandleQuitWithoutSaveConfirmed();
+	/** 키 바인딩 편집을 되돌리고 애플리케이션 종료를 요청한다. 종료 경로가 둘이라 한곳에 모은다. */
+	void QuitApplication();
 
 	// 새 WBP의 명시 바인딩. Optional인 이유는 사용하지 않는 구형 WBP도 데이터 검증을 통과해야 하기 때문이다.
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Settings")
@@ -322,6 +325,8 @@ private:
 	bool bPreserveAppliedResolutionOption = false;
 	bool bNormalizedUnsupportedVideoMode = false;
 	bool bQuitRequested = false;
+	/** 축제 도중 "게임 저장 후 종료" 가 실패해 실패 안내를 보이는 중이다. */
+	bool bSaveBeforeQuitFailed = false;
 	bool bIsTearingDown = false;
 	TArray<FKey> PresentedOpenCloseKeys;
 	uint64 LastBackRequestFrame = MAX_uint64;
@@ -331,7 +336,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> Button_QuitCancel;
 	UPROPERTY(Transient)
-	TObjectPtr<UButton> Button_QuitConfirm;
+	TObjectPtr<UButton> Button_QuitWithoutSave;
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_SettingSelectRow> Row_WindowMode;
 	UPROPERTY(Transient)
