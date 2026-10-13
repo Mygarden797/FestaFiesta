@@ -24,6 +24,7 @@
 #include "TextureResource.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
+#include "UI/PrepHUD/Panels/FF_PrepRecommendedFacilityRow.h"
 #include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UObject/Package.h"
 #include "UObject/StrongObjectPtr.h"
@@ -36,6 +37,16 @@ namespace FFPrepCheckSkyLayoutTest
 {
 	constexpr float Tolerance = .5f;
 	enum class EFixture { Blocked, Ready, Morning, Unknown, LongRequirements };
+	bool IsCompactHiddenText(const TCHAR* Name)
+	{
+		for (const TCHAR* HiddenName : { TEXT("Text_Gold"), TEXT("Text_RequiredFacilities"),
+			TEXT("Text_ExpectedGoalBonus"), TEXT("Text_EstimateNotice") })
+		{
+			if (FCString::Strcmp(Name, HiddenName) == 0) { return true; }
+		}
+		return false;
+	}
+
 	bool Contains(const FSlateRect& Outer, const FSlateRect& Inner)
 	{
 		return Inner.Left >= Outer.Left - Tolerance && Inner.Right <= Outer.Right + Tolerance &&
@@ -67,6 +78,7 @@ namespace FFPrepCheckSkyLayoutTest
 		const bool bUnknown = Kind == EFixture::Unknown;
 		const bool bReady = Kind == EFixture::Ready || Kind == EFixture::Morning;
 		const bool bMorning = Kind == EFixture::Morning;
+		const bool bCompact = Panel.UsesCompactLayout();
 		const TPair<const TCHAR*, const TCHAR*> Values[] = {
 			{ TEXT("Text_DayLabel"), bMorning ? TEXT("3일차") : TEXT("1일차") },
 			{ TEXT("Text_Weather"), bUnknown ? TEXT("아직 알 수 없습니다") : TEXT("맑음") },
@@ -92,7 +104,11 @@ namespace FFPrepCheckSkyLayoutTest
 			auto* Text = Cast<UTextBlock>(Panel.GetWidgetFromName(Value.Key));
 			if (!Test.TestNotNull(FString(TEXT("점검 fixture / ")) + Value.Key, Text)) { return false; }
 			Text->SetText(FText::FromString(Value.Value));
-			Text->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			// 작은 화면에서 감춘 중복 문구를 표시 자료가 다시 켜지 않는다.
+			if (!bCompact || !IsCompactHiddenText(Value.Key))
+			{
+				Text->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			}
 		}
 		auto* Lock = Cast<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_WeatherLockReason")));
 		auto* Open = Cast<UButton>(Panel.GetWidgetFromName(TEXT("Button_OpenGate")));
@@ -111,15 +127,37 @@ namespace FFPrepCheckSkyLayoutTest
 			Choice->SetSelected(FCString::Strcmp(Name, TEXT("Choice_Clear")) == 0);
 			Choice->SetIsEnabled(!bUnknown);
 		}
+		if (bCompact)
+		{
+			auto* Rows = Cast<UWrapBox>(Panel.GetWidgetFromName(TEXT("WrapBox_RecommendedRows")));
+			UWidget* Recommended = Panel.GetWidgetFromName(TEXT("Border_RecommendedFacilities"));
+			auto* Count = Cast<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_RecommendedCount")));
+			if (!Test.TestNotNull(TEXT("작은 권장 시설 카드 묶음"), Rows) ||
+				!Test.TestNotNull(TEXT("권장 시설 영역"), Recommended) ||
+				!Test.TestNotNull(TEXT("권장 시설 개수"), Count)) { return false; }
+			const bool bShowRecommended = !bReady && !bUnknown;
+			Recommended->SetVisibility(bShowRecommended ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+			Count->SetText(FText::FromString(TEXT("권장 시설 8종 없음")));
+			for (UWidget* Child : Rows->GetAllChildren())
+			{
+				auto* Row = Cast<UFF_PrepRecommendedFacilityRow>(Child);
+				if (!Test.TestNotNull(TEXT("권장 시설 표시 행"), Row)) { return false; }
+				Row->SetVisibility(bShowRecommended ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+				Row->SetPlacementEnabled(true, FText::GetEmpty());
+			}
+		}
 		if (Kind == EFixture::LongRequirements)
 		{
-			FString Lines;
-			for (int32 Index = 1; Index <= 12; ++Index)
+			if (!bCompact)
 			{
-				if (!Lines.IsEmpty()) { Lines += TEXT("\n"); }
-				Lines += FString::Printf(TEXT("표시 검사 시설 %02d · 0/1 · ! 추가 설치 필요"), Index);
+				FString Lines;
+				for (int32 Index = 1; Index <= 12; ++Index)
+				{
+					if (!Lines.IsEmpty()) { Lines += TEXT("\n"); }
+					Lines += FString::Printf(TEXT("표시 검사 시설 %02d · 0/1 · ! 추가 설치 필요"), Index);
+				}
+				CastChecked<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_RequiredFacilities")))->SetText(FText::FromString(Lines));
 			}
-			CastChecked<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_RequiredFacilities")))->SetText(FText::FromString(Lines));
 			CastChecked<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_OpenGateReason")))->SetText(FText::FromString(
 				TEXT("메인공연장: 1개 추가 설치가 필요합니다. (설치 0/1) 배치에서 필요한 시설을 설치한 뒤 준비 현황과 추가 설치 사유를 확인하고 다시 점검해주세요.")));
 		}
@@ -148,6 +186,7 @@ namespace FFPrepCheckSkyLayoutTest
 		const TSharedRef<SWidget>& Surface, FIntPoint Size, EFixture Kind, const FString& Variant)
 	{
 		const FString Context = FString::Printf(TEXT("Check_%s_%dx%d"), *Variant, Size.X, Size.Y);
+		const bool bCompact = Panel.UsesCompactLayout();
 		auto* Scroll = Cast<UScrollBox>(Panel.GetWidgetFromName(TEXT("ScrollBox_Body")));
 		UWidget* Body = Panel.GetWidgetFromName(TEXT("VerticalBox_Body"));
 		UWidget* Header = Panel.GetWidgetFromName(TEXT("HorizontalBox_Header"));
@@ -157,6 +196,37 @@ namespace FFPrepCheckSkyLayoutTest
 		if (!Test.TestNotNull(Context + TEXT(" 스크롤 본문"), Scroll) || !Test.TestNotNull(Context + TEXT(" 전체 본문"), Body) ||
 			!Test.TestNotNull(Context + TEXT(" 헤더"), Header) || !Test.TestNotNull(Context + TEXT(" 푸터"), Footer) ||
 			!Test.TestNotNull(Context + TEXT(" 요약 카드 묶음"), Metrics)) { return false; }
+		if (bCompact)
+		{
+			for (const TCHAR* Name : { TEXT("SizeBox_GoldCard"), TEXT("Text_RequiredFacilitiesCaption"),
+				TEXT("Button_RequiredFacilities"), TEXT("Box_GoalBonusRow"), TEXT("Box_GoalBonusRow_Rule_Size"),
+				TEXT("Text_EstimateNotice"), TEXT("Border_AdmissionPreviewRevenue") })
+			{
+				UWidget* Widget = Panel.GetWidgetFromName(Name);
+				if (!Test.TestNotNull(Context + TEXT(" 숨긴 중복 영역 / ") + Name, Widget)) { return false; }
+				Test.TestEqual(Context + TEXT(" / ") + Name + TEXT(" 중복 영역은 공간을 차지하지 않는다"),
+					Widget->GetVisibility(), ESlateVisibility::Collapsed);
+			}
+			auto* Rows = Cast<UWrapBox>(Panel.GetWidgetFromName(TEXT("WrapBox_RecommendedRows")));
+			if (!Test.TestNotNull(Context + TEXT(" 권장 시설 카드 묶음"), Rows)) { return false; }
+			Test.TestEqual(Context + TEXT(" 권장 시설 행 8개를 보존한다"), Rows->GetChildrenCount(), 8);
+			TSet<EFF_PrepRecommendedFacilityKind> Kinds;
+			for (UWidget* Child : Rows->GetAllChildren())
+			{
+				auto* Row = Cast<UFF_PrepRecommendedFacilityRow>(Child);
+				if (!Test.TestNotNull(Context + TEXT(" 실제 권장 시설 행"), Row)) { return false; }
+				Test.TestFalse(Context + TEXT(" 시설 종류가 중복되지 않는다"), Kinds.Contains(Row->Kind));
+				Kinds.Add(Row->Kind);
+				Test.TestTrue(Context + TEXT(" 행의 배치 요청이 부모 패널에 연결된다"), Row->OnPlaceRequested.IsBound());
+			}
+			for (const auto FacilityKind : { EFF_PrepRecommendedFacilityKind::Lighting, EFF_PrepRecommendedFacilityKind::Food,
+				EFF_PrepRecommendedFacilityKind::Toilet, EFF_PrepRecommendedFacilityKind::Entertainment,
+				EFF_PrepRecommendedFacilityKind::Rest, EFF_PrepRecommendedFacilityKind::Drink,
+				EFF_PrepRecommendedFacilityKind::FirstAid, EFF_PrepRecommendedFacilityKind::FireSafety })
+			{
+				Test.TestTrue(Context + TEXT(" 기존 권장 시설 종류가 남아 있다"), Kinds.Contains(FacilityKind));
+			}
+		}
 		FWidgetRenderer Renderer(false, true);
 		TStrongObjectPtr<UTextureRenderTarget2D> Target(
 			FWidgetRenderer::CreateTargetFor(FVector2D(Size.X, Size.Y), TF_Bilinear, true));
@@ -187,6 +257,7 @@ namespace FFPrepCheckSkyLayoutTest
 				Scroll->GetScrollOffsetOfEnd() <= Tolerance);
 			for (const TCHAR* Name : { TEXT("Text_RequiredFacilities"), TEXT("Text_ExpectedGoalBonus"), TEXT("Text_EstimateNotice") })
 			{
+				if (bCompact && IsCompactHiddenText(Name)) { continue; }
 				UWidget* Widget = Panel.GetWidgetFromName(Name);
 				if (Test.TestNotNull(Context + TEXT(" 최초 표시 / ") + Name, Widget))
 				{
@@ -223,13 +294,17 @@ namespace FFPrepCheckSkyLayoutTest
 		if (Size.X >= 1080)
 		{
 			FSlateRect Previous;
+			bool bHasPrevious = false;
 			for (int32 Index = 0; Index < Metrics->GetChildrenCount(); ++Index)
 			{
-				const FSlateRect Rect = Metrics->GetChildAt(Index)->GetCachedGeometry().GetLayoutBoundingRect();
+				UWidget* Card = Metrics->GetChildAt(Index);
+				if (Card->GetVisibility() == ESlateVisibility::Collapsed) { continue; }
+				const FSlateRect Rect = Card->GetCachedGeometry().GetLayoutBoundingRect();
 				Test.TestTrue(Context + TEXT(" 요약 카드가 좌우 폭 안에 들어온다"), Rect.Left >= ScrollRect.Left - Tolerance && Rect.Right <= ScrollRect.Right + Tolerance);
-				if (Index > 0) { Test.TestTrue(Context + TEXT(" 넓은 패널에서는 요약 카드가 한 줄이다"),
+				if (bHasPrevious) { Test.TestTrue(Context + TEXT(" 넓은 패널에서는 요약 카드가 한 줄이다"),
 					FMath::IsNearlyEqual(Rect.Top, Previous.Top, Tolerance) && Rect.Left >= Previous.Right - Tolerance); }
 				Previous = Rect;
+				bHasPrevious = true;
 			}
 		}
 		auto Reveal = [&](UUserWidget& Owner, const TCHAR* Name)
@@ -254,7 +329,20 @@ namespace FFPrepCheckSkyLayoutTest
 			TEXT("Text_ExpectedVisitors"), TEXT("Text_Gold"), TEXT("Text_CapacityRisk"), TEXT("Text_CapacityDetail"),
 			TEXT("Text_StaffSummary"), TEXT("Text_ProgramSummary"), TEXT("Text_RequiredFacilities"),
 			TEXT("Text_StaffWageCost"), TEXT("Text_ExpectedAdmission"), TEXT("Text_ExpectedGoalBonus"), TEXT("Text_EstimateNotice") })
-		{ Reveal(Panel, Name); }
+		{
+			if (!bCompact || !IsCompactHiddenText(Name)) { Reveal(Panel, Name); }
+		}
+		if (bCompact && Kind != EFixture::Unknown && Kind != EFixture::Ready && Kind != EFixture::Morning)
+		{
+			Reveal(Panel, TEXT("Text_RecommendedCount"));
+			auto* Rows = CastChecked<UWrapBox>(Panel.GetWidgetFromName(TEXT("WrapBox_RecommendedRows")));
+			for (UWidget* Child : Rows->GetAllChildren())
+			{
+				auto* Row = CastChecked<UFF_PrepRecommendedFacilityRow>(Child);
+				Reveal(*Row, TEXT("Text_Title"));
+				Reveal(*Row, TEXT("Text_Action"));
+			}
+		}
 		if (Kind == EFixture::Unknown) { Reveal(Panel, TEXT("Text_WeatherLockReason")); }
 		if (Kind == EFixture::Morning) { Reveal(Panel, TEXT("Text_FinaleSummary")); }
 		for (const TCHAR* Name : { TEXT("Choice_Clear"), TEXT("Choice_Rain"), TEXT("Choice_Windy") })

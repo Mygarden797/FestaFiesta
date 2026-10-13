@@ -14,6 +14,8 @@ class USlider;
 class UTextBlock;
 class UWidget;
 class UVerticalBox;
+class UWrapBox;
+class UPanelWidget;
 class UFF_BuildCatalogSubsystem;
 class UFF_PrepRecommendedFacilityRow;
 class UFF_FestivalViewModelSubsystem;
@@ -139,6 +141,8 @@ class FESTAFIESTA_API UFF_PrepPanelCheck : public UFF_PrepPanelBase
 public:
 	UFF_PrepPanelCheck(const FObjectInitializer& ObjectInitializer);
 
+	bool UsesCompactLayout() const { return bUseCompactLayout; }
+
 	/**
 	 * 소유자 데이터가 없는 프리뷰에만 예상 방문객을 넣는다. 실제 게임에서는 ViewModel 값이 우선한다.
 	 * `INDEX_NONE` 이면 관련 칸이 모두 `아직 알 수 없습니다` 가 된다.
@@ -167,6 +171,9 @@ protected:
 
 	UFUNCTION()
 	void HandleStaffAssignmentGuidanceClicked();
+
+	UFUNCTION()
+	void HandleOpenGateGuidanceClicked();
 
 	UFUNCTION()
 	void HandleOpenGateClicked();
@@ -210,6 +217,8 @@ protected:
 	TObjectPtr<UWidget> Border_RecommendedFacilities;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
 	TObjectPtr<UVerticalBox> VerticalBox_RecommendedRows;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
+	TObjectPtr<UWrapBox> WrapBox_RecommendedRows;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
 	TObjectPtr<UTextBlock> Text_RecommendedCount;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
@@ -376,7 +385,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UButton> Button_OpenGateReason;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UTextBlock> Text_OpenGateStaffLink;
+
 	// --- 설정 ---
+
+	/** 간소화한 점검 WBP에서만 중복 안내를 접는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check")
+	bool bUseCompactLayout = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
 	FText DayLabelFormat;
@@ -414,7 +430,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check", meta = (ClampMin = "0.0"))
 	float CapacityDangerRatio = 1.0f;
 
-	/** 견적에 넣지 않는 값이 있다는 안내. 비우지 않는다 — 표가 전부인 것처럼 읽힌다. */
+	/** 기존 견적 설명. 간소화 화면에서는 본문을 접는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check")
 	FText EstimateNoticeText;
 
@@ -452,6 +468,9 @@ private:
 	void RefreshRequiredFacilities();
 	void RefreshStaffAssignmentLinks();
 	void RefreshRecommendedFacilities();
+	UPanelWidget* GetRecommendedRows() const;
+	FName FindRequiredPlacementTarget(FText& OutName) const;
+	bool NeedsRequiredStaffAssignment() const;
 	FName FindRecommendedCatalogTarget(EFF_PrepRecommendedFacilityKind Kind) const;
 
 	/**

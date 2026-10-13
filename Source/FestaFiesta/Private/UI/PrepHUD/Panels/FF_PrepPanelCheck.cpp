@@ -6,6 +6,7 @@
 #include "Components/Slider.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
+#include "Components/WrapBox.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Camera/FF_FestivalPlayerController.h"
@@ -187,6 +188,7 @@ void UFF_PrepPanelCheck::NativePreConstruct()
 	if (Text_EstimateNotice)
 	{
 		Text_EstimateNotice->SetText(EstimateNoticeText);
+		if (bUseCompactLayout) Text_EstimateNotice->SetVisibility(ESlateVisibility::Collapsed);
 	}
 }
 
@@ -195,9 +197,9 @@ void UFF_PrepPanelCheck::NativeOnInitialized()
 	Super::NativeOnInitialized();
 
 	CollectWeatherChoices();
-	if (VerticalBox_RecommendedRows)
+	if (UPanelWidget* Rows = GetRecommendedRows())
 	{
-		for (UWidget* Child : VerticalBox_RecommendedRows->GetAllChildren())
+		for (UWidget* Child : Rows->GetAllChildren())
 		{
 			if (auto* Row = Cast<UFF_PrepRecommendedFacilityRow>(Child))
 			{
@@ -206,7 +208,7 @@ void UFF_PrepPanelCheck::NativeOnInitialized()
 		}
 	}
 	if (Button_RequiredFacilities) Button_RequiredFacilities->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffAssignmentGuidanceClicked);
-	if (Button_OpenGateReason) Button_OpenGateReason->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffAssignmentGuidanceClicked);
+	if (Button_OpenGateReason) Button_OpenGateReason->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOpenGateGuidanceClicked);
 	if (Slider_AdmissionFee) Slider_AdmissionFee->OnValueChanged.AddUniqueDynamic(this, &ThisClass::HandleAdmissionValueChanged);
 	if (Button_AdmissionDecrease) Button_AdmissionDecrease->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAdmissionDecrease);
 	if (Button_AdmissionIncrease) Button_AdmissionIncrease->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAdmissionIncrease);
@@ -715,6 +717,13 @@ void UFF_PrepPanelCheck::RefreshSummary()
 				LOCTEXT("PrepCheck_Staff", "{0}명 (기본 {1} · 고용 {2})"),
 				FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary));
 	}
+	if (bUseCompactLayout && Total >= 0)
+	{
+		StaffSummary = Unassigned >= 0 && Unassigned <= Total
+			? FText::Format(LOCTEXT("CompactStaffSummary", "{0}명 · 배정 {1}명"),
+				FText::AsNumber(Total), FText::AsNumber(Total - Unassigned))
+			: FText::Format(LOCTEXT("CompactStaffCount", "{0}명 · 배정 확인 중"), FText::AsNumber(Total));
+	}
 	SetTextOrHide(Text_StaffSummary, StaffSummary);
 
 	const int32 ProgramCount = GetProgramCount();
@@ -773,6 +782,26 @@ void UFF_PrepPanelCheck::RefreshStaffAssignmentLinks()
 	if (Button_OpenGateReason)
 	{
 		const UFF_PrepHudBar* Bar = GetOwningBar();
+		if (bUseCompactLayout)
+		{
+			FText TargetName;
+			const bool bNeedsPlacement = !FindRequiredPlacementTarget(TargetName).IsNone();
+			const bool bNeedsStaff = NeedsRequiredStaffAssignment();
+			const bool bCanFollow = Bar && Bar->GetCtaState() != EFF_PrepCtaState::Hidden
+				&& Bar->GetCtaState() != EFF_PrepCtaState::Ready
+				&& !HasAdmissionDraft() && !bAdmissionRequestInFlight && (bNeedsPlacement || bNeedsStaff);
+			Button_OpenGateReason->SetIsEnabled(bCanFollow);
+			Button_OpenGateReason->SetVisibility(bCanFollow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+			Button_OpenGateReason->SetCursor(bCanFollow ? EMouseCursor::Hand : EMouseCursor::Default);
+			Button_OpenGateReason->SetToolTipText(bCanFollow
+				? (bNeedsPlacement ? LOCTEXT("CompactRequiredCatalogHint", "건축목록에서 필요한 시설을 확인합니다.")
+					: LOCTEXT("CompactRequiredStaffHint", "스태프 탭에서 안내시설에 인원을 배정합니다."))
+				: FText::GetEmpty());
+			SetTextOrHide(Text_OpenGateStaffLink, bNeedsPlacement
+				? FText::Format(LOCTEXT("CompactRequiredPlacement", "{0} 배치 ›"), TargetName)
+				: LOCTEXT("CompactRequiredStaff", "스태프 배정하기 ›"));
+			return;
+		}
 		const bool bCanFollow = bHasTarget && Bar && Bar->GetCtaState() != EFF_PrepCtaState::Hidden &&
 			!HasAdmissionDraft() && !bAdmissionRequestInFlight;
 		Button_OpenGateReason->SetIsEnabled(bCanFollow);
@@ -798,8 +827,40 @@ void UFF_PrepPanelCheck::RefreshOpenGate()
 
 	const EFF_PrepCtaState State = Bar->GetCtaState();
 	const bool bDraftBlocks = HasAdmissionDraft() || bAdmissionRequestInFlight;
-	SetTextOrHide(Text_OpenGateReason, bDraftBlocks ? AdmissionGateDraftText : (State == EFF_PrepCtaState::Ready
-		? (MissingRecommendedCount > 0 ? RequiredReadyWithWarningsText : OpenGateReadyText) : Bar->GetCtaReason()));
+	FText Reason = bDraftBlocks ? AdmissionGateDraftText : (State == EFF_PrepCtaState::Ready
+		? (MissingRecommendedCount > 0 ? RequiredReadyWithWarningsText : OpenGateReadyText) : Bar->GetCtaReason());
+	if (bUseCompactLayout && !bDraftBlocks && State != EFF_PrepCtaState::Ready && State != EFF_PrepCtaState::Hidden)
+	{
+		const auto* Required = GetWorld() ? GetWorld()->GetSubsystem<UFF_RequiredFacilitiesSubsystem>() : nullptr;
+		if (Required)
+		{
+			const auto Status = Required->GetRequiredFacilitiesStatus();
+			// 현재 차단 원인이 필수 시설일 때만 줄인다. 다른 단계·설정 오류의 사유는 그대로 둔다.
+			if (!Status.bCanProceed && Status.BlockingReason.EqualTo(Reason))
+			{
+				TArray<FText> Missing;
+				for (const auto& Row : Status.Facilities)
+				{
+					if (!Row.bDefinitionValid) { Missing.Reset(); break; }
+					const FText Name = Row.DisplayName.IsEmpty() ? FText::FromName(Row.FacilityDefinitionId) : Row.DisplayName;
+					if (Row.MissingCount > 0)
+					{
+						Missing.Add(Row.RequiresStaffAssignment()
+							? FText::Format(LOCTEXT("CompactMissingInstallStaff", "⚠ {0} · {1}개 설치 후 스태프 {2}명 배정"),
+								Name, FText::AsNumber(Row.MissingCount), FText::AsNumber(Row.RequiredStaffCount))
+							: FText::Format(LOCTEXT("CompactMissingInstall", "⚠ {0} · {1}개 설치 필요"), Name, FText::AsNumber(Row.MissingCount)));
+					}
+					else if (Row.MissingStaffCount > 0)
+					{
+						Missing.Add(FText::Format(LOCTEXT("CompactMissingStaff", "⚠ {0} · 스태프 {1}명 추가 배정"),
+							Name, FText::AsNumber(Row.MissingStaffCount)));
+					}
+				}
+				if (!Missing.IsEmpty()) Reason = FText::Join(FText::FromString(TEXT("\n")), Missing);
+			}
+		}
+	}
+	SetTextOrHide(Text_OpenGateReason, Reason);
 
 	// 문구는 단계마다 다르다. 셋업에서 `개장하기` 를 띄우면 하루를 건너뛰는 것처럼 읽힌다.
 	const FText Label = State == EFF_PrepCtaState::Ready && !bDraftBlocks && MissingRecommendedCount > 0
@@ -841,11 +902,12 @@ void UFF_PrepPanelCheck::RefreshRecommendedFacilities()
 {
 	MissingRecommendedCount = 0;
 	// 기존 WBP를 사용할 때는 보이지 않는 경고가 개장 문구에만 나타나지 않게 한다.
-	if (!VerticalBox_RecommendedRows || !Border_RecommendedFacilities) return;
+	UPanelWidget* Rows = GetRecommendedRows();
+	if (!Rows || !Border_RecommendedFacilities) return;
 	const auto* VM = GetViewModel();
 	const auto View = VM ? VM->GetPrepRecommendedFacilities(RecommendedFacilityRules) : FFF_PrepRecommendedFacilitiesView();
 	TSet<EFF_PrepRecommendedFacilityKind> VisibleKinds;
-	for (UWidget* Child : VerticalBox_RecommendedRows->GetAllChildren())
+	for (UWidget* Child : Rows->GetAllChildren())
 	{
 		auto* Row = Cast<UFF_PrepRecommendedFacilityRow>(Child);
 		if (!Row) continue;
@@ -864,7 +926,37 @@ void UFF_PrepPanelCheck::RefreshRecommendedFacilities()
 	FFormatNamedArguments Args{{TEXT("Count"), FText::AsNumber(MissingRecommendedCount)}};
 	SetTextOrHide(Text_RecommendedCount, FText::Format(RecommendedCountFormat, Args));
 	SetTextOrHide(Text_RecommendedSummary, !View.bAvailable ? RecommendedUnknownText
-		: MissingRecommendedCount > 0 ? FText::Format(RecommendedSummaryFormat, Args) : FText::GetEmpty());
+		: !bUseCompactLayout && MissingRecommendedCount > 0 ? FText::Format(RecommendedSummaryFormat, Args) : FText::GetEmpty());
+}
+
+UPanelWidget* UFF_PrepPanelCheck::GetRecommendedRows() const
+{
+	return WrapBox_RecommendedRows ? static_cast<UPanelWidget*>(WrapBox_RecommendedRows.Get()) : VerticalBox_RecommendedRows.Get();
+}
+
+FName UFF_PrepPanelCheck::FindRequiredPlacementTarget(FText& OutName) const
+{
+	const auto* Required = GetWorld() ? GetWorld()->GetSubsystem<UFF_RequiredFacilitiesSubsystem>() : nullptr;
+	if (Required)
+	{
+		for (const auto& Row : Required->GetRequiredFacilitiesStatus().Facilities)
+		{
+			if (Row.bDefinitionValid && Row.MissingCount > 0 && !Row.FacilityDefinitionId.IsNone())
+			{
+				OutName = Row.DisplayName.IsEmpty() ? FText::FromName(Row.FacilityDefinitionId) : Row.DisplayName;
+				return Row.FacilityDefinitionId;
+			}
+		}
+	}
+	OutName = FText::GetEmpty();
+	return NAME_None;
+}
+
+bool UFF_PrepPanelCheck::NeedsRequiredStaffAssignment() const
+{
+	const auto* Required = GetWorld() ? GetWorld()->GetSubsystem<UFF_RequiredFacilitiesSubsystem>() : nullptr;
+	return Required && Required->GetRequiredFacilitiesStatus().Facilities.ContainsByPredicate(
+		[](const FFF_RequiredFacilityRow& Row) { return Row.bDefinitionValid && Row.MissingCount == 0 && Row.MissingStaffCount > 0; });
 }
 
 FName UFF_PrepPanelCheck::FindRecommendedCatalogTarget(EFF_PrepRecommendedFacilityKind Kind) const
@@ -981,6 +1073,29 @@ void UFF_PrepPanelCheck::HandleStaffAssignmentGuidanceClicked()
 			Camera->FocusOnLocation(Target->GetActorLocation());
 		}
 	}
+}
+
+void UFF_PrepPanelCheck::HandleOpenGateGuidanceClicked()
+{
+	if (!bUseCompactLayout) { HandleStaffAssignmentGuidanceClicked(); return; }
+	const UFF_PrepHudBar* Bar = GetOwningBar();
+	if (!Bar || Bar->GetCtaState() == EFF_PrepCtaState::Hidden || Bar->GetCtaState() == EFF_PrepCtaState::Ready
+		|| HasAdmissionDraft() || bAdmissionRequestInFlight) { RefreshOpenGate(); return; }
+	FText TargetName;
+	const FName Target = FindRequiredPlacementTarget(TargetName);
+	if (!Target.IsNone())
+	{
+		auto* Build = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+		if (!Build || !Build->OpenCatalogForFacility(Target))
+			SetTextOrHide(Text_RecommendedSummary, RecommendedNavigationFailedText);
+		return;
+	}
+	if (NeedsRequiredStaffAssignment())
+	{
+		GetOwningBar()->SelectTab(EFF_PrepHudTab::Staff);
+		return;
+	}
+	RefreshOpenGate();
 }
 
 void UFF_PrepPanelCheck::HandleOpenGateClicked()
