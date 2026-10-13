@@ -68,6 +68,12 @@ enum class EFF_TutorialScope : uint8
 	   섞이면 아침 브리핑을 닫았을 뿐인데 튜토리얼까지 꺼진다.
 	*/
 	Briefing,
+
+	/* 로비에서 트는 이야기 장면(S 엔딩, 2026-10-14). 브리핑처럼 기록하지 않고, 건너뛰기는 이 장면만 닫는다.
+	   브리핑과 나눈 이유: 브리핑은 두세 줄이라 건너뛰기 단추를 숨기는데(UFF_DialogueBoxWidget::ApplySkipButton),
+	   장면은 열 줄 넘게 이어져 단추가 있어야 한다.
+	*/
+	Story,
 };
 
 // 튜토리얼 대사를 굴리고 조작을 기다린다.
@@ -120,6 +126,12 @@ public:
 	// 지금 비서 브리핑을 재생 중인가. 건너뛰기가 브리핑만 닫게 하는 데 쓴다.
 	bool IsBriefingActive() const { return bDialogueActive && ActiveScope == EFF_TutorialScope::Briefing; }
 
+	// 건너뛰면 그 대사만 닫는(튜토리얼을 끄지 않는) 대사인가. 비서 브리핑 · 로비 이야기 장면(S 엔딩).
+	bool IsCloseOnSkipActive() const
+	{
+		return bDialogueActive && (ActiveScope == EFF_TutorialScope::Briefing || ActiveScope == EFF_TutorialScope::Story);
+	}
+
 	// 다음 줄로. 대사창에서 클릭했을 때 부른다.
 	//
 	// 조작을 기다리는 줄에서는 아무 일도 하지 않는다. 그래야 클릭으로
@@ -159,6 +171,24 @@ public:
 	   false — 그때 누른 건 실습장 안과 같은 진짜 건너뛰기라 원래대로 확인 창을 거친다.
 	*/
 	bool TrySkipLobbyStory();
+
+	/* 이름 입력 줄(EFF_DialogueLineKind::NameInput)에서 받은 이름을 남기고 다음 줄로 간다. 받았으면 true.
+
+	   앞뒤 공백을 떼고, 비었거나 설정의 글자 수 한도를 넘으면 받지 않는다(입력 창이 막아 두지만 한 번 더 본다).
+	   이야기를 건너뛰다 이름을 물은 경우면 이름을 받은 뒤 실습장 가는 줄로 간다(TrySkipLobbyStory).
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
+	bool SubmitPlayerName(const FString& Name);
+
+	/* S 엔딩 장면(튜토리얼 설정 S Grade Ending Table)을 지금 튼다. 틀었으면 true.
+	   보통은 축제를 S 등급으로 끝내고 로비에 돌아왔을 때 저절로 튼다(TryStartPendingSGradeEnding). 개발 명령 · 시험에서도 부른다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
+	bool PlaySGradeEnding();
+
+	// 대사의 {이름} 자리에 들어갈 이름. 아직 안 받았으면 설정의 기본 호칭.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
+	FString GetPlayerDisplayName() const;
 
 	// 튜토리얼을 통째로 끝낸다.
 	//
@@ -394,6 +424,11 @@ private:
 	// 레벨 선택 화면이 떠 있으면 로비 인트로를 튼다. 새 게임을 누른 뒤 Tick 에서 부른다.
 	void TryStartPendingLobbyIntro();
 
+	/* 축제를 S 등급으로 끝내고 로비(국가 지도)에 돌아왔으면 S 엔딩 장면을 튼다(UFF_SaveSubsystem::GetPendingSGradeEnding).
+	   비서 브리핑 범위로 튼다 — 건너뛰기는 그 장면만 닫고, 끝까지 봤다는 기록은 남기지 않는다.
+	*/
+	void TryStartPendingSGradeEnding();
+
 	// 새 게임을 눌렀고 아직 로비 인트로를 틀지 않았다. 레벨 선택 화면이 뜨면 튼다.
 	bool bLobbyIntroPending = false;
 
@@ -553,6 +588,19 @@ private:
 
 	int32 CurrentLineIndex = INDEX_NONE;
 	bool bDialogueActive = false;
+
+	/* 지금 줄의 {이름} 을 주인공 이름으로 바꾼 사본. GoToLine 이 만들고 GetCurrentLine 이 돌려준다.
+
+	   줄을 불러올 때가 아니라 보여 줄 때 바꾸는 이유: 로비 이야기는 처음에 전부 불러오는데,
+	   이름은 이야기 중간에 받는다. 불러올 때 바꾸면 이름을 받은 뒤의 줄에도 기본 호칭이 남는다.
+	*/
+	FFF_DialogueLine CurrentResolvedLine;
+
+	// 줄의 화자 · 대사 · 선택지에 든 {이름} 을 바꾼다.
+	FFF_DialogueLine ResolvePlayerNameTokens(const FFF_DialogueLine& Line) const;
+
+	// 이야기를 건너뛰다 이름부터 묻는 중이다. 이름을 받으면 실습장 가는 줄로 간다(TrySkipLobbyStory).
+	bool bSkipStoryAfterName = false;
 
 	FName CurrentAnchor = NAME_None;
 

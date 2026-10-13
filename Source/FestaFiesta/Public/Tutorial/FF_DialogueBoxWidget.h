@@ -185,6 +185,17 @@ private:
 	// WBP 에서 잡은 건너뛰기 버튼의 보임 값. 숨겼다가 되돌릴 때 쓴다.
 	ESlateVisibility SkipButtonShownVisibility = ESlateVisibility::Visible;
 
+	/* 이름 입력 줄이면 이름 입력 창(UFF_NameInputWidget)을 띄우고, 다른 줄이면 내린다.
+
+	   대사창 WBP 에 입력칸을 넣지 않고 창을 따로 띄우는 이유: 대사창은 편집기 생성기(FF.TutorialDialogueUMG)가
+	   만드는 애셋이라, 입력칸 하나 때문에 모든 대사 줄의 배치를 건드리게 된다. 묻는 말은 대사창이 그대로 보여 준다.
+	*/
+	void ApplyNameInput(const FFF_DialogueLine& Line);
+	void RemoveNameInput();
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UFF_NameInputWidget> NameInputWidget;
+
 	// 목록에 없다고 이미 알린 화자. 같은 화자가 수십 줄 말할 때 경고가 줄마다 쌓이지 않게 한다.
 	TSet<FString> WarnedMissingSpeakers;
 

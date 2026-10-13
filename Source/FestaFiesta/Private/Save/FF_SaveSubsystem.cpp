@@ -14,6 +14,7 @@
 #include "Time/FF_FestivalStage.h"
 #include "Save/FF_SaveArchive.h"
 #include "Save/FF_SaveBeforeQuitPolicy.h"
+#include "Secretary/FF_SecretaryAdvisor.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Tutorial/FF_TutorialSubsystem.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
@@ -372,6 +373,16 @@ void UFF_SaveSubsystem::HandleFestivalEnded()
 	Record.PlayCount = 1;
 
 	MarkFestivalCleared(FestivalId, Record);
+
+	/* 비서와의 이야기. 최종 등급만큼 신뢰도를 더하고, S 면 로비로 돌아왔을 때 사무소 장면(S 엔딩)을 튼다.
+	   바로 아래 로비 세이브에 같이 담겨, 로비에 오기 전에 게임을 꺼도 이어하기에서 나온다.
+	*/
+	AddSecretaryTrust(FFSecretaryAdvisor::TrustDeltaForFestival(Evaluation.Grade), TEXT("축제 최종 등급"));
+	if (Evaluation.Grade == EFF_FestivalEvaluationGrade::S)
+	{
+		Meta.PendingSGradeEnding = FestivalId;
+		UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] %s 를 S 등급으로 끝냈다. 로비로 돌아오면 S 엔딩을 튼다."), *FestivalId.ToString());
+	}
 
 	/* 로비 세이브를 자동으로 남긴다.
 
@@ -1029,6 +1040,50 @@ void UFF_SaveSubsystem::MarkLobbyIntroSeen()
 	UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 로비 인트로를 끝까지 봤다."));
 
 	// 보통은 아직 이 판의 세이브가 없다. 그러면 첫 자동 저장에 같이 담긴다.
+	WriteRunMeta();
+}
+
+void UFF_SaveSubsystem::SetPlayerName(const FString& Name)
+{
+	const FString Trimmed = Name.TrimStartAndEnd();
+	if (Meta.PlayerName == Trimmed)
+	{
+		return;
+	}
+
+	Meta.PlayerName = Trimmed;
+	UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 주인공 이름을 '%s' 로 정했다."), *Trimmed);
+
+	// 보통은 아직 이 판의 세이브가 없다(로비 이야기 중). 그러면 첫 자동 저장에 같이 담긴다.
+	WriteRunMeta();
+}
+
+int32 UFF_SaveSubsystem::AddSecretaryTrust(const int32 Delta, const TCHAR* Reason)
+{
+	const int32 Before = Meta.SecretaryTrust;
+	Meta.SecretaryTrust = FMath::Clamp(Before + Delta, FFSecretaryAdvisor::TrustMin, FFSecretaryAdvisor::TrustMax);
+	UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 비서 신뢰도 %d → %d (%s)"), Before, Meta.SecretaryTrust, Reason);
+	return Meta.SecretaryTrust;
+}
+
+bool UFF_SaveSubsystem::MarkSecretaryTrustReachedHigh()
+{
+	if (Meta.bSecretaryTrustReachedHigh)
+	{
+		return false;
+	}
+	Meta.bSecretaryTrustReachedHigh = true;
+	return true;
+}
+
+void UFF_SaveSubsystem::ClearPendingSGradeEnding()
+{
+	if (Meta.PendingSGradeEnding.IsNone())
+	{
+		return;
+	}
+	UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] %s S 엔딩을 틀었다."), *Meta.PendingSGradeEnding.ToString());
+	Meta.PendingSGradeEnding = NAME_None;
 	WriteRunMeta();
 }
 

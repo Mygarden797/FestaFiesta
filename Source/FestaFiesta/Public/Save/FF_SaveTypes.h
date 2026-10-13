@@ -103,6 +103,30 @@ struct FESTAFIESTA_API FFF_MetaSave
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
 	bool bTutorialOptedOut = false;
 
+	/* 로비 이야기에서 받은 주인공 이름. 대사의 {이름} 자리에 들어간다.
+
+	   새 게임마다 다시 묻는다(판 단위). 비어 있으면 튜토리얼 설정의 기본 호칭을 쓴다 —
+	   이야기를 건너뛰었거나 이 칸이 생기기 전의 세이브다.
+	*/
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	FString PlayerName;
+
+	/* 비서 신뢰도(0~100). 결산 성적 · 축제 최종 등급으로 오르내린다(FFSecretaryAdvisor::TrustDeltaForDay).
+	   새 게임은 시작 값(FFSecretaryAdvisor::TrustStart 와 같은 30)에서 출발한다. 이 칸이 없던 세이브도 그 값으로 읽힌다.
+	*/
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	int32 SecretaryTrust = 30;
+
+	// 이 판에서 신뢰도가 '높음'에 처음 닿았는가. 그 순간 비서가 한 번만 하는 말이 있다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	bool bSecretaryTrustReachedHigh = false;
+
+	/* S 등급으로 끝낸 축제. 로비로 돌아오면 사무소 장면(S 엔딩)을 틀고 비운다(UFF_TutorialSubsystem).
+	   축제가 끝나는 순간 정하고 바로 로비 세이브에 담기므로, 로비에 오기 전에 게임을 꺼도 다음에 이어서 나온다.
+	*/
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	FName PendingSGradeEnding;
+
 	/* 튜토리얼을 끝까지 본 축제들.
 
 	   축제마다 배울 것이 다르므로 판정도 축제 단위다. 전역 bool 하나로 두면

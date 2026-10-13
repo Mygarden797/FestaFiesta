@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Economy/Rules/FF_FestivalEvaluationRules.h"
 #include "FF_FFZSTypes.h"
 #include "NPC/Party/FF_NeedState.h"
 
@@ -90,9 +91,36 @@ enum class EFF_SecretaryWeakness : uint8
 	Need
 };
 
+/* 결산 때 그날 성적의 단계(2026-10-14). 비서 말풍선 반응과 신뢰도 오르내림을 정한다.
+
+   만족도 하나로 나눈다. 결산 화면의 비서 한마디(김시리 FFF_DailyReportCommentRules)가 무엇이 좋고 나빴는지
+   분석하므로, 여기서는 기분 · 반응만 말한다. 경계는 축제 평가 등급과 같게 둔다(S 85 · A 70 · B 55).
+*/
+enum class EFF_SecretaryDayTier : uint8
+{
+	Unknown,
+	Poor,
+	SoSo,
+	Good,
+	Great
+};
+
+/* 비서 신뢰도 단계. 판 동안 결산 성적 · 축제 최종 등급으로 쌓인다(UFF_SaveSubsystem::GetSecretaryTrust).
+   높으면 비서가 이름을 불러 가며 더 다정하게 말하고, S 엔딩에 한 줄이 더 나온다.
+*/
+enum class EFF_SecretaryTrustTier : uint8
+{
+	Low,
+	Normal,
+	High
+};
+
 // 아침 브리핑을 지을 때 보는 값. 만족도 · 아쉬운 점 · 매출 1등은 어제 결산(FFF_DailyReportView)에서 옮긴다.
 struct FFF_SecretaryBriefingInputs
 {
+	// 지금 신뢰도 단계. 마무리 인사가 달라진다.
+	EFF_SecretaryTrustTier Trust = EFF_SecretaryTrustTier::Low;
+
 	// 오늘 날짜(1부터).
 	int32 Day = 1;
 
@@ -156,4 +184,31 @@ namespace FFSecretaryAdvisor
 
 	// 한글 낱말의 마지막 글자에 받침이 있는가. "이었어요/였어요" 같은 조사를 고른다. 한글이 아니면 거짓.
 	FESTAFIESTA_API bool HasFinalConsonant(const FString& Word);
+
+	// ── 결산 반응 · 신뢰도(2026-10-14 사용자: 결산 성적에 따라 비서 반응, S 엔딩 특별 대사, 신뢰도) ──
+
+	// 신뢰도 범위와 단계 경계. 새 판은 시작 값에서 출발한다(FFF_MetaSave::SecretaryTrust).
+	inline constexpr int32 TrustMin = 0;
+	inline constexpr int32 TrustMax = 100;
+	inline constexpr int32 TrustStart = 30;
+	inline constexpr int32 TrustNormalAtLeast = 40;
+	inline constexpr int32 TrustHighAtLeast = 70;
+
+	// 그날 만족도(0~100, 모르면 INDEX_NONE)로 단계를 매긴다.
+	FESTAFIESTA_API EFF_SecretaryDayTier ClassifyDay(int32 Satisfaction);
+
+	// 결산 한 번에 신뢰도가 바뀌는 양. 아주 잘한 사흘이면 한 축제로 '높음' 가까이 간다.
+	FESTAFIESTA_API int32 TrustDeltaForDay(EFF_SecretaryDayTier Tier);
+
+	// 축제를 마쳤을 때 최종 등급으로 더하는 신뢰도.
+	FESTAFIESTA_API int32 TrustDeltaForFestival(EFF_FestivalEvaluationGrade Grade);
+
+	FESTAFIESTA_API EFF_SecretaryTrustTier TrustTierOf(int32 Trust);
+
+	/* 결산 말풍선 한마디. {이름} 자리는 띄우는 쪽이 주인공 이름으로 바꾼다.
+	   bTrustJustRoseHigh 면 성적과 상관없이 "믿고 맡겨도 되겠다" 는 말을 한다(판마다 한 번).
+	   bFinalDay 면 하루가 아니라 축제를 마무리하는 말로 한다.
+	*/
+	FESTAFIESTA_API FText BuildReportReaction(
+		EFF_SecretaryDayTier Tier, EFF_SecretaryTrustTier Trust, bool bTrustJustRoseHigh, bool bFinalDay);
 }

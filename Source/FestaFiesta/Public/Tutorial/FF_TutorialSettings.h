@@ -40,6 +40,16 @@ public:
 		meta = (DisplayName = "Lobby Intro Table"))
 	TSoftObjectPtr<UDataTable> LobbyIntroTable;
 
+	/* 축제를 S 등급으로 끝내고 로비로 돌아오면 틀 사무소 장면(2026-10-14 사용자: S 엔딩 특별 대사).
+
+	   로비 이야기와 같은 대사 표 형식이다. 라벨이 Trust_ 로 시작하는 줄은 비서 신뢰도가 '높음'일 때만 나온다.
+	   비우면 S 엔딩 없이 지나간다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
+		meta = (DisplayName = "S Grade Ending Table"))
+	TSoftObjectPtr<UDataTable> SGradeEndingTable = TSoftObjectPtr<UDataTable>(
+		FSoftObjectPath(TEXT("/Game/FestaFiesta/Data/Tutorial/DT_Dialogue_Ending_S.DT_Dialogue_Ending_S")));
+
 	/* 튜토리얼 레벨의 축제 이름. 아틀라스 카탈로그의 FestivalId 와 같아야 한다.
 
 	   튜토리얼 레벨은 대사만이 아니라 레벨 자체가 튜토리얼이다. 그래서 건너뛰면
@@ -181,7 +191,23 @@ public:
 	*/
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Skip",
 		meta = (DisplayName = "Lobby Story Skip Label"))
-	FName LobbyStorySkipLabel = TEXT("Agency_013");
+	FName LobbyStorySkipLabel = TEXT("Agency_ToMap");
+
+	/* 주인공 이름을 아직 안 받았을 때 대사의 {이름} 자리에 넣을 호칭.
+
+	   로비 이야기를 건너뛰어도 이름은 묻는다(TrySkipLobbyStory). 그래도 비는 경우 —
+	   이 칸이 생기기 전의 세이브, 레벨을 바로 연 개발 PIE — 에 쓴다. 뒤에 "님" 이 붙어도 어색하지 않은 말로 둔다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Name")
+	FText DefaultPlayerName = NSLOCTEXT("FestaFiestaTutorial", "DefaultPlayerName", "담당자");
+
+	// 주인공 이름 글자 수 한도. 화자 이름칸과 대사 한 줄에 들어가야 한다.
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Name", meta = (ClampMin = "1", ClampMax = "20"))
+	int32 PlayerNameMaxLength = 8;
+
+	// 이름 입력 창의 화면 순서. 로비 대사창(LobbyDialogueBoxZOrder)보다 위, 건너뛰기 확인 창보다 아래.
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Name")
+	int32 NameInputZOrder = 150;
 
 	// 카메라를 이 거리 이상 움직이면 이동한 것으로 본다.
 	//
