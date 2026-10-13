@@ -175,6 +175,16 @@ private:
 	// 화자 초상화를 바꾼다. 선택지 줄은 앞 사람을 그대로 둔다.
 	void ApplyPortrait(const FFF_DialogueLine& Line);
 
+	/* 비서 브리핑(첫날 인사 · 모닝체크)에서는 건너뛰기 버튼을 숨긴다(2026-10-13 사용자 결정).
+
+	   브리핑은 두세 줄이라 클릭으로 넘기면 되고, 실습장을 막 건너뛴 직후 다대포에서 같은 자리에 또
+	   '건너뛰기' 가 보이면 튜토리얼이 아직 남은 것처럼 헷갈렸다. 버튼만 숨기고 BP 배치는 그대로 둔다.
+	*/
+	void ApplySkipButton();
+
+	// WBP 에서 잡은 건너뛰기 버튼의 보임 값. 숨겼다가 되돌릴 때 쓴다.
+	ESlateVisibility SkipButtonShownVisibility = ESlateVisibility::Visible;
+
 	// 목록에 없다고 이미 알린 화자. 같은 화자가 수십 줄 말할 때 경고가 줄마다 쌓이지 않게 한다.
 	TSet<FString> WarnedMissingSpeakers;
 
