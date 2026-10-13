@@ -103,6 +103,10 @@ void UFF_AtlasCountryScreen::NativeOnActivated()
 void UFF_AtlasCountryScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (IsActivated())
+	{
+		RefreshFestivalAvailability();
+	}
 
 	// 창 크기가 바뀔 때만 다시 배치한다. 매 프레임 계산할 이유가 없다 —
 	// 지구본 화면과 달리 지도는 스스로 움직이지 않는다.
@@ -161,13 +165,16 @@ FReply UFF_AtlasCountryScreen::NativeOnPreviewKeyDown(
 		|| Key == EKeys::Gamepad_FaceButton_Bottom;
 	if (bConfirmKey)
 	{
+		// 길게 누른 첫 Enter가 지도 진입 후 곧바로 축제 시작까지 이어지지 않게 한다.
+		if (InKeyEvent.IsRepeat())
+		{
+			return FReply::Handled();
+		}
+
 		if (UFF_AtlasPinButton* FocusedPin = FindFocusedPin())
 		{
 			SelectFestival(FocusedPin->GetPinId(), /*bMoveFocus=*/false);
-			if (CanStartSelectedFestival())
-			{
-				OnStartFestivalRequested.Broadcast(SelectedFestivalId);
-			}
+			HandleStartClicked(Button_StartFestival);
 			return FReply::Handled();
 		}
 
@@ -181,6 +188,22 @@ FReply UFF_AtlasCountryScreen::NativeOnPreviewKeyDown(
 	}
 
 	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
+FReply UFF_AtlasCountryScreen::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	// 지구본과 같은 대체 경로. CommonUI가 먼저 처리한 Back 입력은 여기로 오지 않는다.
+	const FKey Key = InKeyEvent.GetKey();
+	if (Key == EKeys::Escape || Key == EKeys::Virtual_Gamepad_Back.GetVirtualKey()
+		|| Key == EKeys::Gamepad_FaceButton_Right)
+	{
+		if (!InKeyEvent.IsRepeat())
+		{
+			NativeOnHandleBackAction();
+		}
+		return FReply::Handled();
+	}
+	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
 }
 
 bool UFF_AtlasCountryScreen::NativeOnHandleBackAction()
@@ -802,12 +825,47 @@ bool UFF_AtlasCountryScreen::CanStartSelectedFestival() const
 		&& !Festival->Level.IsNull();
 }
 
+void UFF_AtlasCountryScreen::RefreshFestivalAvailability()
+{
+	// 해금 원본에 변경 이벤트가 없어 열린 화면에서 값만 비교한다.
+	// RebuildForCountry가 이미 읽은 카탈로그만 사용하며, 매 Tick 동기 로드는 하지 않는다.
+	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();
+	const UFF_FestivalAtlasCatalog* Catalog = Settings ? Settings->AtlasCatalog.Get() : nullptr;
+	if (!Catalog || CountryId.IsNone())
+	{
+		return;
+	}
+
+	bool bChanged = false;
+	for (const TPair<FName, TObjectPtr<UFF_AtlasPinButton>>& Pair : PinButtons)
+	{
+		UFF_AtlasPinButton* Pin = Pair.Value;
+		const FFF_FestivalAtlasEntry* Festival = Catalog->FindEntry(Pair.Key);
+		if (!Pin || !Festival || Festival->CountryId != CountryId)
+		{
+			continue;
+		}
+		if (Pin->IsSelectable() != Festival->bUnlocked || !Pin->GetLockReason().EqualTo(Festival->LockReason))
+		{
+			Pin->SetPinData(Festival->FestivalId, Festival->FestivalName, Festival->RegionName,
+				Festival->bUnlocked, Festival->LockReason);
+			// SetPinData는 선택 표시를 초기화한다. 핀을 재생성하거나 포커스를 옮기지 않고 복원한다.
+			Pin->SetSelectedState(Pair.Key == SelectedFestivalId);
+			bChanged = true;
+		}
+	}
+	if (bChanged)
+	{
+		RefreshFestivalCard();
+	}
+}
+
 UFF_AtlasPinButton* UFF_AtlasCountryScreen::FindFocusedPin() const
 {
 	for (const FName FestivalId : NavigationFestivalIds)
 	{
 		if (const TObjectPtr<UFF_AtlasPinButton>* Pin = PinButtons.Find(FestivalId);
-			Pin && *Pin && Pin->Get()->HasAnyUserFocus())
+			Pin && *Pin && (Pin->Get()->HasAnyUserFocus() || Pin->Get()->HasFocusedDescendants()))
 		{
 			return Pin->Get();
 		}
@@ -852,6 +910,7 @@ void UFF_AtlasCountryScreen::HandlePinFocusReceived(UFF_AtlasPinButton* Pin)
 
 void UFF_AtlasCountryScreen::HandleStartClicked(UFF_CommonButtonBase* Button)
 {
+	RefreshFestivalAvailability();
 	if (!CanStartSelectedFestival())
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,

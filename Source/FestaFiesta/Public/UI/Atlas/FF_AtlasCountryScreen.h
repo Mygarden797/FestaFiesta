@@ -76,6 +76,7 @@ protected:
 	virtual void NativeOnActivated() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual bool NativeOnHandleBackAction() override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 
@@ -217,6 +218,8 @@ protected:
 	bool bUseDesignerTextAndColors = false;
 
 private:
+	friend struct FFF_AtlasCountryInputTestAccess;
+
 	/** 지도 이미지는 남기고 동적으로 만든 축제 핀만 제거한다. */
 	void ClearPinButtons();
 
@@ -228,6 +231,9 @@ private:
 
 	/** 고른 축제로 오른쪽 카드를 채운다. 없으면 카드를 통째로 숨기고 안내만 남긴다. */
 	void RefreshFestivalCard();
+
+	/** 런타임 해금 변경을 핀과 카드에 반영하되 현재 선택·포커스는 보존한다. */
+	void RefreshFestivalAvailability();
 
 	/**
 	 * 이 국가에서 처음 고를 만한 축제. 첫 플레이 가능 축제, 없으면 첫 항목이다.
@@ -249,7 +255,7 @@ private:
 	/** 현재 선택이 이 국가에 속하고, 잠금 해제됐으며, 열 레벨도 있는지 재검증한다. */
 	bool CanStartSelectedFestival() const;
 
-	/** 지금 키보드·패드 포커스를 가진 축제 핀. */
+	/** 자신 또는 내부 CommonButton에 키보드·패드 포커스를 가진 축제 핀. */
 	UFF_AtlasPinButton* FindFocusedPin() const;
 
 	UFUNCTION()
