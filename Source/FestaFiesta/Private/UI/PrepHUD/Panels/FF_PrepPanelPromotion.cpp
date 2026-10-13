@@ -380,7 +380,7 @@ FText UFF_PrepPanelPromotion::BuildBlockReasonText() const
 		return LOCTEXT("PrepPromotion_NotStage", "홍보는 셋업에서만 살 수 있습니다. 이번 축제에는 적용되지 않습니다.");
 
 	case EFF_PrepPromotionBlockReason::NoChoiceSelected:
-		return LOCTEXT("PrepPromotion_NoChoice", "살 홍보 등급을 고르세요. `안 함` 은 사지 않는 선택입니다.");
+		return LOCTEXT("PrepPromotion_NoChoice", "홍보 등급을 선택해 주세요. 홍보하지 않으면 예상 방문객이 줄어듭니다.");
 
 	case EFF_PrepPromotionBlockReason::NotEnoughGold:
 		return (Quote.CostGold != INDEX_NONE)
