@@ -509,6 +509,12 @@ FFF_SecretaryLiveSignals UFF_SecretarySubsystem::GatherLiveSignals() const
 		}
 	}
 
+	const UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
+	for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
+	{
+		Signals.NeedCoverage[Index] = Crowd ? Crowd->GetNeedCoverage(static_cast<EFF_NeedType>(Index)) : 1.f;
+	}
+
 	if (const UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>())
 	{
 		for (const FFFZSFacilityReadModel& Facility : Zones->BuildReadModel().Facilities)
@@ -526,7 +532,7 @@ FFF_SecretaryLiveSignals UFF_SecretarySubsystem::GatherLiveSignals() const
 		}
 	}
 
-	if (const UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>())
+	if (Crowd)
 	{
 		Signals.CongestedCellCount = Crowd->GetCongestedCellCount();
 	}

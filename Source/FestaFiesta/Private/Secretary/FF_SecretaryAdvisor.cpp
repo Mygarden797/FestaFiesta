@@ -129,12 +129,22 @@ namespace FFSecretaryAdvisor
 				RestroomUnmet >= Thresholds.UnmetNeedPercent && Signals.ToiletCount <= 0,
 				LOCTEXT("MissingToilet", "화장실이 하나도 없어요. 내일 아침엔 화장실을 꼭 놓아 주세요."));
 
-			// 가장 많이 못 채운 필요 하나.
+			// 가장 많이 못 채운 필요 하나. "늘려 보세요"는 그 시설이 목표 개수보다 적을 때만 한다.
+			// 못 채운 비율은 걸어가는 중·줄 선 손님도 세서, 시설을 충분히 지어도 공연 직후엔 높게 나온다.
 			int32 WorstIndex = INDEX_NONE;
+			bool bRestroomCrowdedDespiteCoverage = false;
 			for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
 			{
-				if (Signals.NeedUnmetPercent[Index] >= Thresholds.UnmetNeedPercent
-					&& (WorstIndex == INDEX_NONE || Signals.NeedUnmetPercent[Index] > Signals.NeedUnmetPercent[WorstIndex]))
+				if (Signals.NeedUnmetPercent[Index] < Thresholds.UnmetNeedPercent)
+				{
+					continue;
+				}
+				if (Signals.NeedCoverage[Index] >= 1.f)
+				{
+					bRestroomCrowdedDespiteCoverage |= Index == SecretaryNeedIndex(EFF_NeedType::Restroom);
+					continue;
+				}
+				if (WorstIndex == INDEX_NONE || Signals.NeedUnmetPercent[Index] > Signals.NeedUnmetPercent[WorstIndex])
 				{
 					WorstIndex = Index;
 				}
@@ -142,6 +152,11 @@ namespace FFSecretaryAdvisor
 			if (WorstIndex != INDEX_NONE)
 			{
 				Offer(EFF_SecretaryTipKind::UnmetNeed, true, SecretaryLiveNeedText(static_cast<EFF_NeedType>(WorstIndex)));
+			}
+			else
+			{
+				Offer(EFF_SecretaryTipKind::UnmetNeed, bRestroomCrowdedDespiteCoverage,
+					LOCTEXT("LiveRestroomRush", "공연이 끝나면 화장실에 손님이 몰려요. 화장실을 공연장 가까이 두면 덜 기다려요."));
 			}
 		}
 
