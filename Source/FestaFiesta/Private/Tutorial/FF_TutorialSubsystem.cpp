@@ -58,6 +58,27 @@ namespace
 		return State;
 	}
 
+	// 튜토리얼을 지나기 전에 잠근 다른 축제 칸들의 원래 값. 되돌릴 때 쓴다(SyncFestivalsLockedUntilTutorial).
+	struct FTutorialFestivalGateState
+	{
+		struct FSavedEntry
+		{
+			FName FestivalId;
+			bool bOriginalUnlocked = true;
+			FText OriginalReason;
+		};
+
+		TWeakObjectPtr<UFF_FestivalAtlasCatalog> Catalog;
+		TArray<FSavedEntry> Entries;
+		bool bOverridden = false;
+	};
+
+	FTutorialFestivalGateState& GetTutorialFestivalGateState()
+	{
+		static FTutorialFestivalGateState State;
+		return State;
+	}
+
 	FFF_FestivalAtlasEntry* FindAtlasEntry(UFF_FestivalAtlasCatalog& Catalog, const FName FestivalId)
 	{
 		return Catalog.Entries.FindByPredicate(
@@ -110,6 +131,7 @@ void UFF_TutorialSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 
 	// 지도 화면이 뜨기 전에 튜토리얼 레벨 잠금을 맞춘다. 화면은 뜰 때 잠금 값을 읽어 핀을 그린다.
 	SyncTutorialLevelLock();
+	SyncFestivalsLockedUntilTutorial();
 
 	BindGameSignals();
 }
@@ -121,6 +143,7 @@ void UFF_TutorialSubsystem::Deinitialize()
 	StopScript();
 	RemoveWidgets();
 	RestoreTutorialLevelLock();
+	RestoreFestivalsLockedUntilTutorial();
 	Super::Deinitialize();
 }
 
@@ -316,6 +339,7 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 
 	// 끝까지 봤거나 건너뛰었으면(또는 새 게임으로 기록이 비면) 바로 지도 잠금에 반영한다.
 	SyncTutorialLevelLock();
+	SyncFestivalsLockedUntilTutorial();
 
 	if (AutoStartCountdown >= 0.f)
 	{
@@ -1447,6 +1471,119 @@ void UFF_TutorialSubsystem::RestoreTutorialLevelLock()
 		}
 	}
 	State = FTutorialLevelLockState();
+}
+
+bool UFF_TutorialSubsystem::HasPassedTutorial(const UFF_SaveSubsystem& Save) const
+{
+	if (Save.IsTutorialOptedOut() || Save.HasClearedAnyFestival())
+	{
+		return true;
+	}
+	// 끝까지 본 기록은 들어온 길에 따라 카탈로그 이름이나 맵 이름으로 남는다(FindTutorialAtlasEntry 주석).
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	if (!Settings)
+	{
+		return false;
+	}
+	if (Save.WasFestivalTutorialSeen(Settings->TutorialFestivalId))
+	{
+		return true;
+	}
+	const UFF_UIFlowSettings* FlowSettings = UFF_UIFlowSettings::Get();
+	UFF_FestivalAtlasCatalog* Catalog = FlowSettings ? FlowSettings->AtlasCatalog.LoadSynchronous() : nullptr;
+	const FFF_FestivalAtlasEntry* Entry = Catalog ? FindTutorialAtlasEntry(*Catalog, Settings->TutorialFestivalId) : nullptr;
+	return Entry && Save.WasFestivalTutorialSeen(Entry->FestivalId);
+}
+
+void UFF_TutorialSubsystem::SyncFestivalsLockedUntilTutorial()
+{
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	const UFF_UIFlowSettings* FlowSettings = UFF_UIFlowSettings::Get();
+	UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this);
+	if (!Settings || Settings->TutorialFestivalId.IsNone() || !FlowSettings || FlowSettings->AtlasCatalog.IsNull() || !Save)
+	{
+		return;
+	}
+
+	bool bPassed = HasPassedTutorial(*Save);
+
+	/* 기록 없이 튜토리얼이 아닌 축제에 들어와 있다(이 기능 전의 세이브로 이어한 판). '건너뜀'으로 남긴다.
+	   이어하기가 기록을 되돌린 뒤에 본다. 먼저 남기면 세이브의 기록이 그 위를 덮는다.
+	*/
+	const UWorld* World = GetWorld();
+	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!bPassed && Save->IsRunActive() && !Save->HasPendingContinue() && Flow && Flow->GetMode() == EFF_UIFlowMode::Festival
+		&& World && Cast<AFF_FestivalGameMode>(World->GetAuthGameMode()) && !IsTutorialLevel())
+	{
+		UE_LOG(LogFestaFiestaTutorial, Log,
+			TEXT("[튜토리얼] 튜토리얼을 지나지 않은 판에서 다른 축제에 들어왔다(예전 세이브). 튜토리얼을 건너뛴 것으로 남긴다."));
+		Save->MarkTutorialOptedOut();
+		bPassed = true;
+	}
+
+	UFF_FestivalAtlasCatalog* Catalog = FlowSettings->AtlasCatalog.LoadSynchronous();
+	const FFF_FestivalAtlasEntry* TutorialEntry = Catalog ? FindTutorialAtlasEntry(*Catalog, Settings->TutorialFestivalId) : nullptr;
+
+	// 판을 시작하지 않았으면(레벨을 바로 연 개발 중) 잠그지 않는다. 튜토리얼 칸이 없으면 다른 축제도 잠그지 않는다(전부 막힌다).
+	const bool bWantLocked = !bPassed && Save->IsRunActive() && TutorialEntry != nullptr;
+
+	FTutorialFestivalGateState& State = GetTutorialFestivalGateState();
+	if (State.bOverridden && State.Catalog.Get() != Catalog)
+	{
+		// 덮어쓴 카탈로그가 내려갔다(편집기에서 애셋을 다시 불러온 경우). 새로 덮어쓴다.
+		State = FTutorialFestivalGateState();
+	}
+	if (bWantLocked == State.bOverridden)
+	{
+		return;
+	}
+	if (!bWantLocked)
+	{
+		RestoreFestivalsLockedUntilTutorial();
+		UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 튜토리얼을 지났다. 다른 축제를 지도에서 다시 열었다."));
+		return;
+	}
+
+	const FName TutorialId = TutorialEntry->FestivalId;
+	State.Catalog = Catalog;
+	State.bOverridden = true;
+	State.Entries.Reset();
+	for (FFF_FestivalAtlasEntry& Entry : Catalog->Entries)
+	{
+		// 튜토리얼 칸 · 원래 잠긴 칸 · 레벨이 없는 칸(아직 못 고르는 축제)은 그대로 둔다.
+		if (Entry.FestivalId == TutorialId || !Entry.bUnlocked || Entry.Level.IsNull())
+		{
+			continue;
+		}
+		State.Entries.Add({ Entry.FestivalId, Entry.bUnlocked, Entry.LockReason });
+		Entry.bUnlocked = false;
+		Entry.LockReason = Settings->FestivalsLockedUntilTutorialReason;
+	}
+
+	UE_LOG(LogFestaFiestaTutorial, Log,
+		TEXT("[튜토리얼] 튜토리얼을 마치거나 건너뛰기 전이라 다른 축제 %d곳을 지도에서 잠갔다."), State.Entries.Num());
+}
+
+void UFF_TutorialSubsystem::RestoreFestivalsLockedUntilTutorial()
+{
+	FTutorialFestivalGateState& State = GetTutorialFestivalGateState();
+	if (!State.bOverridden)
+	{
+		return;
+	}
+
+	if (UFF_FestivalAtlasCatalog* Catalog = State.Catalog.Get())
+	{
+		for (const FTutorialFestivalGateState::FSavedEntry& Saved : State.Entries)
+		{
+			if (FFF_FestivalAtlasEntry* Entry = FindAtlasEntry(*Catalog, Saved.FestivalId))
+			{
+				Entry->bUnlocked = Saved.bOriginalUnlocked;
+				Entry->LockReason = Saved.OriginalReason;
+			}
+		}
+	}
+	State = FTutorialFestivalGateState();
 }
 
 bool UFF_TutorialSubsystem::IsTutorialLevel() const

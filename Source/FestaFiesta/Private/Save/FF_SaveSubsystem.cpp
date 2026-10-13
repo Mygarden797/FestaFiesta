@@ -291,6 +291,13 @@ void UFF_SaveSubsystem::HandleStageChanged(
 		return;
 	}
 
+	// 튜토리얼 실습장은 담지 않는다(IsInTutorialLevel 주석). 다른 축제 세이브의 이어하기를 끊지 않게.
+	if (IsInTutorialLevel())
+	{
+		UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 튜토리얼 실습장이라 하루 시작 저장을 건너뛴다."));
+		return;
+	}
+
 	const UFF_FestivalStageSubsystem* Stage =
 		UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(GetGameInstance());
 
@@ -1076,8 +1083,32 @@ void UFF_SaveSubsystem::WriteLobbyAutoSaveAfterTutorial()
 		return;
 	}
 
+	// 이 판에 진행 중인 축제가 있으면 그 세이브를 지킨다. 튜토리얼 기록만 고쳐 쓴다(헤더 주석).
+	if (HasRunFestivalInProgress())
+	{
+		UE_LOG(LogFestaFiestaSave, Log,
+			TEXT("[저장] 튜토리얼 레벨을 마쳤다. 진행 중인 축제 세이브 %s 를 지키고 튜토리얼 기록만 고쳐 쓴다."),
+			*CurrentRunSlotId.ToString());
+		WriteRunMeta();
+		return;
+	}
+
 	UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 튜토리얼 레벨을 마치고 레벨 선택으로 돌아간다. 로비 세이브를 남긴다."));
 	WriteLobbyAutoSave();
+}
+
+bool UFF_SaveSubsystem::IsInTutorialLevel() const
+{
+	const UGameInstance* GameInstance = GetGameInstance();
+	const UFF_TutorialSubsystem* Tutorial = GameInstance ? UFF_TutorialSubsystem::Get(GameInstance->GetWorld()) : nullptr;
+	return Tutorial && Tutorial->IsTutorialLevel();
+}
+
+bool UFF_SaveSubsystem::HasRunFestivalInProgress() const
+{
+	UFF_SaveGame* RunSave = nullptr;
+	return !CurrentRunSlotId.IsNone() && PeekSlot(CurrentRunSlotId, RunSave) && RunSave
+		&& RunSave->Session.IsFestivalInProgress();
 }
 
 void UFF_SaveSubsystem::BeginNewRun()

@@ -61,6 +61,16 @@ public:
 	FText TutorialLevelLockedReason = NSLOCTEXT("FestaFiestaTutorial", "TutorialLevelLocked",
 		"튜토리얼을 마쳤습니다. 새 게임에서 다시 할 수 있어요.");
 
+	/* 새 게임에서 튜토리얼을 마치거나 건너뛰기 전에 다른 축제 칸에 띄울 잠긴 이유.
+
+	   튜토리얼은 새 게임 시작 직후에만 한다(2026-10-13 사용자 결정). 그 전에 다른 축제로 가면 튜토리얼 레벨이
+	   그 판 내내 열린 채로 남고, 두 레벨의 저장이 섞였다. 그래서 실습장부터 가게 다른 축제를 잠가 둔다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
+		meta = (DisplayName = "Festivals Locked Until Tutorial Reason"))
+	FText FestivalsLockedUntilTutorialReason = NSLOCTEXT("FestaFiestaTutorial", "FestivalsLockedUntilTutorial",
+		"실습장을 먼저 마쳐 주세요. 실습장에서 건너뛰어도 열려요.");
+
 	/* 화자 이름 → 초상화. 대사의 Speaker 칸과 글자가 똑같아야 한다(예: 삼촌).
 
 	   대사 줄마다 그림을 적지 않고 화자로 찾는 이유: 한 사람이 수십 줄을 말하는데
