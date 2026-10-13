@@ -28,7 +28,8 @@ class FESTAFIESTA_API UFF_SecretaryTipWidget : public UUserWidget
 
 public:
 	// 문장을 띄운다. 이미 떠 있으면 새 문장으로 바꾸고 시간을 처음부터 잰다.
-	void ShowTip(const FText& Text);
+	// VisibleOverride 가 0 보다 크면 그만큼 떠 있는다(결산 한마디처럼 오래 읽을 말). 아니면 설정의 훈수 시간.
+	void ShowTip(const FText& Text, float VisibleOverride = -1.f);
 
 	// 지금 닫는다(사라지는 모양을 거친다).
 	void Dismiss();

@@ -68,6 +68,12 @@ enum class EFF_TutorialScope : uint8
 	   섞이면 아침 브리핑을 닫았을 뿐인데 튜토리얼까지 꺼진다.
 	*/
 	Briefing,
+
+	/* 로비에서 트는 이야기 장면(S 엔딩, 2026-10-14). 브리핑처럼 기록하지 않고, 건너뛰기는 이 장면만 닫는다.
+	   브리핑과 나눈 이유: 브리핑은 두세 줄이라 건너뛰기 단추를 숨기는데(UFF_DialogueBoxWidget::ApplySkipButton),
+	   장면은 열 줄 넘게 이어져 단추가 있어야 한다.
+	*/
+	Story,
 };
 
 // 튜토리얼 대사를 굴리고 조작을 기다린다.
@@ -120,6 +126,12 @@ public:
 	// 지금 비서 브리핑을 재생 중인가. 건너뛰기가 브리핑만 닫게 하는 데 쓴다.
 	bool IsBriefingActive() const { return bDialogueActive && ActiveScope == EFF_TutorialScope::Briefing; }
 
+	// 건너뛰면 그 대사만 닫는(튜토리얼을 끄지 않는) 대사인가. 비서 브리핑 · 로비 이야기 장면(S 엔딩).
+	bool IsCloseOnSkipActive() const
+	{
+		return bDialogueActive && (ActiveScope == EFF_TutorialScope::Briefing || ActiveScope == EFF_TutorialScope::Story);
+	}
+
 	// 다음 줄로. 대사창에서 클릭했을 때 부른다.
 	//
 	// 조작을 기다리는 줄에서는 아무 일도 하지 않는다. 그래야 클릭으로
@@ -167,6 +179,12 @@ public:
 	*/
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
 	bool SubmitPlayerName(const FString& Name);
+
+	/* S 엔딩 장면(튜토리얼 설정 S Grade Ending Table)을 지금 튼다. 틀었으면 true.
+	   보통은 축제를 S 등급으로 끝내고 로비에 돌아왔을 때 저절로 튼다(TryStartPendingSGradeEnding). 개발 명령 · 시험에서도 부른다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
+	bool PlaySGradeEnding();
 
 	// 대사의 {이름} 자리에 들어갈 이름. 아직 안 받았으면 설정의 기본 호칭.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
@@ -405,6 +423,11 @@ private:
 
 	// 레벨 선택 화면이 떠 있으면 로비 인트로를 튼다. 새 게임을 누른 뒤 Tick 에서 부른다.
 	void TryStartPendingLobbyIntro();
+
+	/* 축제를 S 등급으로 끝내고 로비(국가 지도)에 돌아왔으면 S 엔딩 장면을 튼다(UFF_SaveSubsystem::GetPendingSGradeEnding).
+	   비서 브리핑 범위로 튼다 — 건너뛰기는 그 장면만 닫고, 끝까지 봤다는 기록은 남기지 않는다.
+	*/
+	void TryStartPendingSGradeEnding();
 
 	// 새 게임을 눌렀고 아직 로비 인트로를 틀지 않았다. 레벨 선택 화면이 뜨면 튼다.
 	bool bLobbyIntroPending = false;

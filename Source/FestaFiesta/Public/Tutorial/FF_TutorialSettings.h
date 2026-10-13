@@ -40,6 +40,16 @@ public:
 		meta = (DisplayName = "Lobby Intro Table"))
 	TSoftObjectPtr<UDataTable> LobbyIntroTable;
 
+	/* 축제를 S 등급으로 끝내고 로비로 돌아오면 틀 사무소 장면(2026-10-14 사용자: S 엔딩 특별 대사).
+
+	   로비 이야기와 같은 대사 표 형식이다. 라벨이 Trust_ 로 시작하는 줄은 비서 신뢰도가 '높음'일 때만 나온다.
+	   비우면 S 엔딩 없이 지나간다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
+		meta = (DisplayName = "S Grade Ending Table"))
+	TSoftObjectPtr<UDataTable> SGradeEndingTable = TSoftObjectPtr<UDataTable>(
+		FSoftObjectPath(TEXT("/Game/FestaFiesta/Data/Tutorial/DT_Dialogue_Ending_S.DT_Dialogue_Ending_S")));
+
 	/* 튜토리얼 레벨의 축제 이름. 아틀라스 카탈로그의 FestivalId 와 같아야 한다.
 
 	   튜토리얼 레벨은 대사만이 아니라 레벨 자체가 튜토리얼이다. 그래서 건너뛰면

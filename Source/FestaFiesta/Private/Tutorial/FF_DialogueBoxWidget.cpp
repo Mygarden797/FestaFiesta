@@ -276,10 +276,10 @@ void UFF_DialogueBoxWidget::HandleSkipClicked()
 	// 확인 창을 여기서 띄우는 이유는, BP 그래프에 로직을 두면 깃에서 병합도
 	// 리뷰도 안 되기 때문이다. BP 는 배치와 모양만 맡는다.
 
-	// 비서 브리핑은 되돌릴 것이 없다. 묻지 않고 그 브리핑만 닫는다(튜토리얼 안내는 그대로).
+	// 비서 브리핑 · 로비 이야기 장면(S 엔딩)은 되돌릴 것이 없다. 묻지 않고 그 대사만 닫는다(튜토리얼 안내는 그대로).
 	if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
 	{
-		if (Tutorial->IsBriefingActive())
+		if (Tutorial->IsCloseOnSkipActive())
 		{
 			Tutorial->StopScript();
 			return;

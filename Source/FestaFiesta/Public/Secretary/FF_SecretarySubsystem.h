@@ -16,6 +16,8 @@ class UFF_SecretaryTipWidget;
    - 운영 중: 상황이 생기면 왼쪽 아래 말풍선으로 짧게 훈수한다. 많아도 30초에 한 번, 같은 말은 한동안 안 한다.
      할 상황이 없이 한동안 조용하면 조작 · 규칙 팁을 하나씩 한다(팁마다 축제 동안 한 번).
    - 모닝체크(2 · 3일차 아침): 어제 운영을 대사창으로 짧게 브리핑한다. 첫날 셋업에는 인사만.
+   - 결산(2026-10-14): 그날 만족도에 따라 말풍선으로 한마디 하고 신뢰도를 고친다. 분석은 결산 화면의 비서 한마디
+     (김시리 FFF_DailyReportCommentRules)가 하므로 여기서는 반응만 한다.
 
    무슨 말을 할지는 판단부(FF_SecretaryAdvisor)가 고르고, 여기서는 값을 모으고 띄울 때를 정한다.
    대사창은 튜토리얼 대사 장치를 브리핑 범위(EFF_TutorialScope::Briefing)로 다시 쓴다.
@@ -28,7 +30,8 @@ class UFF_SecretaryTipWidget;
    ─── 안 하는 것 ─────────────────────────────────────────────────────────────
    - 팀원 시스템(만족도 · 필요 · 군중 · 사건 · 스태프 · 건축 · 장부)은 공개 값을 읽기만 한다.
    - 튜토리얼 레벨에서는 말하지 않는다. 그 레벨은 튜토리얼 대사가 안내한다.
-   - 판 사이에 기억하지 않는다(저장 안 함). 이어하기로 아침에 들어오면 그날 운영 전 값이 없어 브리핑이 짧아진다.
+   - 하루 모음 값은 판 사이에 기억하지 않는다(저장 안 함). 이어하기로 아침에 들어오면 그날 운영 전 값이 없어 브리핑이
+     짧아진다. 판 저장에 남는 것은 신뢰도뿐이다(UFF_SaveSubsystem::GetSecretaryTrust).
 */
 UCLASS()
 class FESTAFIESTA_API UFF_SecretarySubsystem : public UTickableWorldSubsystem
@@ -47,8 +50,13 @@ public:
 
 	static UFF_SecretarySubsystem* Get(const UObject* WorldContextObject);
 
-	// 말풍선을 바로 띄운다. 개발 명령 · 시험에서 쓴다.
-	bool ShowTip(const FText& Text);
+	// 말풍선을 바로 띄운다. 개발 명령 · 시험에서 쓴다. VisibleOverride 는 FF_SecretaryTipWidget::ShowTip 참고.
+	bool ShowTip(const FText& Text, float VisibleOverride = -1.f);
+
+	/* 결산 한마디를 지금 띄운다. 그날 결산 값(만족도)으로 반응을 고르고 신뢰도를 고친다. 하루에 한 번
+	   (bForce 면 다시 — 개발 명령용, 신뢰도도 한 번 더 고친다). 결산 표시값이 아직 없으면 false(조금 뒤 다시 부른다).
+	*/
+	bool PlayReportReaction(bool bForce = false);
 
 	// 지금 값으로 브리핑을 지어 대사창에 띄운다. bFirstDay 면 첫날 인사. 다른 대사가 진행 중이면 false.
 	bool PlayMorningBriefing(bool bFirstDay);
@@ -71,6 +79,10 @@ private:
 	void TickLive(float DeltaTime);
 	void TickBriefing(float DeltaTime);
 	void ScheduleBriefing(bool bFirstDay);
+	void TickReportReaction(float DeltaTime);
+
+	// {이름} 을 주인공 이름으로 바꾼다. 말풍선은 대사 장치를 거치지 않아 여기서 바꾼다.
+	FText ResolvePlayerName(const FText& Text) const;
 
 	// 운영 중 하루치 값을 모은다. 다음 아침 브리핑에 쓴다.
 	void SampleDay();
@@ -108,4 +120,11 @@ private:
 
 	// 이 판에서 한 번이라도 놓아 본 분류. "아직 안 놓아 본 분류" 소개에 쓴다.
 	TSet<EFFZSFacilityCategory> BuiltCategories;
+
+	// 0 이상이면 그만큼 뒤에 결산 한마디를 띄운다. 결산 표시값이 아직 없으면 조금씩 미룬다.
+	float ReportReactionCountdown = -1.f;
+	int32 ReportReactionRetries = 0;
+
+	// 결산 한마디를 한 날. 같은 결산에 두 번 말하지 않고 신뢰도도 두 번 고치지 않는다.
+	int32 ReactedReportDay = INDEX_NONE;
 };

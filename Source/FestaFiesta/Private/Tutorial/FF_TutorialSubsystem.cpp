@@ -16,6 +16,7 @@
 #include "Tutorial/FF_TutorialMarker.h"
 #include "Tutorial/FF_TutorialExitWidget.h"
 #include "Tutorial/FF_TutorialSkipWidget.h"
+#include "Secretary/FF_SecretaryAdvisor.h"
 #include "UI/Atlas/FF_AtlasCountryScreen.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/GameInstance.h"
@@ -241,7 +242,8 @@ void UFF_TutorialSubsystem::RecordScopeCompleted()
 		break;
 
 	case EFF_TutorialScope::Briefing:
-		// 비서 브리핑은 매일 새로 짓는 대사라 봤다는 기록이 필요 없다.
+	case EFF_TutorialScope::Story:
+		// 비서 브리핑은 매일 새로 짓는 대사라, 로비 이야기 장면(S 엔딩)은 틀 때 기다림을 비워서 봤다는 기록이 필요 없다.
 		break;
 
 	default:
@@ -446,8 +448,64 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 		TryStartPendingLobbyIntro();
 	}
 
+	// 축제를 S 등급으로 끝내고 돌아왔으면 사무소 장면을 튼다.
+	TryStartPendingSGradeEnding();
+
 	// 로비 이야기를 튼 뒤에 본다. 먼저 보면 이야기가 뜨는 틱에 지도 버튼이 한 번 깜빡인다.
 	UpdateMapSkipButton();
+}
+
+void UFF_TutorialSubsystem::TryStartPendingSGradeEnding()
+{
+	if (bDialogueActive || bLobbyIntroPending)
+	{
+		return;
+	}
+
+	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!Flow || Flow->GetMode() != EFF_UIFlowMode::Frontend || Flow->GetFrontendScreen() != EFF_UIFlowScreen::AtlasCountry)
+	{
+		return;
+	}
+
+	UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this);
+	const FName Festival = Save ? Save->GetPendingSGradeEnding() : NAME_None;
+	if (Festival.IsNone())
+	{
+		return;
+	}
+
+	// 한 번만 시도한다. 표가 없거나 못 틀어도 비운다 — 매 틱 다시 시도하며 로그가 쌓이지 않게.
+	Save->ClearPendingSGradeEnding();
+	UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] %s 를 S 등급으로 끝내고 돌아왔다."), *Festival.ToString());
+	PlaySGradeEnding();
+}
+
+bool UFF_TutorialSubsystem::PlaySGradeEnding()
+{
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	UDataTable* Table = Settings ? Settings->SGradeEndingTable.LoadSynchronous() : nullptr;
+	TArray<FFF_DialogueLine> Lines;
+	if (!Table || !FFF_DialogueTable::BuildLines(Table, Lines))
+	{
+		UE_LOG(LogFestaFiestaTutorial, Warning,
+			TEXT("[튜토리얼] S 엔딩 표가 없어 장면을 건너뛴다. 튜토리얼 설정의 S Grade Ending Table 을 볼 것."));
+		return false;
+	}
+
+	// 신뢰가 높을 때만 나오는 줄(라벨 Trust_)은 그 밖에서는 뺀다.
+	const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this);
+	const bool bHighTrust = Save
+		&& FFSecretaryAdvisor::TrustTierOf(Save->GetSecretaryTrust()) == EFF_SecretaryTrustTier::High;
+	if (!bHighTrust)
+	{
+		Lines.RemoveAll([](const FFF_DialogueLine& Line) { return Line.Label.ToString().StartsWith(TEXT("Trust_")); });
+	}
+
+	const bool bStarted = PlayLines(Lines, TEXT("SGradeEnding"), EFF_TutorialScope::Story);
+	UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] S 엔딩 %s (%d줄, 신뢰 높음=%s)."),
+		bStarted ? TEXT("시작") : TEXT("못 틂"), Lines.Num(), bHighTrust ? TEXT("예") : TEXT("아니오"));
+	return bStarted;
 }
 
 void UFF_TutorialSubsystem::BindGameSignals()
@@ -725,7 +783,11 @@ void UFF_TutorialSubsystem::EnsureWidgets()
 	   "로비 레벨인가" 를 따로 묻지 않아도 된다. 이미 떠 있는 창의 순서가 다르면
 	   내렸다가 다시 올린다 — 순서는 AddToViewport 할 때만 정해진다.
 	*/
-	const int32 WantedBoxZOrder = (ActiveScope == EFF_TutorialScope::LobbyIntro)
+	// 로비에서 트는 비서 장면(S 엔딩 등)도 로비 순서를 쓴다. 축제 레벨 순서(음수)면 지도 화면 밑에 깔려 안 보인다.
+	const UFF_UIFlowSubsystem* FlowForOrder = UFF_UIFlowSubsystem::Get(this);
+	const bool bLobbyOrder = ActiveScope == EFF_TutorialScope::LobbyIntro
+		|| (FlowForOrder && FlowForOrder->GetMode() == EFF_UIFlowMode::Frontend);
+	const int32 WantedBoxZOrder = bLobbyOrder
 		? Settings->LobbyDialogueBoxZOrder
 		: Settings->DialogueBoxZOrder;
 
@@ -1714,8 +1776,8 @@ void UFF_TutorialSubsystem::RequestSkipConfirm()
 		return;
 	}
 
-	// 비서 브리핑은 되돌릴 것이 없다. 묻지 않고 그 브리핑만 닫는다.
-	if (IsBriefingActive())
+	// 비서 브리핑 · 로비 이야기 장면은 되돌릴 것이 없다. 묻지 않고 그 대사만 닫는다.
+	if (IsCloseOnSkipActive())
 	{
 		StopScript();
 		return;
@@ -1943,8 +2005,8 @@ void UFF_TutorialSubsystem::SkipTutorial()
 		return;
 	}
 
-	// 비서 브리핑을 닫는 건 튜토리얼 건너뛰기가 아니다. 안내를 끄거나 레벨을 떠나지 않는다.
-	if (IsBriefingActive())
+	// 비서 브리핑 · 로비 이야기 장면을 닫는 건 튜토리얼 건너뛰기가 아니다. 안내를 끄거나 레벨을 떠나지 않는다.
+	if (IsCloseOnSkipActive())
 	{
 		StopScript();
 		return;
