@@ -152,6 +152,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
 	bool IsAwaitingSkipConfirm() const { return bAwaitingSkipConfirm; }
 
+	/* 로비 이야기에서 건너뛰기를 눌렀으면 이야기만 넘기고 실습장으로 가는 줄부터 잇는다. 넘겼으면 true.
+
+	   건너뛰기 버튼은 확인 창을 띄우기 전에 이걸 먼저 부른다. 이야기 부분은 되돌릴 것이 없어 묻지 않고,
+	   건너뜀으로 기록하지 않는다(실습장이 열린 채로 남는다). 실습장으로 가는 줄(설정의 LobbyStorySkipLabel)부터는
+	   false — 그때 누른 건 실습장 안과 같은 진짜 건너뛰기라 원래대로 확인 창을 거친다.
+	*/
+	bool TrySkipLobbyStory();
+
 	// 튜토리얼을 통째로 끝낸다.
 	//
 	// SkipNarration 과 다르다. 저쪽은 서사만 넘기고 조작 안내는 남기는데,

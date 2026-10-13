@@ -162,6 +162,19 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Skip")
 	FText SkipConfirmNoText = FText::FromString(TEXT("계속하기"));
 
+	/* 로비 이야기에서 건너뛰기를 누르면 이어서 보여 줄 줄의 라벨. 실습장으로 가는 부분의 첫 줄이다.
+
+	   로비 이야기(삼촌 · 비서)는 튜토리얼이 아니다. 거기서 누른 건너뛰기를 튜토리얼 건너뛰기로 받으면
+	   실습장이 잠겨 안내 없이 다대포부터 하게 됐다(테스터 피드백 2026-10-13). 그래서 이 줄 앞에서는
+	   묻지 않고 이 줄로 넘기기만 하고, 이 줄부터(실습장으로 가는 부분)는 실습장 안과 같이 진짜 건너뛰기다.
+
+	   이 줄이 이야기의 꼬리여야 한다 — 지금 줄이 이 줄보다 앞인지를 표 순서로 본다.
+	   비우거나 표에 없으면 어디서 누르든 진짜 건너뛰기다(예전 동작).
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Skip",
+		meta = (DisplayName = "Lobby Story Skip Label"))
+	FName LobbyStorySkipLabel = TEXT("Agency_013");
+
 	// 카메라를 이 거리 이상 움직이면 이동한 것으로 본다.
 	//
 	// 너무 작으면 손이 미끄러진 것도 조작으로 잡히고, 너무 크면 한참 움직여야

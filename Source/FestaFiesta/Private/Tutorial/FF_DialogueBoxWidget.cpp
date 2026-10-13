@@ -236,6 +236,13 @@ void UFF_DialogueBoxWidget::HandleSkipClicked()
 			Tutorial->StopScript();
 			return;
 		}
+
+		// 로비 이야기(삼촌 · 비서)도 묻지 않는다. 실습장으로 가는 줄로 넘기기만 하고 건너뜀으로 기록하지 않는다.
+		// 그 줄부터 누르면 false 라 아래 확인 창으로 간다(실습장 안과 같은 진짜 건너뛰기).
+		if (Tutorial->TrySkipLobbyStory())
+		{
+			return;
+		}
 	}
 
 	// 이미 떠 있으면 또 만들지 않는다. 겹친 창은 하나를 닫아도 뒤에 하나가 남는다.
