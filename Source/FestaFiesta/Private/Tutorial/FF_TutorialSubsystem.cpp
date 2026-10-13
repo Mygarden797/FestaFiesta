@@ -15,6 +15,8 @@
 #include "Save/FF_SaveSubsystem.h"
 #include "Tutorial/FF_TutorialMarker.h"
 #include "Tutorial/FF_TutorialExitWidget.h"
+#include "Tutorial/FF_TutorialSkipWidget.h"
+#include "UI/Atlas/FF_AtlasCountryScreen.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/GameInstance.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
@@ -442,6 +444,9 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 	{
 		TryStartPendingLobbyIntro();
 	}
+
+	// 로비 이야기를 튼 뒤에 본다. 먼저 보면 이야기가 뜨는 틱에 지도 버튼이 한 번 깜빡인다.
+	UpdateMapSkipButton();
 }
 
 void UFF_TutorialSubsystem::BindGameSignals()
@@ -762,6 +767,12 @@ void UFF_TutorialSubsystem::RemoveWidgets()
 	{
 		ExitWidget->RemoveFromParent();
 		ExitWidget = nullptr;
+	}
+
+	if (MapSkipWidget)
+	{
+		MapSkipWidget->RemoveFromParent();
+		MapSkipWidget = nullptr;
 	}
 }
 
@@ -1380,6 +1391,85 @@ void UFF_TutorialSubsystem::ShowExitButton()
 	}
 }
 
+bool UFF_TutorialSubsystem::IsMapSkipAvailable() const
+{
+	// 대사 중에는 대사창의 건너뛰기가 있다. 로비 이야기가 곧 뜰 참이면 그 대사를 기다린다.
+	if (bDialogueActive || bLobbyIntroPending || bTutorialSkipped)
+	{
+		return false;
+	}
+
+	// 축제를 고르는 국가 지도에서만. 다른 화면(지구본 등)의 오른쪽 위는 무엇이 있는지 이 시스템이 모른다.
+	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!Flow || Flow->GetMode() != EFF_UIFlowMode::Frontend
+		|| Flow->GetFrontendScreen() != EFF_UIFlowScreen::AtlasCountry)
+	{
+		return false;
+	}
+
+	return GetTutorialFestivalGateState().bOverridden;
+}
+
+void UFF_TutorialSubsystem::UpdateMapSkipButton()
+{
+	if (!IsMapSkipAvailable())
+	{
+		if (MapSkipWidget)
+		{
+			MapSkipWidget->RemoveFromParent();
+			MapSkipWidget = nullptr;
+		}
+		return;
+	}
+
+	if (MapSkipWidget)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+	if (!Controller)
+	{
+		return;
+	}
+
+	MapSkipWidget = CreateWidget<UFF_TutorialSkipWidget>(Controller, UFF_TutorialSkipWidget::StaticClass());
+	if (MapSkipWidget)
+	{
+		const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+		MapSkipWidget->AddToViewport(Settings ? Settings->MapSkipButtonZOrder : 110);
+	}
+}
+
+void UFF_TutorialSubsystem::RefreshAtlasLocks()
+{
+	// 잠금 값을 지금 맞춘다. Tick 을 기다리면 아래에서 핀을 다시 그릴 때 옛 값을 읽는다.
+	SyncTutorialLevelLock();
+	SyncFestivalsLockedUntilTutorial();
+
+	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!Flow || Flow->GetMode() != EFF_UIFlowMode::Frontend || Flow->GetActiveCountryId().IsNone())
+	{
+		return;
+	}
+
+	/* 국가 지도 파일(UI 파트)은 고치지 않고 공개 함수 SetCountry 로 다시 그리게 한다.
+	   같은 국가면 아무것도 하지 않는 함수라 한 번 비웠다가 되돌린다. 화면에 올라오지 않은 지도는 올라올 때 다시 그린다.
+	*/
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, FoundWidgets, UFF_AtlasCountryScreen::StaticClass(), false);
+	for (UUserWidget* Widget : FoundWidgets)
+	{
+		UFF_AtlasCountryScreen* Screen = Cast<UFF_AtlasCountryScreen>(Widget);
+		if (Screen && Screen->IsActivated())
+		{
+			Screen->SetCountry(NAME_None);
+			Screen->SetCountry(Flow->GetActiveCountryId());
+		}
+	}
+}
+
 void UFF_TutorialSubsystem::ExitTutorialLevel()
 {
 	UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
@@ -1719,12 +1809,14 @@ void UFF_TutorialSubsystem::SkipTutorial()
 		return;
 	}
 
-	/* 대사가 없으면 건너뛸 것도 없다.
+	/* 대사가 없으면 건너뛸 것도 없다. 국가 지도의 건너뛰기 버튼만 예외다(IsMapSkipAvailable).
 
 	   이 검사가 없으면 대사가 끝난 뒤에도 떠 있던 확인 창에서 `예` 를 누르거나
-	   콘솔을 잘못 치면, 끝까지 본 사람의 안내가 전역으로 꺼진다.
+	   콘솔을 잘못 치면, 끝까지 본 사람의 안내가 전역으로 꺼진다. 지도 버튼은 실습장을 아직 안 지난
+	   판에서만 뜨므로 그럴 일이 없다.
 	*/
-	if (!bDialogueActive)
+	const bool bFromMap = !bDialogueActive && IsMapSkipAvailable();
+	if (!bDialogueActive && !bFromMap)
 	{
 		UE_LOG(LogFestaFiestaTutorial, Log,
 			TEXT("[튜토리얼] 진행 중인 대사가 없어 건너뛰기를 무시한다."));
@@ -1740,9 +1832,16 @@ void UFF_TutorialSubsystem::SkipTutorial()
 
 	bTutorialSkipped = true;
 
-	UE_LOG(LogFestaFiestaTutorial, Log,
-		TEXT("[튜토리얼] 건너뛰었다. 줄 %d/%d 에서 중단."),
-		CurrentLineIndex, ActiveLines.Num());
+	if (bFromMap)
+	{
+		UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 국가 지도의 건너뛰기 버튼으로 건너뛰었다."));
+	}
+	else
+	{
+		UE_LOG(LogFestaFiestaTutorial, Log,
+			TEXT("[튜토리얼] 건너뛰었다. 줄 %d/%d 에서 중단."),
+			CurrentLineIndex, ActiveLines.Num());
+	}
 
 	StopScript();
 
@@ -1758,6 +1857,9 @@ void UFF_TutorialSubsystem::SkipTutorial()
 	{
 		Save->MarkTutorialOptedOut();
 	}
+
+	// 지도 위에서 건너뛰었으면(지도 버튼 · 로비 이야기의 실습장 가는 줄) 핀을 바로 다시 그린다.
+	RefreshAtlasLocks();
 
 	OnTutorialSkipped.Broadcast();
 

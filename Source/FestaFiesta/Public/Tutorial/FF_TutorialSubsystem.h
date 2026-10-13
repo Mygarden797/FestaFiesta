@@ -643,6 +643,28 @@ private:
 	// 나가기 버튼을 띄운다. 이미 떠 있으면 그대로 둔다.
 	void ShowExitButton();
 
+	// 실습장을 지나기 전 국가 지도에 남는 "튜토리얼 건너뛰기" 버튼. FF_TutorialSkipWidget 참고.
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> MapSkipWidget;
+
+	/* 대사 밖에서(국가 지도) 튜토리얼을 건너뛸 수 있는가. 지도 건너뛰기 버튼을 띄우는 조건이자 SkipTutorial 의 허용 조건이다.
+
+	   대사 중이 아니고 · 국가 지도 화면이고 · 다른 축제를 실습장 때문에 잠가 둔 동안(SyncFestivalsLockedUntilTutorial)이다.
+	   잠가 둔 동안만 보는 이유: 그 조건(판 시작 · 튜토리얼 미통과 · 지도에 튜토리얼 칸 있음)이 곧 "건너뛸 튜토리얼이 남았다" 이고,
+	   끝까지 본 사람의 안내를 대사 밖에서 끄는 일이 없어야 한다(SkipTutorial 의 대사 검사 주석).
+	*/
+	bool IsMapSkipAvailable() const;
+
+	// 지도 건너뛰기 버튼을 조건에 맞춰 띄우거나 내린다. Tick 이 부른다.
+	void UpdateMapSkipButton();
+
+	/* 건너뛴 결과를 지도에 바로 반영한다 — 잠금 값을 맞추고 떠 있는 국가 지도의 핀을 다시 그린다.
+
+	   핀은 화면이 뜰 때 잠금 값을 받아 그린다. 지도 위에서 건너뛰면(지도 버튼 · 로비 이야기의 실습장 가는 줄) 화면이 그대로라,
+	   다시 그리지 않으면 실습장 핀은 열린 채 · 다대포 핀은 잠긴 채로 보인다.
+	*/
+	void RefreshAtlasLocks();
+
 	// 개발용 콘솔 명령. 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
 	FFF_DebugConsoleCommands DebugCommands;
 };

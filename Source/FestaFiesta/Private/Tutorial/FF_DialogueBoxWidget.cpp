@@ -28,6 +28,7 @@ void UFF_DialogueBoxWidget::NativeConstruct()
 	if (SkipButton)
 	{
 		SkipButton->OnClicked.AddDynamic(this, &UFF_DialogueBoxWidget::HandleSkipClicked);
+		SkipButtonShownVisibility = SkipButton->GetVisibility();
 	}
 
 	UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
@@ -177,8 +178,21 @@ void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
 	ApplyClickArea(Line);
 	ApplyBackground(Line);
 	ApplyPortrait(Line);
+	ApplySkipButton();
 
 	BP_OnLineChanged(Line);
+}
+
+void UFF_DialogueBoxWidget::ApplySkipButton()
+{
+	if (!SkipButton)
+	{
+		return;
+	}
+
+	const UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
+	const bool bBriefing = Tutorial && Tutorial->IsBriefingActive();
+	SkipButton->SetVisibility(bBriefing ? ESlateVisibility::Collapsed : SkipButtonShownVisibility);
 }
 
 void UFF_DialogueBoxWidget::HandleDialogueActiveChanged(const bool bActive)

@@ -69,7 +69,15 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
 		meta = (DisplayName = "Festivals Locked Until Tutorial Reason"))
 	FText FestivalsLockedUntilTutorialReason = NSLOCTEXT("FestaFiestaTutorial", "FestivalsLockedUntilTutorial",
-		"실습장을 먼저 마쳐 주세요. 실습장에서 건너뛰어도 열려요.");
+		"실습장을 먼저 마쳐 주세요. 오른쪽 위 '튜토리얼 건너뛰기'를 누르면 바로 열려요.");
+
+	/* 실습장을 지나기 전 국가 지도에 남기는 "튜토리얼 건너뛰기" 버튼의 화면 순서(UFF_TutorialSkipWidget).
+
+	   지도는 UI 루트(z 0) 위에 꽉 차게 뜨므로 0 보다 커야 하고, 누르면 뜨는 확인 창(SkipConfirmZOrder)보다는 작아야 한다.
+	   대사 중에는 이 버튼을 내리므로 대사창과는 겹치지 않는다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Skip")
+	int32 MapSkipButtonZOrder = 110;
 
 	/* 화자 이름 → 초상화. 대사의 Speaker 칸과 글자가 똑같아야 한다(예: 삼촌).
 
