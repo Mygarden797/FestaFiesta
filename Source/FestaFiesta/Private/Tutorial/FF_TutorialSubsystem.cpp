@@ -1628,6 +1628,12 @@ void UFF_TutorialSubsystem::RequestSkipConfirm()
 		return;
 	}
 
+	// 로비 이야기는 튜토리얼이 아니다. 묻지 않고 실습장으로 가는 줄로 넘긴다.
+	if (TrySkipLobbyStory())
+	{
+		return;
+	}
+
 	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
 	if (!Settings)
 	{
@@ -1660,6 +1666,44 @@ void UFF_TutorialSubsystem::RequestSkipConfirm()
 	ApplyHighlight(NAME_None);
 
 	OnLineChanged.Broadcast(SkipConfirmLine);
+}
+
+bool UFF_TutorialSubsystem::TrySkipLobbyStory()
+{
+	if (!bDialogueActive || bAwaitingSkipConfirm || ActiveScope != EFF_TutorialScope::LobbyIntro)
+	{
+		return false;
+	}
+
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	const FName Label = Settings ? Settings->LobbyStorySkipLabel : NAME_None;
+	if (Label.IsNone())
+	{
+		return false;
+	}
+
+	const int32 Target = FindLineIndexByLabel(Label);
+	if (Target == INDEX_NONE)
+	{
+		// 라벨을 잘못 적었다. 넘길 곳을 모르니 예전처럼 진짜 건너뛰기로 둔다.
+		UE_LOG(LogFestaFiestaTutorial, Warning,
+			TEXT("[튜토리얼] 로비 이야기 건너뛰기 라벨 %s 를 찾지 못했다. 진짜 건너뛰기로 처리한다."),
+			*Label.ToString());
+		return false;
+	}
+
+	// 이미 실습장으로 가는 부분이다. 실습장 안과 같이 진짜 건너뛰기다(2026-10-13 사용자 결정).
+	if (CurrentLineIndex >= Target)
+	{
+		return false;
+	}
+
+	UE_LOG(LogFestaFiestaTutorial, Log,
+		TEXT("[튜토리얼] 로비 이야기 건너뜀. %d → %d(%s), 건너뜀 기록 없음."),
+		CurrentLineIndex, Target, *Label.ToString());
+
+	GoToLine(Target);
+	return true;
 }
 
 bool UFF_TutorialSubsystem::CanSkipTutorial() const
