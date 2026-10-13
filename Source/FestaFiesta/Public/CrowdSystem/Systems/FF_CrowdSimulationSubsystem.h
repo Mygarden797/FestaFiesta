@@ -510,6 +510,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
 	int32 GetAudiencePartyCount() const;
 
+	// 좌석에 앉은(Waiting/Spectating) 에이전트를 멤버까지 풀어서 돌려준다. 상태를 바꾸지 않는다.
+	void GetSeatedAudienceAgents(TArray<FFF_CrowdSeatedAgent>& OutAgents) const;
+
 	// 도착 불가로 돌려받은 좌석 수(파티 단위, 누적).
 	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
 	int32 GetAudienceSeatsReclaimed() const { return AudienceSeatsReclaimed; }
