@@ -44,6 +44,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSaveLoaded, FName, SlotId);
    하루가 시작될 때 축제 상태를 담고, 축제가 끝나면 로비 세이브를 담는다.
    잃어도 하루치다. 매 단계마다 저장하면 잦고, 수동만 두면 사람이 잊는다.
    메타(튜토리얼 기록 등)가 바뀌면 이 판의 세이브에 그것만 고쳐 쓴다.
+   짓는 시간(셋업 · 모닝체크)에 축제를 벗어나면 그 순간도 담고, 같은 판에서 같은 축제를 다시 고르면
+   거기서 이어한다(HandlePreLoadMap · ResumeRunSaveIfSameFestival).
 */
 UCLASS()
 class FESTAFIESTA_API UFF_SaveSubsystem : public UGameInstanceSubsystem
@@ -291,6 +293,34 @@ private:
 	// 새 판이 시작됐다. 같은 날 두 번 막는 기준을 비운다.
 	UFUNCTION()
 	void HandleFestivalStarted();
+
+	/* 축제 레벨을 벗어나기 직전에 담는다(2026-10-12 피드백: 축제 선택으로 잘못 나갔다 오니 축제장이 사라짐).
+
+	   자동 저장은 하루가 시작될 때만 돌아서, 1일차 셋업에 지은 것은 나가는 순간 어디에도 없었다.
+	   다른 레벨을 열기 직전(PreLoadMap)이면 아직 지금 월드가 살아 있어 시설까지 담을 수 있다.
+	   짓는 시간(셋업 · 모닝체크)에만 담는다. 운영 도중은 하루 정산이 안 끝나 장부와 어긋난다(HandleStageChanged).
+	   튜토리얼 실습장은 연습이라 이어할 자리를 만들지 않는다.
+	*/
+	void HandlePreLoadMap(const FString& MapName);
+	FDelegateHandle PreLoadMapHandle;
+
+	/* 지금 진행 중인 축제 이름. 새 판이 시작될 때 담아 둔다.
+
+	   '축제 선택으로'를 누르면 UI 흐름이 레벨을 열기 전에 프론트엔드로 바뀐다. 그 뒤에는
+	   ResolveCurrentFestivalId 가 None 을 돌려줘서, 나갈 때 담은 세이브에 축제 이름이 비었다(PIE 확인).
+	*/
+	FName RunningFestivalId;
+
+	// 나갈 때 저장 중인가. CaptureSession 이 축제 이름을 RunningFestivalId 로 담는다.
+	bool bSavingOnLeave = false;
+
+	/* 같은 판에서 같은 축제를 다시 골랐으면, 이 판의 세이브(진행 중)에서 이어하기로 정한다.
+
+	   새 판 시작 신호(HandleFestivalStarted)는 GameMode 의 BeginPlay 보다 먼저 온다. 여기서 이어하기를
+	   걸어 두면 1일차 자동 저장은 건너뛰고(HandleStageChanged), GameMode 가 그 세이브를 되돌린다.
+	   새 게임은 이 판의 세이브가 비어 있어(BeginNewRun) 영향이 없다. 다른 축제면 새로 시작한다.
+	*/
+	void ResumeRunSaveIfSameFestival();
 
 
 	/* 다음 틱에 자동 저장한다. 바로 담지 않는다.

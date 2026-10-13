@@ -31,7 +31,8 @@ public:
 
 	// 화면 기준 입력을 월드 이동으로 바꾼다. X 는 오른쪽, Y 는 화면 위쪽이다.
 	// 현재 Yaw 를 기준으로 회전시켜야 "위로 밀면 보이는 쪽으로 간다"가 성립한다.
-	void Pan(const FVector2D& ScreenInput, float DeltaSeconds);
+	// SpeedScale 은 속도에 곱한다(Shift 가속). 입력에 곱하면 대각선 정규화에 잘려 사라진다.
+	void Pan(const FVector2D& ScreenInput, float DeltaSeconds, float SpeedScale = 1.f);
 
 	// 화면 가장자리 스크롤. 키보드와 속도 곡선이 다르다.
 	// 배율을 입력에 곱해서 Pan 에 넘기면 안 된다 — 그쪽은 크기 1 로 정규화해서 배율이 사라진다.

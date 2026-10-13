@@ -203,6 +203,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input", meta = (ClampMin = "1.0"))
 	float BuildDragPanThresholdPixels = 6.f;
 
+	// 누르는 동안 키보드(WASD) 카메라 이동이 PanBoostMultiplier 배 빨라진다(2026-10-12 피드백). 키는 IMC 가 정한다
+	// (IMC_Camera 에서 왼쪽 Shift). 건축의 Shift 조합 · 캐릭터 시야 고정도 같은 키라 IA 가 입력을 소비하지 않게 둔다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input")
+	TObjectPtr<UInputAction> PanBoostAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input", meta = (ClampMin = "1.0"))
+	float PanBoostMultiplier = 2.5f;
+
 	// 시점 전환에 쓸 블렌드 시간. 0 이면 즉시 전환한다.
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera", meta = (ClampMin = "0.0"))
 	float ViewSwitchBlendTime = 0.5f;
@@ -237,6 +245,9 @@ private:
 	void HandleToggleView(const FInputActionValue& Value);
 	void HandleDragPanStarted(const FInputActionValue& Value);
 	void HandleDragPanEnded(const FInputActionValue& Value);
+	void HandlePanBoostStarted(const FInputActionValue& Value);
+	void HandlePanBoostEnded(const FInputActionValue& Value);
+	void SetPanBoost(bool bBoost);
 
 	bool IsBuildSessionActive() const;
 	bool IsBuildPreviewActive() const;

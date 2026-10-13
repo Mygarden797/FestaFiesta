@@ -127,9 +127,9 @@ void FFF_OverviewCameraRig::ClampFocusToBounds(FVector& InOutFocus) const
 	InOutFocus.Z = FMath::Clamp(InOutFocus.Z, Settings.FocusBounds.Min.Z, Settings.FocusBounds.Max.Z);
 }
 
-void FFF_OverviewCameraRig::Pan(const FVector2D& ScreenInput, float DeltaSeconds)
+void FFF_OverviewCameraRig::Pan(const FVector2D& ScreenInput, float DeltaSeconds, const float SpeedScale)
 {
-	ApplyPanWithSpeed(ScreenInput, DeltaSeconds, GetCurrentPanSpeed());
+	ApplyPanWithSpeed(ScreenInput, DeltaSeconds, GetCurrentPanSpeed() * FMath::Max(0.f, SpeedScale));
 }
 
 void FFF_OverviewCameraRig::EdgeScroll(const FVector2D& ScreenInput, float DeltaSeconds)
