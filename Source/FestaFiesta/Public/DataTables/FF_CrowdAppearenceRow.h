@@ -6,6 +6,18 @@
 #include "CrowdSystem/Components/FF_CrowdAnimInstance.h"
 #include "FF_CrowdAppearenceRow.generated.h"
 
+USTRUCT(BlueprintType)
+struct FFF_CrowdAppearanceVariant
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd")
+	TSoftObjectPtr<USkeletalMesh> Mesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd")
+	TSoftClassPtr<UFF_CrowdAnimInstance> AnimClass;
+};
+
 /**
  * 
  */
@@ -37,17 +49,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd")
 	TArray<TSoftObjectPtr<USkeletalMesh>> MeshVariants;
 
-	//성별 구분 외형 풀. 하나라도 채워 두면 Seed로 성별을 정한 뒤 그 풀에서 고른다. 한쪽만 채우면 그쪽으로만 나온다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd")
-	TArray<TSoftObjectPtr<USkeletalMesh>> FemaleMeshVariants;
+	TArray<FFF_CrowdAppearanceVariant> AnimVariants;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd")
-	TArray<TSoftObjectPtr<USkeletalMesh>> MaleMeshVariants;
-
-	//성별 풀이 모두 비어 있으면 Mesh + MeshVariants 중에서, 아니면 성별 풀에서 Seed로 고정된 하나를 고른다. 후보가 없으면 빈 포인터
+	//Mesh + MeshVariants 중 Seed로 고정된 하나를 고른다. 후보가 없으면 빈 포인터
 	TSoftObjectPtr<USkeletalMesh> PickMesh(int32 Seed) const;
 
-	//Seed로 성별을 정한다. 행 이름의 _female/_male 접미사 조회와 PickMesh가 같은 규칙을 쓴다
+	void PickAppearance(int32 Seed, TSoftObjectPtr<USkeletalMesh>& OutMesh, TSoftClassPtr<UFF_CrowdAnimInstance>& OutAnimClass) const;
+
+	//Seed로 성별을 정한다. 호출부가 행 이름의 _female/_male 접미사를 붙여 행을 찾는 데 쓴다
 	static bool IsFemaleSeed(int32 Seed);
 	
 	
