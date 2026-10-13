@@ -29,8 +29,9 @@ public:
 	 * 프로그램 카드와 달리 순번이 아니다 — 등급이 enum 이라 그대로 실을 수 있다.
 	 *
 	 * @param InLabel 등급 이름. **enum `DisplayName` 을 런타임에 읽지 않는다** — 패널이 넣어 준다
+	 * @param bCompact 배수·예측 기준은 툴팁으로 옮기고 방문객 수만 간결하게 표시한다.
 	 */
-	void ConfigureOption(const FFF_PromotionOptionView& InOption, const FText& InLabel);
+	void ConfigureOption(const FFF_PromotionOptionView& InOption, const FText& InLabel, bool bCompact = false);
 
 	EFF_PromotionChoice GetChoice() const { return Option.Choice; }
 

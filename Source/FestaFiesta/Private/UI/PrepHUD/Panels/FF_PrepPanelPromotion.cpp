@@ -230,7 +230,7 @@ void UFF_PrepPanelPromotion::RebuildCards()
 			continue;
 		}
 
-		CardWidget->ConfigureOption(Options[Index], GetChoiceLabel(Options[Index].Choice));
+		CardWidget->ConfigureOption(Options[Index], GetChoiceLabel(Options[Index].Choice), bUseCompactLayout);
 		CardWidget->OnHudTabButtonClicked.BindUObject(this, &UFF_PrepPanelPromotion::HandleCardClicked);
 
 		Box_PromotionCards->AddChild(CardWidget);
@@ -260,6 +260,13 @@ void UFF_PrepPanelPromotion::RefreshAll()
 
 	Quote = FFF_PrepPromotionRules::BuildQuote(FindSelectedOption(), Purchased, bCanPurchaseNow, Gold);
 
+	const int32 AdmissionFee = ViewModel ? ViewModel->GetAdmissionFeeGold() : INDEX_NONE;
+	SetTextOrHide(Text_ForecastBasis, bUseCompactLayout
+		? AdmissionFee != INDEX_NONE
+			? FText::Format(LOCTEXT("CompactForecastBasis", "예상 방문객 · 입장료 {0} 기준"), FText::AsNumber(AdmissionFee))
+			: LOCTEXT("CompactForecastBasisPending", "예상 방문객 · 입장료 확인 중")
+		: FText::GetEmpty());
+
 	// --- 카드 상태 ---
 	for (int32 Index = 0; Index < CardWidgets.Num(); ++Index)
 	{
@@ -270,7 +277,7 @@ void UFF_PrepPanelPromotion::RefreshAll()
 		}
 
 		const EFF_PromotionChoice Choice = Options[Index].Choice;
-		CardWidget->ConfigureOption(Options[Index], GetChoiceLabel(Choice));
+		CardWidget->ConfigureOption(Options[Index], GetChoiceLabel(Choice), bUseCompactLayout);
 
 		// 상태를 매번 전부 다시 정한다. 부분 갱신하면 구매 뒤에도 선택 표시가 남는다.
 		if (Purchased != EFF_PromotionChoice::None)
@@ -337,6 +344,15 @@ void UFF_PrepPanelPromotion::RefreshAll()
 		: MissingValueText);
 	SetTextOrHide(Text_GoldAfterLabel, bPurchased ? CurrentGoldLabel : GoldAfterLabel);
 
+	if (bUseCompactLayout)
+	{
+		SetTextOrHide(Text_PurchaseAction, bPurchased
+			? LOCTEXT("CompactPurchased", "구매 완료")
+			: Quote.Choice != EFF_PromotionChoice::None && Quote.CostGold != INDEX_NONE
+				? FText::Format(LOCTEXT("CompactPurchaseAction", "{0} Gold · 구매하기"), FText::AsNumber(Quote.CostGold))
+				: LOCTEXT("CompactPurchaseDefault", "홍보 구매하기"));
+	}
+
 	if (Button_Purchase)
 	{
 		Button_Purchase->SetIsEnabled(Quote.CanPurchase());
@@ -351,23 +367,43 @@ void UFF_PrepPanelPromotion::RefreshAll()
 		Quote.BlockReason == EFF_PrepPromotionBlockReason::AlreadyPurchased
 		|| Quote.BlockReason == EFF_PrepPromotionBlockReason::NotSetupStage;
 
-	SetTextOrHide(Text_OnceNotice, bReasonRepeatsNotice
+	SetTextOrHide(Text_OnceNotice, !bUseCompactLayout && bReasonRepeatsNotice
 		? FText::GetEmpty()
 		: OnceNoticeText);
 
-	// 🔴 `Collapsed` 가 아니라 `Hidden` 이다. 이 칸은 액션 행의 `Fill` 슬롯이라 접으면
-	// 슬롯째 사라지고 구매 버튼이 왼쪽으로 튄다 (프로그램 패널에서 실제로 겪었다).
+	// 기존 화면은 액션 행의 Fill을 보존한다. 간소화 화면은 구매 버튼이 별도 행이다.
 	if (Text_BlockReason)
 	{
 		Text_BlockReason->SetText(BlockReason);
 		Text_BlockReason->SetVisibility(BlockReason.IsEmpty()
-			? ESlateVisibility::Hidden
+			? (bUseCompactLayout ? ESlateVisibility::Collapsed : ESlateVisibility::Hidden)
 			: ESlateVisibility::SelfHitTestInvisible);
 	}
 }
 
 FText UFF_PrepPanelPromotion::BuildBlockReasonText() const
 {
+	if (bUseCompactLayout)
+	{
+		if (Quote.BlockReason == EFF_PrepPromotionBlockReason::AlreadyPurchased)
+		{
+			const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+			return ViewModel
+				? FText::Format(PurchasedPromotionFormat, GetChoiceLabel(ViewModel->GetPurchasedPromotion()))
+				: LOCTEXT("CompactPurchased", "구매 완료");
+		}
+		if (Quote.BlockReason == EFF_PrepPromotionBlockReason::NotSetupStage)
+		{
+			return LOCTEXT("CompactNotSetup", "셋업에서만 구매할 수 있습니다.");
+		}
+		if (Quote.BlockReason == EFF_PrepPromotionBlockReason::NoChoiceSelected)
+		{
+			return FindSelectedOption()
+				? LOCTEXT("CompactNoPromotion", "홍보 없이 진행합니다. 별도 구매는 필요하지 않습니다.")
+				: LOCTEXT("CompactSelectPromotion", "홍보 등급을 선택하세요.");
+		}
+	}
+
 	switch (Quote.BlockReason)
 	{
 	case EFF_PrepPromotionBlockReason::Unknown:
