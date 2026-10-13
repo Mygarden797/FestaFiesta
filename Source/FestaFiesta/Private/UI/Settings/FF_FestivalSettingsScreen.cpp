@@ -30,6 +30,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/App.h"
 #include "Save/FF_SaveBeforeQuitPolicy.h"
+#include "Tutorial/FF_TutorialSubsystem.h"
 #include "UI/Core/FF_UIAccessibilitySubsystem.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/FF_UILog.h"
@@ -681,6 +682,21 @@ void UFF_FestivalSettingsScreen::RebuildRows()
 		}
 		else
 		{
+			const UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
+			if (Tutorial && Tutorial->IsTutorialLevel())
+			{
+				AddInfoRow(
+					LOCTEXT("ExitTutorialTitle", "실습 중 종료"),
+					LOCTEXT("ExitTutorialValue", "실습 진행은 저장하지 않습니다"),
+					LOCTEXT("ExitTutorialDescription", "실습장에서는 종료할 때 진행 상황을 따로 저장하지 않습니다."));
+			}
+			else if (UFF_SaveBeforeQuitLibrary::WillQuitWithoutSaving(this))
+			{
+				AddInfoRow(
+					LOCTEXT("ExitMidDayTitle", "운영 중 종료"),
+					LOCTEXT("ExitMidDayValue", "오늘 아침부터 이어집니다"),
+					LOCTEXT("ExitMidDayDescription", "운영 중에는 저장하지 않습니다. 다음에 이어하면 오늘 아침 자동 저장부터 다시 시작합니다."));
+			}
 			Button_QuitCancel = AddActionButton(LOCTEXT("ExitContinue", "계속하기"), false);
 			Button_QuitAction = AddActionButton(LOCTEXT("ExitAction", "게임 저장 후 종료"), true);
 			if (Button_QuitCancel)
