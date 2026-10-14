@@ -109,5 +109,5 @@ dirty 후보는 패치와 수정된 추적 파일·미추적 파일의 실제 �
 엔진·MSVC·SDK 갱신은 잠금 파일과 설치 환경을 함께 갱신하고 실제 빌드 로그의 선택 버전을 대조한다.
 도구 갱신 후 전체 테스트·clean 패키징·두 RHI·수동 QA를 다시 수행하고 이전 크기·시간과 비교한다.
 맵·동적 로딩 에셋·플러그인 변경 시 Cook 규칙, 필수 에셋 검사, 라이선스 고지도 함께 수정한다.
-NPC 외형은 `FF_CrowdAppearanceTable`의 실제 행을 기준으로 검사한다. 새 NPC의 실행용 AnimBP·BlendSpace·AnimSequence는 `/Game/Level/Demo_Matereal/Mesh/anim/NPC/Anim` 아래에 두며 이 폴더는 명시적으로 쿠킹한다. 제작용 IK Retargeter는 별도 `Retarget` 폴더에 유지한다. 외형 표의 기본 메시·MeshVariants·AnimVariants를 바꾸면 다음 빌드의 요구 목록도 자동으로 갱신된다.
+NPC 외형은 `FF_CrowdAppearanceTable`의 실제 행을 기준으로 검사한다. 새 NPC의 실행용 AnimBP·BlendSpace·AnimSequence는 `/Game/Level/Demo_Matereal/Mesh/anim/NPC/Anim` 아래에 두며 이 폴더는 명시적으로 쿠킹한다. 제작용 IK Retargeter는 별도 `Retarget` 폴더에 유지한다. 외형 표의 `Mesh`·`AnimClass`·`Variants`를 바꾸면 다음 빌드의 요구 목록도 자동으로 갱신된다. `Variants`는 메시와 AnimBP를 한 쌍으로 보관하며, 변주의 AnimClass가 비어 있으면 게임과 동일하게 행의 AnimClass를 사용한다.
 DDC·Intermediate는 손상 근거와 영향 범위를 확인해 정리한다. `Saved`의 로그·자동저장·세이브는 먼저 보존한다.
