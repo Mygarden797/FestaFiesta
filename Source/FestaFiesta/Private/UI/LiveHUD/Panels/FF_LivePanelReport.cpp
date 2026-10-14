@@ -234,7 +234,20 @@ void UFF_LivePanelReport::RefreshAll()
 	SetTextOrHide(Text_DayLabel, FText::Format(DayLabelFormat, DayArgs));
 	const FText Comment = Report && !Report->AssistantComment.IsEmpty()
 		? FText::FormatNamed(AssistantCommentFormat, TEXT("Comment"), Report->AssistantComment) : FText::GetEmpty();
-	if (Text_AssistantComment)
+	if (Group_AssistantComment && Text_AssistantAdvice && Text_AssistantComment)
+	{
+		// 문자열을 다시 나누거나 불만을 재판정하지 않고 확정 Report의 동일 원본을 쓴다.
+		const FText Advice = Report ? (!Report->AssistantAdvice.IsEmpty()
+			? Report->AssistantAdvice : Report->AssistantComment) : FText::GetEmpty();
+		const FText Details = Report && !Report->AssistantAdvice.IsEmpty()
+			? Report->AssistantDetails : FText::GetEmpty();
+		SetTextOrHide(Text_AssistantAdvice, Advice);
+		SetTextOrHide(Text_AssistantComment, Details);
+		Group_AssistantComment->SetVisibility(Advice.IsEmpty() && Details.IsEmpty()
+			? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+		SetTextOrHide(Text_MissingNote, Report ? FText::GetEmpty() : PendingReportText);
+	}
+	else if (Text_AssistantComment)
 	{
 		Text_AssistantComment->SetAutoWrapText(true);
 		SetTextOrHide(Text_AssistantComment, Comment);

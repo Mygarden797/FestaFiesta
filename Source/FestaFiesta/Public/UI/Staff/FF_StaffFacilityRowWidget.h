@@ -15,7 +15,7 @@ class FESTAFIESTA_API UFF_StaffFacilityRowWidget : public UUserWidget
 {
 	GENERATED_BODY()
 public:
-	void SetFacility(const FFF_StaffFacilityManagementView& View, bool bLive);
+	void SetFacility(const FFF_StaffFacilityManagementView& View, bool bLive, bool bCompact = false);
 	FFF_OnStaffFacilityAction OnAssignRequested;
 	FFF_OnStaffFacilityAction OnUnassignRequested;
 	FFF_OnStaffFacilityAction OnLocateRequested;

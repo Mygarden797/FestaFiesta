@@ -160,6 +160,12 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_AssistantComment;
 
+	/** 고정 비서 카드가 있는 WBP에서만 사용한다. 기존 Text_AssistantComment는 보조 내용을 맡는다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
+	TObjectPtr<UTextBlock> Text_AssistantAdvice;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
+	TObjectPtr<UWidget> Group_AssistantComment;
+
 	/** {Comment}: 비서 한마디 본문(줄바꿈 포함). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Report|Text")
 	FText AssistantCommentFormat = NSLOCTEXT("FestaFiestaLiveReport", "AssistantComment", "비서 한마디\n{Comment}");

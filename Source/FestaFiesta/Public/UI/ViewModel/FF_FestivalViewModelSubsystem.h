@@ -62,6 +62,9 @@ struct FESTAFIESTA_API FFF_DailyReportView
 	int32 TopFacilityGold = 0;
 	// 비서 한마디. FFF_DailyReportCommentRules 가 위 값으로 만든다
 	FText AssistantComment;
+	// 같은 원본 규칙에서 나눈 고정 카드용 조언과 보조 정보. 문장 파싱·별도 판정을 하지 않는다.
+	FText AssistantAdvice;
+	FText AssistantDetails;
 	// 한마디가 고른 불만 1위. 다음 날 아침 비서 브리핑이 같은 판정을 말한다
 	FFF_DailyComplaint Complaint;
 };

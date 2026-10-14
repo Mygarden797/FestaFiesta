@@ -27,6 +27,8 @@ public:
 	FFF_OnStaffIncidentRequested OnIncidentRequested;
 	UPROPERTY(EditDefaultsOnly, Category="Staff") TSubclassOf<UFF_StaffFacilityRowWidget> FacilityRowClass;
 	UPROPERTY(EditDefaultsOnly, Category="Staff", meta=(ClampMin="0")) float FacilityRowSpacing = 8.f;
+	/** 라이브 전용 WBP에서만 켠다. 셋업의 기존 안내와 배치는 유지한다. */
+	UPROPERTY(EditDefaultsOnly, Category="Staff") bool bUseCompactLiveLayout = false;
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -53,9 +55,12 @@ protected:
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UVerticalBox> Box_Facilities;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_FacilitiesEmpty;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_AssignmentGuide;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> Border_AssignmentGuide;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Vacancies;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_AssignmentResult;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UFF_StaffTrainingWidget> Widget_StaffTraining;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> Group_Incident;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_IncidentTitle;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_IncidentSummary;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_ViewIncident;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ManagementNote;

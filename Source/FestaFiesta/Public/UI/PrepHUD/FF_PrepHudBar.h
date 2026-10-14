@@ -569,6 +569,7 @@ private:
 
 	void RefreshTabVisibility();
 	void RefreshFinaleAttention();
+	void RefreshRequiredAttention(EFF_FestivalStage Stage);
 	void RefreshStatusRow();
 
 	/**

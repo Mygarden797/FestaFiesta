@@ -9,7 +9,9 @@
 UENUM(BlueprintType)
 enum class EFF_StaffDuty : uint8
 {
-	Unassigned, Ready, Moving, Working, Returning, Reserved, Unavailable
+	Unassigned, Ready, Moving, Working, Returning, Reserved, Unavailable,
+	/** 준비 시간에 정상 마감된 시설의 재개장을 기다린다. 실제 출동 가능 인원은 아니다. */
+	AwaitingOpening
 };
 
 USTRUCT(BlueprintType)
@@ -23,6 +25,7 @@ struct FESTAFIESTA_API FFF_StaffFacilityManagementView
 	UPROPERTY(BlueprintReadOnly) int32 Capacity = 0;
 	UPROPERTY(BlueprintReadOnly) int32 Assigned = 0;
 	UPROPERTY(BlueprintReadOnly) int32 Ready = 0;
+	UPROPERTY(BlueprintReadOnly) int32 AwaitingOpening = 0;
 	/** 출동 예약/이동/작업 인원. 복귀는 별도다. */
 	UPROPERTY(BlueprintReadOnly) int32 Busy = 0;
 	UPROPERTY(BlueprintReadOnly) int32 Returning = 0;
@@ -69,10 +72,12 @@ struct FESTAFIESTA_API FFF_StaffManagementSnapshot
 	UPROPERTY(BlueprintReadOnly) int32 Assigned = 0;
 	UPROPERTY(BlueprintReadOnly) int32 Unassigned = 0;
 	UPROPERTY(BlueprintReadOnly) int32 Dispatchable = 0;
+	/** 준비 시간의 정상 마감 시설에 배정된 개장 대기 인원. Dispatchable에 포함하지 않는다. */
+	UPROPERTY(BlueprintReadOnly) int32 AwaitingOpening = 0;
 	/** 복귀를 제외한 예약/이동/작업 인원. */
 	UPROPERTY(BlueprintReadOnly) int32 Busy = 0;
 	UPROPERTY(BlueprintReadOnly) int32 Returning = 0;
-	/** 배정됐지만 출발 지점이 무효여서 출동할 수 없는 인원. */
+	/** 출발 지점 확인이 필요한 인원. 준비 시간의 정상 개장 대기는 제외한다. */
 	UPROPERTY(BlueprintReadOnly) int32 Unavailable = 0;
 	UPROPERTY(BlueprintReadOnly) int32 Capacity = 0;
 	UPROPERTY(BlueprintReadOnly) int32 Vacancies = 0;
