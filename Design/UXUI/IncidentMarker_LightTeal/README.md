@@ -3,7 +3,7 @@
 사건 위치 위에 뜨는 원형 마커. Frostpunk 방식 — 어두운 원판 + 흰 기호 + 링 하나.
 생성: `node Tools/ui/incident_marker_drafts/generate.js` (Chrome 헤드리스로 PNG를 굽는다).
 Unreal 반영: `Tools/ui/incident_marker/apply_and_verify.py` (텍스처 임포트 + `M_UI_IncidentTimerRing` 생성, 에디터를 닫고 `UnrealEditor-Cmd -ExecutePythonScript`).
-세부 값의 정본은 `asset-manifest.json`. 어떤 요청으로 어떻게 만들었는지는 `PROMPTS.md`.
+세부 값의 정본은 `asset-manifest.json`. 어떤 요청으로 어떻게 만들었는지는 `PROMPTS.md`（10/14 기준: 이 폴더에 `PROMPTS.md` 는 없다）.
 
 ## 무엇이 무엇을 말하나
 

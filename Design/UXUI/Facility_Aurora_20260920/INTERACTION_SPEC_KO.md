@@ -86,7 +86,7 @@
 
 - `Source/FestaFiesta/Public/UI/FacilityRevenue/FF_FacilityRevenueRanking.h`
 - `Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueRanking.cpp`
-- `Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp`
+- `Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp`（10/14 기준 위치: `Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp`）
 - `Content/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking.uasset`
 - `Content/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRankRow.uasset`
 

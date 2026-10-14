@@ -258,7 +258,7 @@ Expected '막힌 사람이 이식 이전보다 적다 (기본값 0 < old 0)' to 
 | Q1 / I-5 · 풀 크기 | 일반 방문객 500명 + 예약 최대 28명에 맞춰 `AgentPoolSize`를 530으로 조정해도 될까요? **선언이 두 곳입니다**(2026-09-08 확인) — `FF_SpawnActor.h:47` 과 `FF_CrowdSimulationSubsystem.h:382` 둘 다 500 입니다. 한 곳만 고치면 다른 쪽 기본값이 남으니 같이 봐 주세요. 배치 액터의 저장값도 확인이 필요합니다. |
 | Q5 / I-4 · 존 인구 | ✅ **닫힘**(2026-09-08). 광훈님 `UFF_ZonePopulationBridgeSubsystem`이 1초마다 보고합니다. 정원님께 남은 것은 그 주기가 적절한지 확정하는 것뿐입니다. |
 | Q6 · 개체별 혼잡 내성 | ✅ **닫힘**(2026-09-08). `AgentPersonalThresholds`에 보관하고 `FFF_PartyDecisionContext::PersonalDensityThresholdRatio`로 전달합니다. 값도 실제로 들어옵니다. 행동으로 안 나타나는 것은 구역 정원(2,500) 대비 인원(17)이 너무 적어서이며, 코드가 아니라 정원 산정 방식의 문제입니다 — 광훈님 문서 3절. |
-| I-6 · 체류 예산 | ✅ **정원님 몫이 아니었습니다 — 제 몫으로 가져갑니다**(2026-09-08 재확인). `GetLiveDurationForCurrentDay()` 가 이미 있고 입장 곡선 진행도는 그 값을 씁니다(`FF_CrowdSimulationSubsystem.cpp:533`). 남은 것은 **체류 예산 계산 한 줄**(`:458`)이 아직 `Temp_LiveStageMinutes=240` 고정을 쓰는 것뿐이고, 필요한 API 는 이미 제공되고 있으니 제가 고치면 됩니다. 요청 드릴 것이 없습니다. |
+| I-6 · 체류 예산 | ✅ **정원님 몫이 아니었습니다 — 제 몫으로 가져갑니다**(2026-09-08 재확인). `GetLiveDurationForCurrentDay()` 가 이미 있고 입장 곡선 진행도는 그 값을 씁니다(`FF_CrowdSimulationSubsystem.cpp:533`). 남은 것은 **체류 예산 계산 한 줄**(`:458`)이 아직 `Temp_LiveStageMinutes=240` 고정을 쓰는 것뿐이고, 필요한 API 는 이미 제공되고 있으니 제가 고치면 됩니다. 요청 드릴 것이 없습니다.（10/14 기준: 10/13 `703d8bdf` 로 고쳤습니다. 체류 예산이 그날 Live 길이(`GetTodayLiveStageMinutes`)를 씁니다） |
 | I-9 · 일반 Queue 재결정 | 🟡 **요청이 아니라 공유 사항으로 낮춥니다**(2026-09-08 재확인). `ClearPartyQueueState(.., false)` 로컬 전용 경로는 2곳(`:1609`, `:2195`)에 그대로 있지만, 지금 있는 호출부는 전부 안전합니다 — `RequestRedecisionForIdleParties` 는 줄에 선 파티를 제외하고, 예약 복귀와 인내심 이탈은 `bLeaveQueue=true` 를 먼저 부릅니다. 함정은 헤더 주석에 이미 적혀 있습니다. **지금 고칠 것은 없고, 줄에 선 파티에 `RequestDecision` 을 직접 거는 새 호출부를 만들 때만 주의하시면 됩니다.** |
 | I-1 · 격자 원점 | 관련 테스트는 통과합니다. Heat Map 문서의 주의 문구를 해제하기 전에 원점 계산 수정 여부만 확인 부탁드립니다. |
 | I-7 · 이동 계약 | 코드에서 읽은 값을 먼저 적습니다(2026-09-08) — 비리더 속도 배수는 `PartyMemberSpeedBoost=1.15` · `PartyMemberSpeedMultiplier=1.3` 두 개이고, 배회 좌표는 `HeightField.IsWalkable` 로 통행 가능 칸만 고릅니다. **확인 부탁드릴 것은 "배수가 두 개로 나뉘어 곱해지는 구조가 대형 유지 목적인지, 한쪽이 잔재인지" 하나입니다.** 출구 반경은 게이트 도입으로 `Temp_ExitArrivalRadiusUU=400` 과 게이트별 `GateRadiusUU=400` 두 기준이 공존합니다 — 위 「분할 스폰/디스폰」 2번에서 함께 다룹니다. |
@@ -401,6 +401,8 @@ enum class EFF_PartyAudiencePhase : uint8
 | 예약 복귀(`Returning`) | `FacilityApproachRadiusUU` | 슬롯 저작이 없으면 전원이 접근점 한 점을 공유합니다 |
 | 관람 입구·출구 | `FacilityApproachRadiusUU` | 좌표 하나를 수백 명이 공유합니다 |
 | 관람 좌석 | `max(허용오차, 45, 자리간격/2)` | 밀집 블록에서 45cm 는 못 들어갑니다 |
+
+（10/14 기준: 관람 좌석은 그 뒤 개별 좌표로 바뀌어 일행 전원이 `GetAssignedSlotArrivalRadius()`(`AssignedSlotArrivalRadiusUU` 5cm, 최대 10) 안에 들어와야 관람 상태가 됩니다. 시설 줄 칸은 10/12 부터 리더가 `QueueArrivalNotifyRadiusUU` 40cm 안에 들어오면 도착을 알리고 일행은 기다리지 않습니다. 걷는 목표는 그대로 5cm 입니다.）
 
 좌표 하나를 여러 파티가 공유하는 지점에 45cm 를 쓰면 그 반경 안에 물리적으로 다 들어갈 수
 없어서 **영원히 맴돕니다.** 관람 잠금 중에는 목적지 포기도 꺼져 있어 스스로 빠져나오지도 못합니다.

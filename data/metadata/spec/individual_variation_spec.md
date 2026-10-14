@@ -7,7 +7,7 @@
 > 나머지 multiplier 5종(인내심·혼잡내성·선호강도·재평가주기·신규성)은 결정 컨텍스트에 전달되지 않는다. 취향 강도와 신규성 배수는 Decision에서 1.0을 쓴다. `ResolvePersonalThresholds`와 `ShouldReevaluate`는 프로덕션 C++ 호출이 없다.
 > （2026-10-09 코드 기준: Crowd 스폰이 `ResolvePersonalThresholds` 를 부르고, 주기 재평가·줄 인내 이탈이 `ShouldReevaluate` 를 부른다. 취향 강도·신규성 배수도 결정 컨텍스트로 전달된다. 시설로 걸어가는 중이면 재평가 주기 ×3(`EnRouteReevaluateIntervalScale`).）
 > （LeisurelinessAxis는 Resolver 안에서 상관에 쓰이므로 “미사용 5종”에 넣지 않는다. 판단도 전원이 같지는 않다: 아키타입·일행 크기·Need·위치·방문 이력·결정 시드가 다르다.）
-> （Zone density 비용은 인구 보고 미연결, `Relocate`는 현재 밀도 0/개인 임계 1 고정이라는 별도 한계가 있다. 개인 임계 전달만으로 Zone 보고가 채워지지는 않는다.）
+> （Zone density 비용은 인구 보고 미연결, `Relocate`는 현재 밀도 0/개인 임계 1 고정이라는 별도 한계가 있다. 개인 임계 전달만으로 Zone 보고가 채워지지는 않는다.）（10/14 기준: Zone 인구 보고는 `UFF_ZonePopulationBridgeSubsystem` 으로 연결됐고, `Relocate` 판정은 현재 Zone 실밀도와 리더의 개인 임계를 쓴다. Crowd 는 `Relocate` 를 여전히 배회로 처리한다.）
 
 - 목적: 아키타입(`FFF_ArchetypeRow`)·동반유형(`FFF_CompanionModifierRow`)은 집단 평균이다. 같은 Row를 쓰는 NPC들이 복제처럼 보이지 않도록 개체별로 조금씩 다른 행동양식(보행속도·인내심·혼잡내성·선호강도·체류시간·재평가주기·신규성선호)을 주면서도, 같은 Seed·같은 Agent ID에는 항상 같은 값이 나오게 해서 디버깅과 실험 재현이 가능하게 한다.
 
@@ -106,7 +106,7 @@ CSV 원본: `data/derived/individual_variation_knobs_v0.csv` (8행). Unreal Data
 
 ## 6. 체류시간 앵커 — "Live 단계 길이의 몇 %"
 
-（2026-09-03 코드 대조: 아래 240분은 초기 설계 앵커다. 실제 유입 진행도는 Stage의 날짜별 Live 길이를 읽지만 체류 초기 예산은 Crowd 임시 240을 사용한다. 예약은 Stage Live 축제분을 읽고, Need·방문 이력은 Crowd GetLiveMinutes를 사용한다. 배속 수신은 연결됐으나 모든 시간 경로가 하나로 통합된 것은 아니다.）
+（2026-09-03 코드 대조: 아래 240분은 초기 설계 앵커다. 실제 유입 진행도는 Stage의 날짜별 Live 길이를 읽지만 체류 초기 예산은 Crowd 임시 240을 사용한다（10/14 기준: 체류 초기 예산도 그날 Live 길이를 읽는다 — 10/13 `703d8bdf`）. 예약은 Stage Live 축제분을 읽고, Need·방문 이력은 Crowd GetLiveMinutes를 사용한다. 배속 수신은 연결됐으나 모든 시간 경로가 하나로 통합된 것은 아니다.）
 
 체류시간 분포는 공공데이터로 확보할 수 없는 값이라 기획 판단이 필요하다(`utility_ai_spec.md` 8절 "체류시간 분포 — 노브"). 다만 절대 분(分) 숫자를 감으로 정하면 축제 운영시간이 바뀔 때마다 재조정해야 하므로, 게임 안의 다른 구조적 단위에 앵커를 건다.
 
@@ -119,7 +119,7 @@ FinalStayDurationMinutes(NPC) = BaseStayDurationMinutes * stay_duration_multipli
 - `stay_duration_share_of_live_stage_mean`: 평균 NPC가 `Live` 단계 길이 중 머무는 비율의 기준값(초기값 0.5). `status: assumption`.
 - 두 값 모두 `data/derived/utility_coefficients_v0.csv`에 `individual_variation_anchor` term으로 추가했다 (전역 스칼라 노브라 기존 Utility 계수 표와 같은 자리에 둔다 — `total_visitor_count` 등 Utility 식의 항이 아닌 전역 노브도 이미 이 표에 있는 선례를 따른다).
 
-`remaining_stay`는 Crowd의 `PartyRemainingStayMinutes`에 저장되고 결정 컨텍스트로 전달된다. 현재 초기 예산은 `Temp_LiveStageMinutes(240) × stay_duration_share_of_live_stage_mean(0.5) × Traits.StayDurationMultiplier`이다（CSV의 `live_stage_duration_minutes`를 직접 소비하지 않음. 날짜별 Stage Live 길이에 맞춘 예산 통합은 미완료）.
+`remaining_stay`는 Crowd의 `PartyRemainingStayMinutes`에 저장되고 결정 컨텍스트로 전달된다. 현재 초기 예산은 `Temp_LiveStageMinutes(240) × stay_duration_share_of_live_stage_mean(0.5) × Traits.StayDurationMultiplier`이다（CSV의 `live_stage_duration_minutes`를 직접 소비하지 않음. 날짜별 Stage Live 길이에 맞춘 예산 통합은 미완료）.（10/14 기준: 10/13 `703d8bdf` 로 통합됐다. 초기 예산 = 그날 Live 길이(`GetTodayLiveStageMinutes` → `GetLiveDurationForCurrentDay`, 없을 때만 240) × 0.5 × 체류 배수. 전엔 2·3일차도 1일차 240 기준이었다）
 
 ## 7. 특성 간 상관관계 — 공유 성격축 1개
 

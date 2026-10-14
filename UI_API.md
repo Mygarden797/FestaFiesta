@@ -64,7 +64,7 @@ UI는 7개 서브시스템 거의 전부에서 데이터를 읽는다. 각 모�
 | `IsMainProgramLocked()`                | `bool`              | 메인 공연 배속 잠금 구간 여부                 |
 | `AdvanceToNextDay()`                   |                     | Report에서 다음 날 진입                  |
 | `OnRemainingSecondsChanged`            | `int32 NewSeconds`  | 남은 시간이 초 단위로 바뀔 때 (2026-08-11 전 단계로 확장) |
-| `OnFestivalEnded`                      | (인자 없음)             | Day3 Report 종료 시 1회                |
+| `OnFestivalEnded`                      | (인자 없음)             | Day3 Report 종료 시 1회（10/14 기준: `FinishFestival()` 이 한 번만 울림 — 3일차 Closing 의 "축제 마치기"가 부른다. 아래 「축제 종료·최종 결산」 절） |
 | `SkipCurrentStage()`                   |                     | 스킵 가능한 단계를 즉시 넘김 (2026-08-11 추가)   |
 | `IsLiveStage()` / `IsReportStage()`    | `bool`              | 단계 판정 (2026-08-11 추가)              |
 | `IsFinalDay()`                         | `bool`              | 마지막 날 여부. **UI가 총 일수를 하드코딩하지 않게 해줍니다** (2026-08-11 추가) |
@@ -81,8 +81,10 @@ UI는 7개 서브시스템 거의 전부에서 데이터를 읽는다. 각 모�
 | `CanTransitionTo(NewStage, OutBlockingReason)` | `bool`     | 필수 설치 시설 조건으로 전환이 허용되는지 + 막힌 사유 문구 (2026-09-08 추가, 김시리) |
 | `GetStageAdvanceBlockingReason()`      | `FText`             | 현재 단계의 **다음** 단계가 막혔을 때의 안내 문구. 막히지 않았으면 빈 `FText` (2026-09-08 추가, 김시리) |
 | `OnFestivalStarted`                    | (인자 없음)          | 축제가 새로 시작됐음을 알리는 신호 (StartNewFestival() 호출 시 발동|
-| `SetMinigameInProgress(bool)`          |                      | 미니게임 시작/종료 시 호출. true면 배속을 무조건 1배속으로 고정 
-| `IsMinigameInProgress()`               | `bool`               | 지금 미니게임 진행 중인지 즉시 조회 (2026-08-28 추가)
+| `SetMinigameInProgress(bool)`          |                      | 미니게임 시작/종료 시 호출. true면 배속을 무조건 1배속으로 고정（10/14 기준: 미니게임 실행 기능은 2026-09-22 에 제거됐고 이 함수를 부르는 곳이 없다. 함수만 남아 있음） |
+| `IsMinigameInProgress()`               | `bool`               | 지금 미니게임 진행 중인지 즉시 조회 (2026-08-28 추가) |
+
+
 **`OnMainProgramStarted` 사용 시 주의 3건 (백종태 확인, 2026-08-12)** — 토스트 알림 만들 때 다시 읽습니다.
 
 1. **이 이벤트는 공연 "시작"이 아니라 "배속 잠금 시작" 시점입니다.**
@@ -449,9 +451,9 @@ Overview 등 공통 지표는 `UFF_FestivalViewModelSubsystem`이, 설치 시설
   구매는 비용이 적힌 별도 확정 버튼에서만 요청합니다.
 - 매출 순위는 오늘/축제 누적과 해당 기간의 비중을 표시합니다. 합계가 0이면 비중은 `—`이며,
   수익 시설 없음과 아직 결제 없음 상태를 구분합니다. 도감은 발견 이력과 현재 적용 여부를 구분합니다.
-- `/Game/FestaFiesta/UI/Facility/Aurora`의 UI 재질이 초록·민트·연두 광택을 만듭니다.
+- `/Game/FestaFiesta/UI/Facility/Aurora`（10/14 기준 위치: `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/Aurora`）의 UI 재질이 초록·민트·연두 광택을 만듭니다.
   저장된 WBP의 브러시가 재질을 직접 참조하므로 실행 중 위젯 트리를 다시 만들지 않습니다.
-- 건축 화면은 `/Game/FestaFiesta/UI/Building/Clarity`의 세이지 표면과 얇은 간섭광을 사용하며,
+- 건축 화면은 `/Game/FestaFiesta/UI/Building/Clarity`（10/14 기준 위치: `/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity`）의 세이지 표면과 얇은 간섭광을 사용하며,
   프로그램 시설은 별도의 라벤더·청색 펄 재질과 배지로 구분합니다. 도감은 중간 크기의 중앙 창에서
   6열을 유지하고, 매출 순위는 시설 수에 맞춰 높이를 조절합니다.
   1일차 필수 시설은 붉은 펄 카드와 썸네일 왼쪽 아래의 필수 배지로 표시하며, 프로그램 배지와 겹치지 않습니다.
@@ -555,14 +557,23 @@ Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우
 
 ### 설치 시설 공용 정보 패널 (2026-08-29 갱신)
 
+> **10/14 코드 대조 — 이 절 아래 서술 중 바뀐 것**
+>
+> - WBP 3종은 `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/` 로 옮겨졌습니다(경로 상수: `Public/Building/Presentation/FF_BuildUIAssetPaths.h`). 쿠킹은 `DirectoriesToAlwaysCook` 의 `/Game/FestaFiesta/Building/FF_WBP_Building` 이 담당합니다.
+> - **미니게임 실행 기능은 2026-09-22 에 제거됐습니다.** `bHasMinigame`·`bCanStartMinigame`·`MinigameActionText` 필드, `OnMinigameRequested` 이벤트, `Panel_LiveActions`·`Button_StartMinigame`·`Text_StartMinigame` 위젯은 코드에 없습니다(기존 WBP 정리는 `FF.RemoveFacilityMinigameUI`).
+> - 패널은 탭 구조가 됐습니다 — 개요·조합(시너지)·운영·스태프·강화·조명·매출·프로그램(`Button_Tab*`). `FFF_FacilityInfoViewData` 에 스태프(`bShowStaffSection`·`StaffSummaryText`·`bCanAssignStaff`…), 조합(`SynergySummaryText`…), 강화(`bHasFacilityLevels`·`bCanUpgrade`·`Upgrade*Text`…), 조명(`bHasLightingRig`·`bCanEditLighting`), 즐겨찾기(`bIsFavorite`) 필드가 늘었습니다. 정본은 `FF_FacilityInfoTypes.h`.
+> - 패널 C++ 이벤트는 `OnMoveRequested`·`OnRemoveRequested`·`OnProgramScheduleRequested`·`OnUpgradeRequested`·`OnAssignStaffRequested`·`OnUnassignStaffRequested`·`OnCloseRequested`·`OnFavoriteRequested`·`OnRevenueRankingRequested` + 조명 3종입니다. 서브시스템의 `FFF_OnFacilityInfoActionRequested(FGuid)` 는 **4종**(이동·철거·편성·닫기)입니다.
+> - Live 에서 사건 마커를 누르면 `UFF_LiveHudScreen::HandleIncidentMarkerClicked` 가 `ClearSelection()` 을 불러 시설 정보 창을 닫고 사건 상세를 엽니다(10/14 추가). 두 창이 겹치지 않게 하는 규칙입니다.
+> - 카드 배치 `388 × 500`, `(-24, 72)` 와 Picker `520`·하단 `400` 예약은 생성기·자동화 테스트 기준과 다릅니다. 지금 기준은 `FF_FacilityPaidProgramLayout.h`(기본 폭 405 · 우측/상단 18 · 하단 예약 126)와 `FestaFiesta.UI.FacilityInfo.AssetContract`(Clarity 456×620, Aurora 592 등 변형별 값)입니다. 저장된 WBP 가 어느 변형인지는 바이너리라 문서에서 확인하지 못했습니다.
+
 - **헤더**: `Public/UI/Facility/FF_FacilityInfoTypes.h`, `FF_FacilityInfoSubsystem.h`,
   `FF_FacilityInfoPanel.h`, `FF_FacilityPaidProgramTypes.h`,
   `FF_FacilityPaidProgramPicker.h`, `FF_FacilityPaidProgramCard.h`
 - **접근**: `UFF_FacilityInfoSubsystem` (`TickableWorldSubsystem`)
-- **기본 WBP**: `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C`
+- **기본 WBP**: `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C`（예전 `/Game/FestaFiesta/UI/Facility/` 에서 이동）
 - **유료 프로그램 WBP**:
-  `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker.WBP_FF_FacilityPaidProgramPicker_C`,
-  `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard.WBP_FF_FacilityPaidProgramCard_C`
+  `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker.WBP_FF_FacilityPaidProgramPicker_C`,
+  `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard.WBP_FF_FacilityPaidProgramCard_C`
 - **갱신 주기**: 선택 즉시, 선택 시설의 non-Remove World Change 다음 Tick, 선택 중 0.25초 간격.
   Remove·World Snapshot 복원은 즉시 선택 해제
 - **상태**: `구현완료`
@@ -622,7 +633,7 @@ Live에서는 같은 resolver를 0.05초 간격으로 재사용해 커서 아래
 Hover를 즉시 정리한다. 패널이 열린 시설은 `Selected` 표시가 우선하며, Live 이탈·시설 제거·World Snapshot
 복원·Subsystem 종료 때 Hover와 Selected 표시를 모두 해제한다.
 캐릭터 그라운드 모드(`CharacterControl`)에서는 관찰 카메라 이동만 막고 시설 피킹은 유지하므로,
-같은 좌클릭 경로로 시설 정보 패널과 미니게임 진입 동작을 사용할 수 있다.
+같은 좌클릭 경로로 시설 정보 패널을 사용할 수 있다（미니게임 진입은 2026-09-22 제거）.
 
 제품 건축 경로의 `Build` 선택은 `UFF_BuildModeSubsystem`이 소유한다. 활성 건축 세션은 Festival Stage와
 FFZS Phase의 교집합 게이트를 유지하며, 이동·철거 액션 경계에서는 시설 GUID·권위 레지스트리·FFZS Phase·
@@ -640,7 +651,7 @@ FFZS Phase의 교집합 게이트를 유지하며, 이동·철거 액션 경계�
 | 건축 한도 | `CurrentInstancesInWorld`, `MaxInstancesPerWorld`, `InstanceLimitText`, `bInstanceLimitReached` |
 | 운영·Queue | `OperationStateText`, `WaitingPartiesText`, `OccupancyText`, `RemainingServiceText`, `ExpectedWaitText`, `ThroughputText` |
 | 유료 프로그램 | `bShowProgramSection`, `bHasScheduledProgram`, `ProgramStatusText`, `ScheduledProgramSummaryText`, `bShowProgramScheduleAction`, `bCanScheduleProgram`, `ProgramScheduleActionText`, `ProgramScheduleDisabledReasonText` |
-| 액션·피드백 | `bNeedsRelocation`, `bCanMove`, `bCanRemove`, `bHasMinigame`, `bCanStartMinigame`, `MinigameActionText`, `FeedbackText`, `bFeedbackIsError` |
+| 액션·피드백 | `bNeedsRelocation`, `bCanMove`, `bCanRemove`, `FeedbackText`, `bFeedbackIsError` （10/14: 미니게임 3필드 삭제됨） |
 | 시설 수익 (2026-09-17 추가) | `bShowRevenueSection`, `bFacilityGeneratesRevenue`, `TodayRevenueGold`, `TotalRevenueGold`, `TodayPaymentCount`, `TotalPaymentCount`, `TodayRevenueSharePercent`, `TodayRevenueText`, `TotalRevenueText`, `RevenuePaymentCountText`, `RevenueShareText`, `RevenueStatusText`, `RevenueSummaryText` — **이 설치 시설 한 곳**이 실제로 번 돈. 원본은 `UFF_FestivalProgressionSubsystem::GetFacilityInstanceRevenue(FGuid)`이며 종류별 합계(`GetRevenueByFacilityRowsForDay`)와 다르다. 조명·바닥은 `bShowRevenueSection=false` |
 
 문자열 필드는 모두 표시용 `FText`다. 포맷터가 만든 수치에는 단위와 지역화된 숫자 포맷이 적용되지만,
@@ -658,7 +669,7 @@ Actor의 `CanMoveOrRemove()`가 참이어야 한다. 버튼 상태는 안내용�
 - Blueprint 함수는 `ApplyViewData(const FFF_FacilityInfoViewData&)`, `SetPanelOpen(bool)`,
   `IsPointerOverInteractivePanel()` 3종이다. 일반 호출자는 패널을 직접 만들지 않고 서브시스템을 사용한다.
 - 루트는 `CanvasPanel` + `SelfHitTestInvisible`, 실제 카드는 우측 상단 `(-24, 72)`에 고정된
-  `388 × 500`이다. 카드 밖 클릭은 월드로 통과하고 카드 좌클릭과 버튼 입력은 소비한다. 우클릭은 건축
+  `388 × 500`이다（10/14 기준 값이 다름 — 이 절 맨 위 코드 대조 참고）. 카드 밖 클릭은 월드로 통과하고 카드 좌클릭과 버튼 입력은 소비한다. 우클릭은 건축
   선택 취소로 전달될 수 있다.
 - 다음 핵심 27개 `BindWidget` 이름과, 아래 가산 계약 이름을 유지한다.
 
@@ -674,10 +685,10 @@ Text_RemainingService, Text_ExpectedWait, Text_Throughput, Text_Feedback
 `Text_Clearance`와 `ClearanceText`는 기존 WBP·Blueprint 호환용으로만 유지한다. 안전 여유 값은 비우고 위젯을 접어 화면에 표시하지 않는다.
 
 ```text
-Text_InstanceLimit, Button_StartMinigame, Text_StartMinigame,
+Text_InstanceLimit,   (Button_StartMinigame·Text_StartMinigame·Panel_LiveActions 는 9/22 미니게임 제거로 삭제)
 Panel_ProgramSection, Text_ProgramStatus, Text_ScheduledProgramSummary,
 Text_ProgramScheduleReason, Button_ScheduleProgram, Text_ScheduleProgram,
-Panel_Actions, Panel_BuildActions, Panel_LiveActions,
+Panel_Actions, Panel_BuildActions,
 Panel_RevenueSection, Text_FacilityTodayRevenue, Text_FacilityTotalRevenue,
 Text_FacilityRevenueCount, Text_FacilityRevenueShare, Text_FacilityRevenueStatus,
 Text_FacilityRevenueSummary
@@ -687,7 +698,7 @@ Text_FacilityRevenueSummary
 
 - Picker는 종태님 UI와 같은 `LightTeal` 팔레트와
   `/Game/FestaFiesta/UI/Fonts/F_UI_Pretendard`를 사용한다. 루트는 `SelfHitTestInvisible`, 실제 Picker는
-  우측 상단 기준 너비 `520`, 우측 여백 `24`, 상단 여백 `72`로 도킹한다.
+  우측 상단 기준 너비 `520`, 우측 여백 `24`, 상단 여백 `72`로 도킹한다（10/14 기준 생성기 값은 다름 — 이 절 맨 위 코드 대조 참고）.
 - Picker의 하단은 Build UI를 위해 **400px를 예약**한다. 이 값은 Build Host `320px` + 상태 바·여백
   `70px` + 안전 간격 `10px`의 합이며, 세로 stretch를 사용해 해상도가 달라도 하단 Build 패널 위에서
   끝나게 한다.
@@ -718,16 +729,16 @@ Text_FacilityRevenueSummary
 **C++ 전용 어댑터 계약**
 
 - `UFF_FacilityInfoPanel`의 `FSimpleMulticastDelegate OnMoveRequested`·`OnRemoveRequested`·
-  `OnProgramScheduleRequested`·`OnMinigameRequested`·`OnCloseRequested`는 인자가 없다. 이동·철거·편성은
+  `OnProgramScheduleRequested`·`OnCloseRequested`는（`OnMinigameRequested` 는 9/22 삭제. 10/14 기준 강화·스태프 배정/해제·즐겨찾기·매출 순위 이벤트가 추가됨） 인자가 없다. 이동·철거·편성은
   현재 ViewData의 Context와 각 `bCan*`를 통과할 때만 요청하며, 닫기는 항상 방송한다.
-- `UFF_FacilityInfoSubsystem`의 `FFF_OnFacilityInfoActionRequested(FGuid)` 5종은 패널 이벤트를 현재 선택
+- `UFF_FacilityInfoSubsystem`의 `FFF_OnFacilityInfoActionRequested(FGuid)` 4종（10/14 기준. 미니게임 1종 삭제）은 패널 이벤트를 현재 선택
   GUID로 변환한다. 유료 프로그램의 실제 Picker 생성·확인·권위 편성은 서브시스템 내부에서 계속 소유한다.
 - `SetFeedback(const FText&, bool)`은 선택이 없으면 no-op이고, `ClearSelectionIfMatches(FGuid, Context)`는
   호출자 소유 선택만 닫는다. `static FSoftClassPath GetDefaultPanelClassPath()`,
   `const FFF_FacilityInfoViewData& GetCurrentViewData() const`, `FFFacilityInfoModel` 포맷 함수도 C++ 전용이다.
 
 위 항목은 BlueprintAssignable API로 간주하지 않는다. Soft Class로 로드하는 WBP가 Shipping에서도
-포함되도록 `/Game/FestaFiesta/UI/Facility`은 `DirectoriesToAlwaysCook`에 등록되어 있다.
+포함되도록 `/Game/FestaFiesta/UI/Facility`은 `DirectoriesToAlwaysCook`에 등록되어 있다（10/14 기준: WBP 가 옮겨져 `/Game/FestaFiesta/Building/FF_WBP_Building` 항목이 담당）.
 
 ---
 
@@ -805,6 +816,7 @@ FFF_CrowdCellSample {
 
 `FF_BaseCrowd`, `FF_BaseNPC`, `FF_SpawnActor`, `FF_CrowdMovementComponent`,
 `FF_CrowdVisualComponent` — UI 노출 API는 아직 미정.
+（10/14 기준: 이 중 코드에 있는 클래스는 `FF_BaseCrowd`·`FF_SpawnActor` 뿐입니다. `FF_BaseNPC`·`FF_CrowdMovementComponent`·`FF_CrowdVisualComponent` 는 정의가 없습니다.）
 
 `UFF_CrowdSimulationSubsystem` 은 위 `GetCrowdReadModel()` 하나만 UI 접점으로 보시면 됩니다.
 
@@ -906,6 +918,7 @@ FFF_CrowdCellSample {
 
 지금 실제로 움직이는 것은 **`Hunger`·`Restroom`·`Stimulation`** 셋입니다.
 `Thirst`·`Fatigue` 는 아직 쌓이지 않게 꺼 두어서 항상 0 입니다(계수만 켜면 되고 코드 변경은 없습니다).
+（10/14 기준: 2026-10-14 에 갈증 180분·피로 240분으로 켜졌습니다. 다섯 욕구가 모두 움직이고, 결산 만족도 분해·결산 한마디·운영 알림에도 음료·휴게가 들어갑니다.）
 
 ### `FFF_DestinationDecision` — NPC 1명의 이동 원인
 
@@ -915,13 +928,14 @@ FFF_CrowdCellSample {
 - **UI 사용처**: NPC 클릭 시 "왜 저기로 갔는가" 표시
 
 `AllCandidateScores`에 후보별 항별 점수가 다 들어 있어 그대로 표시하면 됩니다.
-⚠️ **여섯 항 중 넷만 값이 움직입니다.** 나머지 둘이 0으로 나오는 것은 화면 버그가 아닙니다.
+⚠️ **`AttractionTerm` 하나만 항상 0 입니다.** 화면 버그가 아닙니다.（10/14 기준으로 갱신）
 
 | 항 | 상태 |
 |---|---|
 | `PreferenceTerm` · `NeedTerm` · `DistanceCostTerm` · `WaitCostTerm` | ✅ 값이 들어옵니다 |
-| `AttractionTerm` | ❌ 항상 0 — 시설 기본 매력도의 정규화 설계가 남아 있습니다(제 작업) |
-| `DensityCostTerm` | ❌ 항상 0 — Zone 혼잡도를 보고하는 코드가 없습니다(이정원 님 대기) |
+| `DensityCostTerm` | ✅ 값이 들어옵니다 — Zone 인구 보고가 연결돼 `FF_ZoneSystemBridge.cpp` 가 후보의 구역 인원·정원을 채웁니다 |
+| `RevisitPenaltyTerm` · `FailedDestinationPenaltyTerm` · `InTransitCostTerm` | ✅ 나중에 추가된 항. 최근 방문·최근 실패·이동 중 일행 수에 따라 움직입니다 |
+| `AttractionTerm` | ❌ 항상 0 — 브리지가 `BaseAttraction = 0` 으로 넣습니다. 시설 기본 매력도는 출시 범위 밖입니다 |
 
 | 필드                                                      | 뜻             |
 | ------------------------------------------------------- | ------------- |
@@ -1126,13 +1140,13 @@ ViewModel의 `RequestScheduleProgram`으로 요청한다. 전역 탭이 빈 자�
 
 - **헤더**: `Public/Festival/FF_FestivalProgressionSubsystem.h`
 - **접근**: `GameInstanceSubsystem`
-- **상태**: 원본 API 전부 `구현완료`. 잔액·인원은 연결됐고 매출 2종은 미연결
+- **상태**: 원본 API 전부 `구현완료`. 잔액·인원은 연결됐고 매출 2종은 미연결（10/14 기준: 매출 2종도 연결됨 — `FF_FestivalViewModelSubsystem.cpp` 가 `OnTotalRevenueChanged`·`OnTodayRevenueChanged` 를 구독하고 초기값을 동기화）
 
 | 값 | Getter | 델리게이트 | 단위·범위 | 연결 |
 |---|---|---|---|---|
 | 잔액 | `GetGold()` | `OnGoldChanged` | Gold, 0 이상·상한 없음 | ✅ |
-| **누적 매출** | `GetTotalRevenue()` | `OnTotalRevenueChanged` | Gold, **줄어들지 않음** | 🔴 **아직 더미** — ViewModel 이 값을 들고만 있고 원본을 안 구독합니다 |
-| **오늘 매출** | `GetTodayRevenue()` | `OnTodayRevenueChanged` | Gold, 매일 아침 0 | 🔴 **아직 더미** — 위와 같음 |
+| **누적 매출** | `GetTotalRevenue()` | `OnTotalRevenueChanged` | Gold, **줄어들지 않음** | ✅（10/14 기준 연결됨. 아래 「남은 연결 작업」은 끝난 일） |
+| **오늘 매출** | `GetTodayRevenue()` | `OnTodayRevenueChanged` | Gold, 매일 아침 0 | ✅（10/14 기준 연결됨） |
 | **전체 인원** | `GetTotalStaffCount()` | `OnTotalStaffCountChanged` | 명, 상한은 Definition 기준 | ✅ ViewModel 중계, PrepHUD·LiveHUD 구독 |
 
 > ⚠️ **2026-09-21 — 없어진 값 2종**
@@ -1148,7 +1162,7 @@ ViewModel의 `RequestScheduleProgram`으로 요청한다. 전역 탭이 빈 자�
 
 원본이 준비되지 않은 ViewModel 인원 값은 `INDEX_NONE`으로 구분합니다.
 
-**남은 연결 작업 — 매출 2종**
+**남은 연결 작업 — 매출 2종**（10/14 기준: 완료. 아래 1~3 은 그대로 구현돼 있음）
 
 Gold 와 **같은 모양**이라 `HandleOwnerGoldChanged` 를 복사하시면 됩니다.
 
@@ -1195,11 +1209,21 @@ Gold 와 **같은 모양**이라 `HandleOwnerGoldChanged` 를 복사하시면 �
 | Day | 단계 흐름 |
 |---|---|
 | **Day1** | `Setup`(420초) → `PromotionPreview`(60초) → `SunsetTransition`(20초) → `Live` → `Closing` → `Report` |
-| Day2 | `MorningCheck`(120초) → `SunsetTransition` → `Live` → `Closing` → `Report` |
+| Day2 | `MorningCheck`(120초 → 10/14 기준 시간 제한 없음, 스킵으로만 넘어감) → `SunsetTransition` → `Live` → `Closing` → `Report` |
 | Day3 | `MorningCheck` → `SunsetTransition` → `Live` → `Finale` → `Closing` → `Report` |
 
 `Live` 앞에 `SunsetTransition`(20초)이 있는 것도 표 기준이니 프로토타입 단계 순서도 같이
 확인해 주세요.
+
+> **10/14 기준 `DT_DaySequence` 덤프 결과** — 위 표보다 이쪽이 현재 값입니다. 표에 `PromotionPreview`·`SunsetTransition` 행이 없습니다(enum 은 남아 있음).
+>
+> | Day | 단계 흐름 (괄호 = 최소~최대 초, 0 = 제한 없음) |
+> |---|---|
+> | **Day1** | `Setup`(제한 없음, 건너뛰기 가능) → `Live` → `Closing`(최소 60) → `Report`(60~120, 건너뛰기 불가) |
+> | Day2 | `MorningCheck`(제한 없음, 건너뛰기 가능) → `Live` → `Closing`(최소 60) → `Report`(60~120) |
+> | Day3 | `MorningCheck`(제한 없음) → `Live` → `Finale`(90~120) → `Closing`(최소 60) → `Report` |
+>
+> `Live` 는 이 표에 행이 없고 길이는 그날 Live 이벤트 표의 마지막 이벤트 시각입니다(`GetLiveDurationForCurrentDay`, 10/11 측정 1일차 240초 · 2·3일차 300초). Live 가 끝나면 3일차만 `Finale`, 나머지는 `Closing` 으로 갑니다(`FF_FestivalStageSubsystem.cpp:521-530`).
 
 **Day1 고용은 `Setup` 화면에서 하시면 됩니다** — Day1 에는 `MorningCheck` 가 없습니다.
 
@@ -1230,12 +1254,12 @@ Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 
 > **2026-08-27 — 자리는 이미 잡혀 있습니다.** `EFF_PrepHudTab::Finale`("피날레") 탭이 있고,
 > `FFF_PrepHudRules::IsTabVisible` 이 **마지막 날 개장 준비에서만** 보이도록 이미 막고
 > 있습니다(`bIsFinalDay`). 탭 노출 조건과 `CanPurchaseFinaleNow()` 가 같은 판정이라
-> 패널 쪽에서 다시 판정하실 필요 없습니다 — **패널 본체만 없습니다.**
+> 패널 쪽에서 다시 판정하실 필요 없습니다 — **패널 본체만 없습니다.**（10/14 기준: `UFF_PrepPanelFinale` 이 `RequestPurchaseFinale` 로 구매합니다）
 
 - **버튼 활성화**: `UFF_StageEconomyBridgeSubsystem::CanPurchaseFinaleNow()` — Day3 MorningCheck이고
   아직 안 샀을 때만 `true`. **표시용이고 구매를 막지는 않습니다**(`CanSkipCurrentStage`와 같은 성격)
 - **목록**: 등급·비용·보너스는 `GetDefinition()->FinaleTiers`에 있습니다.
-  C/B/A/S = 2,000/4,000/6,000/8,000 Gold, 만족도 +3/+6/+10/+15(2026-10-09 변경, 전 +5/+12/+20/+30). 숫자는 밸런싱으로 또 바뀌니 UI 에 복제하지 말고 `GetFinaleTiers()` 로 읽어 주세요
+  C/B/A/S = 2,000/4,000/6,000/8,000 Gold, 만족도 +3/+6/+10/+15(2026-10-09 변경, 전 +5/+12/+20/+30)（10/14 기준 코드 기본값: 1,000/1,800/2,600/3,500 Gold · +2/+3/+5/+8 — `FF_FestivalDefinition.cpp`）. 숫자는 밸런싱으로 또 바뀌니 UI 에 복제하지 말고 `GetFinaleTiers()` 로 읽어 주세요
 - **구매**: `TryPurchaseFinale(EFF_FinaleGrade)` → `EFF_FinalePurchaseResult`.
   실패 이유 한글은 **`UFF_EconomyDisplayTextLibrary::GetFinalePurchaseResultText(Result)`** 로
   뽑아 주세요 (`Gold 부족` / `이미 구매했다` 등). ⚠️ enum 의 `DisplayName` 을 직접 읽으면
@@ -1247,7 +1271,7 @@ Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 
 
 **만족도 보너스는 Gold가 아닙니다.** `GetFinaleSatisfactionBonus()`가 0~100 척도의 가산점(A면 10)을
 돌려주는데, 매출에도 잔액에도 섞이지 않습니다. 최종 평가 점수(`ScoreSatisfaction` = 관객 만족도 + 이 보너스)의
-합산은 관객 만족도가 아직 없어서 붙이지 않았습니다 — 지금은 "몇 점짜리를 샀는가"까지만 보여드릴 수 있습니다.
+합산은 관객 만족도가 아직 없어서 붙이지 않았습니다 — 지금은 "몇 점짜리를 샀는가"까지만 보여드릴 수 있습니다（10/14 기준: 합산 구현됨 — `GetScoreSatisfaction()`）.
 
 잔액이 모자라면 자연히 못 삽니다. 이때 실패 이유는 `Gold 부족`으로 옵니다.
 
@@ -1267,7 +1291,7 @@ Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 
 - **유료 프로그램은 Staff 를 쓰지 않습니다.** 편성에 걸리는 자원은 Gold 하나뿐입니다
 - **시설 성능에도 관여하지 않습니다.** 회전율·객단가는 시설 강화가 올립니다
 - 사건 시스템(`UFF_FestivalEventSubsystem`, 담당 이정원)이 오기 전까지 **Staff 는 실제 소비처가
-  없습니다.** 인원 숫자는 정확하지만 아직 게임에 영향을 주지 않는 상태입니다
+  없습니다.** 인원 숫자는 정확하지만 아직 게임에 영향을 주지 않는 상태입니다（10/14 기준: 사건 시스템은 `UFF_IncidentSubsystem` 으로 들어왔고 스태프 출동·숙련도 작업시간이 연결됨 — 아래 「현장 작업시간과 미리보기」）
 
 표시 단계는 **Day1 `Setup` 과 Day2·3 `MorningCheck`** 입니다. **Live 중에는 고용할 수 없습니다** —
 버튼을 두지 마시고 대신 언제 뽑을 수 있는지 문구로 적어 주세요.
@@ -1390,7 +1414,7 @@ UPROPERTY(BlueprintAssignable) FFF_OnStaffRosterChanged OnStaffRosterChanged;
 **시설 철거 환급은 매출이 아닙니다.** 설치비 50%가 돌아오면서 `OnGoldChanged`는 오지만
 `OnTotalRevenueChanged`는 오지 않습니다. "잔액 상승 = 매출 상승"으로 가정한 코드가 있으면 확인해 주세요.
 
-아직 없는 경제 값은 **일차 결과(등급 산출)와 저장 API**입니다.
+아직 없는 경제 값은 **일차 결과(등급 산출)와 저장 API**입니다（10/14 기준: 둘 다 있음 — 축제 평가 `GetFestivalEvaluation()`, 저장 `UFF_SaveSubsystem`）.
 
 ### SNS 공감·사건 해결 보상 (2026-10-12 백종태 연결)
 
@@ -1510,7 +1534,7 @@ GetSpendReasonText(EFF_SpendReason)                     GetEarnReasonText(EFF_Ea
 
 - `FF_FestivalViewModelSubsystem::GetCurrentStageDisplayText`, Live HUD 탭, PrepHUD 탭은
   `UFF_UIDisplayTextLibrary`를 사용합니다. 해당 3곳의 런타임 메타데이터 조회는 해소됐습니다.
-- 아직 `UEnum::GetDisplayValueAsText`를 쓰는 곳은 `UI/Frontend/FF_OptionsScreen.cpp`의
+- 아직 `UEnum::GetDisplayValueAsText`를 쓰는 곳은 `UI/Frontend/FF_OptionsScreen.cpp`의（10/14 기준: 옵션 화면은 해소. UI 에서 남은 곳은 개발용 `FF_UIFlowStubScreen.cpp` 한 곳）
   카테고리 표시와 `UI/Core/FF_UIFlowStubScreen.cpp`의 개발용 화면 제목입니다.
 - `EFF_PromotionPurchaseResult` 전용 표시 함수는 아직 없습니다. 현재 ViewModel 구매 응답은
   `bool`이며 실패 enum을 위젯으로 중계하지 않습니다. 상세 실패 문구 연결은 별도 작업입니다.
@@ -1537,15 +1561,15 @@ Overview HUD·Report·공통 지표 위젯은 **이 서브시스템만 참조**�
 | SimSatisfaction   | `GetSimSatisfaction()`                | `OnSimSatisfactionChanged`   | **원본 연결 완료** — 대기·밀도·취향매칭·Need 충족도 4항의 2단 계층 산출. 첫 확정 전엔 중립값 50 |
 | SimSatisfaction 분해 4종 | `GetSimSatisfactionWaitScore()` / `GetSimSatisfactionDensityScore()` / `GetSimSatisfactionPreferenceScore()` / `GetSimSatisfactionNeedFulfillmentScore()` | `OnSimSatisfactionWaitScoreChanged` 등 (이름은 각 Getter + `Changed`) | **원본 연결 완료**. SimSatisfaction과 같은 순간(1초 주기)에 같이 갱신됩니다. "지금 만족도가 왜 이 숫자인지" 분해해 보여주는 용도라 필수는 아니고 화면에 넣으면 원인 진단에 도움이 됩니다 |
 | ScoreSatisfaction | `GetScoreSatisfaction()`              | `OnScoreSatisfactionChanged` | SimSatisfaction + FinaleBonus 합산(0~100, 구현됨) |
-| Safety            | `GetSafety()`                         | `OnSafetyChanged`            | 더미 88     |
+| Safety            | `GetSafety()`                         | `OnSafetyChanged`            | 더미 88（10/14 기준 그대로. 결산 패널은 표시하지 않고(`FF_LivePanelReport.cpp`), `UFF_MetricsHudWidget` 은 구독함） |
 | Gold              | `GetGold()`                           | `OnGoldChanged`              | **원본 연결 완료 · ViewModel 구독 중** |
-| TotalRevenue      | `GetTotalRevenue()`                   | `OnTotalRevenueChanged`      | **원본 API 완료 · ViewModel 연결 요청** |
-| TodayRevenue      | `GetTodayRevenue()`                   | `OnTodayRevenueChanged`      | **원본 API 완료 · ViewModel 연결 요청** |
+| TotalRevenue      | `GetTotalRevenue()`                   | `OnTotalRevenueChanged`      | **원본 연결 완료 · ViewModel 구독 중**（10/14 대조） |
+| TodayRevenue      | `GetTodayRevenue()`                   | `OnTodayRevenueChanged`      | **원본 연결 완료 · ViewModel 구독 중**（10/14 대조） |
 | Stage / Day       | `GetCurrentStage()` `GetCurrentDay()` | `OnStageViewChanged`         | **진짜 값**  |
 | 남은 시간             | `GetRemainingSeconds()`               | `OnRemainingSecondsChanged`  | **진짜 값 · 구독 중계** |
 | 전체 스태프 | `GetTotalStaffCount()` | `OnTotalStaffCountChanged` | 원본 연결, 모르면 `INDEX_NONE`. 가용/전체 구분은 없어졌습니다 |
 | 구매 홍보 | `GetPurchasedPromotion()` | `OnPurchasedPromotionChanged` | 원본 등급 미러링. 재시작 통지는 아래 주의 |
-| 예상 방문객 | 아직 ViewModel API 없음 | 아직 중계 없음 | 경제 원본 `GetExpectedVisitors()`는 구현됨 |
+| 예상 방문객 | `GetExpectedVisitors()` | `OnExpectedVisitorsChanged` | 원본 연결 완료（10/14 대조. 2026-09-28 중계 추가, 점검·홍보 패널이 구독）. 준비 바의 "예상 N~M명" 범위는 여전히 미연결 |
 
 ### Command (2026-08-11 신설)
 
@@ -1663,6 +1687,8 @@ API 계약(Getter·델리게이트·0~100 범위)은 안 바뀝니다.
 
 ## 타깃 슈팅 디자인·튜닝 가이드 (2026-08-27)
 
+> **10/14 기준: 이 절은 더 이상 쓸 수 없습니다.** 미니게임 실행 기능이 2026-09-22 에 제거되어 `UFF_TargetShootingTargetVisual`, `FF.RebuildTargetShootingUI`, 런타임·화면 코드가 저장소에 없고 `DA_Minigame_TargetShooting`·`WBP_FF_TargetShooting` 애셋도 없습니다. `UFF_MinigameDefinition` 은 Config 등록 호환용 빈 클래스만 남았습니다. 기록으로만 둡니다.
+
 `Booth_ActivityGame_Shoot` 시설에서 `TargetShooting` 미니게임을 시작합니다. 입력은
 `Border_PlayArea` 전체가 받습니다. 화면 픽셀 좌표를 플레이 영역의 0~1 정규화 좌표로 바꿔
 Runtime에 발사를 요청하면, 하단 1인칭 물총의 총구에서 해당 좌표까지 물방울 탄환이 이동하고 도착 시 Runtime이 타원
@@ -1730,6 +1756,33 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 빗나감·놓친
 ---
 
 # 아직 안 맞는 것 — 2026-09-02 코드 대조 기준
+
+> **10/14 코드 대조 — 아래 표·요청 중 닫힌 것과 남은 것** (아래 본문은 9/02 기록이라 그대로 둡니다)
+>
+> | 항목 | 10/14 상태 |
+> |---|---|
+> | A · enum 메타데이터 2개 파일 | 옵션 화면은 해소. UI 에서는 개발용 `FF_UIFlowStubScreen.cpp` 만 남음 |
+> | A · `TotalRevenue`·`TodayRevenue` | ✅ ViewModel 이 구독·초기 동기화 |
+> | A · 예상 방문객 | ✅ ViewModel `GetExpectedVisitors()`·`OnExpectedVisitorsChanged` 중계, 점검·홍보 패널 구독. 준비 바 `예상 N~M명` 범위는 여전히 `Debug_SetPlaceholders` 로만 채워져 숨겨짐 |
+> | A · 재시작 홍보 표시 | ✅ `StartFestival` 이 `OnPromotionGradeChanged`·`OnExpectedVisitorsChanged` 등을 발행 |
+> | B · Safety | ❌ 그대로 없음(ViewModel 88 고정) |
+> | B · 예상 방문객 범위·미리보기 | 미리보기는 ✅ `PreviewVisitorForecast`. `Min`/`Max` 범위 API 는 없음 |
+> | B · 사건 시스템 / 스태프 배치 | ✅ `UFF_IncidentSubsystem` 으로 구현. 출동은 `ResolveIncident(Handle, OptionIndex, StaffCount)` |
+> | B · 뒷정리 등급 효과 계수 | ❌ `FF_FestivalDefinition.h` 의 TODO 그대로(가격만 있음) |
+> | B · 최종 점수 산식 | ✅ `FF_FestivalEvaluationRules` · `GetFestivalEvaluation()` |
+> | B · 저장 슬롯·저장/불러오기 | ✅ `UFF_SaveSubsystem` + 프론트엔드 `SaveList` 화면 |
+> | B · SNS Read Model | ✅ `FF_LivePanelSNS` 가 `OnSnsPostAdded`·`GetRecentSnsPosts()` 를 사용 |
+> | B · 준비 단계 관객 수 | ❌ 준비 바는 여전히 `Debug_SetPlaceholders` 창구(값 없으면 숨김) |
+> | 요청 1 · 누적 방문객 | ✅ `GetAdmittedVisitorsToday()`·`OnAdmittedVisitorsTodayChanged`, 운영 패널 연결 |
+> | 요청 2 · 시설 표시 이름 | ✅ `FFFZSFacilitySpec::DisplayName`·`FFFZSFacilityReadModel::DisplayName` |
+> | 요청 3 · `CompletedCount` | 일부 — 큐 컴포넌트 `GetCompletedCount()`·`FFFZSQueueSnapshot` 에는 있고 `FFFZSFacilityReadModel` 에는 없음 |
+> | 요청 4 · 큐 id ↔ 시설 id | ✅ `UFF_ZoneSystemQueueBridgeSubsystem::FindQueueFacilityId(FGuid)`·`FindZoneFacilityId(int32)` |
+> | 요청 5 · 줄 포기 손님 | 일부 — 큐 상태 `Abandoned` 와 운영 알림 `QueueAbandon` 은 있음. 시설별·하루 누적 표시 API 는 미확인 |
+> | 요청 7 · 입력 모드 | `AFF_FestivalPlayerController` 가 이제 `SetInputMode` 를 호출함 |
+> | 요청 8 · 비-Live 배속 | ❌ 그대로(비-Live 는 1배속). MorningCheck 는 10/08 부터 시간이 멈춤 |
+> | 요청 9 · 입장료 | ✅ `FF_CrowdEconomyBridgeSubsystem` 이 `EFF_EarnReason::AdmissionFee` 로 매출 반영 |
+> | 요청 10 · 시간 제한 표면 | ❌ 그대로(`GetPhaseTimeRange` 비-const, `CurrentStageHasTimeLimit` 없음) |
+> | 요청 11 · Heat Map | 제품용 렌더링·토글 ✅ `UFF_CrowdDensityHeatmapSubsystem::SetHeatmapVisible`. LOS 경계 6개는 여전히 `FF_CrowdDensityGrid.cpp` 안 |
 
 **A. 화면에 틀린 값이 뜨는 자리** (API 는 있는데 안 붙었거나 다른 값이 붙음)
 
@@ -1910,6 +1963,7 @@ ElapsedLiveSeconds += DeltaTime;   // ← 항상 1배속. 주석에도 그렇게
 (`AGENTS.md` 규칙 1). 실제 코드는 시계가 흐르고 자동 진행됩니다 — **어느 쪽이 맞는지
 확인 부탁드립니다.** 멈추는 것이 맞다면 배속도 필요 없고, 지금 화면에 띄우는
 `{N}초 뒤 자동으로 진행됩니다` 도 지워야 합니다.
+（10/14 기준: 2026-10-08 에 코드가 "멈춤" 쪽으로 정리됐습니다 — MorningCheck 에서는 시간을 쌓지도 자동 전환하지도 않고 스킵으로만 넘어갑니다(`FF_FestivalStageSubsystem.cpp` Tick). 비-Live 단계 배속은 여전히 없습니다.）
 
 #### 9. 🔴 **입장료가 한 번도 걷히지 않습니다** (2026-09-03) · **김시리님께**
 
@@ -2070,8 +2124,8 @@ UI 가 3일차에 배속을 막고 있었는데, **소유자 코드에는 그런
 | 1 | **입장료 슬라이더** | 준비 화면(Setup·MorningCheck), **매일 아침** | 0~15 Gold 슬라이더 + 미리보기("예상 방문객 420명 · 입장료로 −80명 · 예상 입장료 수입 4,200") |
 | 2 | **홍보 카드 4장** | 홍보 단계(기존 패널) | 홍보 없음 / 지역 SNS / 전국 홍보 / 인플루언서. 카드마다 비용·방문객 배수·화제성 +N·예상 방문객 |
 | 3 | **화제성 게이지** | Live HUD (+ 준비 화면) | 0~100 막대, 50 이 중립. "오늘 +4.2" 처럼 아침 대비 변화 |
-| 4 | **축제 평가 화면** | 마지막 날 Report 이후(`FinalReportScreenClass` 가 지금 비어 있음) | 등급 S~D, 총점, 항목 4개 점수, 한 줄 평, 보완 한 줄, 날짜별 만족도 |
-| 5 | 일일 목표 진행도 | Live 패널(운영) | "오늘 방문객 312 / 900 · 달성 시 +300 Gold"(목표는 날마다 900/1000/1100). 지금 `Debug_SetVisitorCount` 로만 채워짐 |
+| 4 | **축제 평가 화면** | 마지막 날 Report 이후(`FinalReportScreenClass` 가 지금 비어 있음 → 10/14 기준 `WBP_FF_FinalReportScreen`(`UFF_ReportScreen`) 연결됨) | 등급 S~D, 총점, 항목 4개 점수, 한 줄 평, 보완 한 줄, 날짜별 만족도 |
+| 5 | 일일 목표 진행도 | Live 패널(운영) | "오늘 방문객 312 / 900 · 달성 시 +300 Gold"(목표는 날마다 900/1000/1100). 지금 `Debug_SetVisitorCount` 로만 채워짐（10/14 기준: 운영 패널이 `GetAdmittedVisitorsToday` 로 연결됨） |
 
 SNS 입장료 글(화제 15·16)은 **기존 SNS 피드에 그대로 섞여 나오므로 추가 UI 가 필요 없습니다.**
 
@@ -2125,7 +2179,7 @@ SNS 입장료 글(화제 15·16)은 **기존 SNS 피드에 그대로 섞여 나�
 | `GetFestivalEvaluationAxisText(EFF_FestivalEvaluationAxis)` | 평가 항목 이름(만족도·방문객·재무·화제성) |
 
 **최종 결산 화면 자리** — 축제가 끝나면 `UFF_UIFlowSubsystem` 이 `Project Settings > FestaFiesta UI Flow > Final Report Screen Class`
-를 띄웁니다. 지금 `WBP_FF_FlowStub` 이 들어 있으니, 평가 화면 위젯을 만드시면 그 칸만 바꿔 주세요.
+를 띄웁니다. 지금 `WBP_FF_FlowStub` 이 들어 있으니, 평가 화면 위젯을 만드시면 그 칸만 바꿔 주세요（10/14 기준: `Config/DefaultGame.ini` 에 `WBP_FF_FinalReportScreen` 으로 바뀜）.
 
 #### 구조체
 
@@ -2161,7 +2215,7 @@ SNS 입장료 글(화제 15·16)은 **기존 SNS 피드에 그대로 섞여 나�
 - 화제성 — 홍보 구매·SNS 긍정 글·유료 프로그램 개최로 오르고, SNS 부정 글로 내려갑니다. SNS 글 1건은 최대 0.3 움직이고, 하루가 바뀌면 중립 쪽으로 40% 식습니다(2026-10-09 전: 0.6 · 25%).
 - 축제 평가 — 만족도 40% · 방문객 목표 달성률 25% · 재무 20% · 화제성 15%. S ≥ 85, A ≥ 70, B ≥ 55, C ≥ 40.
   방문객 달성률의 분모는 날짜별 목표의 합(`VisitorGoalTotal`)입니다.
-  재무 점수 = 100 × (최종 Gold − 시작 Gold) / `FinanceTargetProfitGold`(축제 정의, 지금 15,000 · 잠정), 0~100 으로 자릅니다. 본전·손해면 0점입니다
+  재무 점수 = 100 × (최종 Gold − 시작 Gold) / `FinanceTargetProfitGold`(축제 정의, 지금 15,000 · 잠정 → 10/14 기준 코드 기본값 28,000. 아래 「10/9 2차」 표), 0~100 으로 자릅니다. 본전·손해면 0점입니다
   (2026-10-09 전: 50 + 50 × 이익 / 시작 자금).
 
 #### 유료 프로그램 — "하루 한 번" 이 시설 단위로 바뀌었습니다 (2026-09-23)
@@ -2222,13 +2276,13 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
   `PromotionBasic`·`PromotionFocused`를 읽으며 숫자를 UI에 복제하지 않습니다.
 - 반환값은 **하루 단일 예상치**이며 3일 합계·범위·최대 동시 인원·실제 입장 인원이 아닙니다.
   예약 프로그램 추가 인원은 이 계산에 포함하지 않습니다. Definition이 없으면 `INDEX_NONE`이며 0명과 구분합니다.
-- `OnExpectedVisitorsChanged`의 ViewModel 중계와 PrepHUD 연결은 아직 없습니다.
-  실제 유입도 `AFF_SpawnActor::UnitCount`를 사용하므로 홍보 배수가 스폰에 적용되지는 않습니다.
+- `OnExpectedVisitorsChanged`의 ViewModel 중계와 PrepHUD 연결은 아직 없습니다（10/14 기준: 둘 다 연결됨）.
+  실제 유입도 `AFF_SpawnActor::UnitCount`를 사용하므로 홍보 배수가 스폰에 적용되지는 않습니다（10/14 기준: `FF_CrowdEconomyBridgeSubsystem` 이 예상 방문객을 `SetExpectedVisitorCountOverride` 로 Crowd 에 넘김）.
 - 홍보 패널의 현재 문구 `방문객 수에 반영되지 않습니다`는 실제 유입에 관해서는 유효하지만,
   예상치 계산까지 미구현이라는 뜻은 아닙니다. 권장 안내: `예상치에는 반영되며, 실제 유입 연동은 준비 중입니다.`
 - 재시작 시 경제의 구매 등급은 `None`으로 초기화됩니다. 다만 `StartFestival`은
   `OnPromotionGradeChanged`·`OnExpectedVisitorsChanged`를 발행하지 않습니다.
-  **기존 ViewModel의 재시작 동기화는 미완료**이며 헤더의 “재시작도 이벤트로 통지” 주석은 현재 구현과 다릅니다.
+  **기존 ViewModel의 재시작 동기화는 미완료**이며 헤더의 “재시작도 이벤트로 통지” 주석은 현재 구현과 다릅니다（10/14 기준: `StartFestival` 이 두 델리게이트를 발행하도록 바뀜）.
 - 경제 재시작 자체는 `OnFestivalStarted → StageEconomyBridge → RestartFestival`로 연결돼 있습니다.
   과거의 “경제 전체가 재시작되지 않는다”와 현재의 “홍보 UI 캐시가 갱신되지 않는다”는 다른 문제입니다.
 - 저장·불러오기, 브리지의 홍보 단계 판정, 상세 실패 enum의 위젯 전달, 예상 범위·구매 전 미리보기는 별도 작업입니다.
@@ -2312,7 +2366,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | `HasFestivalEnded()` | `UFF_FestivalStageSubsystem` | BlueprintPure. 최종 결산이 떠 있는 동안 true |
 | `RequestFinishFestival()` | `UFF_UIFlowSubsystem` | BlueprintCallable. **최종 결산 화면의 `로비로` 는 이것을 부르면 됩니다** |
 
-- `FinalReportScreenClass` 는 지금 `WBP_FF_FlowStub`(임시)입니다. 실제 화면으로 교체하면 임시 분기
+- `FinalReportScreenClass` 는 지금 `WBP_FF_FlowStub`(임시)입니다（10/14 기준: `WBP_FF_FinalReportScreen` 으로 교체됨. `FF_UIFlowStubScreen` 의 `bFinalReport` 분기는 아직 코드에 남아 있음）. 실제 화면으로 교체하면 임시 분기
   (`FF_UIFlowStubScreen` 의 `bFinalReport`)는 지워도 됩니다.
 - 3일차 Report 단계는 쓰지 않아도 됩니다. Report 행이 생기더라도 같은 `FinishFestival()` 로 한 번만 울립니다.
 - 새 축제를 시작하면(`OnFestivalStarted`) 만족도·욕구 집계·SNS 피드·배속·날씨·미니게임 상태가 **초기화**됩니다.
@@ -2351,6 +2405,8 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | 6 | **스태프 승급** | `RequestPromoteStaff`, `CanPromoteStaff`, `GetStaffRoster`, `OnStaffRosterChanged` | 승급은 Gold 를 빼지 않습니다(비용 미정, `economy_todo` E1) |
 | 7 | 준비 바 "예상 N~M명" | `GetExpectedVisitors` | `Debug_SetPlaceholders` 로만 채워져 항상 숨겨짐 |
 
+> **10/14 코드 대조** — 1~6 은 화면이 붙었습니다: 1 `FF_PrepPanelFinale`, 2 `FF_PrepPanelCheck`(입장료·미리보기), 3·4 `FF_LivePanelOperations`(화제성·일일 목표), 5 `FF_LivePanelReport`(지출·순이익·원장 줄), 6 `FF_StaffTrainingWidget`. **7 만 남았습니다** — `FF_PrepHudBar` 의 예상 범위는 여전히 `Debug_SetPlaceholders` 창구라 숨겨진 채입니다. 최종 결산 화면은 `UFF_ReportScreen`(`WBP_FF_FinalReportScreen`)이 `GetFinalReport()` 로 그립니다.
+
 ### 화면에 나가는 잘못된 값·문구 — 고쳐야 합니다
 
 | 위치 | 문제 |
@@ -2360,6 +2416,8 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | `ViewModel` `Safety` | 소유자가 없어 **88 고정**. 평가에도 안 들어갑니다. 실값처럼 보이지 않게 숨기거나 문구로 알려 주세요 |
 | `FF_LiveHudStatusBar` | `bUsePlaceholderResourceValues=true` 기본값(관객 284 등 가짜값). 지금은 참조하는 WBP 가 없어 노출되지 않음 |
 | `UFF_ReportScreen` | 사용하는 WBP 가 없는 죽은 코드. 최종 결산 화면을 새로 만들 때 흡수하거나 지우세요 |
+
+> **10/14 코드 대조** — `FF_LivePanelReport` 의 "원인 집계가 붙으면…" 문구와 `FF_LivePanelFinale` 의 "셋업에서만" 문구는 코드에서 사라졌습니다. `UFF_ReportScreen` 은 이제 최종 결산 화면의 부모 클래스입니다(`Config/DefaultGame.ini` `FinalReportScreenClass`). 남은 것: `Safety` 88 고정(결산 패널은 표시하지 않음), `FF_LiveHudStatusBar::bUsePlaceholderResourceValues` 기본값 `true`(참조 WBP 여부는 바이너리라 미확인).
 
 ### 10/9 추가 — 피날레 SNS 후기 · 오늘 목표 · 재무 점수 · 1차 밸런싱 (김시리)
 
@@ -2396,7 +2454,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | 항목 | 지금 | 화면에서 할 일 |
 |---|---|---|
 | `GetDailyVisitorGoal()` (ViewModel·Progression) | **오늘 목표**. Day N = 900 + 100 × (N−1) → 900 / 1000 / 1100 (`DailyVisitorGoalGrowthPerDay`, `GetDailyVisitorGoalForDay`) | 날이 바뀌면 다시 읽기. 고정값으로 캐시하지 않기 |
-| 재무 점수 (`FFF_FestivalEvaluation::FinanceScore`) | 100 × (최종 Gold − 시작 Gold) / `FinanceTargetProfitGold`(15,000, 잠정), 0~100. 본전·손해면 0 | 평가 화면 설명 문구가 "원금 대비"라면 "목표 이익 대비"로 |
+| 재무 점수 (`FFF_FestivalEvaluation::FinanceScore`) | 100 × (최종 Gold − 시작 Gold) / `FinanceTargetProfitGold`(15,000, 잠정 → 10/14 기준 28,000), 0~100. 본전·손해면 0 | 평가 화면 설명 문구가 "원금 대비"라면 "목표 이익 대비"로 |
 | 방문객 점수 | 분모가 날짜별 목표의 합(`VisitorGoalTotal`) | — |
 | 피날레 만족도 보너스 C/B/A/S | **10/12부터 +2 / +3 / +5 / +8** (그전 +3 / +6 / +10 / +15). **가격은 2차 조정에서 1,000 / 1,800 / 2,600 / 3,500** | 숫자를 복제하지 말고 `GetFinaleTiers()` 로 읽기 |
 | 부스 수익 | `BoothCommissionRate` 0.12 → **1.0**. 부스 매출 전액이 축제 몫이고, `DT_FacilityRevenues` 모든 행이 행별 덮어쓰기 꺼짐 | 화면 문구 **"수수료" → "부스 매출"**. 남은 곳: `GetEarnReasonText(FacilityCommission)`("부스 수수료"), 준비 화면 예상 안내("부스 수수료와 미니게임 보상은…"), 시설 정보 예상 수익 툴팁("현재 수수료율…"), 매출 탭 빈 상태("…수수료가 들어옵니다"), 조합 보너스 표기("수수료 +N%") |
@@ -2412,15 +2470,15 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 - **헤더**: `Public/UI/LiveHUD/OperationAlert/FF_OperationAlertPanel.h`
 - **상태**: `구현완료` — **`UFF_LiveHudScreen` 이 만들어 뷰포트(ZOrder 15)에 올립니다.** WBP 없이 C++ 로 트리를 만듭니다.
-- **비고**: 화면 **오른쪽 위**(오른쪽 24 · 위 132)에 "운영" 카드가 6초 떴다가 사라지고(최대 3장, 사건 알림과 같은 LightTeal 카드 · 주의색 `BandCaution` 띠), 그 위의 **「지난 알림 N」 버튼**으로 낸 알림을 최근 10개까지 다시 봅니다.
+- **비고**: 화면 **오른쪽 위**(오른쪽 24 · 위 132)에 "운영" 카드가 6초 떴다가 사라지고(최대 3장, 사건 알림과 같은 LightTeal 카드 · 주의색 `BandCaution` 띠), 그 위의 **「지난 알림 N」 버튼**으로 낸 알림을 최근 10개까지 다시 봅니다（10/14 기준: 라이브 HUD 에 통합 소식 도크가 있으면 이 버튼·목록은 숨고 토스트만 남습니다 — 지난 알림은 통합 소식의 운영 알림 필터에서 봅니다. `FF_OperationAlertPanel::UsesUnifiedNews`）.
   Live 단계에서만 보이고, 카드는 클릭을 막지 않습니다(버튼·펼친 목록만 받음). 위치는 `ScreenMargin`, 크기는 `CardWidth` · `DisplaySeconds` 로 조정합니다. 상단 상태 줄과 겹치면 `ScreenMargin.Y` 만 바꾸면 됩니다.
-  확인은 콘솔 `FF.Alert.Test <0~4>`(0 음식 · 1 화장실 · 2 즐길 거리 · 3 줄 이탈 · 4 갈 곳 없음).
+  확인은 콘솔 `FF.Alert.Test <0~4>`(0 음식 · 1 화장실 · 2 즐길 거리 · 3 줄 이탈 · 4 갈 곳 없음)（10/14 기준: 새로 생긴 휴게·음료 부족은 이 명령으로 띄울 수 없음 — 0~4 로 잘림）.
 
 #### `UFF_OperationAlertSubsystem` (World)
 
 - **헤더**: `Public/UI/LiveHUD/OperationAlert/FF_OperationAlertSubsystem.h`
-- **시그니처**: `OnOperationAlertRaised(const FFF_OperationAlert&)` (`BlueprintAssignable`), `GetHistory()` (`BlueprintPure`). `FFF_OperationAlert` = `Kind` · `Message` · `Day`
-- **갱신 주기**: Live 경과 15초마다 판정. 시설 부족(음식·화장실·즐길 거리)은 같은 종류 120초, 줄 이탈·갈 곳 없음 퇴장은 60초 쿨다운
+- **시그니처**: `OnOperationAlertRaised(const FFF_OperationAlert&)` (`BlueprintAssignable`), `GetHistory()` (`BlueprintPure`). `FFF_OperationAlert` = `Kind` · `Message` · `Day`（10/14 기준 `bHistoryOnly` 추가 — 사건 종료 안내는 토스트 없이 이력에만 들어감）
+- **갱신 주기**: Live 경과 15초마다 판정. 시설 부족(음식·화장실·즐길 거리)은 같은 종류 120초, 줄 이탈·갈 곳 없음 퇴장은 60초 쿨다운（10/14 기준 `EFF_OperationAlertKind` 는 8종: 음식·화장실·즐길 거리·줄 이탈·갈 곳 없음 + `IncidentFinished`(10/12, 이력 전용) + `RestShortage`·`DrinkShortage`(10/14, 휴게·음료 부족 — 시설 부족과 같은 120초). 시설 부족은 한 번 판정에 한 장만 냄. 서브시스템 이력은 최대 30건, 패널 목록은 10건）
 - **상태**: `구현완료`. 다른 위젯이 같은 알림을 쓰고 싶으면 이 델리게이트를 구독하세요
 
 #### 결산 비서 한마디 — `FFF_DailyReportView::AssistantComment`
@@ -2447,7 +2505,7 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | 피날레 가격 C/B/A/S | 1,000 / 1,800 / 2,600 / 3,500 |
 | 재무 목표 `FinanceTargetProfitGold` | **28,000** (10/12 오후, 재무 점수 = 100 × 이익 / 28,000. 시설 줄 처리량이 늘어 부스 수수료가 오른 만큼. 10/12 오전 18,000, 10/11 17,000, 10/9 13,000) |
 | 부스 1회 매출 | 전 행 ×1.5 (`DT_FacilityRevenues`) |
-| 만족도 Need 충족 | 욕구별 운영 중 시설 수 / 목표(10/11부터 음식 **7** · 화장실 2 · 즐길 거리 **10**, 메인 무대 제외. 운영 알림의 시설 부족은 커버리지 0.5 미만일 때만), 하한 0.3 을 곱함. `UFF_CrowdSimulationSubsystem::GetNeedCoverage(EFF_NeedType)` 로 읽을 수 있음 |
+| 만족도 Need 충족 | 욕구별 운영 중 시설 수 / 목표(10/11부터 음식 **7** · 화장실 2 · 즐길 거리 **10**, 메인 무대 제외. 운영 알림의 시설 부족은 커버리지 0.5 미만일 때만), 하한 0.3 을 곱함. `UFF_CrowdSimulationSubsystem::GetNeedCoverage(EFF_NeedType)` 로 읽을 수 있음（10/14 기준: 음료 7 · 휴게 2 목표가 추가돼 켜진 욕구 다섯 개를 모두 봄） |
 | SNS | 화제 27(어제 글 보고 왔다, 2일차 오전, 어제 매출 1위 시설 이름) 추가. 한산(11)은 붐비는 칸이 없을 때만, 붐빔(4)은 붐비는 칸이 있을 때만 나오고 일부 문장에 시설 이름이 들어감 |
 
 
@@ -2530,3 +2588,4 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | 2026-09-22 | 김시리 | 🆕 **스태프 강화(승급) 규칙 확정 + API 완성.** 위 「스태프 강화(승급)」 절 새로 씀. 핵심 3개: `GetStaffRoster()`(개인별 명단, `FFF_StaffMember{StaffId, TrainingLevel, HiredOnDay, LastPromotedDay, bIsBaseStaff}`) · `TryPromoteStaff(int32 StaffId)`(승급 실행) · `OnStaffRosterChanged`(고용·승급 둘 다 이걸로 옴 — 승급은 `OnTotalStaffCountChanged` 로 안 옵니다, 인원수가 안 바뀌니까요). 규칙: 고용 다음 날 아침부터 승급 가능(당일 불가), 한 아침에 1인당 1단계만, 최대 Lv3. **⚠️ 아직 체감 효과는 없습니다** — 승급해도 사건 시스템(이정원)이 없어서 게임 안에서 달라지는 게 없습니다. 그래도 화면은 지금 만드셔도 나중에 API가 안 바뀝니다. 사건별 배치(`스태프 N명 배치`)는 여전히 이번 범위 밖 — §6 참고 |
 | 2026-10-03 | 김시리 | 🔴 **3일차 종료 이벤트 복구 + 최종 결산 UI 계약.** `DT_DaySequence` 에 `Day3_Report` 가 없어 `OnFestivalEnded` 가 안 울리던 문제를 `FinishFestival()`/`RequestFinishFestival()` 로 해결(「축제 종료·최종 결산」 절). 최종 결산 화면의 `로비로` 는 `RequestFinishFestival()`. 새 축제 시작 시 만족도·욕구·SNS·배속·날씨 초기화. 화면이 아직 없는 7건과 잘못 나가는 문구 목록 수록 |
 | 2026-10-07 | 한광훈 | 🆕 **필수 시설에 메인안내소(스태프 배정 시설) 1곳 추가 + 배정까지 필수.** `UFF_FestivalDefinition` 기본 `RequiredSetupFacilities` 에 `Info_GeneralInfo_General` 1개(`MinimumAssignedStaff = 1`)를 더했습니다 — 설치하고 스태프를 1명 이상 `+ 배정`해야 Day 1 시작·개장이 열립니다. `FFF_RequiredFacilityRow` 에 `RequiredStaffCount`·`AssignedStaffCount`·`MissingStaffCount` 추가, `OnRequiredFacilitiesChanged` 가 스태프 배정·해제에도 울립니다. 화면 반영: 하단 바·점검 패널 사유(`+ 배정` 안내), 점검 패널 필수 시설 줄(`! 스태프 배정 필요 (배정 0/1명)`)과 인력 줄(`· 배정 N명`), 카탈로그 카드 툴팁(설치 후 배정 필요), 시설 정보 스태프 영역(`! 필수 배정` 줄). 카탈로그 `필수 · 1일차 시작 전 설치` 범례는 이제 **설치가 남았을 때만** 보입니다 |
+| 2026-10-14 | 문서 점검 | **코드 대조 주석 추가(본문 기록은 유지).** 시설 정보 WBP 경로 이동(`Building/FF_WBP_Building/Facility`)·미니게임 필드/이벤트 삭제·탭 구조, 매출 2종·예상 방문객 ViewModel 연결 완료, MorningCheck 시간 정지, 피날레 기본값(1,000~3,500 · +2~+8), 재무 목표 28,000, 운영 알림 8종(`bHistoryOnly`), 갈증·피로 켜짐, 타깃 슈팅 절 폐기 표시, 「아직 안 맞는 것」·「아직 화면이 없는 것」 닫힘 현황 표 |

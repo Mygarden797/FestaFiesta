@@ -1,5 +1,7 @@
 # P7 스태프 숙련도
 
+> 10/14 기준: 이 단계의 `현황`/`숙련도` 탭은 이후 `Tools/ui/staff_management`(스태프 통합 관리) 적용으로 `Management_Legacy` 아래에 접혀 보관된다. 지금 두 스태프 창은 공통 관리 위젯 `Widget_StaffManagement`(`WBP_FF_StaffManagement`, `UFF_StaffManagementWidget`)를 쓰며, `WBP_FF_StaffTraining`·`WBP_FF_StaffPromotionRow` 는 그 안에서 재사용된다. 아래 탭 크기 조정(`Staff_TabRow`·`SizeBox_StaffOverviewTab`·`SizeBox_StaffTrainingTab`)은 숨겨진 옛 탭에 대한 설명이다.
+
 준비 단계 인력 창과 라이브 스태프 창에 `현황` / `숙련도` 탭을 추가한다. 현황 탭은 기존 고용·배정 정보를 유지하고, 숙련도 탭은 공통 스태프 목록과 승급 상태를 보여준다.
 
 현재 경제 원본 규칙을 그대로 사용한다. 고용한 스태프는 고용 다음 날부터 하루 한 단계씩 최대 Lv.3까지 승급할 수 있으며, 기본 인력은 1일차부터 가능하다. 승급으로 금화를 차감하지 않는다. 원본의 날짜 검사에 UI 전용 Stage 제한을 추가하지 않는다.

@@ -28,7 +28,7 @@
 ## 2. 시설별로 켜고 끄기
 
 1. 언리얼 에디터의 **콘텐츠 브라우저**를 엽니다.
-2. 길은 `Content > FestaFiesta > Zone > Data > FacilityDefinitions > Road`, 타일은 같은 위치의 `Tile` 폴더에서 찾습니다.
+2. 길은 `Content > FestaFiesta > Building > FF_Data_Building > Road`, 타일은 같은 위치의 `Tile` 폴더에서 찾습니다.（10/14 기준 정정: 예전 경로 `Zone > Data > FacilityDefinitions`는 저장소에 없습니다. 실제 PDA는 `Content/FestaFiesta/Building/FF_Data_Building/Road`·`Tile`에 있고, `Config/DefaultGame.ini`의 Asset Manager 검색 경로도 `/Game/FestaFiesta/Building/FF_Data_Building`입니다.）
 3. 원하는 시설 데이터 에셋을 더블클릭합니다. 예를 들어 모래길은 `PDA_FFZS_Road_Surface_Sand`입니다.
 4. 최상위 **Placement** 항목을 펼칩니다.
 5. **Enable Drag Placement**를 체크합니다. 찾기 어렵다면 상세 정보 검색창에 `Enable Drag Placement`를 입력합니다.

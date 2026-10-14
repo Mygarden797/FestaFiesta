@@ -1,13 +1,13 @@
 <!-- 파일: README.md / 역할: 키 설정 화면의 조작법과 입력 정의·저장 호환성·검증 방법을 설명한다. -->
 # Keyboard Bindings · Light Teal
 
-`WBP_FF_PauseOptions`의 **키보드 키 배치** 탭을 실제 리바인딩 화면으로 확장한 작업이다.
+`WBP_FF_PauseOptions`의 **키보드 키 배치** 탭을 실제 리바인딩 화면으로 확장한 작업이다（10/14 기준: `WBP_FF_PauseOptions` 애셋은 저장소에 없다. 키 배치 패널은 축제 중 설정 화면 `WBP_FF_FullscreenOptions`(`UFF_FestivalSettingsScreen`, 일시정지 허브에서 진입)와 프론트엔드 옵션 `WBP_FF_Options`(`UFF_OptionsScreen`)가 얹는다）.
 첨부 레퍼런스는 키보드 배치와 정보 구조만 참고하고, 화면 전체의 색·폰트·간격·상태 표현은
 종태님이 만든 기존 `UFF_UIPalette::InGame` Light Teal 설정 UI를 그대로 따른다.
 
 ## 런타임 자산
 
-- 화면: `/Game/FestaFiesta/UI/Settings/WBP_FF_PauseOptions`
+- 화면: `/Game/FestaFiesta/UI/Settings/WBP_FF_PauseOptions`（10/14 기준 없음 → `/Game/FestaFiesta/UI/Settings/WBP_FF_FullscreenOptions`, `/Game/FestaFiesta/UI/Frontend/WBP_FF_Options`）
 - 키보드 패널: `/Game/FestaFiesta/UI/Settings/WBP_FF_KeyBindingPanel`
 - 생성 텍스처: `/Game/FestaFiesta/UI/Settings/Textures/T_UI_Settings_Keyboard_ImageGen_v2`
 - 원본 PNG: `Design/SourceAssets/UI/Settings/T_UI_Settings_Keyboard_ImageGen_v2.png`

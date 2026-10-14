@@ -2,6 +2,8 @@
 
 `expansion70_catalog.json` is the checked-in initial authoring plan for exactly the 70 numbered rows in `Design/Guides/Facility70_BlenderMCP_Unreal_ProductionBrief_KO.md`. Korean names, subtypes, descriptions, and production emphases are copied verbatim. All 140 named main/exploded reference images exist in `Design/Facitilies` (the repository's actual spelling).
 
+（10/14 기준: #40 `Performance_MainStage_WaveConcertStage`의 시설 정의는 9/20 커밋 `fe1c3ea3`에서 삭제되어 실제 등록된 정의는 69종이다. 카탈로그 JSON에는 70행이 그대로 남아 있다.）
+
 The initial centimetre dimensions are authored targets based on the brief and visual proportions, not dimensions measured from the concept art. When definitions are created, each `UFFZSFacilityDefinition.Spec` becomes authoritative for runtime and subsequent model revisions. Keep the catalog, saved definition, and model reports synchronized; do not silently resize existing definitions on reruns.
 
 ## Fields
