@@ -218,6 +218,9 @@ bool FFF_FacilityCodexRewardNotificationTest::RunTest(const FString& Parameters)
 	Definition->FestivalId = TEXT("CodexNotificationAutomation");
 	Definition->InitialGold = 1000;
 	Economy->StartFestival(Definition.Get());
+	TestFalse(TEXT("New festival clears the previous reward notification"), Codex->HasUnclaimedRewards());
+	TestHints(TEXT("New festival removes both old reward icons"), false);
+	Progress->RecordDiscoveries({ZeroRule, FirstRule, SecondRule});
 	Codex->OnWorldBeginPlay(*World);
 	for (int32 Frame = 0; Frame < 2; ++Frame)
 	{

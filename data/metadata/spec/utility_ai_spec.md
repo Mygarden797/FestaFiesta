@@ -17,6 +17,7 @@
 > 9항 중 7항에 런타임 입력 경로가 있다. 매 결정마다 모두 비영(非零)이라는 뜻은 아니다. `no_choice`는 별도 대안이며 열 번째 시설 효용항이 아니다.
 > 개인 혼잡 임계값은 `density` 비용식의 입력이 아니다. 비용용 Zone 인구 보고와 `Relocate`/주기 재평가 배선은 서로 별개인 미구현 사항이다.
 > （2026-10-09 변경: 주기 재평가는 Crowd 리더 분기에서 `ShouldReevaluate` 로 연결돼 있고, 시설로 걸어가는 중이면 주기 ×3(`EnRouteReevaluateIntervalScale`). 거리 비용은 `distance_ref_meters` 150·상한 3（§3）. Zone 밖 파티는 200m 안 가장 가까운 Zone 으로 결정（§5）. 미구현으로 남은 것은 인구 보고와 `Relocate` 쪽이다.）
+> （10/14 기준: 인구 보고는 연결돼 있다 — `UFF_ZonePopulationBridgeSubsystem` 이 Crowd 위치를 Zone 별로 세어 주기적으로 `ReportZonePopulation` 을 부른다(`FF.Zone.PopulationReporting` 기본 1). 그래서 `DensityCostTerm`·`Relocate` 판정 입력은 실값이다. 남은 것은 Crowd 가 `Relocate` 를 배회로 처리한다는 점이다.）
 > 진행 상황은 `../SiriKim_Docs/utility_ai_todo.md`, 판단 근거는 `../SiriKim_Docs/portfolio_casebook.md`.
 
 - 계수 표: `data/derived/utility_coefficients_v0.csv` (원본) / `data/unreal/utility_coefficients_v0.csv` (UE DataTable용)
@@ -55,7 +56,7 @@ Utility(i, j, t) =
 
 - `i` = 의사결정을 하는 파티 리더（Need는 일행 성분별 최댓값）, `j` = 목적지 한 곳, `t` = 시각
 - 모든 `*_norm` 항은 0~1 (preference만 -1~1)
-- 계수는 런타임에 연결된 `UDataTable`에서 읽고, 테이블·행이 없으면 코드 기본값을 쓴다（CSV를 직접 읽지 않으며 UE DataTable 재임포트가 필요하다. 현재 CSV는 44행이고 신규 감점 계수 3행은 아직 없다: `weight_failed_destination=1.2`, `weight_in_transit=0.7`, `in_transit_ref_count=12`는 코드 폴백으로 동작）.
+- 계수는 런타임에 연결된 `UDataTable`에서 읽고, 테이블·행이 없으면 코드 기본값을 쓴다（CSV를 직접 읽지 않으며 UE DataTable 재임포트가 필요하다. 현재 CSV는 44행이고（10/14 기준: 78행） 신규 감점 계수 3행은 아직 없다: `weight_failed_destination=1.2`, `weight_in_transit=0.7`, `in_transit_ref_count=12`는 코드 폴백으로 동작）.
 
 > ⚠️ **다만 `GetCoefficient`의 3번째 인자가 코드 기본값이고, 그게 CSV와 어긋날 수 있다.** 2026-08-10에 `weight_need`가 코드 1.2 / CSV 1.8로 어긋나 있는 것을 발견했다 — DataTable이 안 붙은 경로에서 아래 부등식이 깨져 있었다. 부등식 자체를 테스트로 고정했으니(`NeedBeatsBestLikedAlternative`) 같은 종류의 드리프트는 이제 잡힌다.
 
@@ -97,8 +98,8 @@ need_urgency_norm(i, j) = max{ Need_i[n] * need_priority[n] : n 은 j 가 해소
 | 계수 | 기본값 | 근거 |
 |---|---:|---|
 | `need_hunger_minutes_to_limit` | 240 | 성인 식사 간격 4시간 가정. `draft_assumption`. **식음료 매출에 영향을 주는 노브** — 늘리면 Hunger 기여가 천천히 커지고 줄이면 빨라진다（softmax와 다른 항도 있으므로 전원/0명 방문을 보장하지 않음） |
-| `need_restroom_minutes_to_limit` | 150 | 주간 배뇨 간격 2.5시간 가정. `draft_assumption`. 축제라 음료 섭취가 많다는 상식적 판단으로 식사보다 짧게 잡았다 |
-| `need_{thirst,fatigue}_minutes_to_limit` | **0** | Phase 게이트. 0이면 안 쌓인다（해소량도 코드 0, CSV 행 없음） |
+| `need_restroom_minutes_to_limit` | 150 | 주간 배뇨 간격 2.5시간 가정. `draft_assumption`. 축제라 음료 섭취가 많다는 상식적 판단으로 식사보다 짧게 잡았다（10/14 기준: 200. 150이면 공연 직후 관람객 대부분이 한꺼번에 급해져 화장실을 지어도 모자랐다） |
+| `need_{thirst,fatigue}_minutes_to_limit` | **0** | Phase 게이트. 0이면 안 쌓인다（해소량도 코드 0, CSV 행 없음）（10/14 기준: 켜짐. 갈증 180·피로 240, 해소량 `need_{thirst,fatigue}_relief_amount` 둘 다 1.0. 코드 기본값·CSV·DataTable 모두 반영） |
 | `need_stimulation_minutes_to_limit` | **240** | Phase 2 활성. `need_stimulation_relief_amount=1.0`과 함께 적용 |
 | `need_hunger_relief_amount` | 0.8 | **부분 해소** — 아래 참고 |
 | `need_restroom_relief_amount` | 1.0 | 완전 해소. 재방문은 `minutes_to_limit`이 다시 쌓아주는 쪽에서 나온다 |
@@ -106,6 +107,8 @@ need_urgency_norm(i, j) = max{ Need_i[n] * need_priority[n] : n 은 j 가 해소
 | `need_initial_fraction_max` | 0.50 | 같은 것의 상한. 0이면 흩뿌리기가 꺼진다 |
 
 **"P0는 Hunger·Restroom만"은 초기 단계 기록이다.** 현재는 Stimulation도 활성이라 세 성분이 증가한다. Thirst·Fatigue를 켜려면 상승 계수와 해소 계수를 함께 설정하고 DataTable에 반영해야 한다（이번 문서 갱신에서는 데이터·코드를 변경하지 않음）.
+
+（10/14 기준: Thirst·Fatigue도 켜져 다섯 성분이 모두 증가한다. 0이면 벤치를 지어도 찾는 손님이 없었다. 만족도 Need 충족도와 시설 커버리지도 켜진 성분 전부를 본다. 커버리지 목표는 `need_coverage_target_thirst` 7·`need_coverage_target_fatigue` 2. 갈증은 음식·나이트라이프 부스와 `Rest_Cooling`, 피로는 `Rest_*` 전부가 푼다.）
 
 #### 해소량이 재방문을 만드는 것이 아니다 (2026-08-10 정정)
 
@@ -125,7 +128,7 @@ need_urgency_norm(i, j) = max{ Need_i[n] * need_priority[n] : n 은 j 가 해소
 초기값 = Triangular(0, need_initial_fraction_mode, need_initial_fraction_max)
 ```
 
-Need는 한계까지 0→1로 선형이므로 **"한계 대비 비율"이 곧 Need 값**이다. 성분마다 별도 계수를 두지 않아도, 이후 `Advance`가 각 성분의 한계 시간(화장실 150분 / 배고픔 240분)대로 올려준다.
+Need는 한계까지 0→1로 선형이므로 **"한계 대비 비율"이 곧 Need 값**이다. 성분마다 별도 계수를 두지 않아도, 이후 `Advance`가 각 성분의 한계 시간(화장실 150분 / 배고픔 240분)대로 올려준다（10/14 기준: 화장실 200분 / 배고픔 240분 / 갈증 180분 / 피로 240분 / 자극 240분）.
 
 - **없으면 무엇이 깨지나**: 전원이 0에서 출발하면 배고픔 곡선이 장내에서 동기화된다. 입장 시각만 다를 뿐 "몇 분 뒤에 배고파지는가"가 모두 같아서 식음료 쏠림이 계단처럼 한 번에 몰린다.
 - **성분별 독립 난수 스트림**을 쓴다 — 배고픈 사람이 화장실도 급하다는 상관을 넣을 근거가 없다. 넣으려면 개체 변주의 `leisureliness_axis` 상관처럼 명시적으로 한다.
@@ -416,7 +419,7 @@ arrival_flow[j] += P(i가 j를 고를 확률)
 
 - **NPC 런타임 층(L3)은 연결됐다.** Simulation이 스폰·Need 증가·체류 예산·Queue 이용 완료·방문 기록을 관리하고 Decision이 후보를 조립해 `Choose`를 호출한다（주기 재평가와 개인 변주 5종 전달은 아직 미연결 — 2026-10-09 기준 주기 재평가는 연결됨, §5）.
 
-- **`ReportZonePopulation`을 부르는 코드가 0곳이다** (2026-08-10 발견) — 플러그인은 "외부 시뮬레이션이 인구와 DeltaSeconds를 보고"하면 Zone 밀도를 계산하는 설계인데 아무도 안 부른다. 별도 보고/초기화가 없으면 `FFFZSZoneReadModel::ReportedPopulation`이 0으로 남고, `BuildCandidates`가 그걸 물려받아 **`density_cost` 항도 0으로 남는다**（C++ 프로덕션 호출 검색 기준. Blueprint·에셋별 외부 주입은 별도 확인）. Zone별 재실 인원은 crowdAI가 아는 값이라 호출 주체를 이정원 님과 협의해야 한다.
+- **`ReportZonePopulation`을 부르는 코드가 0곳이다** (2026-08-10 발견) — 플러그인은 "외부 시뮬레이션이 인구와 DeltaSeconds를 보고"하면 Zone 밀도를 계산하는 설계인데 아무도 안 부른다. 별도 보고/초기화가 없으면 `FFFZSZoneReadModel::ReportedPopulation`이 0으로 남고, `BuildCandidates`가 그걸 물려받아 **`density_cost` 항도 0으로 남는다**（C++ 프로덕션 호출 검색 기준. Blueprint·에셋별 외부 주입은 별도 확인）. Zone별 재실 인원은 crowdAI가 아는 값이라 호출 주체를 이정원 님과 협의해야 한다.（10/14 기준: 해소. `UFF_ZonePopulationBridgeSubsystem` 이 `ReportZonePopulation` 을 부른다, 기본 켜짐）
 - ~~**`FFF_ZoneSystemBridge::BuildCandidates`가 스텁**~~ — **2026-08-10 구현 완료**(테스트 10개). `DistanceMeters`는 Read Model의 시설 대표 위치와 Party 위치로 계산한다. 목적지 선택의 L3 연결도 완료됐으며, `BaseAttraction` 출처는 아직 대기 중이다 — 자세한 내용은 `utility_destination_selector_spec.md` §7의 1-1.
 - **`companion_type_modifier_v0.csv`의 preference delta가 `가구원수` 기반인 문제** — 그룹 크기 *비율*은 실측으로 교체했지만 이 *delta 값* 자체는 아직 그대로다(§4 경고 박스). 대체 후보는 2025 국민여행조사 통계편 표 14-2-x(동반자 유형) 또는 원자료 `A6B_1..12`.
 - **후보 집합 규칙이 계수로 노출되지 않았다** — `BuildCandidates`의 일반 후보는 "현재 Zone + 인접 Zone"으로 줄인다. 추가 설계인 "전역 인기 상위 K"를 구현하면 **부익부 피드백**이 생길 수 있다(인기 있으면 후보에 더 자주 들어가서 더 인기 있어진다). K와 "인기"의 정의를 계수로 빼서 민감도 분석 대상에 넣어야 한다. 안 그러면 병목이 실제 선호 때문인지 후보 필터 때문인지 구분할 수 없다.
@@ -436,7 +439,7 @@ arrival_flow[j] += P(i가 j를 고를 확률)
   - 예약 프로그램 `Participating` 상태에서만 드레인을 멈춘다（복귀·대기 상태에서는 계속 소모）. Need 증가는 계속한다 —
     둘은 분기 지점이 다르다(`reservation_program_spec.md`)
   - ⚠️ 보류 중인 Experience(만족도)가 "불만족 → 익일 재방문"을 맡을 예정이었다.
-    **홀드를 풀 때 이 드레인과 겹치는지 재검토한다**
+    **홀드를 풀 때 이 드레인과 겹치는지 재검토한다**（10/14 기준: 만족도는 구현돼 어제 만족도가 다음 날 방문객 배수 ×0.75~1.25 로 쓰인다. 드레인 배수는 여전히 1.0(꺼짐)이라 겹치지 않는다）
 
 ### 합의 필요 (다른 파트와 걸림)
 
@@ -444,7 +447,7 @@ arrival_flow[j] += P(i가 j를 고를 확률)
 |---|---|---|
 | en-route 인원 반영 | 별도 `InTransitCostTerm`으로 연결됨. Queue 대기에 더하지 않는다（규모별 감점 민감도는 미검증） | Crowd·Decision |
 | Queue가 Party를 쪼개는가 | `TryJoinZoneFacility`가 Party 단위 진입점인데 정원 초과 시 파티 전체를 거절함（부분 입장 없음） | 장원재 (Queue) |
-| 모든 시간 필드의 기준 = "Live 경과분"인가 | 유입 진행도·예약은 Stage, Need·방문 이력은 Crowd 시계, Queue 대기는 실제 분이다（2026-10-09 변경: `UFF_QueueSubsystem::Tick` 이 축제 실효 배속 `GetEffectiveTimeScale` 을 따른다. 전엔 실제 시간으로만 흘러 4배속에서 서비스가 손님 기준 4배 느렸다）. Crowd는 Live·Closing에서 실행된다（초기 체류 예산 240·시간 기준 통합은 남음. SecondsSinceLastEvaluation 기반 주기 감시 미연결） | 강민서 (Stage) |
+| 모든 시간 필드의 기준 = "Live 경과분"인가 | 유입 진행도·예약은 Stage, Need·방문 이력은 Crowd 시계, Queue 대기는 실제 분이다（2026-10-09 변경: `UFF_QueueSubsystem::Tick` 이 축제 실효 배속 `GetEffectiveTimeScale` 을 따른다. 전엔 실제 시간으로만 흘러 4배속에서 서비스가 손님 기준 4배 느렸다）. Crowd는 Live·Closing에서 실행된다（초기 체류 예산 240·시간 기준 통합은 남음. SecondsSinceLastEvaluation 기반 주기 감시 미연결）（10/14 기준: 초기 체류 예산은 그날 Live 길이로 바뀌었다(10/13 `703d8bdf`). 주기 재평가는 10/9 부터 연결. Need·방문 이력이 Crowd 시계를 쓰는 것은 그대로） | 강민서 (Stage) |
 | ~~리더가 `Leave`면 그룹 전체가 퇴장하는가~~ | **8/6 결정: 전원 함께 퇴장.** `no_choice` 행동 3종 전부 리더가 결정하고 그룹원이 상속한다 | 결정 완료 |
 | ~~`ActivityGame` 토큰을 쓰는 부스가 있는가~~ | **8/6 해소.** 팀 네이밍 규칙 페이지에 `Booth_ActivityGame_RingToss` 예시가 명시됐다 — `activity_game` 축은 죽은 값이 아니다 | 해소 |
 | 인원 보존 카운터의 소유자 | 총 방문객 = 장내 + 퇴장 + 미입장. §7 검증 항목인데 Crowd가 활성·입장·퇴장·예약 스폰 수를 들고 있다（전체 수요와 풀 초과분 보존 검증은 별도）. 경제 파트와도 직결(매출 = 장내 인원 × 소비) | 김시리 (경제) |

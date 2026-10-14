@@ -12,6 +12,8 @@
 
 ## 배치 계약
 
+> 10/14 기준: 아래 `388 × 500`·`(-24, 72)`·Picker `520`/하단 `400` 은 지금 생성기·자동화 테스트 기준과 다르다. 기본 배치는 `Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramLayout.h`(폭 405 · 우측/상단 18 · 하단 예약 126, 세로 stretch)이고, `FestaFiesta.UI.FacilityInfo.AssetContract` 는 저장된 WBP 변형별(Clarity 456×620, Aurora 폭 592 등)로 값을 검사한다. 패널은 개요·조합·운영·스태프·강화·조명·매출·프로그램 탭 구조가 됐다. 저장된 WBP 가 어느 변형인지는 바이너리라 이 문서에서 확인하지 못했다.
+
 ### 시설 정보 패널
 
 | 항목 | 값 |

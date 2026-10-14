@@ -133,19 +133,19 @@ GameMode는 시작할 때 `InitializeOverview(InitialFocusLocation, InitialArmLe
 
 ## 5. 파일별 역할과 변경 연결
 
-행 번호는 코드 수정으로 바뀔 수 있으므로 함수와 테스트 이름으로 찾는다. 아래 경로는 현재 작업 공간 `C:/FFProj` 기준이다.
+행 번호는 코드 수정으로 바뀔 수 있으므로 함수와 테스트 이름으로 찾는다. 아래 경로는 현재 작업 공간 `C:/FFProj` 기준이다.（10/14: 저장소 안의 파일 링크는 다른 PC에서도 열리도록 이 문서 기준 상대 경로로 바꿨다. `Artifacts/` 아래 결과물은 로컬 산출물이라 저장소에 없다.）
 
 | 파일 | 역할 | 이번 문제와의 관계 |
 |---|---|---|
-| [FF_CameraTypes.h](C:/FFProj/Source/FestaFiesta/Public/Camera/FF_CameraTypes.h) | 카메라 설정의 기본값 | C01의 엄격한 개별 Zone 제한을 선택 옵션으로 변경한다. |
-| [FF_OverviewCameraPawn.cpp](C:/FFProj/Source/FestaFiesta/Private/Camera/FF_OverviewCameraPawn.cpp) | 입력, 경계, 지면, 정지 상태를 연결 | C01은 `ConstrainFocusToZones`, C02는 `InitializeOverview`와 최초 Tick의 지면 처리 경로를 확인한다. |
-| [FF_OverviewCameraPawn.h](C:/FFProj/Source/FestaFiesta/Public/Camera/FF_OverviewCameraPawn.h) | Pawn의 공개 API와 실행 중 상태 선언 | 높이 보존 선택 인자와 실행 중 높이 차이·최초 Z 상태를 선언한다. |
-| [FF_OverviewCameraRig.cpp](C:/FFProj/Source/FestaFiesta/Private/Camera/FF_OverviewCameraRig.cpp) | 초점·줌·각도·보간 계산 | 이동량 계산, 외곽 제한, `ApplyGroundHeight`, 입력 해제 후 목표 고정을 담당한다. |
-| [FF_FestivalGameMode.h](C:/FFProj/Source/FestaFiesta/Public/Camera/FF_FestivalGameMode.h) | 맵 시작 구도 옵션 | `bPreserveInitialCameraHeight=true`를 기본값으로 제공한다. |
-| [FF_FestivalGameMode.cpp](C:/FFProj/Source/FestaFiesta/Private/Camera/FF_FestivalGameMode.cpp) | 실제 게임 시작의 구도 적용 | `bApplyInitialFraming`이 켜지면 저장된 초점·Arm 길이와 높이 보존 선택을 Pawn에 전달한다. |
-| [FF_OverviewCameraZoneTests.cpp](C:/FFProj/Source/FestaFiesta/Private/Camera/FF_OverviewCameraZoneTests.cpp) | 새 합성 월드 회귀 검사 | 두 구역의 빈 공간 왕복, 프레임률·줌별 이동, 외곽 제한과 strict 선택 옵션을 검사한다. |
-| [FF_OverviewCameraProductionTests.cpp](C:/FFProj/Source/FestaFiesta/Private/Camera/FF_OverviewCameraProductionTests.cpp) | 새 실제 맵 회귀 검사 | 실제 GameMode가 생성한 BP 카메라의 최초 구도와 `Test_Main`의 실제 빈틈 이동을 검사한다. |
-| [FF_OverviewCameraMotionTests.cpp](C:/FFProj/Source/FestaFiesta/Private/Camera/FF_OverviewCameraMotionTests.cpp) | 이동·정지와 높이 보존 회귀 검사 | 기존 Idle·줌·지면 검사에 높이 보존용 테스트 3개를 추가했다. |
+| [FF_CameraTypes.h](../../Source/FestaFiesta/Public/Camera/FF_CameraTypes.h) | 카메라 설정의 기본값 | C01의 엄격한 개별 Zone 제한을 선택 옵션으로 변경한다. |
+| [FF_OverviewCameraPawn.cpp](../../Source/FestaFiesta/Private/Camera/FF_OverviewCameraPawn.cpp) | 입력, 경계, 지면, 정지 상태를 연결 | C01은 `ConstrainFocusToZones`, C02는 `InitializeOverview`와 최초 Tick의 지면 처리 경로를 확인한다. |
+| [FF_OverviewCameraPawn.h](../../Source/FestaFiesta/Public/Camera/FF_OverviewCameraPawn.h) | Pawn의 공개 API와 실행 중 상태 선언 | 높이 보존 선택 인자와 실행 중 높이 차이·최초 Z 상태를 선언한다. |
+| [FF_OverviewCameraRig.cpp](../../Source/FestaFiesta/Private/Camera/FF_OverviewCameraRig.cpp) | 초점·줌·각도·보간 계산 | 이동량 계산, 외곽 제한, `ApplyGroundHeight`, 입력 해제 후 목표 고정을 담당한다. |
+| [FF_FestivalGameMode.h](../../Source/FestaFiesta/Public/Camera/FF_FestivalGameMode.h) | 맵 시작 구도 옵션 | `bPreserveInitialCameraHeight=true`를 기본값으로 제공한다. |
+| [FF_FestivalGameMode.cpp](../../Source/FestaFiesta/Private/Camera/FF_FestivalGameMode.cpp) | 실제 게임 시작의 구도 적용 | `bApplyInitialFraming`이 켜지면 저장된 초점·Arm 길이와 높이 보존 선택을 Pawn에 전달한다. |
+| [FF_OverviewCameraZoneTests.cpp](../../Source/FestaFiesta/Private/Camera/FF_OverviewCameraZoneTests.cpp) | 새 합성 월드 회귀 검사 | 두 구역의 빈 공간 왕복, 프레임률·줌별 이동, 외곽 제한과 strict 선택 옵션을 검사한다. |
+| [FF_OverviewCameraProductionTests.cpp](../../Source/FestaFiesta/Private/Camera/FF_OverviewCameraProductionTests.cpp) | 새 실제 맵 회귀 검사 | 실제 GameMode가 생성한 BP 카메라의 최초 구도와 `Test_Main`의 실제 빈틈 이동을 검사한다. |
+| [FF_OverviewCameraMotionTests.cpp](../../Source/FestaFiesta/Private/Camera/FF_OverviewCameraMotionTests.cpp) | 이동·정지와 높이 보존 회귀 검사 | 기존 Idle·줌·지면 검사에 높이 보존용 테스트 3개를 추가했다. |
 
 새 Zone 테스트는 현재 허용된 `GZ_Beach01`, `GZ_Beach02`를 공통 테스트 계약에서 가져온다. 구역 ID 정책을 느슨하게 만들거나, 폐기된 ID를 테스트에 다시 넣지 않는다. 실제 Zone 등록 실패는 설정 오류로 명확하게 보고한다.
 
@@ -343,9 +343,9 @@ strict 옵션과 높이 보존 개선은 해당 동작의 개선으로 남긴다
 
 | 변경 대상 | 역할과 보존 조건 |
 |---|---|
-| [repair_camera_zone_parents.py](C:/FFProj/Tools/Build/repair_camera_zone_parents.py) | `Test_Main`에만 적용하는 재실행 가능한 이관 도구다. 예상한 13개 ID와 관리 부모를 확인하고 적용 전에 맵을 백업한다. |
+| [repair_camera_zone_parents.py](../../Tools/Build/repair_camera_zone_parents.py) | `Test_Main`에만 적용하는 재실행 가능한 이관 도구다. 예상한 13개 ID와 관리 부모를 확인하고 적용 전에 맵을 백업한다. |
 | `Content/FestaFiesta/Maps/Test_Main.umap` | 13개 Zone의 부모 연결을 해제한다. 원본의 모든 액터 월드 Transform, Zone의 월드 폴리곤·출입 앵커·Outliner 폴더를 비교해 보존한 상태에서 저장한다. |
-| [FFZAAuthoredZone.cpp](C:/FFProj/Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAAuthoredZone.cpp) | `CollectAuthoringIssues`에 런타임 Zone의 에디터 전용 조상 검사를 추가한다. 직접 부모 액터뿐 아니라 전체 SceneComponent 부모 체인의 컴포넌트와 소유 액터를 확인한다. |
+| [FFZAAuthoredZone.cpp](../../Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAAuthoredZone.cpp) | `CollectAuthoringIssues`에 런타임 Zone의 에디터 전용 조상 검사를 추가한다. 직접 부모 액터뿐 아니라 전체 SceneComponent 부모 체인의 컴포넌트와 소유 액터를 확인한다. |
 
 제작 검사에서는 런타임 Zone이 에디터 전용 조상에 연결돼 있으면, Cook 시 월드 위치가 바뀔 수 있다는 오류와 `Keep World` 분리·Outliner 폴더 사용 안내를 제공한다. 단순히 이번 맵만 고치는 데 그치지 않고 같은 구조를 다시 만들었을 때 발견하기 위한 변경이다. 엔진의 `UWorld::IsDataValid`가 맵 액터 검사를 호출하므로 패키징 전 에셋 검증에도 연결된다. 수정한 맵을 포함한 이번 에셋 검증은 오류 0건·경고 0건으로 완료했다.
 

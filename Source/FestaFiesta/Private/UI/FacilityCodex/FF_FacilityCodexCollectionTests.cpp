@@ -193,12 +193,16 @@ bool FFF_FacilityCodexCollectionScreenTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The collection stage is persisted"), Progress->IsCollectionRewardClaimed(Rewards[0].MilestoneId));
 	Definition->InitialGold = MAX_int32 - 10;
 	Economy->RestartFestival();
+	TestEqual(TEXT("New festival clears collection UI discovery progress"), Codex->GetSummary().DiscoveredCount, 0);
+	TestFalse(TEXT("New festival clears collection reward claims"), Progress->IsCollectionRewardClaimed(Rewards[0].MilestoneId));
+	Progress->RecordDiscoveries(Discoveries);
 	StageButton(1)->OnClicked.Broadcast();
 	TestEqual(TEXT("Milestone reward safely saturates the existing Gold wallet"), Economy->GetGold(), MAX_int32);
 	TestTrue(TEXT("The toast reports the ten Gold actually credited"), Feedback->GetText().ToString().Contains(TEXT("10")));
 	TestFalse(TEXT("The toast does not advertise the unpaid authored amount"), Feedback->GetText().ToString().Contains(TEXT("222")));
 	Definition->InitialGold = 1000;
 	Economy->RestartFestival();
+	Progress->RecordDiscoveries(Discoveries);
 	TStrongObjectPtr<UFF_FacilityUpgradeTestPolicy> Observer(NewObject<UFF_FacilityUpgradeTestPolicy>(Game));
 	Observer->ObserveGoldChanged = [&]() { Screen->SetPreviewEntries({}); };
 	Economy->OnGoldChanged.AddDynamic(Observer.Get(), &UFF_FacilityUpgradeTestPolicy::HandleGoldChanged);

@@ -17,7 +17,7 @@
 ## 후속 수정: 전체 조합과 미발견 회색 표시
 
 - 시설창에서 열 때 선택 시설을 자동 필터로 사용하지 않도록 변경했습니다. 실제 시설을 설치·선택하고 시설창의 도감 버튼을 눌러, 선택 시설과 무관한 조합까지 표시되는 것을 검사했습니다.
-- 미발견 카드는 회색 배경·글자와 흐린 썸네일로 표시됩니다. 클릭해서 상세를 볼 수 있고, 발견 시 기존 WBP 색상이 복원됩니다. 데이터 갱신 후 재사용되는 카드의 복원도 검사했습니다.
+- 미발견 카드는 회색 배경·글자와 흐린 썸네일로 표시됩니다. 클릭해서 상세를 볼 수 있고, 발견 시 기존 WBP 색상이 복원됩니다. 데이터 갱신 후 재사용되는 카드의 복원도 검사했습니다.（10/14 기준: 이후 썸네일은 미설치 시설 실루엣·설치 시설 흑백·발견 후 원본 컬러로 바뀌었고(`FF_FacilityCodexImage.h`의 `Grayscale`·`Silhouette`), 최초 발견 보상 100 Gold와 수집 단계 보상이 추가되었다. 현재 동작은 [README_KO.md](README_KO.md)를 본다.）
 - 후속 Editor 빌드 성공: `Saved/FacilityCodexTask/EditorBuildAllGray.log`.
 - 변경 관련 자동 검사 2/2 성공: `AuthoredWidgets`, `PresenterLifecycle`. 보고서: `Saved/FacilityCodexTask/ReportAllGray/index.json`.
 - 아래 화면 PNG를 새 동작으로 다시 렌더링해 회색 표시를 확인했습니다. 기존 WBP 4개는 재생성하거나 저장하지 않았습니다.

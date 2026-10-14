@@ -200,6 +200,8 @@ bIsChild는 “이 캐릭터가 아이인가요?”라는 체크칸에 기본값
 - [ ] Crowd·경제 담당자가 스켈레톤·초기값·월드 범위를 수정한다.
 - [ ] 에디터를 새로 열고 준비 → 개장 → 라이브 → 종료 흐름과 패키지 실행을 확인한다.
 
+（10/14 기준 코드 확인: `bIsChild` 기본값은 `Source/FestaFiesta/Public/DataTables/FF_CrowdAppearenceRow.h`에 `false`로 들어가 있고, `GameplayCueNotifyPaths`는 `Config/DefaultGame.ini`에 `/Game/FestaFiesta/GameplayCues`로 지정되어 있습니다. 서핑 등 미니게임 실행 기능은 「미니게임 실행 기능 제거」 커밋(a27083db)에서 삭제되어 아래 7절의 `FF_SurfingSceneActor` 파일과 `FestaFiesta.Minigame.Surfing.*` 테스트는 더 이상 없습니다. 레벨 Blueprint 오류, 스켈레톤, HUD 아이콘처럼 에셋으로만 확인할 수 있는 항목은 코드로 확인하지 못했습니다.）
+
 기존 Tools/Build/Run-AutomationTests.ps1에는 Editor 빌드·자동화·DataValidation 경로가 있습니다. 팀원 수정이 통합되면 프로젝트 전체 검증에 이 경로를 활용할 수 있습니다. [Epic Data Validation 문서](https://dev.epicgames.com/documentation/en-us/unreal-engine/data-validation-in-unreal-engine?application_version=5.7)
 
 # 7. 개발자 참고: 변경 파일과 재현 도구

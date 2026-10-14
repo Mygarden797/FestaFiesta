@@ -1,0 +1,17 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "1.0.0",
+  "FriendlyName": "FF Map Overview",
+  "Description": "Isolated readable construction grid, whole-map view and circular venue minimap.",
+  "Category": "Festa Fiesta",
+  "EnabledByDefault": true,
+  "CanContainContent": true,
+  "Modules": [
+    { "Name": "FF_MapOverview", "Type": "Runtime", "LoadingPhase": "PostDefault" },
+    { "Name": "FF_MapOverviewEditor", "Type": "Editor", "LoadingPhase": "PostEngineInit" }
+  ],
+  "Plugins": [
+    { "Name": "FF_ZoneSystem", "Enabled": true }
+  ]
+}
