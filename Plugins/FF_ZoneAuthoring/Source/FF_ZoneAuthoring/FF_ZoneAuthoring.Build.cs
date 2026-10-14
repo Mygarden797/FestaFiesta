@@ -25,7 +25,9 @@ public class FF_ZoneAuthoring : ModuleRules
         // AssetRegistry: Project Zone Ids 동기화 시 Zone Definition 에셋 목록 조회(에디터 버튼에서만 호출)
         PrivateDependencyModuleNames.AddRange(new string[]
         {
-            "AssetRegistry"
+            "AssetRegistry",
+            "GeometryCore",
+            "GeometryAlgorithms"
         });
 
         // 에디터 빌드에서만: Undo(FScopedTransaction), 액터 선택(GEditor)

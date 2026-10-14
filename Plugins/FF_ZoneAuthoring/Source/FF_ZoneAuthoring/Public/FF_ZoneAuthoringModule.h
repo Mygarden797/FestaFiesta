@@ -7,3 +7,11 @@
 #include "Logging/LogMacros.h"
 
 FF_ZONEAUTHORING_API DECLARE_LOG_CATEGORY_EXTERN(LogFFZoneAuthoring, Log, All);
+
+#if WITH_EDITOR
+class UWorld;
+
+// The runtime authoring layer requests editor UI without depending on its editor module.
+DECLARE_DELEGATE_TwoParams(FFFZAOpenSelectedWeldRequest, UWorld*, float);
+FF_ZONEAUTHORING_API FFFZAOpenSelectedWeldRequest& FFZAGetSelectedWeldRequest();
+#endif

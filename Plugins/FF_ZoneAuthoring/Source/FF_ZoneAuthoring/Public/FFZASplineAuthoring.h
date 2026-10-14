@@ -35,8 +35,18 @@ namespace FFZASplineAuthoring
     // Spline 점들의 월드 XY 좌표(cm).
     FF_ZONEAUTHORING_API void GetWorldPolygon(const USplineComponent& Spline, TArray<FVector2D>& OutPolygon);
 
-    // 월드 XY 좌표 목록으로 Spline 점을 다시 만든다. Z는 액터 높이를 사용한다.
+    // 월드 XY 좌표 목록으로 Spline 점을 적용한다. 점 수가 같으면 기존 Z, 달라지면 WorldZ를 사용한다.
     FF_ZONEAUTHORING_API void SetWorldPolygon(USplineComponent& Spline, const TArray<FVector2D>& WorldPolygon, double WorldZ);
+
+    // Weld 결과를 적용한다. SourcePointKeys는 변경 전 닫힌 경계의 i + alpha 좌표이다.
+    // 이동한 기존 점의 Z는 보존하고, 추가한 점의 Z는 원래 변에서 보간한다(마지막 변 포함).
+    // 키/좌표가 잘못되거나 원본이 닫힌 직선 경계가 아니면 변경 없이 false.
+    FF_ZONEAUTHORING_API bool SetWorldPolygonPreservingHeights(USplineComponent& Spline,
+        const TArray<FVector2D>& WorldPolygon, const TArray<double>& SourcePointKeys);
+
+    // Pure writeback preflight. A failure leaves OutWorldPoints unchanged; no UObject/editor access.
+    FF_ZONEAUTHORING_API bool BuildWorldPolygonPreservingHeights(const TArray<double>& OriginalWorldHeights,
+        const TArray<FVector2D>& WorldPolygon, const TArray<double>& SourcePointKeys, TArray<FVector>& OutWorldPoints);
 
     // 액터 원점을 왼쪽 아래로 하는 직사각형(SizeCm.X × SizeCm.Y)으로 경계를 만든다.
     // Undo가 필요하면 호출 전에 Spline.Modify()를 부른다(생성자에서도 쓰이므로 내부에서 부르지 않음).
