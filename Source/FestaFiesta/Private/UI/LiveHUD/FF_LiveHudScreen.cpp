@@ -20,6 +20,7 @@
 #include "GameFramework/PlayerController.h"
 #include "UI/FF_UILog.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
+#include "UI/Facility/FF_FacilityInfoSubsystem.h"
 #include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
@@ -225,10 +226,15 @@ void UFF_LiveHudScreen::RequestOpenIncident(FFF_IncidentHandle Handle)
 
 void UFF_LiveHudScreen::HandleIncidentMarkerClicked(FFF_IncidentHandle Handle)
 {
-	const UFF_IncidentSubsystem* Incident = GetWorld() ? GetWorld()->GetSubsystem<UFF_IncidentSubsystem>() : nullptr;
+	UWorld* World = GetWorld();
+	const UFF_IncidentSubsystem* Incident = World ? World->GetSubsystem<UFF_IncidentSubsystem>() : nullptr;
 	if (!Incident || !Incident->IsHandleValid(Handle))
 	{
 		return;
+	}
+	if (UFF_FacilityInfoSubsystem* FacilityInfo = World->GetSubsystem<UFF_FacilityInfoSubsystem>())
+	{
+		FacilityInfo->ClearSelection();
 	}
 	EnsureIncidentDetailPanel();
 	if (IncidentDetailPanel)
