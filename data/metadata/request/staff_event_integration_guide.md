@@ -2,6 +2,13 @@
 
 정원님께 전달할 요청과 변경 사항입니다. 갱신: 2026-09-23.
 
+> （10/14 Dev 기준 현황: 아래 9/23 표는 당시 코드 기록이다. 요청 1~3·5 는 구현됐다 — 알림 4종은 Dynamic 멀티캐스트이고
+> 닫힘 결과는 `OnIncidentFinished(FFF_IncidentClosedInfo)`, 조회는 `GetIncidentView`, 해소는 `ResolveIncident`(선택지·인원)다.
+> 사건은 `UFF_CrowdIncidentBridgeSubsystem` 이 올린다. 요청 4 는 선택지(`UFF_IncidentOption`)의 `MinStaff`·`WorkAmount` 로 들어갔고,
+> 작업 시간 = `WorkAmount ÷ CalcAbilitySum`(하한까지 레벨 그대로, 초과분 50%)이다(`UFF_StaffDispatchSubsystem::CalculateWork`).
+> 정원(`MaxStaff`) 상한·진행률 비례 페널티(`CalcOverduePenalty`)는 쓰이지 않고, 미처리 페널티는 영역 만족도 감점이다.
+> 승급 비용은 여전히 0, Safety 지표는 여전히 88 고정이다. 「확정된 스태프 규칙」의 기본 6명은 10/9 에 1명으로 바뀌었다.）
+
 ## 📌 2026-09-23 추가 요청 — 사건 시스템 머지(`ffff4752`·`30e57b9a`) 이후
 
 머지된 `UFF_IncidentSubsystem` 을 읽어 보고, 경제·만족도·SNS·스태프를 붙이려면 필요한 것을

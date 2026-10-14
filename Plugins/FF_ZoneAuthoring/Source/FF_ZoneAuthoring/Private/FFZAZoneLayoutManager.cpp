@@ -22,7 +22,6 @@
 #include "FF_ZoneAuthoringModule.h"
 #include "FFZAAuthoredZone.h"
 #include "FFZADistrict.h"
-#include "FFZALayoutOps.h"
 #include "FFZAPlot.h"
 #include "FFZAPolygonMath.h"
 #include "FFZASplineAuthoring.h"
@@ -306,34 +305,6 @@ void AFFZAZoneLayoutManager::NormalizeAllTransformsInternal(int32& OutCount)
     }
 }
 
-int32 AFFZAZoneLayoutManager::WeldSharedBoundariesInternal()
-{
-    UWorld* World = GetWorld();
-    if (!World)
-    {
-        return 0;
-    }
-    TArray<AFFZSGameplayZone*> Zones;
-    TArray<TArray<FVector2D>> Polygons;
-    UFFZAZoneAuthoringSubsystem::CollectWorldZones(*World, Zones, Polygons);
-    TArray<bool> Changed;
-    const int32 Moved = FFZALayoutOps::WeldPolygons(Polygons, WeldToleranceCm, Changed);
-    for (int32 Index = 0; Index < Zones.Num(); ++Index)
-    {
-        if (!Changed[Index] || !Zones[Index]->BoundarySpline)
-        {
-            continue;
-        }
-        Zones[Index]->Modify();
-        FFZASplineAuthoring::SetWorldPolygon(*Zones[Index]->BoundarySpline, Polygons[Index], Zones[Index]->GetActorLocation().Z);
-        if (AFFZAAuthoredZone* Authored = Cast<AFFZAAuthoredZone>(Zones[Index]))
-        {
-            Authored->RefreshAuthoringStatus();
-        }
-    }
-    return Moved;
-}
-
 int32 AFFZAZoneLayoutManager::AutoFillNeighborsInternal()
 {
     UWorld* World = GetWorld();
@@ -456,9 +427,14 @@ void AFFZAZoneLayoutManager::NormalizeAllTransforms()
 void AFFZAZoneLayoutManager::WeldSharedBoundaries()
 {
 #if WITH_EDITOR
-    const FScopedTransaction Transaction(LOCTEXT("Weld", "Zone 경계 용접"));
-    const int32 Moved = WeldSharedBoundariesInternal();
-    UE_LOG(LogFFZoneAuthoring, Log, TEXT("Weld Shared Boundaries: 꼭짓점 %d개를 이웃 경계에 붙였습니다."), Moved);
+    if (FFZAGetSelectedWeldRequest().IsBound())
+    {
+        FFZAGetSelectedWeldRequest().Execute(GetWorld(), WeldToleranceCm);
+    }
+    else
+    {
+        UE_LOG(LogFFZoneAuthoring, Warning, TEXT("선택 Zone 용접 창을 열 수 없습니다. FF_ZoneAuthoringEditor 모듈을 확인하세요."));
+    }
 #endif
 }
 
@@ -789,10 +765,9 @@ void AFFZAZoneLayoutManager::FixAndValidateAll()
         int32 Normalized = 0;
         ApplyAllDefinitionsInternal(Applied);
         NormalizeAllTransformsInternal(Normalized);
-        const int32 Welded = WeldSharedBoundariesInternal();
         const int32 NeighborChanges = AutoFillNeighborsInternal();
-        UE_LOG(LogFFZoneAuthoring, Log, TEXT("Fix And Validate All: 정의 %d, 정리 %d, 용접 꼭짓점 %d, 이웃 갱신 %d"),
-            Applied, Normalized, Welded, NeighborChanges);
+        UE_LOG(LogFFZoneAuthoring, Log, TEXT("Fix And Validate All: 정의 %d, 정리 %d, 이웃 갱신 %d. 경계 용접은 선택 Zone 용접 창에서 실행하세요."),
+            Applied, Normalized, NeighborChanges);
     }
     RefreshInternal();
     ValidateInternal();

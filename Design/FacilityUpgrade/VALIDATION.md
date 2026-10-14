@@ -45,7 +45,7 @@
 
 ## 기존 콘텐츠 검증에서 남은 문제
 
-`FestaFiesta.Content.FacilityDefinitions.AllDefinitionsAreProjectable`은 기존 13개 시설의 입장점이 예약 영역 밖으로 150cm 벗어나고, `Toilet_Accessible_WestGate`의 대기 경로가 필요한 길이보다 350cm 부족해 실패한다. 강화 대상 부스 6개는 같은 입구 문제를 Lv.2·Lv.3에서도 이어받는다. 신규 레벨에만 발생하는 Spec 유효성·Party Queue 변환·시각 크기 오류는 없었다.
+`FestaFiesta.Content.FacilityDefinitions.AllDefinitionsAreProjectable`은 기존 13개 시설의 입장점이 예약 영역 밖으로 150cm 벗어나고, `Toilet_Accessible_WestGate`의 대기 경로가 필요한 길이보다 350cm 부족해 실패한다. 강화 대상 부스 6개는 같은 입구 문제를 Lv.2·Lv.3에서도 이어받는다. 신규 레벨에만 발생하는 Spec 유효성·Party Queue 변환·시각 크기 오류는 없었다.（10/14 기준: `Toilet_Accessible_WestGate` 정의는 현재 없다. 이후 기록에서는 같은 검사가 통과했다 — 9/20 시설 70종 검증의 `AllDefinitionsAreProjectable` Success, 9/23 전체 자동화 933/933. 현재 시점 재실행 결과는 없다.）
 
 이관 스크립트는 강화 목록과 사용 여부만 변경했으며 원본 입구·대기열 좌표를 수정하지 않는다. 기존 기본 사양 검사와 해당 큐 검사 코드도 이번 변경으로 바뀌지 않았다. 콘텐츠 검증을 삭제하거나 조건을 완화하지 않았으며, 이 시설들의 입구 위치와 대기 공간은 별도 보정이 필요하다. [상세 진단](../../Artifacts/FacilityUpgrade/ExistingContentValidationIssues.md)과 `FacilityContentReadOnlyAudit.json`에 실제 18개 시설의 좌표와 근거를 기록했다.
 

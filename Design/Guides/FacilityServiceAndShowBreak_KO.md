@@ -19,6 +19,11 @@
 - `UFF_QueueSubsystem::Tick`은 축제 실효 배속(`GetEffectiveTimeScale`)을 따른다. 위 `팀당 5초`는 배속과 관계없이 Stage 시간 기준이다. 전에는 실제 시간으로만 흘러 4배속에서 서비스가 손님 기준 4배 느렸다.
 - 손님 보행 속도 배수 `GuestWalkSpeedScale`은 1.6이다(150cm/s × 1.6 = 2.4m/s).
 
+2026-10-12 추가 규칙
+
+- 시설 줄의 도착 통지는 리더가 자기 칸에서 40cm(`QueueArrivalNotifyRadiusUU`) 안에 들어오면 보낸다. 일행 전원이 5cm 안에 들어오기를 기다리지 않는다. 걷는 목표 오차(`AssignedSlotArrivalRadiusUU` 5cm)는 그대로라 일행은 이용 중에 마저 칸에 들어선다. 전원 5cm를 기다리면 맨 앞 팀이 이용을 시작하기까지 8~13초가 걸려 시설이 줄을 두고 놀았다.
+- 위 규칙은 시설 줄에만 해당한다. 공연 관람석은 지금도 전원이 자기 좌석에 도착해야 관람 상태로 바뀐다.
+
 시설 데이터 변경 도구: `Tools/facilities/migrate_facility_service_duration.py`.
 기본 실행은 감사이며 `-FFApplyFiveSecondFacilityServices` 지정 시 저장한다. 원본 백업, 이전·이후 이용시간, 그 밖의 시설 속성 보존 결과는 `Saved/FacilityServiceDuration5Seconds`에 기록한다.
 

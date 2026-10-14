@@ -307,6 +307,11 @@ GZ_Operations
 다른 프로젝트로 이식할 때는 `ProjectZoneIds`를 자체 Stable ID로 교체하거나
 `bRestrictZoneIdsToProjectPresets`를 끌 수 있다.
 
+（10/14 기준: 위 12개는 코드 기본값(`UFFZSGridLibrary::GetDefaultProjectZoneIds`)이다. FestaFiesta는
+`Config/DefaultGame.ini`의 `[/Script/FF_ZoneSystem.FFZSDeveloperSettings]`에서 `ProjectZoneIds`를
+`GZ_Beach01`~`GZ_Beach05`, `GZ_DadaYajang`, `GZ_DadaepoForest`, `GZ_FountainPirates`, `GZ_FleaMarket`,
+`GZ_PublicParkingWest`, `GZ_TemporaryParkingEast`, `GZ_Operations`, `GZ_Tutorial`의 13개로 덮어쓴다.）
+
 ### 5.4 포함 판정과 Hysteresis
 
 `ContainsWorldPoint`는 월드 위치를 Zone 로컬 좌표로 바꾼 뒤 다음을 모두 검사한다.
@@ -647,6 +652,11 @@ FacilityActor의 Transform이나 QueueComponent 내부 배열을 직접 수정�
 Spec으로 정규화하므로 제2의 시설 데이터 원천으로 사용해서는 안 된다. 다른 명령을 직접 만들 때도
 CommandId와 TransactionId가 모두 유효해야 한다.
 
+（10/14 기준: `EFFZSCommandType`에는 7번째 값 `Upgrade`가 추가되어 있다. 저장된 영수증 순번을 지키기 위해
+맨 뒤에 붙였으며, 시설 강화 단계(`UpgradeTiers`)를 적용한다. Install·Move·Remove와 같이 배치 변경 명령으로
+분류되어 `InitialSetup`·`MorningCheck`에서만 허용되고, Queue가 비어 있어야 실행된다.
+근거: `FF_FFZSTypes.h`의 `EFFZSCommandType`, `FF_FFZSWorldSubsystem.cpp`의 `IsWorldChangeCommand`·`ExecuteUpgrade`.）
+
 ### 9.2 Phase 규칙
 
 | Phase | Install | Move | Remove | Open / Close / EmergencyClose |
@@ -886,7 +896,7 @@ Facility와 WorldSubsystem을 제외한 코드는 내부 배열을 직접 바꿀
 | `MaxWaitingAgents` | 12 | Waiting 배열 최대 인원 |
 | `SlotSpacingCm` | 115 cm | Queue Spline 위 Slot 간격 |
 | `ServiceCapacity` | 1 | 동시 Service Slot 수 |
-| `ServiceDurationSeconds` | 4초 | 실제 Service 도착 후 처리 시간 |
+| `ServiceDurationSeconds` | 5초 | 실제 Service 도착 후 처리 시간 |
 | `AbandonAfterSeconds` | 30초 | Waiting 포기 시간. 0이면 자동 포기 없음 |
 | `SlotArrivalToleranceCm` | 25 cm | Queue·Service·Exit 도착 XY 허용 오차 |
 | `NavigationProjectionExtentCm` | 30 cm | Queue 이동 목표 Nav 투영 범위 |
@@ -1226,11 +1236,11 @@ Editor의 `Edit -> Project Settings -> Game -> FF Zone System`에서 설정한�
 | Placement | Enable Ground Checks | true | 지면 검증 사용 |
 | Placement | Require Every Ground Sample | true | 모든 표본 Hit 요구 |
 | Placement | Enable World Collision Checks | true | Visibility Overlap 사용 |
-| Navigation | Enable Projection Checks | true | Anchor·Slot Nav 검사 |
+| Navigation | Enable Projection Checks | true (FestaFiesta ini는 false) | Anchor·Slot Nav 검사 |
 | Navigation | Fail When Nav Unavailable | false | 운영에서는 true 검토 |
 | Navigation | Projection Extent | 30 cm | Facility별 값과 비교하는 전역 상한, 1 cm 하한 |
 | Zone Authoring | Restrict Zone IDs | true | ProjectZoneIds만 허용 |
-| Zone Authoring | Project Zone IDs | 5.3절의 기본 12개 ID | 제한 모드에서 허용·필수인 ID 집합 |
+| Zone Authoring | Project Zone IDs | 5.3절의 기본 12개 ID (FestaFiesta ini는 13개) | 제한 모드에서 허용·필수인 ID 집합 |
 | Zone Membership | Hysteresis | 50 cm | 이전 Zone 유지 완충 |
 | Integration | Require Production Policy Domains | false | 6개 Domain Gate |
 | Protected Routes | General Width | 300 cm | 전역 기본 폭 |
@@ -1241,9 +1251,15 @@ Editor의 `Edit -> Project Settings -> Game -> FF Zone System`에서 설정한�
 | Density | Warning / Critical Hold | 5 / 3초 | 상승 유지 시간 |
 | Workflow | Initial Phase | InitialSetup | 새 Subsystem의 시작 Phase |
 
-`Config/DefaultFF_ZoneSystem.ini`에는 배포 핵심값과 두 Boolean
+`Config/DefaultFF_ZoneSystem.ini`(플러그인 폴더 기준)에는 배포 핵심값과 두 Boolean
 (`bRestrictZoneIdsToProjectPresets`, `bRequireProductionPolicyDomains`)을 명시한다. Ground/Nav
 검사 Boolean, Trace 범위, ProjectZoneIds, InitialPhase 등은 CDO 또는 생성자 기본값을 사용한다.
+
+（10/14 기준: 설정 클래스가 `Config = Game`이라 FestaFiesta에서 실제로 읽히는 값은 프로젝트
+`Config/DefaultGame.ini`의 `[/Script/FF_ZoneSystem.FFZSDeveloperSettings]`이다. 이 섹션은 위 표의 거의 모든
+항목과 ProjectZoneIds(13개), InitialPhase까지 명시한다. 코드 기본값과 다른 프로젝트 값은
+`bEnableNavigationProjectionChecks=False`, `QueueLaneNavCostPaddingCm=50`이다. 플러그인 ini는 출하 기준
+기록이며 `MaxEnumeratedCellsPerFacility=10000000`으로 DefaultGame.ini의 20000000과 다르다.）
 
 설정이 적용되는 시점을 구분해야 한다.
 
@@ -1601,7 +1617,7 @@ NavMesh 재빌드 비용은 별도 통합 시험이 필요하다.
 
 ### 20.4 QA Gate
 
-`Config/DefaultFF_ZoneSystem.ini`가 참조하는 출하 전 승인 체크리스트다. 아래 항목은 현재 통과
+`Config/DefaultFF_ZoneSystem.ini`가 참조하는 출하 전 승인 체크리스트다（10/14 기준: FestaFiesta에 실제 적용되는 설정은 프로젝트 `Config/DefaultGame.ini`에 있다）. 아래 항목은 현재 통과
 상태를 주장하는 목록이 아니라, 대상 빌드마다 로그·리포트·캡처로 증거를 남겨야 하는 Gate다.
 
 #### 설정·정적 데이터
@@ -1649,7 +1665,9 @@ NavMesh 재빌드 비용은 별도 통합 시험이 필요하다.
   Rect 수가 지나치게 늘어나면 공간 인덱스가 없으므로 비용도 함께 증가한다.
 - Protected Area 충돌 검사는 등록된 보호 영역을 순회한다.
 - `ResolveZoneAtWorldLocation`은 결정론을 위해 Zone ID를 정렬한 뒤 Zone을 순회한다.
-  현재 별도의 Quadtree나 Spatial Hash는 없다.
+  （10/14 기준: `FF_FFZSSpatialHash`가 추가되어 `UFFZSWorldSubsystem`이 `FacilitySpatialIndex`와
+  `RegionSpatialIndex`를 유지한다. BuildArea가 있는 게임 월드에서는 지역 해시로 후보 Zone을 먼저 좁히고,
+  BuildArea가 없으면 위의 정렬 순회를 쓴다. 바로 위 항목의 "공간 인덱스가 없으므로"도 이 기준으로 읽는다.）
 - Navigation 검증은 첫 Entry Anchor에서 필수 Anchor와 Queue Slot까지 동기식 투영·경로
   검사를 수행한다. 대량 배치는 Game Thread Hitch를 피하도록 작업량을 분산해야 한다.
 - Queue 시간 진행은 사건 단위이며 한 Advance에서 최대 4,096 event-step을 처리한다. 같은
@@ -1744,12 +1762,18 @@ Spawn/Despawn을 구현하지 않는다. 프로젝트 NPC가 `IFFZSQueueAgent` C
 
 현재 FestaFiesta QA Harness는 Null Agent Actor와 수동 도착 보고를 사용한다. 따라서
 “Queue 상태 머신이 동작한다”는 검증과 “실제 AI가 목적지까지 이동한다”는 검증을 구분해야 한다.
+（10/14 기준: FestaFiesta 소스에는 `IFFZSQueueAgent` 구현이 없다. 게임 NPC 줄은 프로젝트의 군중 대기열
+`UFF_QueueSubsystem` 이 맡고, 도착은 `UFF_ZoneSystemQueueBridgeSubsystem::NotifyZoneFacilityPartyArrived` 로 알린다.）
 
 ### 22.5 외부 연동과 콘텐츠
 
 - 프로젝트 소스에는 현재 Production `IFFZSExternalPolicy` 구현이 없다. 기본 설정
   `bRequireProductionPolicyDomains=false`에서는 정책 없이 내부 검증만 적용된다. true이면
   6개 필수 Domain 부재로 Command가 `ExternalPolicyRejected`된다.
+  （10/14 기준: 지금은 FestaFiesta가 정책을 등록한다. Economy는 `UFF_ZoneSystemEconomyBridgeSubsystem`,
+  SimulationTime은 `UFF_ZoneSystemStageBridgeSubsystem`, Custom은 `UFF_ZoneSystemQueueBridgeSubsystem`,
+  `UFF_ProgramFacilityProtectionSubsystem`, `UFF_FacilityUpgradeSubsystem`이 맡는다. Navigation·UserInterface·
+  Safety·Experience Domain 구현은 없고 `bRequireProductionPolicyDomains=False`라서 Command가 막히지 않는다.）
 - `CanContainContent=true`지만 플러그인 자체 Content 폴더에는 운영용 Facility Asset 묶음이
   없다. `UFFZSFacilityDefinition` Asset 생성과 Asset Manager 정책은 호스트 프로젝트 책임이다.
 - 운영용 UMG, 사용자 메시지 번역, 분석·Telemetry, 저장 슬롯 관리는 포함하지 않는다.
@@ -1769,9 +1793,9 @@ Spawn/Despawn을 구현하지 않는다. 프로젝트 NPC가 `IFFZSQueueAgent` C
 | Facility Definition 검증·Asset ID | `Source/FF_ZoneSystem/Public/FF_FFZSFacilityDefinition.h`, `Source/FF_ZoneSystem/Private/FF_FFZSFacilityDefinition.cpp` |
 | Runtime Facility와 Anchor | `Source/FF_ZoneSystem/Public/FF_FFZSFacilityActor.h`, `Source/FF_ZoneSystem/Public/FF_FFZSFacilityAnchorComponent.h` |
 | Queue 상태 머신 | `Source/FF_ZoneSystem/Public/FF_FFZSQueueComponent.h`, `Source/FF_ZoneSystem/Private/FF_FFZSQueueComponent.cpp` |
-| Queue Agent 계약 | `Source/FF_ZoneSystem/Public/FF_FFZSQueueAgent.h`, `Source/FF_ZoneSystem/Private/FF_FFZSQueueAgent.cpp` |
+| Queue Agent 계약 | `Source/FF_ZoneSystem/Public/FF_FFZSQueueAgent.h` (cpp는 2026-09-26에 제거) |
 | 1 cm 격자 연산·명령 지문 | `Source/FF_ZoneSystem/Public/FF_FFZSGridLibrary.h`, `Source/FF_ZoneSystem/Private/FF_FFZSGridLibrary.cpp` |
-| 외부 정책 계약 | `Source/FF_ZoneSystem/Public/FF_FFZSExternalPolicy.h`, `Source/FF_ZoneSystem/Private/FF_FFZSExternalPolicy.cpp` |
+| 외부 정책 계약 | `Source/FF_ZoneSystem/Public/FF_FFZSExternalPolicy.h` (cpp는 2026-09-26에 제거) |
 | Preview | `Source/FF_ZoneSystem/Public/FF_FFZSPlacementPreviewActor.h`, `Source/FF_ZoneSystem/Private/FF_FFZSPlacementPreviewActor.cpp` |
 | Settings | `Source/FF_ZoneSystem/Public/FF_FFZSDeveloperSettings.h`, `Source/FF_ZoneSystem/Private/FF_FFZSDeveloperSettings.cpp` |
 | Runtime Unit Test | `Source/FF_ZoneSystem/Private/Tests/` |
