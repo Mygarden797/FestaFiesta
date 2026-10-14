@@ -6,6 +6,8 @@
 
 대상은 브리핑의 70종이다. `.blend` 70개, FBX 70개, 사선 미리보기 70개를 확인했다.
 
+（10/14 기준: 이 문서 생성 뒤 같은 날 커밋 `fe1c3ea3`(9/20)에서 #40 `Performance_MainStage_WaveConcertStage`의 시설 정의가 삭제되어, 게임에 등록된 신규 시설 정의는 **69종**이다. 메인 무대는 기존 `Performance_MainStage_SunsetMainStage` 하나다. #40의 Static Mesh·카탈로그 텍스처는 `Content/Asset/FacilitiesAsset_HKH/FacilityExpansion70/Performance/WaveConcertStage`에 남아 있다. 시설 정의 폴더는 9/22 `Content/FestaFiesta/Zone/Data/FacilityDefinitions`에서 `Content/FestaFiesta/Building/FF_Data_Building`으로 옮겨졌고, 현재 전체 시설 정의는 기존 45종 + 신규 69종 = 114개다.）
+
 | 확인 항목 | 현재 수 | 근거 범위 |
 |---|---:|---|
 | 시설 Definition `.uasset` | 70/70 | 예상 시설별 경로의 실제 파일 존재 |
@@ -21,7 +23,7 @@
 
 - Blender 편집 원본: [C:\Users\gksro\OneDrive\Desktop\Blender](<C:/Users/gksro/OneDrive/Desktop/Blender>). 파일명은 `번호_시설ID.blend`이다.
 - [70종 검색 가능한 로컬 갤러리](<C:/Users/gksro/OneDrive/Desktop/Git/TeamProject/8th-Team13-Final-Project/Design/Guides/Facility70_Gallery.html>)
-- 제작 소스: [SourceArt/FacilityExpansion70](<C:/Users/gksro/OneDrive/Desktop/Git/TeamProject/8th-Team13-Final-Project/SourceArt/FacilityExpansion70>) — `.gitignore` 대상이므로 별도 원본 보관이 필요하다.
+- 제작 소스: [SourceArt/FacilityExpansion70](<C:/Users/gksro/OneDrive/Desktop/Git/TeamProject/8th-Team13-Final-Project/SourceArt/FacilityExpansion70>) — `.gitignore` 대상이므로 별도 원본 보관이 필요하다.（10/14 기준: 9/22 커밋 `69a4bd73`부터 FBX 70개·미리보기 PNG·`production_record.json`·`build_manifest.json`이 저장소의 `Design/SourceArt/FacilityExpansion70`에 올라가 있다. 시설별 `.blend`는 포함되지 않았다. `expansion70_paths.py`의 기본 `.blend` 폴더는 `Design/SourceArt/FacilityExpansion70/Blends`이고, 일부 스크립트는 아직 루트 `SourceArt/FacilityExpansion70`을 읽는다.）
 - 재현 스크립트·카탈로그: [Tools/facilities](<C:/Users/gksro/OneDrive/Desktop/Git/TeamProject/8th-Team13-Final-Project/Tools/facilities>) — 저장소 관리 대상인 코드와 기록이다.
 
 미리보기는 Blender 렌더이며 Unreal 렌더와 구분한다. 원본의 부품별 VIS/COL/GUIDES와 저장된 제작 기록을 함께 확인한다. 아래 이미지에는 번호별 시설 10개씩을 배치했다.
@@ -46,7 +48,7 @@ Blender 일반 편집 파일 저장·재개방 검사: **70/70 통과**. [검증
 
 카탈로그 치수는 초기 계획 상한이다. 일반 시설은 종횡비를 유지해 그 범위에 맞추고 Road/Tile은 400×400×8cm로 맞춘다. 최종 PDA의 XY는 실제 메시 크기를 1cm 셀로 올림하고 높이는 실제 메시 높이를 사용한다. 계획 값·제작된 크기·최종 PDA 값은 아래에 별도로 표시한다. Data Asset 생성 이후 런타임 권위는 해당 `Spec`이다.
 
-설치 비용과 관련 외부 키는 기존 동일 소분류 템플릿/경제 테이블 정책을 사용한다. 신규 70종 전용 가격·수익 균형 조정이 완료되었다는 뜻은 아니다. 유료 공연 프로그램 등록, 영상, VFX, 게임 규칙·점수, 음향, 가동 부품·캐릭터 애니메이션은 별도 구현 범위다. 치료·보안·화재·대피·판매 효과도 형상 존재만으로 구현되었다고 보지 않는다.
+설치 비용과 관련 외부 키는 기존 동일 소분류 템플릿/경제 테이블 정책을 사용한다. 신규 70종 전용 가격·수익 균형 조정이 완료되었다는 뜻은 아니다.（10/14 기준: 1인 이용 매출은 9/20 추가된 시설별 표 `DT_FacilityRevenues`(`data/unreal/facility_revenues_v0.csv`, 114행)에 신규 69종 모두 행이 있으며 10/9 경제 2차 밸런싱 값이 들어 있다. 설치 비용 표 `facility_costs_v0.csv`에는 신규 시설 ID 행이 없다.） 유료 공연 프로그램 등록, 영상, VFX, 게임 규칙·점수, 음향, 가동 부품·캐릭터 애니메이션은 별도 구현 범위다. 치료·보안·화재·대피·판매 효과도 형상 존재만으로 구현되었다고 보지 않는다.
 
 ### 전면 방향과 좌표 변환
 
@@ -101,7 +103,7 @@ Road/Tile #65–70은 임포트 Yaw 0°를 사용해 진행 +X를 유지한다. 
 | 37 | 단체 피크닉 테이블<br>Rest/Picnic | 420 × 280 × 105 | 420 × 277.1 × 90.1 | 420 × 278 × 90.1 | 15 / 1364 / 6 | Unreal 네이티브 검증 PASS<br>[blend](<C:/Users/gksro/OneDrive/Desktop/Blender/37_Rest_Picnic_GroupPicnicTable.blend>) |
 | 38 | 음수 라운지<br>Rest/Cooling | 550 × 400 × 330 | 528 × 372.9 × 330 | 528 × 373 × 330 | 44 / 12812 / 11 | Unreal 네이티브 검증 PASS<br>[blend](<C:/Users/gksro/OneDrive/Desktop/Blender/38_Rest_Cooling_DrinkingWaterLounge.blend>) |
 | 39 | 해변 족욕 쉼터<br>Rest/Cooling | 550 × 500 × 420 | 539 × 490 × 420 | 539 × 490 × 420 | 35 / 2398 / 13 | Unreal 네이티브 검증 PASS<br>[blend](<C:/Users/gksro/OneDrive/Desktop/Blender/39_Rest_Cooling_BeachFootbathShelter.blend>) |
-| 40 | 파도형 콘서트 무대<br>Performance/MainStage | 1400 × 800 × 720 | 1400 × 800 × 702 | 1400 × 800 × 702 | 120 / 13250 / 12 | Unreal 네이티브 검증 PASS<br>[blend](<C:/Users/gksro/OneDrive/Desktop/Blender/40_Performance_MainStage_WaveConcertStage.blend>) |
+| 40 | 파도형 콘서트 무대<br>Performance/MainStage | 1400 × 800 × 720 | 1400 × 800 × 702 | 1400 × 800 × 702 | 120 / 13250 / 12 | Unreal 네이티브 검증 PASS（10/14 기준: 시설 정의 삭제됨）<br>[blend](<C:/Users/gksro/OneDrive/Desktop/Blender/40_Performance_MainStage_WaveConcertStage.blend>) |
 | 41 | 가족 인형극장<br>Performance/SubStage | 650 × 600 × 450 | 633.2 × 576.2 × 450 | 634 × 577 × 450 | 67 / 14240 / 16 | Unreal 네이티브 검증 PASS<br>[blend](<C:/Users/gksro/OneDrive/Desktop/Blender/41_Performance_SubStage_FamilyPuppetTheater.blend>) |
 | 42 | 야외 영화 상영장<br>Performance/SubStage | 1100 × 1100 × 650 | 1100 × 1017 × 622.3 | 1100 × 1018 × 622.3 | 58 / 7384 / 10 | Unreal 네이티브 검증 PASS<br>[blend](<C:/Users/gksro/OneDrive/Desktop/Blender/42_Performance_SubStage_OutdoorCinema.blend>) |
 | 43 | 로컬 밴드 쇼케이스<br>Performance/SubStage | 900 × 650 × 500 | 846.8 × 596.6 × 500 | 847 × 597 × 500 | 106 / 24304 / 12 | Unreal 네이티브 검증 PASS<br>[blend](<C:/Users/gksro/OneDrive/Desktop/Blender/43_Performance_SubStage_LocalBandShowcase.blend>) |
@@ -213,7 +215,7 @@ Road/Tile #65–70은 임포트 Yaw 0°를 사용해 진행 +X를 유지한다. 
 - **37 단체 피크닉 테이블**: 여러 NPC의 착석·식사 애니메이션은 별도 연결한다.
 - **38 음수 라운지**: 수도 물줄기·병 리필·음수 애니메이션은 별도 연결한다.
 - **39 해변 족욕 쉼터**: 수면 재질·물결·족욕 애니메이션과 냉각 효과는 별도 연결한다.
-- **40 파도형 콘서트 무대**: 공연 프로그램·음악·영상 화면·무대 조명·관객 행동은 별도 연결한다.
+- **40 파도형 콘서트 무대**: 공연 프로그램·음악·영상 화면·무대 조명·관객 행동은 별도 연결한다.（10/14 기준: 시설 정의가 삭제되어 연결 대상 아님）
 - **41 가족 인형극장**: 인형·커튼 가동·공연 프로그램·관객 행동은 별도 연결한다.
 - **42 야외 영화 상영장**: 영상 재생·음향·상영 시간표·관객 행동은 별도 연결한다.
 - **43 로컬 밴드 쇼케이스**: 악기 연주 애니메이션·음향·공연 프로그램·관객 행동은 별도 연결한다.

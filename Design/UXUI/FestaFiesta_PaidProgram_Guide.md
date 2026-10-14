@@ -37,7 +37,7 @@
 - 기존 경제 저장소의 알림 순서를 완전한 트랜잭션으로 보강
 - 기획 검증 함수를 Festival DataAsset의 **Validate Assets** 메뉴에 자동 연결
 
-자세한 전달 문구는 `Design/Collaboration/FestaFiesta_PaidProgram_Team_Handoff.md`에 있다.
+자세한 전달 문구는 `Design/Collaboration/FestaFiesta_PaidProgram_Team_Handoff.md`에 있다（10/14 기준 위치: 저장소 루트 `Collaboration/FestaFiesta_PaidProgram_Team_Handoff.md`）.
 
 ## 3. 플레이어 화면에서 실행되는 순서
 

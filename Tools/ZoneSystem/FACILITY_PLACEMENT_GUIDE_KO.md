@@ -33,6 +33,8 @@ NavMesh는 관람객이 보는 보행 지도다. 건축 허가는 관리자가 �
 
 근거: `Artifacts/Validation/PlacementRules/map-readonly.json`. 맵 SHA-256은 검사 전후 `6283c33e87927cb4a2d2591f44e98250edbde3e570218016da41492ce91f257c`로 같았다.
 
+（10/14 기준: 위 표는 2026-09-11 맵 상태다. 2026-10-10 「건축 가능 구역 변경」 커밋에서 `Config/DefaultGame.ini`의 `ProjectZoneIds`가 13개 이름 구역(`GZ_Beach01`~`05`, `GZ_DadaYajang`, `GZ_DadaepoForest`, `GZ_FountainPirates`, `GZ_FleaMarket`, `GZ_PublicParkingWest`, `GZ_TemporaryParkingEast`, `GZ_Operations`, `GZ_Tutorial`)으로 바뀌었고, `GZ_TestMain_01`~`30`은 빠졌다. `Test_Main.umap`도 같은 커밋에서 수정됐으므로 2026-10-10 카메라 수정 기록(`Tools/Camera/CAMERA_REGRESSION_FIX_KO.md` 12절)은 본편 맵의 런타임 Zone을 13개로 적었다. BuildArea 상태는 에디터에서 다시 확인한다. 아래 예시의 `GZ_TestMain_01`도 지금 목록에 있는 ID로 바꿔 읽는다.）
+
 통합 영역은 모든 구역을 감싸는 큰 사각형이 아니다. **실제 구역들이 덮는 부분만 합치므로, 구역 사이 빈틈·구멍·외부는 계속 제외된다.** 서로 맞닿은 구역 사이의 내부 선은 시설이 넘어갈 수 있다.
 
 ## 설치 가능 여부를 판단하는 순서
@@ -102,7 +104,7 @@ NavMesh는 관람객이 보는 보행 지도다. 건축 허가는 관리자가 �
 
 ## 자주 헷갈리는 점
 
-**길이 있어야 설치하는 것과 길 위에 시설을 겹쳐 놓는 것은 다르다.** 길 시설 데이터의 `길 위 시설 설치 허용` / `bAllowFacilityPlacementOnTop`은 길 위에 다른 시설을 놓을 수 있는지를 정한다. 이번 변경은 길 연결 필수 조건만 해제하므로 이 노면 겹침 규칙은 그대로다.
+**길이 있어야 설치하는 것과 길 위에 시설을 겹쳐 놓는 것은 다르다.** 길 시설 데이터의 `길 위 시설 설치 허용` / `bAllowFacilityPlacementOnTop`은 길 위에 다른 시설을 놓을 수 있는지를 정한다. 이번 변경은 길 연결 필수 조건만 해제하므로 이 노면 겹침 규칙은 그대로다.（10/14 기준: Road/Tile 분리 뒤 `bAllowFacilityPlacementOnTop`은 `Legacy` 분류의 숨김 필드가 됐다. 기존 에셋·저장 호환용으로만 남아 있다. 지금은 시설 분류가 정한다. `Road` 위에는 시설을 놓을 수 없고 `Tile` 위에는 놓을 수 있다. 근거: `FF_FFZSTypes.h`의 해당 필드 주석과 `EditCondition = "false"`.）
 
 **에디터의 Layers 이름을 Surface나 Obstacle로 바꾸는 것만으로 설치 허가가 바뀌지 않는다.** 현재 프로젝트는 그런 레이어 이름을 설치 규칙으로 읽지 않는다. 지면·장애물은 `Visibility` 물리 질의, 설치 범위는 구역과 BuildArea, 명시적 금지는 ProtectedArea가 담당한다.
 

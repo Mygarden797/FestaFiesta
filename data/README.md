@@ -41,7 +41,7 @@ NPC 아키타입 구조가 확정됐다: 생애주기 5종(주축) + 동반유�
 - **2026-08-06**: UI 담당(백종태)이 `data/ui/*.csv`의 `ui_override_label`을 채웠고, 빌드 스크립트 재실행으로 `data/unreal/*.csv`까지 반영됐다 — 아키타입 `체험파`/`활동파`/`휴식파`/`탐방파`/`여유파`, 동반유형 `혼자`/`둘이서`/`여럿이서`.
 - 그래도 `DataStatus`는 `draft_assumption` 그대로다. **UI 담당이 값을 정한 것과 팀이 확정한 것은 다른 사건이다**(`data/ui/README.md` 규칙 4). 이 구분이 위 전례가 남긴 교훈이다.
 
-UI 담당자가 명칭을 편집하려면 `data/ui/archetype_label_overrides.csv`·`data/ui/companion_label_overrides.csv`를 쓴다 (`data/ui/README.md` 참조). `data/derived/`·`data/unreal/`을 직접 고치지 않아도 된다. **다만 편집 후 `node Tools/data/build_unreal_datatables.mjs`를 실행해야 `data/unreal/`에 반영된다** — 8/6에 실제로 이 단계가 빠져서 override가 며칠간 반영되지 않은 채 남아 있었다.
+UI 담당자가 명칭을 편집하려면 `data/ui/archetype_label_overrides.csv`·`data/ui/companion_label_overrides.csv`를 쓴다 (`data/ui/README.md` 참조). `data/derived/`·`data/unreal/`을 직접 고치지 않아도 된다. **다만 편집 후 `node Tools/data/build_unreal_datatables.mjs`를 실행해야 `data/unreal/`에 반영된다** — 8/6에 실제로 이 단계가 빠져서 override가 며칠간 반영되지 않은 채 남아 있었다.（10/14 기준: 지금 이 스크립트를 그대로 돌리면 안 된다. `data/unreal/`의 유틸 계수 16행·SNS 문장 270행이 `data/derived/`에 없어 사라진다 — `data/unreal/README.md` 경고 참조）
 
 **2026-08-04 갱신**: 동반유형(`companion_type`)은 NPC 개인에게 독립적으로 부여하는 속성이 아니라 **그룹 생성 규칙의 결과값**으로 재정의됐다 — 그룹 크기·유형(가족/친구 등)·연령 구성·목적지 상속(리더 모델)·시간 공유 규칙은 `metadata/spec/population_group_generation_spec.md`를 참고한다.
 

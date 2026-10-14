@@ -6,4 +6,12 @@
 
 DEFINE_LOG_CATEGORY(LogFFZoneAuthoring);
 
+#if WITH_EDITOR
+FFFZAOpenSelectedWeldRequest& FFZAGetSelectedWeldRequest()
+{
+    static FFFZAOpenSelectedWeldRequest Request;
+    return Request;
+}
+#endif
+
 IMPLEMENT_MODULE(FDefaultModuleImpl, FF_ZoneAuthoring)

@@ -4,6 +4,8 @@
 
 NPC가 어느 지역에 있는지 판단하고 지역별 혼잡과 이동 거리를 계산하는 기존 `FFZSGameplayZone`은 그대로 사용합니다. `Test_Main`에서는 기존 31개 지역을 보존하는 것이 적용 기준입니다. 맵에 보이는 지역 액터를 전부 삭제하는 작업이 아닙니다.
 
+> （10/14 기준: 2026-10-10 「건축 가능 구역 변경」 커밋에서 `Config/DefaultGame.ini`의 `ProjectZoneIds`가 13개 이름 구역(`GZ_Beach01`~`05`, `GZ_DadaYajang`, `GZ_DadaepoForest`, `GZ_FountainPirates`, `GZ_FleaMarket`, `GZ_PublicParkingWest`, `GZ_TemporaryParkingEast`, `GZ_Operations`, `GZ_Tutorial`)으로 바뀌었고, `GZ_TestMain_01`~`30`·`GZ_DadaPocha`·Sunset 계열은 빠졌습니다. 같은 커밋에서 `Test_Main.umap`도 수정됐습니다. 이 문서의 "31개 지역"은 2026-09-10 기준 값입니다. 2026-10-10 [카메라 수정 기록](../Tools/Camera/CAMERA_REGRESSION_FIX_KO.md) 12절은 본편 `Test_Main`에 런타임 Zone이 13개라고 적었습니다. `BuildArea_Main`의 Source Region IDs와 Boundary Status는 에디터에서 다시 확인해야 합니다.）
+
 `Test_Main`에 통합 관리자를 적용하고 맵을 저장했으며, 에디터를 새로 실행해 정상적으로 불러오는 것까지 확인했습니다. 에디터 빌드와 이번 기능에 추가한 자동화 테스트 15개도 통과했습니다. 실제 수동 플레이와 화면 확인은 기존 레벨 블루프린트 오류 때문에 완료하지 못했으며, FPS도 아직 측정하지 않았습니다.
 
 ## 1. 무엇이 달라지나요?

@@ -14,6 +14,8 @@
 
 `node Tools/data/build_unreal_datatables.mjs`를 실행하면 이 폴더의 override가 `data/unreal/*.csv`에 자동 반영된다. UE에서 해당 DataTable을 Reimport하면 끝난다.
 
+> ⚠️ 10/14 기준: 이 스크립트는 `data/unreal/`의 유틸 계수·SNS 문장 CSV도 `data/derived/`로 덮어쓴다. 그 두 파일은 `data/unreal/`에서 직접 고쳐 와서 지금 돌리면 행이 사라진다(`data/unreal/README.md` 참조). 명칭만 바꿀 때는 `data/unreal/npc_archetypes_v0.csv`·`companion_type_modifier_v0.csv`만 반영되게 하고, 나머지 CSV는 되돌린다.
+
 ## 파일
 
 | 파일 | 대응 |

@@ -172,6 +172,92 @@ void SetWorldPolygon(USplineComponent& Spline, const TArray<FVector2D>& WorldPol
     Spline.UpdateSpline();
 }
 
+bool BuildWorldPolygonPreservingHeights(const TArray<double>& OriginalWorldHeights,
+    const TArray<FVector2D>& WorldPolygon, const TArray<double>& SourcePointKeys, TArray<FVector>& OutWorldPoints)
+{
+    const int32 OriginalCount = OriginalWorldHeights.Num();
+    if (OriginalCount < 3 || WorldPolygon.Num() < 3 ||
+        WorldPolygon.Num() != SourcePointKeys.Num())
+    {
+        return false;
+    }
+
+    for (const double Height : OriginalWorldHeights)
+    {
+        if (!FMath::IsFinite(Height))
+        {
+            return false;
+        }
+    }
+
+    // Compute and validate every point before Modify(), so a rejected proposal has no side effects.
+    TArray<FVector> WorldPoints;
+    WorldPoints.Reserve(WorldPolygon.Num());
+    for (int32 Index = 0; Index < WorldPolygon.Num(); ++Index)
+    {
+        const double Key = SourcePointKeys[Index];
+        if (WorldPolygon[Index].ContainsNaN() || !FMath::IsFinite(Key) || Key < 0.0 || Key >= OriginalCount)
+        {
+            return false;
+        }
+        const int32 Edge = FMath::FloorToInt(Key);
+        const double Height = FMath::Lerp(OriginalWorldHeights[Edge], OriginalWorldHeights[(Edge + 1) % OriginalCount], Key - Edge);
+        if (!FMath::IsFinite(Height))
+        {
+            return false;
+        }
+        WorldPoints.Emplace(WorldPolygon[Index].X, WorldPolygon[Index].Y, Height);
+    }
+    OutWorldPoints = MoveTemp(WorldPoints);
+    return true;
+}
+
+bool SetWorldPolygonPreservingHeights(USplineComponent& Spline, const TArray<FVector2D>& WorldPolygon,
+    const TArray<double>& SourcePointKeys)
+{
+    const int32 OriginalCount = Spline.GetNumberOfSplinePoints();
+    if (OriginalCount < 3 || !Spline.IsClosedLoop())
+    {
+        return false;
+    }
+    TArray<double> OriginalHeights;
+    OriginalHeights.Reserve(OriginalCount);
+    for (int32 Index = 0; Index < OriginalCount; ++Index)
+    {
+        const FVector Point = Spline.GetLocationAtSplinePoint(Index, ESplineCoordinateSpace::World);
+        if (Spline.GetSplinePointType(Index) != ESplinePointType::Linear || Point.ContainsNaN())
+        {
+            return false;
+        }
+        OriginalHeights.Add(Point.Z);
+    }
+    TArray<FVector> WorldPoints;
+    if (!BuildWorldPolygonPreservingHeights(OriginalHeights, WorldPolygon, SourcePointKeys, WorldPoints))
+    {
+        return false;
+    }
+
+    Spline.Modify();
+    if (OriginalCount == WorldPoints.Num())
+    {
+        for (int32 Index = 0; Index < WorldPoints.Num(); ++Index)
+        {
+            Spline.SetLocationAtSplinePoint(Index, WorldPoints[Index], ESplineCoordinateSpace::World, false);
+        }
+    }
+    else
+    {
+        Spline.SetSplinePoints(WorldPoints, ESplineCoordinateSpace::World, false);
+        for (int32 Index = 0; Index < WorldPoints.Num(); ++Index)
+        {
+            Spline.SetSplinePointType(Index, ESplinePointType::Linear, false);
+        }
+    }
+    Spline.SetClosedLoop(true, false);
+    Spline.UpdateSpline();
+    return true;
+}
+
 void SetLocalRectangle(USplineComponent& Spline, const FVector2D& SizeCm)
 {
     const double SizeX = FMath::Max(1.0, FMath::RoundToDouble(SizeCm.X));

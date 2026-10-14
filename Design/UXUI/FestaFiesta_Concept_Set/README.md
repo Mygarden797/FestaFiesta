@@ -114,11 +114,11 @@ flowchart LR
 
 ## 프로젝트 근거
 
-- `Source/FestaFiesta/Public/UI/FF_LiveHudMenuBar.h`
-- `Source/FestaFiesta/Public/UI/FF_LiveHudStatusBar.h`
-- `Source/FestaFiesta/Public/UI/FF_ReportScreen.h`
-- `Source/FestaFiesta/Private/UI/FF_ReportScreenWbpBuilder.cpp`
-- `Source/FestaFiesta/Private/Building/UI/FF_BuildCatalogWbpBuilder.cpp`
+- `Source/FestaFiesta/Public/UI/FF_LiveHudMenuBar.h`（10/14 기준 위치: `Public/UI/LiveHUD/FF_LiveHudMenuBar.h`）
+- `Source/FestaFiesta/Public/UI/FF_LiveHudStatusBar.h`（10/14 기준 위치: `Public/UI/LiveHUD/FF_LiveHudStatusBar.h`）
+- `Source/FestaFiesta/Public/UI/FF_ReportScreen.h`（10/14 기준 위치: `Public/UI/Report/FF_ReportScreen.h`）
+- `Source/FestaFiesta/Private/UI/FF_ReportScreenWbpBuilder.cpp`（10/14 기준 위치: `Source/FestaFiestaEditor/Private/UI/Report/FF_ReportScreenWbpBuilder.cpp`）
+- `Source/FestaFiesta/Private/Building/UI/FF_BuildCatalogWbpBuilder.cpp`（10/14 기준 위치: `Source/FestaFiestaEditor/Private/Building/UI/FF_BuildCatalogWbpBuilder.cpp`）
 - `Source/FestaFiesta/Public/Building/FF_BuildModeSubsystem.h`
 - `Source/FestaFiesta/Public/Time/FF_FestivalStage.h`
 - `Source/FestaFiesta/Public/Festival/FF_FestivalDefinition.h`

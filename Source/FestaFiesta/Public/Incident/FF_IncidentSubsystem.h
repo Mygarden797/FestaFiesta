@@ -155,6 +155,9 @@ private:
 	
 	
 	TMap<FGameplayTag, int32> IncidentMaxCheck;
+
+	// 오늘 발생한 종류별 사건 수. 자연 해소·운영 정리로 닫히면 되돌리고, Live 진입 때 비운다.
+	TMap<FGameplayTag, int32> DailyIncidentCount;
 	
 	int32 MaxConcurrent = 64;
 	
