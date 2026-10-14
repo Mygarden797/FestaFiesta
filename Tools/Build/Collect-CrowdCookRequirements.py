@@ -62,21 +62,32 @@ def appearance_rows(table):
     # UE 5.7 JSON export crashes for arrays of native structs. These official
     # column APIs use legacy FProperty text export and the same RowMap order.
     names = unreal.DataTableFunctionLibrary.get_data_table_row_names(table)
-    columns = {key: list(unreal.DataTableFunctionLibrary.get_data_table_column_as_string(table, key))
-               for key in ('Mesh', 'AnimClass', 'MeshVariants', 'AnimVariants')}
-    require(names and all(len(values) == len(names) for values in columns.values()),
-            'Crowd appearance column/row count mismatch')
+    require(names, 'Crowd appearance table has no rows: ' + table.get_path_name())
+    # Match FFF_CrowdAppearenceRow::PickAppearance: Mesh plus paired Variants.
+    # Missing native property names return an empty column, not an API error.
+    required_columns = ('Mesh', 'AnimClass', 'Variants')
+    available_columns = {str(name) for name in
+                         unreal.DataTableFunctionLibrary.get_data_table_column_names(table)}
+    missing_columns = sorted(set(required_columns) - available_columns)
+    require(not missing_columns,
+            'Crowd appearance table is missing required columns: ' + ', '.join(missing_columns) +
+            '; available columns: ' + ', '.join(sorted(available_columns)))
+    columns = {}
+    for key in required_columns:
+        values = list(unreal.DataTableFunctionLibrary.get_data_table_column_as_string(table, key))
+        require(len(values) == len(names),
+                f"Crowd appearance column '{key}' exported {len(values)} values for {len(names)} rows")
+        columns[key] = values
     rows = []
     for index, name in enumerate(names):
         row = {key: values[index] for key, values in columns.items()}
         row['Name'] = str(name)
-        row['MeshVariants'] = tuple_items(row['MeshVariants'])
         variants = []
-        for entry in tuple_items(row['AnimVariants']):
+        for entry in tuple_items(row['Variants']):
             fields = dict(field.split('=', 1) for field in tuple_items(entry))
             require('Mesh' in fields and 'AnimClass' in fields, 'Invalid animation variant: ' + entry)
             variants.append(fields)
-        row['AnimVariants'] = variants
+        row['Variants'] = variants
         rows.append(row)
     return rows
 
@@ -125,9 +136,8 @@ def run():
     for row in sorted(rows, key=lambda item: item['Name']):
         row_anim = object_path(row.get('AnimClass'))
         candidates = [(row.get('Mesh'), row_anim, 'Mesh')]
-        candidates += [(mesh, row_anim, 'MeshVariants') for mesh in row.get('MeshVariants', [])]
-        candidates += [(entry.get('Mesh'), object_path(entry.get('AnimClass')) or row_anim, 'AnimVariants')
-                       for entry in row.get('AnimVariants', [])]
+        candidates += [(entry.get('Mesh'), object_path(entry.get('AnimClass')) or row_anim, 'Variants')
+                       for entry in row.get('Variants', [])]
         result = {'name': row['Name'], 'candidates': []}
         for mesh_ref, anim_ref, field in candidates:
             if not object_path(mesh_ref):
