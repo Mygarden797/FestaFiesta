@@ -41,7 +41,8 @@ public:
 
     // ===================== 0. 한 번에 =====================
 
-    // 정의 적용 → Transform 정리 → 경계 용접 → 이웃 자동 채우기 → 건설 영역/오버레이 갱신 → 전체 검사.
+    // 정의 적용 → Transform 정리 → 이웃 자동 채우기 → 건설 영역/오버레이 갱신 → 전체 검사.
+    // 경계 용접은 선택 목록과 기준 Zone을 지정한 별도 작업 창에서 실행한다.
     UFUNCTION(CallInEditor, Category = "0. One Click")
     void FixAndValidateAll();
 
@@ -71,7 +72,7 @@ public:
     // ===================== 2. 정리 =====================
 
     UPROPERTY(EditAnywhere, Category = "2. Fix", meta = (ClampMin = "0.0", Units = "cm",
-        ToolTip = "Weld Shared Boundaries가 이 거리 안의 꼭짓점을 이웃 Zone 경계에 붙입니다. 너무 크면 모양이 크게 바뀝니다."))
+        ToolTip = "Zone 자동 연결 창의 초기 허용 거리입니다. 인접 경계 탐색 범위는 이 값의 2배이며 양쪽 Zone을 하나의 공통 경계로 맞춥니다."))
     float WeldToleranceCm = 50.0f;
 
     UPROPERTY(EditAnywhere, Category = "2. Fix", meta = (
@@ -88,7 +89,8 @@ public:
     UFUNCTION(CallInEditor, Category = "2. Fix")
     void NormalizeAllTransforms();
 
-    UFUNCTION(CallInEditor, Category = "2. Fix")
+    UFUNCTION(CallInEditor, Category = "2. Fix", meta = (
+        ToolTip = "현재 월드에 로드된 전체 Zone의 자동 연결 창을 엽니다. 기준 지정 없이 인접 경계와 여러 Zone의 접점을 함께 맞춥니다. 미리보기 또는 자동 연결 후 적용을 실행하며 문제가 남으면 부분 적용하지 않습니다."))
     void WeldSharedBoundaries();
 
     UFUNCTION(CallInEditor, Category = "2. Fix")
@@ -125,7 +127,6 @@ private:
 #if WITH_EDITOR
     void ApplyAllDefinitionsInternal(int32& OutCount);
     void NormalizeAllTransformsInternal(int32& OutCount);
-    int32 WeldSharedBoundariesInternal();
     int32 AutoFillNeighborsInternal();
     void RefreshInternal();
     void ValidateInternal();
