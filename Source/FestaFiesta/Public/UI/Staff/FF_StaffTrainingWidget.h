@@ -34,6 +34,9 @@ public:
 	TSubclassOf<UFF_StaffPromotionRowWidget> StaffRowClass;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Rows", meta = (ClampMin = "0"))
 	float StaffRowSpacing = 8.f;
+	/** 라이브 목록은 반복 안내를 도움말로 옮긴다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining")
+	bool bCompactLiveLayout = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Text")
 	FText CountFormat = NSLOCTEXT("FestaFiestaStaffTraining", "Count", "{Count}명");
@@ -91,6 +94,8 @@ protected:
 	TObjectPtr<UTextBlock> Text_HiredStaff;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
 	TObjectPtr<UTextBlock> Text_RosterNote;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_TrainingHelp;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")
 	TObjectPtr<UTextBlock> Text_RosterEmpty;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|StaffTraining")

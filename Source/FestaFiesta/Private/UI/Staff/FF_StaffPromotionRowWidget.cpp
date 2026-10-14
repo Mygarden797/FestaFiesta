@@ -133,7 +133,12 @@ void UFF_StaffPromotionRowWidget::RefreshRow()
 	if (!bHasMember) { return; }
 	RefreshAssignmentStatus();
 	if (Text_StaffName) { Text_StaffName->SetText(GetStaffDisplayName()); }
-	if (Text_StaffKind) { Text_StaffKind->SetText(CurrentMember.bIsBaseStaff ? BaseStaffText : HiredStaffText); }
+	const FText Kind = CurrentMember.bIsBaseStaff ? BaseStaffText : HiredStaffText;
+	if (Text_StaffKind)
+	{
+		Text_StaffKind->SetText(Kind);
+		Text_StaffKind->SetVisibility(bCompactLiveLayout ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	}
 	if (Text_StaffLevel)
 	{
 		Text_StaffLevel->SetText(FText::Format(StaffLevelFormat,
@@ -144,7 +149,12 @@ void UFF_StaffPromotionRowWidget::RefreshRow()
 	}
 	const FText FullStatus = bRequestPending ? PendingStatusText : GetPromotionStatusText(CurrentState);
 	const bool bShowPromoteButton = !bCompactManagementRow || CurrentState == EFF_StaffPromotionState::Ready;
-	if (bCompactManagementRow) { SetToolTipText(FullStatus); }
+	if (bCompactManagementRow)
+	{
+		SetToolTipText(bCompactLiveLayout
+			? FText::Format(NSLOCTEXT("FestaFiestaStaffTraining", "CompactLiveRowTip", "{0} · {1}"), Kind, FullStatus)
+			: FullStatus);
+	}
 	if (Text_PromotionStatus)
 	{
 		const FText CompactStatus = bRequestPending ? PendingLabelText : GetCompactPromotionStatusText(CurrentState);

@@ -5,6 +5,7 @@
 
 #include "AssetCompilingManager.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/PanelWidget.h"
 #include "Components/ScrollBox.h"
@@ -112,6 +113,34 @@ namespace FFPrepCheckSkyLayoutTest
 				Text->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 			}
 		}
+		if (auto* Attention = Cast<UBorder>(Panel.GetWidgetFromName(TEXT("Border_RequiredAttention"))))
+		{
+			auto* Title = Cast<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_RequiredAttentionTitle")));
+			if (!Test.TestNotNull(TEXT("필수 준비 안내 제목"), Title)) return false;
+			Title->SetText(FText::FromString(bReady ? TEXT("✓ 필수 준비 완료")
+				: bUnknown ? TEXT("! 준비 상태 확인") : TEXT("! 필수 준비 1건")));
+			Title->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			Title->SetColorAndOpacity(FLinearColor::FromSRGBColor(bReady ? FColor(23, 101, 75) : FColor(155, 85, 12)));
+			FSlateBrush Brush = Attention->Background;
+			Brush.TintColor = FSlateColor(FLinearColor::FromSRGBColor(bReady ? FColor(237, 249, 242) : FColor(255, 248, 232)));
+			Brush.OutlineSettings.Color = FSlateColor(FLinearColor::FromSRGBColor(bReady ? FColor(179, 217, 196) : FColor(240, 200, 134)));
+			Attention->SetBrush(Brush);
+			Attention->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			if (bReady)
+			{
+				// 실제 준비 완료 상태는 제목만 남긴다. 같은 완료 문구를 본문에 반복하지 않는다.
+				auto* Reason = CastChecked<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_OpenGateReason")));
+				Reason->SetText(FText::GetEmpty());
+				Reason->SetVisibility(ESlateVisibility::Collapsed);
+			}
+		}
+		auto* Action = Cast<UButton>(Panel.GetWidgetFromName(TEXT("Button_OpenGateReason")));
+		auto* ActionLabel = Cast<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_OpenGateStaffLink")));
+		if (!Test.TestNotNull(TEXT("준비 안내 바로가기"), Action) || !Test.TestNotNull(TEXT("준비 안내 바로가기 이름"), ActionLabel)) return false;
+		Action->SetIsEnabled(!bReady && !bUnknown);
+		Action->SetVisibility(!bReady && !bUnknown ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		ActionLabel->SetText(FText::FromString(bCompact ? TEXT("메인공연장 배치 ›") : TEXT("스태프 배정하기 ›")));
+		ActionLabel->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		auto* Lock = Cast<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_WeatherLockReason")));
 		auto* Open = Cast<UButton>(Panel.GetWidgetFromName(TEXT("Button_OpenGate")));
 		UWidget* Finale = Panel.GetWidgetFromName(TEXT("Box_FinaleSummaryRow"));
@@ -194,6 +223,7 @@ namespace FFPrepCheckSkyLayoutTest
 		UWidget* Body = Panel.GetWidgetFromName(TEXT("VerticalBox_Body"));
 		UWidget* Header = Panel.GetWidgetFromName(TEXT("HorizontalBox_Header"));
 		UWidget* Footer = Panel.GetWidgetFromName(TEXT("Border_Footer"));
+		UWidget* Attention = Panel.GetWidgetFromName(TEXT("Border_RequiredAttention"));
 		auto* Metrics = Cast<UPanelWidget>(Panel.GetWidgetFromName(bBalanced
 			? TEXT("HorizontalBox_BalancedMetrics") : TEXT("WrapBox_Metrics")));
 		const bool bHasAdmissionSection = Panel.GetWidgetFromName(TEXT("Border_AdmissionSection")) != nullptr;
@@ -250,9 +280,20 @@ namespace FFPrepCheckSkyLayoutTest
 		const FSlateRect HeaderRect = Header->GetCachedGeometry().GetLayoutBoundingRect();
 		const FSlateRect FooterRect = Footer->GetCachedGeometry().GetLayoutBoundingRect();
 		const FSlateRect ScrollRect = Scroll->GetCachedGeometry().GetLayoutBoundingRect();
+		const FSlateRect ReasonContainer = Attention ? Attention->GetCachedGeometry().GetLayoutBoundingRect() : FooterRect;
 		Test.TestTrue(Context + TEXT(" 헤더와 실행 영역이 패널 안에 유지된다"), Contains(PanelRect, HeaderRect) && Contains(PanelRect, FooterRect));
 		Test.TestTrue(Context + TEXT(" 본문이 고정 영역을 침범하지 않는다"), Contains(PanelRect, ScrollRect) &&
 			ScrollRect.Top >= HeaderRect.Bottom - Tolerance && ScrollRect.Bottom <= FooterRect.Top + Tolerance && ScrollRect.GetSize().Y > 0.f);
+		if (Attention)
+		{
+			Test.TestTrue(Context + TEXT(" 필수 준비 안내는 스크롤 바깥의 형제 영역이다"), Attention->GetParent() == Scroll->GetParent());
+			Test.TestTrue(Context + TEXT(" 필수 준비 안내가 헤더 아래·본문 위에서 고정된다"),
+				Contains(PanelRect, ReasonContainer) && ReasonContainer.GetSize().Y > 0.f &&
+				ReasonContainer.Top >= HeaderRect.Bottom - Tolerance && ReasonContainer.Bottom <= ScrollRect.Top + Tolerance);
+			Test.TestFalse(Context + TEXT(" 필수 준비 안내가 본문을 덮지 않는다"), Intersects(ReasonContainer, ScrollRect));
+			Test.TestFalse(Context + TEXT(" 필수 준비 안내가 하단 실행 버튼을 덮지 않는다"), Intersects(ReasonContainer, FooterRect));
+			CheckText(Test, Panel, TEXT("Text_RequiredAttentionTitle"), ReasonContainer, Context);
+		}
 		if (!bHasAdmissionSection && Size == FIntPoint(1140, 700) && (Kind == EFixture::Blocked || Kind == EFixture::Ready))
 		{
 			// 입장료 영역이 없는 기존 화면만 무스크롤을 요구한다.
@@ -272,7 +313,26 @@ namespace FFPrepCheckSkyLayoutTest
 		}
 		CheckText(Test, Panel, TEXT("Text_PanelTitle"), HeaderRect, Context);
 		CheckText(Test, Panel, TEXT("Text_DayLabel"), HeaderRect, Context);
-		CheckText(Test, Panel, TEXT("Text_OpenGateReason"), FooterRect, Context);
+		if (!Attention || (Kind != EFixture::Ready && Kind != EFixture::Morning))
+		{
+			CheckText(Test, Panel, TEXT("Text_OpenGateReason"), ReasonContainer, Context);
+		}
+		else
+		{
+			UWidget* Reason = Panel.GetWidgetFromName(TEXT("Text_OpenGateReason"));
+			if (!Test.TestNotNull(Context + TEXT(" 완료 시 접는 사유"), Reason)) return false;
+			Test.TestEqual(Context + TEXT(" 완료 문구는 안내 제목에만 남는다"), Reason->GetVisibility(), ESlateVisibility::Collapsed);
+		}
+		if (UWidget* Action = Panel.GetWidgetFromName(TEXT("Button_OpenGateReason")); Action && Action->IsVisible())
+		{
+			const FSlateRect ActionRect = Action->GetCachedGeometry().GetLayoutBoundingRect();
+			Test.TestTrue(Context + TEXT(" 바로가기가 사유와 같은 고정 영역 안에 들어온다"), Contains(ReasonContainer, ActionRect));
+			CheckText(Test, Panel, TEXT("Text_OpenGateStaffLink"), ActionRect, Context);
+			UWidget* Reason = Panel.GetWidgetFromName(TEXT("Text_OpenGateReason"));
+			if (!Test.TestNotNull(Context + TEXT(" 바로가기 옆 사유"), Reason)) return false;
+			Test.TestFalse(Context + TEXT(" 바로가기와 안내 문구가 겹치지 않는다"),
+				Intersects(ActionRect, Reason->GetCachedGeometry().GetLayoutBoundingRect()));
+		}
 		for (const auto& Pair : { TPair<const TCHAR*, const TCHAR*>(TEXT("Button_ContinueBuild"), TEXT("Text_ContinueBuildLabel")),
 			TPair<const TCHAR*, const TCHAR*>(TEXT("Button_OpenGate"), TEXT("Text_OpenGateLabel")) })
 		{
@@ -363,6 +423,13 @@ namespace FFPrepCheckSkyLayoutTest
 		}
 		if (Size.X < 1080 || Kind == EFixture::LongRequirements)
 		{ Test.TestTrue(Context + TEXT(" 줄바꿈·긴 목록을 위해 실제 스크롤 여유가 있다"), Scroll->GetScrollOffsetOfEnd() > 0.f); }
+		if (Attention)
+		{
+			const FSlateRect AfterScroll = Attention->GetCachedGeometry().GetLayoutBoundingRect();
+			Test.TestTrue(Context + TEXT(" 본문을 스크롤해도 필수 준비 안내는 같은 위치에 남는다"),
+				FMath::IsNearlyEqual(AfterScroll.Top, ReasonContainer.Top, Tolerance) &&
+				FMath::IsNearlyEqual(AfterScroll.Bottom, ReasonContainer.Bottom, Tolerance));
+		}
 		Scroll->SetScrollOffset(0.f);
 		Draw();
 		if (!SaveTarget(Test, *Target, Size, Context)) { return false; }
@@ -471,19 +538,36 @@ bool FFF_PrepCheckStaffShortcutLayoutTest::RunTest(const FString& Parameters)
 	auto* ActionLabel = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_OpenGateStaffLink")));
 	UWidget* Row = Panel->GetWidgetFromName(TEXT("HorizontalBox_OpenGateReason"));
 	UWidget* Footer = Panel->GetWidgetFromName(TEXT("Border_Footer"));
+	UWidget* Header = Panel->GetWidgetFromName(TEXT("HorizontalBox_Header"));
+	auto* Scroll = Cast<UScrollBox>(Panel->GetWidgetFromName(TEXT("ScrollBox_Body")));
+	UWidget* Attention = Panel->GetWidgetFromName(TEXT("Border_RequiredAttention"));
+	UWidget* Copy = Attention ? Panel->GetWidgetFromName(TEXT("VerticalBox_RequiredAttentionCopy")) : nullptr;
+	UWidget* Content = Attention ? Panel->GetWidgetFromName(TEXT("HorizontalBox_RequiredAttentionContent")) : Row;
+	auto* Title = Attention ? Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_RequiredAttentionTitle"))) : nullptr;
 	if (!TestNotNull(TEXT("배정 사유 문구"), Reason) || !TestNotNull(TEXT("오른쪽 배정 버튼"), Action) ||
 		!TestNotNull(TEXT("버튼 이름"), ActionLabel) || !TestNotNull(TEXT("사유와 버튼 행"), Row) ||
-		!TestNotNull(TEXT("고정 푸터"), Footer)) return false;
+		!TestNotNull(TEXT("고정 푸터"), Footer) || !TestNotNull(TEXT("고정 헤더"), Header) ||
+		!TestNotNull(TEXT("스크롤 본문"), Scroll)) return false;
+	if (Attention && (!TestNotNull(TEXT("안내 제목·사유 열"), Copy) ||
+		!TestNotNull(TEXT("안내와 바로가기 묶음"), Content) || !TestNotNull(TEXT("필수 준비 제목"), Title))) return false;
+	if (Attention)
+	{
+		TestTrue(TEXT("기존 사유 행은 제목 아래 같은 열에 남는다"), Row->GetParent() == Copy);
+		TestTrue(TEXT("제목·사유 열과 바로가기가 안내띠의 형제 열이다"), Copy->GetParent() == Content && Action->GetParent() == Content);
+		TestTrue(TEXT("필수 준비 안내는 스크롤 바깥에 있다"), Attention->GetParent() == Scroll->GetParent());
+	}
 	Action->SetVisibility(ESlateVisibility::Visible);
 	Action->SetIsEnabled(true);
+	ActionLabel->SetText(FText::FromString(TEXT("스태프 배정하기 ›")));
 	FAssetCompilingManager::Get().FinishAllCompilation();
 	FlushRenderingCommands();
-	// Match both authoritative guidance branches, including the longer no-waiting-staff case.
+	// 새 안내띠의 실제 짧은 사유와 구버전/상세 진단용 긴 사유를 모두 검사한다.
 	const TCHAR* Reasons[] = {
-		TEXT("메인안내소: 스태프를 1명 더 배정해야 합니다. (배정 0/1) 설치한 시설의 `스태프` 탭에서 `+ 배정`을 누르세요."),
+		Attention && Panel->UsesCompactLayout() ? TEXT("⚠ 메인안내소 · 스태프 1명 추가 배정")
+			: TEXT("메인안내소: 스태프를 1명 더 배정해야 합니다. (배정 0/1) 설치한 시설의 `스태프` 탭에서 `+ 배정`을 누르세요."),
 		TEXT("메인안내소: 스태프를 1명 더 배정해야 합니다. (배정 0/1) 대기 중인 스태프가 없습니다. `인력` 탭에서 고용하거나 다른 안내 시설의 스태프를 `- 해제`한 뒤 배정하세요.")
 	};
-	for (const FIntPoint Resolution : { FIntPoint(1280, 720), FIntPoint(1920, 1080) })
+	for (const FIntPoint Resolution : { FIntPoint(1280, 720), FIntPoint(1600, 900), FIntPoint(1920, 1080) })
 	{
 		const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Resolution);
 		const TSharedRef<SWidget> Surface = SNew(SDPIScaler).DPIScale(Dpi)
@@ -498,15 +582,42 @@ bool FFF_PrepCheckStaffShortcutLayoutTest::RunTest(const FString& Parameters)
 		TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(
 			FVector2D(Resolution.X, Resolution.Y), TF_Bilinear, true));
 		if (!TestNotNull(TEXT("배정 바로가기 렌더 타깃"), Target.Get())) return false;
+		const auto Draw = [&]()
+		{
+			// 자동 줄바꿈은 Paint에서 실제 폭을 받은 뒤 다음 Prepass를 무효화한다.
+			// DPI 루트 전체를 갱신하고 크기가 연속 두 번 같아질 때까지만 정착시킨다.
+			// 글자가 들어갈 때까지 반복하지 않으므로 안정된 실제 잘림은 아래 검사에서 계속 실패한다.
+			TArray<FVector2D> PreviousSizes;
+			int32 StableFrames = 0;
+			for (int32 Frame = 0; Frame < 12; ++Frame)
+			{
+				Surface->Invalidate(EInvalidateWidgetReason::Layout);
+				Surface->SlatePrepass(1.f);
+				Renderer.DrawWidget(Target.Get(), Surface, FVector2D(Resolution.X, Resolution.Y), 1.f / 60.f, false);
+				TArray<FVector2D> CurrentSizes;
+				for (UTextBlock* Text : { Reason, ActionLabel, Title })
+				{
+					if (!Text) continue;
+					CurrentSizes.Add(Text->GetCachedGeometry().GetLocalSize());
+					CurrentSizes.Add(Text->GetDesiredSize());
+				}
+				bool bSame = CurrentSizes.Num() == PreviousSizes.Num();
+				for (int32 Index = 0; bSame && Index < CurrentSizes.Num(); ++Index)
+				{
+					bSame = CurrentSizes[Index].Equals(PreviousSizes[Index], .01f);
+				}
+				StableFrames = bSame ? StableFrames + 1 : 0;
+				PreviousSizes = MoveTemp(CurrentSizes);
+				if (Frame >= 3 && StableFrames >= 2) break;
+			}
+			FlushRenderingCommands();
+			TestTrue(TEXT("DPI 루트의 자동 줄바꿈 크기가 제한된 프레임 안에 안정된다"), StableFrames >= 2);
+		};
 		for (int32 Variant = 0; Variant < UE_ARRAY_COUNT(Reasons); ++Variant)
 		{
 			Reason->SetText(FText::FromString(Reasons[Variant]));
-			for (int32 Frame = 0; Frame < 4; ++Frame)
-			{
-				Panel->ForceLayoutPrepass();
-				Renderer.DrawWidget(Target.Get(), Surface, FVector2D(Resolution.X, Resolution.Y), 1.f / 60.f, false);
-			}
-			FlushRenderingCommands();
+			Scroll->SetScrollOffset(0.f);
+			Draw();
 			const FString Context = FString::Printf(TEXT("Check_StaffShortcut_%s_%dx%d"),
 				Variant == 0 ? TEXT("Available") : TEXT("NoWaitingStaff"), Resolution.X, Resolution.Y);
 			const FSlateRect Screen(0.f, 0.f, Resolution.X, Resolution.Y);
@@ -514,28 +625,62 @@ bool FFF_PrepCheckStaffShortcutLayoutTest::RunTest(const FString& Parameters)
 			const FSlateRect ActionRect = Action->GetCachedGeometry().GetLayoutBoundingRect();
 			const FSlateRect RowRect = Row->GetCachedGeometry().GetLayoutBoundingRect();
 			const FSlateRect FooterRect = Footer->GetCachedGeometry().GetLayoutBoundingRect();
-			TestTrue(Context + TEXT(" 안내 문구 바로 오른쪽에 버튼이 보인다"),
-				ActionRect.Left >= ReasonRect.Right + 8.f * Dpi &&
-				FMath::IsNearlyEqual((ReasonRect.Top + ReasonRect.Bottom) * .5f,
+			const FSlateRect ContainerRect = Attention ? Attention->GetCachedGeometry().GetLayoutBoundingRect() : FooterRect;
+			const FSlateRect ContentRect = Content->GetCachedGeometry().GetLayoutBoundingRect();
+			const FSlateRect CopyRect = Copy ? Copy->GetCachedGeometry().GetLayoutBoundingRect() : ReasonRect;
+			TestTrue(Context + TEXT(" 안내 묶음 바로 오른쪽에 버튼이 보인다"),
+				ActionRect.Left >= CopyRect.Right + 8.f * Dpi &&
+				FMath::IsNearlyEqual((CopyRect.Top + CopyRect.Bottom) * .5f,
 					(ActionRect.Top + ActionRect.Bottom) * .5f, 1.f));
 			TestFalse(Context + TEXT(" 문구와 버튼이 겹치지 않는다"), Intersects(ReasonRect, ActionRect));
-			TestTrue(Context + TEXT(" 문구와 버튼이 같은 행과 화면 안에 전부 들어온다"),
-				Contains(RowRect, ReasonRect) && Contains(RowRect, ActionRect) &&
-				Contains(FooterRect, RowRect) && Contains(Screen, FooterRect));
-			for (UTextBlock* Text : { Reason, ActionLabel })
+			TestTrue(Context + TEXT(" 문구와 버튼이 같은 고정 영역과 화면 안에 전부 들어온다"),
+				Contains(RowRect, ReasonRect) && Contains(ContentRect, RowRect) && Contains(ContentRect, ActionRect) &&
+				Contains(ContainerRect, ContentRect) && Contains(Screen, ContainerRect) && Contains(Screen, FooterRect));
+			TArray<UTextBlock*> VisibleTexts = { Reason, ActionLabel };
+			if (Attention)
+			{
+				const FSlateRect HeaderRect = Header->GetCachedGeometry().GetLayoutBoundingRect();
+				const FSlateRect ScrollRect = Scroll->GetCachedGeometry().GetLayoutBoundingRect();
+				const FSlateRect TitleRect = Title->GetCachedGeometry().GetLayoutBoundingRect();
+				TestTrue(Context + TEXT(" 필수 준비 제목과 사유가 같은 열에 들어온다"),
+					!Title->GetText().IsEmpty() && Contains(CopyRect, TitleRect) && Contains(CopyRect, ReasonRect) && TitleRect.Bottom <= ReasonRect.Top + Tolerance);
+				TestTrue(Context + TEXT(" 안내띠가 헤더 아래·스크롤 위에 남는다"),
+					ContainerRect.Top >= HeaderRect.Bottom - Tolerance && ContainerRect.Bottom <= ScrollRect.Top + Tolerance);
+				TestFalse(Context + TEXT(" 안내띠가 스크롤과 겹치지 않는다"), Intersects(ContainerRect, ScrollRect));
+				TestFalse(Context + TEXT(" 안내띠가 하단 실행 버튼과 겹치지 않는다"), Intersects(ContainerRect, FooterRect));
+				VisibleTexts.Add(Title);
+			}
+			for (UTextBlock* Text : VisibleTexts)
 			{
 				const FVector2D Allocated = Text->GetCachedGeometry().GetLocalSize();
 				const FVector2D Desired = Text->GetDesiredSize();
+				AddInfo(FString::Printf(TEXT("%s / %s: Allocated=(%.3f, %.3f), Desired=(%.3f, %.3f), DPI=%.4f"),
+					*Context, *Text->GetName(), Allocated.X, Allocated.Y, Desired.X, Desired.Y, Dpi));
+				// UE 5.7 FSlateVertex는 화면 좌표를 정수 픽셀로 반올림하고, FTextLayout::GetSize는
+				// 측정 폭을 Scale로 나눠 논리 크기로 돌려준다. 텍스트 크기에만 1 화면 픽셀을 허용한다.
+				// 저 DPI에서 0.5 논리 단위를 쓰면 1픽셀 미만의 정상적인 경계 반올림도 잘림으로 오인한다.
+				const FVector2D AllocatedPixels = Allocated * Dpi;
+				const FVector2D DesiredPixels = Desired * Dpi;
 				TestTrue(Context + TEXT(" / ") + Text->GetName() + TEXT(" 글자 크기·줄바꿈이 잘리지 않는다"),
-					Allocated.X + Tolerance >= Desired.X && Allocated.Y + Tolerance >= Desired.Y);
+					AllocatedPixels.X + 1.f >= DesiredPixels.X && AllocatedPixels.Y + 1.f >= DesiredPixels.Y);
 			}
 			TestTrue(Context + TEXT(" 버튼 이름이 버튼 내부에 전부 들어온다"),
 				Contains(ActionRect, ActionLabel->GetCachedGeometry().GetLayoutBoundingRect()));
 			TestTrue(Context + TEXT(" 버튼 클릭 높이를 유지한다"), Action->GetCachedGeometry().GetLocalSize().Y >= 36.f);
 			if (Variant == 1)
-				TestTrue(Context + TEXT(" 긴 실제 배정 사유는 여러 줄로 읽힌다"),
+				TestTrue(Context + TEXT(" 긴 배정 진단 사유는 여러 줄로 읽힌다"),
 					Reason->GetDesiredSize().Y > ActionLabel->GetDesiredSize().Y * 1.5f);
+			// 검사 직후의 동일한 프레임을 저장한다. 스크롤 왕복 뒤의 캡처로 실패 시점을 덮지 않는다.
 			if (!SaveTarget(*this, *Target, Resolution, Context)) return false;
+			if (Attention)
+			{
+				Scroll->ScrollToEnd(); Draw();
+				const FSlateRect AfterScroll = Attention->GetCachedGeometry().GetLayoutBoundingRect();
+				TestTrue(Context + TEXT(" 스크롤 끝에서도 필수 준비 안내는 움직이지 않는다"),
+					FMath::IsNearlyEqual(AfterScroll.Top, ContainerRect.Top, Tolerance) &&
+					FMath::IsNearlyEqual(AfterScroll.Bottom, ContainerRect.Bottom, Tolerance));
+				Scroll->SetScrollOffset(0.f); Draw();
+			}
 		}
 	}
 	Panel->ReleaseSlateResources(true);

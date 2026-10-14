@@ -117,4 +117,60 @@ bool FFF_DailyReportComment_FindComplaintIsTheOnlyJudge::RunTest(const FString& 
 	return true;
 }
 
+// 카드가 조언을 앞세워도 원래 매출·목표 정보를 버리거나 중복하지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DailyReportComment_AdvicePresentationPreservesSource,
+	"FestaFiesta.UI.DailyReportComment.AdvicePresentationPreservesSource",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DailyReportComment_AdvicePresentationPreservesSource::RunTest(const FString& Parameters)
+{
+	FFF_DailyReportCommentInputs Inputs;
+	Inputs.TopFacilityName = FText::FromString(TEXT("테스트 음악 부스"));
+	Inputs.TopFacilityGold = 731;
+	Inputs.bHasSatisfaction = true;
+	Inputs.NeedScore = 84; Inputs.WaitScore = 41; Inputs.DensityScore = 89; Inputs.PreferenceScore = 77;
+	Inputs.AdmittedVisitors = 812; Inputs.DailyVisitorGoal = 900;
+	const auto Presentation = FFF_DailyReportCommentRules::BuildPresentation(Inputs);
+	TArray<FString> LegacyLines;
+	Presentation.FullComment.ToString().ParseIntoArrayLines(LegacyLines);
+	if (!TestEqual(TEXT("기존 세 문장 유지"), LegacyLines.Num(), 3)) return false;
+	TestEqual(TEXT("불만 원본 문장이 핵심 조언"), Presentation.Advice.ToString(), LegacyLines[1]);
+	TestEqual(TEXT("매출·목표는 순서대로 보조 정보"), Presentation.Details.ToString(), LegacyLines[0] + TEXT("\n") + LegacyLines[2]);
+	TestTrue(TEXT("실제 매출 원본 유지"), Presentation.Details.ToString().Contains(TEXT("731")));
+	TestTrue(TEXT("목표 차이 원본 유지"), Presentation.Details.ToString().Contains(TEXT("88")));
+	TestFalse(TEXT("조언을 보조 정보에 반복하지 않음"), Presentation.Details.ToString().Contains(Presentation.Advice.ToString()));
+	TestEqual(TEXT("기존 호출자는 원래 전체 문장"), FFF_DailyReportCommentRules::Build(Inputs).ToString(), Presentation.FullComment.ToString());
+
+	Inputs.bHasSatisfaction = false;
+	const auto Unjudged = FFF_DailyReportCommentRules::BuildPresentation(Inputs);
+	TestEqual(TEXT("판정 없는 날은 실제 매출 요약을 앞세움"), Unjudged.Advice.ToString(), LegacyLines[0]);
+	TestEqual(TEXT("판정 없는 날도 목표 정보 유지"), Unjudged.Details.ToString(), LegacyLines[2]);
+	TestFalse(TEXT("판정 없는 날에 대기 불만을 만들지 않음"), Unjudged.FullComment.ToString().Contains(TEXT("줄이 길다는")));
+	const auto Empty = FFF_DailyReportCommentRules::BuildPresentation(FFF_DailyReportCommentInputs());
+	TestTrue(TEXT("원본이 없으면 빈 카드"), Empty.Advice.IsEmpty() && Empty.Details.IsEmpty() && Empty.FullComment.IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DailyReportComment_FinalAdvicePresentation,
+	"FestaFiesta.UI.DailyReportComment.FinalAdvicePresentation",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DailyReportComment_FinalAdvicePresentation::RunTest(const FString& Parameters)
+{
+	FFF_DailyReportCommentInputs Inputs;
+	Inputs.bFinalDay = true; Inputs.DaysPlayed = 3; Inputs.GoalDaysMet = 2;
+	Inputs.FestivalTopFacilityName = FText::FromString(TEXT("축제 전체 시설")); Inputs.FestivalTopFacilityGold = 1731;
+	Inputs.FirstDaySatisfaction = 47; Inputs.FinalDaySatisfaction = 68;
+	Inputs.bHasSatisfaction = true; Inputs.NeedScore = 83; Inputs.WaitScore = 91;
+	Inputs.PreferenceScore = 40; Inputs.DensityScore = 90;
+	const auto Presentation = FFF_DailyReportCommentRules::BuildPresentation(Inputs);
+	TestTrue(TEXT("마지막 날의 실제 취향 조언"), Presentation.Advice.ToString().Contains(TEXT("여러 종류")));
+	TestFalse(TEXT("마지막 날에는 내일 조언 없음"), Presentation.Advice.ToString().Contains(TEXT("내일")));
+	TArray<FString> FullLines, DetailLines;
+	Presentation.FullComment.ToString().ParseIntoArrayLines(FullLines);
+	Presentation.Details.ToString().ParseIntoArrayLines(DetailLines);
+	TestEqual(TEXT("전체 4문장을 조언1 + 보조3으로 보존"), FullLines.Num(), 4);
+	TestEqual(TEXT("매출·만족도흐름·목표일수 보존"), DetailLines.Num(), 3);
+	TestEqual(TEXT("조언이 원래 마지막 문장과 동일"), Presentation.Advice.ToString(), FullLines.Last());
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -7,6 +7,7 @@
 #include "FF_PrepHudTypes.generated.h"
 
 struct FGeometry;
+struct FFF_RequiredFacilitiesStatus;
 
 /**
  * 준비 단계 하단 바의 탭 6종.
@@ -187,6 +188,13 @@ struct FESTAFIESTA_API FFF_PrepTabSelection
  */
 struct FESTAFIESTA_API FFF_PrepHudRules
 {
+	/** 소유자의 미충족 행을 안내 건수로 센다. 설치 후 배정은 같은 시설의 한 준비 항목이다. */
+	static int32 CountPendingRequiredTasks(const FFF_RequiredFacilitiesStatus& Status);
+
+	/** 탭 선택/열람과 무관하게 실제 미충족 상태가 있는 동안 표시한다. */
+	static bool NeedsRequiredAttention(EFF_PrepHudTab Tab, EFF_FestivalStage Stage,
+		const FFF_RequiredFacilitiesStatus& Status);
+
 	/**
 	 * 준비 단계인지. 셋업 · 홍보 · 개장 준비 셋이다.
 	 *

@@ -21,7 +21,7 @@ void UFF_StaffFacilityRowWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-void UFF_StaffFacilityRowWidget::SetFacility(const FFF_StaffFacilityManagementView& View, bool bLive)
+void UFF_StaffFacilityRowWidget::SetFacility(const FFF_StaffFacilityManagementView& View, bool bLive, bool bCompact)
 {
 	Current = View;
 	if (Text_FacilityName) Text_FacilityName->SetText(View.Label);
@@ -33,6 +33,24 @@ void UFF_StaffFacilityRowWidget::SetFacility(const FFF_StaffFacilityManagementVi
 		Status = FText::Format(LOCTEXT("FacilityDuty", "대기 {0} · 출동 {1} · 복귀 {2}"),
 			View.Ready, View.Busy, View.Returning);
 		if (View.Unavailable > 0) Status = FText::Format(LOCTEXT("UnavailableDuty", "{0} · 출동 불가 {1}"), Status, View.Unavailable);
+		if (bCompact)
+		{
+			// 0인 상태는 생략하되 출동·복귀·불가 인원은 모두 남긴다.
+			FText CompactStatus;
+			const auto AppendCount = [&CompactStatus](const FText& Format, int32 Count)
+			{
+				if (Count <= 0) return;
+				const FText Part = FText::Format(Format, Count);
+				CompactStatus = CompactStatus.IsEmpty() ? Part
+					: FText::Format(LOCTEXT("CompactDutySeparator", "{0} · {1}"), CompactStatus, Part);
+			};
+			AppendCount(LOCTEXT("CompactReady", "대기 {0}명"), View.Ready);
+			AppendCount(LOCTEXT("CompactBusy", "출동 {0}명"), View.Busy);
+			AppendCount(LOCTEXT("CompactReturning", "복귀 {0}명"), View.Returning);
+			AppendCount(LOCTEXT("CompactUnavailable", "출동 불가 {0}명"), View.Unavailable);
+			Status = !CompactStatus.IsEmpty() ? CompactStatus : View.Assigned == 0
+				? LOCTEXT("CompactUnassignedFacility", "배정 없음") : LOCTEXT("CompactDutyUnknown", "상태 확인 중");
+		}
 	}
 	else
 	{

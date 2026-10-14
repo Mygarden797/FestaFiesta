@@ -10,6 +10,7 @@
 #include "FF_PrepPanelCheck.generated.h"
 
 class UButton;
+class UBorder;
 class USlider;
 class UTextBlock;
 class UWidget;
@@ -384,6 +385,13 @@ protected:
 	/** 하단 바와 같은 판정/사유. 준비 선택 사항을 별도의 필수 조건으로 만들지 않는다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_OpenGateReason;
+
+	/** 스크롤 바깥의 필수 준비 안내. 기존 개장 사유/바로가기와 같은 판정을 쓴다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UBorder> Border_RequiredAttention;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UTextBlock> Text_RequiredAttentionTitle;
 
 	/** 안내 문구 오른쪽의 스태프 배정 바로가기. 배정할 대상이 없으면 숨긴다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")

@@ -250,6 +250,7 @@ protected:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_FestivalThumbnailLoadingTest;
+	friend class FFF_FacilityRevenueInspectionTest;
 #endif
 
 	/** 지구본↔국가 지도만 암전으로 감싼다. 화면/히스토리는 완전히 가려진 뒤 바꾼다. */

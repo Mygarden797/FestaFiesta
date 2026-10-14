@@ -197,6 +197,12 @@ FFF_DailyComplaint FFF_DailyReportCommentRules::FindComplaint(const FFF_DailyRep
 
 FText FFF_DailyReportCommentRules::Build(const FFF_DailyReportCommentInputs& Inputs)
 {
+	return BuildPresentation(Inputs).FullComment;
+}
+
+FFF_DailyReportCommentPresentation FFF_DailyReportCommentRules::BuildPresentation(const FFF_DailyReportCommentInputs& Inputs)
+{
+	FFF_DailyReportCommentPresentation Presentation;
 	TArray<FText> Lines;
 	if (Inputs.bFinalDay)
 	{
@@ -207,7 +213,9 @@ FText FFF_DailyReportCommentRules::Build(const FFF_DailyReportCommentInputs& Inp
 		Lines.Add(FText::Format(LOCTEXT("TopFacility", "오늘은 {0}에서 {1} Gold로 가장 많이 벌었어요."),
 			Inputs.TopFacilityName, FText::AsNumber(Inputs.TopFacilityGold)));
 	}
+	TArray<FText> Details = Lines;
 	const FText Complaint = ComplaintLine(Inputs);
+	Presentation.Advice = Complaint;
 	if (!Complaint.IsEmpty())
 	{
 		Lines.Add(Complaint);
@@ -218,9 +226,19 @@ FText FFF_DailyReportCommentRules::Build(const FFF_DailyReportCommentInputs& Inp
 		if (!Goal.IsEmpty())
 		{
 			Lines.Add(Goal);
+			Details.Add(Goal);
 		}
 	}
-	return FText::Join(FText::FromString(TEXT("\n")), Lines);
+	// 만족도 원본이 없으면 판단을 만들지 않고, 실제 있는 요약 한 줄을 앞세운다.
+	if (Presentation.Advice.IsEmpty() && !Details.IsEmpty())
+	{
+		Presentation.Advice = Details[0];
+		Details.RemoveAt(0);
+	}
+	const FText NewLine = FText::FromString(TEXT("\n"));
+	Presentation.Details = FText::Join(NewLine, Details);
+	Presentation.FullComment = FText::Join(NewLine, Lines);
+	return Presentation;
 }
 
 #undef LOCTEXT_NAMESPACE

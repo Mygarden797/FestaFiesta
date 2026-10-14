@@ -3,6 +3,7 @@
 #include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
 
 #include "Components/Button.h"
+#include "Components/Border.h"
 #include "Components/Slider.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -850,6 +851,7 @@ void UFF_PrepPanelCheck::RefreshOpenGate()
 			TEXT("[%s] 소유 바가 없어 개장 버튼 상태를 정할 수 없다."), *GetName());
 		if (Button_OpenGate) { Button_OpenGate->SetIsEnabled(false); }
 		SetTextOrHide(Text_OpenGateReason, LOCTEXT("PrepCheck_GateUnavailable", "시작 조건을 확인할 수 없습니다."));
+		SetTextOrHide(Text_RequiredAttentionTitle, LOCTEXT("RequiredAttentionUnknown", "! 준비 상태 확인"));
 		return;
 	}
 
@@ -857,6 +859,7 @@ void UFF_PrepPanelCheck::RefreshOpenGate()
 	const bool bDraftBlocks = HasAdmissionDraft() || bAdmissionRequestInFlight;
 	FText Reason = bDraftBlocks ? AdmissionGateDraftText : (State == EFF_PrepCtaState::Ready
 		? (MissingRecommendedCount > 0 ? RequiredReadyWithWarningsText : OpenGateReadyText) : Bar->GetCtaReason());
+	FText FullReason = Reason;
 	if (bUseCompactLayout && !bDraftBlocks && State != EFF_PrepCtaState::Ready && State != EFF_PrepCtaState::Hidden)
 	{
 		const auto* Required = GetWorld() ? GetWorld()->GetSubsystem<UFF_RequiredFacilitiesSubsystem>() : nullptr;
@@ -867,9 +870,10 @@ void UFF_PrepPanelCheck::RefreshOpenGate()
 			if (!Status.bCanProceed && Status.BlockingReason.EqualTo(Reason))
 			{
 				TArray<FText> Missing;
+				TArray<FText> StaffMissing;
 				for (const auto& Row : Status.Facilities)
 				{
-					if (!Row.bDefinitionValid) { Missing.Reset(); break; }
+					if (!Row.bDefinitionValid) { Missing.Reset(); StaffMissing.Reset(); break; }
 					const FText Name = Row.DisplayName.IsEmpty() ? FText::FromName(Row.FacilityDefinitionId) : Row.DisplayName;
 					if (Row.MissingCount > 0)
 					{
@@ -880,13 +884,45 @@ void UFF_PrepPanelCheck::RefreshOpenGate()
 					}
 					else if (Row.MissingStaffCount > 0)
 					{
-						Missing.Add(FText::Format(LOCTEXT("CompactMissingStaff", "⚠ {0} · 스태프 {1}명 추가 배정"),
+						StaffMissing.Add(FText::Format(LOCTEXT("CompactMissingStaff", "⚠ {0} · 스태프 {1}명 추가 배정"),
 							Name, FText::AsNumber(Row.MissingStaffCount)));
 					}
 				}
-				if (!Missing.IsEmpty()) Reason = FText::Join(FText::FromString(TEXT("\n")), Missing);
+				// 바로가기가 설치를 우선하므로 보여 주는 첫 작업도 같은 순서로 맞춘다.
+				Missing.Append(StaffMissing);
+				if (!Missing.IsEmpty())
+				{
+					const FText CompactReason = FText::Join(FText::FromString(TEXT("\n")), Missing);
+					Reason = Border_RequiredAttention && Missing.Num() > 1
+						? FText::Format(LOCTEXT("RequiredAttentionMore", "{0} · 외 {1}건"), Missing[0], FText::AsNumber(Missing.Num() - 1))
+						: CompactReason;
+				}
 			}
 		}
+	}
+	if (Border_RequiredAttention)
+	{
+		const auto* Required = GetWorld() ? GetWorld()->GetSubsystem<UFF_RequiredFacilitiesSubsystem>() : nullptr;
+		const FFF_RequiredFacilitiesStatus Status = Required ? Required->GetRequiredFacilitiesStatus() : FFF_RequiredFacilitiesStatus();
+		const int32 Pending = FFF_PrepHudRules::CountPendingRequiredTasks(Status);
+		const bool bReady = State == EFF_PrepCtaState::Ready && !bDraftBlocks;
+		FText Title = bReady ? LOCTEXT("RequiredAttentionReady", "✓ 필수 준비 완료")
+			: bDraftBlocks ? LOCTEXT("RequiredAttentionAdmission", "! 입장료 확인")
+			: !Status.bCanProceed && Pending > 0
+				? FText::Format(LOCTEXT("RequiredAttentionCount", "! 필수 준비 {0}건"), FText::AsNumber(Pending))
+				: LOCTEXT("RequiredAttentionGate", "! 진행 조건 확인");
+		SetTextOrHide(Text_RequiredAttentionTitle, Title);
+		const FLinearColor Ink = FLinearColor::FromSRGBColor(bReady ? FColor(23, 101, 75) : FColor(155, 85, 12));
+		if (Text_RequiredAttentionTitle) { Text_RequiredAttentionTitle->SetColorAndOpacity(Ink); }
+		FSlateBrush Brush = Border_RequiredAttention->Background;
+		Brush.TintColor = FSlateColor(FLinearColor::FromSRGBColor(bReady ? FColor(237, 249, 242) : FColor(255, 248, 232)));
+		Brush.OutlineSettings.Color = FSlateColor(FLinearColor::FromSRGBColor(bReady ? FColor(179, 217, 196) : FColor(240, 200, 134)));
+		Border_RequiredAttention->SetBrush(Brush);
+		Border_RequiredAttention->SetToolTipText(FullReason);
+		Border_RequiredAttention->SetVisibility(State == EFF_PrepCtaState::Hidden
+			? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+		// 완료 문구는 제목에 한 번만 표시한다. 입장료 초안과 다른 차단 사유는 유지한다.
+		if (bReady) { Reason = FText::GetEmpty(); }
 	}
 	SetTextOrHide(Text_OpenGateReason, Reason);
 

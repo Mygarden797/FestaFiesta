@@ -33,6 +33,19 @@ public:
 	/** 구매 가능 여부는 부모 바가 ViewModel에서 읽어 전달한다. */
 	void SetFinaleAttention(bool bEnabled);
 
+	/** 완료 이벤트의 현재 상태로만 해제하며 탭 열람으로는 해제하지 않는다. */
+	void SetRequiredAttention(bool bEnabled, const FText& Hint = FText::GetEmpty());
+	bool HasRequiredAttention() const;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Required")
+	bool bPreviewRequiredAttention = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Required", meta = (ClampMin = "16.0", ClampMax = "40.0"))
+	float RequiredBadgeDiameter = 22.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Required")
+	FLinearColor RequiredBadgeColor = FLinearColor::FromSRGBColor(FColor(0xE9, 0x91, 0x18));
+
 	/** 부모 HUD Designer에서 탭별 문구를 바꾼다. 비워 두면 공통 번역 문구를 사용한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Text")
 	FText DisplayLabelOverride;
@@ -77,5 +90,6 @@ protected:
 private:
 	bool HasFinaleAttention() const;
 	bool bFinaleAttention = false;
+	bool bRequiredAttention = false;
 	float FinaleSheenElapsed = 0.f;
 };

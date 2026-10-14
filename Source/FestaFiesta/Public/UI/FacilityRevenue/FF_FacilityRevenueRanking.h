@@ -99,6 +99,7 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 	bool IsPointerOverPanel() const;
 	bool ShowIntroduction();
 	bool IsIntroductionVisible() const;
+	void ShowInspectionFailure(const FText& Message);
 	FSimpleMulticastDelegate OnCloseRequested;
 	FSimpleMulticastDelegate OnPeriodChanged;
 	FSimpleMulticastDelegate OnInspectRequested;
@@ -137,6 +138,7 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 	UFUNCTION() void InspectClicked();
 	UFUNCTION() void DismissIntroduction();
 	void SelectionChanged(UObject *Object);
+	void ClearInspectionFailure();
 	void UpdatePeriod();
 	UPROPERTY(Transient) TMap<FName, FButtonStyle> AuthoredPeriodStyles;
 	void UpdateFrameSize(const FVector2D& Viewport);
@@ -144,6 +146,9 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 	bool bCapturedFrameSize = false;
 	bool bCumulative = false;
 	bool bForegroundSuppressed = false;
+	FText AuthoredFootnote;
+	FGuid FailedInspectionFacilityId;
+	bool bCapturedFootnote = false;
 	ESlateVisibility IntroductionVisibilityBeforeSuppression = ESlateVisibility::Collapsed;
 };
 UCLASS()

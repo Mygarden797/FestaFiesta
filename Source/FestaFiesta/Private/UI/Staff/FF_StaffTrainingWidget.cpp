@@ -137,12 +137,18 @@ void UFF_StaffTrainingWidget::SyncRoster()
 	SetStaffTrainingText(Text_TotalStaff, FormatCount(ViewModel ? ViewModel->GetTotalStaffCount() : INDEX_NONE));
 	SetStaffTrainingText(Text_BaseStaff, FormatCount(ViewModel ? ViewModel->GetBaseStaffCount() : INDEX_NONE));
 	SetStaffTrainingText(Text_HiredStaff, FormatCount(ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE));
-	SetOptionalStaffTrainingText(Text_RosterNote, IncidentEffectNoteText);
-	if (Text_RosterNote && !IncidentEffectNoteText.IsEmpty())
+	SetOptionalStaffTrainingText(Text_RosterNote, bCompactLiveLayout ? FText::GetEmpty() : IncidentEffectNoteText);
+	if (!bCompactLiveLayout && Text_RosterNote && !IncidentEffectNoteText.IsEmpty())
 	{
 		// 기존 에셋의 승급 안내는 보존하고, 하단에는 실제 효과를 먼저 설명한다.
 		Text_RosterNote->SetToolTipText(RosterNoteText);
 		Text_RosterNote->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (Text_TrainingHelp)
+	{
+		Text_TrainingHelp->SetToolTipText(FText::Format(
+			NSLOCTEXT("FestaFiestaStaffTraining", "CompactHelp", "{0}\n{1}"), IncidentEffectNoteText, RosterNoteText));
+		Text_TrainingHelp->SetVisibility(bCompactLiveLayout ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 	RefreshFilterLabels();
 

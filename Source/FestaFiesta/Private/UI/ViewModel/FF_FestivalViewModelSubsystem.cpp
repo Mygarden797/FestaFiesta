@@ -705,7 +705,10 @@ void UFF_FestivalViewModelSubsystem::FillReportAssistantComment(FFF_DailyReportV
 			for (const TPair<int32, bool>& Pair : GoalMetByDay) Inputs.GoalDaysMet += Pair.Value ? 1 : 0;
 		}
 	}
-	Report.AssistantComment = FFF_DailyReportCommentRules::Build(Inputs);
+	const FFF_DailyReportCommentPresentation Comment = FFF_DailyReportCommentRules::BuildPresentation(Inputs);
+	Report.AssistantComment = Comment.FullComment;
+	Report.AssistantAdvice = Comment.Advice;
+	Report.AssistantDetails = Comment.Details;
 	Report.Complaint = FFF_DailyReportCommentRules::FindComplaint(Inputs);
 }
 
@@ -1625,6 +1628,7 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 
 	const FFFZSReadModel ReadModel = Zone->BuildReadModel();
 	Views.Reserve(ReadModel.Facilities.Num());
+	const UFF_BuildCatalogSubsystem* Catalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>();
 
 	// 공연 휴지 구간에는 큐 다리가 모든 일반 시설을 `접수 불가`로 둔다. 정원이 찬 것과 가른다.
 	const UFF_FestivalStageSubsystem* StageSubsystem = GetStageSubsystem();
@@ -1692,16 +1696,11 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 			}
 		}
 
-		// 사람이 읽을 이름이 시설 데이터에 없다. 고유 토큰이 그나마 구분되는 값이다 —
-		// `GetEligibleFacilitiesForProgram` 과 같은 사정이고 같은 방식으로 만든다.
-		FFF_FacilityNameParts Parts;
-		FString FailureReason;
-		const bool bParsed = UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
-			Facility.Category, Facility.FacilityDefinitionId, Parts, FailureReason);
-
-		View.DisplayName = (bParsed && !Parts.UniqueToken.IsEmpty())
-			? FText::FromString(Parts.UniqueToken)
-			: FText::FromName(Facility.FacilityDefinitionId);
+		// 건축·프로그램 목록과 같은 저작 이름을 사용한다. 비동기 로드 중·누락도
+		// 카탈로그 문구를 유지하며, 두 라이브 패널의 다음 주기 조회에서 최신 이름을 받는다.
+		View.DisplayName = Catalog
+			? Catalog->ResolveFacilityDisplayName(Facility.FacilityDefinitionId)
+			: NSLOCTEXT("FestaFiestaLiveFacility", "NameUnavailable", "시설 이름 확인 중");
 	}
 
 	return Views;

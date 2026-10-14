@@ -179,6 +179,7 @@ void UFF_PrepPanelFinale::RefreshAll()
 		? FText::Format(StageNoticeFormat, FText::AsNumber(CachedViewModel->GetCurrentDay())) : UnavailableStageText);
 	SetText(Text_OnceNotice, OnceNoticeText);
 	SetText(Text_PurchaseLabel, bPurchased ? PurchasedLabel : PurchaseLabel);
+	SetText(Text_Later, bPurchased ? CloseLabel : LaterLabel);
 	SetText(Text_BlockReason, !LastFailureText.IsEmpty() && !bPurchased ? LastFailureText : GetBlockReason(SelectedGrade));
 	if (Button_Purchase) Button_Purchase->SetIsEnabled(IsPurchaseReady(SelectedGrade) && !PendingConfirm.IsValid());
 	RefreshConfirmDialog();
