@@ -54,6 +54,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Incident|Options")
 	int32 MaxActive = INDEX_NONE;
 	
+	// 하루에 발생할 수 있는 같은 종류 사건 수. 자연 해소·운영 정리로 사라진 사건은 세지 않는다. INDEX_NONE이면 제한 없음.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Incident|Options")
 	int32 MaxPerDay = INDEX_NONE;
 	

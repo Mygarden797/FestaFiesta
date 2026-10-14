@@ -48,6 +48,7 @@ void UFF_IncidentSubsystem::Deinitialize()
 	FreeSlots.Reset();
 	ActiveByKey.Reset();
 	CachedDef.Reset();
+	DailyIncidentCount.Reset();
 	MaxConcurrent = 0;
 }
 
@@ -348,6 +349,10 @@ void UFF_IncidentSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, 
 	{
 		CloseAllIncidents();
 	}
+	else
+	{
+		DailyIncidentCount.Reset();
+	}
 }
 
 void UFF_IncidentSubsystem::CloseAllIncidents()
@@ -400,7 +405,15 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	{
 		*IncidentMaxNum -=1;
 	}
-	
+
+	if (Reason == EFF_IncidentCloseReason::NaturalResolution || Reason == EFF_IncidentCloseReason::SessionReset)
+	{
+		if (int32* DailyCount = DailyIncidentCount.Find(Slot.IncidentTag))
+		{
+			*DailyCount = FMath::Max(0, *DailyCount - 1);
+		}
+	}
+
 	Handle.Index = Index;
 	Handle.Serial = Slot.Serial;
 
@@ -629,6 +642,20 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 			return FFF_IncidentHandle();
 		}
 		(*IncidentMaxNum)++;
+	}
+
+	if (IncDef->MaxPerDay != INDEX_NONE)
+	{
+		int32& DailyCount = DailyIncidentCount.FindOrAdd(Report.IncidentTag);
+		if (DailyCount >= IncDef->MaxPerDay)
+		{
+			if (IncidentMaxNum)
+			{
+				(*IncidentMaxNum)--;
+			}
+			return FFF_IncidentHandle();
+		}
+		++DailyCount;
 	}
 
 	const int32 Index = FreeSlots.Num() > 0 ? FreeSlots.Pop() : IncidentSlots.AddDefaulted();
