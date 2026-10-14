@@ -14,6 +14,7 @@
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Save/FF_SaveSubsystem.h"
 #include "Subsystems/SubsystemCollection.h"
 #include "TimerManager.h"
 
@@ -57,7 +58,7 @@ void UFF_FacilityCodexSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	// Some test/transition worlds receive their GameInstance after subsystem initialization.
 	Refresh();
 	// Player login resets the configured festival during startup. Accept claims only after
-	// that reset finishes; discovery itself can safely persist before the economy is ready.
+	// that reset finishes; startup reconciliation then records the current festival's layout.
 	StartupRewardTimer = InWorld.GetTimerManager().SetTimerForNextTick(
 		FTimerDelegate::CreateUObject(this, &ThisClass::CompleteStartup));
 }
@@ -80,6 +81,7 @@ void UFF_FacilityCodexSubsystem::BindGameInstance()
 	UFF_BuildCatalogSubsystem* CurrentCatalog = Game ? Game->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
 	UFF_FacilityCodexProgressSubsystem* CurrentProgress = Game ? Game->GetSubsystem<UFF_FacilityCodexProgressSubsystem>() : nullptr;
 	UFF_FestivalProgressionSubsystem* CurrentEconomy = Game ? Game->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+	UFF_SaveSubsystem* CurrentSave = Game ? Game->GetSubsystem<UFF_SaveSubsystem>() : nullptr;
 	if (Catalog != CurrentCatalog)
 	{
 		if (Catalog) { Catalog->OnCatalogChanged.RemoveDynamic(this, &ThisClass::HandleCatalogChanged); }
@@ -92,11 +94,12 @@ void UFF_FacilityCodexSubsystem::BindGameInstance()
 		Progress = CurrentProgress;
 		if (Progress) { Progress->OnProgressChanged.AddUniqueDynamic(this, &ThisClass::HandleProgressChanged); }
 	}
-	if (Economy != CurrentEconomy)
+	Economy = CurrentEconomy;
+	if (Save != CurrentSave)
 	{
-		if (Economy) { Economy->OnFestivalDefinitionChanged.RemoveDynamic(this, &ThisClass::Refresh); }
-		Economy = CurrentEconomy;
-		if (Economy) { Economy->OnFestivalDefinitionChanged.AddUniqueDynamic(this, &ThisClass::Refresh); }
+		if (Save) { Save->OnSaveLoaded.RemoveDynamic(this, &ThisClass::HandleSaveLoaded); }
+		Save = CurrentSave;
+		if (Save) { Save->OnSaveLoaded.AddUniqueDynamic(this, &ThisClass::HandleSaveLoaded); }
 	}
 }
 
@@ -106,7 +109,10 @@ void UFF_FacilityCodexSubsystem::Refresh()
 	if (bRefreshing) { return; }
 	TGuardValue<bool> RefreshGuard(bRefreshing, true);
 	BindGameInstance();
-	if (Progress) { SessionDiscoveries.Append(Progress->GetDiscoveredRuleIdsView()); }
+	// Global progress restores before the old facilities have been removed. Wait until
+	// all parts finish; otherwise a partial layout can contaminate the selected slot.
+	if (Save && Save->IsRestoring()) { return; }
+	if (Progress) { SessionDiscoveries = Progress->GetDiscoveredRuleIdsView(); }
 	const FFFZSReadModel WorldModel = ZoneSystem ? ZoneSystem->BuildReadModel() : FFFZSReadModel();
 	CachedRegistryRevision = ZoneSystem ? ZoneSystem->GetFacilityRegistryRevision() : MAX_uint64;
 	EligibleInstanceIds.Reset();
@@ -145,7 +151,7 @@ void UFF_FacilityCodexSubsystem::PublishEntries()
 	{
 		FFF_FacilityCodexEntry& Entry = CachedEntries[Index];
 		EntryByRuleId.Add(Entry.RuleId, Index);
-		Entry.bDiscovered |= SessionDiscoveries.Contains(Entry.RuleId);
+		Entry.bDiscovered = SessionDiscoveries.Contains(Entry.RuleId);
 		Entry.bDiscoveryRewardClaimed = Progress && Progress->IsDiscoveryRewardClaimed(Entry.RuleId);
 		Entry.TargetName = Catalog ? Catalog->ResolveFacilityDisplayName(Entry.TargetFacilityId) : LOCTEXT("LoadingFacility", "시설 이름 불러오는 중");
 		Entry.PartnerName = Catalog ? Catalog->ResolveFacilityDisplayName(Entry.PartnerFacilityId) : LOCTEXT("LoadingFacility", "시설 이름 불러오는 중");
@@ -164,6 +170,7 @@ void UFF_FacilityCodexSubsystem::PublishEntries()
 // 조합 조건에 영향을 줄 수 있는 배치·등록 변경만 다시 계산한다. 단순 영업 열기·닫기는 재계산을 생략한다.
 void UFF_FacilityCodexSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
 {
+	if (Save && Save->IsRestoring()) { return; }
 	if (ZoneSystem)
 	{
 		const uint64 RegistryRevision = ZoneSystem->GetFacilityRegistryRevision();
@@ -215,8 +222,15 @@ void UFF_FacilityCodexSubsystem::HandleCatalogChanged()
 void UFF_FacilityCodexSubsystem::HandleProgressChanged()
 {
 	if (bRefreshing || !Progress) { return; }
-	SessionDiscoveries.Append(Progress->GetDiscoveredRuleIdsView());
+	// Reset/load replaces history. Publishing alone avoids rediscovering the previous
+	// festival's facilities before the new/restored layout is ready.
+	SessionDiscoveries = Progress->GetDiscoveredRuleIdsView();
 	PublishEntries();
+}
+
+void UFF_FacilityCodexSubsystem::HandleSaveLoaded(const FName SlotId)
+{
+	Refresh();
 }
 
 bool UFF_FacilityCodexSubsystem::FindEntry(const FName RuleId, FFF_FacilityCodexEntry& OutEntry) const
@@ -231,6 +245,7 @@ bool UFF_FacilityCodexSubsystem::ClaimDiscoveryReward(const FName RuleId)
 {
 	if (!bReadyToClaimRewards) { return false; }
 	BindGameInstance();
+	if (Save && Save->IsRestoring()) { return false; }
 	FFF_FacilityCodexEntry Entry;
 	if (!Progress || !FindEntry(RuleId, Entry) || !Entry.bDiscovered || Entry.bDiscoveryRewardClaimed)
 	{
@@ -255,7 +270,7 @@ TArray<FFF_FacilityCodexCollectionMilestone> UFF_FacilityCodexSubsystem::GetColl
 		Milestone.bReached = Milestone.DiscoveredCount >= Milestone.RequiredDiscoveries;
 		Milestone.bClaimed = Progress && Progress->IsCollectionRewardClaimed(Reward.MilestoneId);
 		Milestone.bCanClaim = Milestone.bReached && !Milestone.bClaimed && bReadyToClaimRewards
-			&& Progress && Economy && Economy->IsFestivalStarted();
+			&& Progress && Economy && Economy->IsFestivalStarted() && (!Save || !Save->IsRestoring());
 	}
 	return Result;
 }
@@ -278,7 +293,7 @@ bool UFF_FacilityCodexSubsystem::ClaimCollectionReward(const FName MilestoneId)
 {
 	if (!bReadyToClaimRewards || MilestoneId.IsNone()) { return false; }
 	BindGameInstance();
-	if (!Progress) { return false; }
+	if (!Progress || (Save && Save->IsRestoring())) { return false; }
 	const TArray<FFF_FacilityCodexCollectionReward> Rewards =
 		GetDefault<UFF_FacilityCodexSettings>()->GetValidCollectionRewards(CachedSummary.TotalCount);
 	const FFF_FacilityCodexCollectionReward* Reward = Rewards.FindByPredicate(
@@ -311,7 +326,7 @@ void UFF_FacilityCodexSubsystem::Deinitialize()
 	}
 	if (Catalog) { Catalog->OnCatalogChanged.RemoveDynamic(this, &ThisClass::HandleCatalogChanged); }
 	if (Progress) { Progress->OnProgressChanged.RemoveDynamic(this, &ThisClass::HandleProgressChanged); }
-	if (Economy) { Economy->OnFestivalDefinitionChanged.RemoveDynamic(this, &ThisClass::Refresh); }
+	if (Save) { Save->OnSaveLoaded.RemoveDynamic(this, &ThisClass::HandleSaveLoaded); }
 	OnCodexChanged.Clear();
 	CachedEntries.Reset();
 	EntryByRuleId.Reset();
@@ -323,6 +338,7 @@ void UFF_FacilityCodexSubsystem::Deinitialize()
 	Catalog = nullptr;
 	Progress = nullptr;
 	Economy = nullptr;
+	Save = nullptr;
 	LoadedTable = nullptr;
 	Super::Deinitialize();
 }
