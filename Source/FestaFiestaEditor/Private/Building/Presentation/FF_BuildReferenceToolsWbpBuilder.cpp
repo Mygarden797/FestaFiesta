@@ -1775,6 +1775,17 @@ bool ApplyDragPlacementGapControl(UWidgetBlueprint& BP)
     return SaveNewBlueprint(TEXT("FF_BUILD_DRAG_PLACEMENT_GAP"), BP);
 }
 
+bool ApplyQueueSettingsControls(UWidgetBlueprint& BP)
+{
+    UWidgetTree& Tree = *BP.WidgetTree;
+    if (Tree.FindWidget(TEXT("Panel_QueueSettings"))) return FFBuildToolsModel::EnsureQueueSettingsControls(Tree);
+    BP.Modify();
+    Tree.Modify();
+    if (auto* Body = Tree.FindWidget(TEXT("Column_BuildSettings"))) Body->Modify();
+    if (!FFBuildToolsModel::EnsureQueueSettingsControls(Tree)) return false;
+    return SaveNewBlueprint(TEXT("FF_BUILD_QUEUE_SETTINGS"), BP);
+}
+
 void Apply()
 {
     UWidgetBlueprint* BP = LoadExistingBlueprint(FFBuildUIAssetPaths::BuildToolsPackage);
@@ -1791,7 +1802,7 @@ void Apply()
             ApplyPearlReadableCards(*BP) && ApplyIconHelp(*BP) &&
             ApplyActionLanguage(*BP) && ApplyKeyboardHelp(*BP) && ApplyConstructionEditingHelp(*BP) &&
             ApplyQueueShortcutKeys(*BP) && RemoveTopWallet(*BP) && ApplyViewToggleHelp(*BP) && ApplyCharacterShortcutsHelp(*BP) &&
-            ApplyDragPlacementGapControl(*BP))
+            ApplyDragPlacementGapControl(*BP) && ApplyQueueSettingsControls(*BP))
         {
             UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_BUILD_REFERENCE_TOOLS_REUSE"));
         }
@@ -1817,7 +1828,7 @@ void Apply()
         !ApplyPearlReadableCards(*BP) || !ApplyIconHelp(*BP) ||
         !ApplyActionLanguage(*BP) || !ApplyKeyboardHelp(*BP) || !ApplyConstructionEditingHelp(*BP) ||
         !ApplyQueueShortcutKeys(*BP) || !RemoveTopWallet(*BP) || !ApplyViewToggleHelp(*BP) || !ApplyCharacterShortcutsHelp(*BP) ||
-        !ApplyDragPlacementGapControl(*BP))
+        !ApplyDragPlacementGapControl(*BP) || !ApplyQueueSettingsControls(*BP))
     {
         UE_LOG(LogFFUIWbpBuilder, Error, TEXT("FF_BUILD_REFERENCE_TOOLS_FAIL: refinement failed"));
     }

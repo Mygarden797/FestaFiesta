@@ -44,6 +44,42 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsRequiredSpaceTest,
     "FestaFiesta.Building.BuildTools.RequiredSpace",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsQueueSettingsInputTest,
+    "FestaFiesta.Building.BuildTools.QueueSettingsInput",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFBuildToolsQueueSettingsInputTest::RunTest(const FString& Parameters)
+{
+    int32 Teams = 17;
+    float Spacing = 200.f, Width = 600.f;
+    for (const FString Invalid : {TEXT(""), TEXT("0"), TEXT("513"), TEXT("1.5"), TEXT("-1"), TEXT("1e2"), TEXT("12팀")})
+    {
+        TestFalse(Invalid + TEXT(" cannot change the team limit"),
+            FFBuildToolsModel::TryParseQueueSettingsText(Invalid, TEXT("115"), TEXT("600"), Teams, Spacing, Width));
+        TestEqual(TEXT("Invalid team text preserves capacity"), Teams, 17);
+        TestEqual(TEXT("Invalid team text preserves spacing"), Spacing, 200.f);
+        TestEqual(TEXT("Invalid team text preserves width"), Width, 600.f);
+    }
+    for (const FString Invalid : {TEXT(""), TEXT("70"), TEXT("89.9"), TEXT("1000.1"), TEXT("NaN"), TEXT("inf"), TEXT("1e2"), TEXT("115cm"), TEXT("1,000")})
+        TestFalse(Invalid + TEXT(" cannot change slot spacing"),
+            FFBuildToolsModel::TryParseQueueSettingsText(TEXT("12"), Invalid, TEXT("600"), Teams, Spacing, Width));
+    for (const FString Invalid : {TEXT(""), TEXT("99.9"), TEXT("1000.1"), TEXT("NaN"), TEXT("-100"), TEXT("600..5")})
+        TestFalse(Invalid + TEXT(" cannot change lane width"),
+            FFBuildToolsModel::TryParseQueueSettingsText(TEXT("12"), TEXT("115"), Invalid, Teams, Spacing, Width));
+    TestEqual(TEXT("A late field failure leaves the entire edit unchanged"), Teams, 17);
+    TestEqual(TEXT("A late field failure never partially updates slot spacing"), Spacing, 200.f);
+    TestTrue(TEXT("Decimal centimeters and whitespace are supported"),
+        FFBuildToolsModel::TryParseQueueSettingsText(TEXT(" 24 "), TEXT(" 125.5 "), TEXT(" 650.25 "), Teams, Spacing, Width));
+    TestEqual(TEXT("Capacity remains an integer team count"), Teams, 24);
+    TestEqual(TEXT("Decimal slot spacing is retained"), Spacing, 125.5f);
+    TestEqual(TEXT("Decimal lane width is retained"), Width, 650.25f);
+    TestTrue(TEXT("The full explicit range is supported"),
+        FFBuildToolsModel::TryParseQueueSettingsText(TEXT("512"), TEXT("90"), TEXT("1000"), Teams, Spacing, Width));
+    TestTrue(TEXT("Build help points players to the editable queue settings"),
+        UFF_BuildModeGuide::MakeBuildOverviewHelpText().ToString().Contains(TEXT("대기열 설정")));
+    return true;
+}
+
 bool FFFBuildToolsRequiredSpaceTest::RunTest(const FString& Parameters)
 {
     FFFZSFacilitySpec Spec;

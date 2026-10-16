@@ -313,6 +313,19 @@ bool FFFZSFacilityAudioSettings::HasNonDefaultValues() const
     // 오류를 가능한 한 모아 저작자에게 한 번에 보여 주되, 위험한 반복문은 선행 조건이 모두
     // 유효할 때만 실행한다. 따라서 잘못된 대형 입력도 실제 Cell/Slot 열거 전에 실패한다.
  
+bool FFFZSQueueSettings::IsValid(TArray<FText>& OutErrors) const
+{
+    if (!bEnabled) return true;
+    if (MaxWaitingTeams < 1 || MaxWaitingTeams > UFFZSDeveloperSettings::MaxQueueWaitingAgents ||
+        !FMath::IsFinite(SlotSpacingCm) || SlotSpacingCm < 90.0f || SlotSpacingCm > 1000.0f ||
+        !FMath::IsFinite(LaneWidthCm) || LaneWidthCm < 100.0f || LaneWidthCm > 1000.0f)
+    {
+        OutErrors.Add(LOCTEXT("InvalidPlayerQueueSettings", "대기 정원은 1~512팀, 자리 간격은 90~1000cm, 통로 폭은 100~1000cm로 입력하세요."));
+        return false;
+    }
+    return true;
+}
+
 void FFFZSFacilitySpec::NormalizeNonServiceGeometry()
 {
     // Retired for every facility; keep the serialized field only for legacy assets/saves.
@@ -328,12 +341,19 @@ void FFFZSFacilitySpec::NormalizeNonServiceGeometry()
     QueueRules.MaxWaitingAgents = 0;
     QueueRules.ServiceCapacity = 0;
     QueueLayout = EFFZSQueueLayout::Authored;
+    QueueSettings = FFFZSQueueSettings();
     Audience.bEnabled = false;
 }
 
 bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
+    const bool bQueueSettingsValid = QueueSettings.IsValid(OutErrors);
+    if (QueueSettings.bEnabled && (!UsesServiceQueue() ||
+        (bQueueSettingsValid && QueueSettings.SlotSpacingCm <= QueueRules.SlotArrivalToleranceCm * 2.0f)))
+    {
+        OutErrors.Add(LOCTEXT("QueueSettingsTargetSpacing", "대기열 설정은 서비스 시설에서만 사용할 수 있으며 자리 간격은 도착 허용 거리의 두 배보다 커야 합니다."));
+    }
     const bool bHasNoService = !UsesServiceQueue();
     if (!StaticEnum<EFFZSQueueLayout>()->IsValidEnumValue(static_cast<int64>(QueueLayout)) ||
         (bHasNoService && QueueLayout != EFFZSQueueLayout::Authored))

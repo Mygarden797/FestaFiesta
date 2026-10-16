@@ -244,6 +244,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Queue")
     bool SetFacilityQueueLayout(FGuid FacilityInstanceId, EFFZSQueueLayout Layout, FText& OutError);
 
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Queue")
+    FFFZSPlacementValidation ValidateQueueSettings(FGuid FacilityInstanceId, const FFFZSQueueSettings& Settings, EFFZSQueueLayout Layout) const;
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Queue")
+    bool SetFacilityQueueSettings(FGuid FacilityInstanceId, const FFFZSQueueSettings& Settings, EFFZSQueueLayout Layout, FText& OutError);
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Queue")
+    FFFZSCommandResult ResetAllFacilityQueueSettingsToDefaults();
+
 
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Policy")
     bool RegisterExternalPolicy(UObject* PolicyProvider);
@@ -348,6 +355,7 @@ private:
     const TArray<FFFZSPolicyContext>* ConstructionPolicyContexts = nullptr;
     bool bConstructionReplayUndo = false;
     bool bIsConstructionBatch = false;
+    bool bIsResettingAllQueueSettings = false;
     bool bIsReplayingConstruction = false;
     FGuid ConstructionPlacementStrokeTransactionId;
     FGuid ConstructionPlacementStrokeId;

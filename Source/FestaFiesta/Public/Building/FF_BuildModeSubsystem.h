@@ -377,6 +377,7 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 	friend class FFF_UIUtilityFlyoutForegroundTest;
 	friend class FFF_BuildGroupEditingTest;
 	friend class FFF_BuildQueueLayoutDraftTest;
+	friend class FFFBuildToolsQueueSettingsTest;
 	friend class FFF_BuildPlacementMemoryTest;
 #endif
 
@@ -555,6 +556,14 @@ public:
 	bool RedoBuildEdit();
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Queue")
 	bool SetSelectedFacilityQueueLayout(EFFZSQueueLayout Layout);
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Queue")
+	bool SetSelectedFacilityQueueSettings(int32 MaxWaitingTeams, float SlotSpacingCm, float LaneWidthCm);
+	UFUNCTION(BlueprintPure, Category = "Building|Queue")
+	FFFZSQueueSettings GetEditingQueueSettings() const;
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Queue")
+	bool ResetAllFacilityQueuesToDefaults();
+	UFUNCTION(BlueprintPure, Category = "Building|Queue")
+	bool CanResetAllFacilityQueuesToDefaults() const;
 	UFUNCTION(BlueprintPure, Category = "Building|Queue")
 	bool CanChooseQueueLayout() const;
 	UFUNCTION(BlueprintPure, Category = "Building|Queue")
@@ -766,6 +775,8 @@ private:
 	FFFZSFacilitySpec SelectedSpec;
 	// A preview owns only this choice; the original authored spec remains unchanged until commit.
 	EFFZSQueueLayout PendingQueueLayout = EFFZSQueueLayout::Authored;
+	FFFZSQueueSettings PendingQueueSettings;
+	bool SetSelectedFacilityQueueConfiguration(EFFZSQueueLayout Layout, const FFFZSQueueSettings& Settings);
 	FFFZSGridPlacement CurrentPlacement;
 	// 가장 최근 RefreshPreview 결과. CommitPlacement가 설치 가능 여부를 판단할 때 사용한다. 
 	FFFZSPlacementValidation LastValidation;

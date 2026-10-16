@@ -40,7 +40,94 @@ bool UFF_BuildModeSubsystem::RedoBuildEdit()
 
 bool UFF_BuildModeSubsystem::SetSelectedFacilityQueueLayout(const EFFZSQueueLayout Layout)
 {
+	FFFZSQueueSettings Settings = PendingQueueSettings;
+	if (!FFBuildModeModel::IsPreviewActive(State))
+	{
+		const UFF_FacilityInfoSubsystem* Info = GetFacilityInfoSubsystem();
+		const AFFZSFacilityActor* Facility = Info ? Info->GetSelectedFacility() : nullptr;
+		if (!Facility) return false;
+		Settings = Facility->GetBaseFacilitySpec().QueueSettings;
+	}
+	return SetSelectedFacilityQueueConfiguration(Layout, Settings);
+}
+
+bool UFF_BuildModeSubsystem::SetSelectedFacilityQueueSettings(
+	const int32 MaxWaitingTeams, const float SlotSpacingCm, const float LaneWidthCm)
+{
+	FFFZSQueueSettings Settings;
+	Settings.bEnabled = true;
+	Settings.MaxWaitingTeams = MaxWaitingTeams;
+	Settings.SlotSpacingCm = SlotSpacingCm;
+	Settings.LaneWidthCm = LaneWidthCm;
+	return SetSelectedFacilityQueueConfiguration(GetEditingQueueLayout(), Settings);
+}
+
+FFFZSQueueSettings UFF_BuildModeSubsystem::GetEditingQueueSettings() const
+{
+	FFFZSQueueSettings Result = PendingQueueSettings;
+	const FFFZSFacilitySpec* Spec = FFBuildModeModel::IsPreviewActive(State) ? &SelectedSpec : nullptr;
+	if (!Spec)
+	{
+		const UFF_FacilityInfoSubsystem* Info = GetFacilityInfoSubsystem();
+		const AFFZSFacilityActor* Facility = Info ? Info->GetSelectedFacility() : nullptr;
+		if (Facility)
+		{
+			Result = Facility->GetBaseFacilitySpec().QueueSettings;
+			Spec = &Facility->GetFacilitySpec();
+		}
+	}
+	if (!Result.bEnabled && Spec && Spec->UsesServiceQueue())
+	{
+		// Legacy geometry stays intact until explicitly applied. Offer its current
+		// capacity/spacing with the common width as a proposed configuration.
+		Result.MaxWaitingTeams = Spec->QueueRules.MaxWaitingAgents;
+		Result.SlotSpacingCm = Spec->QueueRules.SlotSpacingCm;
+	}
+	return Result;
+}
+
+bool UFF_BuildModeSubsystem::CanResetAllFacilityQueuesToDefaults() const
+{
+	return !bInputSuspendedForPauseMenu && !bIsExitingBuildMode && !bMultiSelectionActive &&
+		!IsGroupPlacementActive() && CanReconfigure() && FFBuildModeModel::IsBuildSessionActive(State);
+}
+
+bool UFF_BuildModeSubsystem::ResetAllFacilityQueuesToDefaults()
+{
+	if (!CanResetAllFacilityQueuesToDefaults()) return false;
+	NotifyBuildToolsInteraction();
+	UFFZSWorldSubsystem* Zones = GetZoneSystem();
+	if (!Zones) return false;
+	// Finish the click-to-move preview first so the bulk authority update cannot
+	// leave a stale ghost targeting an instance that it has just reconfigured.
+	if (State == EFF_BuildModeState::Moving) CancelMovingToBuildMode(TEXT(""));
+	const int64 RevisionBeforeReset = Zones->GetWorldRevision();
+	const FFFZSCommandResult Result = Zones->ResetAllFacilityQueueSettingsToDefaults();
+	if (Result.bSucceeded && State == EFF_BuildModeState::Placing && SelectedSpec.UsesServiceQueue())
+	{
+		FFFZSQueueSettings Defaults;
+		Defaults.bEnabled = true;
+		SetSelectedFacilityQueueConfiguration(EFFZSQueueLayout::Authored, Defaults);
+	}
+	bPreviewWorldDirty = true;
+	const FString SuccessMessage = Zones->GetWorldRevision() != RevisionBeforeReset
+		? TEXT("모든 대기열을 기본형 · 12팀 · 자리 간격 115cm · 통로 폭 600cm로 통일했습니다. Ctrl+Z로 되돌릴 수 있습니다.")
+		: TEXT("모든 시설이 이미 공통 대기열 기본값을 사용하고 있습니다.");
+	ShowStatus(Result.bSucceeded ? SuccessMessage : Result.Message.ToString(), !Result.bSucceeded);
+	OnBuildToolsChanged.Broadcast();
+	return Result.bSucceeded;
+}
+
+bool UFF_BuildModeSubsystem::SetSelectedFacilityQueueConfiguration(
+	const EFFZSQueueLayout Layout, const FFFZSQueueSettings& Settings)
+{
 	if (!CanChooseQueueLayout()) return false;
+	TArray<FText> SettingsErrors;
+	if (!Settings.IsValid(SettingsErrors))
+	{
+		ShowStatus(SettingsErrors.IsEmpty() ? TEXT("대기열 설정이 올바르지 않습니다.") : SettingsErrors[0].ToString(), true);
+		return false;
+	}
 	if (FFBuildModeModel::IsPreviewActive(State))
 	{
 		FFFZSFacilitySpec Base;
@@ -62,8 +149,12 @@ bool UFF_BuildModeSubsystem::SetSelectedFacilityQueueLayout(const EFFZSQueueLayo
 			Base = Definition->Spec;
 		}
 		Base.QueueLayout = EFFZSQueueLayout::Authored;
+		// Scale the authored shell before generating the chosen queue once. Reusing
+		// an audience-shifted path as frontage can turn a later draft onto another face.
+		Base.QueueSettings.bEnabled = false;
 		FFFZSFacilitySpec Candidate = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Base, Level, Size);
 		Candidate.QueueLayout = Layout;
+		Candidate.QueueSettings = Settings;
 		FText Error;
 		if (!FFFZSQueueGeometry::ApplySelectedLayout(Candidate, Error))
 		{
@@ -75,6 +166,7 @@ bool UFF_BuildModeSubsystem::SetSelectedFacilityQueueLayout(const EFFZSQueueLayo
 		EndDragPlacement();
 		CancelNearbyPlacementSearch();
 		PendingQueueLayout = Layout;
+		PendingQueueSettings = Settings;
 		SelectedSpec = MoveTemp(Candidate);
 		bPreviewWorldDirty = true;
 		bSuppressWorldClickUntilReleased = true;
@@ -96,8 +188,8 @@ bool UFF_BuildModeSubsystem::SetSelectedFacilityQueueLayout(const EFFZSQueueLayo
 	if (!Facility || !Zones) return false;
 	NotifyBuildToolsInteraction();
 	FText Error;
-	const bool bSuccess = Zones->SetFacilityQueueLayout(Facility->GetFacilityInstanceId(), Layout, Error);
-	ShowStatus(bSuccess ? TEXT("대기열 형태를 변경했습니다.") : Error.ToString(), !bSuccess);
+	const bool bSuccess = Zones->SetFacilityQueueSettings(Facility->GetFacilityInstanceId(), Settings, Layout, Error);
+	ShowStatus(bSuccess ? TEXT("대기열 설정을 변경했습니다.") : Error.ToString(), !bSuccess);
 	OnBuildToolsChanged.Broadcast();
 	return bSuccess;
 }

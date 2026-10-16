@@ -168,6 +168,103 @@ bool FFF_BuildQueueLayoutDraftTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Cancel leaves original queue intact"), Facility->GetQueueLayout(), EFFZSQueueLayout::Left);
     TestEqual(TEXT("Cancel returns to installed-facility mode"), Build->GetBuildModeState(), EFF_BuildModeState::BuildMode);
     TestEqual(TEXT("Cancel clears the draft"), Build->PendingQueueLayout, EFFZSQueueLayout::Authored);
+
+    // The same editor owns team capacity and physical lane size. All fields are
+    // committed together, including a queue-only edit at the original location.
+    Build->State = EFF_BuildModeState::Placing;
+    Build->SelectedFacilityDefinitionId = Definition->Spec.FacilityDefinitionId;
+    Build->SelectedSpec = Definition->Spec;
+    Build->CurrentZoneId = Zone->ZoneId;
+    Build->CurrentPlacement.OriginCell = FIntPoint(6000, 6000);
+    Build->bHasPlacementTarget = true;
+    Build->SpawnPlacementPreview();
+    if (!TestNotNull(TEXT("Queue settings preview"), Build->PlacementPreview.Get())) return false;
+    TestTrue(TEXT("A valid team/spacing/width draft is accepted atomically"),
+        Build->SetSelectedFacilityQueueSettings(8, 150.f, 600.f));
+    const FFFZSQueueSettings Custom = Build->GetEditingQueueSettings();
+    TestTrue(TEXT("Applying a draft opts into the common queue generator"), Custom.bEnabled);
+    TestFalse(TEXT("An invalid width rejects the complete edit"),
+        Build->SetSelectedFacilityQueueSettings(20, 200.f, 10.f));
+    TestTrue(TEXT("Invalid settings preserve all previous fields"), Build->GetEditingQueueSettings() == Custom);
+    TestTrue(TEXT("Changing shape preserves custom capacity and dimensions"),
+        Build->SetSelectedFacilityQueueLayout(EFFZSQueueLayout::Right));
+    TestTrue(TEXT("Shape shortcuts retain the entire user configuration"), Build->GetEditingQueueSettings() == Custom);
+    Build->RebuildPreviewCommand();
+    const FFFZSCommand CustomInstall = Build->PlacementPreview->PreviewCommand;
+    TestTrue(TEXT("Install payload carries the complete draft"), CustomInstall.FacilitySpec.QueueSettings == Custom);
+    TestEqual(TEXT("Effective preview exposes the selected team capacity"), Build->SelectedSpec.QueueRules.MaxWaitingAgents, 8);
+    TestEqual(TEXT("Effective preview exposes the selected slot spacing"), Build->SelectedSpec.QueueRules.SlotSpacingCm, 150.f);
+    if (!TestTrue(TEXT("Custom queue facility installs"), Zones->ExecuteCommand(CustomInstall).bSucceeded)) return false;
+    AFFZSFacilityActor* CustomFacility = Zones->FindFacility(CustomInstall.FacilityInstanceId);
+    if (!TestNotNull(TEXT("Custom facility"), CustomFacility)) return false;
+    TestTrue(TEXT("Installed base retains the user configuration"), CustomFacility->GetBaseFacilitySpec().QueueSettings == Custom);
+    TestEqual(TEXT("Real queue component receives the new capacity"), CustomFacility->GetEffectiveQueueRules().MaxWaitingAgents, 8);
+
+    Build->State = EFF_BuildModeState::Moving;
+    Build->MovingFacility = CustomFacility;
+    Build->MovingFacilityInstanceId = CustomFacility->GetFacilityInstanceId();
+    Build->MoveTransactionId = FGuid::NewGuid();
+    Build->MoveOriginZoneId = CustomFacility->GetZoneId();
+    Build->MoveOriginPlacement = CustomFacility->GetGridPlacement();
+    Build->CurrentZoneId = Build->MoveOriginZoneId;
+    Build->CurrentPlacement = Build->MoveOriginPlacement;
+    Build->SelectedSpec = CustomFacility->GetFacilitySpec();
+    Build->PendingQueueLayout = CustomFacility->GetQueueLayout();
+    Build->PendingQueueSettings = Custom;
+    Build->bHasPlacementTarget = true;
+    TestTrue(TEXT("Installed queue accepts a size/capacity-only draft"),
+        Build->SetSelectedFacilityQueueSettings(6, 140.f, 500.f));
+    Build->RefreshCurrentPlacementValidation();
+    TestTrue(TEXT("Move payload explicitly opts into settings changes"),
+        Build->PlacementPreview->PreviewCommand.bChangeQueueSettings);
+    TestEqual(TEXT("Draft leaves installed queue capacity untouched"), CustomFacility->GetEffectiveQueueRules().MaxWaitingAgents, 8);
+    TestTrue(TEXT("Same-position confirmation commits changed queue settings"), Build->CommitPlacement());
+    CustomFacility = Zones->FindFacility(CustomInstall.FacilityInstanceId);
+    if (!TestNotNull(TEXT("Reconfigured facility"), CustomFacility)) return false;
+    TestEqual(TEXT("Confirmed queue receives the new team capacity"), CustomFacility->GetEffectiveQueueRules().MaxWaitingAgents, 6);
+    TestEqual(TEXT("Queue edit does not move the facility"), CustomFacility->GetGridPlacement().OriginCell, CustomInstall.Placement.OriginCell);
+    TestTrue(TEXT("Queue settings are one undoable edit"), Build->UndoBuildEdit());
+    CustomFacility = Zones->FindFacility(CustomInstall.FacilityInstanceId);
+    if (!TestNotNull(TEXT("Facility after settings undo"), CustomFacility)) return false;
+    TestTrue(TEXT("Undo restores original capacity and dimensions"), CustomFacility->GetBaseFacilitySpec().QueueSettings == Custom);
+    TestTrue(TEXT("Queue settings can be redone"), Build->RedoBuildEdit());
+
+    TestTrue(TEXT("Existing queue facilities can be unified in one operation"), Build->ResetAllFacilityQueuesToDefaults());
+    FFFZSQueueSettings Defaults;
+    Defaults.bEnabled = true;
+    for (const FGuid& Id : {Install.FacilityInstanceId, CustomInstall.FacilityInstanceId})
+    {
+        const AFFZSFacilityActor* Unified = Zones->FindFacility(Id);
+        if (TestNotNull(TEXT("Unified facility remains installed"), Unified))
+        {
+            TestTrue(TEXT("Every queue uses the same common default settings"), Unified->GetBaseFacilitySpec().QueueSettings == Defaults);
+            TestEqual(TEXT("Every queue uses the common default shape"), Unified->GetQueueLayout(), EFFZSQueueLayout::Authored);
+        }
+    }
+    TestTrue(TEXT("One undo restores the settings of every unified facility"), Build->UndoBuildEdit());
+    CustomFacility = Zones->FindFacility(CustomInstall.FacilityInstanceId);
+    if (!TestNotNull(TEXT("Facility after bulk undo"), CustomFacility)) return false;
+    TestEqual(TEXT("Bulk undo restores the independently edited capacity"), CustomFacility->GetEffectiveQueueRules().MaxWaitingAgents, 6);
+
+    UFFZSFacilityDefinition* MainStage = LoadObject<UFFZSFacilityDefinition>(nullptr,
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
+    if (!TestNotNull(TEXT("Main stage definition for audience-adjacent draft"), MainStage)) return false;
+    Catalog->EntryIndexByDefinitionId.Add(MainStage->Spec.FacilityDefinitionId, Catalog->Entries.Num());
+    Catalog->Entries.AddDefaulted_GetRef().Definition = MainStage;
+    Build->State = EFF_BuildModeState::Placing;
+    Build->SelectedFacilityDefinitionId = MainStage->Spec.FacilityDefinitionId;
+    Build->SelectedSpec = MainStage->Spec;
+    Build->PendingQueueLayout = EFFZSQueueLayout::Authored;
+    Build->PendingQueueSettings = MainStage->Spec.QueueSettings;
+    Build->CurrentZoneId = Zone->ZoneId;
+    Build->bHasPlacementTarget = false;
+    Build->SpawnPlacementPreview();
+    TestTrue(TEXT("The common settings support the production main stage draft"),
+        Build->SetSelectedFacilityQueueSettings(12, 115.f, 600.f));
+    const TArray<FVector> MainStageDraft = Build->SelectedSpec.QueueSplinePointsCm;
+    Build->RebuildPreviewCommand();
+    TestTrue(TEXT("A command rebuild preserves an audience-shifted draft's frontage and positions"),
+        MainStageDraft == Build->SelectedSpec.QueueSplinePointsCm);
     return true;
 }
 

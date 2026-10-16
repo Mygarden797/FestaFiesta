@@ -252,7 +252,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ProcessConstructionBatch(const TArray<FF
     // Public group edits remain capped at 128. Only trusted history snapshots may
     // restore a full placement stroke; one atomic batch retains aggregate policy checks,
     // rollback, stable identities and exactly one set of wallet notifications.
-    const int32 MaxCommands = bIsReplayingConstruction && DesiredSnapshots ? MaxPlacementStrokeCommands : 128;
+    const int32 MaxCommands = (bIsReplayingConstruction && DesiredSnapshots) || bIsResettingAllQueueSettings ? MaxPlacementStrokeCommands : 128;
     if (Commands.IsEmpty() || Commands.Num() > MaxCommands)
         return MakeFailure(EFFZSPlacementFailure::DataInvalid, MaxCommands == MaxPlacementStrokeCommands
             ? LOCTEXT("StrokeHistorySize", "한 번에 1~4096개 연속 설치 기록을 복구할 수 있습니다.")
@@ -265,7 +265,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ProcessConstructionBatch(const TArray<FF
     FFFZSCommandResult ReplayResult;
     for (const FFFZSCommand& Command : Commands)
     {
-        if (!IsConstruction(Command.Type) || (Command.bChangeQueueLayout && Command.Type != EFFZSCommandType::Move)
+        if (!IsConstruction(Command.Type) || ((Command.bChangeQueueLayout || Command.bChangeQueueSettings) && Command.Type != EFFZSCommandType::Move)
             || !Command.CommandId.IsValid() || !Command.TransactionId.IsValid()
             || !Command.FacilityInstanceId.IsValid() || Ids.Contains(Command.FacilityInstanceId)
             || CommandIds.Contains(Command.CommandId) || Command.TransactionId != Commands[0].TransactionId
@@ -337,6 +337,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ProcessConstructionBatch(const TArray<FF
                 Target.Queue.State = EFFZSQueueState::Closed;
             }
             if (!DesiredSnapshots && Command.bChangeQueueLayout) Target.FacilitySpec.QueueLayout = Command.QueueLayout;
+            if (!DesiredSnapshots && Command.bChangeQueueSettings) Target.FacilitySpec.QueueSettings = Command.QueueSettings;
             Target.ZoneId = Command.ZoneId;
             Target.Placement = Command.Placement;
             UFFZSGridLibrary::NormalizePlacement(Target.Placement);

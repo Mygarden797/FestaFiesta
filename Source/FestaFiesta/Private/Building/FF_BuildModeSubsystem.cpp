@@ -783,6 +783,7 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 	DismissPlacementFailureFeedback();
 	SelectedSpec = Definition->Spec;
 	PendingQueueLayout = Definition->Spec.QueueLayout;
+	PendingQueueSettings = Definition->Spec.QueueSettings;
 	CurrentPlacement = FFFZSGridPlacement{};
 	CurrentZoneId = NAME_None;
 	bHasPlacementTarget = false;
@@ -1018,7 +1019,8 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 		return false;
 	}
 	if (bIsMoving && CurrentZoneId == MoveOriginZoneId &&
-		CurrentPlacement == MoveOriginPlacement && PendingQueueLayout == MoveTarget->GetQueueLayout())
+		CurrentPlacement == MoveOriginPlacement && PendingQueueLayout == MoveTarget->GetQueueLayout() &&
+		PendingQueueSettings == MoveTarget->GetBaseFacilitySpec().QueueSettings)
 	{
 		ShowStatus(TEXT("기존 위치와 방향이 같습니다. 다른 위치로 이동해 주세요."), true);
 		return false;
@@ -2375,6 +2377,7 @@ void UFF_BuildModeSubsystem::ResetPlacementSelection()
 	SelectedFacilityDefinitionId = NAME_None;
 	SelectedSpec = FFFZSFacilitySpec{};
 	PendingQueueLayout = EFFZSQueueLayout::Authored;
+	PendingQueueSettings = FFFZSQueueSettings();
 	CurrentPlacement = FFFZSGridPlacement{};
 	LastValidation = FFFZSPlacementValidation{};
 	CurrentZoneId = NAME_None;
@@ -2780,6 +2783,7 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility(const bool bKeepInitial
 	MoveTransactionId = FGuid::NewGuid();
 	SelectedSpec = FacilitySpec;
 	PendingQueueLayout = Facility->GetQueueLayout();
+	PendingQueueSettings = Facility->GetBaseFacilitySpec().QueueSettings;
 	CurrentZoneId = SourceZoneId;
 	CurrentPlacement = SourcePlacement;
 	ClearPendingRemovalSelection();
@@ -2910,6 +2914,7 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 		}
 		FFFZSFacilitySpec Base = SelectedDefinition->Spec;
 		Base.QueueLayout = PendingQueueLayout;
+		Base.QueueSettings = PendingQueueSettings;
 		SelectedSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Base, 1, 1.0f);
 	}
 	else
@@ -3114,6 +3119,9 @@ void UFF_BuildModeSubsystem::RebuildPreviewCommand()
 		MoveCommand.FacilitySpec = SelectedSpec;
 		MoveCommand.bChangeQueueLayout = MovingFacility.IsValid() && PendingQueueLayout != MovingFacility->GetQueueLayout();
 		MoveCommand.QueueLayout = PendingQueueLayout;
+		MoveCommand.bChangeQueueSettings = MovingFacility.IsValid() &&
+			PendingQueueSettings != MovingFacility->GetBaseFacilitySpec().QueueSettings;
+		MoveCommand.QueueSettings = PendingQueueSettings;
 		MoveCommand.ZoneId = CurrentZoneId;
 		MoveCommand.Placement = CurrentPlacement;
 		PlacementPreview->PreviewCommand = MoveTemp(MoveCommand);
@@ -3144,6 +3152,7 @@ void UFF_BuildModeSubsystem::RebuildPreviewCommand()
 		PlacementPreview->PreviewCommand.TransactionId = PendingDragPlacementTransactionId;
 	}
 	PlacementPreview->PreviewCommand.FacilitySpec.QueueLayout = PendingQueueLayout;
+	PlacementPreview->PreviewCommand.FacilitySpec.QueueSettings = PendingQueueSettings;
 	SelectedSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(PlacementPreview->PreviewCommand.FacilitySpec, 1, 1.0f);
 }
 

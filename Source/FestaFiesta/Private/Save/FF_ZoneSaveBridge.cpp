@@ -72,6 +72,9 @@ void UFF_ZoneSaveBridge::CollectFacilities(FFF_ZoneSaveState& Out) const
 		Saved.Placement = Facility->GetGridPlacement();
 		Saved.InstanceId = Facility->GetFacilityInstanceId();
 		Saved.UpgradeLevel = Facility->GetUpgradeLevel();
+		Saved.bHasQueueConfiguration = true;
+		Saved.QueueLayout = Facility->GetBaseFacilitySpec().QueueLayout;
+		Saved.QueueSettings = Facility->GetBaseFacilitySpec().QueueSettings;
 
 		Out.Facilities.Add(Saved);
 	}
@@ -105,6 +108,8 @@ void UFF_ZoneSaveBridge::ClearExistingFacilities()
 		FFFZSCommand Command;
 		Command.Type = EFFZSCommandType::Remove;
 		Command.CommandId = FGuid::NewGuid();
+		Command.TransactionId = Command.CommandId;
+		Command.ExpectedWorldRevision = ZoneWorld->GetWorldRevision();
 		Command.FacilityInstanceId = InstanceId;
 
 		ZoneWorld->ExecuteCommand(Command);
@@ -165,6 +170,20 @@ int32 UFF_ZoneSaveBridge::RestoreFacilities(const FFF_ZoneSaveState& In)
 		*/
 		FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommandFromDefinition(
 			Definition, Saved.ZoneId, Saved.Placement);
+		if (Saved.bHasQueueConfiguration)
+		{
+			Command.FacilitySpec.QueueLayout = Saved.QueueLayout;
+			Command.FacilitySpec.QueueSettings = Saved.QueueSettings;
+		}
+		else
+		{
+			// New definitions use a common queue by default. Expanding an older
+			// tightly packed layout during load could make facilities fail placement
+			// validation and disappear. Preserve authored geometry until the player
+			// explicitly applies the validated "unify all queues" operation.
+			Command.FacilitySpec.QueueLayout = EFFZSQueueLayout::Authored;
+			Command.FacilitySpec.QueueSettings.bEnabled = false;
+		}
 		if (Saved.InstanceId.IsValid() && !ZoneWorld->FindFacility(Saved.InstanceId))
 		{
 			Command.FacilityInstanceId = Saved.InstanceId;

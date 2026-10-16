@@ -22,7 +22,8 @@ FText UFF_BuildModeGuide::MakeBuildOverviewHelpText()
 		"[TAB] 시점 전환\n"
 		"설치된 시설을 클릭하면 바로 이동할 수 있습니다. 운영 중인 시설은 정보를 확인합니다.\n"
 		"[Ctrl+Z] 실행 취소 · [Ctrl+Y] 다시 실행\n"
-		"시설 선택 후 [7] 기본 · [8] 좌측 · [9] 우측 · [0] U자 대기열");
+        "시설 선택 후 [7] 기본 · [8] 좌측 · [9] 우측 · [0] U자 대기열\n"
+        "건축 설정 → 대기열 설정: 정원·자리 간격·통로 폭 · 전체 기본값 적용");
 }
 
 FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving, const bool bInDragPlacementEnabled,
@@ -42,6 +43,7 @@ FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving, const bool
 			"[우클릭] 건축모드 UI 다시 표시 (시설 목록으로 돌아가기)\n"
 			"[Ctrl+Z] 드래그 한 번으로 설치한 시설 함께 취소 · [Ctrl+Y] 함께 다시 실행\n"
 			"[7] 기본 · [8] 좌측 · [9] 우측 · [0] U자 대기열\n"
+            "건축 설정 → 대기열 설정에서 정원·자리 간격·통로 폭을 조절합니다.\n"
 			"초록은 배치 가능, 빨강은 배치 불가입니다. 설치할 때마다 비용과 건축 한도를 확인합니다."),
 			FText::AsNumber(FMath::Clamp(DragPlacementGapCm, 0, 1000)));
 	}
@@ -60,6 +62,7 @@ FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving, const bool
 			"직접 조정 후에는 위치와 회전을 유지합니다. [Enter] 확정 · [T] 커서 배치로 돌아가기\n"
 			"{0}\n"
 			"[7] 기본 · [8] 좌측 · [9] 우측 · [0] U자 대기열\n"
+            "건축 설정 → 대기열 설정에서 정원·자리 간격·통로 폭을 조절합니다.\n"
 			"[Ctrl+Z] 실행 취소 · [Ctrl+Y] 다시 실행\n"
 			"공간 외에 설치 비용·건축 한도도 충족해야 합니다."),
 		ConfirmText);

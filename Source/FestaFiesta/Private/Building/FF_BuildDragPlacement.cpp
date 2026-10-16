@@ -58,6 +58,7 @@ struct FFF_BuildDragPlacementSession
 	FGuid TransactionId = FGuid::NewGuid();
 	FName ZoneHint;
 	EFFZSQueueLayout QueueLayout = EFFZSQueueLayout::Authored;
+	FFFZSQueueSettings QueueSettings;
 	bool bHasShownSpatialFailure = false;
 };
 
@@ -163,6 +164,7 @@ void UFF_BuildModeSubsystem::BeginDragPlacement(const bool bOriginAlreadyProcess
 	Stroke.TransactionId = TransactionId;
 	Stroke.Definition = Definition;
 	Stroke.QueueLayout = PendingQueueLayout;
+	Stroke.QueueSettings = PendingQueueSettings;
 	Stroke.ZoneHint = CurrentZoneId;
 	Stroke.LatticeToWorld = FTransform(FRotator(0.0, LocalYaw + Zone->GetActorRotation().Yaw, 0.0),
 		Zone->GetActorTransform().TransformPosition(FVector(Center, 0.0)));
@@ -293,6 +295,7 @@ bool UFF_BuildModeSubsystem::TryInstallDragCell(const FIntPoint& Cell)
 		Definition, ZoneId, Placement, Zones->GetWorldRevision());
 	Command.TransactionId = Stroke->TransactionId;
 	Command.FacilitySpec.QueueLayout = Stroke->QueueLayout;
+	Command.FacilitySpec.QueueSettings = Stroke->QueueSettings;
 	const FFFZSCommandResult Result = Zones->ExecuteCommand(Command);
 	if (DragPlacementSession != Stroke || State != EFF_BuildModeState::Placing) { return Result.bSucceeded; }
 	bPreviewWorldDirty = true;

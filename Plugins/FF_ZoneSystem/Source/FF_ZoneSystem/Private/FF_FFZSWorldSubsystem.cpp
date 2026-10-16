@@ -1525,18 +1525,18 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacement(const FFFZSComma
     if (Existing)
     {
         EffectiveCommand.FacilitySpec = Existing->GetFacilitySpec();
-        if (Command.bChangeQueueLayout)
+        if (Command.bChangeQueueLayout || Command.bChangeQueueSettings)
         {
             FFFZSFacilitySpec Base = Existing->GetBaseFacilitySpec();
-            Base.QueueLayout = EFFZSQueueLayout::Authored;
+            if (Command.bChangeQueueLayout) Base.QueueLayout = Command.QueueLayout;
+            if (Command.bChangeQueueSettings) Base.QueueSettings = Command.QueueSettings;
             EffectiveCommand.FacilitySpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
                 Base, Existing->GetUpgradeLevel(), Existing->GetUpgradeSizeMultiplier());
-            EffectiveCommand.FacilitySpec.QueueLayout = Command.QueueLayout;
-            FText Error;
-            if (!FFFZSQueueGeometry::ApplySelectedLayout(EffectiveCommand.FacilitySpec, Error))
+            TArray<FText> Errors;
+            if (!EffectiveCommand.FacilitySpec.IsValid(Errors))
             {
                 FFFZSPlacementValidation Invalid;
-                Invalid.AddFailure(EFFZSPlacementFailure::DataInvalid, Error);
+                Invalid.AddFailure(EFFZSPlacementFailure::DataInvalid, Errors.IsEmpty() ? LOCTEXT("InvalidQueueSettingsPreview", "선택한 대기열 설정으로 배치할 수 없습니다.") : Errors[0]);
                 return Invalid;
             }
         }
@@ -2784,7 +2784,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     {
         return MakeFailure(EFFZSPlacementFailure::DataInvalid, LOCTEXT("MissingCommandIds", "CommandId와 TransactionId가 필요합니다."));
     }
-    if (Command.bChangeQueueLayout && Command.Type != EFFZSCommandType::Move)
+    if ((Command.bChangeQueueLayout || Command.bChangeQueueSettings) && Command.Type != EFFZSCommandType::Move)
     {
         return MakeFailure(EFFZSPlacementFailure::DataInvalid,
             LOCTEXT("QueueLayoutMoveOnly", "이동 중 대기열 변경은 Move 명령으로만 확정할 수 있습니다."));
@@ -2980,10 +2980,11 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteMove(const FFFZSCommand& Command,
 
     FFFZSCommand EffectiveCommand = Command;
     EffectiveCommand.FacilitySpec = Facility->GetFacilitySpec();
-    if (Command.bChangeQueueLayout)
+    if (Command.bChangeQueueLayout || Command.bChangeQueueSettings)
     {
         FFFZSFacilitySpec Base = Facility->GetBaseFacilitySpec();
-        Base.QueueLayout = Command.QueueLayout;
+        if (Command.bChangeQueueLayout) Base.QueueLayout = Command.QueueLayout;
+        if (Command.bChangeQueueSettings) Base.QueueSettings = Command.QueueSettings;
         EffectiveCommand.FacilitySpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
             Base, Facility->GetUpgradeLevel(), Facility->GetUpgradeSizeMultiplier());
     }
@@ -3004,12 +3005,16 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteMove(const FFFZSCommand& Command,
     const FFFZSGridPlacement PreviousPlacement = Facility->GetGridPlacement();
     const FTransform PreviousTransform = Facility->GetActorTransform();
     const EFFZSQueueLayout PreviousQueueLayout = Facility->GetQueueLayout();
+    const FFFZSQueueSettings PreviousQueueSettings = Facility->GetBaseFacilitySpec().QueueSettings;
     const EFFZSFacilityState PreviousState = Facility->GetFacilityState();
     ReleaseFacilityRegions(*Facility);
-    if ((Command.bChangeQueueLayout && !Facility->ApplyQueueLayout(Command.QueueLayout)) ||
+    if (((Command.bChangeQueueLayout || Command.bChangeQueueSettings) && !Facility->ApplyQueueSettings(
+            Command.bChangeQueueSettings ? Command.QueueSettings : PreviousQueueSettings,
+            Command.bChangeQueueLayout ? Command.QueueLayout : PreviousQueueLayout)) ||
         !Facility->ApplyPlacement(Command.ZoneId, Command.Placement, Validation.PlacementTransform))
     {
-        if (Facility->GetQueueLayout() != PreviousQueueLayout) Facility->ApplyQueueLayout(PreviousQueueLayout);
+        if (Facility->GetQueueLayout() != PreviousQueueLayout || Facility->GetBaseFacilitySpec().QueueSettings != PreviousQueueSettings)
+            Facility->ApplyQueueSettings(PreviousQueueSettings, PreviousQueueLayout);
         Facility->ApplyPlacement(PreviousZoneId, PreviousPlacement, PreviousTransform);
         Facility->FacilityState = PreviousState;
         OccupyFacilityRegions(*Facility);

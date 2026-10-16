@@ -67,6 +67,10 @@ namespace FFBuildToolsModel
     FESTAFIESTA_API bool TryParseDragPlacementGapText(const FString& Text, int32& OutGapCm);
     /** Shared by runtime compatibility and the saved WBP builder; does not replace authored controls. */
     FESTAFIESTA_API UEditableTextBox* EnsureDragPlacementGapControl(UWidgetTree& Tree);
+    /** Queue inputs commit together so a temporary partial edit never changes the reservation. */
+    FESTAFIESTA_API bool TryParseQueueSettingsText(const FString& TeamsText, const FString& SpacingText,
+        const FString& WidthText, int32& OutTeams, float& OutSpacingCm, float& OutWidthCm);
+    FESTAFIESTA_API bool EnsureQueueSettingsControls(UWidgetTree& Tree);
     /** Top and height of the guide, bounded above the measured catalog edge. */
     FESTAFIESTA_API FVector2D ResolveHelpVerticalBounds(float ContentHeight, float AvailableBottom,
         float PreferredTop = 525.f, float ReservedTop = 104.f);
@@ -275,6 +279,13 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_FreeRotateRight;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_Angle;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_DragPlacementGap;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_QueueSettings;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_QueueMaxTeams;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_QueueSlotSpacing;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_QueueLaneWidth;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_QueueSettingsSummary;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ApplyQueueSettings;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ResetAllQueues;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_NudgeLeft;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_NudgeUp;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_NudgeDown;
@@ -287,6 +298,7 @@ private:
     friend class FFFBuildFeatureGuideInputTest;
     friend class FFFBuildFeatureGuideRenderTest;
     friend class FFFBuildToolsCatalogHelpTest;
+    friend class FFFBuildToolsQueueSettingsTest;
     FName CurrentGuideFeature;
     FName PendingGuideAction;
     bool bUpdatingGuideTopic = false;
@@ -351,6 +363,14 @@ private:
     void RefreshAngleText();
     void RefreshDragPlacementGapText();
     bool IsEditingDragPlacementGap() const;
+    bool IsEditingQueueSettings() const;
+    void RefreshQueueSettingsText();
+    void RefreshQueueSettingsControls();
+    bool bRefreshingQueueSettings = false;
+    bool bQueueSettingsDirty = false;
+    FName QueueEditingDefinitionId;
+    FGuid QueueEditingInstanceId;
+    uint8 QueueEditingState = MAX_uint8;
     bool ApplyAngleText(const FText& Text);
     bool ApplyPendingAngle();
     void SetSnap(int32 StepCm);
@@ -370,4 +390,8 @@ private:
     UFUNCTION() void HandleNudgeRight();
     UFUNCTION() void HandleAngleCommitted(const FText& Text, ETextCommit::Type CommitMethod);
     UFUNCTION() void HandleDragPlacementGapCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+    UFUNCTION() void HandleQueueSettingsChanged(const FText& Text);
+    UFUNCTION() void HandleQueueSettingsCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+    UFUNCTION() void HandleApplyQueueSettings();
+    UFUNCTION() void HandleResetAllQueues();
 };

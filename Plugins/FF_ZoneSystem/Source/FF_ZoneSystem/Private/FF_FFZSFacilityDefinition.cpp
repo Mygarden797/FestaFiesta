@@ -26,6 +26,16 @@ bool UFFZSFacilityDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
         OutErrors.Append(BaseErrors);
         return false;
     }
+    if (Spec.QueueSettings.bEnabled || Spec.QueueLayout != EFFZSQueueLayout::Authored)
+    {
+        const FFFZSFacilitySpec Effective = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Spec, 1, 1.0f);
+        TArray<FText> EffectiveErrors;
+        if (!Effective.IsValid(EffectiveErrors))
+        {
+            OutErrors.Append(EffectiveErrors);
+            return false;
+        }
+    }
     if (Spec.bUsesFacilityLevels)
     {
         // Tier structure was validated once above. Do not copy and revalidate the whole
@@ -90,13 +100,14 @@ bool UFFZSFacilityDefinition::DoesSpecMatchLoadedDefinition(
     Candidate.FacilityInstanceId = FGuid(5, 6, 7, 8);
     Candidate.ZoneId = TEXT("CanonicalSpecComparison");
     Candidate.FacilitySpec = Spec;
-    if (!StaticEnum<EFFZSQueueLayout>()->IsValidEnumValue(static_cast<int64>(Spec.QueueLayout)))
+    if (!StaticEnum<EFFZSQueueLayout>()->IsValidEnumValue(static_cast<int64>(Spec.QueueLayout)) || !Spec.QueueSettings.IsValid(Errors))
     {
         return false;
     }
     // The only player-owned spec field is the queue layout. All authored geometry/economy
     // still has to match the loaded definition exactly when duplicating a facility/preset.
     Candidate.FacilitySpec.QueueLayout = Definition->Spec.QueueLayout;
+    Candidate.FacilitySpec.QueueSettings = Definition->Spec.QueueSettings;
     FFFZSCommand Canonical = Candidate;
     Canonical.FacilitySpec = Definition->Spec;
     // Legacy padding no longer affects facility identity or placement. Preserve the raw
@@ -120,6 +131,15 @@ void UFFZSFacilityDefinition::PostLoad()
 {
     Super::PostLoad();
     Spec.NormalizeNonServiceGeometry();
+    // Existing production assets share a generated default while retaining their original
+    // geometry for old snapshots and explicit legacy-layout restoration.
+    if (Spec.UsesServiceQueue() && !Spec.QueueSettings.bEnabled &&
+        GetPathName().StartsWith(TEXT("/Game/FestaFiesta/Building/FF_Data_Building/")))
+    {
+        Spec.QueueSettings = FFFZSQueueSettings();
+        Spec.QueueSettings.bEnabled = true;
+        Spec.QueueLayout = EFFZSQueueLayout::Authored;
+    }
 }
 
 #if WITH_EDITOR

@@ -6,6 +6,8 @@
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSQueueComponent.h"
+#include "Components/SplineComponent.h"
 #include "FF_FFZSZoneActor.h"
 #include "FF_FFZSTestExternalPolicy.h"
 #include "FF_FFZSConstructionHistoryTestPolicy.h"
@@ -352,4 +354,130 @@ bool FFFZSConstructionPlacementStrokeReentrantEndTest::RunTest(const FString& Pa
     TestFalse(TEXT("Callback end did not split history"), Zones->CanUndoConstruction());
     return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSQueueSettingsHistoryTest,
+    "FF_ZoneSystem.Construction.QueueSettings.EditUndoSaveAndAtomicReset",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFFZSQueueSettingsHistoryTest::RunTest(const FString& Parameters)
+{
+    FConstructionTestSettings Settings;
+    UFFZSWorldSubsystem* Zones = CreateConstructionWorld(*this);
+    if (!TestNotNull(TEXT("Queue settings world"), Zones)) return false;
+    const FFFZSCommand A = InstallAt(FIntPoint(1000, 1000));
+    const FFFZSCommand B = InstallAt(FIntPoint(5000, 1000));
+    if (!TestTrue(TEXT("Legacy facility A installs"), Zones->ExecuteCommand(A).bSucceeded) ||
+        !TestTrue(TEXT("Legacy facility B installs"), Zones->ExecuteCommand(B).bSucceeded)) return false;
+    Zones->ClearConstructionHistory();
+    FFFZSQueueSettings Custom;
+    Custom.bEnabled = true;
+    Custom.MaxWaitingTeams = 8;
+    Custom.SlotSpacingCm = 150.f;
+    Custom.LaneWidthCm = 300.f;
+    FText Error;
+    if (!TestTrue(TEXT("One facility accepts custom settings"), Zones->SetFacilityQueueSettings(A.FacilityInstanceId, Custom, EFFZSQueueLayout::Left, Error)))
+    {
+        AddError(Error.ToString());
+        return false;
+    }
+    AFFZSFacilityActor* Facility = Zones->FindFacility(A.FacilityInstanceId);
+    TestTrue(TEXT("User settings are retained in the instance base"), Facility->GetBaseFacilitySpec().QueueSettings == Custom);
+    TestEqual(TEXT("Runtime queue uses the new team limit"), Facility->GetQueueComponent()->GetRules().MaxWaitingAgents, 8);
+    TestEqual(TEXT("Runtime queue uses the new spacing"), Facility->GetQueueComponent()->GetRules().SlotSpacingCm, 150.f);
+    TestTrue(TEXT("Undo custom settings"), Zones->UndoConstruction(Error));
+    TestFalse(TEXT("Undo restores legacy authored layout"), Zones->FindFacility(A.FacilityInstanceId)->GetBaseFacilitySpec().QueueSettings.bEnabled);
+    TestFalse(TEXT("One settings action creates one history entry"), Zones->CanUndoConstruction());
+    TestTrue(TEXT("Redo custom settings"), Zones->RedoConstruction(Error));
+    TestTrue(TEXT("Changing only shape preserves custom settings"), Zones->SetFacilityQueueLayout(A.FacilityInstanceId, EFFZSQueueLayout::Right, Error));
+    TestTrue(TEXT("The custom settings survive a shape change"), Zones->FindFacility(A.FacilityInstanceId)->GetBaseFacilitySpec().QueueSettings == Custom);
+    FFFZSCommand MoveSettings = Edit(A, EFFZSCommandType::Move, FIntPoint(3000, 5000), 0);
+    MoveSettings.bChangeQueueSettings = true;
+    MoveSettings.QueueSettings = Custom;
+    MoveSettings.QueueSettings.MaxWaitingTeams = 10;
+    if (!TestTrue(TEXT("Move can atomically change settings while preserving shape"), Zones->ExecuteCommand(MoveSettings).bSucceeded)) return false;
+    Custom = MoveSettings.QueueSettings;
+    TestTrue(TEXT("Move commits the player settings"), Zones->FindFacility(A.FacilityInstanceId)->GetBaseFacilitySpec().QueueSettings == Custom);
+    TestEqual(TEXT("Settings-only Move preserves the layout"), Zones->FindFacility(A.FacilityInstanceId)->GetQueueLayout(), EFFZSQueueLayout::Right);
+    const FFFZSWorldSnapshot Snapshot = Zones->CaptureWorldSnapshot();
+    TArray<FText> Errors;
+    TestTrue(TEXT("Custom settings save restores"), Zones->RestoreWorldSnapshot(Snapshot, Errors));
+    TestTrue(TEXT("Snapshot preserves custom settings"), Zones->FindFacility(A.FacilityInstanceId)->GetBaseFacilitySpec().QueueSettings == Custom);
+    Zones->ClearConstructionHistory();
+    UFFZSTestExternalPolicy* RejectPolicy = NewObject<UFFZSTestExternalPolicy>(Zones);
+    RejectPolicy->bAllowTentativeApply = false;
+    Zones->RegisterExternalPolicy(RejectPolicy);
+    const int64 BeforePolicyFailure = Zones->GetWorldRevision();
+    TestFalse(TEXT("Policy rejection aborts the whole settings reset"), Zones->ResetAllFacilityQueueSettingsToDefaults().bSucceeded);
+    TestEqual(TEXT("Policy rejection leaves revision unchanged"), Zones->GetWorldRevision(), BeforePolicyFailure);
+    TestTrue(TEXT("Policy rejection preserves custom A"), Zones->FindFacility(A.FacilityInstanceId)->GetBaseFacilitySpec().QueueSettings == Custom);
+    TestFalse(TEXT("Policy rejection preserves legacy B"), Zones->FindFacility(B.FacilityInstanceId)->GetBaseFacilitySpec().QueueSettings.bEnabled);
+    TestFalse(TEXT("Rejected reset creates no undo record"), Zones->CanUndoConstruction());
+    Zones->UnregisterExternalPolicy(RejectPolicy);
+    const FFFZSCommandResult Reset = Zones->ResetAllFacilityQueueSettingsToDefaults();
+    if (!TestTrue(*FString::Printf(TEXT("Whole park settings reset: %s"), *Reset.Message.ToString()), Reset.bSucceeded)) return false;
+    FFFZSQueueSettings Defaults;
+    Defaults.bEnabled = true;
+    for (const FGuid Id : {A.FacilityInstanceId, B.FacilityInstanceId})
+    {
+        TestTrue(TEXT("Reset applies common settings to each service facility"), Zones->FindFacility(Id)->GetBaseFacilitySpec().QueueSettings == Defaults);
+        TestEqual(TEXT("Reset uses the common straight layout"), Zones->FindFacility(Id)->GetQueueLayout(), EFFZSQueueLayout::Authored);
+    }
+    TestTrue(TEXT("One undo restores the entire reset"), Zones->UndoConstruction(Error));
+    TestTrue(TEXT("Undo reset restores custom A"), Zones->FindFacility(A.FacilityInstanceId)->GetBaseFacilitySpec().QueueSettings == Custom);
+    TestFalse(TEXT("Undo reset restores legacy B"), Zones->FindFacility(B.FacilityInstanceId)->GetBaseFacilitySpec().QueueSettings.bEnabled);
+    TestFalse(TEXT("Reset has no member-level undo entries"), Zones->CanUndoConstruction());
+    TestTrue(TEXT("One redo reapplies reset"), Zones->RedoConstruction(Error));
+    const int64 BeforeNoop = Zones->GetWorldRevision();
+    TestTrue(TEXT("Reset already common settings is harmless"), Zones->ResetAllFacilityQueueSettingsToDefaults().bSucceeded);
+    TestEqual(TEXT("No-op reset creates no world mutation"), Zones->GetWorldRevision(), BeforeNoop);
+    TestTrue(TEXT("Return to mixed settings"), Zones->UndoConstruction(Error));
+    const FFFZSCommand Open = Edit(B, EFFZSCommandType::Open, B.Placement.OriginCell);
+    TestTrue(TEXT("One affected facility opens"), Zones->ExecuteCommand(Open).bSucceeded);
+    const int64 BeforeRejectedReset = Zones->GetWorldRevision();
+    TestFalse(TEXT("An active facility rejects the full reset"), Zones->ResetAllFacilityQueueSettingsToDefaults().bSucceeded);
+    TestEqual(TEXT("Rejected reset leaves revision unchanged"), Zones->GetWorldRevision(), BeforeRejectedReset);
+    TestTrue(TEXT("Rejected reset preserves another facility's custom settings"), Zones->FindFacility(A.FacilityInstanceId)->GetBaseFacilitySpec().QueueSettings == Custom);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSQueueSettingsLargeResetTest,
+    "FF_ZoneSystem.Construction.QueueSettings.ResetAbovePublicBatchLimit",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFFZSQueueSettingsLargeResetTest::RunTest(const FString& Parameters)
+{
+    FConstructionTestSettings Settings;
+    UFFZSWorldSubsystem* Zones = CreateConstructionWorld(*this);
+    if (!TestNotNull(TEXT("Large queue settings world"), Zones)) return false;
+    AFFZSGameplayZone* Zone = Zones->FindZone(FFZSTest::ProjectZoneId());
+    if (!TestNotNull(TEXT("Large queue test zone"), Zone)) return false;
+    Zones->UnregisterZone(Zone);
+    Zone->BoundarySpline->ClearSplinePoints(false);
+    for (const FVector& Point : {FVector(0, 0, 0), FVector(100000, 0, 0), FVector(100000, 100000, 0), FVector(0, 100000, 0)})
+    {
+        const int32 Index = Zone->BoundarySpline->GetNumberOfSplinePoints();
+        Zone->BoundarySpline->AddSplinePoint(Point, ESplineCoordinateSpace::Local, false);
+        Zone->BoundarySpline->SetSplinePointType(Index, ESplinePointType::Linear, false);
+    }
+    Zone->BoundarySpline->SetClosedLoop(true, true);
+    if (!TestTrue(TEXT("Large test boundary registers"), Zones->RegisterZone(Zone))) return false;
+    TArray<FFFZSCommand> Installs;
+    for (int32 Index = 0; Index < 129; ++Index)
+    {
+        const FFFZSCommand Command = InstallAt(FIntPoint(1000 + Index % 13 * 4000, 1000 + Index / 13 * 4000));
+        if (!TestTrue(*FString::Printf(TEXT("Legacy queue member %d installs"), Index), Zones->ExecuteCommand(Command).bSucceeded)) return false;
+        Installs.Add(Command);
+    }
+    Zones->ClearConstructionHistory();
+    FText Error;
+    TestFalse(TEXT("Public batch limit remains 128"), Zones->ValidateConstructionBatch(Installs, Error));
+    const FFFZSCommandResult Reset = Zones->ResetAllFacilityQueueSettingsToDefaults();
+    if (!TestTrue(*FString::Printf(TEXT("129 facilities reset atomically: %s"), *Reset.Message.ToString()), Reset.bSucceeded)) return false;
+    for (const FFFZSCommand& Install : Installs)
+        TestTrue(TEXT("Every reset member has common settings"), Zones->FindFacility(Install.FacilityInstanceId)->GetBaseFacilitySpec().QueueSettings.bEnabled);
+    TestTrue(TEXT("One undo restores all 129 legacy queues"), Zones->UndoConstruction(Error));
+    for (const FFFZSCommand& Install : Installs)
+        TestFalse(TEXT("Undo preserves each original facility ID and legacy settings"), Zones->FindFacility(Install.FacilityInstanceId)->GetBaseFacilitySpec().QueueSettings.bEnabled);
+    TestFalse(TEXT("Large reset creates only one undo entry"), Zones->CanUndoConstruction());
+    TestTrue(TEXT("One redo restores all 129 common queues"), Zones->RedoConstruction(Error));
+    return true;
+}
+
 #endif
