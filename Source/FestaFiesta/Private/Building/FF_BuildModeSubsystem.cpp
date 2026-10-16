@@ -1383,6 +1383,7 @@ bool UFF_BuildModeSubsystem::HandleMultiSelectionInput(APlayerController& Contro
 	const bool bPointerOverDebugPanel, const bool bPointerOverFacilityInfo)
 {
 	if (!bMultiSelectionActive || State != EFF_BuildModeState::BuildMode) return false;
+	if (MultiSelectionWidget) MultiSelectionWidget->UpdatePresetMenuFocus();
 	const bool bPointerOverStrip = MultiSelectionWidget && MultiSelectionWidget->IsPointerOverStrip();
 	const bool bBlockedByUi = bPointerOverTools || bPointerOverDebugPanel ||
 		bPointerOverFacilityInfo || bPointerOverStrip || IsPointerBlockedByUi(&Controller);

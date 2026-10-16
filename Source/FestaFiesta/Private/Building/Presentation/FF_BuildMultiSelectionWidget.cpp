@@ -297,11 +297,14 @@ void UFF_BuildMultiSelectionWidget::NativeConstruct()
 	if (Button_SavePreset) Button_SavePreset->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSavePreset);
 	if (Button_LoadPreset) Button_LoadPreset->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleLoadPreset);
 	if (Button_DeletePreset) Button_DeletePreset->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDeletePreset);
+	if (Combo_Presets) Combo_Presets->OnOpening.AddUniqueDynamic(this, &ThisClass::HandlePresetMenuOpening);
 	RefreshSelection();
 }
 
 void UFF_BuildMultiSelectionWidget::NativeDestruct()
 {
+	if (Combo_Presets) Combo_Presets->OnOpening.RemoveDynamic(this, &ThisClass::HandlePresetMenuOpening);
+	bPresetMenuWasOpen = false;
 	SetMarquee(false, FVector2D::ZeroVector, FVector2D::ZeroVector);
 	if (UFF_BuildModeSubsystem* System = BuildMode.Get())
 	{
@@ -533,7 +536,11 @@ void UFF_BuildMultiSelectionWidget::HandleInspectClicked()
 }
 void UFF_BuildMultiSelectionWidget::HandleClearClicked()
 {
-	if (UFF_BuildModeSubsystem* System = BuildMode.Get()) { System->ClearMultiSelection(); }
+	if (UFF_BuildModeSubsystem* System = BuildMode.Get())
+	{
+		System->ClearMultiSelection();
+		System->RestoreMultiSelectionViewportFocus();
+	}
 }
 void UFF_BuildMultiSelectionWidget::HandleExitClicked()
 {
@@ -542,43 +549,106 @@ void UFF_BuildMultiSelectionWidget::HandleExitClicked()
 
 void UFF_BuildMultiSelectionWidget::HandleMoveGroup()
 {
-	if (BuildMode.IsValid()) BuildMode->BeginGroupMove();
+	if (BuildMode.IsValid())
+	{
+		BuildMode->BeginGroupMove();
+		BuildMode->RestoreMultiSelectionViewportFocus();
+	}
 }
 void UFF_BuildMultiSelectionWidget::HandleDuplicateGroup()
 {
-	if (BuildMode.IsValid()) BuildMode->BeginGroupDuplicate();
+	if (BuildMode.IsValid())
+	{
+		BuildMode->BeginGroupDuplicate();
+		BuildMode->RestoreMultiSelectionViewportFocus();
+	}
 }
 void UFF_BuildMultiSelectionWidget::HandleRemoveGroup()
 {
-	if (BuildMode.IsValid()) BuildMode->RemoveSelectedGroup();
+	if (BuildMode.IsValid())
+	{
+		BuildMode->RemoveSelectedGroup();
+		BuildMode->RestoreMultiSelectionViewportFocus();
+	}
 }
 void UFF_BuildMultiSelectionWidget::HandleRotateLeft()
 {
-	if (BuildMode.IsValid()) BuildMode->RotateGroupPlacement(-BuildMode->GetPlacementRotationSnapDegrees());
+	if (BuildMode.IsValid())
+	{
+		BuildMode->RotateGroupPlacement(-BuildMode->GetPlacementRotationSnapDegrees());
+		BuildMode->RestoreMultiSelectionViewportFocus();
+	}
 }
 void UFF_BuildMultiSelectionWidget::HandleRotateRight()
 {
-	if (BuildMode.IsValid()) BuildMode->RotateGroupPlacement(BuildMode->GetPlacementRotationSnapDegrees());
+	if (BuildMode.IsValid())
+	{
+		BuildMode->RotateGroupPlacement(BuildMode->GetPlacementRotationSnapDegrees());
+		BuildMode->RestoreMultiSelectionViewportFocus();
+	}
 }
 void UFF_BuildMultiSelectionWidget::HandleApplyGroup()
 {
-	if (BuildMode.IsValid()) BuildMode->CommitGroupPlacement();
+	if (BuildMode.IsValid())
+	{
+		BuildMode->CommitGroupPlacement();
+		BuildMode->RestoreMultiSelectionViewportFocus();
+	}
 }
 void UFF_BuildMultiSelectionWidget::HandleCancelGroup()
 {
-	if (BuildMode.IsValid()) BuildMode->CancelGroupPlacement();
+	if (BuildMode.IsValid())
+	{
+		BuildMode->CancelGroupPlacement();
+		BuildMode->RestoreMultiSelectionViewportFocus();
+	}
 }
 void UFF_BuildMultiSelectionWidget::HandleSavePreset()
 {
-	if (BuildMode.IsValid() && Edit_PresetName) BuildMode->SaveSelectedGroupPreset(Edit_PresetName->GetText().ToString());
+	if (BuildMode.IsValid() && Edit_PresetName)
+	{
+		BuildMode->SaveSelectedGroupPreset(Edit_PresetName->GetText().ToString());
+		BuildMode->RestoreMultiSelectionViewportFocus();
+	}
 }
 void UFF_BuildMultiSelectionWidget::HandleLoadPreset()
 {
-	if (BuildMode.IsValid() && Combo_Presets) BuildMode->BeginGroupPreset(Combo_Presets->GetSelectedOption());
+	if (BuildMode.IsValid() && Combo_Presets)
+	{
+		BuildMode->BeginGroupPreset(Combo_Presets->GetSelectedOption());
+		BuildMode->RestoreMultiSelectionViewportFocus();
+	}
 }
 void UFF_BuildMultiSelectionWidget::HandleDeletePreset()
 {
-	if (BuildMode.IsValid() && Combo_Presets) BuildMode->DeleteGroupPreset(Combo_Presets->GetSelectedOption());
+	if (BuildMode.IsValid() && Combo_Presets)
+	{
+		BuildMode->DeleteGroupPreset(Combo_Presets->GetSelectedOption());
+		BuildMode->RestoreMultiSelectionViewportFocus();
+	}
+}
+
+void UFF_BuildMultiSelectionWidget::HandlePresetMenuOpening()
+{
+	bPresetMenuWasOpen = true;
+}
+
+void UFF_BuildMultiSelectionWidget::UpdatePresetMenuFocus()
+{
+	// Keep the pending close while the app is inactive; returning from Alt+Tab
+	// must still release a combo that retained keyboard focus.
+	if (!FSlateApplication::IsInitialized() || !FSlateApplication::Get().IsActive()) return;
+	if (!bPresetMenuWasOpen || !Combo_Presets || Combo_Presets->IsOpen()) return;
+	bPresetMenuWasOpen = false;
+	APlayerController* Controller = GetOwningPlayer();
+	// SComboBox restores its own focus after closing, even when the same option
+	// was chosen. Wait for that close in the existing build-input tick, and only
+	// reclaim focus still owned by the combo. Clicking a text field keeps it.
+	if (Controller && (Combo_Presets->HasUserFocus(Controller) ||
+		Combo_Presets->HasUserFocusedDescendants(Controller)))
+	{
+		if (BuildMode.IsValid()) BuildMode->RestoreMultiSelectionViewportFocus();
+	}
 }
 
 UWidget* UFF_BuildMultiSelectionWidget::GeneratePresetOption(FString Name)

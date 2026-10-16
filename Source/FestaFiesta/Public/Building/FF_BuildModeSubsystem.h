@@ -530,6 +530,9 @@ public:
 	/** F1 switches to world selection; the selection never performs a destructive command. */
 	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
 	void ToggleMultiSelection();
+
+	/** Return keyboard input to the camera after a multi-selection UI action. */
+	void RestoreMultiSelectionViewportFocus();
 	UFUNCTION(BlueprintPure, Category = "Building|Multi Selection")
 	bool IsMultiSelectionActive() const { return bMultiSelectionActive; }
 	UFUNCTION(BlueprintPure, Category = "Building|Multi Selection")
