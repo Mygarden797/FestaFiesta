@@ -241,7 +241,7 @@ public:
 	 * 쌓이지 않는 Need(`MinutesToLimit == 0`)는 0 에서 시작한다 — 안 쌓이는데 초기값이 있으면
 	 * 영원히 그 값에 머문다.
 	 *
-	 * @param StableAgentId  crowdAI 가 Hash(GroupID, 그룹 내 순번)으로 계산해 주는 값
+	 * @param StableAgentId  Crowd 가 유닛을 만들 때마다 1씩 올려 매기는 순번. 도착 일정이 결정적이라 같은 Seed 면 같은 값이다
 	 * @param RiseRates      **켜진 Need 를 가려내는 데만 쓴다** — 안 쌓이는 성분은 0 에서 시작한다
 	 */
 	static FFF_NeedState MakeInitialNeeds(

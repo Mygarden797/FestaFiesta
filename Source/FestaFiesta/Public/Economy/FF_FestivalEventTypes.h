@@ -11,7 +11,7 @@
  * 이 구조체가 채워져서 넘어오면 FFF_StaffEventRules 가 능력치 합·소요시간·페널티를 계산한다.
  *
  * 근거: data/metadata/SiriKim_Docs/staff_event_design.md §4·§7.
- * 2026-09-22 기준 사건 시스템 자체는 미착수 — 이 계약은 착수 전에 인터페이스부터 맞추기 위한 것이다.
+ * 사건 쪽에서는 FFF_IncidentOption 이 이 카드를 들고 오고, FF_StaffDispatchSubsystem 이 판정에 넘긴다.
  */
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_FestivalEventCard
