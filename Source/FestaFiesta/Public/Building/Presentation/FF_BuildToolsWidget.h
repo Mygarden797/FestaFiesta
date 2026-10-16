@@ -16,6 +16,7 @@ class UEditableTextBox;
 class UImage;
 class USizeBox;
 class UTextBlock;
+class UWidgetTree;
 class UFF_BuildModeSubsystem;
 class UFF_BuildCatalogEconomyReadModel;
 class UFF_BuildCatalogSubsystem;
@@ -42,6 +43,7 @@ struct FESTAFIESTA_API FFF_BuildToolsViewData
     UPROPERTY(BlueprintReadOnly) bool bGridVisible = false;
     UPROPERTY(BlueprintReadOnly) int32 PreferredSnapCm = 100;
     UPROPERTY(BlueprintReadOnly) int32 ActiveSnapCm = 100;
+    UPROPERTY(BlueprintReadOnly) int32 DragPlacementGapCm = 0;
     UPROPERTY(BlueprintReadOnly) float YawDegrees = 0.0f;
     UPROPERTY(BlueprintReadOnly) FText FacilityName;
     UPROPERTY(BlueprintReadOnly) FText CostText;
@@ -61,6 +63,10 @@ namespace FFBuildToolsModel
     // Explicit degree input is finite, decimal and within the displayed 0..360 range.
     // Invalid edits leave the caller's previous value untouched; 360 wraps to 0.
     FESTAFIESTA_API bool TryParseYawText(const FString& Text, float& OutYawDegrees);
+    /** Extra edge-to-edge spacing for a drag stroke; invalid edits preserve the prior value. */
+    FESTAFIESTA_API bool TryParseDragPlacementGapText(const FString& Text, int32& OutGapCm);
+    /** Shared by runtime compatibility and the saved WBP builder; does not replace authored controls. */
+    FESTAFIESTA_API UEditableTextBox* EnsureDragPlacementGapControl(UWidgetTree& Tree);
     /** Top and height of the guide, bounded above the measured catalog edge. */
     FESTAFIESTA_API FVector2D ResolveHelpVerticalBounds(float ContentHeight, float AvailableBottom,
         float PreferredTop = 525.f, float ReservedTop = 104.f);
@@ -113,6 +119,7 @@ public:
     bool bDesignerShowHelp = true;
     bool IsPointerOverTools() const;
     bool IsEditingAngle() const;
+    bool IsEditingText() const;
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ToggleRadialMenu();
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ToggleHelp();
     bool IsRadialMenuOpen() const;
@@ -267,6 +274,7 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_FreeRotateLeft;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_FreeRotateRight;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_Angle;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_DragPlacementGap;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_NudgeLeft;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_NudgeUp;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_NudgeDown;
@@ -341,6 +349,8 @@ private:
     UFUNCTION() void HandleFreeRotateRightPressed();
     UFUNCTION() void HandleGoldChanged(int32 Gold);
     void RefreshAngleText();
+    void RefreshDragPlacementGapText();
+    bool IsEditingDragPlacementGap() const;
     bool ApplyAngleText(const FText& Text);
     bool ApplyPendingAngle();
     void SetSnap(int32 StepCm);
@@ -359,4 +369,5 @@ private:
     UFUNCTION() void HandleNudgeDown();
     UFUNCTION() void HandleNudgeRight();
     UFUNCTION() void HandleAngleCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+    UFUNCTION() void HandleDragPlacementGapCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 };

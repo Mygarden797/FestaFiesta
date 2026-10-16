@@ -69,6 +69,18 @@ bool UFF_BuildModeSubsystem::IsDragPlacementEnabled() const
 	return State == EFF_BuildModeState::Placing && Definition && Definition->bEnableDragPlacement;
 }
 
+void UFF_BuildModeSubsystem::SetDragPlacementGapCm(const int32 GapCm)
+{
+	if (bInputSuspendedForPauseMenu || bIsExitingBuildMode) return;
+	const int32 NewGap = FMath::Clamp(GapCm, 0, MaxDragPlacementGapCm);
+	if (DragPlacementGapCm == NewGap) return;
+	NotifyBuildToolsInteraction();
+	DragPlacementGapCm = NewGap;
+	RefreshBuildModeGuide();
+	OnBuildToolsChanged.Broadcast();
+	ShowStatus(FString::Printf(TEXT("시설 사이 간격 %dcm · 다음 드래그부터 적용됩니다."), NewGap));
+}
+
 void UFF_BuildModeSubsystem::HandlePlacementPrimaryPress(const bool bButtonDown)
 {
 	// Every press uses the established single-install/move path, including a quick
@@ -77,28 +89,41 @@ void UFF_BuildModeSubsystem::HandlePlacementPrimaryPress(const bool bButtonDown)
 	const bool bCanExtend = bButtonDown && IsDragPlacementEnabled();
 	const FName PressedDefinitionId = SelectedFacilityDefinitionId;
 	const TWeakObjectPtr<AFFZSPlacementPreviewActor> PressedPreview(PlacementPreview.Get());
-	const bool bInstalled = CommitPlacement();
-	if (!bCanExtend || !IsDragPlacementEnabled() ||
+	EndDragPlacement();
+	UFFZSWorldSubsystem* Zones = GetZoneSystem();
+	const FGuid TransactionId = bCanExtend ? FGuid::NewGuid() : FGuid();
+	if (bCanExtend && (!Zones || !Zones->BeginConstructionPlacementStroke(TransactionId))) return;
+	bool bInstalled = false;
+	bool bStrokeStillOpen = false;
+	{
+		TGuardValue<FGuid> TransactionGuard(PendingDragPlacementTransactionId, TransactionId);
+		bInstalled = CommitPlacement();
+		bStrokeStillOpen = PendingDragPlacementTransactionId == TransactionId;
+	}
+	const auto CloseStroke = [&]() { if (Zones && bCanExtend) Zones->EndConstructionPlacementStroke(TransactionId); };
+	if (!bCanExtend || !bStrokeStillOpen || !IsDragPlacementEnabled() ||
 		SelectedFacilityDefinitionId != PressedDefinitionId || PlacementPreview != PressedPreview.Get())
 	{
+		CloseStroke();
 		return;
 	}
 	if (!bInstalled)
 	{
 		// Only fresh spatial validation failures are skippable. Money, limits and
 		// execution failures end the press and cannot silently resume after recovery.
-		if (LastValidation.bIsValid || LastValidation.Reasons.IsEmpty()) { return; }
+		if (LastValidation.bIsValid || LastValidation.Reasons.IsEmpty()) { CloseStroke(); return; }
 		for (const EFFZSPlacementFailure Reason : LastValidation.Reasons)
 		{
-			if (!FFBuildDragPlacement::IsSpatialFailure(Reason)) { return; }
+			if (!FFBuildDragPlacement::IsSpatialFailure(Reason)) { CloseStroke(); return; }
 		}
 	}
 	// The press already processed the origin. Never buy or reject it a second time.
-	BeginDragPlacement(true);
+	BeginDragPlacement(true, TransactionId);
+	if (!DragPlacementSession) CloseStroke();
 	if (DragPlacementSession && !bInstalled) { DragPlacementSession->bHasShownSpatialFailure = true; }
 }
 
-void UFF_BuildModeSubsystem::BeginDragPlacement(const bool bOriginAlreadyProcessed)
+void UFF_BuildModeSubsystem::BeginDragPlacement(const bool bOriginAlreadyProcessed, FGuid TransactionId)
 {
 	EndDragPlacement();
 	UFFZSWorldSubsystem* Zones = GetZoneSystem();
@@ -110,6 +135,15 @@ void UFF_BuildModeSubsystem::BeginDragPlacement(const bool bOriginAlreadyProcess
 		!Zone || !PlacementPreview || !CanReconfigure() || !Definition || !Definition->IsDefinitionValid(Errors))
 	{
 		return;
+	}
+	if (TransactionId.IsValid())
+	{
+		if (!Zones->IsConstructionPlacementStrokeActive(TransactionId)) return;
+	}
+	else
+	{
+		TransactionId = FGuid::NewGuid();
+		if (!Zones->BeginConstructionPlacementStroke(TransactionId)) return;
 	}
 
 	const float LocalYaw = UFFZSGridLibrary::YawCentidegreesToDegrees(
@@ -125,7 +159,8 @@ void UFF_BuildModeSubsystem::BeginDragPlacement(const bool bOriginAlreadyProcess
 	// guard from that precision, never relax collision rules or expose a magic gap.
 	const bool bCardinal = FMath::IsNearlyZero(FMath::Fmod(FMath::Abs(LocalYaw), 90.0f), 0.0001f);
 	const double RoundingGuardCm = bCardinal ? 0.0 : UE_SQRT_2;
-	Stroke.PitchCm = FVector2D(Stroke.Footprint) + FVector2D(RoundingGuardCm);
+	Stroke.PitchCm = FVector2D(Stroke.Footprint) + FVector2D(RoundingGuardCm + GetDragPlacementGapCm());
+	Stroke.TransactionId = TransactionId;
 	Stroke.Definition = Definition;
 	Stroke.QueueLayout = PendingQueueLayout;
 	Stroke.ZoneHint = CurrentZoneId;
@@ -145,7 +180,15 @@ void UFF_BuildModeSubsystem::BeginDragPlacement(const bool bOriginAlreadyProcess
 
 void UFF_BuildModeSubsystem::EndDragPlacement()
 {
+	const TSharedPtr<FFF_BuildDragPlacementSession> Stroke = DragPlacementSession;
 	DragPlacementSession.Reset();
+	const FGuid PendingId = PendingDragPlacementTransactionId;
+	PendingDragPlacementTransactionId.Invalidate();
+	if (UFFZSWorldSubsystem* Zones = GetZoneSystem())
+	{
+		if (Stroke) Zones->EndConstructionPlacementStroke(Stroke->TransactionId);
+		if (PendingId.IsValid()) Zones->EndConstructionPlacementStroke(PendingId);
+	}
 }
 
 bool UFF_BuildModeSubsystem::ResolveDragCursorCell(const FVector& CursorWorld, FIntPoint& OutCell) const
@@ -229,7 +272,8 @@ bool UFF_BuildModeSubsystem::TryInstallDragCell(const FIntPoint& Cell)
 	UFFZSWorldSubsystem* Zones = GetZoneSystem();
 	UFFZSFacilityDefinition* Definition = Stroke ? Stroke->Definition.Get() : nullptr;
 	if (!Stroke || !Zones || !Definition || bInputSuspendedForPauseMenu || !IsDragPlacementEnabled() ||
-		!CanReconfigure() || Definition->Spec.FootprintSizeCells != Stroke->Footprint)
+		!CanReconfigure() || Definition->Spec.FootprintSizeCells != Stroke->Footprint ||
+		!Zones->IsConstructionPlacementStrokeActive(Stroke->TransactionId))
 	{
 		EndDragPlacement();
 		return false;

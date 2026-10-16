@@ -388,6 +388,7 @@ public:
 	static constexpr int32 DefaultPlacementPositionSnapCm = 100;
 	static constexpr int32 DefaultPrecisionPlacementPositionSnapCm = 25;
 	static constexpr int32 DefaultFreePlacementPositionSnapCm = 1;
+	static constexpr int32 MaxDragPlacementGapCm = 1000;
 
 	// 지원 월드인지와 QA 전용 맵인지 확인해 이 서브시스템을 생성할지를 결정한다.
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
@@ -645,6 +646,11 @@ public:
 	/** Selected Data Asset opts in to holding the left mouse button to paint facilities. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
 	bool IsDragPlacementEnabled() const;
+	/** Additional edge-to-edge space, separate from cursor/grid snapping. Zero keeps roads joined. */
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void SetDragPlacementGapCm(int32 GapCm);
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	int32 GetDragPlacementGapCm() const { return DragPlacementGapCm; }
 
 private:
 #if WITH_DEV_AUTOMATION_TESTS
@@ -667,8 +673,10 @@ private:
 	bool HandlePlacementGizmoInput(APlayerController& Controller, bool bPointerBlocked);
 	// A stroke owns bounded path/deduplication data; installed actors remain owned by ZoneSystem.
 	TSharedPtr<FFF_BuildDragPlacementSession> DragPlacementSession;
+	int32 DragPlacementGapCm = 0;
+	FGuid PendingDragPlacementTransactionId;
 	void HandlePlacementPrimaryPress(bool bButtonDown);
-	void BeginDragPlacement(bool bOriginAlreadyProcessed = false);
+	void BeginDragPlacement(bool bOriginAlreadyProcessed = false, FGuid TransactionId = FGuid());
 	void UpdateDragPlacement(const FVector& CursorWorld);
 	void ProcessDragPlacement();
 	void EndDragPlacement();

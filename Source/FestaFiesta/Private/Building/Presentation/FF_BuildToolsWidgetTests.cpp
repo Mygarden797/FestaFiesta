@@ -4,10 +4,41 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/Presentation/FF_BuildToolsWidget.h"
+#include "Building/Presentation/FF_BuildModeGuide.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/TextBlock.h"
 #include "FF_FFZSTypes.h"
 #include "Misc/AutomationTest.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsDragPlacementGapInputTest,
+    "FestaFiesta.Building.BuildTools.DragPlacementGapInput",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFBuildToolsDragPlacementGapInputTest::RunTest(const FString& Parameters)
+{
+    int32 GapCm = 123;
+    for (const FString Invalid : {TEXT(""), TEXT("-1"), TEXT("1001"), TEXT("999999999999"),
+        TEXT("1.5"), TEXT("NaN"), TEXT("1e2"), TEXT("50cm"), TEXT("1,000")})
+    {
+        TestFalse(Invalid + TEXT(" is not a whole centimeter spacing in range"),
+            FFBuildToolsModel::TryParseDragPlacementGapText(Invalid, GapCm));
+        TestEqual(TEXT("Invalid edits preserve the last valid spacing"), GapCm, 123);
+    }
+    TestTrue(TEXT("Zero explicitly permits touching facilities"),
+        FFBuildToolsModel::TryParseDragPlacementGapText(TEXT("0"), GapCm));
+    TestEqual(TEXT("Zero is preserved"), GapCm, 0);
+    TestTrue(TEXT("Whitespace is accepted around a valid number"),
+        FFBuildToolsModel::TryParseDragPlacementGapText(TEXT(" 250 "), GapCm));
+    TestEqual(TEXT("Spacing is expressed in centimeters"), GapCm, 250);
+    TestTrue(TEXT("Ten meters is accepted"), FFBuildToolsModel::TryParseDragPlacementGapText(TEXT("1000"), GapCm));
+    TestEqual(TEXT("Upper bound is preserved"), GapCm, 1000);
+    const FString Help = UFF_BuildModeGuide::MakePlacementHelpText(false, true, 250).ToString();
+    TestTrue(TEXT("Drag help reports the actual user spacing and stroke undo"),
+        Help.Contains(TEXT("250cm")) && Help.Contains(TEXT("Ctrl+Z")) && Help.Contains(TEXT("함께 취소")));
+    TestFalse(TEXT("Moving help does not promise drag installation"),
+        UFF_BuildModeGuide::MakePlacementHelpText(true, true, 250).ToString().Contains(TEXT("여유 250cm")));
+    return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsRequiredSpaceTest,
     "FestaFiesta.Building.BuildTools.RequiredSpace",

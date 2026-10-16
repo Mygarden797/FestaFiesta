@@ -2007,7 +2007,8 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		Text_PlacementGuide->SetText(Guide);
 		Text_PlacementGuide->SetToolTipText(bShowSeparateTools
 			? UFF_BuildModeGuide::MakePlacementHelpText(State == EFF_BuildModeState::Moving,
-				BuildModeSubsystem && BuildModeSubsystem->IsDragPlacementEnabled())
+				BuildModeSubsystem && BuildModeSubsystem->IsDragPlacementEnabled(),
+				BuildModeSubsystem ? BuildModeSubsystem->GetDragPlacementGapCm() : 0)
 			: UFF_BuildModeGuide::MakeBuildOverviewHelpText());
 	}
 	// 🔴 **패널 높이도 같이 줄인다.**

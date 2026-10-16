@@ -1757,6 +1757,24 @@ bool RemoveTopWallet(UWidgetBlueprint& BP)
     return false;
 }
 
+bool ApplyDragPlacementGapControl(UWidgetBlueprint& BP)
+{
+    UWidgetTree& Tree = *BP.WidgetTree;
+    if (Tree.FindWidget(TEXT("Editable_DragPlacementGap"))) return true;
+    BP.Modify();
+    Tree.Modify();
+    if (auto* Body = Tree.FindWidget(TEXT("Column_BuildSettings"))) Body->Modify();
+    if (!FFBuildToolsModel::EnsureDragPlacementGapControl(Tree)) return false;
+    if (auto* Body = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Column_BuildSettings"))))
+        if (UWidget* SnapRow = Tree.FindWidget(TEXT("Row_SettingsSnap")))
+        {
+            const int32 Index = Body->GetChildIndex(SnapRow);
+            if (Index != INDEX_NONE) Body->ShiftChild(Index + 1, Tree.FindWidget(TEXT("Row_SettingsDragPlacementGap")));
+        }
+    // Runtime uses the same named control without requiring existing assets to be rebuilt.
+    return SaveNewBlueprint(TEXT("FF_BUILD_DRAG_PLACEMENT_GAP"), BP);
+}
+
 void Apply()
 {
     UWidgetBlueprint* BP = LoadExistingBlueprint(FFBuildUIAssetPaths::BuildToolsPackage);
@@ -1772,7 +1790,8 @@ void Apply()
             ApplyPearlToolbarAndDrawer(*BP) && ApplyPearlPolish(*BP) &&
             ApplyPearlReadableCards(*BP) && ApplyIconHelp(*BP) &&
             ApplyActionLanguage(*BP) && ApplyKeyboardHelp(*BP) && ApplyConstructionEditingHelp(*BP) &&
-            ApplyQueueShortcutKeys(*BP) && RemoveTopWallet(*BP) && ApplyViewToggleHelp(*BP) && ApplyCharacterShortcutsHelp(*BP))
+            ApplyQueueShortcutKeys(*BP) && RemoveTopWallet(*BP) && ApplyViewToggleHelp(*BP) && ApplyCharacterShortcutsHelp(*BP) &&
+            ApplyDragPlacementGapControl(*BP))
         {
             UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_BUILD_REFERENCE_TOOLS_REUSE"));
         }
@@ -1797,7 +1816,8 @@ void Apply()
         !ApplyPearlToolbarAndDrawer(*BP) || !ApplyPearlPolish(*BP) ||
         !ApplyPearlReadableCards(*BP) || !ApplyIconHelp(*BP) ||
         !ApplyActionLanguage(*BP) || !ApplyKeyboardHelp(*BP) || !ApplyConstructionEditingHelp(*BP) ||
-        !ApplyQueueShortcutKeys(*BP) || !RemoveTopWallet(*BP) || !ApplyViewToggleHelp(*BP) || !ApplyCharacterShortcutsHelp(*BP))
+        !ApplyQueueShortcutKeys(*BP) || !RemoveTopWallet(*BP) || !ApplyViewToggleHelp(*BP) || !ApplyCharacterShortcutsHelp(*BP) ||
+        !ApplyDragPlacementGapControl(*BP))
     {
         UE_LOG(LogFFUIWbpBuilder, Error, TEXT("FF_BUILD_REFERENCE_TOOLS_FAIL: refinement failed"));
     }

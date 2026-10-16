@@ -25,22 +25,25 @@ FText UFF_BuildModeGuide::MakeBuildOverviewHelpText()
 		"시설 선택 후 [7] 기본 · [8] 좌측 · [9] 우측 · [0] U자 대기열");
 }
 
-FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving, const bool bInDragPlacementEnabled)
+FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving, const bool bInDragPlacementEnabled,
+	const int32 DragPlacementGapCm)
 {
 	if (!bInMoving && bInDragPlacementEnabled)
 	{
-		return LOCTEXT("DragPlacementHelp",
+		return FText::Format(LOCTEXT("DragPlacementGapHelp",
 			"[좌클릭] 누른 채 바닥을 드래그하면 시설이 이어서 설치됩니다. 버튼을 놓으면 즉시 멈춥니다.\n"
-			"첫 시설의 위치와 각도를 기준으로 시설 크기만큼 간격을 맞추며, 빠르게 움직여도 중간 칸을 채웁니다.\n"
+			"첫 시설의 위치와 각도를 기준으로 시설 크기 + 여유 {0}cm 간격을 맞추며, 빠르게 움직여도 중간 칸을 채웁니다.\n"
+			"건축 설정의 시설 사이 간격에서 0~1000cm를 지정합니다. 0cm는 시설을 붙여 놓습니다.\n"
 			"[Ctrl] 정밀 맞춤 · [Alt] 자유 배치는 첫 시설의 시작 위치에 적용됩니다.\n"
 			"[Q/E] 회전 · [Shift+Q/E] 부드럽게 회전하면 드래그가 끝납니다. 다시 클릭해 시작하세요.\n"
 			"[Enter/배치 확정] 한 개 설치 · [G] 격자 표시/숨기기\n"
 			"직접 조정 후에는 위치와 회전을 유지합니다. [Enter] 확정 · [T] 커서 배치로 돌아가기\n"
 			"[TAB] 시점 전환\n"
 			"[우클릭] 건축모드 UI 다시 표시 (시설 목록으로 돌아가기)\n"
-			"[Ctrl+Z] 실행 취소 · [Ctrl+Y] 다시 실행\n"
+			"[Ctrl+Z] 드래그 한 번으로 설치한 시설 함께 취소 · [Ctrl+Y] 함께 다시 실행\n"
 			"[7] 기본 · [8] 좌측 · [9] 우측 · [0] U자 대기열\n"
-			"초록은 배치 가능, 빨강은 배치 불가입니다. 설치할 때마다 비용과 건축 한도를 확인합니다.");
+			"초록은 배치 가능, 빨강은 배치 불가입니다. 설치할 때마다 비용과 건축 한도를 확인합니다."),
+			FText::AsNumber(FMath::Clamp(DragPlacementGapCm, 0, 1000)));
 	}
 	const FText ConfirmText = bInMoving
 		? LOCTEXT("MovingHelpAction", "[좌클릭/Enter] 이동 확정 · [우클릭] 이동 취소")
@@ -67,6 +70,16 @@ void UFF_BuildModeGuide::SetDragPlacementEnabled(const bool bInDragPlacementEnab
 	if (bDragPlacementEnabled != bInDragPlacementEnabled)
 	{
 		bDragPlacementEnabled = bInDragPlacementEnabled;
+		ApplyGuideText();
+	}
+}
+
+void UFF_BuildModeGuide::SetDragPlacementGapCm(const int32 GapCm)
+{
+	const int32 SafeGap = FMath::Clamp(GapCm, 0, 1000);
+	if (CachedDragPlacementGapCm != SafeGap)
+	{
+		CachedDragPlacementGapCm = SafeGap;
 		ApplyGuideText();
 	}
 }
@@ -154,18 +167,19 @@ void UFF_BuildModeGuide::ApplyGuideText()
 		TEXT("TXT_GuideRow_3"),
 		FText::Format(
 			bDragPlacement
-				? LOCTEXT("DragPositionSnap", "첫 위치 {0}cm · [Ctrl/Alt] 시작점 조정 · 이후 시설 크기 간격")
+				? LOCTEXT("DragPositionGap", "첫 위치 {0}cm · [Ctrl/Alt] 시작점 · 시설 사이 {2}cm")
 				: LOCTEXT("PositionSnapAndGrid", "현재 {0}cm 맞춤 · [Ctrl] 정밀 · [Alt] 자유 · [G] 격자 {1}"),
 			PositionSnapText,
 			bPlacementGridVisible
 				? LOCTEXT("GridOn", "켜짐")
-				: LOCTEXT("GridOff", "꺼짐")));
+				: LOCTEXT("GridOff", "꺼짐"),
+			FText::AsNumber(CachedDragPlacementGapCm)));
 	SetNamedText(
 		TEXT("TXT_GuideRow_4"),
 		bMoving
 			? LOCTEXT("MoveOrCancel", "[좌클릭/Enter] 이동 · 직접 조정 중 [Enter] 확정 · [T] 커서 배치\n[우클릭] 이동 취소")
 			: (bDragPlacement
-				? LOCTEXT("DragInstallOrCatalog", "[좌클릭 누른 채 이동] 연속 설치 · 놓으면 정지\n직접 조정 중 [Enter] 확정 · [T] 커서 배치 · [우클릭] 시설 목록")
+				? LOCTEXT("DragInstallStrokeOrCatalog", "[좌클릭 드래그] 연속 설치 · [Ctrl+Z] 한 번에 취소\n[Enter] 한 개 설치 · [T] 커서 배치 · [우클릭] 시설 목록")
 				: LOCTEXT("RepeatInstallOrCatalog", "[좌클릭/Enter] 한 개씩 설치 · 직접 조정 중 [Enter] 확정\n[T] 커서 배치 · [우클릭] 건축모드 UI 다시 표시")));
 }
 

@@ -8,6 +8,7 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "FF_FFZSTestExternalPolicy.h"
+#include "FF_FFZSConstructionHistoryTestPolicy.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include "FF_FFZSProjectZoneTestFixture.h"
 
@@ -49,6 +50,22 @@ namespace
         Command.ZoneId = Install.ZoneId;
         Command.Placement.OriginCell = Position;
         Command.Placement.YawCentidegrees = Yaw;
+        return Command;
+    }
+    FFFZSCommand StrokeTileAt(FIntPoint Position, FGuid TransactionId)
+    {
+        FFFZSFacilitySpec Spec;
+        Spec.FacilityDefinitionId = TEXT("Tile_HistoryStrokeFixture");
+        Spec.DisplayName = FText::FromString(TEXT("History stroke tile"));
+        Spec.Category = EFFZSFacilityCategory::Tile;
+        Spec.FootprintSizeCells = FIntPoint(100, 100);
+        Spec.ClearanceCells = 0;
+        Spec.QueueRules.MaxWaitingAgents = 0;
+        Spec.QueueRules.ServiceCapacity = 0;
+        FFFZSGridPlacement Placement;
+        Placement.OriginCell = Position;
+        FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommand(Spec, FFZSTest::ProjectZoneId(), Placement, -1);
+        Command.TransactionId = TransactionId;
         return Command;
     }
 }
@@ -154,6 +171,185 @@ bool FFFZSConstructionBatchAtomicTest::RunTest(const FString& Parameters)
     Zones->UnregisterExternalPolicy(Policy);
     const bool bRedone = Zones->RedoConstruction(Error);
     TestTrue(*FString::Printf(TEXT("Redo still available after rejection: %s"), *Error.ToString()), bRedone);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSConstructionPlacementStrokeTest,
+    "FF_ZoneSystem.Construction.History.PlacementStrokeGroupingAndSessionBoundaries",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFFZSConstructionPlacementStrokeTest::RunTest(const FString& Parameters)
+{
+    FConstructionTestSettings Settings;
+    UFFZSWorldSubsystem* Zones = CreateConstructionWorld(*this);
+    if (!TestNotNull(TEXT("Stroke world"), Zones)) return false;
+    const FGuid TransactionId = FGuid::NewGuid();
+    const FFFZSCommand A = StrokeTileAt(FIntPoint(1000, 1000), TransactionId);
+    const FFFZSCommand B = StrokeTileAt(FIntPoint(1200, 1000), TransactionId);
+    FText Error;
+    TestFalse(TEXT("Invalid transaction cannot begin a stroke"), Zones->BeginConstructionPlacementStroke(FGuid()));
+    TestTrue(TEXT("Press begins stroke"), Zones->BeginConstructionPlacementStroke(TransactionId));
+    TestFalse(TEXT("Nested begin cannot change the active session"), Zones->BeginConstructionPlacementStroke(FGuid::NewGuid()));
+    FFFZSCommand InvalidOrigin = StrokeTileAt(FIntPoint(-1000, -1000), TransactionId);
+    TestFalse(TEXT("Invalid initial candidate is skipped"), Zones->ExecuteCommand(InvalidOrigin).bSucceeded);
+    TestTrue(TEXT("Rejected origin preserves session"), Zones->IsConstructionPlacementStrokeActive(TransactionId));
+    if (!TestTrue(TEXT("First successful stroke install"), Zones->ExecuteCommand(A).bSucceeded)) return false;
+    TestTrue(TEXT("Duplicate receipt does not create another history item"), Zones->ExecuteCommand(A).bWasDuplicateReplay);
+    const FFFZSCommand Collision = StrokeTileAt(A.Placement.OriginCell, TransactionId);
+    TestFalse(TEXT("Rejected intermediate candidate is skipped"), Zones->ExecuteCommand(Collision).bSucceeded);
+    if (!TestTrue(TEXT("Second successful stroke install"), Zones->ExecuteCommand(B).bSucceeded)) return false;
+    Zones->EndConstructionPlacementStroke(FGuid::NewGuid());
+    TestTrue(TEXT("Wrong owner cannot close stroke"), Zones->IsConstructionPlacementStrokeActive(TransactionId));
+    Zones->EndConstructionPlacementStroke(TransactionId);
+    TestFalse(TEXT("Release closes stroke"), Zones->IsConstructionPlacementStrokeActive(TransactionId));
+
+    const FFFZSCommand Independent = StrokeTileAt(FIntPoint(1600, 1000), TransactionId);
+    TestTrue(TEXT("Same transaction without begin installs independently"), Zones->ExecuteCommand(Independent).bSucceeded);
+    TestTrue(TEXT("Undo independent install"), Zones->UndoConstruction(Error));
+    TestNull(TEXT("Only independent install removed"), Zones->FindFacility(Independent.FacilityInstanceId));
+    TestNotNull(TEXT("Previous stroke survives first undo"), Zones->FindFacility(A.FacilityInstanceId));
+    TestTrue(TEXT("Undo all successful stroke installs once"), Zones->UndoConstruction(Error));
+    TestNull(TEXT("First stroke member removed"), Zones->FindFacility(A.FacilityInstanceId));
+    TestNull(TEXT("Second stroke member removed"), Zones->FindFacility(B.FacilityInstanceId));
+    TestFalse(TEXT("Skipped candidates and duplicates leave no history"), Zones->CanUndoConstruction());
+    TestTrue(TEXT("Redo stroke once"), Zones->RedoConstruction(Error));
+    TestNotNull(TEXT("First stroke member restored"), Zones->FindFacility(A.FacilityInstanceId));
+    TestNotNull(TEXT("Second stroke member restored"), Zones->FindFacility(B.FacilityInstanceId));
+
+    TestTrue(TEXT("Empty press begins"), Zones->BeginConstructionPlacementStroke(TransactionId));
+    Zones->EndConstructionPlacementStroke(TransactionId);
+    TestTrue(TEXT("Empty press preserves redo branch"), Zones->CanRedoConstruction());
+    TestTrue(TEXT("Reused transaction begins a fresh stroke generation"), Zones->BeginConstructionPlacementStroke(TransactionId));
+    const FFFZSCommand Later = StrokeTileAt(FIntPoint(1800, 1000), TransactionId);
+    TestTrue(TEXT("New stroke install"), Zones->ExecuteCommand(Later).bSucceeded);
+    Zones->EndConstructionPlacementStroke(TransactionId);
+    TestTrue(TEXT("Undo newer session once"), Zones->UndoConstruction(Error));
+    TestNull(TEXT("New session removed"), Zones->FindFacility(Later.FacilityInstanceId));
+    TestNotNull(TEXT("Reused transaction cannot merge earlier session"), Zones->FindFacility(A.FacilityInstanceId));
+
+    TestTrue(TEXT("Interrupted press begins"), Zones->BeginConstructionPlacementStroke(TransactionId));
+    const FFFZSCommand Interrupted = StrokeTileAt(FIntPoint(2000, 1000), TransactionId);
+    TestTrue(TEXT("Interrupted stroke member installs"), Zones->ExecuteCommand(Interrupted).bSucceeded);
+    const FFFZSCommand OtherEdit = StrokeTileAt(FIntPoint(2200, 1000), FGuid::NewGuid());
+    TestTrue(TEXT("Other successful edit"), Zones->ExecuteCommand(OtherEdit).bSucceeded);
+    TestFalse(TEXT("Other edit closes stroke"), Zones->IsConstructionPlacementStrokeActive(TransactionId));
+    TestTrue(TEXT("Undo only other edit"), Zones->UndoConstruction(Error));
+    TestNotNull(TEXT("Interrupted stroke remains independently undoable"), Zones->FindFacility(Interrupted.FacilityInstanceId));
+    TestTrue(TEXT("Clear-bound stroke begins"), Zones->BeginConstructionPlacementStroke(TransactionId));
+    Zones->ClearConstructionHistory();
+    TestFalse(TEXT("Clear closes session"), Zones->IsConstructionPlacementStrokeActive(TransactionId));
+    TestFalse(TEXT("Clear discards undo history"), Zones->CanUndoConstruction());
+    Zones->SetChangePhase(EFFZSChangePhase::LiveOperation);
+    TestFalse(TEXT("Operation cannot begin a construction stroke"), Zones->BeginConstructionPlacementStroke(TransactionId));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSConstructionLargePlacementStrokeTest,
+    "FF_ZoneSystem.Construction.History.LargePlacementStrokeAtomicReplayAndPolicyReceipts",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFFZSConstructionLargePlacementStrokeTest::RunTest(const FString& Parameters)
+{
+    FConstructionTestSettings Settings;
+    UFFZSWorldSubsystem* Zones = CreateConstructionWorld(*this);
+    if (!TestNotNull(TEXT("Large stroke world"), Zones)) return false;
+    const FFFZSCommand Unrelated = StrokeTileAt(FIntPoint(7000, 7000), FGuid::NewGuid());
+    if (!TestTrue(TEXT("Unrelated tile installs"), Zones->ExecuteCommand(Unrelated).bSucceeded)) return false;
+    AFFZSFacilityActor* UnrelatedActor = Zones->FindFacility(Unrelated.FacilityInstanceId);
+    Zones->ClearConstructionHistory();
+    const FGuid TransactionId = FGuid::NewGuid();
+    if (!TestTrue(TEXT("Large stroke begins"), Zones->BeginConstructionPlacementStroke(TransactionId))) return false;
+    TArray<FFFZSCommand> Commands;
+    TArray<AFFZSFacilityActor*> OriginalActors;
+    for (int32 Index = 0; Index < 129; ++Index)
+    {
+        const FFFZSCommand Command = StrokeTileAt(FIntPoint(1000 + Index % 16 * 200, 1000 + Index / 16 * 200), TransactionId);
+        if (!TestTrue(*FString::Printf(TEXT("Large stroke member %d installs"), Index), Zones->ExecuteCommand(Command).bSucceeded)) return false;
+        Commands.Add(Command);
+        OriginalActors.Add(Zones->FindFacility(Command.FacilityInstanceId));
+    }
+    Zones->EndConstructionPlacementStroke(TransactionId);
+    FText Error;
+    TestFalse(TEXT("Public preview still rejects groups above 128"), Zones->ValidateConstructionBatch(Commands, Error));
+    TestFalse(TEXT("Public execute still rejects groups above 128"), Zones->ExecuteConstructionBatch(Commands).bSucceeded);
+
+    UFFZSConstructionHistoryTestPolicy* Policy = NewObject<UFFZSConstructionHistoryTestPolicy>(Zones);
+    Policy->Zones = Zones;
+    Policy->RejectTentativeCall = 65;
+    Zones->RegisterExternalPolicy(Policy);
+    const int64 BeforeUndoRevision = Zones->GetWorldRevision();
+    TestFalse(TEXT("Late policy rejection aborts the full undo"), Zones->UndoConstruction(Error));
+    TestEqual(TEXT("Rejected undo keeps revision"), Zones->GetWorldRevision(), BeforeUndoRevision);
+    TestEqual(TEXT("Full stroke is visible to aggregate policy validation"), Policy->ObservedBatchSize, 129);
+    TestEqual(TEXT("Rejected undo commits no member"), Policy->CommitCalls, 0);
+    TestEqual(TEXT("Rejected member and all earlier reservations roll back"), Policy->RollbackCalls, 65);
+    for (int32 Index = 0; Index < Commands.Num(); ++Index)
+        TestTrue(*FString::Printf(TEXT("Rejected undo preserves actor %d"), Index), Zones->FindFacility(Commands[Index].FacilityInstanceId) == OriginalActors[Index]);
+    TestTrue(TEXT("Rejected undo remains retryable"), Zones->CanUndoConstruction());
+    TestFalse(TEXT("Rejected undo does not create redo"), Zones->CanRedoConstruction());
+
+    Policy->RejectTentativeCall = INDEX_NONE;
+    Policy->TentativeCalls = Policy->RollbackCalls = 0;
+    if (!TestTrue(*FString::Printf(TEXT("One undo removes all 129: %s"), *Error.ToString()), Zones->UndoConstruction(Error))) return false;
+    TestEqual(TEXT("Every original receipt is exposed for exact refunds"), Policy->UndoSources.Num(), 129);
+    for (const FFFZSCommand& Command : Commands)
+    {
+        TestNull(TEXT("Stroke member removed"), Zones->FindFacility(Command.FacilityInstanceId));
+        TestTrue(TEXT("Undo maps to original installation receipt"), Policy->UndoSources.Contains(Command.CommandId));
+    }
+    TestFalse(TEXT("Large stroke occupies exactly one history slot"), Zones->CanUndoConstruction());
+    TestTrue(TEXT("Unrelated actor identity survives undo"), Zones->FindFacility(Unrelated.FacilityInstanceId) == UnrelatedActor);
+
+    Policy->RejectTentativeCall = 65;
+    Policy->TentativeCalls = Policy->CommitCalls = Policy->RollbackCalls = 0;
+    const int64 BeforeRedoRevision = Zones->GetWorldRevision();
+    TestFalse(TEXT("Late redo rejection aborts all staged installs"), Zones->RedoConstruction(Error));
+    TestEqual(TEXT("Rejected redo keeps revision"), Zones->GetWorldRevision(), BeforeRedoRevision);
+    TestEqual(TEXT("Rejected redo commits no member"), Policy->CommitCalls, 0);
+    TestEqual(TEXT("Rejected redo rolls back all reservations"), Policy->RollbackCalls, 65);
+    for (const FFFZSCommand& Command : Commands) TestNull(TEXT("Rejected redo leaves no partial install"), Zones->FindFacility(Command.FacilityInstanceId));
+    TestEqual(TEXT("Rejected redo leaves only unrelated actor registered"), Zones->GetPlacedFacilityCount(), 1);
+    TestTrue(TEXT("Rejected redo remains retryable"), Zones->CanRedoConstruction());
+
+    Policy->RejectTentativeCall = INDEX_NONE;
+    Policy->TentativeCalls = Policy->RollbackCalls = 0;
+    if (!TestTrue(TEXT("One redo restores all 129"), Zones->RedoConstruction(Error))) return false;
+    TestEqual(TEXT("Every original receipt is exposed for exact recharging"), Policy->RedoSources.Num(), 129);
+    for (const FFFZSCommand& Command : Commands)
+    {
+        AFFZSFacilityActor* Facility = Zones->FindFacility(Command.FacilityInstanceId);
+        if (TestNotNull(TEXT("Stable facility ID restored"), Facility))
+            TestEqual(TEXT("Placement restored"), Facility->GetGridPlacement().OriginCell, Command.Placement.OriginCell);
+        TestTrue(TEXT("Redo maps to original installation receipt"), Policy->RedoSources.Contains(Command.CommandId));
+    }
+    TestTrue(TEXT("Unrelated actor identity survives redo"), Zones->FindFacility(Unrelated.FacilityInstanceId) == UnrelatedActor);
+    TestTrue(TEXT("Large stroke supports another complete undo"), Zones->UndoConstruction(Error));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSConstructionPlacementStrokeReentrantEndTest,
+    "FF_ZoneSystem.Construction.History.PlacementStrokeCallbackEndIncludesInFlightInstall",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFFZSConstructionPlacementStrokeReentrantEndTest::RunTest(const FString& Parameters)
+{
+    FConstructionTestSettings Settings;
+    UFFZSWorldSubsystem* Zones = CreateConstructionWorld(*this);
+    if (!TestNotNull(TEXT("Callback stroke world"), Zones)) return false;
+    const FGuid TransactionId = FGuid::NewGuid();
+    Zones->BeginConstructionPlacementStroke(TransactionId);
+    const FFFZSCommand A = StrokeTileAt(FIntPoint(1000, 1000), TransactionId);
+    const FFFZSCommand B = StrokeTileAt(FIntPoint(1200, 1000), TransactionId);
+    if (!TestTrue(TEXT("First stroke member installs"), Zones->ExecuteCommand(A).bSucceeded)) return false;
+    UFFZSConstructionHistoryTestPolicy* Policy = NewObject<UFFZSConstructionHistoryTestPolicy>(Zones);
+    Policy->Zones = Zones;
+    Policy->StrokeToEndOnPreValidate = TransactionId;
+    Zones->RegisterExternalPolicy(Policy);
+    if (!TestTrue(TEXT("Callback closes during second member validation"), Zones->ExecuteCommand(B).bSucceeded)) return false;
+    TestFalse(TEXT("End takes effect before command returns"), Zones->IsConstructionPlacementStrokeActive(TransactionId));
+    TestFalse(TEXT("Callback cannot open another session"), Policy->bCallbackBeginSucceeded);
+    FText Error;
+    TestTrue(TEXT("One undo still includes the in-flight installation"), Zones->UndoConstruction(Error));
+    TestNull(TEXT("Earlier stroke member removed"), Zones->FindFacility(A.FacilityInstanceId));
+    TestNull(TEXT("In-flight stroke member removed"), Zones->FindFacility(B.FacilityInstanceId));
+    TestFalse(TEXT("Callback end did not split history"), Zones->CanUndoConstruction());
     return true;
 }
 #endif

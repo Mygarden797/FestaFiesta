@@ -931,7 +931,7 @@ void UFF_BuildModeSubsystem::ApplyPlacementYawDegrees(const float YawDegrees)
 	CancelNearbyPlacementSearch();
 	PlacementAssistanceMessage = FText::GetEmpty();
 	if (bHasPlacementTarget && (bDirectPlacementAdjustment || (BuildToolsWidget &&
-		(BuildToolsWidget->IsPointerOverTools() || BuildToolsWidget->IsEditingAngle()))))
+		(BuildToolsWidget->IsPointerOverTools() || BuildToolsWidget->IsEditingText()))))
 	{
 		const FVector2D OldOffset = FFBuildModeModel::ResolveRotatedFootprintCenterOffset(
 			SelectedSpec.FootprintSizeCells, UFFZSGridLibrary::YawCentidegreesToDegrees(
@@ -967,7 +967,9 @@ float UFF_BuildModeSubsystem::GetPlacementYawDegrees() const
 
 bool UFF_BuildModeSubsystem::CommitPlacement()
 {
-	EndDragPlacement();
+	// The primary press opens history before buying its origin. Other confirmations
+	// finish a held stroke before committing their independent edit.
+	if (!PendingDragPlacementTransactionId.IsValid()) EndDragPlacement();
 	CancelNearbyPlacementSearch();
 	if (bInputSuspendedForPauseMenu)
 	{
@@ -1069,6 +1071,12 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 	}
 	else
 	{
+		// Cursor sampling can leave an already validated preview in place (for
+		// example after losing the cursor trace). Its origin still belongs to this press.
+		if (PendingDragPlacementTransactionId.IsValid())
+		{
+			PlacementPreview->PreviewCommand.TransactionId = PendingDragPlacementTransactionId;
+		}
 		Result = PlacementPreview->CommitPreview();
 	}
 	if (!Result.bSucceeded)
@@ -2168,6 +2176,7 @@ void UFF_BuildModeSubsystem::RefreshBuildModeGuide()
 		GetPlacementPositionSnapCm(),
 		bPlacementGridVisible);
 	BuildModeGuideWidget->SetDragPlacementEnabled(IsDragPlacementEnabled());
+	BuildModeGuideWidget->SetDragPlacementGapCm(GetDragPlacementGapCm());
 }
 
 void UFF_BuildModeSubsystem::RemoveBuildModeGuide()
@@ -2928,9 +2937,9 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 		}
 		bAwaitingMovePointerMotion = false;
 	}
-	// Hovering a tool or typing an angle must not drag the building underneath that UI.
+	// Hovering a tool or editing its text must not drag the building underneath that UI.
 	if (bDirectPlacementAdjustment || (BuildToolsWidget && FFBuildModeModel::ShouldFreezePlacementTarget(
-		BuildToolsWidget->IsPointerOverTools() || BuildToolsWidget->IsRadialMenuOpen(), BuildToolsWidget->IsEditingAngle())))
+		BuildToolsWidget->IsPointerOverTools() || BuildToolsWidget->IsRadialMenuOpen(), BuildToolsWidget->IsEditingText())))
 	{
 		if (bHasPlacementTarget)
 		{
@@ -3130,6 +3139,10 @@ void UFF_BuildModeSubsystem::RebuildPreviewCommand()
 		CurrentZoneId,
 		CurrentPlacement,
 		ZoneSystem->GetWorldRevision());
+	if (PendingDragPlacementTransactionId.IsValid())
+	{
+		PlacementPreview->PreviewCommand.TransactionId = PendingDragPlacementTransactionId;
+	}
 	PlacementPreview->PreviewCommand.FacilitySpec.QueueLayout = PendingQueueLayout;
 	SelectedSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(PlacementPreview->PreviewCommand.FacilitySpec, 1, 1.0f);
 }

@@ -23,10 +23,14 @@
 #include "Components/Border.h"
 #include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
@@ -192,6 +196,69 @@ bool FFBuildToolsModel::TryParseYawText(const FString& Text, float& OutYawDegree
     return true;
 }
 
+bool FFBuildToolsModel::TryParseDragPlacementGapText(const FString& Text, int32& OutGapCm)
+{
+    const FString Trimmed = Text.TrimStartAndEnd();
+    if (Trimmed.IsEmpty() || Trimmed.Len() > 4) return false;
+    for (const TCHAR Character : Trimmed)
+        if (Character < TEXT('0') || Character > TEXT('9')) return false;
+    int32 Parsed = 0;
+    if (!FDefaultValueHelper::ParseInt(Trimmed, Parsed) || Parsed < 0 || Parsed > 1000) return false;
+    OutGapCm = Parsed;
+    return true;
+}
+
+UEditableTextBox* FFBuildToolsModel::EnsureDragPlacementGapControl(UWidgetTree& Tree)
+{
+    if (UWidget* Existing = Tree.FindWidget(TEXT("Editable_DragPlacementGap")))
+        return Cast<UEditableTextBox>(Existing);
+    auto* Body = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Column_BuildSettings")));
+    if (!Body || Tree.FindWidget(TEXT("Row_SettingsDragPlacementGap"))) return nullptr;
+
+    auto* Row = Tree.ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Row_SettingsDragPlacementGap"));
+    auto* Label = Tree.ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Label_SettingsDragPlacementGap"));
+    Label->SetText(LOCTEXT("DragPlacementGapLabel", "시설 사이 간격"));
+    Label->SetVisibility(ESlateVisibility::HitTestInvisible);
+    if (const auto* Template = Cast<UTextBlock>(Tree.FindWidget(TEXT("Label_SettingsSnap"))))
+    {
+        Label->SetFont(Template->GetFont());
+        Label->SetColorAndOpacity(Template->GetColorAndOpacity());
+    }
+    auto* LabelSlot = Row->AddChildToHorizontalBox(Label);
+    LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+    LabelSlot->SetVerticalAlignment(VAlign_Center);
+    LabelSlot->SetPadding(FMargin(0.f, 0.f, 8.f, 0.f));
+
+    auto* Input = Tree.ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), TEXT("Editable_DragPlacementGap"));
+    if (const auto* Template = Cast<UEditableTextBox>(Tree.FindWidget(TEXT("Editable_Angle"))))
+        Input->SetWidgetStyle(Template->GetWidgetStyle());
+    Input->SetText(FText::FromString(TEXT("0")));
+    Input->SetHintText(LOCTEXT("DragPlacementGapHint", "0~1000"));
+    Input->SetJustification(ETextJustify::Center);
+    Input->SetSelectAllTextWhenFocused(true);
+    Input->SetClearKeyboardFocusOnCommit(false);
+    const FText Tip = LOCTEXT("DragPlacementGapTooltip",
+        "연속 설치할 시설 크기에 더하는 여유 간격입니다. 0~1000cm를 입력하세요.\n"
+        "0cm는 시설을 붙여 놓습니다. 변경한 간격은 다음 드래그부터 적용됩니다.\n"
+        "드래그 한 번으로 설치한 시설은 Ctrl+Z로 함께 취소합니다.");
+    Input->SetToolTipText(Tip);
+    Row->SetToolTipText(Tip);
+    auto* InputSize = Tree.ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("Size_SettingsDragPlacementGap"));
+    InputSize->SetWidthOverride(84.f);
+    InputSize->AddChild(Input);
+    Row->AddChildToHorizontalBox(InputSize)->SetVerticalAlignment(VAlign_Center);
+    auto* Unit = Tree.ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_SettingsDragPlacementGapUnit"));
+    Unit->SetText(FText::FromString(TEXT("cm")));
+    Unit->SetFont(Label->GetFont());
+    Unit->SetColorAndOpacity(Label->GetColorAndOpacity());
+    Unit->SetVisibility(ESlateVisibility::HitTestInvisible);
+    auto* UnitSlot = Row->AddChildToHorizontalBox(Unit);
+    UnitSlot->SetPadding(FMargin(6.f, 0.f, 0.f, 0.f));
+    UnitSlot->SetVerticalAlignment(VAlign_Center);
+    Body->AddChildToVerticalBox(Row)->SetPadding(FMargin(0.f, 2.f, 0.f, 12.f));
+    return Input;
+}
+
 UFF_BuildToolsActionButton::UFF_BuildToolsActionButton()
 {
     InitIsFocusable(false);
@@ -262,6 +329,8 @@ void UFF_BuildToolsWidget::NativePreConstruct()
 void UFF_BuildToolsWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+    // Ship the spacing control with existing saved toolbars as well as rebuilt ones.
+    if (WidgetTree) Editable_DragPlacementGap = FFBuildToolsModel::EnsureDragPlacementGapControl(*WidgetTree);
     SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     // These bounds retain their height when their panel is collapsed. Let only
     // visible descendants receive input so the world/catalog remains clickable.
@@ -372,6 +441,8 @@ void UFF_BuildToolsWidget::NativeConstruct()
         Editable_Angle->SetClearKeyboardFocusOnCommit(false);
         Editable_Angle->OnTextCommitted.AddUniqueDynamic(this, &ThisClass::HandleAngleCommitted);
     }
+    if (Editable_DragPlacementGap)
+        Editable_DragPlacementGap->OnTextCommitted.AddUniqueDynamic(this, &ThisClass::HandleDragPlacementGapCommitted);
     InstallToolbarForegroundLayer();
     RefreshTools();
 }
@@ -380,6 +451,7 @@ void UFF_BuildToolsWidget::NativeConstruct()
 void UFF_BuildToolsWidget::NativeDestruct()
 {
     StopPointerFreeRotation();
+    if (Editable_DragPlacementGap) Editable_DragPlacementGap->OnTextCommitted.RemoveAll(this);
     if (auto* Discovery = FeatureDiscovery.Get()) Discovery->OnFeatureSeen.RemoveAll(this);
     FeatureDiscovery.Reset();
     if (Combo_FeatureGuideTopic) Combo_FeatureGuideTopic->OnSelectionChanged.RemoveAll(this);
@@ -1070,6 +1142,17 @@ bool UFF_BuildToolsWidget::IsEditingAngle() const
         (Editable_Angle->HasKeyboardFocus() || Editable_Angle->HasFocusedDescendants());
 }
 
+bool UFF_BuildToolsWidget::IsEditingDragPlacementGap() const
+{
+    return !bBodyForegroundSuppressed && Editable_DragPlacementGap && Editable_DragPlacementGap->GetIsEnabled() &&
+        (Editable_DragPlacementGap->HasKeyboardFocus() || Editable_DragPlacementGap->HasFocusedDescendants());
+}
+
+bool UFF_BuildToolsWidget::IsEditingText() const
+{
+    return IsEditingAngle() || IsEditingDragPlacementGap();
+}
+
 FReply UFF_BuildToolsWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
 {
     if (bBodyForegroundSuppressed) return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
@@ -1116,6 +1199,17 @@ FReply UFF_BuildToolsWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, c
             KeyEvent.GetKey() == EKeys::Down) return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
         return FReply::Handled();
     }
+    if (IsEditingDragPlacementGap())
+    {
+        if (KeyEvent.GetKey() == EKeys::Escape)
+        {
+            if (UFF_BuildModeSubsystem* System = BuildMode.Get()) System->NotifyBuildToolsInteraction();
+            Editable_DragPlacementGap->SetError(FText::GetEmpty());
+            RefreshDragPlacementGapText();
+            return FReply::Handled();
+        }
+        return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
+    }
     if (UFF_BuildModeSubsystem* System = BuildMode.Get())
         if (System->HandleNearbyPlacementShortcut(KeyEvent.GetKey(),
             KeyEvent.IsControlDown() || KeyEvent.IsShiftDown() || KeyEvent.IsAltDown() || KeyEvent.IsCommandDown(),
@@ -1161,6 +1255,15 @@ void UFF_BuildToolsWidget::RefreshAngleText()
         const UFF_BuildModeSubsystem* System = BuildMode.Get();
         Editable_Angle->SetText(FText::FromString(FString::Printf(TEXT("%.2f"),
             System ? System->GetPlacementYawDegrees() : 0.0f)));
+    }
+}
+
+void UFF_BuildToolsWidget::RefreshDragPlacementGapText()
+{
+    if (Editable_DragPlacementGap)
+    {
+        const UFF_BuildModeSubsystem* System = BuildMode.Get();
+        Editable_DragPlacementGap->SetText(FText::FromString(FString::FromInt(System ? System->GetDragPlacementGapCm() : 0)));
     }
 }
 
@@ -1261,6 +1364,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     ViewData.bPreviewActive = bPreview;
     ViewData.bMoving = State == EFF_BuildModeState::Moving;
     ViewData.bDragPlacementEnabled = System && System->IsDragPlacementEnabled() && !System->IsDirectPlacementAdjustment();
+    ViewData.DragPlacementGapCm = System ? System->GetDragPlacementGapCm() : 0;
     ViewData.bGridVisible = bGrid;
     ViewData.PreferredSnapCm = PreferredSnap;
     ViewData.ActiveSnapCm = ActiveSnap;
@@ -1336,7 +1440,8 @@ void UFF_BuildToolsWidget::RefreshTools()
         Text_BuildHelpPrimary->SetText(!bPreview
             ? LOCTEXT("IconHelpInspect", "시설 클릭해 바로 이동")
             : bDirectHelp ? LOCTEXT("KeyHelpGizmoDrag", "핸들 조정 · Enter 확정 · T 위치 다시 선택")
-            : ViewData.bDragPlacementEnabled ? LOCTEXT("IconHelpDrag", "드래그로 연속 설치")
+            : ViewData.bDragPlacementEnabled ? FText::Format(LOCTEXT("IconHelpDragWithGap", "드래그 연속 설치 · 여유 {0}cm"),
+                FText::AsNumber(ViewData.DragPlacementGapCm))
             : LOCTEXT("IconHelpPlace", "클릭해 시설 배치"));
     if (Text_BuildHelpRotate)
         Text_BuildHelpRotate->SetText(ViewData.bDragPlacementEnabled
@@ -1399,7 +1504,7 @@ void UFF_BuildToolsWidget::RefreshTools()
             ViewData.bDragPlacementEnabled ? LOCTEXT("ModeDragPlacement", "시설 연속 배치") :
             bPreview ? LOCTEXT("ModePlacement", "시설 배치") : LOCTEXT("ModeOverview", "시설 확인"));
         Text_Mode->SetToolTipText(bPreview
-            ? UFF_BuildModeGuide::MakePlacementHelpText(ViewData.bMoving, ViewData.bDragPlacementEnabled)
+            ? UFF_BuildModeGuide::MakePlacementHelpText(ViewData.bMoving, ViewData.bDragPlacementEnabled, ViewData.DragPlacementGapCm)
             : UFF_BuildModeGuide::MakeBuildOverviewHelpText());
     }
     {
@@ -1523,6 +1628,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     Enable(Button_FreeRotateRight, bPreview);
     Enable(Button_Catalog, bSession);
     Enable(Editable_Angle, bPreview);
+    Enable(Editable_DragPlacementGap, bSession);
     Enable(Button_NudgeLeft, bPreview);
     Enable(Button_NudgeUp, bPreview);
     Enable(Button_NudgeDown, bPreview);
@@ -1590,6 +1696,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     {
         RefreshAngleText();
     }
+    if (!IsEditingDragPlacementGap()) RefreshDragPlacementGapText();
     BP_OnToolsStateChanged(ViewData);
 }
 
@@ -1687,6 +1794,12 @@ void UFF_BuildToolsWidget::RefreshEditingHelp()
         FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState());
     if (Button_BuildHelpUndo) Button_BuildHelpUndo->SetIsEnabled(bCanInteract && Zones && Zones->CanUndoConstruction());
     if (Button_BuildHelpRedo) Button_BuildHelpRedo->SetIsEnabled(bCanInteract && Zones && Zones->CanRedoConstruction());
+    if (auto* Undo = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_BuildHelpUndo"))))
+    {
+        Undo->SetText(LOCTEXT("UndoAction", "실행 취소"));
+    }
+    if (Button_BuildHelpUndo) Button_BuildHelpUndo->SetToolTipText(LOCTEXT("UndoStrokeTip",
+        "Ctrl+Z · 마지막 건설 작업을 취소합니다. 드래그 한 번으로 설치한 시설은 함께 취소됩니다."));
     const bool bQueueAvailable = bCanInteract && System->CanChooseQueueLayout();
     if (Row_BuildHelpQueue)
         Row_BuildHelpQueue->SetVisibility(bQueueAvailable ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
@@ -1782,6 +1895,28 @@ void UFF_BuildToolsWidget::HandleAngleCommitted(const FText& Text, const ETextCo
         return;
     }
     ApplyAngleText(Text);
+}
+
+void UFF_BuildToolsWidget::HandleDragPlacementGapCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
+{
+    UFF_BuildModeSubsystem* System = BuildMode.Get();
+    if (!System || !FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState()) ||
+        System->IsInputSuspendedForPauseMenu()) return;
+    System->NotifyBuildToolsInteraction();
+    if (CommitMethod == ETextCommit::OnCleared)
+    {
+        if (Editable_DragPlacementGap) Editable_DragPlacementGap->SetError(FText::GetEmpty());
+        RefreshDragPlacementGapText();
+        return;
+    }
+    int32 GapCm = 0;
+    const bool bValid = FFBuildToolsModel::TryParseDragPlacementGapText(Text.ToString(), GapCm);
+    if (Editable_DragPlacementGap)
+        Editable_DragPlacementGap->SetError(bValid ? FText::GetEmpty() :
+            LOCTEXT("InvalidDragPlacementGap", "0~1000 사이의 정수(cm)를 입력해 주세요."));
+    if (!bValid) return;
+    System->SetDragPlacementGapCm(GapCm);
+    RefreshDragPlacementGapText();
 }
 
 #undef LOCTEXT_NAMESPACE
