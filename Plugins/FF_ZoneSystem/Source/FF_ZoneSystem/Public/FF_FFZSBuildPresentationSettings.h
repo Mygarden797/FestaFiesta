@@ -22,17 +22,22 @@ public:
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement Feedback")
     TSoftObjectPtr<UMaterialInterface> DefaultPlacementFeedbackMaterial;
 
+    // Generated translucent copies preserve each source material's textures and parameters.
+    // Soft references also keep these variants reachable when the project is cooked.
+    UPROPERTY(Config, EditAnywhere, Category = "Placement Feedback")
+    TMap<FSoftObjectPath, TSoftObjectPtr<UMaterialInterface>> GeneratedPreviewMaterials;
+
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement Feedback")
-    FLinearColor ValidPlacementColor = FLinearColor(0.04f, 0.65f, 0.25f);
+    FLinearColor ValidPlacementColor = FLinearColor(0.015f, 0.65f, 1.0f);
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement Feedback")
     FLinearColor InvalidPlacementColor = FLinearColor(0.85f, 0.035f, 0.025f);
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement Feedback", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float ValidPlacementOpacity = 0.24f;
+    float ValidPlacementOpacity = 0.68f;
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement Feedback", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float InvalidPlacementOpacity = 0.38f;
+    float InvalidPlacementOpacity = 0.72f;
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement Feedback", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float FailureSurfaceOpacity = 0.18f;

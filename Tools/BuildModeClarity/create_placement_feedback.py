@@ -39,3 +39,12 @@ else:
     unreal.EditorAssetLibrary.set_metadata_tag(material, VERSION_KEY, '1')
     assert unreal.EditorAssetLibrary.save_loaded_asset(material)
     unreal.log('FF_BUILD_PLACEMENT_FEEDBACK_PASS')
+
+# Invalid drag candidates use this material on an instanced copy of the actual mesh.
+# Persist the shader usage for cooked builds as well as editor previews.
+if not material.get_editor_property('used_with_instanced_static_meshes'):
+    material.set_editor_property('used_with_instanced_static_meshes', True)
+    unreal.MaterialEditingLibrary.recompile_material(material)
+    assert unreal.EditorAssetLibrary.save_loaded_asset(material)
+assert material.get_editor_property('used_with_instanced_static_meshes')
+unreal.log('FF_BUILD_PLACEMENT_FEEDBACK_INSTANCING_OK')

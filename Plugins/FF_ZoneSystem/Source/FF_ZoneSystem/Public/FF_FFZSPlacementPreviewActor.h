@@ -16,6 +16,7 @@
 struct FStreamableHandle;
 class USceneComponent;
 class UStaticMeshComponent;
+class UStaticMesh;
 class ULineBatchComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
@@ -146,14 +147,16 @@ protected:
 
 private:
     UPROPERTY(Transient)
-    TObjectPtr<UMaterialInstanceDynamic> GhostFeedbackMaterial;
+    TArray<TObjectPtr<UMaterialInstanceDynamic>> GhostMaterials;
     UPROPERTY(Transient)
     TObjectPtr<UMaterialInstanceDynamic> FailureSurfaceMaterial;
     bool bFeedbackMaterialLoadAttempted = false;
     bool bHasUnvalidatedPreviewTransform = false;
     bool bUsesEffectiveBatchSpec = false;
     EFFZSPlacementFailure RequestedFailureReason = EFFZSPlacementFailure::None;
+    TWeakObjectPtr<UStaticMesh> GhostMaterialSourceMesh;
     void RefreshGhostFeedback();
+    void ApplyGhostMaterials();
     void ShowFailureSurface(const FFFZSOrientedRect& WorldRegion, double BaseZ, int32 SurfaceIndex);
     UPROPERTY(VisibleAnywhere, Category = "Preview")
     FFFZSPlacementValidation LastValidation;

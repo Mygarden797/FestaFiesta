@@ -47,9 +47,9 @@ bool FFF_FacilityQueueDefaultsContentTest::RunTest(const FString& Parameters)
 		}
 		++QueueFacilityCount;
 		TestTrue(*FString::Printf(TEXT("Every service facility uses the common queue system: %s"), *Label), Base.QueueSettings.bEnabled);
-		TestEqual(*FString::Printf(TEXT("Default team capacity is unified: %s"), *Label), Base.QueueSettings.MaxWaitingTeams, 12);
+		TestEqual(*FString::Printf(TEXT("Default team capacity is unified: %s"), *Label), Base.QueueSettings.MaxWaitingTeams, 6);
 		TestEqual(*FString::Printf(TEXT("Default team spacing is unified: %s"), *Label), Base.QueueSettings.SlotSpacingCm, 115.f);
-		TestEqual(*FString::Printf(TEXT("Default lane width is unified: %s"), *Label), Base.QueueSettings.LaneWidthCm, 600.f);
+		TestEqual(*FString::Printf(TEXT("Default lane width is unified: %s"), *Label), Base.QueueSettings.LaneWidthCm, 300.f);
 		const int32 ServiceCapacity = Base.QueueRules.ServiceCapacity;
 		const float ServiceDuration = Base.QueueRules.ServiceDurationSeconds;
 		FFFZSFacilitySpec DirectLayout = Base;
@@ -83,14 +83,14 @@ bool FFF_FacilityQueueDefaultsContentTest::RunTest(const FString& Parameters)
 			AddError(FString::Printf(TEXT("The common level-one queue is invalid: %s"), *Label));
 			for (const FText& Error : Errors) AddError(Error.ToString());
 		}
-		TestEqual(*FString::Printf(TEXT("Runtime waiting slots use the common capacity: %s"), *Label), Effective.QueueRules.MaxWaitingAgents, 12);
+		TestEqual(*FString::Printf(TEXT("Runtime waiting slots use the common capacity: %s"), *Label), Effective.QueueRules.MaxWaitingAgents, 6);
 		TestEqual(*FString::Printf(TEXT("Runtime waiting slots use the common spacing: %s"), *Label), Effective.QueueRules.SlotSpacingCm, 115.f);
 		TestEqual(*FString::Printf(TEXT("Queue unification preserves the authored concurrent service capacity: %s"), *Label), Effective.QueueRules.ServiceCapacity, ServiceCapacity);
 		TestEqual(*FString::Printf(TEXT("Queue unification preserves the authored service duration: %s"), *Label), Effective.QueueRules.ServiceDurationSeconds, ServiceDuration);
 		FFF_QueueLaneGeometry Lane;
 		TestTrue(*FString::Printf(TEXT("Every unified queue projects into live Party Queue geometry: %s"), *Label),
 			UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(Effective, FTransform::Identity, Lane));
-		TestEqual(*FString::Printf(TEXT("Every projected queue has exactly twelve team slots: %s"), *Label), Lane.ExplicitSlotTransforms.Num(), 12);
+		TestEqual(*FString::Printf(TEXT("Every projected queue has exactly six team slots: %s"), *Label), Lane.ExplicitSlotTransforms.Num(), 6);
 	}
 	TestTrue(TEXT("At least one actual production queue was checked"), QueueFacilityCount > 0);
 	AddInfo(FString::Printf(TEXT("Checked all %d production definitions: %d service queues, %d facilities without queues."),

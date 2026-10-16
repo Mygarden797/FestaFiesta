@@ -175,17 +175,17 @@ bool FFFZSQueueSettingsGeometryTest::RunTest(const FString& Parameters)
                 for (const FText& Error : Errors) AddError(Error.ToString());
                 continue;
             }
-            TestEqual(TEXT("Every service facility uses twelve team slots"), Effective.QueueRules.MaxWaitingAgents, 12);
+            TestEqual(TEXT("Every service facility uses six team slots"), Effective.QueueRules.MaxWaitingAgents, 6);
             TestEqual(TEXT("Every service facility uses the same spacing"), Effective.QueueRules.SlotSpacingCm, 115.0f);
             TestTrue(TEXT("The authored path is retained in the base spec"), Base.QueueSplinePointsCm == Original.QueueSplinePointsCm);
             const FFFZSFacilitySpec Scaled = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Base, 2, 1.5f);
             TestTrue(TEXT("Unified layout remains valid after facility scale"), Scaled.IsValid(Errors));
             TestEqual(TEXT("Facility scale keeps user spacing in world centimetres"), Scaled.QueueRules.SlotSpacingCm, 115.0f);
-            TestEqual(TEXT("Facility scale keeps user lane width in world centimetres"), Scaled.QueueSettings.LaneWidthCm, 600.0f);
+            TestEqual(TEXT("Facility scale keeps user lane width in world centimetres"), Scaled.QueueSettings.LaneWidthCm, 300.0f);
             if (Layout == EFFZSQueueLayout::UShape)
             {
                 TestTrue(TEXT("Parallel U lanes have at least a full lane width between them"),
-                    FVector::Dist(Effective.QueueSplinePointsCm[1], Effective.QueueSplinePointsCm[2]) >= 600.0);
+                    FVector::Dist(Effective.QueueSplinePointsCm[1], Effective.QueueSplinePointsCm[2]) >= 300.0);
             }
         }
     }
@@ -237,6 +237,7 @@ bool FFFZSQueueSettingsRejectTest::RunTest(const FString& Parameters)
     FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec();
     Spec.QueueSettings.bEnabled = true;
     Spec.QueueSettings.MaxWaitingTeams = 4;
+    Spec.QueueSettings.LaneWidthCm = 600.f;
     Spec.QueueLayout = EFFZSQueueLayout::UShape;
     const FFFZSFacilitySpec Before = Spec;
     FText Error;
@@ -295,6 +296,8 @@ bool FFFZSQueueSettingsAudienceAccessTest::RunTest(const FString& Parameters)
         return false;
     }
     Base.QueueSettings.bEnabled = true;
+    Base.QueueSettings.MaxWaitingTeams = 12;
+    Base.QueueSettings.LaneWidthCm = 600.f;
     for (const EFFZSQueueLayout Layout : {EFFZSQueueLayout::Authored, EFFZSQueueLayout::Left, EFFZSQueueLayout::Right, EFFZSQueueLayout::UShape})
     {
         FText Error;

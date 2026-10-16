@@ -536,7 +536,7 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
     for (FName Name : {TEXT("Button_BuildBack"), TEXT("Button_BuildSettings"), TEXT("Button_BuildSettingsClose"),
         TEXT("Button_MultiSelect"), TEXT("Button_SnapCycle"), TEXT("Button_ToolbarRanges"),
         TEXT("Button_ToolbarCatalog"), TEXT("Button_ToolbarHelp"),
-        TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo"),
+        TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo"), TEXT("Button_BuildHelpClose"),
         TEXT("Button_SettingsGrid"), TEXT("Button_SettingsSnapMeter"),
         TEXT("Button_SettingsSnapPrecision"), TEXT("Button_SettingsSnapFree"),
         TEXT("Button_SettingsDirectAdjustment"), TEXT("Button_SettingsFacilityRanges"),
@@ -573,7 +573,7 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Help opens independently beneath the left summary"), Open(TEXT("Border_PlacementHelp")));
     auto* HelpLabel = Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Label_Help")));
     TestTrue(TEXT("Visible help has a clear close action"), HelpLabel && HelpLabel->GetText().ToString() == TEXT("안내 닫기"));
-    Click(TEXT("Button_Help"));
+    Click(TEXT("Button_BuildHelpClose"));
     TestFalse(TEXT("The help close action dismisses only the instructions"), Open(TEXT("Border_PlacementHelp")));
     if (auto* HelpBounds = Cast<USizeBox>(Widget->GetWidgetFromName(TEXT("Size_BuildWorldHelp"))))
     {

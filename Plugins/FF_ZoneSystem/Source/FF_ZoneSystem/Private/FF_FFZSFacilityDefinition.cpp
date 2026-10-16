@@ -130,6 +130,8 @@ FPrimaryAssetId UFFZSFacilityDefinition::GetPrimaryAssetId() const
 void UFFZSFacilityDefinition::PostLoad()
 {
     Super::PostLoad();
+    // Also retires the main stage's former FIFO geometry while preserving all seats,
+    // performance metadata, paid upgrades, and unrelated service facilities.
     Spec.NormalizeNonServiceGeometry();
     // Existing production assets share a generated default while retaining their original
     // geometry for old snapshots and explicit legacy-layout restoration.

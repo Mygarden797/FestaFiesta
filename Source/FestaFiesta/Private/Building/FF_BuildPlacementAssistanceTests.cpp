@@ -489,39 +489,60 @@ bool FFF_BuildPlacementMemoryTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Manipulating a preview does not execute an authority command"), Zones->GetWorldRevision(), InitialRevision);
     TestEqual(TEXT("Manipulating a preview does not charge the player"), Economy->GetGold(), InitialGold);
 
-    // The source grid may move between uses. Reuse its integer position and the
-    // user's world angle, then derive height and validation again from live data.
+    // Reopening a definition keeps its world angle, but the first ghost must
+    // follow the cursor instead of pinning itself to the previous position.
     Build->DestroyPlacementPreview();
     Build->ResetPlacementSelection();
     Zone->SetActorLocationAndRotation(FVector(0, 0, 180), FRotator(0, 270, 0));
     Zones->RefreshBuildArea();
-    if (!TestTrue(TEXT("Reselecting a used definition restores its remembered pose"), Reselect(First.Get()))) return false;
-    TestTrue(TEXT("The remembered pose is a pinned preview"), Build->HasPlacementTarget() && Build->IsDirectPlacementAdjustment());
-    TestEqual(TEXT("Reselection preserves the last manually adjusted grid position"),
-        Build->CurrentPlacement.OriginCell, ManipulatedPlacement.OriginCell);
+    if (!TestTrue(TEXT("Reselecting a used definition starts a fresh cursor preview"), Reselect(First.Get()))) return false;
+    TestFalse(TEXT("Without a cursor hit, reselection cannot restore a stale placement target"), Build->HasPlacementTarget());
+    TestFalse(TEXT("A remembered angle cannot pin the first preview"), Build->IsDirectPlacementAdjustment());
+    TestTrue(TEXT("Reselection does not inherit the last manually adjusted grid position"),
+        Build->CurrentPlacement.OriginCell != ManipulatedPlacement.OriginCell);
     TestTrue(TEXT("A changed region rotation cannot rotate the user's saved world angle"),
         FMath::Abs(FMath::FindDeltaAngleDegrees(Build->GetPlacementYawDegrees(), WorldYaw)) < 0.01f);
-    TestTrue(TEXT("Restoration derives the new local angle instead of copying the old local yaw"),
+
+    // This authority fixture has no local controller. Supply a fresh destination
+    // explicitly, then exercise the same validation and installation commands.
+    Build->CurrentZoneId = ZoneId;
+    Build->CurrentPlacement.OriginCell = FIntPoint(1300, 800);
+    Build->bHasPlacementTarget = true;
+    Build->SetPlacementYawDegrees(WorldYaw);
+    Build->RefreshCurrentPlacementValidation();
+    TestTrue(TEXT("The fresh target derives its local angle from the remembered world angle"),
         FMath::Abs(FMath::FindDeltaAngleDegrees(UFFZSGridLibrary::YawCentidegreesToDegrees(
             UFFZSGridLibrary::GetEffectiveYawCentidegrees(Build->CurrentPlacement)), WorldYaw - 270.f)) < 0.01f);
     TestTrue(TEXT("The preview recomputes height from the live region"),
         FMath::IsNearlyEqual(Build->LastValidation.PlacementTransform.GetLocation().Z, 180.0, 0.01));
-    TestEqual(TEXT("Restoration rebuilds the command with the current authority revision"),
+    TestEqual(TEXT("The fresh destination uses the current authority revision"),
         Build->PlacementPreview->PreviewCommand.ExpectedWorldRevision, Zones->GetWorldRevision());
     const FFFZSGridPlacement CommitPose = Build->CurrentPlacement;
+    const auto* ActivePreview = Build->PlacementPreview.Get();
     if (!TestTrue(TEXT("The pinned pose commits through the production install path"), Build->CommitPlacement())) return false;
-    TestTrue(TEXT("Successful installation retains direct adjustment for the next preview"), Build->IsDirectPlacementAdjustment());
-    TestTrue(TEXT("Successful installation retains the complete manipulated pose"), Build->CurrentPlacement == CommitPose);
+    TestFalse(TEXT("Successful installation releases direct adjustment for the next cursor preview"), Build->IsDirectPlacementAdjustment());
+    TestTrue(TEXT("Successful installation remains in placing mode"), Build->State == EFF_BuildModeState::Placing);
+    TestTrue(TEXT("Successful installation keeps the preview actor for the next facility"), Build->PlacementPreview.Get() == ActivePreview);
+    TestTrue(TEXT("The next cursor preview retains the selected world angle"),
+        FMath::Abs(FMath::FindDeltaAngleDegrees(Build->GetPlacementYawDegrees(), WorldYaw)) < 0.01f);
     TestEqual(TEXT("One confirmation installs exactly one facility"), Zones->GetPlacedFacilityCount(), 1);
     TestEqual(TEXT("One confirmation charges exactly one install cost"), Economy->GetGold(), InitialGold - Cost.InstallCost);
 
     if (!TestTrue(TEXT("A different definition can be selected"), Reselect(Second.Get()))) return false;
     TestFalse(TEXT("Another definition cannot inherit the first definition's position"), Build->HasPlacementTarget());
     TestTrue(TEXT("Another definition cannot inherit the first definition's angle"), FMath::IsNearlyZero(Build->GetPlacementYawDegrees()));
-    if (!TestTrue(TEXT("Returning to the first definition restores its own pose"), Reselect(First.Get()))) return false;
-    TestTrue(TEXT("The installed location is restored without silently offsetting it"), Build->CurrentPlacement == CommitPose);
-    TestFalse(TEXT("A reused occupied location is validated again instead of retaining an old green result"), Build->IsCurrentPlacementValid());
-    TestTrue(TEXT("Authority occupancy remains visible after restoration"),
+    if (!TestTrue(TEXT("Returning to the first definition restores its own angle"), Reselect(First.Get()))) return false;
+    TestFalse(TEXT("Returning to a definition does not target the occupied installation automatically"), Build->HasPlacementTarget());
+    TestFalse(TEXT("Returning to a definition remains in cursor placement"), Build->IsDirectPlacementAdjustment());
+    TestTrue(TEXT("Each definition remembers its own world angle"),
+        FMath::Abs(FMath::FindDeltaAngleDegrees(Build->GetPlacementYawDegrees(), WorldYaw)) < 0.01f);
+    Build->CurrentZoneId = ZoneId;
+    Build->CurrentPlacement = CommitPose;
+    Build->bHasPlacementTarget = true;
+    Build->SetPlacementYawDegrees(WorldYaw);
+    Build->RefreshCurrentPlacementValidation();
+    TestFalse(TEXT("Explicitly choosing an occupied destination cannot retain an old green result"), Build->IsCurrentPlacementValid());
+    TestTrue(TEXT("Authority occupancy remains visible for the chosen destination"),
         Build->LastValidation.Reasons.Contains(EFFZSPlacementFailure::PlacementCollision));
     const auto& FeedbackAsset = GetDefault<UFF_BuildingSettings>()->PlacementFailureFeedbackClass;
     UClass* FeedbackClass = FeedbackAsset.LoadSynchronous();
@@ -535,14 +556,14 @@ bool FFF_BuildPlacementMemoryTest::RunTest(const FString& Parameters)
     // headless UI error without hiding a broken configured feedback asset.
     AddExpectedError(FString::Printf(TEXT("건축 실패 알림 WBP를 사용할 수 없습니다: %s"),
         *FeedbackAsset.ToSoftObjectPath().ToString()), EAutomationExpectedErrorFlags::Contains, 1);
-    TestFalse(TEXT("Confirming the occupied remembered location cannot purchase a duplicate"), Build->CommitPlacement());
+    TestFalse(TEXT("Confirming the occupied destination cannot purchase a duplicate"), Build->CommitPlacement());
     TestTrue(TEXT("A rejected confirmation retains the user's chosen pose and adjustment mode"),
         Build->CurrentPlacement == CommitPose && Build->IsDirectPlacementAdjustment());
     TestEqual(TEXT("A rejected duplicate leaves the installation count unchanged"), Zones->GetPlacedFacilityCount(), 1);
     TestEqual(TEXT("A rejected duplicate leaves the player's money unchanged"), Economy->GetGold(), InitialGold - Cost.InstallCost);
 
     Build->ToggleDirectPlacementAdjustment();
-    TestFalse(TEXT("T explicitly releases a remembered pose back to cursor placement"), Build->IsDirectPlacementAdjustment());
+    TestFalse(TEXT("T explicitly releases a manually pinned pose back to cursor placement"), Build->IsDirectPlacementAdjustment());
     TestTrue(TEXT("Cursor mode retains the selected definition's continuous placement support"), Build->IsDragPlacementEnabled());
     Build->ToggleDirectPlacementAdjustment();
     TestTrue(TEXT("The user can pin the preview again"), Build->IsDirectPlacementAdjustment());
@@ -552,7 +573,9 @@ bool FFF_BuildPlacementMemoryTest::RunTest(const FString& Parameters)
     Build->CurrentPlacement.YawCentidegrees = 12000;
     Build->RememberPlacementPose();
     if (!TestTrue(TEXT("Returning from an existing-facility edit can reselect the definition"), Reselect(First.Get()))) return false;
-    TestTrue(TEXT("Moving an existing instance cannot replace a new-installation pose"), Build->CurrentPlacement == CommitPose);
+    TestFalse(TEXT("Returning from an existing-facility edit starts without a pinned target"), Build->HasPlacementTarget());
+    TestTrue(TEXT("Moving an existing instance cannot replace the new-installation world angle"),
+        FMath::Abs(FMath::FindDeltaAngleDegrees(Build->GetPlacementYawDegrees(), WorldYaw)) < 0.01f);
 
     Build->DestroyPlacementPreview();
     Build->ResetPlacementSelection();

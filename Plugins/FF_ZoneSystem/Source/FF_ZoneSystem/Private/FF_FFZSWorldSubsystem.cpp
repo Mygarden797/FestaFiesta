@@ -4111,6 +4111,18 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapsho
     for (FFFZSFacilityInstanceSnapshot& Saved : MigratedSnapshot.Facilities)
     {
         Saved.FacilitySpec.NormalizeNonServiceGeometry();
+        if (Saved.FacilitySpec.IsAudienceOnlyVenue())
+        {
+            // Retired FIFO participants must not resurrect on an audience-only stage.
+            // Preserve historic totals; audience state and performance data live outside
+            // this queue and retain their existing save owners.
+            Saved.Queue.Entries.Reset();
+            Saved.Queue.State = EFFZSQueueState::Closed;
+            Saved.Queue.StateBeforeBlocked = EFFZSQueueState::Closed;
+            Saved.Queue.bDrainRequested = true;
+            Saved.Queue.BlockedElapsedSeconds = 0.f;
+            Saved.Queue.RepathAttemptCount = 0;
+        }
     }
     EffectiveSnapshot = &MigratedSnapshot;
 

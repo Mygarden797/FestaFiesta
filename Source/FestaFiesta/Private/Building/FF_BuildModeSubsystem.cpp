@@ -1,4 +1,4 @@
-// FF_BuildModeSubsystem.cpp
+﻿// FF_BuildModeSubsystem.cpp
 
 // 건축 모드의 입력·UI·미리보기와 Zone System 권위 배치/이동/철거 명령을 조정한다.
 // 흐름: 세션 진입 -> 카탈로그 선택 -> 커서 기반 검증 -> 명령 커밋 또는 실패 피드백.
@@ -270,6 +270,8 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 	APlayerController* Controller = GetLocalPlayerController();
 	if (!Controller)
 	{
+		if (bFacilityDragActive) { CancelMovingToBuildMode(TEXT("시설 이동을 취소했습니다.")); }
+		ResetFacilityPointerDrag();
 		EndDragPlacement();
 		ClearBuildSynergyPreview();
 		return;
@@ -342,6 +344,8 @@ bool UFF_BuildModeSubsystem::SuspendInputForPauseMenu()
 	}
 
 	const bool bWasAlreadySuspended = bInputSuspendedForPauseMenu;
+	if (bFacilityDragActive) { CancelMovingToBuildMode(TEXT("시설 이동을 취소했습니다.")); }
+	ResetFacilityPointerDrag();
 	EndDragPlacement();
 	bMultiSelectionPointerArmed = false;
 	bMultiSelectionMarqueeVisible = false;
@@ -365,6 +369,7 @@ bool UFF_BuildModeSubsystem::SuspendInputForPauseMenu()
 		PauseMenuFocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget();
 	}
 	ResetPlacementRotationInput();
+	DismissPlacementFailureFeedback();
 	// Viewport tools sit above the CommonUI root. Hide them synchronously before
 	// Pause/Options takes over; their expanded panels and selection stay intact.
 	if (BuildToolsWidget) { BuildToolsWidget->RefreshTools(); }
@@ -584,7 +589,7 @@ void UFF_BuildModeSubsystem::EnterBuildMode()
 	SetBuildInputMode(*Controller);
 	// UI 버튼 콜백이 mouse-up에서 오더라도 다음 Tick까지는 같은 클릭을 월드 입력으로 사용하지 않는다.
 	bSuppressWorldClickUntilReleased = true;
-	ShowStatus(TEXT("시설 클릭: 바로 이동 · B 시설 목록 · 우클릭 이동 취소"), false, 2.5f);
+	ShowStatus(TEXT("시설 클릭: 정보 확인 · 누른 채 드래그: 이동 · 놓기: 확정 · 우클릭: 취소 · B 시설 목록"), false, 2.5f);
 }
 
 void UFF_BuildModeSubsystem::OpenCatalog()
@@ -776,9 +781,10 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 		}
 	}
 
-	// Always reload the live definition. Restore only this facility's user pose,
-	// never a prior validation result or a different facility's placement state.
+	// Always reload the live definition. Keep this facility's last rotation, but
+	// start its first ghost under the cursor instead of pinning an old position.
 	EndDragPlacement();
+	ResetPlacementAssistance();
 	SelectedFacilityDefinitionId = FacilityDefinitionId;
 	DismissPlacementFailureFeedback();
 	SelectedSpec = Definition->Spec;
@@ -806,11 +812,9 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 		bSuppressPlacementConfirmUntilReleased = true;
 	}
 	// 첫 프레임부터 현재 커서 위치와 회전을 명령에 반영하기 위해 위치 변화 여부와 무관하게 강제 갱신한다.
-	const bool bRestoredPose = RestorePlacementPose();
-	if (!bRestoredPose) UpdatePlacementFromCursor(true);
-	ShowStatus(bRestoredPose
-		? TEXT("마지막 위치와 회전을 유지합니다. 직접 조정 후 Enter로 설치 · T로 커서 배치")
-		: TEXT("시설을 놓을 위치를 선택하세요. 회전과 위치 조정은 건축 도구에서 사용할 수 있습니다."));
+	RestorePlacementPose();
+	UpdatePlacementFromCursor(true);
+	ShowStatus(TEXT("반투명 미리보기를 원하는 위치로 옮긴 뒤 클릭하세요. 설치 후에도 다음 미리보기가 마우스를 따라갑니다."));
 	return PlacementPreview != nullptr;
 }
 
@@ -968,8 +972,13 @@ float UFF_BuildModeSubsystem::GetPlacementYawDegrees() const
 
 bool UFF_BuildModeSubsystem::CommitPlacement()
 {
-	// The primary press opens history before buying its origin. Other confirmations
-	// finish a held stroke before committing their independent edit.
+	// A held drag owns its pending group until release. A toolbar/Enter confirmation
+	// must never purchase one member early or discard the rest of that preview.
+	if (DragPlacementSession)
+	{
+		ShowStatus(TEXT("마우스를 놓으면 설치 가능한 미리보기만 한 번에 설치합니다."));
+		return false;
+	}
 	if (!PendingDragPlacementTransactionId.IsValid()) EndDragPlacement();
 	CancelNearbyPlacementSearch();
 	if (bInputSuspendedForPauseMenu)
@@ -1136,18 +1145,13 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 	}
 
 	ShowStatus(FString::Printf(TEXT("%s 설치 완료"), *SelectedSpec.DisplayName.ToString()), false);
-	const bool bKeepAdjustedPose = bDirectPlacementAdjustment;
+	// Repeated placement returns to the cursor after buying the displayed ghost.
+	// Keep its angle, but do not leave the next preview pinned inside the new facility.
 	ResetPlacementAssistance();
-	bDirectPlacementAdjustment = bKeepAdjustedPose;
 	DismissPlacementFailureFeedback();
 	// 연속 배치를 지원하므로 성공 후 Placing 상태를 유지한다. 설치로 revision/점유 셀이 바뀌었으므로
 	// 같은 위치의 다음 프리뷰도 즉시 다시 검증한다.
-	if (bKeepAdjustedPose)
-	{
-		RefreshCurrentPlacementValidation();
-		RefreshPlacementGizmo();
-	}
-	else UpdatePlacementFromCursor(true);
+	UpdatePlacementFromCursor(true);
 	return true;
 }
 
@@ -1155,6 +1159,8 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 {
 	if (BuildToolsWidget && BuildToolsWidget->IsFeatureGuideOpen())
 	{
+		if (bFacilityDragActive) { CancelMovingToBuildMode(TEXT("시설 이동을 취소했습니다.")); }
+		ResetFacilityPointerDrag();
 		// The guide owns input even when the pointer is outside its card. Keep
 		// confirmation clicks and held keys from reaching the world after it closes.
 		EndDragPlacement();
@@ -1164,11 +1170,12 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 		bSuppressBuildToggleUntilReleased = true;
 		return;
 	}
-	if (DragPlacementSession && (!Controller.IsInputKeyDown(EKeys::LeftMouseButton) ||
-		!IsPlacementPointerInsideViewport(Controller) || IsEditableSlateTextFocused()))
+	if (DragPlacementSession && (!IsPlacementPointerInsideViewport(Controller) ||
+		IsEditableSlateTextFocused() || (!Controller.IsInputKeyDown(EKeys::LeftMouseButton) &&
+		!Controller.WasInputKeyJustReleased(EKeys::LeftMouseButton))))
 	{
-		// Release, UI hover or focus loss cancels pending work immediately. A held button
-		// never resumes painting after returning from a modal or another application.
+		// A genuine release below commits the staged group. Focus loss or a missed
+		// release cancels it instead, so returning to the window cannot buy facilities.
 		EndDragPlacement();
 	}
 	const bool bBlockBuildToggleThisFrame = bSuppressBuildToggleUntilReleased;
@@ -1244,6 +1251,9 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	}
 	if (bMultiSelectionActive && HandleMultiSelectionInput(Controller, bBlockWorldClickThisFrame,
 		bPointerOverTools, bPointerOverDebugPanel, bPointerOverFacilityInfo)) return;
+	if (HandleFacilityPointerDrag(Controller,
+		bBlockWorldClickThisFrame || bPointerOverTools || bPointerOverDebugPanel || bPointerOverFacilityInfo ||
+		IsEditableSlateTextFocused() || IsPointerBlockedByUi(&Controller), DeltaTime)) return;
 	// Pointer inspection has separate ownership from keyboard editing and demolition.
 	// A world click can leave a catalog search field, but never passes through catalog UI.
 	if (Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton) &&
@@ -1278,13 +1288,8 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 			}
 			return;
 		}
-		if (FFBuildModeModel::CanAcceptWorldBuildAction(bBlockPlacementConfirmThisFrame, false, bPointerOverTools) &&
-			Controller.WasInputKeyJustPressed(EKeys::Enter) &&
-			PendingRemovalFacility.IsValid())
-		{
-			ConfirmPendingRemoval();
-			return;
-		}
+		// Enter confirms a placement preview only. An inspected facility remains
+		// selected after moving, so demolition must use the card's explicit confirmation.
 		return;
 	}
 
@@ -1320,13 +1325,14 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	// PlayerController has already received this press through GameAndUI routing.
 	// Do not require the deepest Slate hit to be SViewport: non-consuming HUD wrappers
 	// also legitimately bubble world clicks. Actual tool/panel rectangles remain blocked.
-	if (!bDirectPlacementAdjustment && !bBlockWorldClickThisFrame && !bPointerOverDebugPanel && !bPointerOverTools && !bPointerOverFacilityInfo &&
+	if (!bBlockWorldClickThisFrame && !bPointerOverDebugPanel && !bPointerOverTools && !bPointerOverFacilityInfo &&
 		Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton))
 	{
 		HandlePlacementPrimaryPress(Controller.IsInputKeyDown(EKeys::LeftMouseButton));
 		return;
 	}
-	if (FFBuildModeModel::CanAcceptWorldBuildAction(bBlockPlacementConfirmThisFrame, false, bPointerOverTools) &&
+	if (!DragPlacementSession && FFBuildModeModel::CanAcceptWorldBuildAction(bBlockPlacementConfirmThisFrame, false,
+		bPointerOverTools || bPointerOverFacilityInfo || bPointerOverDebugPanel) &&
 		Controller.WasInputKeyJustPressed(EKeys::Enter))
 	{
 		CommitPlacement();
@@ -1336,19 +1342,25 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	{
 		FHitResult GroundHit;
 		UFFZSWorldSubsystem* Zones = GetZoneSystem();
+		const bool bHasGround = TraceGroundUnderCursor(Controller, GroundHit);
 		if (bBlockWorldClickThisFrame || bPointerOverDebugPanel || bPointerOverTools || bPointerOverFacilityInfo ||
-			!TraceGroundUnderCursor(Controller, GroundHit) || !Zones ||
-			Zones->ResolveZoneAtWorldLocation(GroundHit.ImpactPoint, CurrentZoneId).IsNone())
+			(!bHasGround && !GroundHit.bBlockingHit) || !Zones)
 		{
 			EndDragPlacement();
 			return;
 		}
-		// Sample and move the ghost every input frame. Full preview policy checks remain
-		// on Tick's bounded cadence; individual purchases still validate authoritatively.
+		// Keep blocked slopes and positions outside a zone in the visible path, so they
+		// can turn red and be skipped without cancelling the other proposed facilities.
+		// Release remains the sole authority write for the installable subset.
 		PlacementPreview->SetPlacementGridSurface(GroundHit.ImpactPoint, GroundHit.ImpactNormal);
 		UpdateDragPlacement(GroundHit.ImpactPoint);
 		ProcessDragPlacement();
 		RefreshDragPlacementPreview(false, false, &GroundHit);
+		if (DragPlacementSession && !Controller.IsInputKeyDown(EKeys::LeftMouseButton))
+		{
+			if (Controller.WasInputKeyJustReleased(EKeys::LeftMouseButton)) CommitDragPlacement();
+			else EndDragPlacement();
+		}
 	}
 }
 
@@ -1530,6 +1542,8 @@ void UFF_BuildModeSubsystem::SetPreferredPositionSnapCm(const int32 SnapCm)
 
 void UFF_BuildModeSubsystem::NotifyBuildToolsInteraction()
 {
+	if (bFacilityDragActive) { CancelMovingToBuildMode(TEXT("시설 이동을 취소했습니다.")); }
+	ResetFacilityPointerDrag();
 	EndDragPlacement();
 	bSuppressWorldClickUntilReleased = true;
 	bSuppressPlacementConfirmUntilReleased = true;
@@ -1554,7 +1568,6 @@ void UFF_BuildModeSubsystem::NudgePlacement(const FIntPoint Direction)
 	CurrentPlacement.OriginCell = FIntPoint(static_cast<int32>(X), static_cast<int32>(Y));
 	EndDragPlacement();
 	bDirectPlacementAdjustment = true;
-	bAwaitingMovePointerMotion = false;
 	RefreshCurrentPlacementValidation();
 	RefreshPlacementGizmo();
 }
@@ -1607,7 +1620,10 @@ FText UFF_BuildModeSubsystem::GetPlacementStatusText() const
 	if (LastValidation.bIsValid)
 	{
 		return FText::FromString(State == EFF_BuildModeState::Moving
-			? TEXT("이동 가능 · 좌클릭/Enter로 확정") : TEXT("배치 가능 · 좌클릭/Enter로 연속 설치"));
+			? TEXT("이동 가능 · 누른 채 드래그하고 놓아 확정")
+			: IsDragPlacementEnabled()
+				? TEXT("드래그로 미리보기 · 놓으면 가능한 곳만 설치")
+				: TEXT("배치 가능 · 좌클릭/Enter로 연속 설치"));
 	}
 	return GetPlacementGuidance().Title;
 }
@@ -2342,30 +2358,10 @@ bool UFF_BuildModeSubsystem::RestorePlacementPose()
 	if (State != EFF_BuildModeState::Placing || !PlacementPreview) return false;
 	const FRememberedPlacementPose* SavedPose = RememberedPlacementPoses.Find(SelectedFacilityDefinitionId);
 	if (!SavedPose) return false;
-	// Validation and presentation can record the pose again; do not hold a map entry across them.
-	const FRememberedPlacementPose Pose = *SavedPose;
-	UFFZSWorldSubsystem* Zones = GetZoneSystem();
-	const AFFZSGameplayZone* Zone = Zones ? Zones->FindZone(Pose.ZoneId) : nullptr;
-	if (!Zone)
-	{
-		CurrentPlacement.YawCentidegrees = UFFZSGridLibrary::DegreesToYawCentidegrees(Pose.WorldYawDegrees);
-		CurrentPlacement.QuarterTurns = 0;
-		return false;
-	}
-	CurrentZoneId = Pose.ZoneId;
-	CurrentPlacement = Pose.Placement;
-	bHasPlacementTarget = true;
-	bDirectPlacementAdjustment = true;
-	const float RegionYaw = Zones->FindBuildArea() ? Zone->GetActorRotation().Yaw : 0.f;
-	CurrentPlacement.YawCentidegrees = UFFZSGridLibrary::NormalizeYawCentidegrees(
-		UFFZSGridLibrary::DegreesToYawCentidegrees(Pose.WorldYawDegrees - RegionYaw));
+	// With no target zone yet, yaw is in world space. Cursor placement converts it
+	// to the current region and validates its fresh position before displaying it.
+	CurrentPlacement.YawCentidegrees = UFFZSGridLibrary::DegreesToYawCentidegrees(SavedPose->WorldYawDegrees);
 	CurrentPlacement.QuarterTurns = 0;
-	PlacementPreview->SetActorHiddenInGame(false);
-	PlacementPreview->SetPlacementGridSurface(
-		Zones->BuildPlacementTransform(*Zone, SelectedSpec, CurrentPlacement).GetLocation(), FVector::UpVector);
-	// The remembered position is a preference, never permission to bypass current ground/occupancy rules.
-	RefreshCurrentPlacementValidation();
-	RefreshPlacementGizmo();
 	return true;
 }
 
@@ -2391,8 +2387,7 @@ void UFF_BuildModeSubsystem::ResetPlacementSelection()
 
 void UFF_BuildModeSubsystem::ResetMovingSelection()
 {
-	bAwaitingMovePointerMotion = false;
-	MovePointerStartPixels = FVector2D::ZeroVector;
+	ResetFacilityPointerDrag();
 	MovingFacility.Reset();
 	MovingFacilityInstanceId.Invalidate();
 	MoveOriginZoneId = NAME_None;
@@ -2441,6 +2436,8 @@ bool UFF_BuildModeSubsystem::TraceGroundUnderCursor(
 	// 구역·점유·최종 지형 적합성은 공통 배치 검증기에 맡긴다.
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(FFBuildGroundTrace), false);
 	QueryParams.AddIgnoredActor(PlacementPreview);
+	QueryParams.AddIgnoredActor(MovingFacility.Get());
+	QueryParams.AddIgnoredActor(PendingRemovalFacility.Get());
 	if (Controller.GetPawn())
 	{
 		QueryParams.AddIgnoredActor(Controller.GetPawn());
@@ -2550,6 +2547,7 @@ void UFF_BuildModeSubsystem::ClearSynergyCatalogContext()
 
 void UFF_BuildModeSubsystem::ClearPendingRemovalSelection(const bool bPreserveSynergyContext)
 {
+	ResetFacilityPointerDrag();
 	if (!bPreserveSynergyContext) ClearSynergyCatalogContext();
 	AFFZSFacilityActor* ClearingFacility = PendingRemovalFacility.Get();
 	FGuid ClearingFacilityId;
@@ -2627,13 +2625,127 @@ bool UFF_BuildModeSubsystem::HandleFacilityInspectionClick(APlayerController& Co
 	// facility, and retain a weak reference across synchronous state-change subscribers.
 	const TWeakObjectPtr<AFFZSFacilityActor> RequestedFacility(Facility);
 	if (bEnterFromPreparation) { EnterBuildMode(); }
-	// Re-selecting opens/refreshes the card again, including after a previous panel-load failure.
-	if (!InspectFacility(RequestedFacility.Get())) return false;
-	Facility = RequestedFacility.Get();
-	if (Facility && CanReconfigure() && Facility->CanMoveOrRemove())
+	// Inspection owns the click. A drag may begin only if this exact press stays held.
+	if (!InspectFacility(RequestedFacility.Get())) { return false; }
+	BeginFacilityPointerDrag(Controller);
+	return true;
+}
+
+void UFF_BuildModeSubsystem::ResetFacilityPointerDrag()
+{
+	bFacilityDragPending = false;
+	bFacilityDragActive = false;
+	FacilityDragInstanceId.Invalidate();
+	FacilityDragStartPixels = FVector2D::ZeroVector;
+	FacilityDragCursorOffset = FVector::ZeroVector;
+}
+
+void UFF_BuildModeSubsystem::BeginFacilityPointerDrag(APlayerController& Controller)
+{
+	ResetFacilityPointerDrag();
+	AFFZSFacilityActor* Facility = PendingRemovalFacility.Get();
+	UFFZSWorldSubsystem* Zones = GetZoneSystem();
+	AFFZSGameplayZone* Zone = Facility && Zones ? Zones->FindZone(Facility->GetZoneId()) : nullptr;
+	float X = 0.f, Y = 0.f;
+	FHitResult Ground;
+	if (!Controller.IsInputKeyDown(EKeys::LeftMouseButton) || !Facility || !Zone ||
+		!Facility->CanMoveOrRemove() || !CanReconfigure() ||
+		!Controller.GetMousePosition(X, Y) || !TraceGroundUnderCursor(Controller, Ground)) return;
+
+	const FFFZSGridPlacement& Placement = Facility->GetGridPlacement();
+	const FVector2D Center = FFBuildModeModel::ResolveRotatedFootprintCenterOffset(
+		Facility->GetFacilitySpec().FootprintSizeCells,
+		UFFZSGridLibrary::YawCentidegreesToDegrees(UFFZSGridLibrary::GetEffectiveYawCentidegrees(Placement)));
+	const FVector WorldCenter = Zone->GetActorTransform().TransformPosition(FVector(
+		Placement.OriginCell.X + Center.X, Placement.OriginCell.Y + Center.Y, 0.0));
+	FacilityDragCursorOffset = FVector(WorldCenter.X - Ground.ImpactPoint.X,
+		WorldCenter.Y - Ground.ImpactPoint.Y, 0.0);
+	FacilityDragStartPixels = FVector2D(X, Y);
+	FacilityDragInstanceId = Facility->GetFacilityInstanceId();
+	bFacilityDragPending = true;
+	// Preparation/catalog entry may have consumed this same press while opening the
+	// workspace. It is now owned by the inspected facility, never by new placement.
+	bSuppressWorldClickUntilReleased = false;
+}
+
+bool UFF_BuildModeSubsystem::HandleFacilityPointerDrag(APlayerController& Controller,
+	const bool bPointerBlocked, const float DeltaTime)
+{
+	if (!bFacilityDragPending && !bFacilityDragActive && State != EFF_BuildModeState::Moving) return false;
+	if (Controller.WasInputKeyJustPressed(EKeys::RightMouseButton))
 	{
-		return StartMovingSelectedFacility(true);
+		if (State == EFF_BuildModeState::Moving) CancelMovingToBuildMode(TEXT("시설 이동을 취소했습니다."));
+		ResetFacilityPointerDrag();
+		return true;
 	}
+	if (!bFacilityDragPending && !bFacilityDragActive)
+	{
+		// Explicit Move/M only arms the source. A fresh world press must still select
+		// that facility; neither Enter nor idle mouse motion confirms or moves it.
+		if (!bPointerBlocked && Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton) &&
+			IsPlacementPointerInsideViewport(Controller))
+		{
+			UFF_FacilityInfoSubsystem* Info = GetFacilityInfoSubsystem();
+			if (Info && Info->ResolveFacilityUnderCursor(Controller) == MovingFacility.Get())
+				BeginFacilityPointerDrag(Controller);
+			else
+			{
+				CancelMovingToBuildMode(TEXT(""));
+				HandleFacilityInspectionClick(Controller);
+			}
+		}
+		return true;
+	}
+	const bool bSelectionValid = PendingRemovalFacility.IsValid() &&
+		PendingRemovalFacility->GetFacilityInstanceId() == FacilityDragInstanceId &&
+		(State == EFF_BuildModeState::BuildMode || State == EFF_BuildModeState::Moving);
+	if (!bSelectionValid || bPointerBlocked || !IsPlacementPointerInsideViewport(Controller))
+	{
+		if (bFacilityDragActive) CancelMovingToBuildMode(TEXT("시설 이동을 취소했습니다."));
+		ResetFacilityPointerDrag();
+		bSuppressWorldClickUntilReleased = Controller.IsInputKeyDown(EKeys::LeftMouseButton);
+		return true;
+	}
+	if (!Controller.IsInputKeyDown(EKeys::LeftMouseButton))
+	{
+		if (bFacilityDragActive)
+		{
+			// Commit is allowed only on the actual release edge. Losing application
+			// focus or pointer ownership never turns an unfinished gesture into a move.
+			bool bCommitted = false;
+			if (Controller.WasInputKeyJustReleased(EKeys::LeftMouseButton))
+			{
+				TGuardValue<bool> ReleaseGuard(bReleasingFacilityDrag, true);
+				bCommitted = CommitPlacement();
+			}
+			if (!bCommitted && State == EFF_BuildModeState::Moving)
+				CancelMovingToBuildMode(TEXT("이동할 수 없는 위치여서 원래 위치를 유지했습니다."), true);
+		}
+		ResetFacilityPointerDrag();
+		return true;
+	}
+	if (bFacilityDragPending)
+	{
+		float X = 0.f, Y = 0.f;
+		if (!Controller.GetMousePosition(X, Y) ||
+			FVector2D::DistSquared(FVector2D(X, Y), FacilityDragStartPixels) < 36.0) return true;
+		// StartMoving resets preview bookkeeping. Retain the click offset so grabbing
+		// an edge does not snap the facility's center to the pointer at drag start.
+		const FVector Offset = FacilityDragCursorOffset;
+		const FGuid FacilityId = FacilityDragInstanceId;
+		if (State != EFF_BuildModeState::Moving && !StartMovingSelectedFacility())
+		{
+			ResetFacilityPointerDrag();
+			return true;
+		}
+		FacilityDragCursorOffset = Offset;
+		FacilityDragInstanceId = FacilityId;
+		bFacilityDragPending = false;
+		bFacilityDragActive = true;
+		bSuppressWorldClickUntilReleased = false;
+	}
+	HandlePlacementRotationInput(Controller, DeltaTime);
+	UpdatePlacementFromCursor();
 	return true;
 }
 
@@ -2721,7 +2833,7 @@ bool UFF_BuildModeSubsystem::ConfirmPendingRemoval()
 	return true;
 }
 
-bool UFF_BuildModeSubsystem::StartMovingSelectedFacility(const bool bKeepInitialPosition)
+bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
 {
 	if (bInputSuspendedForPauseMenu)
 	{
@@ -2786,7 +2898,8 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility(const bool bKeepInitial
 	PendingQueueSettings = Facility->GetBaseFacilitySpec().QueueSettings;
 	CurrentZoneId = SourceZoneId;
 	CurrentPlacement = SourcePlacement;
-	ClearPendingRemovalSelection();
+	// The inspected instance remains selected while its move is only a preview.
+	// Keeping the card also preserves its queue, lighting and close actions.
 
 	SetState(EFF_BuildModeState::Moving);
 	SetFacilityRangeVisibility(true);
@@ -2805,21 +2918,12 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility(const bool bKeepInitial
 		bSuppressWorldClickUntilReleased = true;
 		bSuppressPlacementConfirmUntilReleased = true;
 	}
-	if (bKeepInitialPosition)
-	{
-		bHasPlacementTarget = true;
-		if (APlayerController* Controller = GetLocalPlayerController())
-		{
-			float X = 0.f, Y = 0.f;
-			bAwaitingMovePointerMotion = Controller->GetMousePosition(X, Y);
-			MovePointerStartPixels = FVector2D(X, Y);
-		}
-		PlacementPreview->SetActorHiddenInGame(false);
-		PlacementPreview->SetPlacementGridSurface(Facility->GetActorLocation(), FVector::UpVector);
-		RefreshCurrentPlacementValidation();
-	}
-	else UpdatePlacementFromCursor(true);
-	ShowStatus(TEXT("좌클릭/Enter 이동 · Q/E 회전 · Ctrl 정밀 · Alt 자유 · G 격자 · 우클릭 이동 취소"));
+	// Move/M arms an anchored preview. Pointer movement alone never relocates it.
+	bHasPlacementTarget = true;
+	PlacementPreview->SetActorHiddenInGame(false);
+	PlacementPreview->SetPlacementGridSurface(Facility->GetActorLocation(), FVector::UpVector);
+	RefreshCurrentPlacementValidation();
+	ShowStatus(TEXT("시설을 누른 채 드래그해 이동 · 놓기 확정 · 우클릭 취소"));
 	return State == EFF_BuildModeState::Moving && PlacementPreview != nullptr;
 }
 
@@ -2869,6 +2973,7 @@ void UFF_BuildModeSubsystem::HandleRemoveRequested(const FGuid FacilityInstanceI
 	}
 	bSuppressWorldClickUntilReleased = true;
 	bSuppressPlacementConfirmUntilReleased = true;
+	if (State == EFF_BuildModeState::Moving) { CancelMovingToBuildMode(TEXT("")); }
 	ConfirmPendingRemoval();
 }
 
@@ -2881,6 +2986,7 @@ void UFF_BuildModeSubsystem::HandleRemovalCancelRequested(const FGuid FacilityIn
 	}
 	bSuppressWorldClickUntilReleased = true;
 	bSuppressPlacementConfirmUntilReleased = true;
+	if (State == EFF_BuildModeState::Moving) { CancelMovingToBuildMode(TEXT("")); }
 	ClearPendingRemovalSelection();
 	ShowStatus(TEXT("시설 선택을 취소했습니다."), false, 1.5f);
 }
@@ -2930,20 +3036,17 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 		}
 	}
 
-	if (State == EFF_BuildModeState::Moving && bAwaitingMovePointerMotion)
-	{
-		float X = 0.f, Y = 0.f;
-		if (!bDirectPlacementAdjustment && (!Controller->GetMousePosition(X, Y) ||
-			FVector2D::DistSquared(FVector2D(X, Y), MovePointerStartPixels) <= 1.0))
-		{
-			if (bForceCommandRebuild || FPlatformTime::Seconds() - LastPreviewValidationTimeSeconds >= 0.5)
-				RefreshCurrentPlacementValidation();
-			return false;
-		}
-		bAwaitingMovePointerMotion = false;
-	}
 	// Hovering a tool or editing its text must not drag the building underneath that UI.
-	if (bDirectPlacementAdjustment || (BuildToolsWidget && FFBuildModeModel::ShouldFreezePlacementTarget(
+	if (State == EFF_BuildModeState::Moving && (!bFacilityDragActive ||
+		(!Controller->IsInputKeyDown(EKeys::LeftMouseButton) && !bReleasingFacilityDrag)))
+	{
+		if (bHasPlacementTarget && bForceCommandRebuild) RefreshCurrentPlacementValidation();
+		return false;
+	}
+	const UFF_FacilityInfoSubsystem* FacilityInfo = GetFacilityInfoSubsystem();
+	const bool bFreezeForInfo = FacilityInfo && FFBuildModeModel::ShouldFreezePlacementTarget(
+		FacilityInfo->IsPointerOverPanel(), FacilityInfo->IsLightingTextInputFocused());
+	if (bDirectPlacementAdjustment || bFreezeForInfo || (BuildToolsWidget && FFBuildModeModel::ShouldFreezePlacementTarget(
 		BuildToolsWidget->IsPointerOverTools() || BuildToolsWidget->IsRadialMenuOpen(), BuildToolsWidget->IsEditingText())))
 	{
 		if (bHasPlacementTarget)
@@ -2972,6 +3075,10 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 		return false;
 	}
 
+	if (State == EFF_BuildModeState::Moving && bFacilityDragActive)
+	{
+		GroundHit.ImpactPoint += FacilityDragCursorOffset;
+	}
 	const bool bUnifiedBuilding = ZoneSystem->FindBuildArea() != nullptr;
 	const float ManipulationYawDegrees = GetPlacementYawDegrees();
 	const int32 PositionSnapCm = GetPlacementPositionSnapCm();
@@ -3084,8 +3191,10 @@ void UFF_BuildModeSubsystem::RefreshCurrentPlacementValidation()
 			bIsMoving);
 	ShowStatus(LastValidation.bIsValid
 		? bIsMoving
-			? TEXT("이동 가능 · 좌클릭/Enter로 확정")
-			: TEXT("배치 가능 · 좌클릭/Enter로 설치")
+			? TEXT("이동 가능 · 누른 채 드래그하고 놓아 확정")
+			: IsDragPlacementEnabled()
+				? TEXT("드래그로 미리보기 · 놓으면 가능한 곳만 설치")
+				: TEXT("배치 가능 · 좌클릭/Enter로 설치")
 		: FString::Printf(TEXT("%s 불가 · %s"),
 			bIsMoving ? TEXT("이동") : TEXT("배치"),
 			*UserFacingFailure.ToString()),
@@ -3322,12 +3431,16 @@ void UFF_BuildModeSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Eve
 		Event.Type == EFFZSCommandType::Move && bMoveCommitInFlight &&
 		InFlightMoveCommandId.IsValid() && Event.CommandId == InFlightMoveCommandId;
 	if (bTargetsMovingFacility && !bOwnMoveEvent &&
-		(Event.Type == EFFZSCommandType::Move || Event.Type == EFFZSCommandType::Remove))
+		(Event.Type == EFFZSCommandType::Move || Event.Type == EFFZSCommandType::Remove ||
+		 Event.Type == EFFZSCommandType::Upgrade))
 	{
-		// 타 시스템이 대상을 먼저 이동·삭제하면 이전 원본 스냅샷으로 커밋하지 않도록 즉시 취소한다.
-		CancelMovingToBuildMode(TEXT("이동 대상이 외부에서 변경되어 현재 이동을 취소했습니다."), true);
+		// Queue edits and upgrades from the retained card also invalidate the old
+		// footprint/spec snapshot, so never commit that preview after the authority edit.
+		CancelMovingToBuildMode(TEXT("시설 상태가 변경되어 이동 미리보기를 종료했습니다."));
 	}
-	if ((Event.Type == EFFZSCommandType::Remove || Event.Type == EFFZSCommandType::Move) &&
+	// Moves (including queue reconfiguration) preserve the inspected actor. Its card
+	// refreshes from authority; only removal invalidates the selection.
+	if (Event.Type == EFFZSCommandType::Remove &&
 		PendingRemovalFacility.IsValid() &&
 		PendingRemovalFacility->GetFacilityInstanceId() == Event.FacilityInstanceId)
 	{
@@ -3433,9 +3546,12 @@ UFF_BuildModeSubsystem::GetOrCreatePlacementFailureFeedback()
 	}
 
 	PlacementFailureFeedback->SetVisibility(ESlateVisibility::Collapsed);
-	if (!PlacementFailureFeedback->AddToPlayerScreen(110))
+	// Player-screen widgets sit below viewport facility markers regardless of their Z order.
+	// Use the viewport layer above the construction toolbar; feedback remains hit-test invisible.
+	PlacementFailureFeedback->AddToViewport(FFBuildToolsModel::ForegroundViewportZOrder + 1);
+	if (!PlacementFailureFeedback->IsInViewport())
 	{
-		UE_LOG(LogFFBuildMode, Error, TEXT("건축 실패 알림 WBP를 플레이어 화면에 추가하지 못했습니다."));
+		UE_LOG(LogFFBuildMode, Error, TEXT("건축 실패 알림 WBP를 화면 전면에 추가하지 못했습니다."));
 		PlacementFailureFeedback = nullptr;
 	}
 	return PlacementFailureFeedback;

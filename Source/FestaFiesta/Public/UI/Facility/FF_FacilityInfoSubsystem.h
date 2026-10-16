@@ -130,6 +130,9 @@ public:
 
 	/** Keeps authoritative command failure details visible until selection changes. */
 	void SetFeedback(const FText& Feedback, bool bIsError);
+	/** Applies all queue fields atomically to the reviewed installed facility. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info|Queue")
+	bool ApplySelectedQueueSettings(FGuid FacilityInstanceId, const FFFZSQueueSettings& Settings);
 
 	static FSoftClassPath GetDefaultPanelClassPath();
 	static FSoftClassPath GetDefaultPaidProgramPickerClassPath();

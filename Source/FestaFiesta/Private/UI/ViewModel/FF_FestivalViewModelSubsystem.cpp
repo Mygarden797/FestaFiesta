@@ -1545,13 +1545,14 @@ namespace FFViewModelFacilityLocal
 {
 	/**
 	 * 손님 줄을 받는 시설인가. 큐 다리(`RegisterOrRefreshFacility`)와 같은 기준이다 —
-	 * 조명과 바닥면(길·타일)은 대기열을 만들지 않는다. 바닥면 판정은 원본 사양의 함수를 그대로 쓴다.
+	 * 조명·바닥면·관객석 전용 메인스테이지는 원본 사양과 같은 대기열 정책을 따른다.
 	 */
-	bool UsesPartyQueue(EFFZSFacilityCategory Category)
+	bool UsesPartyQueue(EFFZSFacilityCategory Category, FName DefinitionId)
 	{
 		FFFZSFacilitySpec Probe;
 		Probe.Category = Category;
-		return Category != EFFZSFacilityCategory::Lighting && !Probe.IsGroundSurface();
+		Probe.FacilityDefinitionId = DefinitionId;
+		return Probe.UsesServiceQueue();
 	}
 
 	/** ZoneSystem 의 설치 상태를 UI 값으로 옮긴다. 모르는 값은 지어내지 않고 `Unknown` 이다. */
@@ -1653,7 +1654,7 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 		View.bNeedsRelocation = Facility.bNeedsRelocation;
 		// 관람석 판정은 NPC 목적지 선택과 같은 함수를 쓴다. 규칙을 두 곳에 두지 않는다.
 		View.bSeatedVenue = FFF_ZoneSystemBridge::IsMainStageFacility(Facility.Category, Facility.FacilityDefinitionId);
-		View.bUsesQueue = FFViewModelFacilityLocal::UsesPartyQueue(Facility.Category);
+		View.bUsesQueue = FFViewModelFacilityLocal::UsesPartyQueue(Facility.Category, Facility.FacilityDefinitionId);
 
 		// 🔴 아무도 아직 못 끝냈으면 평균이 `0.0` 으로 온다. 그것을 `0초 대기` 로 그리면
 		//    "기다림이 없다" 는 틀린 사실이 된다 — 실제로는 **아직 모르는 것**이다.

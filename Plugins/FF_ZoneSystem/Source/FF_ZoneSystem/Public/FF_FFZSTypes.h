@@ -347,13 +347,13 @@ struct FF_ZONESYSTEM_API FFFZSQueueSettings
     bool bEnabled = false;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "1", ClampMax = "512"))
-    int32 MaxWaitingTeams = 12;
+    int32 MaxWaitingTeams = 6;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "90", ClampMax = "1000", Units = "cm"))
     float SlotSpacingCm = 115.0f;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "100", ClampMax = "1000", Units = "cm"))
-    float LaneWidthCm = 600.0f;
+    float LaneWidthCm = 300.0f;
 
     bool IsValid(TArray<FText>& OutErrors) const;
     bool operator==(const FFFZSQueueSettings& Other) const
@@ -727,13 +727,16 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
         return Category == EFFZSFacilityCategory::Road || Category == EFFZSFacilityCategory::Tile;
     }
 
-    /** Passive infrastructure reserves only its physical footprint. */
+    /** The scheduled main stage uses its independent audience venue, never a FIFO service queue. */
+    bool IsAudienceOnlyVenue() const;
+
+    /** Passive infrastructure and the audience-only main stage do not run service queues. */
     bool UsesServiceQueue() const
     {
-        return Category != EFFZSFacilityCategory::Lighting && !IsGroundSurface();
+        return Category != EFFZSFacilityCategory::Lighting && !IsGroundSurface() && !IsAudienceOnlyVenue();
     }
 
-    /** Clear retired safety margins on every facility and obsolete service geometry on passive facilities. */
+    /** Clear retired safety margins and obsolete FIFO geometry; retain the main stage's independent audience. */
     void NormalizeNonServiceGeometry();
 
     bool AllowsFacilityPlacementOnTop() const

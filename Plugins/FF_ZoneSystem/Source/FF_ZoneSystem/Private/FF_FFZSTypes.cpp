@@ -326,6 +326,12 @@ bool FFFZSQueueSettings::IsValid(TArray<FText>& OutErrors) const
     return true;
 }
 
+bool FFFZSFacilitySpec::IsAudienceOnlyVenue() const
+{
+    static const FName MainStageId(TEXT("Performance_MainStage_SunsetMainStage"));
+    return Category == EFFZSFacilityCategory::Performance && FacilityDefinitionId == MainStageId;
+}
+
 void FFFZSFacilitySpec::NormalizeNonServiceGeometry()
 {
     // Retired for every facility; keep the serialized field only for legacy assets/saves.
@@ -342,7 +348,8 @@ void FFFZSFacilitySpec::NormalizeNonServiceGeometry()
     QueueRules.ServiceCapacity = 0;
     QueueLayout = EFFZSQueueLayout::Authored;
     QueueSettings = FFFZSQueueSettings();
-    Audience.bEnabled = false;
+    // Scheduled audience geometry owns its seats and portals independently of FIFO.
+    if (!IsAudienceOnlyVenue()) Audience.bEnabled = false;
 }
 
 bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
@@ -419,9 +426,9 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 
     if (bHasNoService && (QueueRules.MaxWaitingAgents != 0 || QueueRules.ServiceCapacity != 0 ||
         !QueueReservedRects.IsEmpty() || !QueueReservedCells.IsEmpty() ||
-        !QueueSplinePointsCm.IsEmpty() || !Anchors.IsEmpty() || Audience.bEnabled))
+        !QueueSplinePointsCm.IsEmpty() || !Anchors.IsEmpty() || (Audience.bEnabled && !IsAudienceOnlyVenue())))
     {
-        OutErrors.Add(LOCTEXT("NonServiceFacilityHasServiceData", "조명, 길, 타일 시설은 대기·서비스 정원이 0이어야 하며 대기열, 서비스 Anchor, 관람 영역을 사용할 수 없습니다."));
+        OutErrors.Add(LOCTEXT("NonServiceFacilityHasServiceData", "대기열을 사용하지 않는 시설은 대기·서비스 정원이 0이어야 하며 대기열과 서비스 Anchor를 사용할 수 없습니다. 메인 무대의 관람 공간은 별도로 유지합니다."));
     }
     if ((!bHasNoService && (QueueRules.MaxWaitingAgents <= 0 || QueueRules.ServiceCapacity <= 0)) ||
         !FMath::IsFinite(QueueRules.SlotSpacingCm) || QueueRules.SlotSpacingCm <= 0.0f ||

@@ -333,6 +333,7 @@ private:
     int32 PlacementProblemIndex = 0;
     bool bRestoreHelpAfterSettings = false;
     bool bHelpExpanded = false;
+    bool bHelpDismissedByUser = false;
     bool bHelpForegroundSuppressed = false;
     UPROPERTY(Transient) TObjectPtr<UCanvasPanel> ForegroundBodyCanvas;
     bool bBodyForegroundSuppressed = false;
@@ -350,7 +351,11 @@ private:
     UFUNCTION() void HandleEdgeScroll();
     UFUNCTION() void ToggleFacts();
     void SetHelpExpanded(bool bExpanded);
+    void InstallHelpCloseControl();
     void RefreshHelpPresentation();
+    void RefreshPlacementSurfaces();
+    TWeakObjectPtr<UUserWidget> FacilityInfoAvoidanceSurface;
+    double NextFacilityInfoSearchTime = 0.0;
     void InstallToolbarForegroundLayer();
     void RefreshBodyPresentation();
     void CloseRadialMenu();

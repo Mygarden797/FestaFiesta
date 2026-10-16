@@ -259,12 +259,33 @@ bool FFF_BuildQueueLayoutDraftTest::RunTest(const FString& Parameters)
     Build->CurrentZoneId = Zone->ZoneId;
     Build->bHasPlacementTarget = false;
     Build->SpawnPlacementPreview();
-    TestTrue(TEXT("The common settings support the production main stage draft"),
-        Build->SetSelectedFacilityQueueSettings(12, 115.f, 600.f));
-    const TArray<FVector> MainStageDraft = Build->SelectedSpec.QueueSplinePointsCm;
+    const FFFZSAudienceLayout MainStageAudience = Build->SelectedSpec.Audience;
+    TestFalse(TEXT("The production main stage cannot recreate a retired service queue"),
+        Build->SetSelectedFacilityQueueSettings(6, 115.f, 300.f));
     Build->RebuildPreviewCommand();
-    TestTrue(TEXT("A command rebuild preserves an audience-shifted draft's frontage and positions"),
-        MainStageDraft == Build->SelectedSpec.QueueSplinePointsCm);
+    TestTrue(TEXT("A main stage command rebuild retains no FIFO path or reservation"),
+        Build->SelectedSpec.QueueSplinePointsCm.IsEmpty() && Build->SelectedSpec.QueueReservedRects.IsEmpty());
+    TestTrue(TEXT("Queue controls preserve every main stage audience seat and portal"),
+        FFFZSAudienceLayout::StaticStruct()->CompareScriptStruct(&MainStageAudience, &Build->SelectedSpec.Audience, 0));
+
+    UFFZSFacilityDefinition* AudienceStage = NewObject<UFFZSFacilityDefinition>(GetTransientPackage());
+    AudienceStage->Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::Performance);
+    AudienceStage->Spec.FacilityDefinitionId = TEXT("Performance_SubStage_AudienceQueueDraftTest");
+    AudienceStage->Spec.Audience.bEnabled = true;
+    AudienceStage->Spec.Audience.FirstSlotLocalCm = FVector(0, 700, 0);
+    if (!TestTrue(TEXT("The separate performance fixture has valid audience portals"),
+        AudienceStage->Spec.Audience.TryCenterAndArrangePortals())) return false;
+    Catalog->EntryIndexByDefinitionId.Add(AudienceStage->Spec.FacilityDefinitionId, Catalog->Entries.Num());
+    Catalog->Entries.AddDefaulted_GetRef().Definition = AudienceStage;
+    Build->SelectedFacilityDefinitionId = AudienceStage->Spec.FacilityDefinitionId;
+    Build->SelectedSpec = AudienceStage->Spec;
+    Build->PendingQueueSettings = AudienceStage->Spec.QueueSettings;
+    TestTrue(TEXT("Other performance facilities retain editable queues beside their audience"),
+        Build->SetSelectedFacilityQueueSettings(6, 115.f, 300.f));
+    const TArray<FVector> AudienceStageDraft = Build->SelectedSpec.QueueSplinePointsCm;
+    Build->RebuildPreviewCommand();
+    TestTrue(TEXT("A command rebuild preserves an audience-shifted performance queue draft"),
+        AudienceStageDraft == Build->SelectedSpec.QueueSplinePointsCm);
     return true;
 }
 

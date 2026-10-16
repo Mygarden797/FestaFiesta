@@ -28,8 +28,8 @@
 #include "FF_FFZSVisualGeometry.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "FF_ZoneSystem.h"
 #include "SceneManagement.h"
-
 
 // 이 Actor는 배치 명령을 시각화하는 비권위 Preview다.
 // RefreshPreview는 Subsystem의 현재 상태로 후보를 검증하고 Actor Transform, 메시, CustomDepth, 디버그
@@ -52,8 +52,11 @@ AFFZSPlacementPreviewActor::AFFZSPlacementPreviewActor()
     PreviewMesh->SetupAttachment(SceneRoot);
     PreviewMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     PreviewMesh->SetGenerateOverlapEvents(false);
+    PreviewMesh->SetCanEverAffectNavigation(false);
+    PreviewMesh->SetCastShadow(false);
+    PreviewMesh->SetReceivesDecals(false);
     PreviewMesh->SetRenderCustomDepth(true);
-    // The temporary ghost needs the translucent overlay pass even for Nanite source assets.
+    // The temporary ghost needs translucent material slots even for Nanite source assets.
     // Only this component uses the source fallback mesh; installed facilities are unchanged.
     PreviewMesh->bDisallowNanite = true;
 
@@ -169,19 +172,9 @@ void AFFZSPlacementPreviewActor::SetUnvalidatedPreviewTransform(const FTransform
     if (bHasUnvalidatedPreviewTransform) return;
     bHasUnvalidatedPreviewTransform = true;
     PreviewMesh->SetRenderCustomDepth(false);
-    // Reuse the loaded material without asset requests or per-frame allocations. A neutral
-    // ghost must not inherit the previous target's green/red verdict or blocker geometry.
-    if (GhostFeedbackMaterial)
-    {
-        GhostFeedbackMaterial->SetVectorParameterValue(TEXT("StatusColor"), FLinearColor::White);
-        GhostFeedbackMaterial->SetScalarParameterValue(TEXT("Opacity"), FMath::Clamp(
-            GetDefault<UFFZSBuildPresentationSettings>()->ValidPlacementOpacity, 0.0f, 1.0f));
-        PreviewMesh->SetOverlayMaterial(GhostFeedbackMaterial);
-    }
-    else
-    {
-        PreviewMesh->SetOverlayMaterial(nullptr);
-    }
+    // Keep the source appearance while following the cursor. Cached slot MIDs only change
+    // opacity; stale validation colors and blocker geometry must not follow a new target.
+    ApplyGhostMaterials();
     for (UStaticMeshComponent* Surface : FailureSurfaces) if (Surface) Surface->SetVisibility(false);
     if (RangeLines) RangeLines->Flush();
     if (UFFZSBuildableGridComponent* Grid = Cast<UFFZSBuildableGridComponent>(PlacementGridLines)) Grid->HideGrid();
@@ -208,7 +201,6 @@ void AFFZSPlacementPreviewActor::RefreshGhostFeedback()
                 nullptr, LOAD_NoWarn | LOAD_Quiet);
         if (Material)
         {
-            GhostFeedbackMaterial = UMaterialInstanceDynamic::Create(Material, this);
             FailureSurfaceMaterial = UMaterialInstanceDynamic::Create(Material, this);
         }
     }
@@ -218,14 +210,57 @@ void AFFZSPlacementPreviewActor::RefreshGhostFeedback()
         FailureSurfaceMaterial->SetVectorParameterValue(TEXT("StatusColor"), Style.InvalidPlacementColor);
         FailureSurfaceMaterial->SetScalarParameterValue(TEXT("Opacity"), FMath::Clamp(Style.FailureSurfaceOpacity, 0.0f, 1.0f));
     }
-    if (GhostFeedbackMaterial)
+    ApplyGhostMaterials();
+}
+
+void AFFZSPlacementPreviewActor::ApplyGhostMaterials()
+{
+    // Cooked variants retain each source material's graph, textures and parameters while
+    // exposing GhostOpacity. The source mesh and its installed materials remain untouched.
+    PreviewMesh->SetOverlayMaterial(nullptr);
+    UStaticMesh* SourceMesh = PreviewMesh->GetStaticMesh();
+    if (!SourceMesh) return;
+    const UFFZSBuildPresentationSettings& Style = *GetDefault<UFFZSBuildPresentationSettings>();
+    if (GhostMaterialSourceMesh.Get() != SourceMesh)
     {
-        GhostFeedbackMaterial->SetVectorParameterValue(TEXT("StatusColor"), LastValidation.bIsValid
-            ? Style.ValidPlacementColor : bFootprintFailure ? Style.InvalidPlacementColor : FLinearColor::White);
-        GhostFeedbackMaterial->SetScalarParameterValue(TEXT("Opacity"), FMath::Clamp(
-            bFootprintFailure ? Style.InvalidPlacementOpacity : Style.ValidPlacementOpacity, 0.0f, 1.0f));
-        PreviewMesh->SetOverlayMaterial(GhostFeedbackMaterial);
+        GhostMaterialSourceMesh = SourceMesh;
+        const int32 MaterialCount = SourceMesh->GetStaticMaterials().Num();
+        GhostMaterials.Reset();
+        GhostMaterials.SetNumZeroed(MaterialCount);
+        int32 MissingVariantCount = 0;
+        for (int32 Index = 0; Index < MaterialCount; ++Index)
+        {
+            UMaterialInterface* SourceMaterial = SourceMesh->GetMaterial(Index);
+            const TSoftObjectPtr<UMaterialInterface>* VariantReference = SourceMaterial
+                ? Style.GeneratedPreviewMaterials.Find(FSoftObjectPath(SourceMaterial)) : nullptr;
+            UMaterialInterface* Variant = VariantReference ? VariantReference->LoadSynchronous() : nullptr;
+            if (Variant)
+            {
+                GhostMaterials[Index] = UMaterialInstanceDynamic::Create(Variant, this);
+                PreviewMesh->SetMaterial(Index, GhostMaterials[Index]);
+            }
+            else
+            {
+                // An unexpected material must still show the actual facility rather than
+                // replacing its texture with an unrelated solid status color.
+                PreviewMesh->SetMaterial(Index, SourceMaterial);
+                if (SourceMaterial) ++MissingVariantCount;
+            }
+        }
+        if (MissingVariantCount > 0)
+        {
+            UE_LOG(LogFFZoneSystem, Warning,
+                TEXT("Placement preview mesh '%s' has %d material slots without generated translucent variants; preserving their source appearance."),
+                *SourceMesh->GetPathName(), MissingVariantCount);
+        }
     }
+    const bool bFootprintFailure = !bHasUnvalidatedPreviewTransform &&
+        FFZSBuildRangePresentation::IsFailureForRegion(
+            GetDisplayedFailureReason(), FFZSBuildRangePresentation::ERegion::Footprint);
+    const float GhostOpacity = FMath::Clamp(bFootprintFailure
+        ? Style.InvalidPlacementOpacity : Style.ValidPlacementOpacity, 0.0f, 1.0f);
+    for (UMaterialInstanceDynamic* GhostMaterial : GhostMaterials)
+        if (GhostMaterial) GhostMaterial->SetScalarParameterValue(TEXT("GhostOpacity"), GhostOpacity);
 }
 
 // 실패 영역 바닥의 반투명 면을 재사용하며 충돌과 내비게이션에는 참여시키지 않는다.
@@ -345,6 +380,9 @@ void AFFZSPlacementPreviewActor::RequestPreviewMesh()
         VisualLoadHandle.Reset();
     }
     PreviewMesh->SetStaticMesh(nullptr);
+    PreviewMesh->EmptyOverrideMaterials();
+    GhostMaterials.Reset();
+    GhostMaterialSourceMesh.Reset();
     PreviewMesh->SetRelativeTransform(FFZSVisualGeometry::ResolveVisualMeshTransform(
         PreviewCommand.FacilitySpec,
         nullptr));
@@ -358,6 +396,7 @@ void AFFZSPlacementPreviewActor::RequestPreviewMesh()
         PreviewMesh->SetRelativeTransform(FFZSVisualGeometry::ResolveVisualMeshTransform(
             PreviewCommand.FacilitySpec,
             LoadedMesh));
+        ApplyGhostMaterials();
         return;
     }
 
@@ -381,6 +420,7 @@ void AFFZSPlacementPreviewActor::ApplyLoadedPreviewMesh()
         PreviewMesh->SetRelativeTransform(FFZSVisualGeometry::ResolveVisualMeshTransform(
             PreviewCommand.FacilitySpec,
             LoadedMesh));
+        ApplyGhostMaterials();
     }
 }
 

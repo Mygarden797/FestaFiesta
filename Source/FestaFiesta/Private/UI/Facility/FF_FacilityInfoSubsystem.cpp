@@ -295,6 +295,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	Panel->OnUpgradeRequested.AddUObject(this, &ThisClass::HandlePanelUpgradeRequested);
 	Panel->OnAssignStaffRequested.AddUObject(this, &ThisClass::HandlePanelAssignStaffRequested);
 	Panel->OnUnassignStaffRequested.AddUObject(this, &ThisClass::HandlePanelUnassignStaffRequested);
+	Panel->OnQueueSettingsRequested.BindUObject(this, &ThisClass::ApplySelectedQueueSettings);
 	Panel->OnLightingRequested.AddUObject(this, &ThisClass::HandlePanelLightingRequested);
 	Panel->OnLightingRollbackRequested.AddUObject(this, &ThisClass::HandlePanelLightingRollbackRequested);
 	Panel->OnLightingResetRequested.AddUObject(this, &ThisClass::HandlePanelLightingResetRequested);
@@ -330,6 +331,7 @@ void UFF_FacilityInfoSubsystem::ReleasePanel()
 	Panel->OnUpgradeRequested.RemoveAll(this);
 	Panel->OnAssignStaffRequested.RemoveAll(this);
 	Panel->OnUnassignStaffRequested.RemoveAll(this);
+	Panel->OnQueueSettingsRequested.Unbind();
 	// 취소 시 원래 조명으로 되돌리는 이벤트가 필요하므로 연결을 끊기 전에 취소한다.
 	Panel->CancelLightingEdit();
 	Panel->OnLightingRollbackRequested.RemoveAll(this);
@@ -1018,6 +1020,17 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		bReconfigurePhase && bQueueEmpty && Facility.CanMoveOrRemove();
 	OutViewData.bCanMove = bCanModify;
 	OutViewData.bCanRemove = bCanModify;
+	OutViewData.bHasQueueSettings = Spec.UsesServiceQueue() && Spec.QueueRules.MaxWaitingAgents > 0;
+	OutViewData.bCanEditQueueSettings = OutViewData.bHasQueueSettings && bCanModify && !bPauseMenuPresentationSuppressed;
+	OutViewData.QueueSettings = Facility.GetBaseFacilitySpec().QueueSettings;
+	if (!OutViewData.QueueSettings.bEnabled && OutViewData.bHasQueueSettings)
+	{
+		OutViewData.QueueSettings.MaxWaitingTeams = Spec.QueueRules.MaxWaitingAgents;
+		OutViewData.QueueSettings.SlotSpacingCm = Spec.QueueRules.SlotSpacingCm;
+	}
+	OutViewData.QueueSettingsHint = OutViewData.bCanEditQueueSettings
+		? LOCTEXT("QueueSettingsEditable", "이 시설의 대기 정원과 크기를 변경합니다. 공간이 확보되면 즉시 적용됩니다.")
+		: LOCTEXT("QueueSettingsReadOnly", "준비 시간에 시설을 닫고 모든 손님이 퇴장하면 변경할 수 있습니다.");
 
 	// Paid-program state is flattened here so WBP bindings never have to join progression cards,
 	// reservation handles, facility identity, and stage policy on their own.

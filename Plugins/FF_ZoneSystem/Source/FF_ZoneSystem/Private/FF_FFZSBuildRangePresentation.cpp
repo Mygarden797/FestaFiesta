@@ -79,7 +79,18 @@ void FFZSBuildRangePresentation::AppendPlacementRanges(TArray<FBatchedLine>& Lin
                 RegionCorners[Index] * UFFZSDeveloperSettings::DefaultPlacementCellSizeCm, 0.0));
             Corners[Index].Z = SurfaceZ;
         }
+        const int32 FirstLine = Lines.Num();
         AppendOutline(Lines, Corners, Color, bDashed, bAccentCorners, Style, true);
+        if (bAccentCorners)
+        {
+            // Emphasize only the pending facility's exact footprint. The screen-space
+            // renderer adds its dark underlay, separating this border from the grid.
+            for (int32 Index = FirstLine; Index < Lines.Num(); ++Index)
+            {
+                Lines[Index].Thickness = FMath::Max(3.5f, Lines[Index].Thickness + 1.0f);
+                Lines[Index].Color.A = 1.0f;
+            }
+        }
     };
     const auto DrawGroup = [&DrawRect](const TArray<FFFZSOrientedRect>& Rects,
         const FLinearColor& Color, const ERegion Region)

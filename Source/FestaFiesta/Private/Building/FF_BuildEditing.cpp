@@ -6,6 +6,15 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
 
+bool UFF_BuildModeSubsystem::CanUndoBuildEdit() const
+{
+	const auto* Zones=GetZoneSystem(); return Zones && Zones->CanUndoConstruction();
+}
+bool UFF_BuildModeSubsystem::CanRedoBuildEdit() const
+{
+	const auto* Zones=GetZoneSystem(); return Zones && Zones->CanRedoConstruction();
+}
+
 bool UFF_BuildModeSubsystem::UndoBuildEdit()
 {
 	if (bInputSuspendedForPauseMenu || bIsExitingBuildMode || !CanReconfigure() ||
@@ -98,7 +107,7 @@ bool UFF_BuildModeSubsystem::ResetAllFacilityQueuesToDefaults()
 	NotifyBuildToolsInteraction();
 	UFFZSWorldSubsystem* Zones = GetZoneSystem();
 	if (!Zones) return false;
-	// Finish the click-to-move preview first so the bulk authority update cannot
+	// Finish an active move preview first so the bulk authority update cannot
 	// leave a stale ghost targeting an instance that it has just reconfigured.
 	if (State == EFF_BuildModeState::Moving) CancelMovingToBuildMode(TEXT(""));
 	const int64 RevisionBeforeReset = Zones->GetWorldRevision();
@@ -111,7 +120,7 @@ bool UFF_BuildModeSubsystem::ResetAllFacilityQueuesToDefaults()
 	}
 	bPreviewWorldDirty = true;
 	const FString SuccessMessage = Zones->GetWorldRevision() != RevisionBeforeReset
-		? TEXT("모든 대기열을 기본형 · 12팀 · 자리 간격 115cm · 통로 폭 600cm로 통일했습니다. Ctrl+Z로 되돌릴 수 있습니다.")
+		? TEXT("모든 대기열을 기본형 · 6팀 · 자리 간격 115cm · 통로 폭 300cm로 통일했습니다. Ctrl+Z로 되돌릴 수 있습니다.")
 		: TEXT("모든 시설이 이미 공통 대기열 기본값을 사용하고 있습니다.");
 	ShowStatus(Result.bSucceeded ? SuccessMessage : Result.Message.ToString(), !Result.bSucceeded);
 	OnBuildToolsChanged.Broadcast();
