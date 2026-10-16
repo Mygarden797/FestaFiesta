@@ -377,6 +377,7 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 	friend class FFF_UIUtilityFlyoutForegroundTest;
 	friend class FFF_BuildGroupEditingTest;
 	friend class FFF_BuildQueueLayoutDraftTest;
+	friend class FFF_BuildPlacementMemoryTest;
 #endif
 
 public:
@@ -764,10 +765,23 @@ private:
 	FName SelectedFacilityDefinitionId = NAME_None;
 	// 마지막으로 해석한 Zone이자 경계 판정의 안정화 힌트. 등록 Zone을 찾지 못하거나 종료하면 NAME_None이다. 
 	FName CurrentZoneId = NAME_None;
+	// Placement preferences belong to this world, not the facility definition asset.
+	struct FRememberedPlacementPose
+	{
+		FName ZoneId = NAME_None;
+		FFFZSGridPlacement Placement;
+		float WorldYawDegrees = 0.f;
+	};
+	TMap<FName, FRememberedPlacementPose> RememberedPlacementPoses;
+	void RememberPlacementPose();
+	bool RestorePlacementPose();
+	void ApplyPlacementYawDegrees(float YawDegrees);
 	// Move 대상의 안정 ID와 시작 위치. 동일 Zone·배치 커밋을 차단하고 등록 일치를 재검증한다.
 	FGuid MovingFacilityInstanceId;
 	FName MoveOriginZoneId = NAME_None;
 	FFFZSGridPlacement MoveOriginPlacement;
+	bool bAwaitingMovePointerMotion = false;
+	FVector2D MovePointerStartPixels = FVector2D::ZeroVector;
 	// 프리뷰를 재생성해도 하나의 사용자 이동 작업임을 유지하는 상관관계 ID.
 	FGuid MoveTransactionId;
 	// ExecuteCommand가 동기 방송하는 자체 Move 이벤트를 외부 변경과 구분한다.
@@ -914,7 +928,7 @@ private:
 	// 선택 대상을 최신 단계·레지스트리·점유 상태로 재검증한 뒤 권위 Remove 명령을 실행한다.
 	bool ConfirmPendingRemoval();
 	// 현재 선택된 시설을 재검증하고 액터 Spec·GUID·회전을 복사해 Moving을 시작한다.
-	bool StartMovingSelectedFacility();
+	bool StartMovingSelectedFacility(bool bKeepInitialPosition = false);
 	// 원본 시설을 변경하지 않고 프리뷰만 정리한 뒤 BuildMode로 복귀한다.
 	void CancelMovingToBuildMode(const FString& StatusMessage, bool bIsError = false);
 	// 공용 시설 정보 패널의 선택 ID를 기존 건축 명령 경계에서 다시 검증하는 어댑터.

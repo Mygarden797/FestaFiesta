@@ -26,7 +26,7 @@ FFF_BuildPlacementGuidance UFF_BuildModeSubsystem::GetPlacementGuidance(const in
     {
         Result.Title = LOCTEXT("Ready", "배치 가능");
         Result.Advice = bDirectPlacementAdjustment
-            ? LOCTEXT("DirectReady", "화살표로 이동 · 원으로 회전\nEnter 또는 배치 확정으로 설치하세요.")
+            ? LOCTEXT("DirectReady", "위치·회전 유지 · 화살표로 이동 · 원으로 회전\nEnter로 확정 · T로 커서 배치")
             : LOCTEXT("CursorReady", "클릭 / Enter로 확정 · T로 직접 조정");
         return Result;
     }

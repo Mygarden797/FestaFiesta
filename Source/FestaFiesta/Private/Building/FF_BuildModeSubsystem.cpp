@@ -255,6 +255,7 @@ void UFF_BuildModeSubsystem::Deinitialize()
 		}
 	}
 	ResetPlacementSelection();
+	RememberedPlacementPoses.Reset();
 	bSuppressWorldClickUntilReleased = false;
 	bSuppressPlacementConfirmUntilReleased = false;
 	bSuppressBuildToggleUntilReleased = false;
@@ -491,6 +492,7 @@ void UFF_BuildModeSubsystem::SetExternalCatalogPresentationActive(const bool bAc
 
 void UFF_BuildModeSubsystem::SetState(const EFF_BuildModeState NewState)
 {
+	if (State != NewState) { RememberPlacementPose(); }
 	if (State != NewState) { EndDragPlacement(); }
 	if (State == NewState)
 	{
@@ -582,7 +584,7 @@ void UFF_BuildModeSubsystem::EnterBuildMode()
 	SetBuildInputMode(*Controller);
 	// UI 버튼 콜백이 mouse-up에서 오더라도 다음 Tick까지는 같은 클릭을 월드 입력으로 사용하지 않는다.
 	bSuppressWorldClickUntilReleased = true;
-	ShowStatus(TEXT("시설 확인 · 기존 시설을 클릭하면 정보가 열립니다 · B 시설 목록"), false, 2.5f);
+	ShowStatus(TEXT("시설 클릭: 바로 이동 · B 시설 목록 · 우클릭 이동 취소"), false, 2.5f);
 }
 
 void UFF_BuildModeSubsystem::OpenCatalog()
@@ -774,7 +776,8 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 		}
 	}
 
-	// 새 선택은 이전 Zone/원점/검증 결과와 독립적이어야 한다. 선택 스펙만 복사하고 배치 표적은 초기화한다.
+	// Always reload the live definition. Restore only this facility's user pose,
+	// never a prior validation result or a different facility's placement state.
 	EndDragPlacement();
 	SelectedFacilityDefinitionId = FacilityDefinitionId;
 	DismissPlacementFailureFeedback();
@@ -802,8 +805,11 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 		bSuppressPlacementConfirmUntilReleased = true;
 	}
 	// 첫 프레임부터 현재 커서 위치와 회전을 명령에 반영하기 위해 위치 변화 여부와 무관하게 강제 갱신한다.
-	UpdatePlacementFromCursor(true);
-	ShowStatus(TEXT("시설을 놓을 위치를 선택하세요. 회전과 위치 조정은 건축 도구에서 사용할 수 있습니다."));
+	const bool bRestoredPose = RestorePlacementPose();
+	if (!bRestoredPose) UpdatePlacementFromCursor(true);
+	ShowStatus(bRestoredPose
+		? TEXT("마지막 위치와 회전을 유지합니다. 직접 조정 후 Enter로 설치 · T로 커서 배치")
+		: TEXT("시설을 놓을 위치를 선택하세요. 회전과 위치 조정은 건축 도구에서 사용할 수 있습니다."));
 	return PlacementPreview != nullptr;
 }
 
@@ -883,10 +889,19 @@ void UFF_BuildModeSubsystem::RotatePlacementDegrees(const float DeltaDegrees)
 		return;
 	}
 
-	SetPlacementYawDegrees(GetPlacementYawDegrees() + DeltaDegrees);
+	ApplyPlacementYawDegrees(GetPlacementYawDegrees() + DeltaDegrees);
 }
 
 void UFF_BuildModeSubsystem::SetPlacementYawDegrees(const float YawDegrees)
+{
+	if (bInputSuspendedForPauseMenu || !FFBuildModeModel::IsPreviewActive(State) ||
+		!FMath::IsFinite(YawDegrees)) return;
+	// An explicit angle edit owns the current position after the pointer leaves UI.
+	if (bHasPlacementTarget && !bDirectPlacementAdjustment) ToggleDirectPlacementAdjustment();
+	ApplyPlacementYawDegrees(YawDegrees);
+}
+
+void UFF_BuildModeSubsystem::ApplyPlacementYawDegrees(const float YawDegrees)
 {
 	if (bInputSuspendedForPauseMenu)
 	{
@@ -932,6 +947,7 @@ void UFF_BuildModeSubsystem::SetPlacementYawDegrees(const float YawDegrees)
 	}
 	CurrentPlacement.YawCentidegrees = NewYawCentidegrees;
 	CurrentPlacement.QuarterTurns = 0;
+	RememberPlacementPose();
 	// 자유 회전은 매 프레임 이 함수를 호출할 수 있다. 비싼 커서 Trace와 전체 권위 검증을 여기서
 	// 강제하지 않고, 프로젝트 설정의 미리보기 갱신 주기가 가장 최신 각도를 한 번만 반영하게 한다.
 	bPreviewWorldDirty = true;
@@ -1110,11 +1126,18 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 	}
 
 	ShowStatus(FString::Printf(TEXT("%s 설치 완료"), *SelectedSpec.DisplayName.ToString()), false);
+	const bool bKeepAdjustedPose = bDirectPlacementAdjustment;
 	ResetPlacementAssistance();
+	bDirectPlacementAdjustment = bKeepAdjustedPose;
 	DismissPlacementFailureFeedback();
 	// 연속 배치를 지원하므로 성공 후 Placing 상태를 유지한다. 설치로 revision/점유 셀이 바뀌었으므로
 	// 같은 위치의 다음 프리뷰도 즉시 다시 검증한다.
-	UpdatePlacementFromCursor(true);
+	if (bKeepAdjustedPose)
+	{
+		RefreshCurrentPlacementValidation();
+		RefreshPlacementGizmo();
+	}
+	else UpdatePlacementFromCursor(true);
 	return true;
 }
 
@@ -1519,7 +1542,11 @@ void UFF_BuildModeSubsystem::NudgePlacement(const FIntPoint Direction)
 		return;
 	}
 	CurrentPlacement.OriginCell = FIntPoint(static_cast<int32>(X), static_cast<int32>(Y));
+	EndDragPlacement();
+	bDirectPlacementAdjustment = true;
+	bAwaitingMovePointerMotion = false;
 	RefreshCurrentPlacementValidation();
+	RefreshPlacementGizmo();
 }
 
 bool UFF_BuildModeSubsystem::GetPlacementMarkerLocation(FVector& OutLocation) const
@@ -1730,7 +1757,7 @@ void UFF_BuildModeSubsystem::SnapPlacementRotation(const int32 Direction)
 		return;
 	}
 
-	SetPlacementYawDegrees(FFBuildModeModel::ResolveNextSnappedYawDegrees(
+	ApplyPlacementYawDegrees(FFBuildModeModel::ResolveNextSnappedYawDegrees(
 		GetPlacementYawDegrees(),
 		GetPlacementRotationSnapDegrees(),
 		Direction));
@@ -2288,8 +2315,52 @@ void UFF_BuildModeSubsystem::DestroyPlacementPreview()
 	PlacementPreview = nullptr;
 }
 
+void UFF_BuildModeSubsystem::RememberPlacementPose()
+{
+	const UFFZSWorldSubsystem* Zones = GetZoneSystem();
+	if (State != EFF_BuildModeState::Placing || SelectedFacilityDefinitionId.IsNone() ||
+		!bHasPlacementTarget || !Zones || !Zones->FindZone(CurrentZoneId)) return;
+	FRememberedPlacementPose& Pose = RememberedPlacementPoses.FindOrAdd(SelectedFacilityDefinitionId);
+	Pose.ZoneId = CurrentZoneId;
+	Pose.Placement = CurrentPlacement;
+	Pose.WorldYawDegrees = GetPlacementYawDegrees();
+}
+
+bool UFF_BuildModeSubsystem::RestorePlacementPose()
+{
+	if (State != EFF_BuildModeState::Placing || !PlacementPreview) return false;
+	const FRememberedPlacementPose* SavedPose = RememberedPlacementPoses.Find(SelectedFacilityDefinitionId);
+	if (!SavedPose) return false;
+	// Validation and presentation can record the pose again; do not hold a map entry across them.
+	const FRememberedPlacementPose Pose = *SavedPose;
+	UFFZSWorldSubsystem* Zones = GetZoneSystem();
+	const AFFZSGameplayZone* Zone = Zones ? Zones->FindZone(Pose.ZoneId) : nullptr;
+	if (!Zone)
+	{
+		CurrentPlacement.YawCentidegrees = UFFZSGridLibrary::DegreesToYawCentidegrees(Pose.WorldYawDegrees);
+		CurrentPlacement.QuarterTurns = 0;
+		return false;
+	}
+	CurrentZoneId = Pose.ZoneId;
+	CurrentPlacement = Pose.Placement;
+	bHasPlacementTarget = true;
+	bDirectPlacementAdjustment = true;
+	const float RegionYaw = Zones->FindBuildArea() ? Zone->GetActorRotation().Yaw : 0.f;
+	CurrentPlacement.YawCentidegrees = UFFZSGridLibrary::NormalizeYawCentidegrees(
+		UFFZSGridLibrary::DegreesToYawCentidegrees(Pose.WorldYawDegrees - RegionYaw));
+	CurrentPlacement.QuarterTurns = 0;
+	PlacementPreview->SetActorHiddenInGame(false);
+	PlacementPreview->SetPlacementGridSurface(
+		Zones->BuildPlacementTransform(*Zone, SelectedSpec, CurrentPlacement).GetLocation(), FVector::UpVector);
+	// The remembered position is a preference, never permission to bypass current ground/occupancy rules.
+	RefreshCurrentPlacementValidation();
+	RefreshPlacementGizmo();
+	return true;
+}
+
 void UFF_BuildModeSubsystem::ResetPlacementSelection()
 {
+	RememberPlacementPose();
 	EndDragPlacement();
 	ResetPlacementAssistance();
 	SelectedFacilityDefinitionId = NAME_None;
@@ -2308,6 +2379,8 @@ void UFF_BuildModeSubsystem::ResetPlacementSelection()
 
 void UFF_BuildModeSubsystem::ResetMovingSelection()
 {
+	bAwaitingMovePointerMotion = false;
+	MovePointerStartPixels = FVector2D::ZeroVector;
 	MovingFacility.Reset();
 	MovingFacilityInstanceId.Invalidate();
 	MoveOriginZoneId = NAME_None;
@@ -2543,7 +2616,13 @@ bool UFF_BuildModeSubsystem::HandleFacilityInspectionClick(APlayerController& Co
 	const TWeakObjectPtr<AFFZSFacilityActor> RequestedFacility(Facility);
 	if (bEnterFromPreparation) { EnterBuildMode(); }
 	// Re-selecting opens/refreshes the card again, including after a previous panel-load failure.
-	return InspectFacility(RequestedFacility.Get());
+	if (!InspectFacility(RequestedFacility.Get())) return false;
+	Facility = RequestedFacility.Get();
+	if (Facility && CanReconfigure() && Facility->CanMoveOrRemove())
+	{
+		return StartMovingSelectedFacility(true);
+	}
+	return true;
 }
 
 bool UFF_BuildModeSubsystem::ConfirmPendingRemoval()
@@ -2630,7 +2709,7 @@ bool UFF_BuildModeSubsystem::ConfirmPendingRemoval()
 	return true;
 }
 
-bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
+bool UFF_BuildModeSubsystem::StartMovingSelectedFacility(const bool bKeepInitialPosition)
 {
 	if (bInputSuspendedForPauseMenu)
 	{
@@ -2713,7 +2792,20 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
 		bSuppressWorldClickUntilReleased = true;
 		bSuppressPlacementConfirmUntilReleased = true;
 	}
-	UpdatePlacementFromCursor(true);
+	if (bKeepInitialPosition)
+	{
+		bHasPlacementTarget = true;
+		if (APlayerController* Controller = GetLocalPlayerController())
+		{
+			float X = 0.f, Y = 0.f;
+			bAwaitingMovePointerMotion = Controller->GetMousePosition(X, Y);
+			MovePointerStartPixels = FVector2D(X, Y);
+		}
+		PlacementPreview->SetActorHiddenInGame(false);
+		PlacementPreview->SetPlacementGridSurface(Facility->GetActorLocation(), FVector::UpVector);
+		RefreshCurrentPlacementValidation();
+	}
+	else UpdatePlacementFromCursor(true);
 	ShowStatus(TEXT("좌클릭/Enter 이동 · Q/E 회전 · Ctrl 정밀 · Alt 자유 · G 격자 · 우클릭 이동 취소"));
 	return State == EFF_BuildModeState::Moving && PlacementPreview != nullptr;
 }
@@ -2824,6 +2916,18 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 		}
 	}
 
+	if (State == EFF_BuildModeState::Moving && bAwaitingMovePointerMotion)
+	{
+		float X = 0.f, Y = 0.f;
+		if (!bDirectPlacementAdjustment && (!Controller->GetMousePosition(X, Y) ||
+			FVector2D::DistSquared(FVector2D(X, Y), MovePointerStartPixels) <= 1.0))
+		{
+			if (bForceCommandRebuild || FPlatformTime::Seconds() - LastPreviewValidationTimeSeconds >= 0.5)
+				RefreshCurrentPlacementValidation();
+			return false;
+		}
+		bAwaitingMovePointerMotion = false;
+	}
 	// Hovering a tool or typing an angle must not drag the building underneath that UI.
 	if (bDirectPlacementAdjustment || (BuildToolsWidget && FFBuildModeModel::ShouldFreezePlacementTarget(
 		BuildToolsWidget->IsPointerOverTools() || BuildToolsWidget->IsRadialMenuOpen(), BuildToolsWidget->IsEditingAngle())))
@@ -2953,6 +3057,7 @@ void UFF_BuildModeSubsystem::RefreshCurrentPlacementValidation()
 	RebuildPreviewCommand();
 	LastValidation = PlacementPreview->RefreshPreview();
 	LastPreviewValidationTimeSeconds = FPlatformTime::Seconds();
+	RememberPlacementPose();
 	RefreshBuildSynergyPreview();
 	const bool bIsMoving = State == EFF_BuildModeState::Moving;
 	const EFFZSPlacementFailure PrimaryFailure = LastValidation.Reasons.IsEmpty()

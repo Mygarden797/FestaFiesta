@@ -20,7 +20,7 @@ FText UFF_BuildModeGuide::MakeBuildOverviewHelpText()
 		"먼 곳은 커서나 카메라를 옮겨 확인하세요.\n"
 		"[G] 격자 표시/숨기기 · [WASD] 카메라 이동 · [Q/E] 카메라 회전\n"
 		"[TAB] 시점 전환\n"
-		"설치된 시설을 선택해 이동하거나 철거할 수 있습니다.\n"
+		"설치된 시설을 클릭하면 바로 이동할 수 있습니다. 운영 중인 시설은 정보를 확인합니다.\n"
 		"[Ctrl+Z] 실행 취소 · [Ctrl+Y] 다시 실행\n"
 		"시설 선택 후 [7] 기본 · [8] 좌측 · [9] 우측 · [0] U자 대기열");
 }
@@ -35,6 +35,7 @@ FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving, const bool
 			"[Ctrl] 정밀 맞춤 · [Alt] 자유 배치는 첫 시설의 시작 위치에 적용됩니다.\n"
 			"[Q/E] 회전 · [Shift+Q/E] 부드럽게 회전하면 드래그가 끝납니다. 다시 클릭해 시작하세요.\n"
 			"[Enter/배치 확정] 한 개 설치 · [G] 격자 표시/숨기기\n"
+			"직접 조정 후에는 위치와 회전을 유지합니다. [Enter] 확정 · [T] 커서 배치로 돌아가기\n"
 			"[TAB] 시점 전환\n"
 			"[우클릭] 건축모드 UI 다시 표시 (시설 목록으로 돌아가기)\n"
 			"[Ctrl+Z] 실행 취소 · [Ctrl+Y] 다시 실행\n"
@@ -53,6 +54,7 @@ FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving, const bool
 			"[TAB] 시점 전환\n"
 			"[Q/E] 일정 각도로 회전 · [Shift+Q/E] 누르는 동안 부드럽게 회전\n"
 			"[Ctrl] 누르는 동안 정밀 위치 맞춤 · [Alt] 누르는 동안 자유 배치\n"
+			"직접 조정 후에는 위치와 회전을 유지합니다. [Enter] 확정 · [T] 커서 배치로 돌아가기\n"
 			"{0}\n"
 			"[7] 기본 · [8] 좌측 · [9] 우측 · [0] U자 대기열\n"
 			"[Ctrl+Z] 실행 취소 · [Ctrl+Y] 다시 실행\n"
@@ -128,7 +130,7 @@ void UFF_BuildModeGuide::ApplyGuideText()
 	if (!bPlacementPreviewActive)
 	{
 		SetNamedText(TEXT("TXT_GuideRow_2"), LOCTEXT("CameraRotate", "[Q] [E]  카메라 회전"));
-		SetNamedText(TEXT("TXT_GuideRow_3"), LOCTEXT("SelectFacility", "[좌클릭]  철거/이동 대상 선택"));
+		SetNamedText(TEXT("TXT_GuideRow_3"), LOCTEXT("SelectFacility", "[좌클릭]  시설 바로 이동 · 운영 중에는 정보 확인"));
 		SetNamedText(TEXT("TXT_GuideRow_4"), LOCTEXT("OverviewGridAndCancel", "[G] 격자 표시/숨기기 · [우클릭] 선택 취소"));
 		return;
 	}
@@ -161,10 +163,10 @@ void UFF_BuildModeGuide::ApplyGuideText()
 	SetNamedText(
 		TEXT("TXT_GuideRow_4"),
 		bMoving
-			? LOCTEXT("MoveOrCancel", "[좌클릭/Enter]  이동 · [우클릭]  이동 취소")
+			? LOCTEXT("MoveOrCancel", "[좌클릭/Enter] 이동 · 직접 조정 중 [Enter] 확정 · [T] 커서 배치\n[우클릭] 이동 취소")
 			: (bDragPlacement
-				? LOCTEXT("DragInstallOrCatalog", "[좌클릭 누른 채 이동] 연속 설치 · 놓으면 정지\n[우클릭] 건축모드 UI 다시 표시")
-				: LOCTEXT("RepeatInstallOrCatalog", "[좌클릭/Enter] 한 개씩 설치 · [우클릭] 건축모드 UI 다시 표시")));
+				? LOCTEXT("DragInstallOrCatalog", "[좌클릭 누른 채 이동] 연속 설치 · 놓으면 정지\n직접 조정 중 [Enter] 확정 · [T] 커서 배치 · [우클릭] 시설 목록")
+				: LOCTEXT("RepeatInstallOrCatalog", "[좌클릭/Enter] 한 개씩 설치 · 직접 조정 중 [Enter] 확정\n[T] 커서 배치 · [우클릭] 건축모드 UI 다시 표시")));
 }
 
 #undef LOCTEXT_NAMESPACE

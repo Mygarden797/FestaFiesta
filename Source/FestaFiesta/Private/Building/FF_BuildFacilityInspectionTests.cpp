@@ -20,6 +20,7 @@
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "Tests/FF_ProjectZoneTestFixture.h"
@@ -209,6 +210,9 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
     Festival->FestivalId = TEXT("BuildFacilityInspectionAutomation");
     Festival->FacilityCostTable = Costs;
     Festival->InitialGold = 10000;
+    // This fixture adds its own mandatory facility below; unrelated production
+    // defaults would send compact guidance to a missing facility's catalog instead.
+    Festival->RequiredSetupFacilities.Reset();
     Progression->StartFestival(Festival);
 
     const FName ZoneId(FFProjectZoneTest::ZoneId());
@@ -226,6 +230,7 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
         Spec.InstallCostKey = NAME_None;
         FFFZSGridPlacement Placement;
         Placement.OriginCell = FIntPoint(X, 1000);
+        Placement.YawCentidegrees = X == 1000 ? 3725 : 0;
         const FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommand(
             Spec, ZoneId, Placement, Zones->GetWorldRevision());
         const FFFZSCommandResult Result = Zones->ExecuteCommand(Command);
@@ -264,6 +269,18 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
         // Workspace transitions suppress the opening press until a released frame.
         Build->HandleInput(*Controller, InputDeltaSeconds);
     };
+    const auto CancelMove = [&]()
+    {
+        Controller->PlayerInput->InputKey(FInputKeyEventArgs::CreateSimulated(
+            EKeys::RightMouseButton, IE_Pressed, 1.0f));
+        Controller->PlayerInput->InputKey(FInputKeyEventArgs::CreateSimulated(
+            EKeys::RightMouseButton, IE_Released, 0.0f));
+        Controller->PlayerInput->ProcessInputStack(InputStack, InputDeltaSeconds, false);
+        Build->HandleInput(*Controller, InputDeltaSeconds);
+        Controller->PlayerInput->ProcessInputStack(InputStack, InputDeltaSeconds, false);
+        TestEqual(TEXT("Right click returns an automatic move to world building"),
+            Build->GetBuildModeState(), EFF_BuildModeState::BuildMode);
+    };
     // The friend seam seeds only the workspace state. Raw input then follows the same
     // deprojection, selection proxy, registry and WBP path as a delivered gameplay click.
     Build->State = EFF_BuildModeState::BuildMode;
@@ -279,6 +296,41 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("A suppressed opening click cannot select the world behind UI"),
         Info->GetSelectedFacilityId().IsValid());
     QuickClick();
+    TestEqual(TEXT("A world facility click immediately starts its move preview"),
+        Build->GetBuildModeState(), EFF_BuildModeState::Moving);
+    TestEqual(TEXT("Automatic move targets the clicked registered instance"),
+        Build->MovingFacility.Get(), First);
+    TestTrue(TEXT("Automatic move has a valid initial placement target"), Build->bHasPlacementTarget);
+    TestTrue(TEXT("The initial move keeps the source position and arbitrary rotation"),
+        Build->CurrentPlacement == FirstPlacement);
+    if (TestNotNull(TEXT("Automatic move creates a placement preview"), Build->PlacementPreview.Get()))
+    {
+        TestTrue(TEXT("The initial preview command retains the source placement"),
+            Build->PlacementPreview->PreviewCommand.Placement == FirstPlacement);
+        TestEqual(TEXT("The initial preview validates a move instead of a new purchase"),
+            Build->PlacementPreview->PreviewCommand.Type, EFFZSCommandType::Move);
+    }
+    TestEqual(TEXT("The opening click cannot commit a move or charge the player"),
+        Zones->GetWorldRevision(), RevisionBeforeInspection);
+    TestEqual(TEXT("The opening click preserves the festival balance"),
+        Progression->GetGold(), GoldBeforeInspection);
+    TestTrue(TEXT("The source remains authoritative throughout the move preview"),
+        First->GetActorTransform().Equals(FirstTransform));
+    // A stationary cursor must keep the initial anchor through repeated preview ticks.
+    Build->UpdatePlacementFromCursor(true);
+    TestTrue(TEXT("Stationary cursor refresh does not jump to the clicked mesh center"),
+        Build->CurrentPlacement == FirstPlacement);
+    TestTrue(TEXT("Stationary cursor refresh retains a usable original target"), Build->bHasPlacementTarget);
+    CancelMove();
+    TestTrue(TEXT("Cancelling an automatic move preserves the source placement"),
+        First->GetGridPlacement() == FirstPlacement && First->GetActorTransform().Equals(FirstTransform));
+    TestEqual(TEXT("Cancelling a move does not issue an authoritative command"),
+        Zones->GetWorldRevision(), RevisionBeforeInspection);
+
+    // Explicit inspection remains available to staff management and other UI shortcuts.
+    TestTrue(TEXT("Explicit inspection opens the existing facility card"), Build->InspectFacility(First));
+    TestEqual(TEXT("Explicit inspection does not begin an automatic move"),
+        Build->GetBuildModeState(), EFF_BuildModeState::BuildMode);
     TestEqual(TEXT("Existing info subsystem selects the installed instance"), Info->GetSelectedFacilityId(), First->GetFacilityInstanceId());
     TestEqual(TEXT("Inspector uses build context"), Info->GetSelectionContext(), EFF_FacilityInfoContext::Build);
     TArray<UUserWidget*> Panels;
@@ -292,11 +344,9 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
         TestEqual(TEXT("Panel projects selected instance data"), Panel->GetCurrentViewData().FacilityInstanceId,
             First->GetFacilityInstanceId());
     }
-    QuickClick();
-    TestEqual(TEXT("Repeated raw clicks keep the same facility selected"), Info->GetSelectedFacilityId(), First->GetFacilityInstanceId());
+    TestTrue(TEXT("Repeated explicit inspection keeps the same facility selected"), Build->InspectFacility(First));
     TestEqual(TEXT("Repeated inspection never removes the source"), Zones->FindFacility(First->GetFacilityInstanceId()), First);
-    AimAt(Second->SelectionProxy->GetComponentLocation());
-    QuickClick();
+    TestTrue(TEXT("Explicit inspection can switch the selected instance"), Build->InspectFacility(Second));
     TestEqual(TEXT("Info selection switches to the other installed instance"), Info->GetSelectedFacilityId(), Second->GetFacilityInstanceId());
     if (Panel)
     {
@@ -321,8 +371,13 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
     Build->State = EFF_BuildModeState::CatalogOpen;
     AimAt(First->SelectionProxy->GetComponentLocation());
     QuickClick();
-    TestEqual(TEXT("Catalog inspection ends in BuildMode"), Build->GetBuildModeState(), EFF_BuildModeState::BuildMode);
-    TestEqual(TEXT("Catalog inspection opens requested existing instance"), Info->GetSelectedFacilityId(), First->GetFacilityInstanceId());
+    TestEqual(TEXT("A world click from the catalog immediately enters Moving"),
+        Build->GetBuildModeState(), EFF_BuildModeState::Moving);
+    TestEqual(TEXT("Catalog world click moves the requested existing instance"), Build->MovingFacility.Get(), First);
+    TestTrue(TEXT("Catalog world click preserves the original placement"), Build->CurrentPlacement == FirstPlacement);
+    CancelMove();
+    TestTrue(TEXT("Explicit inspection can reopen the card after cancelling a catalog move"),
+        Build->InspectFacility(First));
     TestEqual(TEXT("Every inspection leaves authority revision unchanged"), Zones->GetWorldRevision(), RevisionBeforeInspection);
     TestEqual(TEXT("Every inspection leaves the festival balance unchanged"), Progression->GetGold(), GoldBeforeInspection);
     TestTrue(TEXT("Inspection never moves the source actor"), First->GetActorTransform().Equals(FirstTransform));
@@ -348,10 +403,13 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
         Info->GetSelectedFacilityId().IsValid());
     FestivalController->SetModalUiActive(false);
     QuickClick();
-    TestEqual(TEXT("Clicking an installed facility from the normal preparation screen enters inspection"),
-        Build->GetBuildModeState(), EFF_BuildModeState::BuildMode);
-    TestEqual(TEXT("The first click from the normal preparation screen opens that facility card"),
-        Info->GetSelectedFacilityId(), First->GetFacilityInstanceId());
+    TestEqual(TEXT("Clicking an installed facility from the normal preparation screen enters Moving"),
+        Build->GetBuildModeState(), EFF_BuildModeState::Moving);
+    TestEqual(TEXT("The first preparation-screen click targets that installed facility"),
+        Build->MovingFacility.Get(), First);
+    TestTrue(TEXT("Preparation-screen move begins at the existing position and angle"),
+        Build->CurrentPlacement == FirstPlacement);
+    CancelMove();
 
     // Pause uses a lower CommonUI layer than the viewport toolbar. Exercise the
     // real presenter so a settings/economy refresh cannot reveal it above Options.
@@ -397,6 +455,7 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
         Zones->GetWorldRevision(), RevisionBeforeInspection);
     TestEqual(TEXT("Normal preparation and live input leave the festival balance unchanged"),
         Progression->GetGold(), GoldBeforeInspection);
+
     Stage->CurrentStage = EFF_FestivalStage::Setup;
 
     // Reuse the real viewport/controller fixture to exercise the saved check WBP's
@@ -451,8 +510,23 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("Saved warning has an explicit staff assignment action"), Guidance) ||
         !TestNotNull(TEXT("Warning keeps its own text"), Reason) ||
         !TestNotNull(TEXT("Warning and action share one horizontal row"), ReasonRow)) { return false; }
-    TestTrue(TEXT("The action is placed immediately right of the warning text"),
-        ReasonRow->GetChildAt(0) == Reason && ReasonRow->GetChildAt(1) == Guidance);
+    UWidget* Attention = Check->GetWidgetFromName(TEXT("Border_RequiredAttention"));
+    if (Attention)
+    {
+        UWidget* Copy = Check->GetWidgetFromName(TEXT("VerticalBox_RequiredAttentionCopy"));
+        auto* Content = Cast<UHorizontalBox>(Check->GetWidgetFromName(TEXT("HorizontalBox_RequiredAttentionContent")));
+        if (!TestNotNull(TEXT("Saved attention strip has its title and reason column"), Copy) ||
+            !TestNotNull(TEXT("Saved attention strip has its horizontal content row"), Content)) { return false; }
+        TestTrue(TEXT("The warning reason remains in the attention strip's copy column"),
+            Reason->GetParent() == ReasonRow && ReasonRow->GetParent() == Copy);
+        TestTrue(TEXT("The action is immediately right of the title and warning column"),
+            Content->GetChildAt(0) == Copy && Content->GetChildAt(1) == Guidance);
+    }
+    else
+    {
+        TestTrue(TEXT("The action is placed immediately right of the warning text"),
+            ReasonRow->GetChildAt(0) == Reason && ReasonRow->GetChildAt(1) == Guidance);
+    }
     TestTrue(TEXT("The warning flexes while the action retains its width"),
         CastChecked<UHorizontalBoxSlot>(Reason->Slot)->GetSize().SizeRule == ESlateSizeRule::Fill);
     TestTrue(TEXT("The action occupies only its required width"),
@@ -463,7 +537,23 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
     const int64 RevisionBeforeShortcut = Zones->GetWorldRevision();
     const int32 GoldBeforeShortcut = Progression->GetGold();
     Guidance->OnClicked.Broadcast();
-    TestTrue(TEXT("Warning click opens the build tab synchronously"), Bar->GetSelection().IsSelected(EFF_PrepHudTab::Build));
+    if (Check->UsesCompactLayout())
+    {
+        TestTrue(TEXT("Compact warning opens the staff tab when only staff assignment is missing"),
+            Bar->GetSelection().IsSelected(EFF_PrepHudTab::Staff));
+        TestEqual(TEXT("Compact staff guidance does not start a facility move"),
+            Build->GetBuildModeState(), EFF_BuildModeState::Closed);
+        TestEqual(TEXT("Compact staff guidance leaves facility authority unchanged"),
+            Zones->GetWorldRevision(), RevisionBeforeShortcut);
+        TestEqual(TEXT("Compact staff guidance does not charge or hire staff"),
+            Progression->GetGold(), GoldBeforeShortcut);
+        // Explicit facility actions still use the inspector, independently of the
+        // compact HUD's staff-tab destination and world-click automatic movement.
+        Bar->SelectTab(EFF_PrepHudTab::Build);
+        TestTrue(TEXT("An explicit action inspects the installed staff facility"), Build->InspectFacility(StaffFacility));
+        TestTrue(TEXT("An explicit action opens the selected facility's staff page"), Info->ShowSelectedStaffPage());
+    }
+    TestTrue(TEXT("Facility inspection opens the build tab synchronously"), Bar->GetSelection().IsSelected(EFF_PrepHudTab::Build));
     TestEqual(TEXT("Warning click enters facility inspection"), Build->GetBuildModeState(), EFF_BuildModeState::BuildMode);
     TestEqual(TEXT("Warning click selects the required installed Info facility"),
         Info->GetSelectedFacilityId(), StaffInstall.FacilityInstanceId);
@@ -483,8 +573,62 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
     Bar->SelectTab(EFF_PrepHudTab::Check);
     TestTrue(TEXT("Player can return from assignment to the check panel"), Bar->GetSelection().IsSelected(EFF_PrepHudTab::Check));
     TestFalse(TEXT("Satisfied staffing disables the warning shortcut on reopen"), Guidance->GetIsEnabled());
-    TestEqual(TEXT("Satisfied staffing hides the shortcut and leaves the reason readable"), Guidance->GetVisibility(), ESlateVisibility::Collapsed);
-    TestTrue(TEXT("The reason is separate from the hidden shortcut"), Reason->IsVisible());
+    TestEqual(TEXT("Satisfied staffing hides the completed assignment shortcut"), Guidance->GetVisibility(), ESlateVisibility::Collapsed);
+    if (Check->UsesCompactLayout() && Attention)
+    {
+        auto* Title = Cast<UTextBlock>(Check->GetWidgetFromName(TEXT("Text_RequiredAttentionTitle")));
+        if (!TestNotNull(TEXT("The completed compact attention strip retains its title"), Title)) { return false; }
+        TestEqual(TEXT("Satisfied compact preparation is ready"), Bar->GetCtaState(), EFF_PrepCtaState::Ready);
+        TestEqual(TEXT("The completed compact attention strip remains visible"),
+            Attention->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
+        TestTrue(TEXT("The compact completion title remains visible"), Title->IsVisible());
+        TestEqual(TEXT("The compact strip shows completion once in its title"),
+            Title->GetText().ToString(), FString(TEXT("✓ 필수 준비 완료")));
+        TestEqual(TEXT("The compact completion title replaces the duplicated reason"),
+            Reason->GetVisibility(), ESlateVisibility::Collapsed);
+    }
+    else
+    {
+        TestTrue(TEXT("The reason is separate from the hidden shortcut"), Reason->IsVisible());
+    }
+
+    // Isolate the operational-lock case from the preparation HUD fixture above.
+    Bar->CloseCurrentPanel();
+    Bar->RemoveFromParent();
+    Build->ExitBuildMode();
+    Stage->CurrentStage = EFF_FestivalStage::Live;
+    if (!TestTrue(TEXT("Operational-lock fixture enters its lifecycle phase"),
+        Zones->SetChangePhase(EFFZSChangePhase::LiveOperation))) { return false; }
+    FFFZSCommand OpenCommand;
+    OpenCommand.CommandId = FGuid::NewGuid();
+    OpenCommand.TransactionId = FGuid::NewGuid();
+    OpenCommand.ExpectedWorldRevision = Zones->GetWorldRevision();
+    OpenCommand.Type = EFFZSCommandType::Open;
+    OpenCommand.FacilityInstanceId = First->GetFacilityInstanceId();
+    const FFFZSCommandResult OpenResult = Zones->ExecuteCommand(OpenCommand);
+    if (!TestTrue(*FString::Printf(TEXT("Operational-lock fixture opens: %s"),
+        *OpenResult.Message.ToString()), OpenResult.bSucceeded)) { return false; }
+    TestFalse(TEXT("An active facility cannot move"), First->CanMoveOrRemove());
+    Stage->CurrentStage = EFF_FestivalStage::Setup;
+    if (!TestTrue(TEXT("Operational-lock fixture returns to preparation authority"),
+        Zones->SetChangePhase(EFFZSChangePhase::InitialSetup))) { return false; }
+    const int64 RevisionBeforeLockedClick = Zones->GetWorldRevision();
+    const int32 GoldBeforeLockedClick = Progression->GetGold();
+    Build->EnterBuildMode();
+    AimAt(First->SelectionProxy->GetComponentLocation());
+    QuickClick(); // Release the build-entry suppression before the delivered world press.
+    QuickClick();
+    TestEqual(TEXT("An active facility click opens inspection without starting a move"),
+        Build->GetBuildModeState(), EFF_BuildModeState::BuildMode);
+    TestEqual(TEXT("An active facility remains available for information and operations"),
+        Info->GetSelectedFacilityId(), First->GetFacilityInstanceId());
+    TestEqual(TEXT("The operational lock never submits a move command"),
+        Zones->GetWorldRevision(), RevisionBeforeLockedClick);
+    TestEqual(TEXT("The operational lock does not charge the player"),
+        Progression->GetGold(), GoldBeforeLockedClick);
+    TestTrue(TEXT("The operational lock keeps the original actor transform"),
+        First->GetActorTransform().Equals(FirstTransform));
+    Build->ExitBuildMode();
 
     Info->ClearSelection();
     Build->State = EFF_BuildModeState::Closed;

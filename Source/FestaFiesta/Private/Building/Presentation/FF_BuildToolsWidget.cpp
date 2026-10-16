@@ -1334,8 +1334,8 @@ void UFF_BuildToolsWidget::RefreshTools()
     const bool bDirectHelp = System && System->IsDirectPlacementAdjustment();
     if (Text_BuildHelpPrimary)
         Text_BuildHelpPrimary->SetText(!bPreview
-            ? LOCTEXT("IconHelpInspect", "시설 클릭해 정보 보기")
-            : bDirectHelp ? LOCTEXT("KeyHelpGizmoDrag", "핸들을 드래그해 조정")
+            ? LOCTEXT("IconHelpInspect", "시설 클릭해 바로 이동")
+            : bDirectHelp ? LOCTEXT("KeyHelpGizmoDrag", "핸들 조정 · Enter 확정 · T 위치 다시 선택")
             : ViewData.bDragPlacementEnabled ? LOCTEXT("IconHelpDrag", "드래그로 연속 설치")
             : LOCTEXT("IconHelpPlace", "클릭해 시설 배치"));
     if (Text_BuildHelpRotate)
