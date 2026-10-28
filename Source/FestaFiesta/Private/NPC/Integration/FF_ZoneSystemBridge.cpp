@@ -370,18 +370,10 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	// TODO(예약 필터): reservation_program_spec.md §4.1. `예약 필요` 시설은 그 Party 가 예약을
 	// 갖고 있지 않으면 제외해야 한다. 태그 출처(한광훈)가 정해지면 위 필터 옆에 붙인다.
 
-	// TODO(예약 귀환 안전장치): 판정 함수는 이미 있다
-	// `FFF_ProgramReservationReturnTrip::Evaluate` (별 파일로 파킹, 테스트 6개로 고정).
-	// `EstimatedWaitMinutes` 가 아직 0 이기 때문에 아직 호출하지 않는다.
-	// 0 이면 "줄이 없다"로 계산되어 판정이 낙관적으로 기운다 
-	// Queue 어댑터 결선(= 그 값이 실제 값이 되는 시점) 후에 잇는다.
-	//
-	// [붙이는 방법]
-	// 위 카테고리·상태 필터 옆에서 Party 의 예약 정보를 받아 `bCanReturnInTime == false` 인 후보를 제외한다. 
-	// 보행 속도는 계수 `npc_walk_speed_mps`(1.5)를 쓴다 — 출처는 crowdAI 의 `FUnitData::Speed` 150 cm/s 다. 
-	// 개체 변주 `WalkSpeedMultiplier` 가 결선되면(지금은 만들기만 하고 소비하는 곳이 0곳이다) 그 배수를 곱한다.
-	// 그때까지는 2차 안전장치(하드 데드라인, L3 소관)만으로 동작한다.
-	
+	// 예약 귀환 판정(`FFF_ProgramReservationReturnTrip::Evaluate`)은 여기서 하지 않는다.
+	// 대기 시간이 채워진 뒤라야 판정이 낙관적으로 기울지 않으므로, Queue 대기를 병합한 다음
+	// UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision 이 후보를 거른다.
+
 	return Candidates;
 }
 

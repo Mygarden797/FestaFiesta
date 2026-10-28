@@ -33,11 +33,11 @@ struct FFF_FinaleTier
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale")
 	EFF_FinaleGrade Grade = EFF_FinaleGrade::None;
 
-	// 구매 비용 (Gold). 기획서 §10: C/B/A/S = 2,000 / 4,000 / 6,000 / 8,000
+	// 구매 비용 (Gold). 값은 UFF_FestivalDefinition 생성자의 FinaleTiers 가 정한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale", meta = (ClampMin = "0"))
 	int32 CostGold = 0;
 
-	// ScoreSatisfaction 가산값 (0~100 척도). 기획서 §10: C/B/A/S = +5 / +12 / +20 / +30
+	// ScoreSatisfaction 가산값 (0~100 척도). 값은 CostGold 와 같은 곳에서 정한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale", meta = (ClampMin = "0"))
 	int32 SatisfactionBonus = 0;
 };

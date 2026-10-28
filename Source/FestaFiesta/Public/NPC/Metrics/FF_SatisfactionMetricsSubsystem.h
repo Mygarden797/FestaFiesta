@@ -15,6 +15,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSimSatisfactionChanged, int32,
  * 만족도 산출 계수.
  * UtilityCoefficient DataTable(`FFF_UtilityCoefficientRow`)에서 개별 행으로 로드하며,
  * 테이블이 없거나 행이 없으면 여기 적힌 기본값으로 대체한다.
+ * 기본값은 폴백일 뿐이다 — 게임이 쓰는 가중치는 표의 satisfaction_weight_* 행이고, 1단계·개인 부합도 축은 기본값과 다르다.
  *
  * === 2단 계층 구조 ===
  * 대기·밀도·취향매칭·Need 충족도 네 입력을 평평하게 한 번에 섞지 않고, 두 축으로 먼저 묶는다. 
