@@ -35,6 +35,9 @@ public:
 	/** 패널 위 클릭이 뒤쪽 월드 시설의 선택으로도 처리되지 않도록 마우스 위치를 검사한다. */
 	bool IsPointerOverStrip() const;
 
+	/** Return camera focus once the preset popup closes, without interrupting text entry. */
+	void UpdatePresetMenuFocus();
+
 	/** Reusable card WBP. Its layout, font and thumbnail surface are authored in Designer. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Multi Selection|Presentation")
 	TSoftClassPtr<UUserWidget> SelectedFacilityCardClass;
@@ -77,6 +80,7 @@ private:
 	UFUNCTION() void HandleSavePreset();
 	UFUNCTION() void HandleLoadPreset();
 	UFUNCTION() void HandleDeletePreset();
+	UFUNCTION() void HandlePresetMenuOpening();
 	UFUNCTION() UWidget* GeneratePresetOption(FString Name);
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_MoveGroup;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_DuplicateGroup;
@@ -94,6 +98,7 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_MultiSelectionDesignerHint;
 	TArray<FString> DisplayedPresetNames;
 	bool bPresetOptionsInitialized = false;
+	bool bPresetMenuWasOpen = false;
 
 	TWeakObjectPtr<UFF_BuildModeSubsystem> BuildMode;
 	TWeakObjectPtr<UFF_BuildCatalogSubsystem> Catalog;

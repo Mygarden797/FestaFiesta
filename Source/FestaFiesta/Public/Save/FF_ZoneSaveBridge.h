@@ -39,6 +39,17 @@ struct FFF_ZoneFacilitySave
 	// 돈을 내고 올린 강화 단계. 되돌릴 때 같은 단계까지 다시 밟는다(비용 없이).
 	UPROPERTY()
 	int32 UpgradeLevel = 1;
+
+	// Missing fields preserve the original authored queue geometry of old saves;
+	// an explicitly disabled setting in a new save is distinguishable and retained.
+	UPROPERTY()
+	bool bHasQueueConfiguration = false;
+
+	UPROPERTY()
+	EFFZSQueueLayout QueueLayout = EFFZSQueueLayout::Authored;
+
+	UPROPERTY()
+	FFFZSQueueSettings QueueSettings;
 };
 
 USTRUCT()

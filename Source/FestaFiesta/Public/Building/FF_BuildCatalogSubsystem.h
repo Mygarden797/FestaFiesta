@@ -137,6 +137,7 @@ private:
 	friend class FFF_BuildCatalogLoadingScreenThumbnailHandleTest;
 	friend class FFF_BuildDragPlacementTest;
 	friend class FFF_BuildQueueLayoutDraftTest;
+	friend class FFF_BuildPlacementMemoryTest;
 	friend class FFF_PrepProgramFacilityNavigationTest;
 #endif
 

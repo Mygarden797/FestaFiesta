@@ -55,7 +55,7 @@ namespace FFBuildModeGuideWbpBuilder
 			{TEXT("카메라"), TEXT("카메라 이동 · 일시정지 · [TAB] 시점 전환")},
 			{TEXT("격자:"), TEXT("주변의 빈 건축 공간 · 막힌 곳은 표시하지 않아요")},
 			{TEXT("[Q] [E]"), TEXT("카메라 회전")},
-			{TEXT("[좌클릭]"), TEXT("철거/이동 대상 선택")},
+			{TEXT("[좌클릭]"), TEXT("시설정보 · 누른 채 드래그 이동")},
 			{TEXT("[G]"), TEXT("격자 표시/숨기기 · [우클릭] 선택 취소")},
 		};
 

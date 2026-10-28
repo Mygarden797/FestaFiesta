@@ -337,6 +337,33 @@ struct FF_ZONESYSTEM_API FFFZSQueueRules
     // 차단 구간의 시간 기반 요청과 에이전트별 이동 실패 재시도에 적용되는 최대 횟수다. 0은 재시도하지 않는다.//
 };
 
+/** Player-owned queue geometry. Disabled preserves authored assets and old saved layouts. */
+USTRUCT(BlueprintType)
+struct FF_ZONESYSTEM_API FFFZSQueueSettings
+{
+    GENERATED_BODY()
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue")
+    bool bEnabled = false;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "1", ClampMax = "512"))
+    int32 MaxWaitingTeams = 6;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "90", ClampMax = "1000", Units = "cm"))
+    float SlotSpacingCm = 115.0f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "100", ClampMax = "1000", Units = "cm"))
+    float LaneWidthCm = 300.0f;
+
+    bool IsValid(TArray<FText>& OutErrors) const;
+    bool operator==(const FFFZSQueueSettings& Other) const
+    {
+        return bEnabled == Other.bEnabled && (!bEnabled ||
+            (MaxWaitingTeams == Other.MaxWaitingTeams && SlotSpacingCm == Other.SlotSpacingCm && LaneWidthCm == Other.LaneWidthCm));
+    }
+    bool operator!=(const FFFZSQueueSettings& Other) const { return !(*this == Other); }
+};
+
 USTRUCT(BlueprintType)
  // 1 cm 정수 격자에서 [Min, Max) 반열림 구간으로 표현하는 축 정렬 사각형이다.
  // 셀을 수십만 개의 FIntPoint로 펼치지 않고 네 정수만 저장하므로 600 cm x 300 cm 시설도
@@ -624,6 +651,9 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Queue")
     EFFZSQueueLayout QueueLayout = EFFZSQueueLayout::Authored;
 
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue")
+    FFFZSQueueSettings QueueSettings;
+
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Queue Rules", ToolTip = "대기 정원·슬롯 간격·동시 서비스 수·처리 시간·이탈·내비 재시도 규칙입니다."))
     FFFZSQueueRules QueueRules;
 
@@ -697,13 +727,16 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
         return Category == EFFZSFacilityCategory::Road || Category == EFFZSFacilityCategory::Tile;
     }
 
-    /** Passive infrastructure reserves only its physical footprint. */
+    /** The scheduled main stage uses its independent audience venue, never a FIFO service queue. */
+    bool IsAudienceOnlyVenue() const;
+
+    /** Passive infrastructure and the audience-only main stage do not run service queues. */
     bool UsesServiceQueue() const
     {
-        return Category != EFFZSFacilityCategory::Lighting && !IsGroundSurface();
+        return Category != EFFZSFacilityCategory::Lighting && !IsGroundSurface() && !IsAudienceOnlyVenue();
     }
 
-    /** Clear retired safety margins on every facility and obsolete service geometry on passive facilities. */
+    /** Clear retired safety margins and obsolete FIFO geometry; retain the main stage's independent audience. */
     void NormalizeNonServiceGeometry();
 
     bool AllowsFacilityPlacementOnTop() const
@@ -926,6 +959,12 @@ struct FF_ZONESYSTEM_API FFFZSCommand
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Command|Queue")
     EFFZSQueueLayout QueueLayout = EFFZSQueueLayout::Authored;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Command|Queue")
+    bool bChangeQueueSettings = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Command|Queue")
+    FFFZSQueueSettings QueueSettings;
 
     // Upgrade payload: absolute values relative to the original installation spec.
     // Other command types ignore these fields and keep their existing fingerprint.

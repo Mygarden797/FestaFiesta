@@ -380,15 +380,22 @@ bool AFFZSFacilityActor::ApplyUpgradeState(const int32 NewLevel, const float New
 
 bool AFFZSFacilityActor::ApplyQueueLayout(const EFFZSQueueLayout Layout)
 {
+    return ApplyQueueSettings(GetBaseFacilitySpec().QueueSettings, Layout);
+}
+
+bool AFFZSFacilityActor::ApplyQueueSettings(const FFFZSQueueSettings& Settings, const EFFZSQueueLayout Layout)
+{
     if (!FacilitySpec.UsesServiceQueue() || !CanMoveOrRemove() || !QueueComponent || QueueComponent->IsOccupied())
     {
         return false;
     }
     FFFZSFacilitySpec NewBase = GetBaseFacilitySpec();
     NewBase.QueueLayout = Layout;
+    NewBase.QueueSettings = Settings;
+    TArray<FText> Errors;
+    if (!NewBase.IsValid(Errors)) return false;
     FFFZSFacilitySpec EffectiveSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
         NewBase, UpgradeLevel, UpgradeSizeMultiplier);
-    TArray<FText> Errors;
     if (!EffectiveSpec.IsValid(Errors))
     {
         return false;
@@ -398,6 +405,7 @@ bool AFFZSFacilityActor::ApplyQueueLayout(const EFFZSQueueLayout Layout)
     BaseFacilitySpec = MoveTemp(NewBase);
     FacilitySpec = MoveTemp(EffectiveSpec);
     RebuildRuntimePresentation();
+    QueueComponent->Configure(GetEffectiveQueueRules());
     // Preserve completed/abandoned queue statistics; only its spatial targets changed.
     SetNavigationObstacleEnabled(bNavigationWasEnabled);
     return true;

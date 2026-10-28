@@ -232,7 +232,7 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, CodexWidgets, UFF_FacilityCodexScreen::StaticClass(), true);
 	TestEqual(TEXT("Repeated open creates only one screen"), CodexWidgets.Num(), 1);
 	auto* InspectorExit = Cast<UButton>(OpenScreen->GetWidgetFromName(TEXT("Button_ExitCodex")));
-	if (!TestNotNull(TEXT("Inspector-launched codex has a real X button"), InspectorExit)) return false;
+	if (!TestNotNull(TEXT("Inspector-launched codex has a real back button"), InspectorExit)) return false;
 	InspectorExit->OnClicked.Broadcast();
 	Presenter->CloseCodex();
 	TestFalse(TEXT("Repeated close removes the surface"), Presenter->IsCodexOpen());
@@ -314,10 +314,19 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 		if (!TestNotNull(TEXT("Catalog-launched codex screen"), CatalogCodex)) return false;
 		TestEqual(TEXT("Catalog search never becomes an implicit codex filter"),
 			CatalogCodex->GetVisibleEntryCount(), Codex->GetEntriesView().Num());
-		if (!Codex->GetEntriesView().IsEmpty()) CatalogCodex->OpenCombinationDetail(Codex->GetEntriesView()[0].RuleId);
+		if (!TestTrue(TEXT("Catalog-launched codex has a recipe for back navigation"), !Codex->GetEntriesView().IsEmpty())) return false;
+		CatalogCodex->OpenCombinationDetail(Codex->GetEntriesView()[0].RuleId);
+		if (!TestTrue(TEXT("Catalog-launched codex opens a recipe detail"), CatalogCodex->IsCombinationDetailOpen())) return false;
 		auto* CatalogExit = Cast<UButton>(CatalogCodex->GetWidgetFromName(TEXT("Button_ExitCodex")));
-		if (!TestNotNull(TEXT("Catalog-launched codex detail has a real X button"), CatalogExit)) return false;
+		if (!TestNotNull(TEXT("Catalog-launched codex detail has a real back button"), CatalogExit)) return false;
 		CatalogExit->OnClicked.Broadcast();
+		TestFalse(TEXT("First back returns to the codex list"), CatalogCodex->IsCombinationDetailOpen());
+		TestTrue(TEXT("Detail back retains the codex session"), Presenter->IsCodexOpen());
+		TestTrue(TEXT("Detail back keeps catalog input suspended"), Build->IsInputSuspendedForPauseMenu());
+		TestTrue(TEXT("Detail back keeps game viewport input blocked"), Viewport->IgnoreInput());
+		TestEqual(TEXT("Detail back keeps the original catalog hidden"), Prep->GetVisibility(), ESlateVisibility::Hidden);
+		CatalogExit->OnClicked.Broadcast();
+		TestFalse(TEXT("Second back leaves the codex for the original catalog"), Presenter->IsCodexOpen());
 		TestTrue(TEXT("Advance catalog close restoration"), AdvanceFrame());
 		TestFalse(TEXT("Catalog input resumes after closing codex"), Build->IsInputSuspendedForPauseMenu());
 		TestEqual(TEXT("Closing codex returns to the same catalog state"), Build->GetBuildModeState(), EFF_BuildModeState::CatalogOpen);

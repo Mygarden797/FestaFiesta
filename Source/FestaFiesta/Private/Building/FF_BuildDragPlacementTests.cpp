@@ -1,7 +1,7 @@
 // FF_BuildDragPlacementTests.cpp
-// 역할: 다음 기능의 정상 동작과 오류 처리를 자동 검사한다: 마우스로 그린 경로를 중복 없이 제한된 작업량으로 연속 설치한다.
+// 역할: 드래그 미리보기 중 가능한 위치만 해제 시 한 번에 설치하고 취소하는 동작을 검사한다.
 
-// Exercises drag input through the real installation, occupancy and economy boundaries.
+// Exercises deferred drag proposals through the real installation, occupancy and economy boundaries.
 // Only cursor sampling and initial selection are seeded; no install result is mocked.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
@@ -29,6 +29,7 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "Tests/FF_ProjectZoneTestFixture.h"
+#include "Tests/FF_FFZSTestFixtures.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Framework/Application/SlateApplication.h"
@@ -127,7 +128,7 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
 
     // GameInstance initialization starts production discovery immediately. Invalidate
     // its callbacks before cancellation, exactly as RefreshCatalog does, so a late
-    // async completion cannot replace the isolated four-definition test catalog.
+    // async completion cannot replace the isolated test catalog.
     FFBuildCatalogModel::BeginNextRequest(Catalog->RequestGeneration);
     if (Catalog->ActiveLoadHandle.IsValid() && !Catalog->ActiveLoadHandle->HasLoadCompleted())
     {
@@ -185,6 +186,8 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     TStrongObjectPtr<UFFZSFacilityDefinition> Rectangle(NewObject<UFFZSFacilityDefinition>());
     TStrongObjectPtr<UFFZSFacilityDefinition> Single(NewObject<UFFZSFacilityDefinition>());
     TStrongObjectPtr<UFFZSFacilityDefinition> Limited(NewObject<UFFZSFacilityDefinition>());
+    TStrongObjectPtr<UFFZSFacilityDefinition> Small(NewObject<UFFZSFacilityDefinition>());
+    TStrongObjectPtr<UFFZSFacilityDefinition> Queued(NewObject<UFFZSFacilityDefinition>());
     Road->Spec = MakeRoadSpec(TEXT("Road_Surface_DragTest"), FIntPoint(400, 400));
     Road->bEnableDragPlacement = true;
     Rectangle->Spec = MakeRoadSpec(TEXT("Road_Surface_RectangleTest"), FIntPoint(400, 200));
@@ -193,12 +196,18 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     Limited->Spec = MakeRoadSpec(TEXT("Road_Surface_LimitedTest"), FIntPoint(400, 400));
     Limited->Spec.MaxInstancesPerWorld = 2;
     Limited->bEnableDragPlacement = true;
+    Small->Spec = MakeRoadSpec(TEXT("Road_Surface_LongStrokeTest"), FIntPoint(40, 40));
+    Small->bEnableDragPlacement = true;
+    Queued->Spec = FFZSTest::MakeValidFacilitySpec();
+    Queued->Spec.FacilityDefinitionId = TEXT("Booth_Queued_DragTest");
+    Queued->Spec.InstallCostKey = TEXT("Cost.Road.Default");
+    Queued->bEnableDragPlacement = true;
 
     // Use a private dynamic type so catalog validation runs without changing production assets.
     const FPrimaryAssetType TestType(*FString::Printf(TEXT("FFBuildDragTest_%s"),
         *FGuid::NewGuid().ToString(EGuidFormats::Digits)));
     ON_SCOPE_EXIT { Assets->RemovePrimaryAssetType(TestType); };
-    for (UFFZSFacilityDefinition* Definition : { Road.Get(), Rectangle.Get(), Single.Get(), Limited.Get() })
+    for (UFFZSFacilityDefinition* Definition : { Road.Get(), Rectangle.Get(), Single.Get(), Limited.Get(), Small.Get(), Queued.Get() })
     {
         const FPrimaryAssetId AssetId(TestType, Definition->Spec.FacilityDefinitionId);
         if (!TestTrue(TEXT("Transient definition registers"), Assets->AddDynamicAsset(
@@ -209,7 +218,7 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
         Catalog->RequestedAssetIds.Add(AssetId);
     }
     Catalog->RebuildCatalogFromLoadedAssets();
-    if (!TestEqual(TEXT("All authored definitions pass production catalog validation"), Catalog->GetEntriesView().Num(), 4))
+    if (!TestEqual(TEXT("All authored definitions pass production catalog validation"), Catalog->GetEntriesView().Num(), 6))
     {
         return false;
     }
@@ -220,6 +229,8 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
         Build->State = EFF_BuildModeState::Placing;
         Build->SelectedFacilityDefinitionId = Definition->Spec.FacilityDefinitionId;
         Build->SelectedSpec = Definition->Spec;
+        Build->PendingQueueLayout = Definition->Spec.QueueLayout;
+        Build->PendingQueueSettings = Definition->Spec.QueueSettings;
         Build->CurrentZoneId = ZoneId;
         Build->CurrentPlacement = FFFZSGridPlacement();
         Build->CurrentPlacement.OriginCell = Origin;
@@ -236,8 +247,8 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     };
     const auto Drain = [&]()
     {
-        // No wall-clock assumption: every pass may do as little as one authority command.
-        for (int32 Pass = 0; Pass < 64; ++Pass)
+        // No wall-clock assumption: every pass may prepare as little as one preview position.
+        for (int32 Pass = 0; Pass < 256; ++Pass)
         {
             Build->ProcessDragPlacement();
         }
@@ -247,57 +258,19 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
         return Zones->CountFacilitiesByDefinitionId(Definition->Spec.FacilityDefinitionId);
     };
 
-    // The ghost follows every sampled target without spending money or running the
-    // expensive preview policy pass. Its old verdict must not color the new target.
-    {
-        SelectAt(Road.Get(), FIntPoint(1000, 1000));
-        Build->RefreshCurrentPlacementValidation();
-        AFFZSPlacementPreviewActor* Preview = Build->PlacementPreview.Get();
-        TestTrue(TEXT("Initial preview is validated"), Build->LastValidation.bIsValid);
-        const FTransform ValidatedTransform = Build->LastValidation.PlacementTransform;
-        const FGuid ValidatedCommandId = Preview->PreviewCommand.CommandId;
-        const double ValidatedTime = Build->LastPreviewValidationTimeSeconds;
-        const int64 PreviewRevision = Zones->GetWorldRevision();
-        const int32 PreviewGold = Economy->GetGold();
-        Build->BeginDragPlacement(true);
-        for (const int32 X : { 1400, 1800, 2200 })
-        {
-            const FVector Cursor = CursorAt(FIntPoint(X, 1000));
-            Preview->SetPlacementGridSurface(Cursor + FVector(0, 0, 37), FVector::UpVector);
-            Build->UpdateDragPlacement(Cursor);
-            Build->RefreshDragPlacementPreview(false, false);
-            TestTrue(TEXT("Ghost follows the latest snapped center before periodic validation"),
-                Preview->GetActorLocation().Equals(Cursor + FVector(0, 0, 37), 0.01));
-            TestTrue(TEXT("A moved target is explicitly awaiting validation"), Preview->HasUnvalidatedPreviewTransform());
-            TestFalse(TEXT("An unvalidated target never keeps the previous success stencil"), Preview->PreviewMesh->bRenderCustomDepth);
-            TestEqual(TEXT("Old validated range geometry is removed"), Preview->RangeLines->BatchedLines.Num(), 0);
-        }
-        TestEqual(TEXT("Pose updates retain the validated command"), Preview->PreviewCommand.CommandId, ValidatedCommandId);
-        TestEqual(TEXT("Pose updates do not run preview validation"), Build->LastPreviewValidationTimeSeconds, ValidatedTime);
-        TestTrue(TEXT("Build validation remains attached to the previous validated pose"),
-            Build->LastValidation.PlacementTransform.Equals(ValidatedTransform));
-        TestTrue(TEXT("Actor validation remains attached to the previous validated pose"),
-            Preview->GetLastValidation().PlacementTransform.Equals(ValidatedTransform));
-        Build->RefreshDragPlacementPreview(false);
-        TestFalse(TEXT("Periodic refresh validates the latest pose even though CurrentPlacement already moved"),
-            Preview->HasUnvalidatedPreviewTransform());
-        TestEqual(TEXT("Periodic refresh rebuilds the command at the latest sampled origin"),
-            Preview->PreviewCommand.Placement.OriginCell, FIntPoint(2200, 1000));
-        TestTrue(TEXT("Periodic refresh restores the authoritative ground height and pose"),
-            Preview->GetActorTransform().Equals(Build->LastValidation.PlacementTransform));
-        TestTrue(TEXT("Periodic refresh restores validated feedback"), Preview->PreviewMesh->bRenderCustomDepth);
-        TestTrue(TEXT("Periodic refresh restores current footprint geometry"), Preview->RangeLines->BatchedLines.Num() > 0);
-        TestEqual(TEXT("Presentation never changes the world revision"), Zones->GetWorldRevision(), PreviewRevision);
-        TestEqual(TEXT("Presentation never spends gold"), Economy->GetGold(), PreviewGold);
-        Build->EndDragPlacement();
-    }
+    TestEqual(TEXT("New placement sessions preserve connected roads by default"), Build->GetDragPlacementGapCm(), 0);
+    Build->SetDragPlacementGapCm(-100);
+    TestEqual(TEXT("Negative spacing cannot create overlapping pitch"), Build->GetDragPlacementGapCm(), 0);
+    Build->SetDragPlacementGapCm(1001);
+    TestEqual(TEXT("Spacing is bounded to ten metres"), Build->GetDragPlacementGapCm(), 1000);
+    Build->SetDragPlacementGapCm(0);
 
     SelectAt(Single.Get(), FIntPoint(3000, 1000));
     TestFalse(TEXT("Existing definitions remain single-click by default"), Build->IsDragPlacementEnabled());
     Build->BeginDragPlacement();
     Build->UpdateDragPlacement(CursorAt(FIntPoint(4200, 1000)));
     Drain();
-    TestEqual(TEXT("Opted-out definition never installs through drag"), Count(Single.Get()), 0);
+    TestEqual(TEXT("Opted-out definitions never stage purchases through drag"), Count(Single.Get()), 0);
 
     // Exercise a genuine PlayerInput press edge, including a click released before
     // the next frame. The isolated driver world has no viewport: the delivered
@@ -386,139 +359,83 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     Build->State = EFF_BuildModeState::Moving;
     Build->BeginDragPlacement();
     Drain();
-    TestEqual(TEXT("Moving an existing facility cannot begin a purchase stroke"), Count(Road.Get()), 0);
+    TestFalse(TEXT("Moving an existing facility cannot start a purchase stroke"), Build->DragPlacementSession.IsValid());
+    TestEqual(TEXT("Moving never purchases a facility"), Count(Road.Get()), 0);
 
+    // A held gesture is only a proposal. Nothing in the registry, occupancy,
+    // construction history or wallet changes until its one release operation.
     SelectAt(Road.Get(), FIntPoint(1000, 1000));
-    TestTrue(TEXT("Data-asset opt-in enables drag"), Build->IsDragPlacementEnabled());
-    const int32 GoldBeforeLine = Economy->GetGold();
-    const int64 RevisionBeforeLine = Zones->GetWorldRevision();
+    const int32 GoldBeforeStroke = Economy->GetGold();
+    const int64 RevisionBeforeStroke = Zones->GetWorldRevision();
     Build->RefreshCurrentPlacementValidation();
     Build->HandlePlacementPrimaryPress(true);
-    TestEqual(TEXT("Press installs the first tile exactly once"), Count(Road.Get()), 1);
-    TestTrue(TEXT("Holding left click starts the opted-in drag session"), Build->DragPlacementSession.IsValid());
-    for (int32 Frame = 0; Frame < 16; ++Frame)
+    TestTrue(TEXT("Held press starts a preview session"), Build->DragPlacementSession.IsValid());
+    TestEqual(TEXT("The first held preview does not purchase its origin"), Count(Road.Get()), 0);
+    for (const int32 X : { 1000, 1400, 1800, 2200, 1400, 2200 })
     {
-        Build->UpdateDragPlacement(CursorAt(FIntPoint(1000, 1000)));
-        Build->ProcessDragPlacement();
+        Build->UpdateDragPlacement(CursorAt(FIntPoint(X, 1000)));
+        Drain();
+        Build->RefreshDragPlacementPreview(false, false);
     }
-    TestEqual(TEXT("Holding still never repeats the initial authority commit"),
-        Zones->GetWorldRevision(), RevisionBeforeLine + 1);
-    TestEqual(TEXT("Holding still never repeats the initial charge"), Economy->GetGold(), GoldBeforeLine - InstallCost);
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(2200, 1000)));
-    Drain();
-    TestEqual(TEXT("Fast cursor movement fills all four footprint-spaced tiles"), Count(Road.Get()), 4);
-    TestEqual(TEXT("Every tile is a real authority commit"), Zones->GetWorldRevision(), RevisionBeforeLine + 4);
-    TestEqual(TEXT("Every successful tile pays exactly one install cost"), Economy->GetGold(), GoldBeforeLine - 4 * InstallCost);
-    TSet<FGuid> LineIds;
-    for (int32 X = 1000; X <= 2200; X += 400)
-    {
-        AFFZSFacilityActor* Tile = Zones->FindFacilityAtWorldPoint(CursorAt(FIntPoint(X, 1000)), ZoneId);
-        if (TestNotNull(TEXT("Each interpolated tile is independently registered"), Tile))
-        {
-            TestEqual(TEXT("Installed footprint uses centimetre coordinates"), Tile->GetGridPlacement().OriginCell, FIntPoint(X, 1000));
-            LineIds.Add(Tile->GetFacilityInstanceId());
-        }
-    }
-    TestEqual(TEXT("Separate tiles have separate stable instance IDs"), LineIds.Num(), 4);
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(1000, 1000)));
-    Drain();
-    TestEqual(TEXT("Backtracking does not add duplicate purchases"), Economy->GetGold(), GoldBeforeLine - 4 * InstallCost);
-    TestEqual(TEXT("Backtracking does not change authority revision"), Zones->GetWorldRevision(), RevisionBeforeLine + 4);
+    TestEqual(TEXT("All sampled ghosts remain outside the facility registry"), Count(Road.Get()), 0);
+    TestEqual(TEXT("Previewing and retracing do not spend money"), Economy->GetGold(), GoldBeforeStroke);
+    TestEqual(TEXT("Previewing and retracing do not change world revision"), Zones->GetWorldRevision(), RevisionBeforeStroke);
+    TestTrue(TEXT("Release installs the complete deduplicated proposal"), Build->CommitDragPlacement());
+    TestFalse(TEXT("Release ends the staged session"), Build->DragPlacementSession.IsValid());
+    TestEqual(TEXT("Four preview positions become four facilities"), Count(Road.Get()), 4);
+    TestEqual(TEXT("Release charges each distinct preview exactly once"), Economy->GetGold(), GoldBeforeStroke - 4 * InstallCost);
+    TestEqual(TEXT("Only release publishes the four construction changes"), Zones->GetWorldRevision(), RevisionBeforeStroke + 4);
+    TestEqual(TEXT("Successful release retains continuous placement mode"), Build->GetBuildModeState(), EFF_BuildModeState::Placing);
+    TestNotNull(TEXT("The next cursor preview survives release"), Build->PlacementPreview.Get());
+    TestFalse(TEXT("A duplicate release cannot install the proposal twice"), Build->CommitDragPlacement());
+    TestEqual(TEXT("Duplicate release does not charge twice"), Economy->GetGold(), GoldBeforeStroke - 4 * InstallCost);
+    TestTrue(TEXT("One undo removes the entire released proposal"), Build->UndoBuildEdit());
+    TestEqual(TEXT("All four facilities are removed by one undo"), Count(Road.Get()), 0);
+    TestEqual(TEXT("One undo refunds the complete proposal"), Economy->GetGold(), GoldBeforeStroke);
+    TestTrue(TEXT("One redo restores the entire released proposal"), Build->RedoBuildEdit());
+    TestEqual(TEXT("Redo restores four facilities"), Count(Road.Get()), 4);
+    TestEqual(TEXT("Redo charges the proposal exactly once"), Economy->GetGold(), GoldBeforeStroke - 4 * InstallCost);
 
+    // A press and release delivered in the same input frame stays one click.
     SelectAt(Road.Get(), FIntPoint(4200, 1000));
     Build->RefreshCurrentPlacementValidation();
-    const int32 GoldBeforeRoadClick = Economy->GetGold();
-    const int64 RevisionBeforeRoadClick = Zones->GetWorldRevision();
     Build->HandlePlacementPrimaryPress(false);
-    TestEqual(TEXT("Quick click also installs an opted-in road"), Count(Road.Get()), 5);
-    TestEqual(TEXT("Opted-in quick click charges one tile"), Economy->GetGold(), GoldBeforeRoadClick - InstallCost);
-    TestEqual(TEXT("Opted-in quick click commits one tile"), Zones->GetWorldRevision(), RevisionBeforeRoadClick + 1);
-    TestFalse(TEXT("Opted-in quick click does not outlive the released button"), Build->DragPlacementSession.IsValid());
+    TestEqual(TEXT("A quick click installs one opted-in facility"), Count(Road.Get()), 5);
+    TestFalse(TEXT("A quick click leaves no held preview session"), Build->DragPlacementSession.IsValid());
     Build->UpdateDragPlacement(CursorAt(FIntPoint(5000, 1000)));
     Drain();
-    TestEqual(TEXT("An opted-in road cannot keep buying after a quick click"), Count(Road.Get()), 5);
+    TestEqual(TEXT("Moving after quick release cannot install again"), Count(Road.Get()), 5);
 
-    SelectAt(Road.Get(), FIntPoint(4200, 1000));
-    Build->RefreshCurrentPlacementValidation();
-    TestFalse(TEXT("An occupied initial position fails actual preview validation"), Build->LastValidation.bIsValid);
-    Build->HandlePlacementPrimaryPress(true);
-    TestTrue(TEXT("Holding on existing road can start an extension into empty ground"), Build->DragPlacementSession.IsValid());
-    TestEqual(TEXT("The occupied initial tile is never charged again"), Economy->GetGold(), GoldBeforeRoadClick - InstallCost);
-    TestEqual(TEXT("The occupied initial tile makes no authority commit"), Zones->GetWorldRevision(), RevisionBeforeRoadClick + 1);
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(5000, 1000)));
-    AFFZSFacilityActor* OccupiedRoad = Zones->FindFacilityAtWorldPoint(CursorAt(FIntPoint(4200, 1000)), ZoneId);
-    if (!TestNotNull(TEXT("Occupied road supplies a registered pavement hit"), OccupiedRoad)) return false;
-    const FVector PavementPoint = CursorAt(FIntPoint(5000, 1000)) +
-        FVector(0, 0, OccupiedRoad->GetFacilitySpec().PlacementObstacleHeightCm);
-    const FHitResult PavementHit(OccupiedRoad, nullptr, PavementPoint, FVector::UpVector);
-    Build->PlacementPreview->SetPlacementGridSurface(PavementPoint, FVector::UpVector);
-    Build->RefreshDragPlacementPreview(false, false, &PavementHit);
-    TestTrue(TEXT("Lightweight road preview uses the installed pavement base instead of its mesh top"),
-        FMath::IsNearlyEqual(Build->PlacementPreview->GetActorLocation().Z, OccupiedRoad->GetActorLocation().Z, 0.01));
-    FVector RetainedGridPoint, RetainedGridNormal;
-    TestTrue(TEXT("Correcting the ghost height preserves the actual traced surface for the grid"),
-        Build->PlacementPreview->GetPlacementGridSurface(RetainedGridPoint, RetainedGridNormal) &&
-        RetainedGridPoint.Equals(PavementPoint));
-    TestFalse(TEXT("Moving from occupied road drops the stale failure stencil"),
-        Build->PlacementPreview->PreviewMesh->bRenderCustomDepth);
-    for (const UStaticMeshComponent* Surface : Build->PlacementPreview->FailureSurfaces)
-    {
-        TestFalse(TEXT("Moving to a new target hides each old blocked-area surface"), Surface->IsVisible());
-    }
-    TestFalse(TEXT("Moving the ghost preserves the actual previous failure until validation"), Build->LastValidation.bIsValid);
-    Build->RefreshDragPlacementPreview(false);
-    TestTrue(TEXT("Periodic validation replaces the old occupied-road verdict at the new empty target"), Build->LastValidation.bIsValid);
-    TestTrue(TEXT("Periodic road validation does not bounce the ghost down from the pavement top"),
-        FMath::IsNearlyEqual(Build->PlacementPreview->GetActorLocation().Z, OccupiedRoad->GetActorLocation().Z, 0.01));
-    Drain();
-    TestEqual(TEXT("Holding from existing road installs the next two empty tiles"), Count(Road.Get()), 7);
-    TestEqual(TEXT("Extending existing road charges only the two new tiles"), Economy->GetGold(), GoldBeforeRoadClick - 3 * InstallCost);
-    TestEqual(TEXT("Extending existing road commits only the two new tiles"), Zones->GetWorldRevision(), RevisionBeforeRoadClick + 3);
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(4200, 1000)));
-    Drain();
-    TestEqual(TEXT("Returning to the initially occupied tile never retries or charges it"),
-        Economy->GetGold(), GoldBeforeRoadClick - 3 * InstallCost);
-
-    // The frame cap is contractual; the soft time budget may stop a pass earlier.
+    // Releasing before the frame budget drained must include every drawn position.
     SelectAt(Road.Get(), FIntPoint(1000, 2200));
     const int32 BeforeBudget = Count(Road.Get());
+    const int32 GoldBeforeBudget = Economy->GetGold();
     Build->BeginDragPlacement();
     Build->UpdateDragPlacement(CursorAt(FIntPoint(6200, 2200)));
-    const int32 BeforePass = Count(Road.Get());
     Build->ProcessDragPlacement();
-    const int32 AfterPass = Count(Road.Get());
-    TestTrue(TEXT("One frame advances but never exceeds eight authority installs"),
-        AfterPass > BeforePass && AfterPass - BeforePass <= 8);
-    TestTrue(TEXT("Long cursor jumps retain work for later frames"), AfterPass - BeforeBudget < 14);
-    Drain();
-    TestEqual(TEXT("Bounded processing eventually fills the complete line"), Count(Road.Get()) - BeforeBudget, 14);
+    TestEqual(TEXT("A bounded preview pass does not install a prefix"), Count(Road.Get()), BeforeBudget);
+    TestEqual(TEXT("Preview work cannot reserve or spend wallet money"), Economy->GetGold(), GoldBeforeBudget);
+    TestTrue(TEXT("Release drains pending preview positions before the atomic commit"), Build->CommitDragPlacement());
+    TestEqual(TEXT("The complete fourteen-tile line is installed together"), Count(Road.Get()) - BeforeBudget, 14);
 
-    // Redundant straight samples must not overflow the 128-target backlog. The
-    // following bend and retrace stay explicit, even before any queued work runs.
-    SelectAt(Road.Get(), FIntPoint(1000, 2800));
-    Build->BeginDragPlacement();
-    for (int32 Sample = 1; Sample <= 160; ++Sample)
-    {
-        Build->UpdateDragPlacement(CursorAt(FIntPoint(1000 + Sample * 400, 2800)));
-    }
-    TestTrue(TEXT("A straight input burst coalesces without cancelling the stroke"), Build->DragPlacementSession.IsValid());
-    Build->EndDragPlacement();
-
+    // Bends and retracing retain the actual drawn path, not a rectangle or shortcut.
     SelectAt(Road.Get(), FIntPoint(8200, 1000));
     const int32 BeforeBend = Count(Road.Get());
     Build->BeginDragPlacement();
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(8600, 1000)));
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(9000, 1000)));
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(9000, 1400)));
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(9000, 1800)));
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(8600, 1800)));
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(8200, 1800)));
+    for (const FIntPoint Position : { FIntPoint(8600, 1000), FIntPoint(9000, 1000),
+        FIntPoint(9000, 1400), FIntPoint(9000, 1800), FIntPoint(8600, 1800), FIntPoint(8200, 1800) })
+    {
+        Build->UpdateDragPlacement(CursorAt(Position));
+    }
     Drain();
-    TestEqual(TEXT("Coalesced input retains every tile along both turns"), Count(Road.Get()) - BeforeBend, 7);
-    TestNull(TEXT("Coalescing does not fill the unpainted interior of a bend"),
+    TestEqual(TEXT("A bent proposal has no installed prefix"), Count(Road.Get()), BeforeBend);
+    TestTrue(TEXT("A complete bent proposal installs on release"), Build->CommitDragPlacement());
+    TestEqual(TEXT("Both turns retain all seven drawn positions"), Count(Road.Get()) - BeforeBend, 7);
+    TestNull(TEXT("The undrawn interior of a bend stays empty"),
         Zones->FindFacilityAtWorldPoint(CursorAt(FIntPoint(8600, 1400)), ZoneId));
 
-    // Failed positions are remembered for this stroke, even if occupancy changes later.
+    // An occupied middle preview is skipped, while both valid ends form one
+    // construction entry. Undo must never touch the pre-existing obstacle.
     FFFZSGridPlacement BlockedPlacement;
     BlockedPlacement.OriginCell = FIntPoint(1400, 3400);
     const FFFZSCommand BlockerCommand = UFFZSGridLibrary::MakeInstallCommandFromDefinition(
@@ -528,146 +445,297 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
         return false;
     }
     SelectAt(Road.Get(), FIntPoint(1000, 3400));
+    const int32 BeforeBlocked = Count(Road.Get());
+    const int32 GoldBeforeBlocked = Economy->GetGold();
+    const int64 RevisionBeforeBlocked = Zones->GetWorldRevision();
     Build->BeginDragPlacement();
     Build->UpdateDragPlacement(CursorAt(FIntPoint(1800, 3400)));
     Drain();
-    TestNotNull(TEXT("An occupied tile does not block the next valid tile"),
+    TestEqual(TEXT("Invalid previews do not change registry occupancy"), Count(Road.Get()), BeforeBlocked);
+    TestTrue(TEXT("Release skips the occupied middle and installs the valid ends"), Build->CommitDragPlacement());
+    TestEqual(TEXT("Both valid ends install despite the blocked middle"), Count(Road.Get()), BeforeBlocked + 2);
+    TestEqual(TEXT("The blocked middle contributes no cost"), Economy->GetGold(), GoldBeforeBlocked - 2 * InstallCost);
+    TestEqual(TEXT("Only the accepted ends publish revisions"), Zones->GetWorldRevision(), RevisionBeforeBlocked + 2);
+    TestNotNull(TEXT("The valid position before the blocker installs"),
+        Zones->FindFacilityAtWorldPoint(CursorAt(FIntPoint(1000, 3400)), ZoneId));
+    TestNotNull(TEXT("A later valid position still installs after the rejected candidate"),
         Zones->FindFacilityAtWorldPoint(CursorAt(FIntPoint(1800, 3400)), ZoneId));
-    FFFZSCommand RemoveBlocker;
-    RemoveBlocker.CommandId = FGuid::NewGuid();
-    RemoveBlocker.TransactionId = FGuid::NewGuid();
-    RemoveBlocker.Type = EFFZSCommandType::Remove;
-    RemoveBlocker.FacilityInstanceId = BlockerCommand.FacilityInstanceId;
-    RemoveBlocker.ExpectedWorldRevision = Zones->GetWorldRevision();
-    if (!TestTrue(TEXT("Previously blocked position becomes available"), Zones->ExecuteCommand(RemoveBlocker).bSucceeded))
+    TestNotNull(TEXT("The existing obstacle remains unchanged"), Zones->FindFacility(BlockerCommand.FacilityInstanceId));
+    TestTrue(TEXT("One undo removes the accepted subset"), Build->UndoBuildEdit());
+    TestEqual(TEXT("Undo removes both ends without removing the blocker"), Count(Road.Get()), BeforeBlocked);
+    TestEqual(TEXT("Subset undo refunds only accepted positions"), Economy->GetGold(), GoldBeforeBlocked);
+    TestNotNull(TEXT("The unrelated blocker survives subset undo"), Zones->FindFacility(BlockerCommand.FacilityInstanceId));
+    SelectAt(Road.Get(), FIntPoint(1400, 3400));
+    const int64 RevisionBeforeAllBlocked = Zones->GetWorldRevision();
+    Build->BeginDragPlacement();
+    Drain();
+    TestFalse(TEXT("An entirely blocked proposal installs nothing"), Build->CommitDragPlacement());
+    TestEqual(TEXT("An entirely blocked proposal preserves the wallet"), Economy->GetGold(), GoldBeforeBlocked);
+    TestEqual(TEXT("An entirely blocked proposal publishes no revision"), Zones->GetWorldRevision(), RevisionBeforeAllBlocked);
+    TestTrue(TEXT("An empty accepted subset preserves the previous redo entry"), Zones->CanRedoConstruction());
+    TestTrue(TEXT("One redo restores only the accepted subset"), Build->RedoBuildEdit());
+    TestEqual(TEXT("Subset redo restores both ends without duplicating the blocker"), Count(Road.Get()), BeforeBlocked + 2);
+    TestEqual(TEXT("Subset redo charges exactly two facilities"), Economy->GetGold(), GoldBeforeBlocked - 2 * InstallCost);
+
+    // Revalidate against the release-time world, even after all held previews
+    // passed validation. Another command can occupy a candidate before release.
+    SelectAt(Road.Get(), FIntPoint(5000, 7400));
+    Build->BeginDragPlacement();
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(5800, 7400)));
+    Drain();
+    FFFZSGridPlacement LateBlockedPlacement;
+    LateBlockedPlacement.OriginCell = FIntPoint(5400, 7400);
+    const FFFZSCommand LateBlocker = UFFZSGridLibrary::MakeInstallCommandFromDefinition(
+        Road.Get(), ZoneId, LateBlockedPlacement, Zones->GetWorldRevision());
+    if (!TestTrue(TEXT("Another command occupies a previously valid preview"), Zones->ExecuteCommand(LateBlocker).bSucceeded))
     {
         return false;
     }
-    const int64 RevisionAfterRemoval = Zones->GetWorldRevision();
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(1400, 3400)));
-    Drain();
-    TestEqual(TEXT("The same stroke does not retry a previously failed position"), Zones->GetWorldRevision(), RevisionAfterRemoval);
-    SelectAt(Road.Get(), FIntPoint(1400, 3400));
-    Build->BeginDragPlacement();
-    TestEqual(TEXT("A fresh press clears failed-position history"), Zones->GetWorldRevision(), RevisionAfterRemoval + 1);
+    const int32 BeforeLateRelease = Count(Road.Get());
+    const int32 GoldBeforeLateRelease = Economy->GetGold();
+    TestTrue(TEXT("Release reselects the remaining valid positions against the current world"), Build->CommitDragPlacement());
+    TestEqual(TEXT("The late blocked candidate is skipped while both ends install"), Count(Road.Get()), BeforeLateRelease + 2);
+    TestEqual(TEXT("Late revalidation charges only the accepted positions"), Economy->GetGold(), GoldBeforeLateRelease - 2 * InstallCost);
+    TestTrue(TEXT("The release-time subset remains one undo entry"), Build->UndoBuildEdit());
+    TestEqual(TEXT("Undo removes only the release-time subset"), Count(Road.Get()), BeforeLateRelease);
+    TestNotNull(TEXT("The independently installed late blocker survives undo"), Zones->FindFacility(LateBlocker.FacilityInstanceId));
 
+    // Footprint axes, arbitrary rotation and the user's gap survive staging.
     SelectAt(Rectangle.Get(), FIntPoint(1000, 4600));
     Build->BeginDragPlacement();
     Build->UpdateDragPlacement(CursorAt(FIntPoint(1000, 5200)));
-    Drain();
-    TestEqual(TEXT("Rectangular footprints use their own 200cm vertical spacing"), Count(Rectangle.Get()), 4);
+    TestTrue(TEXT("A rectangular vertical proposal commits"), Build->CommitDragPlacement());
+    TestEqual(TEXT("Rectangular footprints use 200cm vertical spacing"), Count(Rectangle.Get()), 4);
     SelectAt(Rectangle.Get(), FIntPoint(3000, 4600), 9000);
     Build->BeginDragPlacement();
     Build->UpdateDragPlacement(CursorAt(FIntPoint(3600, 4600)));
-    Drain();
-    TestEqual(TEXT("A quarter turn rotates footprint spacing with the tiles"), Count(Rectangle.Get()), 8);
+    TestTrue(TEXT("A quarter-turned rectangular proposal commits"), Build->CommitDragPlacement());
+    TestEqual(TEXT("Quarter turn rotates the spacing with the footprint"), Count(Rectangle.Get()), 8);
 
-    // Independent cm rounding used to shorten every fourth 45-degree step to
-    // 398.808cm. A four-metre tile then collided with its immediate predecessor.
     SelectAt(Road.Get(), FIntPoint(5000, 3400), 4500);
     const int32 BeforeOblique = Count(Road.Get());
     const FVector ObliqueStart = CursorAt(FIntPoint(5000, 3400));
     Build->BeginDragPlacement();
     Build->UpdateDragPlacement(ObliqueStart + FRotator(0.0, 45.0, 0.0).RotateVector(FVector(4000.0, 0.0, 0.0)));
-    Drain();
-    TestEqual(TEXT("A 45-degree line installs all tiles despite integer-origin rounding"), Count(Road.Get()) - BeforeOblique, 11);
+    TestTrue(TEXT("A diagonal proposal avoids centimetre rounding overlap"), Build->CommitDragPlacement());
+    TestEqual(TEXT("All eleven diagonal facilities install together"), Count(Road.Get()) - BeforeOblique, 11);
 
+    Build->SetDragPlacementGapCm(150);
+    SelectAt(Road.Get(), FIntPoint(1000, 6200));
+    const int32 BeforeSpaced = Count(Road.Get());
+    const int32 GoldBeforeSpaced = Economy->GetGold();
+    Build->HandlePlacementPrimaryPress(true);
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(2650, 6200)));
+    Drain();
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(1550, 6200)));
+    Drain();
+    TestEqual(TEXT("Spaced and retraced previews remain unpurchased"), Count(Road.Get()), BeforeSpaced);
+    TestTrue(TEXT("A regularly spaced proposal commits"), Build->CommitDragPlacement());
+    TestEqual(TEXT("Four 400cm footprints retain their 150cm gaps"), Count(Road.Get()) - BeforeSpaced, 4);
+    for (const int32 X : { 1000, 1550, 2100, 2650 })
+    {
+        AFFZSFacilityActor* Facility = Zones->FindFacilityAtWorldPoint(CursorAt(FIntPoint(X, 6200)), ZoneId);
+        if (TestNotNull(TEXT("Each spaced preview position is installed"), Facility))
+        {
+            TestEqual(TEXT("The reviewed gap is the authoritative placement gap"),
+                Facility->GetGridPlacement().OriginCell, FIntPoint(X, 6200));
+        }
+    }
+    TestEqual(TEXT("Retracing never duplicates a charge"), Economy->GetGold(), GoldBeforeSpaced - 4 * InstallCost);
+
+    SelectAt(Road.Get(), FIntPoint(1000, 7000));
+    const int64 RevisionBeforeGapChange = Zones->GetWorldRevision();
+    Build->BeginDragPlacement();
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(2650, 7000)));
+    Drain();
+    Build->SetDragPlacementGapCm(300);
+    TestFalse(TEXT("Changing spacing cancels all previews made with the old gap"), Build->DragPlacementSession.IsValid());
+    TestEqual(TEXT("Changing spacing never purchases the old proposal"), Zones->GetWorldRevision(), RevisionBeforeGapChange);
+    SelectAt(Road.Get(), FIntPoint(1000, 6600));
+    Build->BeginDragPlacement();
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(1700, 6600)));
+    TestTrue(TEXT("The next gesture commits using the changed gap"), Build->CommitDragPlacement());
+    TestEqual(TEXT("A 700cm pitch places exactly two additional facilities"), Count(Road.Get()) - BeforeSpaced, 6);
+    TestTrue(TEXT("The later spaced proposal is one separate undo entry"), Build->UndoBuildEdit());
+    TestEqual(TEXT("Undo preserves the first proposal"), Count(Road.Get()) - BeforeSpaced, 4);
+    TestTrue(TEXT("The first spaced proposal is one undo entry"), Build->UndoBuildEdit());
+    TestEqual(TEXT("Two undos remove the two independent proposals"), Count(Road.Get()), BeforeSpaced);
+    TestEqual(TEXT("Undo refunds exactly both proposals"), Economy->GetGold(), GoldBeforeSpaced);
+    TestTrue(TEXT("The first proposal can be redone"), Build->RedoBuildEdit());
+    TestTrue(TEXT("The second proposal can be redone"), Build->RedoBuildEdit());
+    TestEqual(TEXT("Redo preserves the two historical spacings"), Count(Road.Get()) - BeforeSpaced, 6);
+    Build->SetDragPlacementGapCm(0);
+
+    // Keep previews and the public atomic batch within the same 128-member limit.
+    // An oversized gesture must not commit a prefix that the user did not approve.
+    SelectAt(Small.Get(), FIntPoint(7000, 8200));
+    const int32 GoldBeforeLongStroke = Economy->GetGold();
+    const int64 RevisionBeforeLongStroke = Zones->GetWorldRevision();
+    Build->BeginDragPlacement();
+    for (int32 Row = 0; Row < 10; ++Row)
+    {
+        const int32 Y = 8200 + Row * 40;
+        if (Row > 0)
+        {
+            Build->UpdateDragPlacement(CursorAt(FIntPoint(Row % 2 == 0 ? 7000 : 7480, Y)));
+        }
+        Build->UpdateDragPlacement(CursorAt(FIntPoint(Row % 2 == 0 ? 7480 : 7000, Y)));
+    }
+    Drain();
+    TestFalse(TEXT("An oversized 130-position proposal cannot release a partial batch"), Build->CommitDragPlacement());
+    TestEqual(TEXT("Oversized proposals install nothing"), Count(Small.Get()), 0);
+    TestEqual(TEXT("Oversized proposals spend nothing"), Economy->GetGold(), GoldBeforeLongStroke);
+    TestEqual(TEXT("Oversized proposals publish no revision"), Zones->GetWorldRevision(), RevisionBeforeLongStroke);
+
+    SelectAt(Small.Get(), FIntPoint(7000, 8200));
+    Build->BeginDragPlacement();
+    for (int32 Row = 0; Row < 10; ++Row)
+    {
+        const int32 Y = 8200 + Row * 40;
+        if (Row > 0)
+        {
+            Build->UpdateDragPlacement(CursorAt(FIntPoint(Row % 2 == 0 ? 7000 : 7480, Y)));
+        }
+        const int32 X = Row == 9 ? 7080 : (Row % 2 == 0 ? 7480 : 7000);
+        Build->UpdateDragPlacement(CursorAt(FIntPoint(X, Y)));
+    }
+    TestTrue(TEXT("Exactly 128 preview positions can commit as one batch"), Build->CommitDragPlacement());
+    TestEqual(TEXT("The complete maximum-size proposal installs"), Count(Small.Get()), 128);
+    TestTrue(TEXT("One undo removes the maximum-size proposal"), Build->UndoBuildEdit());
+    TestEqual(TEXT("Maximum-size undo leaves no prefix behind"), Count(Small.Get()), 0);
+    TestEqual(TEXT("Maximum-size undo returns the exact complete cost"), Economy->GetGold(), GoldBeforeLongStroke);
+    TestTrue(TEXT("One redo restores the maximum-size proposal"), Build->RedoBuildEdit());
+    TestEqual(TEXT("Maximum-size redo restores every facility"), Count(Small.Get()), 128);
+
+    // Cancellation, UI interruptions, selection changes and pause are cancellation,
+    // never implicit release. No deferred proposal may buy after the interruption.
     SelectAt(Road.Get(), FIntPoint(1000, 5800));
+    const int64 RevisionBeforeCancel = Zones->GetWorldRevision();
     Build->BeginDragPlacement();
     Build->UpdateDragPlacement(CursorAt(FIntPoint(6200, 5800)));
+    Drain();
     Build->EndDragPlacement();
-    const int64 RevisionAfterRelease = Zones->GetWorldRevision();
+    TestFalse(TEXT("Cancelled proposals cannot later release"), Build->CommitDragPlacement());
     Build->UpdateDragPlacement(CursorAt(FIntPoint(7000, 5800)));
     Drain();
-    TestEqual(TEXT("Release discards queued work and prevents later ghost installs"), Zones->GetWorldRevision(), RevisionAfterRelease);
+    TestEqual(TEXT("Cancellation discards every unpurchased preview"), Zones->GetWorldRevision(), RevisionBeforeCancel);
 
     SelectAt(Road.Get(), FIntPoint(1000, 7000));
     Build->BeginDragPlacement();
     Build->UpdateDragPlacement(CursorAt(FIntPoint(6200, 7000)));
-    TestTrue(TEXT("Pause acquires the build input suspension"), Build->SuspendInputForPauseMenu());
-    const int64 RevisionAtPause = Zones->GetWorldRevision();
     Drain();
-    TestEqual(TEXT("Pause stops pending purchases immediately"), Zones->GetWorldRevision(), RevisionAtPause);
+    TestTrue(TEXT("Pause acquires build input suspension"), Build->SuspendInputForPauseMenu());
+    TestFalse(TEXT("Pause cancels the held proposal"), Build->DragPlacementSession.IsValid());
     Build->RestoreInputAfterPauseMenu();
     Build->UpdateDragPlacement(CursorAt(FIntPoint(7000, 7000)));
     Drain();
-    TestEqual(TEXT("Resume requires a new press instead of resuming the old stroke"), Zones->GetWorldRevision(), RevisionAtPause);
+    TestEqual(TEXT("Resume cannot purchase a cancelled proposal"), Zones->GetWorldRevision(), RevisionBeforeCancel);
 
     SelectAt(Road.Get(), FIntPoint(3000, 7000));
     Build->BeginDragPlacement();
     Build->UpdateDragPlacement(CursorAt(FIntPoint(6200, 7000)));
-    const int64 RevisionBeforeRotation = Zones->GetWorldRevision();
-    Build->SetPlacementYawDegrees(90.0f);
     Drain();
-    TestEqual(TEXT("Changing direction cancels queued purchases at the old angle"), Zones->GetWorldRevision(), RevisionBeforeRotation);
-
+    Build->SetPlacementYawDegrees(90.0f);
+    TestFalse(TEXT("Changing rotation cancels the old proposal"), Build->DragPlacementSession.IsValid());
+    TestEqual(TEXT("Rotation does not purchase old-angle previews"), Zones->GetWorldRevision(), RevisionBeforeCancel);
     SelectAt(Road.Get(), FIntPoint(4600, 7000));
     Build->BeginDragPlacement();
     Build->UpdateDragPlacement(CursorAt(FIntPoint(6200, 7000)));
-    const int64 RevisionBeforeReset = Zones->GetWorldRevision();
-    Build->ResetPlacementSelection();
     Drain();
-    TestEqual(TEXT("Selection reset discards all pending stroke work"), Zones->GetWorldRevision(), RevisionBeforeReset);
+    Build->ResetPlacementSelection();
+    TestFalse(TEXT("Selection reset cancels every preview"), Build->DragPlacementSession.IsValid());
+    TestEqual(TEXT("Selection reset does not purchase a prefix"), Zones->GetWorldRevision(), RevisionBeforeCancel);
 
+    // Each candidate is legal against the existing world, but neighboring queues
+    // overlap each other. Greedy batch validation must skip the middle two and
+    // still accept a later non-overlapping candidate in the same gesture.
+    SelectAt(Queued.Get(), FIntPoint(3500, 7000));
+    const int32 GoldBeforeQueued = Economy->GetGold();
+    for (const int32 Y : { 7000, 7300, 7600, 7900 })
+    {
+        FFFZSGridPlacement CandidatePlacement;
+        CandidatePlacement.OriginCell = FIntPoint(3500, Y);
+        const FFFZSCommand Candidate = UFFZSGridLibrary::MakeInstallCommandFromDefinition(
+            Queued.Get(), ZoneId, CandidatePlacement, Zones->GetWorldRevision());
+        TestTrue(TEXT("Every queued candidate is individually valid before the gesture"),
+            Zones->ValidatePlacement(Candidate).bIsValid);
+    }
+    Build->BeginDragPlacement();
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(3500, 7900)));
+    Drain();
+    TestEqual(TEXT("Overlapping queue previews remain unpurchased while held"), Count(Queued.Get()), 0);
+    TestTrue(TEXT("Release selects a mutually compatible queued subset"), Build->CommitDragPlacement());
+    TestEqual(TEXT("The first and later non-overlapping queue facilities install"), Count(Queued.Get()), 2);
+    TestNotNull(TEXT("A valid queued candidate after rejected neighbors is retained"),
+        Zones->FindFacilityAtWorldPoint(CursorAt(FIntPoint(3500, 7900)), ZoneId));
+    TestEqual(TEXT("Rejected overlapping queue candidates are free"), Economy->GetGold(), GoldBeforeQueued - 2 * InstallCost);
+    TestTrue(TEXT("The queued subset is one undo entry"), Build->UndoBuildEdit());
+    TestEqual(TEXT("Queued subset undo removes every accepted member"), Count(Queued.Get()), 0);
+    TestEqual(TEXT("Queued subset undo refunds only the accepted cost"), Economy->GetGold(), GoldBeforeQueued);
+
+    // Aggregate limits and affordability select a draw-order prefix that is
+    // still executed as one atomic group, never as separate purchases.
     SelectAt(Limited.Get(), FIntPoint(1000, 8200));
     const int32 GoldBeforeLimit = Economy->GetGold();
     Build->BeginDragPlacement();
     Build->UpdateDragPlacement(CursorAt(FIntPoint(2200, 8200)));
     Drain();
-    TestEqual(TEXT("Drag obeys the authored world instance limit"), Count(Limited.Get()), 2);
-    TestEqual(TEXT("Build-limit rejection never charges for rejected tiles"), Economy->GetGold(), GoldBeforeLimit - 2 * InstallCost);
-    TestEqual(TEXT("Build-limit feedback reports the actual authority failure"),
-        Build->PlacementFailureFeedback->GetFailureTitle().ToString(),
-        UFF_BuildPlacementFailureFeedback::MakeFailureTitle(EFFZSPlacementFailure::BuildLimitReached, false).ToString());
-    SelectAt(Limited.Get(), FIntPoint(3000, 8200));
-    Build->RefreshCurrentPlacementValidation();
-    TestFalse(TEXT("A reached build limit invalidates the initial preview"), Build->LastValidation.bIsValid);
-    TestTrue(TEXT("The initial preview reports the actual build-limit failure"),
-        Build->LastValidation.Reasons.Contains(EFFZSPlacementFailure::BuildLimitReached));
-    Build->HandlePlacementPrimaryPress(true);
-    TestFalse(TEXT("A build-limit failure cannot start a held purchase session"), Build->DragPlacementSession.IsValid());
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(4200, 8200)));
-    Drain();
-    TestEqual(TEXT("Holding after an initial build-limit failure never purchases"), Count(Limited.Get()), 2);
-    TestEqual(TEXT("An initial build-limit failure never charges gold"), Economy->GetGold(), GoldBeforeLimit - 2 * InstallCost);
+    TestEqual(TEXT("Previewing beyond an instance limit installs nothing"), Count(Limited.Get()), 0);
+    TestTrue(TEXT("Four proposals install only the two allowed by the authored limit"), Build->CommitDragPlacement());
+    TestEqual(TEXT("The instance limit is respected across the accepted subset"), Count(Limited.Get()), 2);
+    TestEqual(TEXT("Limit-skipped candidates contribute no cost"), Economy->GetGold(), GoldBeforeLimit - 2 * InstallCost);
+    TestNotNull(TEXT("The first limit-eligible candidate installs"),
+        Zones->FindFacilityAtWorldPoint(CursorAt(FIntPoint(1000, 8200)), ZoneId));
+    TestNotNull(TEXT("The second limit-eligible candidate installs"),
+        Zones->FindFacilityAtWorldPoint(CursorAt(FIntPoint(1400, 8200)), ZoneId));
+    TestTrue(TEXT("The limit-selected subset is one undo entry"), Build->UndoBuildEdit());
+    TestEqual(TEXT("One undo removes both limit-selected facilities"), Count(Limited.Get()), 0);
+    TestTrue(TEXT("The limit-selected subset is one redo entry"), Build->RedoBuildEdit());
+    TestEqual(TEXT("One redo restores both facilities without exceeding the limit"), Count(Limited.Get()), 2);
+    SelectAt(Limited.Get(), FIntPoint(2200, 8200));
+    const int64 RevisionBeforeFullLimit = Zones->GetWorldRevision();
+    Build->BeginDragPlacement();
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(2600, 8200)));
+    TestFalse(TEXT("A fully reached limit leaves no accepted candidates"), Build->CommitDragPlacement());
+    TestEqual(TEXT("A fully reached limit charges nothing more"), Economy->GetGold(), GoldBeforeLimit - 2 * InstallCost);
+    TestEqual(TEXT("A fully reached limit publishes no revision"), Zones->GetWorldRevision(), RevisionBeforeFullLimit);
 
     SelectAt(Road.Get(), FIntPoint(1000, 9000));
-    TestTrue(TEXT("Fixture leaves enough money for exactly two tiles"),
+    TestTrue(TEXT("Fixture leaves money for exactly two facilities"),
         Economy->TrySpend(Economy->GetGold() - 2 * InstallCost, EFF_SpendReason::Promotion));
     const int32 BeforeMoney = Count(Road.Get());
+    const int64 RevisionBeforeMoney = Zones->GetWorldRevision();
     Build->BeginDragPlacement();
     Build->UpdateDragPlacement(CursorAt(FIntPoint(2200, 9000)));
     Drain();
-    TestEqual(TEXT("Insufficient funds stop at the last affordable tile"), Count(Road.Get()) - BeforeMoney, 2);
-    TestEqual(TEXT("The real economy never overspends"), Economy->GetGold(), 0);
-    TestEqual(TEXT("Money rejection reaches the real failure presenter"),
+    TestEqual(TEXT("Unaffordable previews cannot reserve money"), Economy->GetGold(), 2 * InstallCost);
+    TestTrue(TEXT("Four candidates install only the two affordable positions"), Build->CommitDragPlacement());
+    TestEqual(TEXT("The accepted subset never exceeds the available funds"), Count(Road.Get()), BeforeMoney + 2);
+    TestEqual(TEXT("Only accepted facilities consume the available balance"), Economy->GetGold(), 0);
+    TestEqual(TEXT("Only affordable accepted facilities publish revisions"), Zones->GetWorldRevision(), RevisionBeforeMoney + 2);
+    TestTrue(TEXT("One undo removes the affordable subset"), Build->UndoBuildEdit());
+    TestEqual(TEXT("Affordable-subset undo restores the complete balance"), Economy->GetGold(), 2 * InstallCost);
+    TestTrue(TEXT("One redo restores the affordable subset"), Build->RedoBuildEdit());
+    TestEqual(TEXT("Affordable-subset redo charges only the accepted members"), Economy->GetGold(), 0);
+
+    // An empty accepted set must not create a construction history entry at all.
+    Zones->ClearConstructionHistory();
+    SelectAt(Road.Get(), FIntPoint(3000, 9000));
+    const int64 RevisionBeforeNoFunds = Zones->GetWorldRevision();
+    Build->BeginDragPlacement();
+    Build->UpdateDragPlacement(CursorAt(FIntPoint(4200, 9000)));
+    Drain();
+    TestFalse(TEXT("No funds leaves no accepted candidates"), Build->CommitDragPlacement());
+    TestFalse(TEXT("An empty accepted subset creates no undo history"), Zones->CanUndoConstruction());
+    TestEqual(TEXT("An empty accepted subset leaves the wallet unchanged"), Economy->GetGold(), 0);
+    TestEqual(TEXT("An empty accepted subset leaves the revision unchanged"), Zones->GetWorldRevision(), RevisionBeforeNoFunds);
+    TestEqual(TEXT("An entirely unaffordable proposal reports the actual failure"),
         Build->PlacementFailureFeedback->GetFailureType(), EFF_BuildPlacementFailureType::InsufficientGold);
     Economy->AddRevenue(10 * InstallCost, EFF_EarnReason::DailyGoalBonus);
     Build->UpdateDragPlacement(CursorAt(FIntPoint(2600, 9000)));
     Drain();
-    TestEqual(TEXT("New income does not silently restart the cancelled stroke"), Count(Road.Get()) - BeforeMoney, 2);
-    TestEqual(TEXT("New income remains untouched until a new press"), Economy->GetGold(), 10 * InstallCost);
-
-    // Economic rejection on the initial click must not leave an armed stroke
-    // which can unexpectedly spend money received while the button stays held.
-    TestTrue(TEXT("Fixture exhausts funds before the initial click"),
-        Economy->TrySpend(Economy->GetGold(), EFF_SpendReason::Promotion));
-    SelectAt(Road.Get(), FIntPoint(3000, 9000));
-    Build->RefreshCurrentPlacementValidation();
-    TestFalse(TEXT("Insufficient funds invalidate the initial preview"), Build->LastValidation.bIsValid);
-    TestTrue(TEXT("The initial preview reports the actual insufficient-funds failure"),
-        Build->LastValidation.Reasons.Contains(EFFZSPlacementFailure::InsufficientFunds));
-    const int64 RevisionBeforeUnaffordableClick = Zones->GetWorldRevision();
-    Build->HandlePlacementPrimaryPress(true);
-    TestFalse(TEXT("An unaffordable initial click never arms a held purchase session"), Build->DragPlacementSession.IsValid());
-    TestEqual(TEXT("An unaffordable initial click never commits"), Zones->GetWorldRevision(), RevisionBeforeUnaffordableClick);
-    Economy->AddRevenue(3 * InstallCost, EFF_EarnReason::DailyGoalBonus);
-    Build->UpdateDragPlacement(CursorAt(FIntPoint(4200, 9000)));
-    Drain();
-    TestEqual(TEXT("Income after an unaffordable initial click requires a fresh press"),
-        Zones->GetWorldRevision(), RevisionBeforeUnaffordableClick);
-    TestEqual(TEXT("Holding after an unaffordable initial click leaves new income untouched"),
-        Economy->GetGold(), 3 * InstallCost);
+    TestEqual(TEXT("Later income cannot revive rejected candidates"), Count(Road.Get()), BeforeMoney + 2);
+    TestEqual(TEXT("Later income requires a new gesture to spend"), Economy->GetGold(), 10 * InstallCost);
     return true;
 }
 

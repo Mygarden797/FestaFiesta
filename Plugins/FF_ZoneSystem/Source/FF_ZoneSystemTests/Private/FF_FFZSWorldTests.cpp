@@ -27,9 +27,11 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/SplineComponent.h"
 #include "Engine/CollisionProfile.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "FF_FFZSCollision.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSFacilityDefinition.h"
@@ -2474,8 +2476,13 @@ bool FFFZSPlacementObstructionFeedbackLifecycleTest::RunTest(const FString& Para
         !TestTrue(TEXT("Synthetic zone registers"), Subsystem->RegisterZone(Zone))) return false;
     FFFZSGridPlacement Placement;
     Placement.OriginCell = FIntPoint(1000, 1000);
+    FFFZSFacilitySpec PreviewSpec = FFZSTest::MakeValidFacilitySpec();
+    UStaticMesh* PreviewSourceMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+    if (!TestNotNull(TEXT("Loaded source mesh for ghost material verification"), PreviewSourceMesh)) return false;
+    PreviewSpec.VisualMesh = PreviewSourceMesh;
+    UMaterialInterface* SourceMaterial = PreviewSourceMesh->GetMaterial(0);
     const FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommand(
-        FFZSTest::MakeValidFacilitySpec(), ZoneId, Placement, -1);
+        PreviewSpec, ZoneId, Placement, -1);
     const FFFZSPlacementValidation Clear = Subsystem->ValidatePlacement(Command);
     if (!TestTrue(TEXT("Control location is valid"), Clear.bIsValid)) return false;
 
@@ -2508,7 +2515,24 @@ bool FFFZSPlacementObstructionFeedbackLifecycleTest::RunTest(const FString& Para
         : Preview->PlacementFeedbackMaterial;
     if (FeedbackMaterial.IsValid())
     {
-        TestNotNull(TEXT("Generated material is a separate ghost overlay"), Preview->PreviewMesh->GetOverlayMaterial());
+        TestNull(TEXT("Ghost does not double render an overlay over an opaque base"), Preview->PreviewMesh->GetOverlayMaterial());
+        const TSoftObjectPtr<UMaterialInterface>* GeneratedMaterial = SourceMaterial
+            ? GetDefault<UFFZSBuildPresentationSettings>()->GeneratedPreviewMaterials.Find(FSoftObjectPath(SourceMaterial))
+            : nullptr;
+        if (GeneratedMaterial && GeneratedMaterial->IsValid())
+        {
+            UMaterialInstanceDynamic* GhostMaterial = Cast<UMaterialInstanceDynamic>(Preview->PreviewMesh->GetMaterial(0));
+            if (TestNotNull(TEXT("Ghost uses its source material's generated preview variant"), GhostMaterial))
+            {
+                TestEqual(TEXT("The next placement is translucent"), GhostMaterial->GetBlendMode(), BLEND_Translucent);
+                TestTrue(TEXT("Ghost retains the source-specific appearance"), GhostMaterial->IsChildOf(GeneratedMaterial->Get()));
+            }
+        }
+        else
+        {
+            TestTrue(TEXT("Unmapped fixture preserves its source appearance"), Preview->PreviewMesh->GetMaterial(0) == SourceMaterial);
+        }
+        TestTrue(TEXT("Installed source mesh keeps its original material"), PreviewSourceMesh->GetMaterial(0) == SourceMaterial);
         TestTrue(TEXT("Failed region has translucent surfaces"), !Preview->FailureSurfaces.IsEmpty());
     }
     for (const UStaticMeshComponent* Surface : Preview->FailureSurfaces)

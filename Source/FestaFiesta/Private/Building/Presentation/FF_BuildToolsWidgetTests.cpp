@@ -4,14 +4,81 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/Presentation/FF_BuildToolsWidget.h"
+#include "Building/Presentation/FF_BuildModeGuide.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/TextBlock.h"
 #include "FF_FFZSTypes.h"
 #include "Misc/AutomationTest.h"
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsDragPlacementGapInputTest,
+    "FestaFiesta.Building.BuildTools.DragPlacementGapInput",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFBuildToolsDragPlacementGapInputTest::RunTest(const FString& Parameters)
+{
+    int32 GapCm = 123;
+    for (const FString Invalid : {TEXT(""), TEXT("-1"), TEXT("1001"), TEXT("999999999999"),
+        TEXT("1.5"), TEXT("NaN"), TEXT("1e2"), TEXT("50cm"), TEXT("1,000")})
+    {
+        TestFalse(Invalid + TEXT(" is not a whole centimeter spacing in range"),
+            FFBuildToolsModel::TryParseDragPlacementGapText(Invalid, GapCm));
+        TestEqual(TEXT("Invalid edits preserve the last valid spacing"), GapCm, 123);
+    }
+    TestTrue(TEXT("Zero explicitly permits touching facilities"),
+        FFBuildToolsModel::TryParseDragPlacementGapText(TEXT("0"), GapCm));
+    TestEqual(TEXT("Zero is preserved"), GapCm, 0);
+    TestTrue(TEXT("Whitespace is accepted around a valid number"),
+        FFBuildToolsModel::TryParseDragPlacementGapText(TEXT(" 250 "), GapCm));
+    TestEqual(TEXT("Spacing is expressed in centimeters"), GapCm, 250);
+    TestTrue(TEXT("Ten meters is accepted"), FFBuildToolsModel::TryParseDragPlacementGapText(TEXT("1000"), GapCm));
+    TestEqual(TEXT("Upper bound is preserved"), GapCm, 1000);
+    const FString Help = UFF_BuildModeGuide::MakePlacementHelpText(false, true, 250).ToString();
+    TestTrue(TEXT("Drag help reports the actual user spacing and stroke undo"),
+        Help.Contains(TEXT("250cm")) && Help.Contains(TEXT("Ctrl+Z")) && Help.Contains(TEXT("함께 취소")));
+    TestFalse(TEXT("Moving help does not promise drag installation"),
+        UFF_BuildModeGuide::MakePlacementHelpText(true, true, 250).ToString().Contains(TEXT("여유 250cm")));
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsRequiredSpaceTest,
     "FestaFiesta.Building.BuildTools.RequiredSpace",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsQueueSettingsInputTest,
+    "FestaFiesta.Building.BuildTools.QueueSettingsInput",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFBuildToolsQueueSettingsInputTest::RunTest(const FString& Parameters)
+{
+    int32 Teams = 17;
+    float Spacing = 200.f, Width = 600.f;
+    for (const FString Invalid : {TEXT(""), TEXT("0"), TEXT("513"), TEXT("1.5"), TEXT("-1"), TEXT("1e2"), TEXT("12팀")})
+    {
+        TestFalse(Invalid + TEXT(" cannot change the team limit"),
+            FFBuildToolsModel::TryParseQueueSettingsText(Invalid, TEXT("115"), TEXT("600"), Teams, Spacing, Width));
+        TestEqual(TEXT("Invalid team text preserves capacity"), Teams, 17);
+        TestEqual(TEXT("Invalid team text preserves spacing"), Spacing, 200.f);
+        TestEqual(TEXT("Invalid team text preserves width"), Width, 600.f);
+    }
+    for (const FString Invalid : {TEXT(""), TEXT("70"), TEXT("89.9"), TEXT("1000.1"), TEXT("NaN"), TEXT("inf"), TEXT("1e2"), TEXT("115cm"), TEXT("1,000")})
+        TestFalse(Invalid + TEXT(" cannot change slot spacing"),
+            FFBuildToolsModel::TryParseQueueSettingsText(TEXT("12"), Invalid, TEXT("600"), Teams, Spacing, Width));
+    for (const FString Invalid : {TEXT(""), TEXT("99.9"), TEXT("1000.1"), TEXT("NaN"), TEXT("-100"), TEXT("600..5")})
+        TestFalse(Invalid + TEXT(" cannot change lane width"),
+            FFBuildToolsModel::TryParseQueueSettingsText(TEXT("12"), TEXT("115"), Invalid, Teams, Spacing, Width));
+    TestEqual(TEXT("A late field failure leaves the entire edit unchanged"), Teams, 17);
+    TestEqual(TEXT("A late field failure never partially updates slot spacing"), Spacing, 200.f);
+    TestTrue(TEXT("Decimal centimeters and whitespace are supported"),
+        FFBuildToolsModel::TryParseQueueSettingsText(TEXT(" 24 "), TEXT(" 125.5 "), TEXT(" 650.25 "), Teams, Spacing, Width));
+    TestEqual(TEXT("Capacity remains an integer team count"), Teams, 24);
+    TestEqual(TEXT("Decimal slot spacing is retained"), Spacing, 125.5f);
+    TestEqual(TEXT("Decimal lane width is retained"), Width, 650.25f);
+    TestTrue(TEXT("The full explicit range is supported"),
+        FFBuildToolsModel::TryParseQueueSettingsText(TEXT("512"), TEXT("90"), TEXT("1000"), Teams, Spacing, Width));
+    TestTrue(TEXT("Build help points players to the editable queue settings"),
+        UFF_BuildModeGuide::MakeBuildOverviewHelpText().ToString().Contains(TEXT("대기열 설정")));
+    return true;
+}
 
 bool FFFBuildToolsRequiredSpaceTest::RunTest(const FString& Parameters)
 {
@@ -469,7 +536,7 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
     for (FName Name : {TEXT("Button_BuildBack"), TEXT("Button_BuildSettings"), TEXT("Button_BuildSettingsClose"),
         TEXT("Button_MultiSelect"), TEXT("Button_SnapCycle"), TEXT("Button_ToolbarRanges"),
         TEXT("Button_ToolbarCatalog"), TEXT("Button_ToolbarHelp"),
-        TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo"),
+        TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo"), TEXT("Button_BuildHelpClose"),
         TEXT("Button_SettingsGrid"), TEXT("Button_SettingsSnapMeter"),
         TEXT("Button_SettingsSnapPrecision"), TEXT("Button_SettingsSnapFree"),
         TEXT("Button_SettingsDirectAdjustment"), TEXT("Button_SettingsFacilityRanges"),
@@ -506,7 +573,7 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Help opens independently beneath the left summary"), Open(TEXT("Border_PlacementHelp")));
     auto* HelpLabel = Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Label_Help")));
     TestTrue(TEXT("Visible help has a clear close action"), HelpLabel && HelpLabel->GetText().ToString() == TEXT("안내 닫기"));
-    Click(TEXT("Button_Help"));
+    Click(TEXT("Button_BuildHelpClose"));
     TestFalse(TEXT("The help close action dismisses only the instructions"), Open(TEXT("Border_PlacementHelp")));
     if (auto* HelpBounds = Cast<USizeBox>(Widget->GetWidgetFromName(TEXT("Size_BuildWorldHelp"))))
     {

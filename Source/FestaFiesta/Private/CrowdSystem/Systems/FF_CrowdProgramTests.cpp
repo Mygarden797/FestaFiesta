@@ -445,8 +445,8 @@ bool FFF_CrowdAudienceLifecycle::RunTest(const FString& Parameters)
 	Spec.Audience.bEnabled = true;
 	Spec.Audience.Columns = 2;
 	Spec.Audience.Rows = 1;
-	// 관람 영역은 건물 바닥·일반 Queue 예약 영역과 겹치면 설치가 거부된다.
-	// 이 fixture 의 Queue 는 +Y 로 21m 뻗으므로 좌석은 반대쪽에 둔다.
+	// 관람 영역은 건물 바닥과 겹치지 않게 둔다. 메인스테이지의 옛 FIFO는
+	// 설치 정규화에서 제거되며 관객석의 자리와 입퇴장 경로는 그대로 유지된다.
 	Spec.Audience.FirstSlotLocalCm = FVector(-60, -900, 0);
 	Spec.Audience.FocusLocalCm = FVector(0, 100, 200);
 	Spec.Audience.CenterAisleWidthCm = 0.f;
@@ -463,6 +463,8 @@ bool FFF_CrowdAudienceLifecycle::RunTest(const FString& Parameters)
 	if (!TestTrue(*FString::Printf(TEXT("Audience facility installs: %s"),
 		*InstallResult.Message.ToString()), InstallResult.bSucceeded)) return false;
 	const FGuid FacilityId = Install.FacilityInstanceId;
+	TestFalse(TEXT("Main-stage installation retires the legacy FIFO without disabling its audience"),
+		Zones->FindFacility(FacilityId)->GetFacilitySpec().UsesServiceQueue());
 
 	// 설치 직후는 Validated 다. 관람 스냅샷은 Active 시설에만 열린다.
 	auto* StageBridge = World->GetSubsystem<UFF_ZoneSystemStageBridgeSubsystem>();

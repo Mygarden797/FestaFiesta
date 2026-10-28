@@ -304,6 +304,12 @@ bool FFF_FacilityCodexIntroductionUiTest::RunTest(const FString& Parameters)
 			TestFalse(TEXT("Keyboard acceptance dismisses only the explanation"), Screen->IsIntroductionVisible());
 			TestTrue(TEXT("Keyboard acceptance preserves the codex"), Presenter->IsCodexOpen());
 		}
+		if (!TestTrue(TEXT("Guide can be presented for back-button coverage"), Screen->ShowIntroduction())) return false;
+		auto* Back = Cast<UButton>(Screen->GetWidgetFromName(TEXT("Button_ExitCodex")));
+		if (!TestNotNull(TEXT("Codex back button"), Back)) return false;
+		Back->OnClicked.Broadcast();
+		TestFalse(TEXT("Back dismisses the first-use explanation before leaving the collection"), Screen->IsIntroductionVisible());
+		TestTrue(TEXT("Back from the explanation preserves the codex session"), Presenter->IsCodexOpen());
 		Presenter->CloseCodex();
 		++GFrameCounter;
 		if (!TestTrue(TEXT("Advance first-use close restoration"), Fixture.TickTestWorld())) return false;

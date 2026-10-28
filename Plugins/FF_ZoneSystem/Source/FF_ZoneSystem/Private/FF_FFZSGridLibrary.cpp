@@ -918,6 +918,21 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
         AppendInt(TEXT("move.change_queue_layout"), 1);
         AppendInt(TEXT("move.queue_layout"), static_cast<int64>(Command.QueueLayout));
     }
+    const auto AppendQueueSettings = [&](const FString& Prefix, const FFFZSQueueSettings& Settings)
+    {
+        AppendInt(*(Prefix + TEXT(".enabled")), Settings.bEnabled ? 1 : 0);
+        if (Settings.bEnabled)
+        {
+            AppendInt(*(Prefix + TEXT(".max_waiting_teams")), Settings.MaxWaitingTeams);
+            AppendFloat(*(Prefix + TEXT(".slot_spacing_cm")), Settings.SlotSpacingCm);
+            AppendFloat(*(Prefix + TEXT(".lane_width_cm")), Settings.LaneWidthCm);
+        }
+    };
+    if (Command.bChangeQueueSettings)
+    {
+        AppendInt(TEXT("move.change_queue_settings"), 1);
+        AppendQueueSettings(TEXT("move.queue_settings"), Command.QueueSettings);
+    }
 
     // Preserve every existing command's v5 receipt byte for byte across the save migration.
     if (Command.Type == EFFZSCommandType::Upgrade)
@@ -970,6 +985,8 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
     {
         AppendInt(TEXT("spec.queue_layout"), static_cast<int64>(Spec.QueueLayout));
     }
+    // Additive disabled defaults preserve existing saved command receipt fingerprints.
+    if (Spec.QueueSettings.bEnabled) AppendQueueSettings(TEXT("spec.queue_settings"), Spec.QueueSettings);
 
     // v5는 압축 사각형 원본과 구 호환 단일 셀을 모두 기록한다. 잘못된 사양도 서로 다른
     // 멱등성 payload가 같은 지문으로 합쳐지지 않도록 검증 전 원본 순서를 의도적으로 보존한다.

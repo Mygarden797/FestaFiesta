@@ -17,16 +17,21 @@
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/WidgetTree.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Components/Border.h"
 #include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
@@ -41,6 +46,7 @@
 #include "UI/Settings/FF_RuntimeSettingsSubsystem.h"
 #include "UI/Core/FF_UIForegroundRules.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "UI/Facility/FF_FacilityInfoPanel.h"
 
 #define LOCTEXT_NAMESPACE "FFBuildTools"
 
@@ -192,6 +198,188 @@ bool FFBuildToolsModel::TryParseYawText(const FString& Text, float& OutYawDegree
     return true;
 }
 
+bool FFBuildToolsModel::TryParseDragPlacementGapText(const FString& Text, int32& OutGapCm)
+{
+    const FString Trimmed = Text.TrimStartAndEnd();
+    if (Trimmed.IsEmpty() || Trimmed.Len() > 4) return false;
+    for (const TCHAR Character : Trimmed)
+        if (Character < TEXT('0') || Character > TEXT('9')) return false;
+    int32 Parsed = 0;
+    if (!FDefaultValueHelper::ParseInt(Trimmed, Parsed) || Parsed < 0 || Parsed > 1000) return false;
+    OutGapCm = Parsed;
+    return true;
+}
+
+UEditableTextBox* FFBuildToolsModel::EnsureDragPlacementGapControl(UWidgetTree& Tree)
+{
+    if (UWidget* Existing = Tree.FindWidget(TEXT("Editable_DragPlacementGap")))
+        return Cast<UEditableTextBox>(Existing);
+    auto* Body = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Column_BuildSettings")));
+    if (!Body || Tree.FindWidget(TEXT("Row_SettingsDragPlacementGap"))) return nullptr;
+
+    auto* Row = Tree.ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Row_SettingsDragPlacementGap"));
+    auto* Label = Tree.ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Label_SettingsDragPlacementGap"));
+    Label->SetText(LOCTEXT("DragPlacementGapLabel", "시설 사이 간격"));
+    Label->SetVisibility(ESlateVisibility::HitTestInvisible);
+    if (const auto* Template = Cast<UTextBlock>(Tree.FindWidget(TEXT("Label_SettingsSnap"))))
+    {
+        Label->SetFont(Template->GetFont());
+        Label->SetColorAndOpacity(Template->GetColorAndOpacity());
+    }
+    auto* LabelSlot = Row->AddChildToHorizontalBox(Label);
+    LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+    LabelSlot->SetVerticalAlignment(VAlign_Center);
+    LabelSlot->SetPadding(FMargin(0.f, 0.f, 8.f, 0.f));
+
+    auto* Input = Tree.ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), TEXT("Editable_DragPlacementGap"));
+    if (const auto* Template = Cast<UEditableTextBox>(Tree.FindWidget(TEXT("Editable_Angle"))))
+        Input->SetWidgetStyle(Template->GetWidgetStyle());
+    Input->SetText(FText::FromString(TEXT("0")));
+    Input->SetHintText(LOCTEXT("DragPlacementGapHint", "0~1000"));
+    Input->SetJustification(ETextJustify::Center);
+    Input->SetSelectAllTextWhenFocused(true);
+    Input->SetClearKeyboardFocusOnCommit(false);
+    const FText Tip = LOCTEXT("DragPlacementGapTooltip",
+        "연속 설치할 시설 크기에 더하는 여유 간격입니다. 0~1000cm를 입력하세요.\n"
+        "0cm는 시설을 붙여 놓습니다. 변경한 간격은 다음 드래그부터 적용됩니다.\n"
+        "드래그 한 번으로 설치한 시설은 Ctrl+Z로 함께 취소합니다.");
+    Input->SetToolTipText(Tip);
+    Row->SetToolTipText(Tip);
+    auto* InputSize = Tree.ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("Size_SettingsDragPlacementGap"));
+    InputSize->SetWidthOverride(84.f);
+    InputSize->AddChild(Input);
+    Row->AddChildToHorizontalBox(InputSize)->SetVerticalAlignment(VAlign_Center);
+    auto* Unit = Tree.ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_SettingsDragPlacementGapUnit"));
+    Unit->SetText(FText::FromString(TEXT("cm")));
+    Unit->SetFont(Label->GetFont());
+    Unit->SetColorAndOpacity(Label->GetColorAndOpacity());
+    Unit->SetVisibility(ESlateVisibility::HitTestInvisible);
+    auto* UnitSlot = Row->AddChildToHorizontalBox(Unit);
+    UnitSlot->SetPadding(FMargin(6.f, 0.f, 0.f, 0.f));
+    UnitSlot->SetVerticalAlignment(VAlign_Center);
+    Body->AddChildToVerticalBox(Row)->SetPadding(FMargin(0.f, 2.f, 0.f, 12.f));
+    return Input;
+}
+
+bool FFBuildToolsModel::TryParseQueueSettingsText(const FString& TeamsText, const FString& SpacingText,
+    const FString& WidthText, int32& OutTeams, float& OutSpacingCm, float& OutWidthCm)
+{
+    const FString Teams = TeamsText.TrimStartAndEnd();
+    if (Teams.IsEmpty() || Teams.Len() > 3) return false;
+    for (const TCHAR Character : Teams)
+        if (Character < TEXT('0') || Character > TEXT('9')) return false;
+    int32 ParsedTeams = 0;
+    if (!FDefaultValueHelper::ParseInt(Teams, ParsedTeams) || ParsedTeams < 1 || ParsedTeams > 512) return false;
+    const auto ParseDimension = [](const FString& Text, const float Minimum, float& OutValue)
+    {
+        const FString Number = Text.TrimStartAndEnd();
+        if (Number.IsEmpty() || Number.Len() > 12) return false;
+        bool bHasDigit = false, bHasPoint = false;
+        for (const TCHAR Character : Number)
+        {
+            if (Character >= TEXT('0') && Character <= TEXT('9')) bHasDigit = true;
+            else if (Character == TEXT('.') && !bHasPoint) bHasPoint = true;
+            else return false;
+        }
+        float Parsed = 0.f;
+        if (!bHasDigit || !FDefaultValueHelper::ParseFloat(Number, Parsed) || !FMath::IsFinite(Parsed) ||
+            Parsed < Minimum || Parsed > 1000.f) return false;
+        OutValue = Parsed;
+        return true;
+    };
+    float ParsedSpacing = 0.f, ParsedWidth = 0.f;
+    if (!ParseDimension(SpacingText, 90.f, ParsedSpacing) || !ParseDimension(WidthText, 100.f, ParsedWidth)) return false;
+    OutTeams = ParsedTeams;
+    OutSpacingCm = ParsedSpacing;
+    OutWidthCm = ParsedWidth;
+    return true;
+}
+
+bool FFBuildToolsModel::EnsureQueueSettingsControls(UWidgetTree& Tree)
+{
+    if (Tree.FindWidget(TEXT("Panel_QueueSettings")))
+        return Cast<UEditableTextBox>(Tree.FindWidget(TEXT("Editable_QueueMaxTeams"))) &&
+            Cast<UEditableTextBox>(Tree.FindWidget(TEXT("Editable_QueueSlotSpacing"))) &&
+            Cast<UEditableTextBox>(Tree.FindWidget(TEXT("Editable_QueueLaneWidth"))) &&
+            Cast<UButton>(Tree.FindWidget(TEXT("Button_ApplyQueueSettings"))) &&
+            Cast<UButton>(Tree.FindWidget(TEXT("Button_ResetAllQueues")));
+    auto* Body = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Column_BuildSettings")));
+    if (!Body) return false;
+    auto* QueueSettingsPanel = Tree.ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Panel_QueueSettings"));
+    const auto MakeLabel = [&](const FName Name, const FText& Text)
+    {
+        auto* Label = Tree.ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
+        Label->SetText(Text);
+        Label->SetVisibility(ESlateVisibility::HitTestInvisible);
+        if (const auto* Template = Cast<UTextBlock>(Tree.FindWidget(TEXT("Label_SettingsSnap"))))
+        {
+            Label->SetFont(Template->GetFont());
+            Label->SetColorAndOpacity(Template->GetColorAndOpacity());
+        }
+        return Label;
+    };
+    QueueSettingsPanel->AddChildToVerticalBox(MakeLabel(TEXT("Label_QueueSettings"), LOCTEXT("QueueSettingsTitle", "대기열 설정")))
+        ->SetPadding(FMargin(0.f, 8.f, 0.f, 8.f));
+    const auto AddInput = [&](const FName RowName, const FName InputName, const FText& Caption,
+        const TCHAR* Default, const FText& Hint, const FText& Tooltip)
+    {
+        auto* Row = Tree.ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), RowName);
+        Row->SetToolTipText(Tooltip);
+        auto* Label = MakeLabel(FName(*(InputName.ToString() + TEXT("_Label"))), Caption);
+        auto* LabelSlot = Row->AddChildToHorizontalBox(Label);
+        LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+        LabelSlot->SetVerticalAlignment(VAlign_Center);
+        auto* Input = Tree.ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), InputName);
+        if (const auto* Template = Cast<UEditableTextBox>(Tree.FindWidget(TEXT("Editable_Angle"))))
+            Input->SetWidgetStyle(Template->GetWidgetStyle());
+        // The angle editor deliberately uses a large display font. Queue values
+        // need room for decimals such as 650.25 inside the compact settings row.
+        FEditableTextBoxStyle QueueInputStyle = Input->GetWidgetStyle();
+        FSlateFontInfo QueueNumberFont = Label->GetFont();
+        QueueNumberFont.Size = 16;
+        QueueInputStyle.SetFont(QueueNumberFont);
+        Input->SetWidgetStyle(QueueInputStyle);
+        Input->SetText(FText::FromString(Default));
+        Input->SetHintText(Hint);
+        Input->SetToolTipText(Tooltip);
+        Input->SetJustification(ETextJustify::Center);
+        Input->SetSelectAllTextWhenFocused(true);
+        Input->SetClearKeyboardFocusOnCommit(false);
+        auto* Size = Tree.ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*(InputName.ToString() + TEXT("_Size"))));
+        Size->SetWidthOverride(96.f);
+        Size->AddChild(Input);
+        Row->AddChildToHorizontalBox(Size)->SetVerticalAlignment(VAlign_Center);
+        QueueSettingsPanel->AddChildToVerticalBox(Row)->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+    };
+    AddInput(TEXT("Row_QueueMaxTeams"), TEXT("Editable_QueueMaxTeams"), LOCTEXT("QueueTeamsLabel", "정원 (팀)"),
+        TEXT("6"), LOCTEXT("QueueTeamsHint", "1~512"),
+        LOCTEXT("QueueTeamsTip", "1팀이 대기열 1자리를 사용합니다. 1~512팀을 입력하세요.\n동시에 이용하는 팀 수와 서비스 속도는 시설 고유 설정을 유지합니다."));
+    AddInput(TEXT("Row_QueueSlotSpacing"), TEXT("Editable_QueueSlotSpacing"), LOCTEXT("QueueSpacingLabel", "자리 간격 (cm)"),
+        TEXT("115"), LOCTEXT("QueueSpacingHint", "90~1000"),
+        LOCTEXT("QueueSpacingTip", "대기 자리 사이 간격입니다. 90~1000cm를 입력하세요.\n줄 길이는 정원과 자리 간격으로 자동 계산합니다."));
+    AddInput(TEXT("Row_QueueLaneWidth"), TEXT("Editable_QueueLaneWidth"), LOCTEXT("QueueWidthLabel", "통로 폭 (cm)"),
+        TEXT("300"), LOCTEXT("QueueWidthHint", "100~1000"),
+        LOCTEXT("QueueWidthTip", "대기열이 예약하는 통로 폭입니다. 100~1000cm를 입력하세요.\n폭을 좁히면 큰 일행은 입장하지 못할 수 있습니다. 다른 시설과 겹치면 적용할 수 없습니다."));
+    auto* Summary = MakeLabel(TEXT("Text_QueueSettingsSummary"), FText::GetEmpty());
+    Summary->SetAutoWrapText(true);
+    QueueSettingsPanel->AddChildToVerticalBox(Summary)->SetPadding(FMargin(0.f, 2.f, 0.f, 8.f));
+    const auto AddAction = [&](const FName Name, const FText& Caption, const FText& Tooltip)
+    {
+        auto* Button = Tree.ConstructWidget<UFF_BuildToolsActionButton>(UFF_BuildToolsActionButton::StaticClass(), Name);
+        if (const auto* Template = Cast<UButton>(Tree.FindWidget(TEXT("Button_SettingsSnapMeter"))))
+            Button->SetStyle(Template->GetStyle());
+        Button->SetToolTipText(Tooltip);
+        Button->AddChild(MakeLabel(FName(*(Name.ToString() + TEXT("_Label"))), Caption));
+        QueueSettingsPanel->AddChildToVerticalBox(Button)->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+    };
+    AddAction(TEXT("Button_ApplyQueueSettings"), LOCTEXT("ApplyQueueSettings", "대기열 설정 적용"),
+        LOCTEXT("ApplyQueueSettingsTip", "정원·자리 간격·통로 폭을 함께 적용합니다. 입력 중 Enter로도 적용할 수 있습니다.\n설치·이동 미리보기는 배치를 확정할 때 시설에 반영합니다. Esc는 입력을 되돌립니다."));
+    AddAction(TEXT("Button_ResetAllQueues"), LOCTEXT("ResetAllQueues", "전체 기본값 적용"),
+        LOCTEXT("ResetAllQueuesTip", "설치된 모든 대기열 시설을 6팀 · 자리 간격 115cm · 통로 폭 300cm · 기본형으로 통일합니다.\n준비 시간에 적용할 수 있으며 Ctrl+Z로 전체 변경을 한 번에 되돌릴 수 있습니다.\n동시 이용 팀 수와 서비스 속도는 유지합니다."));
+    Body->AddChildToVerticalBox(QueueSettingsPanel)->SetPadding(FMargin(0.f, 2.f, 0.f, 10.f));
+    return true;
+}
+
 UFF_BuildToolsActionButton::UFF_BuildToolsActionButton()
 {
     InitIsFocusable(false);
@@ -262,6 +450,19 @@ void UFF_BuildToolsWidget::NativePreConstruct()
 void UFF_BuildToolsWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+    // Ship the spacing control with existing saved toolbars as well as rebuilt ones.
+    if (WidgetTree)
+    {
+        Editable_DragPlacementGap = FFBuildToolsModel::EnsureDragPlacementGapControl(*WidgetTree);
+        FFBuildToolsModel::EnsureQueueSettingsControls(*WidgetTree);
+        Panel_QueueSettings = GetWidgetFromName(TEXT("Panel_QueueSettings"));
+        Editable_QueueMaxTeams = Cast<UEditableTextBox>(GetWidgetFromName(TEXT("Editable_QueueMaxTeams")));
+        Editable_QueueSlotSpacing = Cast<UEditableTextBox>(GetWidgetFromName(TEXT("Editable_QueueSlotSpacing")));
+        Editable_QueueLaneWidth = Cast<UEditableTextBox>(GetWidgetFromName(TEXT("Editable_QueueLaneWidth")));
+        Text_QueueSettingsSummary = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_QueueSettingsSummary")));
+        Button_ApplyQueueSettings = Cast<UButton>(GetWidgetFromName(TEXT("Button_ApplyQueueSettings")));
+        Button_ResetAllQueues = Cast<UButton>(GetWidgetFromName(TEXT("Button_ResetAllQueues")));
+    }
     SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     // These bounds retain their height when their panel is collapsed. Let only
     // visible descendants receive input so the world/catalog remains clickable.
@@ -272,6 +473,7 @@ void UFF_BuildToolsWidget::NativeConstruct()
         Size_BuildWorldHelp = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_BuildWorldHelp")));
     if (Size_BuildWorldHelp) Size_BuildWorldHelp->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     bHelpExpanded = Border_PlacementHelp && Border_PlacementHelp->IsVisible();
+    InstallHelpCloseControl();
     bHelpForegroundSuppressed = false;
     if (Size_BuildWorldHelp)
         if (auto* HelpCanvasSlot = Cast<UCanvasPanelSlot>(Size_BuildWorldHelp->Slot))
@@ -341,6 +543,8 @@ void UFF_BuildToolsWidget::NativeConstruct()
     FF_BIND_TOOL(Button_Help, ToggleHelp)
     FF_BIND_TOOL(Button_BuildHelpUndo, HandleUndoConstruction)
     FF_BIND_TOOL(Button_BuildHelpRedo, HandleRedoConstruction)
+    FF_BIND_TOOL(Button_ApplyQueueSettings, HandleApplyQueueSettings)
+    FF_BIND_TOOL(Button_ResetAllQueues, HandleResetAllQueues)
     FF_BIND_TOOL(Button_DirectAdjustment, ToggleDirectAdjustment)
     FF_BIND_TOOL(Button_FindNearby, FindNearbyPlacement)
     FF_BIND_TOOL(Button_NextPlacementProblem, ShowNextPlacementProblem)
@@ -372,6 +576,14 @@ void UFF_BuildToolsWidget::NativeConstruct()
         Editable_Angle->SetClearKeyboardFocusOnCommit(false);
         Editable_Angle->OnTextCommitted.AddUniqueDynamic(this, &ThisClass::HandleAngleCommitted);
     }
+    if (Editable_DragPlacementGap)
+        Editable_DragPlacementGap->OnTextCommitted.AddUniqueDynamic(this, &ThisClass::HandleDragPlacementGapCommitted);
+    for (UEditableTextBox* Input : {Editable_QueueMaxTeams.Get(), Editable_QueueSlotSpacing.Get(), Editable_QueueLaneWidth.Get()})
+        if (Input)
+        {
+            Input->OnTextChanged.AddUniqueDynamic(this, &ThisClass::HandleQueueSettingsChanged);
+            Input->OnTextCommitted.AddUniqueDynamic(this, &ThisClass::HandleQueueSettingsCommitted);
+        }
     InstallToolbarForegroundLayer();
     RefreshTools();
 }
@@ -380,6 +592,15 @@ void UFF_BuildToolsWidget::NativeConstruct()
 void UFF_BuildToolsWidget::NativeDestruct()
 {
     StopPointerFreeRotation();
+    if (Editable_DragPlacementGap) Editable_DragPlacementGap->OnTextCommitted.RemoveAll(this);
+    for (UEditableTextBox* Input : {Editable_QueueMaxTeams.Get(), Editable_QueueSlotSpacing.Get(), Editable_QueueLaneWidth.Get()})
+        if (Input)
+        {
+            Input->OnTextChanged.RemoveAll(this);
+            Input->OnTextCommitted.RemoveAll(this);
+        }
+    if (Button_ApplyQueueSettings) Button_ApplyQueueSettings->OnClicked.RemoveAll(this);
+    if (Button_ResetAllQueues) Button_ResetAllQueues->OnClicked.RemoveAll(this);
     if (auto* Discovery = FeatureDiscovery.Get()) Discovery->OnFeatureSeen.RemoveAll(this);
     FeatureDiscovery.Reset();
     if (Combo_FeatureGuideTopic) Combo_FeatureGuideTopic->OnSelectionChanged.RemoveAll(this);
@@ -592,7 +813,11 @@ void UFF_BuildToolsWidget::HandleGuidedSnap() { RequestFeatureToolbarAction(TEXT
 void UFF_BuildToolsWidget::HandleGuidedRanges() { RequestFeatureToolbarAction(TEXT("FacilityRanges")); }
 void UFF_BuildToolsWidget::HandleGuidedSettings() { RequestFeatureToolbarAction(TEXT("BuildSettings")); }
 void UFF_BuildToolsWidget::HandleGuidedCatalog() { RequestFeatureToolbarAction(TEXT("BuildCatalog")); }
-void UFF_BuildToolsWidget::HandleGuidedControls() { RequestFeatureToolbarAction(TEXT("BuildControls")); }
+void UFF_BuildToolsWidget::HandleGuidedControls()
+{
+    if (bHelpExpanded || bHelpDismissedByUser) ToggleHelp();
+    else RequestFeatureToolbarAction(TEXT("BuildControls"));
+}
 
 void UFF_BuildToolsWidget::CloseRadialMenu()
 {
@@ -621,6 +846,7 @@ void UFF_BuildToolsWidget::ToggleHelp()
     const bool bSession = System && FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState());
     if (!bSession && !ViewData.bPreviewActive) return;
     if (bSession) System->NotifyBuildToolsInteraction();
+    bHelpDismissedByUser = bHelpExpanded;
     SetHelpExpanded(!bHelpExpanded);
     SetChoiceState(Button_ToolbarHelp, Cast<UTextBlock>(Button_ToolbarHelp ? Button_ToolbarHelp->GetContent() : nullptr),
         bHelpExpanded);
@@ -636,6 +862,66 @@ void UFF_BuildToolsWidget::SetHelpExpanded(const bool bExpanded)
         if (auto* Label = Cast<UTextBlock>(Button_Help->GetContent()))
             Label->SetText(bExpanded ? LOCTEXT("ClosePlacementHelp", "안내 닫기") : LOCTEXT("OpenPlacementHelp", "조작 안내"));
     RefreshHelpPresentation();
+}
+
+void UFF_BuildToolsWidget::InstallHelpCloseControl()
+{
+    if (!WidgetTree || !Border_PlacementHelp) return;
+    if (auto* ExistingClose = Cast<UButton>(GetWidgetFromName(TEXT("Button_BuildHelpClose"))))
+    {
+        ExistingClose->OnClicked.AddUniqueDynamic(this, &ThisClass::ToggleHelp);
+        return;
+    }
+    UWidget* HelpContent = Border_PlacementHelp->GetContent();
+    if (!HelpContent) return;
+    auto* Heading = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_BuildIconHelpHeading")));
+
+    // Keep the close action outside the scroll area, including in already-saved WBPs.
+    HelpContent->RemoveFromParent();
+    auto* HelpShell = WidgetTree->ConstructWidget<UVerticalBox>(
+        UVerticalBox::StaticClass(), TEXT("Column_BuildHelpShell"));
+    HelpShell->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    Border_PlacementHelp->AddChild(HelpShell);
+    auto* Header = WidgetTree->ConstructWidget<UHorizontalBox>(
+        UHorizontalBox::StaticClass(), TEXT("Row_BuildHelpHeader"));
+    Header->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    HelpShell->AddChildToVerticalBox(Header)->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+    if (Heading) Heading->RemoveFromParent();
+    else
+    {
+        Heading = WidgetTree->ConstructWidget<UTextBlock>(
+            UTextBlock::StaticClass(), TEXT("Text_BuildHelpCloseHeading"));
+        Heading->SetText(LOCTEXT("HelpCloseHeading", "조작 안내"));
+        Heading->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+    }
+    auto* HeadingSlot = Header->AddChildToHorizontalBox(Heading);
+    HeadingSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+    HeadingSlot->SetVerticalAlignment(VAlign_Center);
+
+    auto* Close = WidgetTree->ConstructWidget<UFF_BuildToolsActionButton>(
+        UFF_BuildToolsActionButton::StaticClass(), TEXT("Button_BuildHelpClose"));
+    FButtonStyle CloseStyle = Close->GetStyle();
+    CloseStyle.Normal = FSlateRoundedBoxBrush(FLinearColor(.94f, .97f, 1.f), 6.f);
+    CloseStyle.Hovered = FSlateRoundedBoxBrush(FLinearColor(.75f, .93f, 1.f), 6.f);
+    CloseStyle.Pressed = FSlateRoundedBoxBrush(FLinearColor(.58f, .83f, .94f), 6.f);
+    Close->SetStyle(CloseStyle);
+    Close->SetToolTipText(LOCTEXT("HelpCloseTip", "조작 안내 닫기 · 상단 조작 안내 버튼으로 다시 열 수 있습니다"));
+    auto* Caption = WidgetTree->ConstructWidget<UTextBlock>(
+        UTextBlock::StaticClass(), TEXT("Text_BuildHelpClose"));
+    Caption->SetText(LOCTEXT("HelpCloseAction", "닫기 ×"));
+    Caption->SetColorAndOpacity(FSlateColor(FLinearColor(.05f, .08f, .12f)));
+    FSlateFontInfo CaptionFont = Heading->GetFont();
+    CaptionFont.Size = 13;
+    Caption->SetFont(CaptionFont);
+    Close->AddChild(Caption);
+    auto* CloseBounds = WidgetTree->ConstructWidget<USizeBox>(
+        USizeBox::StaticClass(), TEXT("Size_BuildHelpClose"));
+    CloseBounds->SetWidthOverride(72.f);
+    CloseBounds->SetHeightOverride(30.f);
+    CloseBounds->AddChild(Close);
+    Header->AddChildToHorizontalBox(CloseBounds)->SetVerticalAlignment(VAlign_Center);
+    HelpShell->AddChildToVerticalBox(HelpContent)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+    Close->OnClicked.AddUniqueDynamic(this, &ThisClass::ToggleHelp);
 }
 
 void UFF_BuildToolsWidget::InstallToolbarForegroundLayer()
@@ -695,6 +981,23 @@ void UFF_BuildToolsWidget::RefreshBodyPresentation()
     }
 }
 
+void UFF_BuildToolsWidget::RefreshPlacementSurfaces()
+{
+    const UFF_BuildModeSubsystem* System = BuildMode.Get();
+    const EFF_BuildModeState State = System ? System->GetBuildModeState() : EFF_BuildModeState::Closed;
+    const bool bNewPlacement = FFBuildModeModel::IsPreviewActive(State) && State != EFF_BuildModeState::Moving;
+    const UFF_FacilityInfoSubsystem* Info = GetWorld() ? GetWorld()->GetSubsystem<UFF_FacilityInfoSubsystem>() : nullptr;
+    // The selected facility already owns the right inspector. A held drag uses
+    // release-to-confirm, so neither a duplicate card nor an install dock belongs
+    // on top of that inspector, even in a narrow viewport.
+    if (Border_PlacementInfo)
+        Border_PlacementInfo->SetVisibility(bNewPlacement && !(Info && Info->HasSelection()) &&
+            !(Panel_BuildSettings && Panel_BuildSettings->IsVisible())
+            ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+    if (Border_Tools)
+        Border_Tools->SetVisibility(bNewPlacement ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+}
+
 void UFF_BuildToolsWidget::RefreshHelpPresentation()
 {
     if (IsDesignTime()) return;
@@ -747,6 +1050,7 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
     if (IsDesignTime()) return;
     RefreshEditingHelp();
     RefreshHelpPresentation();
+    RefreshPlacementSurfaces();
     if (!bHelpForegroundSuppressed && Size_BuildWorldHelp && Border_PlacementHelp && Border_PlacementHelp->IsVisible())
     {
         // Use the painted catalog edge in the same logical coordinate system.
@@ -810,8 +1114,10 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
                         Bottom = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(FVector2D::ZeroVector)).Y - 16.f;
                 }
             }
+            const UWidget* HelpHeader = GetWidgetFromName(TEXT("Row_BuildHelpHeader"));
+            const float HeaderHeight = HelpHeader ? HelpHeader->GetDesiredSize().Y + 8.f : 0.f;
             const float ContentHeight = Column_BuildIconHelp
-                ? Column_BuildIconHelp->GetDesiredSize().Y + 24.f
+                ? Column_BuildIconHelp->GetDesiredSize().Y + HeaderHeight + 24.f
                 : Size_BuildWorldHelp->GetDesiredSize().Y;
             // The Designer owns the preferred position. Only move upward/shrink when
             // another visible panel or the viewport would cover the guide.
@@ -883,10 +1189,24 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
     const FGeometry Screen = UWidgetLayoutLibrary::GetPlayerScreenWidgetGeometry(GetOwningPlayer());
     Projected = Geometry.AbsoluteToLocal(Screen.LocalToAbsolute(Projected));
     const FVector2D Size = Geometry.GetLocalSize();
-    // The ping yields to every persistent surface. If no free spot exists it stays hidden;
-    // the same status remains readable in the summary, never covering another control.
-    const FVector2D PingSize = System->IsCurrentPlacementValid() ? FVector2D(280, 40) : FVector2D(360, 60);
+    if (!Text_ContextPing || Size.X <= 48.f) return;
+    // Measure explicit wrapping before choosing a position. A saved WBP's fixed
+    // one-line slot must not crop a longer instruction or translated failure.
+    const FMargin PingPadding = Border_ContextPing->GetPadding();
+    const float MaximumPingWidth = FMath::Min(360.f, float(Size.X) - 48.f);
+    Text_ContextPing->SetAutoWrapText(false);
+    Text_ContextPing->SetWrapTextAt(FMath::Max(1.f,
+        MaximumPingWidth - PingPadding.Left - PingPadding.Right));
+    Text_ContextPing->SetWrappingPolicy(ETextWrappingPolicy::AllowPerCharacterWrapping);
+    Border_ContextPing->SetVisibility(ESlateVisibility::HitTestInvisible);
+    Border_ContextPing->ForceLayoutPrepass();
+    const FVector2D PingSize = Border_ContextPing->GetDesiredSize();
+    Border_ContextPing->SetVisibility(ESlateVisibility::Collapsed);
+    if (PingSize.GetMin() <= 0.f) return;
+    PingSlot->SetAutoSize(true);
     PingSlot->SetSize(PingSize);
+    // The measured bounds yield to persistent surfaces and stay inside the
+    // viewport. The same status remains available in the summary if no slot fits.
     TArray<FVector> WorldCorners;
     if (!System->GetPlacementPreviewWorldCorners(WorldCorners)) return;
     FBox2D PreviewBounds(EForceInit::ForceInit);
@@ -909,6 +1229,29 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
         const FVector2D Max = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(Bounds.GetLocalSize())) + FVector2D(12);
         Occupied.Add(FBox2D(Min, Max));
     }
+    const UFF_FacilityInfoSubsystem* Info = GetWorld() ? GetWorld()->GetSubsystem<UFF_FacilityInfoSubsystem>() : nullptr;
+    const double Now = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+    if (Info && Info->HasSelection() && !FacilityInfoAvoidanceSurface.IsValid() && Now >= NextFacilityInfoSearchTime)
+    {
+        NextFacilityInfoSearchTime = Now + .5;
+        TArray<UUserWidget*> Panels;
+        UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Panels, UFF_FacilityInfoPanel::StaticClass(), false);
+        for (UUserWidget* Panel : Panels)
+            if (Panel && Panel->GetOwningPlayer() == GetOwningPlayer() && Panel->IsVisible())
+            {
+                FacilityInfoAvoidanceSurface = Panel;
+                break;
+            }
+    }
+    if (UUserWidget* Panel = FacilityInfoAvoidanceSurface.Get(); Panel && Panel->IsVisible())
+        if (const UWidget* Surface = Panel->GetWidgetFromName(TEXT("Border_Panel")))
+        {
+            const FGeometry& Bounds = Surface->GetCachedGeometry();
+            if (Bounds.GetLocalSize().GetMin() > 0.f)
+                Occupied.Add(FBox2D(
+                    Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(FVector2D::ZeroVector)) - FVector2D(12.f),
+                    Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(Bounds.GetLocalSize())) + FVector2D(12.f)));
+        }
     FVector2D Position;
     if (FFBuildToolsModel::ResolveContextPingPosition(Projected, PingSize, Size, PreviewBounds, Occupied,
         System->IsDirectPlacementAdjustment() ? 100.f : 52.f, Position))
@@ -964,9 +1307,7 @@ void UFF_BuildToolsWidget::ToggleBuildSettings()
         SetHelpExpanded(false);
     }
     Panel_BuildSettings->SetVisibility(bClosing ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
-    if (Border_PlacementInfo)
-        Border_PlacementInfo->SetVisibility(ViewData.bPreviewActive && bClosing
-            ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+    RefreshPlacementSurfaces();
     if (bClosing)
     {
         if (bRestoreHelpAfterSettings) SetHelpExpanded(true);
@@ -1070,9 +1411,43 @@ bool UFF_BuildToolsWidget::IsEditingAngle() const
         (Editable_Angle->HasKeyboardFocus() || Editable_Angle->HasFocusedDescendants());
 }
 
+bool UFF_BuildToolsWidget::IsEditingDragPlacementGap() const
+{
+    return !bBodyForegroundSuppressed && Editable_DragPlacementGap && Editable_DragPlacementGap->GetIsEnabled() &&
+        (Editable_DragPlacementGap->HasKeyboardFocus() || Editable_DragPlacementGap->HasFocusedDescendants());
+}
+
+bool UFF_BuildToolsWidget::IsEditingText() const
+{
+    return IsEditingAngle() || IsEditingDragPlacementGap() || IsEditingQueueSettings();
+}
+
+bool UFF_BuildToolsWidget::IsEditingQueueSettings() const
+{
+    if (bBodyForegroundSuppressed) return false;
+    for (const UEditableTextBox* Input : {Editable_QueueMaxTeams.Get(), Editable_QueueSlotSpacing.Get(), Editable_QueueLaneWidth.Get()})
+        if (Input && Input->GetIsEnabled() && (Input->HasKeyboardFocus() || Input->HasFocusedDescendants())) return true;
+    return false;
+}
+
 FReply UFF_BuildToolsWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
 {
     if (bBodyForegroundSuppressed) return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
+    // Escape first cancels the editor buffer. It must not also open the pause menu.
+    if (IsEditingQueueSettings())
+    {
+        if (KeyEvent.GetKey() == EKeys::Escape)
+        {
+            if (UFF_BuildModeSubsystem* System = BuildMode.Get()) System->NotifyBuildToolsInteraction();
+            RefreshQueueSettingsText();
+            return FReply::Handled();
+        }
+        if (KeyEvent.GetKey() == EKeys::Enter)
+        {
+            if (!KeyEvent.IsRepeat()) HandleApplyQueueSettings();
+            return FReply::Handled();
+        }
+    }
     const UFF_FestivalSettingsDeveloperSettings* PauseSettings = UFF_FestivalSettingsDeveloperSettings::Get();
     const UFF_BuildModeSubsystem* BuildSystem = BuildMode.Get();
     ULocalPlayer* OwningLocalPlayer = GetOwningLocalPlayer();
@@ -1115,6 +1490,21 @@ FReply UFF_BuildToolsWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, c
             KeyEvent.GetKey() == EKeys::SpaceBar || KeyEvent.GetKey() == EKeys::Up ||
             KeyEvent.GetKey() == EKeys::Down) return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
         return FReply::Handled();
+    }
+    if (IsEditingQueueSettings())
+    {
+        return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
+    }
+    if (IsEditingDragPlacementGap())
+    {
+        if (KeyEvent.GetKey() == EKeys::Escape)
+        {
+            if (UFF_BuildModeSubsystem* System = BuildMode.Get()) System->NotifyBuildToolsInteraction();
+            Editable_DragPlacementGap->SetError(FText::GetEmpty());
+            RefreshDragPlacementGapText();
+            return FReply::Handled();
+        }
+        return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
     }
     if (UFF_BuildModeSubsystem* System = BuildMode.Get())
         if (System->HandleNearbyPlacementShortcut(KeyEvent.GetKey(),
@@ -1161,6 +1551,67 @@ void UFF_BuildToolsWidget::RefreshAngleText()
         const UFF_BuildModeSubsystem* System = BuildMode.Get();
         Editable_Angle->SetText(FText::FromString(FString::Printf(TEXT("%.2f"),
             System ? System->GetPlacementYawDegrees() : 0.0f)));
+    }
+}
+
+void UFF_BuildToolsWidget::RefreshDragPlacementGapText()
+{
+    if (Editable_DragPlacementGap)
+    {
+        const UFF_BuildModeSubsystem* System = BuildMode.Get();
+        Editable_DragPlacementGap->SetText(FText::FromString(FString::FromInt(System ? System->GetDragPlacementGapCm() : 0)));
+    }
+}
+
+void UFF_BuildToolsWidget::RefreshQueueSettingsText()
+{
+    TGuardValue<bool> Guard(bRefreshingQueueSettings, true);
+    const UFF_BuildModeSubsystem* System = BuildMode.Get();
+    const FFFZSQueueSettings Settings = System ? System->GetEditingQueueSettings() : FFFZSQueueSettings();
+    if (Editable_QueueMaxTeams) Editable_QueueMaxTeams->SetText(FText::FromString(FString::FromInt(Settings.MaxWaitingTeams)));
+    if (Editable_QueueSlotSpacing) Editable_QueueSlotSpacing->SetText(FText::FromString(FString::SanitizeFloat(Settings.SlotSpacingCm)));
+    if (Editable_QueueLaneWidth) Editable_QueueLaneWidth->SetText(FText::FromString(FString::SanitizeFloat(Settings.LaneWidthCm)));
+    for (UEditableTextBox* Input : {Editable_QueueMaxTeams.Get(), Editable_QueueSlotSpacing.Get(), Editable_QueueLaneWidth.Get()})
+        if (Input) Input->SetError(FText::GetEmpty());
+    bQueueSettingsDirty = false;
+}
+
+void UFF_BuildToolsWidget::RefreshQueueSettingsControls()
+{
+    const UFF_BuildModeSubsystem* System = BuildMode.Get();
+    const bool bSession = System && FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState());
+    const bool bAvailable = bSession && System->CanChooseQueueLayout();
+    const UFF_FacilityInfoSubsystem* Info = GetWorld() ? GetWorld()->GetSubsystem<UFF_FacilityInfoSubsystem>() : nullptr;
+    const FGuid Instance = Info ? Info->GetSelectedFacilityId() : FGuid();
+    const FName Definition = System ? System->GetSelectedFacilityDefinitionId() : NAME_None;
+    const uint8 State = System ? static_cast<uint8>(System->GetBuildModeState()) : MAX_uint8;
+    if (!bAvailable || QueueEditingState != State || QueueEditingDefinitionId != Definition || QueueEditingInstanceId != Instance)
+        bQueueSettingsDirty = false;
+    QueueEditingState = State;
+    QueueEditingDefinitionId = Definition;
+    QueueEditingInstanceId = Instance;
+    if (Panel_QueueSettings) Panel_QueueSettings->SetVisibility(bSession ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+    for (UEditableTextBox* Input : {Editable_QueueMaxTeams.Get(), Editable_QueueSlotSpacing.Get(), Editable_QueueLaneWidth.Get()})
+        if (Input) Input->SetIsEnabled(bAvailable);
+    if (Button_ApplyQueueSettings) Button_ApplyQueueSettings->SetIsEnabled(bAvailable);
+    if (Button_ResetAllQueues) Button_ResetAllQueues->SetIsEnabled(bSession && System->CanResetAllFacilityQueuesToDefaults());
+    if (!bQueueSettingsDirty && !IsEditingQueueSettings()) RefreshQueueSettingsText();
+    if (Text_QueueSettingsSummary)
+    {
+        if (!bAvailable)
+            Text_QueueSettingsSummary->SetText(LOCTEXT("QueueSettingsChooseFacility", "대기열이 있는 시설을 선택해 조절하세요.\n전체 기본값은 6팀 · 115cm 간격 · 300cm 폭입니다."));
+        else
+        {
+            const FFFZSQueueSettings Settings = System->GetEditingQueueSettings();
+            const double LengthM = FMath::Max(0, Settings.MaxWaitingTeams - 1) * static_cast<double>(Settings.SlotSpacingCm) / 100.;
+            FNumberFormattingOptions NumberOptions;
+            NumberOptions.MaximumFractionalDigits = 2;
+            Text_QueueSettingsSummary->SetText(FText::Format(
+                Settings.bEnabled
+                    ? LOCTEXT("QueueSettingsLength", "현재 줄 길이 {0}m · 정원과 간격으로 자동 계산\n설치·이동은 배치를 확정할 때 반영합니다.")
+                    : LOCTEXT("QueueLegacySettingsLength", "현재 자리 기준 길이 {0}m\n기존 대기열 · 적용하면 공통 방식으로 변경합니다. 폭은 제안값입니다."),
+                FText::AsNumber(LengthM, &NumberOptions)));
+        }
     }
 }
 
@@ -1234,11 +1685,7 @@ void UFF_BuildToolsWidget::RefreshTools()
             : State == EFF_BuildModeState::BuildMode
             ? LOCTEXT("BackToFestival", "축제로 돌아가기")
             : LOCTEXT("BackToCatalog", "시설 목록으로"));
-    if (Border_Tools)
-        Border_Tools->SetVisibility(bPreview ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-    if (Border_PlacementInfo)
-        Border_PlacementInfo->SetVisibility(bPreview && !(Panel_BuildSettings && Panel_BuildSettings->IsVisible())
-            ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+    RefreshPlacementSurfaces();
     if (!bPreview || (System && System->IsInputSuspendedForPauseMenu())) { StopPointerFreeRotation(); }
     if (!bPreview)
     {
@@ -1249,8 +1696,8 @@ void UFF_BuildToolsWidget::RefreshTools()
         if (Panel_PlacementFacts) Panel_PlacementFacts->SetVisibility(ESlateVisibility::Collapsed);
         if (!bSession) SetHelpExpanded(false);
     }
-    // Open once on entry. Cursor, rotation and economy refreshes preserve a user's dismissal.
-    else if (bStartingPreview)
+    // A user's dismissal also survives switching facilities and starting a new preview.
+    else if (bStartingPreview && !bHelpDismissedByUser)
     {
         if (Panel_BuildSettings && Panel_BuildSettings->IsVisible()) bRestoreHelpAfterSettings = true;
         else SetHelpExpanded(true);
@@ -1260,7 +1707,8 @@ void UFF_BuildToolsWidget::RefreshTools()
     const int32 ActiveSnap = System ? System->GetActivePositionSnapCm() : PreferredSnap;
     ViewData.bPreviewActive = bPreview;
     ViewData.bMoving = State == EFF_BuildModeState::Moving;
-    ViewData.bDragPlacementEnabled = System && System->IsDragPlacementEnabled() && !System->IsDirectPlacementAdjustment();
+    ViewData.bDragPlacementEnabled = !ViewData.bMoving && System && System->IsDragPlacementEnabled() && !System->IsDirectPlacementAdjustment();
+    ViewData.DragPlacementGapCm = System ? System->GetDragPlacementGapCm() : 0;
     ViewData.bGridVisible = bGrid;
     ViewData.PreferredSnapCm = PreferredSnap;
     ViewData.ActiveSnapCm = ActiveSnap;
@@ -1329,18 +1777,22 @@ void UFF_BuildToolsWidget::RefreshTools()
         HelpHint->SetAutoWrapText(true);
         HelpHint->SetText(bPreview && !ViewData.bMoving
             ? LOCTEXT("PlacementReturnToBuildUiHint", "시설 설치 중 우클릭하면\n건축모드 UI가 다시 표시됩니다.")
+            : ViewData.bMoving
+            ? LOCTEXT("MovingFacilityInfoHint", "시설을 누른 채 드래그하고 놓으면 이동합니다.\n우클릭하면 원래 위치로 되돌아갑니다.")
             : LOCTEXT("BuildKeyboardHelpHint", "표시된 키를 누르면 실행됩니다"));
     }
     const bool bDirectHelp = System && System->IsDirectPlacementAdjustment();
     if (Text_BuildHelpPrimary)
         Text_BuildHelpPrimary->SetText(!bPreview
-            ? LOCTEXT("IconHelpInspect", "시설 클릭해 정보 보기")
-            : bDirectHelp ? LOCTEXT("KeyHelpGizmoDrag", "핸들을 드래그해 조정")
-            : ViewData.bDragPlacementEnabled ? LOCTEXT("IconHelpDrag", "드래그로 연속 설치")
+            ? LOCTEXT("IconHelpInspect", "클릭 정보 · 누른 채 드래그 이동")
+            : ViewData.bMoving ? LOCTEXT("IconHelpConfirmMove", "누른 채 드래그 · 놓아서 이동 확정")
+            : bDirectHelp ? LOCTEXT("KeyHelpGizmoDrag", "핸들 조정 · Enter 확정 · T 위치 다시 선택")
+            : ViewData.bDragPlacementEnabled ? FText::Format(LOCTEXT("IconHelpDragWithGap", "드래그 미리보기 · 놓아 가능한 곳만 설치 · 여유 {0}cm"),
+                FText::AsNumber(ViewData.DragPlacementGapCm))
             : LOCTEXT("IconHelpPlace", "클릭해 시설 배치"));
     if (Text_BuildHelpRotate)
-        Text_BuildHelpRotate->SetText(ViewData.bDragPlacementEnabled
-            ? LOCTEXT("IconHelpEndDrag", "회전하면 연속 배치 종료")
+        Text_BuildHelpRotate->SetText(!ViewData.bMoving && ViewData.bDragPlacementEnabled
+            ? LOCTEXT("IconHelpEndDrag", "회전하면 드래그 미리보기 취소")
             : LOCTEXT("IconHelpRotateFacility", "시설 방향 회전"));
     if (Text_BuildHelpMove)
         Text_BuildHelpMove->SetText(LOCTEXT("IconHelpMoveCamera", "카메라 이동"));
@@ -1382,7 +1834,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     if (Text_RotationHint)
     {
         Text_RotationHint->SetText(FText::Format(ViewData.bDragPlacementEnabled
-            ? LOCTEXT("DragRotationHint", "{0}°씩 회전 · 회전 시 연속 배치 종료")
+            ? LOCTEXT("DragRotationHint", "{0}°씩 회전 · 회전 시 드래그 미리보기 취소")
             : LOCTEXT("RotationHint", "{0}°씩 회전 · 자유 회전 지원"),
             FText::AsNumber(System ? System->GetPlacementRotationSnapDegrees() : 45.0f)));
     }
@@ -1399,7 +1851,7 @@ void UFF_BuildToolsWidget::RefreshTools()
             ViewData.bDragPlacementEnabled ? LOCTEXT("ModeDragPlacement", "시설 연속 배치") :
             bPreview ? LOCTEXT("ModePlacement", "시설 배치") : LOCTEXT("ModeOverview", "시설 확인"));
         Text_Mode->SetToolTipText(bPreview
-            ? UFF_BuildModeGuide::MakePlacementHelpText(ViewData.bMoving, ViewData.bDragPlacementEnabled)
+            ? UFF_BuildModeGuide::MakePlacementHelpText(ViewData.bMoving, ViewData.bDragPlacementEnabled, ViewData.DragPlacementGapCm)
             : UFF_BuildModeGuide::MakeBuildOverviewHelpText());
     }
     {
@@ -1415,7 +1867,7 @@ void UFF_BuildToolsWidget::RefreshTools()
         else if (bPreview && System->IsCurrentPlacementValid())
         {
             Status = ViewData.bDragPlacementEnabled
-                ? LOCTEXT("DragPlacementReady", "배치 가능 · 드래그로 연속 설치")
+                ? LOCTEXT("DragPlacementReady", "드래그 미리보기 · 놓아 가능한 곳만 설치")
                 : FText::Format(LOCTEXT("PlacementReady", "배치 가능 · 현재 {0}cm 맞춤"), FText::AsNumber(ActiveSnap));
             Color = ReadyStatusColor;
         }
@@ -1428,7 +1880,9 @@ void UFF_BuildToolsWidget::RefreshTools()
         if (Text_ContextPing)
         {
             Text_ContextPing->SetText(System && System->IsCurrentPlacementValid()
-                ? System->IsDirectPlacementAdjustment() ? LOCTEXT("PingPinned", "위치 조정 완료 · 배치 확정")
+                ? ViewData.bMoving ? LOCTEXT("PingMoveReady", "이동 가능 · 마우스를 놓아 확정")
+                : System->IsDirectPlacementAdjustment() ? LOCTEXT("PingPinned", "위치 조정 완료 · 배치 확정")
+                : ViewData.bDragPlacementEnabled ? LOCTEXT("PingDragReady", "드래그 미리보기\n놓으면 가능한 곳만 설치")
                     : LOCTEXT("PingReady", "배치 가능 · 눌러서 설치") : Guidance.Title);
             Text_ContextPing->SetColorAndOpacity(Color);
         }
@@ -1523,6 +1977,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     Enable(Button_FreeRotateRight, bPreview);
     Enable(Button_Catalog, bSession);
     Enable(Editable_Angle, bPreview);
+    Enable(Editable_DragPlacementGap, bSession);
     Enable(Button_NudgeLeft, bPreview);
     Enable(Button_NudgeUp, bPreview);
     Enable(Button_NudgeDown, bPreview);
@@ -1590,6 +2045,8 @@ void UFF_BuildToolsWidget::RefreshTools()
     {
         RefreshAngleText();
     }
+    if (!IsEditingDragPlacementGap()) RefreshDragPlacementGapText();
+    RefreshQueueSettingsControls();
     BP_OnToolsStateChanged(ViewData);
 }
 
@@ -1687,6 +2144,12 @@ void UFF_BuildToolsWidget::RefreshEditingHelp()
         FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState());
     if (Button_BuildHelpUndo) Button_BuildHelpUndo->SetIsEnabled(bCanInteract && Zones && Zones->CanUndoConstruction());
     if (Button_BuildHelpRedo) Button_BuildHelpRedo->SetIsEnabled(bCanInteract && Zones && Zones->CanRedoConstruction());
+    if (auto* Undo = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_BuildHelpUndo"))))
+    {
+        Undo->SetText(LOCTEXT("UndoAction", "실행 취소"));
+    }
+    if (Button_BuildHelpUndo) Button_BuildHelpUndo->SetToolTipText(LOCTEXT("UndoStrokeTip",
+        "Ctrl+Z · 마지막 건설 작업을 취소합니다. 드래그 한 번으로 설치한 시설은 함께 취소됩니다."));
     const bool bQueueAvailable = bCanInteract && System->CanChooseQueueLayout();
     if (Row_BuildHelpQueue)
         Row_BuildHelpQueue->SetVisibility(bQueueAvailable ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
@@ -1782,6 +2245,89 @@ void UFF_BuildToolsWidget::HandleAngleCommitted(const FText& Text, const ETextCo
         return;
     }
     ApplyAngleText(Text);
+}
+
+void UFF_BuildToolsWidget::HandleDragPlacementGapCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
+{
+    UFF_BuildModeSubsystem* System = BuildMode.Get();
+    if (!System || !FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState()) ||
+        System->IsInputSuspendedForPauseMenu()) return;
+    System->NotifyBuildToolsInteraction();
+    if (CommitMethod == ETextCommit::OnCleared)
+    {
+        if (Editable_DragPlacementGap) Editable_DragPlacementGap->SetError(FText::GetEmpty());
+        RefreshDragPlacementGapText();
+        return;
+    }
+    int32 GapCm = 0;
+    const bool bValid = FFBuildToolsModel::TryParseDragPlacementGapText(Text.ToString(), GapCm);
+    if (Editable_DragPlacementGap)
+        Editable_DragPlacementGap->SetError(bValid ? FText::GetEmpty() :
+            LOCTEXT("InvalidDragPlacementGap", "0~1000 사이의 정수(cm)를 입력해 주세요."));
+    if (!bValid) return;
+    System->SetDragPlacementGapCm(GapCm);
+    RefreshDragPlacementGapText();
+}
+
+void UFF_BuildToolsWidget::HandleQueueSettingsChanged(const FText& Text)
+{
+    if (!bRefreshingQueueSettings) bQueueSettingsDirty = true;
+}
+
+void UFF_BuildToolsWidget::HandleQueueSettingsCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
+{
+    if (bRefreshingQueueSettings) return;
+    if (CommitMethod == ETextCommit::OnCleared)
+    {
+        if (UFF_BuildModeSubsystem* System = BuildMode.Get()) System->NotifyBuildToolsInteraction();
+        RefreshQueueSettingsText();
+    }
+    else if (CommitMethod == ETextCommit::OnEnter) HandleApplyQueueSettings();
+    // Moving between inputs keeps all three buffers until the explicit atomic apply.
+}
+
+void UFF_BuildToolsWidget::HandleApplyQueueSettings()
+{
+    UFF_BuildModeSubsystem* System = BuildMode.Get();
+    if (!System || !System->CanChooseQueueLayout() || !Editable_QueueMaxTeams ||
+        !Editable_QueueSlotSpacing || !Editable_QueueLaneWidth) return;
+    System->NotifyBuildToolsInteraction();
+    int32 Teams = 0;
+    float Spacing = 0.f, Width = 0.f;
+    const bool bValid = FFBuildToolsModel::TryParseQueueSettingsText(Editable_QueueMaxTeams->GetText().ToString(),
+        Editable_QueueSlotSpacing->GetText().ToString(), Editable_QueueLaneWidth->GetText().ToString(), Teams, Spacing, Width);
+    const auto SetError = [](UEditableTextBox* Input, const bool bInputValid, const FText& Error)
+        { Input->SetError(bInputValid ? FText::GetEmpty() : Error); };
+    int32 IgnoredTeams = 0;
+    float IgnoredSpacing = 0.f, IgnoredWidth = 0.f;
+    SetError(Editable_QueueMaxTeams, FFBuildToolsModel::TryParseQueueSettingsText(
+        Editable_QueueMaxTeams->GetText().ToString(), TEXT("115"), TEXT("300"), IgnoredTeams, IgnoredSpacing, IgnoredWidth),
+        LOCTEXT("InvalidQueueTeams", "1~512 사이의 정수(팀)를 입력해 주세요."));
+    SetError(Editable_QueueSlotSpacing, FFBuildToolsModel::TryParseQueueSettingsText(
+        TEXT("6"), Editable_QueueSlotSpacing->GetText().ToString(), TEXT("300"), IgnoredTeams, IgnoredSpacing, IgnoredWidth),
+        LOCTEXT("InvalidQueueSpacing", "90~1000 사이의 숫자(cm)를 입력해 주세요."));
+    SetError(Editable_QueueLaneWidth, FFBuildToolsModel::TryParseQueueSettingsText(
+        TEXT("6"), TEXT("115"), Editable_QueueLaneWidth->GetText().ToString(), IgnoredTeams, IgnoredSpacing, IgnoredWidth),
+        LOCTEXT("InvalidQueueWidth", "100~1000 사이의 숫자(cm)를 입력해 주세요."));
+    if (!bValid) return;
+    if (System->SetSelectedFacilityQueueSettings(Teams, Spacing, Width))
+    {
+        RefreshQueueSettingsText();
+        RefreshQueueSettingsControls();
+    }
+}
+
+void UFF_BuildToolsWidget::HandleResetAllQueues()
+{
+    if (UFF_BuildModeSubsystem* System = BuildMode.Get(); System && System->CanResetAllFacilityQueuesToDefaults())
+    {
+        System->NotifyBuildToolsInteraction();
+        if (System->ResetAllFacilityQueuesToDefaults())
+        {
+            RefreshQueueSettingsText();
+            RefreshQueueSettingsControls();
+        }
+    }
 }
 
 #undef LOCTEXT_NAMESPACE

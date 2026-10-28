@@ -47,6 +47,8 @@ struct FFFZSConstructionHistoryEntry
     TArray<FFFZSCommand> Commands;
     TMap<FGuid, FFFZSFacilityInstanceSnapshot> Before;
     TMap<FGuid, FFFZSFacilityInstanceSnapshot> After;
+    // Fresh for every explicit press/release session, even if a caller reuses TransactionId.
+    FGuid PlacementStrokeId;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFFZSWorldChangedSignature, const FFFZSWorldChangeEvent&, Event);
@@ -214,6 +216,13 @@ public:
     bool ValidateConstructionBatch(const TArray<FFFZSCommand>& Commands, FText& OutFailureReason);
     FFFZSCommandResult ExecuteConstructionBatch(const TArray<FFFZSCommand>& Commands);
 
+    // Consecutive successful installs with this transaction form one undo step (up to 4096).
+    // Begin before the first press install and end on release/cancel. Other successful edits
+    // close the session; transaction IDs alone never merge independently submitted commands.
+    bool BeginConstructionPlacementStroke(FGuid TransactionId);
+    void EndConstructionPlacementStroke(FGuid TransactionId);
+    bool IsConstructionPlacementStrokeActive(const FGuid& TransactionId) const;
+
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
     bool UndoConstruction(FText& OutFailureReason);
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
@@ -234,6 +243,13 @@ public:
     FFFZSPlacementValidation ValidateQueueLayout(FGuid FacilityInstanceId, EFFZSQueueLayout Layout) const;
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Queue")
     bool SetFacilityQueueLayout(FGuid FacilityInstanceId, EFFZSQueueLayout Layout, FText& OutError);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Queue")
+    FFFZSPlacementValidation ValidateQueueSettings(FGuid FacilityInstanceId, const FFFZSQueueSettings& Settings, EFFZSQueueLayout Layout) const;
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Queue")
+    bool SetFacilityQueueSettings(FGuid FacilityInstanceId, const FFFZSQueueSettings& Settings, EFFZSQueueLayout Layout, FText& OutError);
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Queue")
+    FFFZSCommandResult ResetAllFacilityQueueSettingsToDefaults();
 
 
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Policy")
@@ -339,8 +355,16 @@ private:
     const TArray<FFFZSPolicyContext>* ConstructionPolicyContexts = nullptr;
     bool bConstructionReplayUndo = false;
     bool bIsConstructionBatch = false;
+    bool bIsResettingAllQueueSettings = false;
     bool bIsReplayingConstruction = false;
+    FGuid ConstructionPlacementStrokeTransactionId;
+    FGuid ConstructionPlacementStrokeId;
+    // Ending from a policy callback still includes the command already being committed.
+    FGuid ClosingPlacementStrokeCommandId;
+    FGuid ClosingPlacementStrokeTransactionId;
+    FGuid ClosingPlacementStrokeId;
 
+    void ResetConstructionPlacementStroke();
     void RecordConstructionEdit(const FFFZSCommand& Command, const FFFZSFacilityInstanceSnapshot& Before);
     void PushConstructionHistory(FFFZSConstructionHistoryEntry&& Entry);
     bool ReplayConstructionHistory(bool bUndo, FText& OutFailureReason);

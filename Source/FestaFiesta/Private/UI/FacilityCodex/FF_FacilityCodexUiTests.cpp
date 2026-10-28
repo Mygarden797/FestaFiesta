@@ -183,7 +183,7 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
         auto* LockedLabel = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_DetailRewardLocked")));
         auto* DetailGold = Cast<UImage>(Screen->GetWidgetFromName(TEXT("Image_DetailRewardGold")));
         auto* CardGold = Cast<UImage>(CardClass->GetWidgetTreeArchetype()->FindWidget(TEXT("Image_CardRewardGold")));
-        if (!TestNotNull(TEXT("Top-right codex exit button"), ExitCodex) ||
+        if (!TestNotNull(TEXT("Top-right codex back button"), ExitCodex) ||
             !TestNotNull(TEXT("Pearl collection browse"), Browse) ||
             !TestNotNull(TEXT("Separate detail page"), DetailPage) ||
             !TestNotNull(TEXT("Separate showcase"), Showcase) ||
@@ -276,13 +276,21 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
         TestFalse(TEXT("Back returns to the collection list"), Screen->IsCombinationDetailOpen());
         int32 ExitRequests = 0;
         const FDelegateHandle ExitObserver = Screen->OnCloseRequested.AddLambda([&ExitRequests]() { ++ExitRequests; });
-        ExitCodex->OnClicked.Broadcast();
-        TestEqual(TEXT("X on the list requests closing the whole codex once"), ExitRequests, 1);
+        const auto* BackLabel = Cast<UTextBlock>(ExitCodex->GetContent());
+        TestTrue(TEXT("The former X advertises back navigation on the saved widget"),
+            BackLabel && BackLabel->GetText().ToString() == TEXT("‹") &&
+            ExitCodex->GetToolTipText().ToString() == TEXT("뒤로가기 · Esc"));
+        Screen->SetDiscoveryFilter(EFF_FacilityCodexFilterState::Discovered);
         Screen->OpenCombinationDetail(Entries[0].RuleId);
         ExitCodex->OnClicked.Broadcast();
-        TestEqual(TEXT("X on a detail requests closing the whole codex once"), ExitRequests, 2);
+        TestFalse(TEXT("The top-right back button returns from detail to the list"), Screen->IsCombinationDetailOpen());
+        TestEqual(TEXT("Detail back keeps the codex modal open"), ExitRequests, 0);
+        TestEqual(TEXT("Detail back retains the selected recipe"), Screen->GetSelectedRuleId(), Entries[0].RuleId);
+        TestEqual(TEXT("Detail back preserves the discovery filter"), Screen->GetVisibleEntryCount(), 1);
+        TestTrue(TEXT("Detail back restores the recipe list"), Browse->IsVisible() && !DetailPage->IsVisible());
+        ExitCodex->OnClicked.Broadcast();
+        TestEqual(TEXT("Back on the list requests returning to the previous screen once"), ExitRequests, 1);
         Screen->OnCloseRequested.Remove(ExitObserver);
-        Close->OnClicked.Broadcast();
         Screen->SetPreviewEntries(Entries);
         Screen->SetDiscoveryFilter(EFF_FacilityCodexFilterState::RewardReady);
         TestEqual(TEXT("Reward filter lists only the discovered unpaid recipe"), Screen->GetVisibleEntryCount(), 1);
@@ -378,10 +386,10 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                 TestTrue(TEXT("Collection filters occupy their own row below the title and above the list"),
                     FilterRect.Top >= CloseRect.Bottom - 1.f && FilterRect.Bottom <= BrowseRect.Top + 1.f);
                 const FSlateRect ExitRect = ExitCodex->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-                AddInfo(FString::Printf(TEXT("Codex bounds %dx%d DPI=%.9f: X=(%.3f,%.3f)-(%.3f,%.3f), size=(%.9f,%.9f); titleRight=%.3f filterTop=%.3f browseRight=%.3f"),
+                AddInfo(FString::Printf(TEXT("Codex bounds %dx%d DPI=%.9f: Back=(%.3f,%.3f)-(%.3f,%.3f), size=(%.9f,%.9f); titleRight=%.3f filterTop=%.3f browseRight=%.3f"),
                     Resolution.X, Resolution.Y, Dpi, ExitRect.Left, ExitRect.Top, ExitRect.Right, ExitRect.Bottom,
                     ExitRect.GetSize().X, ExitRect.GetSize().Y, CloseRect.Right, FilterRect.Top, BrowseRect.Right));
-                TestTrue(TEXT("X remains visible at the top-right above the filters at every resolution"),
+                TestTrue(TEXT("Back remains visible at the top-right above the filters at every resolution"),
                     ExitCodex->IsVisible() && ExitRect.GetSize().GetMin() >= 31.95f &&
                     ExitRect.Right < ScreenRect.Right && ExitRect.Left > ScreenRect.Left &&
                     ExitRect.Top >= 0.f && ExitRect.Bottom < FilterRect.Top && ExitRect.Left > CloseRect.Right);
@@ -542,7 +550,7 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
                 const FSlateRect DetailRect = DetailPage->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 const FSlateRect ExitRect = ExitCodex->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 const FSlateRect NextRect = Screen->GetWidgetFromName(TEXT("Button_CollectionNext"))->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-                TestTrue(TEXT("Detail navigation leaves a clear gap before the X button"),
+                TestTrue(TEXT("Detail navigation leaves a clear gap before the back button"),
                     ExitCodex->IsVisible() && NextRect.Right + 16.f * Dpi <= ExitRect.Left && ExitRect.Right <= Resolution.X);
                 const FSlateRect ShowcaseRect = Showcase->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 const FSlateRect RewardPanelRect = Screen->GetWidgetFromName(TEXT("Border_ShowcaseRewardInfo"))

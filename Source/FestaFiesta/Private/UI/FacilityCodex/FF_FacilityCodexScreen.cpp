@@ -176,6 +176,13 @@ void UFF_FacilityCodexScreen::UpdateCloseTargetLayout()
 void UFF_FacilityCodexScreen::NativePreConstruct()
 {
 	Super::NativePreConstruct();
+	// Apply the navigation affordance to existing saved widgets as well as Designer previews.
+	if (Button_ExitCodex)
+	{
+		Button_ExitCodex->SetToolTipText(LOCTEXT("BackHint", "뒤로가기 · Esc"));
+		if (auto* Label = Cast<UTextBlock>(Button_ExitCodex->GetContent()))
+			Label->SetText(LOCTEXT("BackIcon", "‹"));
+	}
 #if WITH_EDITORONLY_DATA
 	if (IsDesignTime() && Column_CollectionCategories)
 	{
@@ -883,9 +890,8 @@ void UFF_FacilityCodexScreen::HandleClose()
 }
 void UFF_FacilityCodexScreen::HandleExitCodex()
 {
-	// The X closes the whole modal, including from a recipe detail. The presenter
-	// restores the original catalog/inspector and input state through this event.
-	OnCloseRequested.Broadcast();
+	// Keep the saved widget binding while sharing the same back policy as Escape and the title button.
+	HandleClose();
 }
 void UFF_FacilityCodexScreen::HandleAll() { SetDiscoveryFilter(EFF_FacilityCodexFilterState::All); }
 void UFF_FacilityCodexScreen::HandleDiscovered() { SetDiscoveryFilter(EFF_FacilityCodexFilterState::Discovered); }

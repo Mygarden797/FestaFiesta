@@ -6,6 +6,7 @@
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
+#include "Components/EditableTextBox.h"
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
@@ -82,6 +83,19 @@ bool FFFBuildToolsCatalogHelpTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("The same toolbar action dismisses instructions in the catalog"), HelpIsRendered());
     if (!Click(TEXT("Button_ToolbarHelp")) || !Click(TEXT("Button_BuildSettings"))) return false;
     TestTrue(TEXT("The real settings action opens its drawer"), Settings->IsVisible());
+    auto* GapInput = Cast<UEditableTextBox>(Widget->GetWidgetFromName(TEXT("Editable_DragPlacementGap")));
+    if (!TestNotNull(TEXT("Saved toolbar gains the spacing control without a binary migration"), GapInput)) return false;
+    TestTrue(TEXT("The gap input has its real native commit binding"), GapInput->OnTextCommitted.IsBound());
+    const int32 PreviousSnap = Build->GetPreferredPositionSnapCm();
+    GapInput->SetText(FText::FromString(TEXT("250")));
+    GapInput->OnTextCommitted.Broadcast(GapInput->GetText(), ETextCommit::OnEnter);
+    TestEqual(TEXT("Editing the visible control updates actual drag spacing"), Build->GetDragPlacementGapCm(), 250);
+    TestEqual(TEXT("Facility spacing does not change the position snap preference"), Build->GetPreferredPositionSnapCm(), PreviousSnap);
+    GapInput->SetText(FText::FromString(TEXT("1001")));
+    GapInput->OnTextCommitted.Broadcast(GapInput->GetText(), ETextCommit::OnEnter);
+    TestEqual(TEXT("An invalid visible edit preserves the previous valid setting"), Build->GetDragPlacementGapCm(), 250);
+    GapInput->OnTextCommitted.Broadcast(GapInput->GetText(), ETextCommit::OnCleared);
+    TestEqual(TEXT("Cancelling an invalid edit restores the stored centimeters"), GapInput->GetText().ToString(), FString(TEXT("250")));
     TestFalse(TEXT("Settings cover previously open instructions"), HelpIsRendered());
     TestEqual(TEXT("Settings collapse the complete instruction surface"), Surface->GetVisibility(), ESlateVisibility::Collapsed);
     if (!Click(TEXT("Button_BuildSettingsClose"))) return false;

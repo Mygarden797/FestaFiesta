@@ -6,6 +6,7 @@
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSQueueGeometry.h"
+#include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 
 namespace
 {
@@ -71,7 +72,9 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(
 		|| Rules.MaxWaitingAgents > UFFZSDeveloperSettings::MaxQueueWaitingAgents
 		|| Spec.QueueSplinePointsCm.Num() > UFFZSDeveloperSettings::MaxQueueSplinePoints
 		|| !FMath::IsFinite(Rules.SlotSpacingCm)
-		|| Rules.SlotSpacingCm <= 0.0f)
+		|| Rules.SlotSpacingCm <= 0.0f
+		|| (Spec.QueueSettings.bEnabled && (!FMath::IsFinite(Spec.QueueSettings.LaneWidthCm)
+			|| Spec.QueueSettings.LaneWidthCm <= 0.f)))
 	{
 		return false;
 	}
@@ -173,6 +176,16 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(
 	OutLane.bConstrainMemberPlacement = true;
 	OutLane.MemberPlacementClearanceCm = 40.f;
 	OutLane.MaxMemberLateralOffsetCm = 270.f;
+	if (Spec.QueueSettings.bEnabled)
+	{
+		// Companion centres must leave a complete Crowd body inside the reserved
+		// lane. Keep the same 40cm safety radius used by the placement solver.
+		const float MemberRadiusCm = FMath::Max(FUnitData().Radius, OutLane.MemberPlacementClearanceCm);
+		const FVector Scale = FacilityTransform.GetScale3D().GetAbs();
+		const float MinimumHorizontalScale = static_cast<float>(FMath::Min(Scale.X, Scale.Y));
+		OutLane.MaxMemberLateralOffsetCm = FMath::Clamp(
+			Spec.QueueSettings.LaneWidthCm * MinimumHorizontalScale * .5f - MemberRadiusCm, 0.f, 270.f);
+	}
 	FFF_QueuePlacementObstacle OwnFootprint;
 	if (TryBuildPlacementObstacle(Spec, FacilityTransform, OwnFootprint))
 	{
