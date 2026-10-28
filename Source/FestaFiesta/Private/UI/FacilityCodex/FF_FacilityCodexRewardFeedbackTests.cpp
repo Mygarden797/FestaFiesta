@@ -181,6 +181,8 @@ bool FFF_FacilityCodexRewardFeedbackTest::RunTest(const FString& Parameters)
 	Definition->FestivalId = TEXT("CodexFeedbackAutomation");
 	Definition->InitialGold = 1000;
 	Economy->StartFestival(Definition.Get());
+	TestTrue(TEXT("New festival clears previously seeded discoveries"), Progress->GetDiscoveredRuleIdsView().IsEmpty());
+	Progress->RecordDiscoveries(TSet<FName>{FirstRule, SecondRule});
 	Codex->OnWorldBeginPlay(*World);
 	bool bStartupQueueAdvanced = false;
 	FTimerHandle StartupProbe = World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateLambda([&bStartupQueueAdvanced]()

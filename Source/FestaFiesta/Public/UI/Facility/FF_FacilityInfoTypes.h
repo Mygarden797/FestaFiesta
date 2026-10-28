@@ -163,6 +163,11 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText QueueCapacityText;
+	/** The installed facility's configuration, independent of current queue occupancy. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Queue") bool bHasQueueSettings = false;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Queue") bool bCanEditQueueSettings = false;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Queue") FFFZSQueueSettings QueueSettings;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Queue") FText QueueSettingsHint;
 	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info") FText QueueCapacityValueText;
 	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info") FText ServiceCapacityValueText;
 

@@ -124,9 +124,12 @@ bool Layout(UWidgetBlueprint& BP, UWidgetTree& T)
         300, FVector2D(1, 1), FVector2D(-28, -96), FVector2D(1, 1));
 
     auto* PingText = Text(BP, T, TEXT("Text_ContextPing"), TEXT("배치 가능 · 클릭 / Enter"), 15);
+    PingText->SetAutoWrapText(false);
+    PingText->SetWrapTextAt(336.f);
+    PingText->SetWrappingPolicy(ETextWrappingPolicy::AllowPerCharacterWrapping);
     auto* Ping = Panel(BP, T, TEXT("Border_ContextPing"), PingText, TEXT("Header")); Ping->SetPadding(FMargin(12, 8));
     Ping->SetVisibility(ESlateVisibility::Collapsed);
-    auto* PingSlot = Root->AddChildToCanvas(Ping); PingSlot->SetSize(FVector2D(280, 40));
+    auto* PingSlot = Root->AddChildToCanvas(Ping); PingSlot->SetAutoSize(true);
     return true;
 }
 bool RefineLeftHelp(UWidgetBlueprint& BP)

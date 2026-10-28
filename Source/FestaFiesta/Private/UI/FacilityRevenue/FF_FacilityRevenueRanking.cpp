@@ -3,6 +3,7 @@
 
 #include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "UI/Core/FF_OutsideClickDismiss.h"
+#include "UI/Core/FF_UIForegroundRules.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Building/Presentation/FF_BuildingFeatureDiscoverySubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
@@ -20,6 +21,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Input/Reply.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
 #include "UI/FacilityCodex/FF_FacilityCodexImage.h"
 
@@ -109,6 +111,15 @@ void UFF_FacilityRevenueRankRow::NativeOnEntryReleased()
 void UFF_FacilityRevenueRankingPanel::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (!bCapturedFootnote)
+	{
+		if (const auto* Footnote = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_Footnote"))))
+		{
+			AuthoredFootnote = Footnote->GetText();
+			bCapturedFootnote = true;
+		}
+	}
+	ClearInspectionFailure();
 	if (Size_ClarityFrame && !bCapturedFrameSize)
 	{
 		// 디자이너의 크기를 기준으로 작은 화면에서만 줄인다.
@@ -116,7 +127,7 @@ void UFF_FacilityRevenueRankingPanel::NativeConstruct()
 		bCapturedFrameSize = true;
 	}
 	FFOutsideClickDismiss::Register(this,
-		[this] { return IsInViewport() && IsVisible(); },
+		[this] { return IsInViewport() && IsVisible() && !bForegroundSuppressed; },
 		[this](FVector2D Position)
 		{
 			return FFOutsideClickDismiss::IsInside(Border_Panel, Position)
@@ -134,6 +145,9 @@ void UFF_FacilityRevenueRankingPanel::NativeConstruct()
 }
 void UFF_FacilityRevenueRankingPanel::NativeDestruct()
 {
+	if (UWidget* Surface = Size_ClarityFrame ? static_cast<UWidget*>(Size_ClarityFrame.Get()) : Border_Panel.Get())
+		Surface->SetVisibility(ESlateVisibility::Visible);
+	bForegroundSuppressed = false;
 	FFOutsideClickDismiss::Unregister(this);
 	Button_Close->OnClicked.RemoveAll(this);
 	Button_Today->OnClicked.RemoveAll(this);
@@ -147,6 +161,19 @@ void UFF_FacilityRevenueRankingPanel::NativeDestruct()
 void UFF_FacilityRevenueRankingPanel::NativeTick(const FGeometry& Geometry, float DeltaTime)
 {
 	Super::NativeTick(Geometry, DeltaTime);
+	const bool bSuppressed = FFUIForegroundRules::HasForegroundWindow(this);
+	if (bSuppressed != bForegroundSuppressed)
+	{
+		bForegroundSuppressed = bSuppressed;
+		if (UWidget* Surface = Size_ClarityFrame ? static_cast<UWidget*>(Size_ClarityFrame.Get()) : Border_Panel.Get())
+			Surface->SetVisibility(bSuppressed ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		if (Border_Introduction)
+		{
+			if (bSuppressed) IntroductionVisibilityBeforeSuppression = Border_Introduction->GetVisibility();
+			Border_Introduction->SetVisibility(bSuppressed ? ESlateVisibility::Collapsed : IntroductionVisibilityBeforeSuppression);
+		}
+	}
+	if (bForegroundSuppressed) return;
 	UpdateFrameSize(Geometry.GetLocalSize());
 }
 void UFF_FacilityRevenueRankingPanel::UpdateFrameSize(const FVector2D& Viewport)
@@ -220,6 +247,7 @@ void UFF_FacilityRevenueRankingPanel::DismissIntroduction()
 
 FReply UFF_FacilityRevenueRankingPanel::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
 {
+	if (bForegroundSuppressed) return FReply::Unhandled();
 	if (!IsIntroductionVisible()) return Super::NativeOnPreviewKeyDown(Geometry, Event);
 	if (!Event.IsRepeat() && (Event.GetKey() == EKeys::Escape || Event.GetKey() == EKeys::Enter || Event.GetKey() == EKeys::SpaceBar))
 		DismissIntroduction();
@@ -228,7 +256,23 @@ FReply UFF_FacilityRevenueRankingPanel::NativeOnPreviewKeyDown(const FGeometry& 
 void UFF_FacilityRevenueRankingPanel::InspectClicked()
 {
 	if (GetSelectedFacilityId().IsValid())
+	{
+		ClearInspectionFailure();
 		OnInspectRequested.Broadcast();
+	}
+}
+void UFF_FacilityRevenueRankingPanel::ShowInspectionFailure(const FText& Message)
+{
+	FailedInspectionFacilityId = GetSelectedFacilityId();
+	if (auto* Footnote = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_Footnote"))))
+		Footnote->SetText(Message);
+}
+void UFF_FacilityRevenueRankingPanel::ClearInspectionFailure()
+{
+	FailedInspectionFacilityId.Invalidate();
+	if (bCapturedFootnote)
+		if (auto* Footnote = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_Footnote"))))
+			Footnote->SetText(AuthoredFootnote);
 }
 void UFF_FacilityRevenueRankingPanel::Present(const TArray<UFF_FacilityRevenueRankItem *> &Rows, int64 Sum,
 											  bool bAvailable, FGuid Preferred)
@@ -275,6 +319,9 @@ FGuid UFF_FacilityRevenueRankingPanel::GetSelectedFacilityId() const
 void UFF_FacilityRevenueRankingPanel::SelectionChanged(UObject *Object)
 {
 	auto *Item = Cast<UFF_FacilityRevenueRankItem>(Object);
+	// 같은 시설의 매출만 갱신되면 실패 안내를 유지하고, 새 선택에서만 원래 안내로 돌아간다.
+	if (FailedInspectionFacilityId.IsValid() && (!Item || Item->FacilityId != FailedInspectionFacilityId))
+		ClearInspectionFailure();
 	Text_SelectedName->SetText(Item ? Item->Name : LOCTEXT("Select", "시설을 선택하세요"));
 	Text_SelectedRank->SetText(Item ? FText::Format(LOCTEXT("Rank", "{0}위"), FText::AsNumber(Item->Rank))
 									: FText::FromString(TEXT("—")));
@@ -288,11 +335,13 @@ void UFF_FacilityRevenueRankingPanel::SelectionChanged(UObject *Object)
 }
 bool UFF_FacilityRevenueRankingPanel::IsPointerOverPanel() const
 {
+	if (bForegroundSuppressed) return false;
 	return IsVisible() && Border_Panel && FSlateApplication::IsInitialized() &&
 		   Border_Panel->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos());
 }
 FReply UFF_FacilityRevenueRankingPanel::NativeOnKeyDown(const FGeometry &Geometry, const FKeyEvent &Event)
 {
+	if (bForegroundSuppressed) return FReply::Unhandled();
 	if (Event.GetKey() == EKeys::Escape)
 	{
 		CloseClicked();
@@ -499,7 +548,6 @@ void UFF_FacilityRevenueRankingSubsystem::Refresh()
 	auto *Info = GetWorld()->GetSubsystem<UFF_FacilityInfoSubsystem>();
 	if (Info && Info->IsPauseMenuPresentationSuppressed())
 	{
-		Close();
 		return;
 	}
 	FGuid Selected = Panel->GetSelectedFacilityId();
@@ -552,19 +600,39 @@ void UFF_FacilityRevenueRankingSubsystem::Refresh()
 }
 void UFF_FacilityRevenueRankingSubsystem::Inspect()
 {
+	if (!IsOpen()) return;
 	const FGuid Id = GetSelectedFacilityId();
 	auto *Zones = GetWorld()->GetSubsystem<UFFZSWorldSubsystem>();
 	auto *Actor = Zones ? Zones->FindFacility(Id) : nullptr;
 	auto *Info = GetWorld()->GetSubsystem<UFF_FacilityInfoSubsystem>();
-	const auto Context = Info ? Info->GetSelectionContext() : EFF_FacilityInfoContext::None;
-	Close();
-	if (!Actor)
+	if (!IsValid(Actor))
+	{
+		Panel->ShowInspectionFailure(LOCTEXT("InspectMissingFacility", "시설을 찾을 수 없습니다. 다른 시설을 선택해 주세요."));
 		return;
+	}
+	const UGameInstance* Game = GetWorld()->GetGameInstance();
+	const auto* Stage = Game ? Game->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
 	auto *Build = GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>();
-	if (Build && Context != EFF_FacilityInfoContext::Live)
-		Build->InspectFacility(Actor);
-	else if (Info)
-		Info->SelectFacility(GetWorld()->GetFirstPlayerController(), Actor, EFF_FacilityInfoContext::Live);
+	// Live HUD는 열린 순위창도 전경으로 취급한다. 동기 요청 동안만 접어 정보 선택을 허용한다.
+	// 시설 정보의 순위 표시 억제는 성공 전까지 유지하므로 이전 정보창은 비치지 않는다.
+	const ESlateVisibility PreviousVisibility = Panel->GetVisibility();
+	Panel->SetVisibility(ESlateVisibility::Collapsed);
+	// 하단 탭에서 처음 열면 시설 선택 문맥은 None이다. 이전 선택이 아닌 현재 단계를 따른다.
+	const bool bSelected = Stage && Stage->CurrentStage == EFF_FestivalStage::Live
+		? Info && Info->SelectFacility(Panel->GetOwningPlayer(), Actor, EFF_FacilityInfoContext::Live)
+		: Stage && Build && Build->InspectFacility(Actor);
+	if (bSelected)
+	{
+		// 선택 중에는 정보창 표시 억제를 유지한다. 성공한 뒤 닫으면 새 시설 정보만 나타난다.
+		Close();
+	}
+	else if (Panel->IsInViewport())
+	{
+		// 선택 콜백에서 명시적으로 닫힌 창은 되살리지 않는다.
+		Panel->SetVisibility(PreviousVisibility);
+		if (Info) Info->SetRevenueRankingPresentationOpen(true);
+		Panel->ShowInspectionFailure(LOCTEXT("InspectUnavailable", "시설 정보를 열 수 없습니다. 잠시 후 다시 시도해 주세요."));
+	}
 }
 void UFF_FacilityRevenueRankingSubsystem::Changed()
 {

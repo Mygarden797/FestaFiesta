@@ -28,7 +28,13 @@ enum class EFF_DialogueLineKind : uint8
 	WaitForAction   UMETA(DisplayName = "조작 대기"),
 
 	// 화면 전환, 암전 같은 연출. 대사 없이 지나간다.
-	Direction       UMETA(DisplayName = "연출")
+	Direction       UMETA(DisplayName = "연출"),
+
+	/* 주인공 이름을 받는다. 대사는 묻는 말로 보이고, 이름 입력 창이 함께 뜬다.
+	   받은 이름은 대사의 {이름} 자리에 들어간다(UFF_TutorialSubsystem::SubmitPlayerName).
+	   클릭으로 넘어가지 않고, 이름을 넣어야 다음 줄로 간다.
+	*/
+	NameInput       UMETA(DisplayName = "이름 입력")
 };
 
 /* 대사를 넘기려면 어디를 눌러야 하는가.
@@ -237,9 +243,10 @@ struct FFF_DialogueLine
 
 	bool CanSkip() const
 	{
-		// 조작 대기와 선택지는 건너뛸 수 없다. 진행이 막힌다.
+		// 조작 대기 · 선택지 · 이름 입력은 건너뛸 수 없다. 진행이 막힌다.
 		if (Kind == EFF_DialogueLineKind::WaitForAction
-			|| Kind == EFF_DialogueLineKind::Choice)
+			|| Kind == EFF_DialogueLineKind::Choice
+			|| Kind == EFF_DialogueLineKind::NameInput)
 		{
 			return false;
 		}

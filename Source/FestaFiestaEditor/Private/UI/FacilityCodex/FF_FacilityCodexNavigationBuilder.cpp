@@ -267,10 +267,10 @@ void Apply()
     Style.Pressed = FFBuildPearl::Rounded(FFBuildPearl::Color(180, 221, 238), 16.f);
     Style.NormalPadding = Style.PressedPadding = FMargin(0.f);
     Exit->SetStyle(Style); Exit->SetBackgroundColor(FLinearColor::White);
-    Exit->SetToolTipText(NSLOCTEXT("FFCodexNavigation", "ExitHint", "도감 닫기 · 이전 화면으로"));
+    Exit->SetToolTipText(NSLOCTEXT("FFFacilityCodexScreen", "BackHint", "뒤로가기 · Esc"));
     auto* Label = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_ExitCodex")));
     if (!Label) Label = MakeWidget<UTextBlock>(*BP, Tree, TEXT("Text_ExitCodex"));
-    Label->SetText(FText::FromString(TEXT("×")));
+    Label->SetText(NSLOCTEXT("FFFacilityCodexScreen", "BackIcon", "‹"));
     Label->SetFont(FFBuildTypography::Make(FFBuildTypography::ERole::Heading, 26));
     Label->SetColorAndOpacity(FSlateColor(FFBuildPearl::Ink));
     Label->SetJustification(ETextJustify::Center); Label->SetVisibility(ESlateVisibility::HitTestInvisible);

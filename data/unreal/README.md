@@ -20,6 +20,8 @@
 
 재생성: `node Tools/data/build_unreal_datatables.mjs`
 
+> ⚠️ 10/14 기준: 이 원칙과 달리 두 CSV는 이 폴더에서 직접 고쳐 왔다. `utility_coefficients_v0.csv`는 78행인데 `data/derived/`에는 62행뿐이고(시설 커버리지 6행·`sns_finale_*` 9행·`distance_cost_cap` 1행이 여기에만 있다), `sns_post_templates_v0.csv`는 405행인데 `data/derived/`는 135행(화제 1~14)이다. 지금 위 스크립트를 돌리면 이 행들이 사라진다. 돌리기 전에 이 폴더의 행을 `data/derived/`로 먼저 옮긴다. 게임 값은 이 CSV가 아니라 임포트된 DataTable(`.uasset`)이 정한다.
+
 단, `visitor_arrival_curve_v0.csv` 는 이 스크립트가 만들지 않는다 — `node Tools/data/build_arrival_curve.mjs` 로 따로 생성한다
 (입력이 derived CSV 두 개의 계수라서 계보가 다르다. 설계는 `data/metadata/spec/visitor_arrival_curve_spec.md` 참조).
 

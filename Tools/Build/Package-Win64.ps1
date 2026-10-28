@@ -18,12 +18,19 @@ param(
 
     [switch] $SkipTests,
 
+    # Manual-QA builds can omit asset validation while still compiling the cooker target.
+    [switch] $SkipDataValidation,
+
     [switch] $SkipSmokeTest,
 
     # Requires a GPU/driver supporting both paths; tests real RHI startup, not gameplay.
     [switch] $GraphicsSmokeTest,
 
     [switch] $SkipZip,
+
+    # Cooked containers are already compressed; Fastest shortens manual-QA delivery.
+    [ValidateSet('Optimal', 'Fastest')]
+    [string] $ZipCompressionLevel = 'Optimal',
 
     [ValidateLength(10, 500)]
     [string] $QualityOverrideReason
@@ -291,12 +298,12 @@ $engineBuildFile = Join-Path $resolvedEngineRoot 'Engine\Build\Build.version'
 $engineBuild = Get-Content -LiteralPath $engineBuildFile -Raw | ConvertFrom-Json
 $toolchainLockFile = Join-Path $PSScriptRoot 'toolchain.lock.json'
 $toolchainLock = Get-Content -LiteralPath $toolchainLockFile -Raw | ConvertFrom-Json
-$hasQualityOverride = [bool]$SkipTests -or [bool]$SkipSmokeTest
+$hasQualityOverride = [bool]$SkipTests -or [bool]$SkipDataValidation -or [bool]$SkipSmokeTest
 if ($hasQualityOverride -and [string]::IsNullOrWhiteSpace($QualityOverrideReason)) {
-    throw '-SkipTests or -SkipSmokeTest requires -QualityOverrideReason so the exception is auditable.'
+    throw '-SkipTests, -SkipDataValidation or -SkipSmokeTest requires -QualityOverrideReason so the exception is auditable.'
 }
 if (-not $hasQualityOverride -and -not [string]::IsNullOrWhiteSpace($QualityOverrideReason)) {
-    throw '-QualityOverrideReason is valid only with -SkipTests or -SkipSmokeTest.'
+    throw '-QualityOverrideReason is valid only with -SkipTests, -SkipDataValidation or -SkipSmokeTest.'
 }
 
 if (-not [string]::IsNullOrWhiteSpace($engineAssociation) -and
@@ -425,24 +432,53 @@ try {
 
     $currentPhase = 'validation'
     $currentLog = 'Validation'
-    if (-not $SkipTests) {
-        & (Join-Path $PSScriptRoot 'Run-AutomationTests.ps1') `
-            -EngineRoot $resolvedEngineRoot `
-            -ProjectFile $projectFile `
-            -OutputRoot $validationRoot
+    # Always compile the Editor modules used by the cooker. Each omitted
+    # validation stage is explicit and recorded in the artifact manifest.
+    $validationArguments = @{
+        EngineRoot = $resolvedEngineRoot
+        ProjectFile = $projectFile
+        OutputRoot = $validationRoot
+        SkipDataValidation = [bool]$SkipDataValidation
     }
-    else {
-        # A test override never bypasses asset validation or the editor compile gate.
-        & (Join-Path $PSScriptRoot 'Run-AutomationTests.ps1') `
-            -EngineRoot $resolvedEngineRoot `
-            -ProjectFile $projectFile `
-            -OutputRoot $validationRoot `
-            -TestFilter @()
-    }
+    if ($SkipTests) { $validationArguments.TestFilter = @() }
+    & (Join-Path $PSScriptRoot 'Run-AutomationTests.ps1') @validationArguments
     # The editor build selects the same toolchain as the game build. Checking
     # its log here fails a drifted machine before the long clean BuildCookRun.
     $null = Assert-LockedToolchainSelection `
         -LogPath (Join-Path $validationRoot 'EditorBuild.log') -Lock $toolchainLock
+
+    # Read the actual appearance rows and runtime animation library with the freshly
+    # built editor. This is a source inventory, not a gameplay/automation test.
+    # Never publish a container that omits a variant selected by these rows.
+    $currentPhase = 'crowd-cook-requirements'
+    $currentLog = 'Logs/CrowdCookRequirements.log'
+    $crowdRequirementsFile = Join-Path $metadataRoot 'Crowd-CookRequirements.json'
+    $crowdInventoryLog = Join-Path $logsRoot 'CrowdCookRequirements.log'
+    $crowdInventoryArguments = @(
+        $projectFile,
+        $buildDdc.Argument,
+        '-run=pythonscript',
+        "-script=$(Join-Path $PSScriptRoot 'Collect-CrowdCookRequirements.py')",
+        "-FFCrowdRequirementsOutput=$crowdRequirementsFile",
+        '-unattended', '-nop4', '-nosplash', '-nullrhi', '-nosound',
+        '-stdout', '-FullStdOutLogOutput'
+    )
+    Write-Host 'Collecting crowd mesh/animation cook requirements from source assets...'
+    $crowdInventoryExitCode = -1
+    $savedErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & (Join-Path $resolvedEngineRoot 'Engine\Binaries\Win64\UnrealEditor-Cmd.exe') `
+            @crowdInventoryArguments 2>&1 | Tee-Object -FilePath $crowdInventoryLog
+        $crowdInventoryExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
+    if ($crowdInventoryExitCode -ne 0 -or -not (Test-Path -LiteralPath $crowdRequirementsFile -PathType Leaf)) {
+        throw "Crowd cook inventory failed with exit code $crowdInventoryExitCode. See: $crowdInventoryLog"
+    }
+    $crowdRequirements = Get-Content -LiteralPath $crowdRequirementsFile -Raw | ConvertFrom-Json
 
     $runUat = Join-Path $resolvedEngineRoot 'Engine\Build\BatchFiles\RunUAT.bat'
     $uatLog = Join-Path $logsRoot 'BuildCookRun.log'
@@ -454,7 +490,10 @@ try {
         # own UnrealPak process and requires explicit additional options.
         # Each child must also forward Log-level DDC selection evidence to
         # BuildCookRun.log; default Display-only stdout hides a valid backend.
-        '-AdditionalCookerOptions=-FullStdOutLogOutput',
+        # Rebuild source discovery/dependency metadata for release cooks. UE 5.7's
+        # stale registry cache can hide new animation packages even with AlwaysCook.
+        # Cache writes and the much larger shader/compression DDC remain enabled.
+        '-AdditionalCookerOptions=-FullStdOutLogOutput -NoAssetRegistryCacheRead',
         "-AdditionalPakOptions=$($buildDdc.Argument) -FullStdOutLogOutput",
         "-AdditionalIoStoreOptions=$($buildDdc.Argument) -FullStdOutLogOutput",
         '-target=FestaFiesta',
@@ -502,7 +541,7 @@ try {
     # The cooker still succeeds when a cooked package hard-references content
     # it did not cook (NeverCook rules, editor-only targets). The player would
     # get a null reference at runtime, so treat it as a release blocker.
-    $missingContent = @(Select-String -LiteralPath $uatLog -Pattern 'Content is missing from cook')
+    $missingContent = @(Select-String -LiteralPath $uatLog -Pattern 'Content is missing from cook|Unable to find package for cooking')
     if ($missingContent.Count -gt 0) {
         throw "The cook dropped $($missingContent.Count) referenced package(s): $($missingContent[0].Line.Trim()) See: $uatLog"
     }
@@ -628,6 +667,17 @@ try {
             pak            = $true
             ioStore        = $true
             compressed     = $true
+            assetRegistryCacheRead = $false
+            archiveCompression = if ($SkipZip) { $null } else { $ZipCompressionLevel }
+            crowdCookRequirements = [ordered]@{
+                report = 'Metadata/Crowd-CookRequirements.json'
+                sourceTable = $crowdRequirements.sourceTable
+                sourceTableSha256 = $crowdRequirements.sourceTableSha256
+                requiredAssetCount = @($crowdRequirements.requiredAssets).Count
+                animationBlueprintCount = $crowdRequirements.animationBlueprintCount
+                animationSequenceCount = $crowdRequirements.animationSequenceCount
+                blendSpaceCount = $crowdRequirements.blendSpaceCount
+            }
             prerequisites  = @('vc_redist.x64.exe')
             crashReporter  = $false
             publicSymbols  = $false
@@ -639,7 +689,7 @@ try {
         }
         validation    = [ordered]@{
             automationTests = -not [bool]$SkipTests
-            dataValidation  = $true
+            dataValidation  = -not [bool]$SkipDataValidation
             smokeTest      = -not [bool]$SkipSmokeTest
             graphicsStartupTest = [bool]$GraphicsSmokeTest
             defaultLauncherStartupTest = [bool]$GraphicsSmokeTest
@@ -671,6 +721,7 @@ try {
         EngineRoot     = $resolvedEngineRoot
         ProjectFile    = $projectFile
         ReportDirectory = $metadataRoot
+        CrowdRequirementsFile = $crowdRequirementsFile
     }
     if (-not $SkipSmokeTest) {
         $verifyArguments.SmokeTest = $true
@@ -702,7 +753,7 @@ try {
         [System.IO.Compression.ZipFile]::CreateFromDirectory(
             $payloadRoot,
             $zipPath,
-            [System.IO.Compression.CompressionLevel]::Optimal,
+            [System.IO.Compression.CompressionLevel]$ZipCompressionLevel,
             $false)
         $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
         [System.IO.File]::WriteAllText(

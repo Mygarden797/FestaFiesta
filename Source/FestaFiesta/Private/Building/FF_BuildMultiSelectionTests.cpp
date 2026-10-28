@@ -6,7 +6,11 @@
 
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/FF_BuildMultiSelectionModel.h"
+#include "Building/Presentation/FF_BuildMultiSelectionWidget.h"
 #include "Camera/FF_FestivalPlayerController.h"
+#include "Camera/FF_OverviewCameraPawn.h"
+#include "Components/Button.h"
+#include "Components/EditableTextBox.h"
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Engine/DataTable.h"
 #include "Engine/Engine.h"
@@ -14,7 +18,14 @@
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "EnhancedPlayerInput.h"
+#include "Framework/Application/SlateApplication.h"
+#include "InputAction.h"
 #include "InputKeyEventArgs.h"
+#include "InputMappingContext.h"
+#include "InputModifiers.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSGridLibrary.h"
@@ -27,22 +38,28 @@
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
 #include "Kismet/GameplayStatics.h"
+#include "Layout/WidgetPath.h"
+#include "Slate/SceneViewport.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include "UnrealClient.h"
 #include "Widgets/SOverlay.h"
+#include "Widgets/SViewport.h"
+#include "Widgets/Input/SButton.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/SVirtualWindow.h"
 
 namespace
 {
-class FMultiSelectionViewport final : public FViewport
+class FMultiSelectionViewport final : public FSceneViewport
 {
 public:
-	explicit FMultiSelectionViewport(FViewportClient* Client) : FViewport(Client) {}
+	FMultiSelectionViewport(FViewportClient* Client, const TSharedRef<SViewport>& Widget)
+		: FSceneViewport(Client, Widget) {}
 	virtual FIntPoint GetSizeXY() const override { return FIntPoint(800, 600); }
-	virtual void* GetWindow() override { return nullptr; }
-	virtual void MoveWindow(int32, int32, int32, int32) override {}
-	virtual void Destroy() override {}
-	virtual bool SetUserFocus(bool) override { return true; }
+	// Keep the real FSceneViewport::HasFocus: a focused toolbar/button must block
+	// camera input until the production code returns actual Slate focus to SViewport.
+	virtual bool IsForegroundWindow() const override { return true; }
 	virtual bool KeyState(FKey) const override { return false; }
 	virtual int32 GetMouseX() const override { return 400; }
 	virtual int32 GetMouseY() const override { return 300; }
@@ -58,7 +75,6 @@ public:
 		return FIntPoint(FMath::RoundToInt(Point.X * 800), FMath::RoundToInt(Point.Y * 600));
 	}
 	virtual void InvalidateDisplay() override {}
-	virtual FViewportFrame* GetViewportFrame() override { return nullptr; }
 };
 
 struct FScopedMultiSelectionSettings
@@ -115,6 +131,17 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildMultiSelectionSessionTest,
 
 bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 {
+	if (!TestTrue(TEXT("Slate application exists"), FSlateApplication::IsInitialized())) return false;
+	FSlateApplication& Slate = FSlateApplication::Get();
+	const bool bPreviouslyActive = Slate.IsActive();
+	const TSharedPtr<SWidget> PreviousFocus = Slate.GetKeyboardFocusedWidget();
+	Slate.OnApplicationActivationChanged(true);
+	ON_SCOPE_EXIT
+	{
+		if (PreviousFocus) Slate.SetKeyboardFocus(PreviousFocus);
+		else Slate.ClearKeyboardFocus();
+		Slate.OnApplicationActivationChanged(bPreviouslyActive);
+	};
 	FScopedMultiSelectionSettings Settings;
 	FTestWorldWrapper Fixture;
 	if (!Fixture.CreateTestWorld(EWorldType::Game))
@@ -134,13 +161,24 @@ bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 	UGameViewportClient* Viewport = NewObject<UGameViewportClient>(GEngine);
 	Context->GameViewport = Viewport;
 	Viewport->Init(*Context, Game, false);
-	Viewport->SetViewportOverlayWidget(nullptr, SNew(SOverlay));
-	FMultiSelectionViewport InputViewport(Viewport);
-	Viewport->Viewport = &InputViewport;
-	ON_SCOPE_EXIT { Viewport->Viewport = nullptr; };
+	const TSharedRef<SOverlay> Overlay = SNew(SOverlay);
+	const TSharedRef<SViewport> ViewportWidget = SNew(SViewport)[Overlay];
+	const TSharedRef<SButton> ToolbarFocus = SNew(SButton);
+	const TSharedRef<SBox> SelectionPanelHost = SNew(SBox);
+	const TSharedRef<SVirtualWindow> Window = SNew(SVirtualWindow).Size(FVector2D(800, 600));
+	Window->SetContent(SNew(SOverlay)
+		+ SOverlay::Slot()[ViewportWidget]
+		+ SOverlay::Slot()[SelectionPanelHost]
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top)[ToolbarFocus]);
+	Slate.RegisterVirtualWindow(Window);
+	ON_SCOPE_EXIT { Slate.UnregisterVirtualWindow(Window); };
+	Viewport->SetViewportOverlayWidget(Window, Overlay);
+	FMultiSelectionViewport InputViewport(Viewport, ViewportWidget);
+	Viewport->SetViewportFrame(&InputViewport);
+	ON_SCOPE_EXIT { Viewport->SetViewportFrame(nullptr); };
 	FString PlayerError;
 	ULocalPlayer* Player = Game->CreateLocalPlayer(0, PlayerError, false);
-	APlayerController* Controller = World->SpawnActor<AFF_FestivalPlayerController>();
+	AFF_FestivalPlayerController* Controller = World->SpawnActor<AFF_FestivalPlayerController>();
 	if (!TestNotNull(*FString::Printf(TEXT("Player: %s"), *PlayerError), Player) ||
 		!TestNotNull(TEXT("Controller"), Controller)) return false;
 	Controller->SetPlayer(Player);
@@ -230,8 +268,91 @@ bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Function keys cannot open settings"), Build->IsBuildSettingsOpen());
 	TestEqual(TEXT("Function keys preserve grid visibility"), Build->IsPlacementGridVisible(), bGridBeforeKeys);
 	TestEqual(TEXT("Function keys preserve position snap"), Build->GetPreferredPositionSnapCm(), SnapBeforeKeys);
+
+	// Use the real controller action binding and Enhanced Input evaluation. A
+	// direct AddPanInput call would miss the toolbar-focus regression entirely.
+	AFF_OverviewCameraPawn* Camera = World->SpawnActor<AFF_OverviewCameraPawn>();
+	UEnhancedInputLocalPlayerSubsystem* CameraInput =
+		ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(Player);
+	if (!TestNotNull(TEXT("Overview camera"), Camera) ||
+		!TestNotNull(TEXT("Enhanced Input subsystem"), CameraInput)) return false;
+	Camera->CameraSettings.bUseZoneBounds = false;
+	Camera->CameraSettings.bConstrainFocusToZones = false;
+	Camera->CameraSettings.bFollowGroundHeight = false;
+	Camera->CameraSettings.bEnableEdgeScroll = false;
+	Camera->InitializeOverview(FVector(2700, 1000, 100), 4000.f);
+	UEnhancedPlayerInput* EnhancedInput = NewObject<UEnhancedPlayerInput>(Controller);
+	Controller->PlayerInput = EnhancedInput;
+	EnhancedInput->DebugExecBindings.Reset();
+	Controller->InputComponent = NewObject<UEnhancedInputComponent>(Controller);
+	Controller->InputComponent->RegisterComponent();
+	Controller->PanAction = NewObject<UInputAction>(Controller);
+	Controller->PanAction->ValueType = EInputActionValueType::Axis2D;
+	Controller->PanAction->AccumulationBehavior = EInputActionAccumulationBehavior::Cumulative;
+	Controller->SetupInputComponent();
+	UInputMappingContext* CameraMappings = NewObject<UInputMappingContext>(Controller);
+	CameraMappings->MapKey(Controller->PanAction, EKeys::D);
+	CameraMappings->MapKey(Controller->PanAction, EKeys::A).Modifiers.Add(
+		NewObject<UInputModifierNegate>(CameraMappings));
+	CameraMappings->MapKey(Controller->PanAction, EKeys::W).Modifiers.Add(
+		NewObject<UInputModifierSwizzleAxis>(CameraMappings));
+	FEnhancedActionKeyMapping& Backward = CameraMappings->MapKey(Controller->PanAction, EKeys::S);
+	Backward.Modifiers.Add(NewObject<UInputModifierNegate>(CameraMappings));
+	Backward.Modifiers.Add(NewObject<UInputModifierSwizzleAxis>(CameraMappings));
+	FModifyContextOptions MappingOptions;
+	MappingOptions.bForceImmediately = true;
+	MappingOptions.bIgnoreAllPressedKeysUntilRelease = false;
+	CameraInput->ClearAllMappings();
+	CameraInput->AddMappingContext(CameraMappings, 0, MappingOptions);
+	const TArray<UInputComponent*> CameraInputStack = {Controller->InputComponent};
+	const auto ApplyFocusReply = [&]()
+	{
+		// SetInputMode queues this reply; LaunchEngineLoop applies it after input.
+		// Exercise that same path instead of manually granting viewport focus.
+		FWidgetPath Path;
+		Slate.GeneratePathToWidgetUnchecked(ViewportWidget, Path);
+		if (!TestTrue(TEXT("Virtual game viewport has a real Slate path"), Path.IsValid())) return;
+		Slate.ProcessExternalReply(Path, Player->GetSlateOperations(), 0);
+		Player->GetSlateOperations() = FReply::Unhandled();
+	};
+	const auto AttachSelectionPanel = [&]()
+	{
+		// The isolated GameViewportClient has no game-layer manager. Host the same
+		// production UMG tree in our virtual window so its controls take real focus.
+		if (Build->MultiSelectionWidget)
+			SelectionPanelHost->SetContent(Build->MultiSelectionWidget->TakeWidget());
+		Window->SlatePrepass();
+	};
+	const auto PressCameraKey = [&](const FKey Key)
+	{
+		const FVector Before = Camera->GetCameraState().FocusLocation;
+		Controller->InputKey(FInputKeyEventArgs(&InputViewport,
+			FInputDeviceId::CreateFromInternalId(0), Key, IE_Pressed, 1.f, false, 0u));
+		for (int32 Frame = 0; Frame < 6; ++Frame)
+		{
+			EnhancedInput->ProcessInputStack(CameraInputStack, InputDeltaSeconds, false);
+			Camera->Tick(InputDeltaSeconds);
+		}
+		Controller->InputKey(FInputKeyEventArgs(&InputViewport,
+			FInputDeviceId::CreateFromInternalId(0), Key, IE_Released, 0.f, false, 0u));
+		EnhancedInput->ProcessInputStack(CameraInputStack, InputDeltaSeconds, false);
+		Camera->Tick(InputDeltaSeconds);
+		return Camera->GetCameraState().FocusLocation - Before;
+	};
+	Window->SlatePrepass();
+	Slate.SetKeyboardFocus(ToolbarFocus);
+	TestTrue(TEXT("Toolbar owns actual keyboard focus before multi-selection"),
+		Slate.GetKeyboardFocusedWidget() == ToolbarFocus);
+	TestFalse(TEXT("Toolbar focus prevents camera movement before entering selection"),
+		Controller->IsCameraMovementAllowed());
 	Build->ToggleMultiSelection();
+	AttachSelectionPanel();
+	ApplyFocusReply();
 	TestTrue(TEXT("Toolbar action enables world multi-selection"), Build->IsMultiSelectionActive());
+	TestTrue(TEXT("Entering multi-selection restores actual viewport keyboard focus"),
+		Slate.GetKeyboardFocusedWidget() == ViewportWidget);
+	TestTrue(TEXT("Multi-selection allows the real overview camera input path"),
+		Controller->IsCameraMovementAllowed());
 	Build->ToggleMultiSelectedFacility(First);
 	TestEqual(TEXT("Click selects a registered facility"), Build->GetMultiSelectionCount(), 1);
 	Build->ToggleMultiSelectedFacility(First);
@@ -253,7 +374,41 @@ bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 		Build->SelectFacilitiesInScreenRect(*Controller, Rect);
 		TestEqual(TEXT("Marquee selects both real installed facilities"), Build->GetMultiSelectionCount(), 2);
 	}
-	Build->ClearMultiSelection();
+	const FVector FirstBeforeCamera = First->GetActorLocation();
+	const FVector SecondBeforeCamera = Second->GetActorLocation();
+	for (const FKey Key : {EKeys::W, EKeys::A, EKeys::S, EKeys::D})
+		TestFalse(*FString::Printf(TEXT("%s pans the camera with facilities multi-selected"), *Key.ToString()),
+			PressCameraKey(Key).IsNearlyZero(0.01));
+	const FVector ReleasedCameraFocus = Camera->GetCameraState().FocusLocation;
+	for (int32 Frame = 0; Frame < 6; ++Frame)
+	{
+		EnhancedInput->ProcessInputStack(CameraInputStack, InputDeltaSeconds, false);
+		Camera->Tick(InputDeltaSeconds);
+	}
+	TestEqual(TEXT("Released WASD leaves no residual camera movement"),
+		Camera->GetCameraState().FocusLocation, ReleasedCameraFocus);
+	TestEqual(TEXT("Camera input preserves both selected facilities"), Build->GetMultiSelectionCount(), 2);
+	TestEqual(TEXT("Camera input never moves the first facility"), First->GetActorLocation(), FirstBeforeCamera);
+	TestEqual(TEXT("Camera input never moves the second facility"), Second->GetActorLocation(), SecondBeforeCamera);
+	TestEqual(TEXT("Camera input never submits a construction command"), Zones->GetWorldRevision(), RevisionBefore);
+	TestEqual(TEXT("Camera input leaves festival gold unchanged"), Progression->GetGold(), GoldBeforePauseKeys);
+	UEditableTextBox* PresetName = Build->MultiSelectionWidget
+		? Cast<UEditableTextBox>(Build->MultiSelectionWidget->GetWidgetFromName(TEXT("Edit_PresetName"))) : nullptr;
+	if (!TestNotNull(TEXT("Production preset-name input exists"), PresetName)) return false;
+	Slate.SetKeyboardFocus(PresetName->TakeWidget());
+	TestTrue(TEXT("Preset name takes real Slate text focus"), PresetName->HasKeyboardFocus() || PresetName->HasFocusedDescendants());
+	TestTrue(TEXT("Typing W in the preset name cannot pan the camera"), PressCameraKey(EKeys::W).IsNearlyZero(0.01));
+	Build->RestoreMultiSelectionViewportFocus();
+	ApplyFocusReply();
+	TestFalse(TEXT("Explicit action can restore camera movement after text entry"), PressCameraKey(EKeys::D).IsNearlyZero(0.01));
+	UButton* ClearSelection = Cast<UButton>(Build->MultiSelectionWidget->GetWidgetFromName(TEXT("Button_ClearSelection")));
+	if (!TestNotNull(TEXT("Production clear-selection button exists"), ClearSelection)) return false;
+	Slate.SetKeyboardFocus(ClearSelection->TakeWidget());
+	TestFalse(TEXT("Focused selection action temporarily owns camera input"), Controller->IsCameraMovementAllowed());
+	ClearSelection->OnClicked.Broadcast();
+	ApplyFocusReply();
+	TestTrue(TEXT("Clear-selection button returns actual viewport focus"), Slate.GetKeyboardFocusedWidget() == ViewportWidget);
+	TestFalse(TEXT("W still pans after using a focused selection button"), PressCameraKey(EKeys::W).IsNearlyZero(0.01));
 	TestTrue(TEXT("Clear keeps F1 mode active"), Build->IsMultiSelectionActive());
 	TestEqual(TEXT("Clear removes every selection"), Build->GetMultiSelectionCount(), 0);
 	Build->ToggleMultiSelectedFacility(First);
@@ -268,6 +423,8 @@ bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 	Build->State = EFF_BuildModeState::BuildMode;
 	Build->bBuildSessionActive = true;
 	Build->ToggleMultiSelection();
+	AttachSelectionPanel();
+	ApplyFocusReply();
 	Build->AddMultiSelectedFacility(First);
 	Build->AddMultiSelectedFacility(Second);
 	const FGuid FirstId = First->GetFacilityInstanceId();
@@ -276,6 +433,7 @@ bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 	const FVector SecondOriginal = Second->GetActorLocation();
 	TestTrue(TEXT("Group movement starts with a preview"), Build->BeginGroupMove());
 	TestEqual(TEXT("Preview holds both selected IDs"), Build->GroupSourceIds.Num(), 2);
+	TestFalse(TEXT("D pans while a group movement preview is active"), PressCameraKey(EKeys::D).IsNearlyZero(0.01));
 	Build->RefreshGroupPlacement(Build->GroupTargetCenter + FVector(0.f, 3000.f, 0.f));
 	Build->RotateGroupPlacement(90.f);
 	if (TestEqual(TEXT("Rotation retains both candidate placements"), Build->GroupCommands.Num(), 2))
@@ -290,7 +448,15 @@ bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("Rotation preview leaves the first actor untouched"), First->GetActorLocation(), FirstOriginal);
 	TestEqual(TEXT("Rotation preview leaves authority revision untouched"), Zones->GetWorldRevision(), RevisionBefore);
-	Build->CancelGroupPlacement();
+	UButton* CancelGroup = Cast<UButton>(Build->MultiSelectionWidget->GetWidgetFromName(TEXT("Button_CancelGroup")));
+	if (!TestNotNull(TEXT("Production group-cancel button exists"), CancelGroup)) return false;
+	Window->SlatePrepass();
+	Slate.SetKeyboardFocus(CancelGroup->TakeWidget());
+	TestFalse(TEXT("Focused group action owns keyboard input before clicking"), Controller->IsCameraMovementAllowed());
+	CancelGroup->OnClicked.Broadcast();
+	ApplyFocusReply();
+	TestTrue(TEXT("Cancelling a group preview returns actual viewport focus"), Slate.GetKeyboardFocusedWidget() == ViewportWidget);
+	TestFalse(TEXT("W pans again after the group-cancel action"), PressCameraKey(EKeys::W).IsNearlyZero(0.01));
 	TestFalse(TEXT("Cancel releases group ghosts"), Build->IsGroupPlacementActive());
 	TestTrue(TEXT("Cancelled group destroys every preview actor"), Build->GroupPreviews.IsEmpty());
 	TestEqual(TEXT("Cancel keeps selected facilities"), Build->GetMultiSelectionCount(), 2);
@@ -360,6 +526,11 @@ bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Beginning placement preserves the original saved queue data"),
 		SavedLegacySpec.QueueRules.MaxWaitingAgents > 0 && !SavedLegacySpec.QueueSplinePointsCm.IsEmpty() && !SavedLegacySpec.Anchors.IsEmpty());
 	Build->CancelGroupPlacement();
+	Slate.SetKeyboardFocus(ToolbarFocus);
+	Build->ToggleMultiSelection();
+	ApplyFocusReply();
+	TestFalse(TEXT("Explicit selection exit disables multi-selection"), Build->IsMultiSelectionActive());
+	TestTrue(TEXT("Exiting multi-selection returns actual viewport focus"), Slate.GetKeyboardFocusedWidget() == ViewportWidget);
 	Build->ExitBuildMode();
 	return true;
 }

@@ -42,7 +42,7 @@ git lfs pull
 & '.\Tools\Build\Package-Win64.ps1' -EngineRoot $FFEngine -ProjectFile $FFProject -OutputRoot $FFOutput -BuildLabel $FFLabel -Configuration Shipping -GraphicsSmokeTest
 ```
 
-기본은 clean Shipping 빌드다. 표준 후보에는 `-Incremental`, `-SkipTests`, `-SkipSmokeTest`, `-SkipZip`을 추가하지 않는다.
+기본은 clean Shipping 빌드다. 표준 후보에는 `-Incremental`, `-SkipTests`, `-SkipDataValidation`, `-SkipSmokeTest`, `-SkipZip`을 추가하지 않는다.
 Editor 빌드, `FestaFiesta`·`FF_ZoneSystem` 전체 자동화, 데이터 검증 후 Build/Cook/Stage/Package/Archive를 실행한다.
 전체 자동화에는 위젯 픽셀 검사가 포함되어 `-RenderOffscreen`으로 실행한다. 창을 띄우지 않아도 GPU·드라이버가 필요하며, 데이터 검증은 `-nullrhi`로 실행한다.
 자동화의 각 필터 실행은 보고서 옆 `User-<고유 ID>`를 절대 `-UserDir`로 사용해 플레이어 저장과 이전 실행의 저장 데이터를 격리한다. 실패 분석을 위해 이 폴더도 검증 보고서와 함께 보관한다.
@@ -55,6 +55,23 @@ $FFRelease = Join-Path $FFOutput $FFLabel
 & '.\Tools\Build\Verify-Package.ps1' -PackagePath (Join-Path $FFRelease 'Package') -EngineRoot $FFEngine -ProjectFile $FFProject -Configuration Shipping -SmokeTest -GraphicsSmokeTest -ReportDirectory (Join-Path $FFRelease 'Recheck')
 ```
 
+## 요청자가 직접 테스트하는 빠른 패키징
+
+자동 검증과 실행 테스트를 요청자가 직접 진행하기로 한 경우 아래 예외 명령을 사용한다.
+위 준비 절차와 `$FFEngine`, `$FFProject`, `$FFOutput` 경로 설정은 동일하게 적용하고, 실행마다 고유 라벨을 지정한다.
+
+```powershell
+$FFLabel = 'FF-Win64-Shipping-{0}-ManualQA' -f [DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(9)).ToString('yyyyMMdd-HHmmss')
+& '.\Tools\Build\Package-Win64.ps1' -EngineRoot $FFEngine -ProjectFile $FFProject -OutputRoot $FFOutput -BuildLabel $FFLabel -Configuration Shipping -Incremental -SkipTests -SkipDataValidation -SkipSmokeTest -ZipCompressionLevel Fastest -QualityOverrideReason 'Manual QA will be performed by the requester; skip automated validation and runtime smoke tests.'
+```
+
+Editor 컴파일과 Build/Cook/Stage/Package/Archive, 정적 패키지 검사는 유지하며 자동화 테스트·데이터 검증·실행 smoke 테스트를 생략한다.
+패키징 전에 외형 데이터표의 메시·AnimBP 조합과 전용 NPC 애니메이션 라이브러리를 읽어 `Metadata/Crowd-CookRequirements.json`을 생성한다. 이 목록의 모든 에셋을 실제 IoStore 컨테이너와 대조하므로 실행 테스트를 생략해도 애니메이션 누락은 실패 처리한다.
+쿠커는 `-NoAssetRegistryCacheRead`로 원본 에셋 목록과 의존성을 새로 수집한다. 오래된 레지스트리로 새 애니메이션이 누락되는 것을 방지하며, 갱신된 캐시 저장과 셰이더·압축 DDC 재사용은 유지한다. `Unable to find package for cooking` 경고도 빌드 실패로 처리한다.
+ZIP은 생성하며, `-ZipCompressionLevel Fastest`로 이미 압축된 게임 컨테이너의 재압축 시간을 줄인다. ZIP 크기는 기본 `Optimal`보다 커질 수 있으며 선택값은 manifest에 기록한다. 정식 릴리스의 기본값은 `Optimal`이다.
+`-Incremental`은 UAT `-clean`만 생략하므로 캐시 적중이나 반복 Cook을 보장하지 않는다.
+산출물은 수동 QA 대기 상태의 `quality-override`로 기록하며 `latest.json`으로 승격하지 않는다. 데이터 검증 생략은 manifest의 `validation.dataValidation=false`에 남는다.
+
 ## 산출물과 판정
 
 | 위치 | 역할 |
@@ -63,6 +80,7 @@ $FFRelease = Join-Path $FFOutput $FFLabel
 | `<라벨>.zip` | payload 전체 배포 묶음. EXE나 `.ucas` 일부만 따로 배포하지 않음 |
 | `Symbols` | 해당 바이너리의 PDB·target receipt. 장애 분석용 내부 보관; 공개 ZIP 밖에 유지 |
 | `Metadata` | 소스·툴체인·품질 상태 manifest, 패키지·RHI 검증, IoStore 목록과 SHA-256 근거 |
+| `Metadata/Crowd-CookRequirements.json` | 외형 표의 실제 메시·AnimBP 조합, 스켈레톤 대응, 포함해야 할 NPC 애니메이션 목록과 원본 표 해시 |
 | `Validation` | Editor 빌드, 전체 자동화와 데이터 검증 보고서 |
 | `Logs/BuildCookRun.log` | 실제 컴파일러·SDK 선택, Cook 누락, 빌드 실패의 근거 |
 | `Metadata/size-report.json` | payload·컨테이너·ZIP 크기와 직전 승격 빌드 대비 증감 |
@@ -76,9 +94,9 @@ dirty 후보는 패치와 수정된 추적 파일·미추적 파일의 실제 �
 
 ## 예외와 출고 QA
 
-`-SkipTests` 또는 `-SkipSmokeTest`에는 10~500자의 `-QualityOverrideReason`이 필수다.
+`-SkipTests`, `-SkipDataValidation`, `-SkipSmokeTest` 중 하나라도 사용하면 10~500자의 `-QualityOverrideReason`이 필수다.
 결과는 `quality-override`와 `QUALITY-OVERRIDE.txt`로 표시하며 `latest.json`으로 승격하지 않는다.
-`-SkipTests`도 Editor 빌드·데이터 검증은 유지한다. 테스트 실패는 원인을 고쳐 표준 절차로 다시 검증한다.
+`-SkipTests`만 사용하면 Editor 빌드·데이터 검증은 유지한다. 데이터 검증 생략은 별도 `-SkipDataValidation`으로 지정하며 Editor 빌드는 항상 유지한다. 테스트 실패는 원인을 고쳐 표준 절차로 다시 검증한다.
 그래픽 smoke는 RHI·셰이더 모델 초기화 근거다. 화면·게임 진행·성능의 수동 QA는 별도다.
 두 RHI에서 Frontend → 실제 맵 → 조작·건설·저장·불러오기·종료를 확인하고 GPU·드라이버·증상을 기록한다.
 렌더링 차이, 첫 실행·반복 실행의 프레임 시간, 기존 세이브 호환성, 별도 플레이 PC도 확인한다.
@@ -91,4 +109,5 @@ dirty 후보는 패치와 수정된 추적 파일·미추적 파일의 실제 �
 엔진·MSVC·SDK 갱신은 잠금 파일과 설치 환경을 함께 갱신하고 실제 빌드 로그의 선택 버전을 대조한다.
 도구 갱신 후 전체 테스트·clean 패키징·두 RHI·수동 QA를 다시 수행하고 이전 크기·시간과 비교한다.
 맵·동적 로딩 에셋·플러그인 변경 시 Cook 규칙, 필수 에셋 검사, 라이선스 고지도 함께 수정한다.
+NPC 외형은 `FF_CrowdAppearanceTable`의 실제 행을 기준으로 검사한다. 새 NPC의 실행용 AnimBP·BlendSpace·AnimSequence는 `/Game/Level/Demo_Matereal/Mesh/anim/NPC/Anim` 아래에 두며 이 폴더는 명시적으로 쿠킹한다. 제작용 IK Retargeter는 별도 `Retarget` 폴더에 유지한다. 외형 표의 `Mesh`·`AnimClass`·`Variants`를 바꾸면 다음 빌드의 요구 목록도 자동으로 갱신된다. `Variants`는 메시와 AnimBP를 한 쌍으로 보관하며, 변주의 AnimClass가 비어 있으면 게임과 동일하게 행의 AnimClass를 사용한다.
 DDC·Intermediate는 손상 근거와 영향 범위를 확인해 정리한다. `Saved`의 로그·자동저장·세이브는 먼저 보존한다.

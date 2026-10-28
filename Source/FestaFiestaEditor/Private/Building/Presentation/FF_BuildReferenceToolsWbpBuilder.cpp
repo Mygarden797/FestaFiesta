@@ -21,6 +21,8 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "HAL/IConsoleManager.h"
+#include "Editor.h"
+#include "Engine/World.h"
 #include "Engine/Texture2D.h"
 #include "UI/Core/FF_BuildPearlStyle.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
@@ -47,6 +49,8 @@ constexpr const TCHAR* KeyboardHelpKey = TEXT("FF.BuildReferenceTools.KeyboardHe
 constexpr const TCHAR* ConstructionHelpKey = TEXT("FF.BuildReferenceTools.ConstructionHelpV10");
 constexpr const TCHAR* QueueShortcutKey = TEXT("FF.BuildReferenceTools.QueueShortcutV11");
 constexpr const TCHAR* NearbyShortcutKey = TEXT("FF.BuildNearbyShortcut.20261001.v1");
+constexpr const TCHAR* ViewToggleShortcutKey = TEXT("FF.BuildViewToggleShortcut.20261013.v1");
+constexpr const TCHAR* CharacterShortcutsKey = TEXT("FF.BuildCharacterShortcuts.20261013.v1");
 const FLinearColor White = FLinearColor::White;
 
 FSlateBrush Surface(const FLinearColor Color, const float Radius, const FLinearColor Outline = FLinearColor::Transparent)
@@ -77,6 +81,35 @@ void AddRow(UHorizontalBox& Row, UWidget& Child, const float Right = 6.0f, const
     Slot->SetSize(FSlateChildSize(bFill ? ESlateSizeRule::Fill : ESlateSizeRule::Automatic));
     Slot->SetVerticalAlignment(VAlign_Center);
     Slot->SetPadding(FMargin(0.0f, 0.0f, Right, 0.0f));
+}
+
+// Every keyboard guide shares the same physical key artwork.
+USizeBox* KeyboardHelpKeycap(UWidgetBlueprint& BP, UWidgetTree& Tree, const TCHAR* Name, const TCHAR* Caption,
+    const UTextBlock* FontTemplate = nullptr)
+{
+    const FString Stem = FString(TEXT("BuildHelpKey_")) + Name;
+    auto* Size = MakeWidget<USizeBox>(BP, Tree, FName(*(TEXT("Size_") + Stem)));
+    Size->SetMinDesiredWidth(25.f);
+    Size->SetHeightOverride(28.f);
+    auto* Edge = MakeWidget<UBorder>(BP, Tree, FName(*(TEXT("Border_") + Stem)));
+    Edge->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(158, 169, 193), 5.f));
+    Edge->SetPadding(FMargin(1.f, 1.f, 1.f, 3.f));
+    auto* Face = MakeWidget<UBorder>(BP, Tree, FName(*(TEXT("Face_") + Stem)));
+    Face->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(247, 249, 255), 4.f));
+    Face->SetPadding(FMargin(5.f, 1.f));
+    Face->SetHorizontalAlignment(HAlign_Center);
+    Face->SetVerticalAlignment(VAlign_Center);
+    auto* Key = Label(BP, Tree, FName(*(TEXT("Text_") + Stem)),
+        FText::FromString(Caption), 14, FFBuildPearl::Ink, true);
+    if (FontTemplate)
+    {
+        Key->SetFont(FontTemplate->GetFont());
+        Key->SetColorAndOpacity(FontTemplate->GetColorAndOpacity());
+    }
+    Face->AddChild(Key);
+    Edge->AddChild(Face);
+    Size->AddChild(Edge);
+    return Size;
 }
 
 void AddColumn(UVerticalBox& Column, UWidget& Child, const float Bottom = 8.0f)
@@ -1273,23 +1306,7 @@ bool ApplyKeyboardHelp(UWidgetBlueprint& BP)
     // Toolbar pictograms remain actions; only this guide teaches keyboard bindings.
     auto Keycap = [&](const TCHAR* KeyName, const TCHAR* Caption) -> USizeBox*
     {
-        const FString Stem = FString(TEXT("BuildHelpKey_")) + KeyName;
-        auto* Size = MakeWidget<USizeBox>(BP, Tree, FName(*(TEXT("Size_") + Stem)));
-        Size->SetMinDesiredWidth(25.f);
-        Size->SetHeightOverride(28.f);
-        auto* Edge = MakeWidget<UBorder>(BP, Tree, FName(*(TEXT("Border_") + Stem)));
-        Edge->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(158, 169, 193), 5.f));
-        Edge->SetPadding(FMargin(1.f, 1.f, 1.f, 3.f));
-        auto* Face = MakeWidget<UBorder>(BP, Tree, FName(*(TEXT("Face_") + Stem)));
-        Face->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(247, 249, 255), 4.f));
-        Face->SetPadding(FMargin(5.f, 1.f));
-        Face->SetHorizontalAlignment(HAlign_Center);
-        Face->SetVerticalAlignment(VAlign_Center);
-        Face->AddChild(Label(BP, Tree, FName(*(TEXT("Text_") + Stem)),
-            FText::FromString(Caption), 14, FFBuildPearl::Ink, true));
-        Edge->AddChild(Face);
-        Size->AddChild(Edge);
-        return Size;
+        return KeyboardHelpKeycap(BP, Tree, KeyName, Caption);
     };
     auto Keys = [&](const TCHAR* IconName, const TArray<TPair<FString, FString>>& KeyList,
         const TCHAR* KeysRowName = nullptr) -> bool
@@ -1490,18 +1507,7 @@ bool ApplyConstructionEditingHelp(UWidgetBlueprint& BP)
     }
     auto Keycap = [&](const TCHAR* Name, const TCHAR* Caption) -> USizeBox*
     {
-        const FString Stem = FString(TEXT("BuildHelpKey_")) + Name;
-        auto* Size = MakeWidget<USizeBox>(BP, Tree, FName(*(TEXT("Size_") + Stem)));
-        Size->SetMinDesiredWidth(25.f); Size->SetHeightOverride(28.f);
-        auto* Edge = MakeWidget<UBorder>(BP, Tree, FName(*(TEXT("Border_") + Stem)));
-        Edge->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(158, 169, 193), 5.f));
-        Edge->SetPadding(FMargin(1.f, 1.f, 1.f, 3.f));
-        auto* Face = MakeWidget<UBorder>(BP, Tree, FName(*(TEXT("Face_") + Stem)));
-        Face->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(247, 249, 255), 4.f));
-        Face->SetPadding(FMargin(5.f, 1.f)); Face->SetHorizontalAlignment(HAlign_Center); Face->SetVerticalAlignment(VAlign_Center);
-        Face->AddChild(Label(BP, Tree, FName(*(TEXT("Text_") + Stem)), FText::FromString(Caption), 14, FFBuildPearl::Ink, true));
-        Edge->AddChild(Face); Size->AddChild(Edge);
-        return Size;
+        return KeyboardHelpKeycap(BP, Tree, Name, Caption);
     };
     auto HelpRow = [&](const TCHAR* Stem, const TArray<TPair<FString, FString>>& Keys, const FText& Caption, const TCHAR* CaptionName = nullptr) -> UHorizontalBox*
     {
@@ -1556,6 +1562,154 @@ bool ApplyConstructionEditingHelp(UWidgetBlueprint& BP)
     return false;
 }
 
+bool ApplyViewToggleHelp(UWidgetBlueprint& BP)
+{
+    auto& Metadata = BP.GetOutermost()->GetMetaData();
+    UWidgetTree& Tree = *BP.WidgetTree;
+    auto* Column = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Column_BuildIconHelp")));
+    auto* Hint = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_BuildHelpKeyboardHint")));
+    auto* UndoKey = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_BuildHelpKey_UndoCtrl")));
+    auto* UndoCaption = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_BuildHelpUndo")));
+    if (!Column || !Hint || Hint->GetParent() != Column || !UndoKey || !UndoCaption) return false;
+    if (Metadata.GetValue(&BP, ViewToggleShortcutKey) == TEXT("1"))
+    {
+        auto* Row = Tree.FindWidget(TEXT("Row_BuildHelpViewToggle"));
+        auto* Key = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_BuildHelpKey_Tab")));
+        return Row && Row->GetParent() == Column && Key && Key->GetText().ToString() == TEXT("TAB") &&
+            Column->GetChildIndex(Row) == Column->GetChildIndex(Hint) + 1;
+    }
+    for (const TCHAR* Name : {TEXT("Row_BuildHelpViewToggle"), TEXT("Size_BuildHelpViewToggleIcon"),
+        TEXT("Row_BuildHelpViewToggleKeys"), TEXT("Size_BuildHelpKey_Tab"), TEXT("Border_BuildHelpKey_Tab"),
+        TEXT("Face_BuildHelpKey_Tab"), TEXT("Text_BuildHelpKey_Tab"), TEXT("Text_BuildHelpViewToggle")})
+        if (Tree.FindWidget(Name)) return false;
+    BP.Modify(); Tree.Modify(); Column->Modify(); Hint->Modify();
+    auto* Row = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("Row_BuildHelpViewToggle"));
+    Row->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    auto* Keys = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("Row_BuildHelpViewToggleKeys"));
+    // Saved guides can have a project font override applied after generation.
+    // Match the actual Ctrl+Z key rather than reverting to the builder's default font.
+    AddRow(*Keys, *KeyboardHelpKeycap(BP, Tree, TEXT("Tab"), TEXT("TAB"), UndoKey), 4.f);
+    auto* Lane = MakeWidget<USizeBox>(BP, Tree, TEXT("Size_BuildHelpViewToggleIcon"));
+    Lane->SetWidthOverride(124.f); Lane->SetHeightOverride(30.f);
+    auto* LaneSlot = CastChecked<USizeBoxSlot>(Lane->AddChild(Keys));
+    LaneSlot->SetHorizontalAlignment(HAlign_Left); LaneSlot->SetVerticalAlignment(VAlign_Center);
+    AddRow(*Row, *Lane, 10.f);
+    auto* Caption = Label(BP, Tree, TEXT("Text_BuildHelpViewToggle"),
+        LOCTEXT("HelpViewToggle", "시점 전환"), 13, FLinearColor::White, true);
+    Caption->SetFont(UndoCaption->GetFont());
+    Caption->SetAutoWrapText(true);
+    AddRow(*Row, *Caption, 0.f, true);
+    AddColumn(*Column, *Row, 4.f);
+    Column->ShiftChild(Column->GetChildIndex(Hint) + 1, Row);
+    Hint->SetText(LOCTEXT("KeyboardHelpHint", "표시된 키를 누르면 실행됩니다"));
+    Metadata.SetValue(&BP, ViewToggleShortcutKey, TEXT("1"));
+    if (SaveNewBlueprint(TEXT("FF_BUILD_VIEW_TOGGLE_SHORTCUT"), BP)) return true;
+    Metadata.RemoveValue(&BP, ViewToggleShortcutKey);
+    return false;
+}
+
+bool ApplyCharacterShortcutsHelp(UWidgetBlueprint& BP)
+{
+    auto& Metadata = BP.GetOutermost()->GetMetaData();
+    UWidgetTree& Tree = *BP.WidgetTree;
+    auto* Column = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Column_BuildIconHelp")));
+    auto* ViewToggle = Tree.FindWidget(TEXT("Row_BuildHelpViewToggle"));
+    auto* UndoKey = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_BuildHelpKey_UndoCtrl")));
+    auto* UndoCaption = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_BuildHelpUndo")));
+    if (!Column || !ViewToggle || ViewToggle->GetParent() != Column || !UndoKey || !UndoCaption) return false;
+
+    struct FShortcut
+    {
+        const TCHAR* Stem;
+        const TCHAR* KeyName;
+        const TCHAR* Key;
+        FText Caption;
+        FText Hint;
+    };
+    const FShortcut Shortcuts[] = {
+        {TEXT("ShiftLock"), TEXT("ShiftLock"), TEXT("SHIFT"),
+            LOCTEXT("HelpCharacterShiftLock", "캐릭터 시점 고정"),
+            LOCTEXT("HelpCharacterShiftLockHint", "캐릭터 시점에서 Shift를 눌러 시점 고정을 켜거나 끕니다.")},
+        {TEXT("Sprint"), TEXT("SprintAlt"), TEXT("ALT"),
+            LOCTEXT("HelpCharacterSprint", "달리기"),
+            LOCTEXT("HelpCharacterSprintHint", "캐릭터 시점에서 Alt를 눌러 달리기를 켜거나 끕니다.")}
+    };
+    const bool bApplied = Metadata.GetValue(&BP, CharacterShortcutsKey) == TEXT("1");
+    bool bUpdateCaptions = false;
+    for (int32 Index = 0; Index < UE_ARRAY_COUNT(Shortcuts); ++Index)
+    {
+        const FShortcut& Shortcut = Shortcuts[Index];
+        const FString Stem = FString(TEXT("BuildHelp")) + Shortcut.Stem;
+        const FString KeyStem = FString(TEXT("BuildHelpKey_")) + Shortcut.KeyName;
+        if (bApplied)
+        {
+            auto* Row = Tree.FindWidget(FName(*(TEXT("Row_") + Stem)));
+            auto* Key = Cast<UTextBlock>(Tree.FindWidget(FName(*(TEXT("Text_") + KeyStem))));
+            auto* Caption = Cast<UTextBlock>(Tree.FindWidget(FName(*(TEXT("Text_") + Stem))));
+            if (!Row || Row->GetParent() != Column || !Key || Key->GetText().ToString() != Shortcut.Key ||
+                !Caption ||
+                Column->GetChildIndex(Row) != Column->GetChildIndex(ViewToggle) + 1 + Index) return false;
+            bUpdateCaptions |= !Caption->GetText().EqualTo(Shortcut.Caption);
+        }
+        else
+        {
+            for (const FString& Name : {TEXT("Row_") + Stem, TEXT("Size_") + Stem + TEXT("Icon"),
+                TEXT("Row_") + Stem + TEXT("Keys"), TEXT("Text_") + Stem,
+                TEXT("Size_") + KeyStem, TEXT("Border_") + KeyStem,
+                TEXT("Face_") + KeyStem, TEXT("Text_") + KeyStem})
+                if (Tree.FindWidget(FName(*Name))) return false;
+        }
+    }
+    if (bApplied)
+    {
+        if (!bUpdateCaptions) return true;
+        BP.Modify();
+        TArray<FText> PreviousCaptions;
+        for (const FShortcut& Shortcut : Shortcuts)
+        {
+            const FName Name(*(FString(TEXT("Text_BuildHelp")) + Shortcut.Stem));
+            auto* Caption = CastChecked<UTextBlock>(Tree.FindWidget(Name));
+            Caption->Modify();
+            PreviousCaptions.Add(Caption->GetText());
+            Caption->SetText(Shortcut.Caption);
+        }
+        if (SaveNewBlueprint(TEXT("FF_BUILD_CHARACTER_SHORTCUTS"), BP)) return true;
+        for (int32 Index = 0; Index < UE_ARRAY_COUNT(Shortcuts); ++Index)
+        {
+            const FName Name(*(FString(TEXT("Text_BuildHelp")) + Shortcuts[Index].Stem));
+            CastChecked<UTextBlock>(Tree.FindWidget(Name))->SetText(PreviousCaptions[Index]);
+        }
+        return false;
+    }
+
+    BP.Modify(); Tree.Modify(); Column->Modify();
+    for (int32 Index = 0; Index < UE_ARRAY_COUNT(Shortcuts); ++Index)
+    {
+        const FShortcut& Shortcut = Shortcuts[Index];
+        const FString Stem = FString(TEXT("BuildHelp")) + Shortcut.Stem;
+        auto* Row = MakeWidget<UHorizontalBox>(BP, Tree, FName(*(TEXT("Row_") + Stem)));
+        Row->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        Row->SetToolTipText(Shortcut.Hint);
+        auto* Keys = MakeWidget<UHorizontalBox>(BP, Tree, FName(*(TEXT("Row_") + Stem + TEXT("Keys"))));
+        AddRow(*Keys, *KeyboardHelpKeycap(BP, Tree, Shortcut.KeyName, Shortcut.Key, UndoKey), 4.f);
+        auto* Lane = MakeWidget<USizeBox>(BP, Tree, FName(*(TEXT("Size_") + Stem + TEXT("Icon"))));
+        Lane->SetWidthOverride(124.f); Lane->SetHeightOverride(30.f);
+        auto* LaneSlot = CastChecked<USizeBoxSlot>(Lane->AddChild(Keys));
+        LaneSlot->SetHorizontalAlignment(HAlign_Left); LaneSlot->SetVerticalAlignment(VAlign_Center);
+        AddRow(*Row, *Lane, 10.f);
+        auto* Caption = Label(BP, Tree, FName(*(TEXT("Text_") + Stem)), Shortcut.Caption, 13, FLinearColor::White, true);
+        Caption->SetFont(UndoCaption->GetFont());
+        Caption->SetAutoWrapText(true);
+        AddRow(*Row, *Caption, 0.f, true);
+        AddColumn(*Column, *Row, 4.f);
+        Column->ShiftChild(Column->GetChildIndex(ViewToggle) + 1 + Index, Row);
+    }
+    Metadata.SetValue(&BP, CharacterShortcutsKey, TEXT("1"));
+    if (SaveNewBlueprint(TEXT("FF_BUILD_CHARACTER_SHORTCUTS"), BP)) return true;
+    Metadata.RemoveValue(&BP, CharacterShortcutsKey);
+    return false;
+}
+
 // Text-only migration: preserve every existing widget, binding, font, brush and slot.
 bool ApplyQueueShortcutKeys(UWidgetBlueprint& BP)
 {
@@ -1603,6 +1757,35 @@ bool RemoveTopWallet(UWidgetBlueprint& BP)
     return false;
 }
 
+bool ApplyDragPlacementGapControl(UWidgetBlueprint& BP)
+{
+    UWidgetTree& Tree = *BP.WidgetTree;
+    if (Tree.FindWidget(TEXT("Editable_DragPlacementGap"))) return true;
+    BP.Modify();
+    Tree.Modify();
+    if (auto* Body = Tree.FindWidget(TEXT("Column_BuildSettings"))) Body->Modify();
+    if (!FFBuildToolsModel::EnsureDragPlacementGapControl(Tree)) return false;
+    if (auto* Body = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Column_BuildSettings"))))
+        if (UWidget* SnapRow = Tree.FindWidget(TEXT("Row_SettingsSnap")))
+        {
+            const int32 Index = Body->GetChildIndex(SnapRow);
+            if (Index != INDEX_NONE) Body->ShiftChild(Index + 1, Tree.FindWidget(TEXT("Row_SettingsDragPlacementGap")));
+        }
+    // Runtime uses the same named control without requiring existing assets to be rebuilt.
+    return SaveNewBlueprint(TEXT("FF_BUILD_DRAG_PLACEMENT_GAP"), BP);
+}
+
+bool ApplyQueueSettingsControls(UWidgetBlueprint& BP)
+{
+    UWidgetTree& Tree = *BP.WidgetTree;
+    if (Tree.FindWidget(TEXT("Panel_QueueSettings"))) return FFBuildToolsModel::EnsureQueueSettingsControls(Tree);
+    BP.Modify();
+    Tree.Modify();
+    if (auto* Body = Tree.FindWidget(TEXT("Column_BuildSettings"))) Body->Modify();
+    if (!FFBuildToolsModel::EnsureQueueSettingsControls(Tree)) return false;
+    return SaveNewBlueprint(TEXT("FF_BUILD_QUEUE_SETTINGS"), BP);
+}
+
 void Apply()
 {
     UWidgetBlueprint* BP = LoadExistingBlueprint(FFBuildUIAssetPaths::BuildToolsPackage);
@@ -1618,7 +1801,8 @@ void Apply()
             ApplyPearlToolbarAndDrawer(*BP) && ApplyPearlPolish(*BP) &&
             ApplyPearlReadableCards(*BP) && ApplyIconHelp(*BP) &&
             ApplyActionLanguage(*BP) && ApplyKeyboardHelp(*BP) && ApplyConstructionEditingHelp(*BP) &&
-            ApplyQueueShortcutKeys(*BP) && RemoveTopWallet(*BP))
+            ApplyQueueShortcutKeys(*BP) && RemoveTopWallet(*BP) && ApplyViewToggleHelp(*BP) && ApplyCharacterShortcutsHelp(*BP) &&
+            ApplyDragPlacementGapControl(*BP) && ApplyQueueSettingsControls(*BP))
         {
             UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_BUILD_REFERENCE_TOOLS_REUSE"));
         }
@@ -1643,7 +1827,8 @@ void Apply()
         !ApplyPearlToolbarAndDrawer(*BP) || !ApplyPearlPolish(*BP) ||
         !ApplyPearlReadableCards(*BP) || !ApplyIconHelp(*BP) ||
         !ApplyActionLanguage(*BP) || !ApplyKeyboardHelp(*BP) || !ApplyConstructionEditingHelp(*BP) ||
-        !ApplyQueueShortcutKeys(*BP) || !RemoveTopWallet(*BP))
+        !ApplyQueueShortcutKeys(*BP) || !RemoveTopWallet(*BP) || !ApplyViewToggleHelp(*BP) || !ApplyCharacterShortcutsHelp(*BP) ||
+        !ApplyDragPlacementGapControl(*BP) || !ApplyQueueSettingsControls(*BP))
     {
         UE_LOG(LogFFUIWbpBuilder, Error, TEXT("FF_BUILD_REFERENCE_TOOLS_FAIL: refinement failed"));
     }
@@ -1652,6 +1837,48 @@ void Apply()
 FAutoConsoleCommand Command(TEXT("FF.ApplyBuildReferenceTools"),
     TEXT("Add an interactive build-mode top bar and settings drawer to the saved WBP."),
     FConsoleCommandDelegate::CreateStatic(&Apply));
+
+void ApplyViewToggleShortcut()
+{
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World || GEditor->PlayWorld || World->GetOutermost()->GetName() != TEXT("/Engine/Maps/Entry"))
+    {
+        UE_LOG(LogFFUIWbpBuilder, Error, TEXT("FF_BUILD_VIEW_TOGGLE_SHORTCUT_FAIL: requires idle Entry editor"));
+        return;
+    }
+    auto* BP = LoadExistingBlueprint(FFBuildUIAssetPaths::BuildToolsPackage);
+    if (!BP || !BP->WidgetTree || BP->ParentClass != UFF_BuildToolsWidget::StaticClass() || !ApplyViewToggleHelp(*BP))
+    {
+        UE_LOG(LogFFUIWbpBuilder, Error, TEXT("FF_BUILD_VIEW_TOGGLE_SHORTCUT_FAIL: saved guide migration failed"));
+        return;
+    }
+    UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_BUILD_VIEW_TOGGLE_SHORTCUT_PASS"));
+}
+
+FAutoConsoleCommand ViewToggleCommand(TEXT("FF.ApplyBuildViewToggleShortcut"),
+    TEXT("Add a TAB keycap matching Ctrl+Z to the existing BuildTools guide only."),
+    FConsoleCommandDelegate::CreateStatic(&ApplyViewToggleShortcut));
+
+void ApplyCharacterShortcuts()
+{
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World || GEditor->PlayWorld || World->GetOutermost()->GetName() != TEXT("/Engine/Maps/Entry"))
+    {
+        UE_LOG(LogFFUIWbpBuilder, Error, TEXT("FF_BUILD_CHARACTER_SHORTCUTS_FAIL: requires idle Entry editor"));
+        return;
+    }
+    auto* BP = LoadExistingBlueprint(FFBuildUIAssetPaths::BuildToolsPackage);
+    if (!BP || !BP->WidgetTree || BP->ParentClass != UFF_BuildToolsWidget::StaticClass() || !ApplyCharacterShortcutsHelp(*BP))
+    {
+        UE_LOG(LogFFUIWbpBuilder, Error, TEXT("FF_BUILD_CHARACTER_SHORTCUTS_FAIL: saved guide migration failed"));
+        return;
+    }
+    UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_BUILD_CHARACTER_SHORTCUTS_PASS"));
+}
+
+FAutoConsoleCommand CharacterShortcutsCommand(TEXT("FF.ApplyBuildCharacterShortcuts"),
+    TEXT("Add matching Shift and Alt keycaps for character controls to the existing BuildTools guide."),
+    FConsoleCommandDelegate::CreateStatic(&ApplyCharacterShortcuts));
 }
 
 #undef LOCTEXT_NAMESPACE

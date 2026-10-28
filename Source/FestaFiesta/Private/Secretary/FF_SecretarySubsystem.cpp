@@ -12,6 +12,7 @@
 #include "Incident/FF_IncidentTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
+#include "Save/FF_SaveSubsystem.h"
 #include "Secretary/FF_SecretarySettings.h"
 #include "Secretary/FF_SecretaryTipWidget.h"
 #include "Staff/FF_StaffFacilitySubsystem.h"
@@ -174,9 +175,90 @@ void UFF_SecretarySubsystem::HandleStageChanged(const EFF_FestivalStage Previous
 			ScheduleBriefing(true);
 		}
 		break;
+	case EFF_FestivalStage::Report:
+		if (const UFF_SecretarySettings* Settings = UFF_SecretarySettings::Get(); Settings && Settings->bEnableReportReaction)
+		{
+			ReportReactionRetries = 0;
+			ReportReactionCountdown = Settings->ReportReactionDelaySeconds;
+		}
+		break;
 	default:
 		break;
 	}
+}
+
+void UFF_SecretarySubsystem::TickReportReaction(const float DeltaTime)
+{
+	if (ReportReactionCountdown < 0.f)
+	{
+		return;
+	}
+	ReportReactionCountdown -= DeltaTime;
+	if (ReportReactionCountdown > 0.f)
+	{
+		return;
+	}
+
+	if (PlayReportReaction())
+	{
+		ReportReactionCountdown = -1.f;
+		return;
+	}
+
+	// 결산 표시값은 원본 정산이 끝나야 선다. 잠깐씩 기다리고, 끝내 없으면 그날은 접는다.
+	ReportReactionCountdown = (++ReportReactionRetries < 15) ? 1.f : -1.f;
+}
+
+bool UFF_SecretarySubsystem::PlayReportReaction(const bool bForce)
+{
+	const UFF_FestivalStageSubsystem* Stage = BoundStage.Get();
+	const UWorld* World = GetWorld();
+	UGameInstance* Game = World ? World->GetGameInstance() : nullptr;
+	const UFF_FestivalViewModelSubsystem* ViewModel = Game ? Game->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
+	const FFF_DailyReportView* Report = ViewModel ? ViewModel->GetDailyReport() : nullptr;
+	if (!Stage || !Report)
+	{
+		return false;
+	}
+	if (ReactedReportDay == Report->Day && !bForce)
+	{
+		return true;
+	}
+	ReactedReportDay = Report->Day;
+
+	// 결산 화면 · 다음 날 아침 브리핑과 같은 만족도 값을 본다.
+	const int32 Satisfaction = Report->bHasSatisfaction ? Report->ScoreSatisfaction : INDEX_NONE;
+	const EFF_SecretaryDayTier Tier = FFSecretaryAdvisor::ClassifyDay(Satisfaction);
+
+	EFF_SecretaryTrustTier Trust = EFF_SecretaryTrustTier::Low;
+	bool bTrustJustRoseHigh = false;
+	if (UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		Trust = FFSecretaryAdvisor::TrustTierOf(
+			Save->AddSecretaryTrust(FFSecretaryAdvisor::TrustDeltaForDay(Tier), TEXT("결산")));
+		bTrustJustRoseHigh = Trust == EFF_SecretaryTrustTier::High && Save->MarkSecretaryTrustReachedHigh();
+	}
+
+	const FText Text = ResolvePlayerName(
+		FFSecretaryAdvisor::BuildReportReaction(Tier, Trust, bTrustJustRoseHigh, Stage->IsFinalDay()));
+	const UFF_SecretarySettings* Settings = UFF_SecretarySettings::Get();
+	ShowTip(Text, Settings ? Settings->ReportReactionVisibleSeconds : 10.f);
+	UE_LOG(LogFestaFiestaSecretary, Log, TEXT("[비서] %d일차 결산 반응(만족도 %d · 단계 %d · 신뢰 %d%s): %s"),
+		Report->Day, Satisfaction, static_cast<int32>(Tier), static_cast<int32>(Trust),
+		bTrustJustRoseHigh ? TEXT(" · 처음 높음") : TEXT(""), *Text.ToString());
+	return true;
+}
+
+FText UFF_SecretarySubsystem::ResolvePlayerName(const FText& Text) const
+{
+	const FString Source = Text.ToString();
+	if (!Source.Contains(TEXT("{이름}")))
+	{
+		return Text;
+	}
+	const UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
+	const FString Name = Tutorial ? Tutorial->GetPlayerDisplayName() : FString(TEXT("담당자"));
+	return FText::FromString(Source.Replace(TEXT("{이름}"), *Name));
 }
 
 void UFF_SecretarySubsystem::Tick(const float DeltaTime)
@@ -186,6 +268,7 @@ void UFF_SecretarySubsystem::Tick(const float DeltaTime)
 		return;
 	}
 	TickBriefing(DeltaTime);
+	TickReportReaction(DeltaTime);
 	if (BoundStage.IsValid() && BoundStage->CurrentStage == EFF_FestivalStage::Live)
 	{
 		TickLive(DeltaTime);
@@ -283,6 +366,10 @@ FFF_SecretaryBriefingInputs UFF_SecretarySubsystem::GatherBriefingInputs() const
 	if (const UFF_FestivalStageSubsystem* Stage = BoundStage.Get())
 	{
 		Inputs.Day = Stage->CurrentDay;
+	}
+	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		Inputs.Trust = FFSecretaryAdvisor::TrustTierOf(Save->GetSecretaryTrust());
 	}
 	// 어제 만족도 · 아쉬운 점 · 매출 1등은 어제 결산이 이미 정했다. 결산 화면과 다른 말을 하지 않도록 그대로 옮긴다.
 	// 이어하기로 아침에 들어와 어제 결산을 못 봤으면 비워 둔다(브리핑이 그 줄들을 빼고 말한다).
@@ -422,6 +509,12 @@ FFF_SecretaryLiveSignals UFF_SecretarySubsystem::GatherLiveSignals() const
 		}
 	}
 
+	const UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
+	for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
+	{
+		Signals.NeedCoverage[Index] = Crowd ? Crowd->GetNeedCoverage(static_cast<EFF_NeedType>(Index)) : 1.f;
+	}
+
 	if (const UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>())
 	{
 		for (const FFFZSFacilityReadModel& Facility : Zones->BuildReadModel().Facilities)
@@ -439,7 +532,7 @@ FFF_SecretaryLiveSignals UFF_SecretarySubsystem::GatherLiveSignals() const
 		}
 	}
 
-	if (const UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>())
+	if (Crowd)
 	{
 		Signals.CongestedCellCount = Crowd->GetCongestedCellCount();
 	}
@@ -536,14 +629,14 @@ UFF_SecretaryTipWidget* UFF_SecretarySubsystem::EnsureTipWidget()
 	return TipWidget;
 }
 
-bool UFF_SecretarySubsystem::ShowTip(const FText& Text)
+bool UFF_SecretarySubsystem::ShowTip(const FText& Text, const float VisibleOverride)
 {
 	UFF_SecretaryTipWidget* Widget = Text.IsEmpty() ? nullptr : EnsureTipWidget();
 	if (!Widget)
 	{
 		return false;
 	}
-	Widget->ShowTip(Text);
+	Widget->ShowTip(Text, VisibleOverride);
 	return true;
 }
 
@@ -588,6 +681,36 @@ namespace
 			{
 				Secretary->ShowTip(Tip.Text);
 			}
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs SecretaryReportCommand(
+		TEXT("FF.Secretary.Report"),
+		TEXT("결산 한마디를 지금 띄운다(그날 한 번 규칙 무시). 결산 단계에서 쓴다."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (UFF_SecretarySubsystem* Secretary = World ? World->GetSubsystem<UFF_SecretarySubsystem>() : nullptr)
+			{
+				UE_LOG(LogFestaFiestaSecretary, Display, TEXT("[비서] 결산 한마디 %s"),
+					Secretary->PlayReportReaction(true) ? TEXT("띄움") : TEXT("결산 값 없음"));
+			}
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs SecretaryTrustCommand(
+		TEXT("FF.Secretary.Trust"),
+		TEXT("비서 신뢰도를 보거나 맞춘다. FF.Secretary.Trust 75 — 숫자를 빼면 지금 값만 찍는다."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			UFF_SaveSubsystem* Save = World ? UFF_SaveSubsystem::Get(World) : nullptr;
+			if (!Save)
+			{
+				return;
+			}
+			if (Args.Num() > 0)
+			{
+				Save->AddSecretaryTrust(FCString::Atoi(*Args[0]) - Save->GetSecretaryTrust(), TEXT("개발 명령"));
+			}
+			UE_LOG(LogFestaFiestaSecretary, Display, TEXT("[비서] 신뢰도 %d (단계 %d)"),
+				Save->GetSecretaryTrust(), static_cast<int32>(FFSecretaryAdvisor::TrustTierOf(Save->GetSecretaryTrust())));
 		}));
 
 	FAutoConsoleCommandWithWorldAndArgs SecretaryBriefingCommand(

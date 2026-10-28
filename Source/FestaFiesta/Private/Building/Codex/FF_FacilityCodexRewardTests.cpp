@@ -1,5 +1,5 @@
 // FF_FacilityCodexRewardTests.cpp
-// 역할: FacilityCodexReward 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Codex.Rewards.DiscoveryRequiresExplicitOneTimeClaim, FestaFiesta.Building.Codex.Rewards.ProfileReloadPreservesUnclaimedAndMigratesPaidHistory).
+// 역할: 축제별 조합 발견·보상 수령·저장 복원과 중복 지급 방지 계약을 자동 검사한다.
 
 #include "Building/Codex/FF_FacilityCodexProgressSubsystem.h"
 
@@ -21,19 +21,18 @@
 #include "FF_FFZSZoneActor.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Festival/FF_FestivalSettings.h"
 #include "HAL/FileManager.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ConfigCacheIni.h"
-#include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
-#include "Subsystems/SubsystemCollection.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include "UObject/StrongObjectPtr.h"
 
 namespace FFF_CodexRewardTests
 {
-	/** Tests read/write an isolated profile, never the player's discovery history. */
+	/** Introduction settings stay isolated from the player's profile. */
 	class FScopedProfile
 	{
 	public:
@@ -61,8 +60,6 @@ namespace FFF_CodexRewardTests
 		FHarness()
 			: Game(NewObject<UGameInstance>())
 		{
-			Economy = NewObject<UFF_FestivalProgressionSubsystem>(Game.Get());
-			Progress = NewObject<UFF_FacilityCodexProgressSubsystem>(Game.Get());
 			Definition = NewObject<UFF_FestivalDefinition>(Game.Get());
 			UDataTable* Costs = NewObject<UDataTable>(Game.Get());
 			Costs->RowStruct = FFF_FacilityCostRow::StaticStruct();
@@ -70,12 +67,24 @@ namespace FFF_CodexRewardTests
 			Definition->FacilityCostTable = Costs;
 			Definition->FestivalId = TEXT("CodexRewardAutomation");
 			Definition->InitialGold = 1000;
-			Progress->Initialize(Collection);
+			InitializeSubsystems();
 		}
-		~FHarness() { Progress->Deinitialize(); }
+		~FHarness() { Game->Shutdown(); }
+		void InitializeSubsystems()
+		{
+			TGuardValue<TSoftObjectPtr<UFF_FestivalDefinition>> StartupDefinition(
+				GetMutableDefault<UFF_FestivalSettings>()->DefaultFestival, {});
+			Game->Init();
+			Economy = Game->GetSubsystem<UFF_FestivalProgressionSubsystem>();
+			Progress = Game->GetSubsystem<UFF_FacilityCodexProgressSubsystem>();
+		}
+		void ReloadSubsystems()
+		{
+			Game->Shutdown();
+			InitializeSubsystems();
+		}
 		FScopedProfile Profile;
 		TStrongObjectPtr<UGameInstance> Game;
-		FSubsystemCollection<UGameInstanceSubsystem> Collection;
 		UFF_FestivalProgressionSubsystem* Economy = nullptr;
 		UFF_FacilityCodexProgressSubsystem* Progress = nullptr;
 		UFF_FestivalDefinition* Definition = nullptr;
@@ -160,44 +169,124 @@ bool FFF_FacilityCodexAuthoredRewardTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityCodexRewardPersistenceTest,
-	"FestaFiesta.Building.Codex.Rewards.ProfileReloadPreservesUnclaimedAndMigratesPaidHistory",
+	"FestaFiesta.Building.Codex.Rewards.FestivalSavePreservesUnclaimedAndClaimedHistory",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FFF_FacilityCodexRewardPersistenceTest::RunTest(const FString& Parameters)
 {
 	FFF_CodexRewardTests::FHarness H;
-	if (!TestNotNull(TEXT("Config persistence is available"), GConfig)) { return false; }
-	const TArray<FString> LegacyHistory = {TEXT("LegacyDiscovery")};
-	GConfig->SetArray(TEXT("FestaFiesta.FacilityCodex"), TEXT("DiscoveredRuleIds"), LegacyHistory, GGameUserSettingsIni);
-	GConfig->RemoveKey(TEXT("FestaFiesta.FacilityCodex"), TEXT("DiscoveryRewardClaimVersion"), GGameUserSettingsIni);
-	H.Progress->Initialize(H.Collection);
 	H.Economy->StartFestival(H.Definition);
-	TestEqual(TEXT("Loading old profile history never grants gold"), H.Economy->GetGold(), 1000);
-	TestTrue(TEXT("Legacy automatic rewards migrate as claimed"), H.Progress->IsDiscoveryRewardClaimed(TEXT("LegacyDiscovery")));
-	TestFalse(TEXT("Legacy automatic payment cannot be manually collected again"),
-		H.Progress->ClaimDiscoveryReward(TEXT("LegacyDiscovery"), 999, H.Economy));
-	const TSet<FName> Discoveries = {TEXT("LegacyDiscovery"), TEXT("NewDiscovery"), TEXT("ClaimedDiscovery")};
-	TestTrue(TEXT("A batch can contain old and new history"), H.Progress->RecordDiscoveries(Discoveries));
-	TestTrue(TEXT("One new discovery can be claimed before reload"), H.Progress->ClaimDiscoveryReward(TEXT("ClaimedDiscovery"), 47, H.Economy));
+	const TSet<FName> Discoveries = {TEXT("NewDiscovery"), TEXT("ClaimedDiscovery")};
+	TestTrue(TEXT("Festival records discoveries"), H.Progress->RecordDiscoveries(Discoveries));
+	TestTrue(TEXT("One discovery can be claimed before saving"), H.Progress->ClaimDiscoveryReward(TEXT("ClaimedDiscovery"), 47, H.Economy));
 	TestEqual(TEXT("Only the explicit claim receives gold"), H.Economy->GetGold(), 1047);
-	FString SavedProfile;
-	TestTrue(TEXT("Discovery history is written to disk"), FFileHelper::LoadFileToString(SavedProfile, *H.Profile.Path));
-	TestTrue(TEXT("Persisted history includes the new rule ID"), SavedProfile.Contains(TEXT("NewDiscovery")));
-	GConfig->UnloadFile(GGameUserSettingsIni);
-	UFF_FacilityCodexProgressSubsystem* Reloaded = NewObject<UFF_FacilityCodexProgressSubsystem>(H.Game.Get());
-	Reloaded->Initialize(H.Collection);
-	TestTrue(TEXT("A fresh subsystem reads the saved discovery"), Reloaded->IsDiscovered(TEXT("NewDiscovery")));
-	TestFalse(TEXT("Unclaimed rewards remain unclaimed across reload"), Reloaded->IsDiscoveryRewardClaimed(TEXT("NewDiscovery")));
-	TestTrue(TEXT("Claimed rewards remain claimed across reload"), Reloaded->IsDiscoveryRewardClaimed(TEXT("ClaimedDiscovery")));
-	TestTrue(TEXT("Legacy migration survives reload"), Reloaded->IsDiscoveryRewardClaimed(TEXT("LegacyDiscovery")));
-	TestFalse(TEXT("Restoring the same layout cannot pay the saved rules"), Reloaded->RecordDiscoveries(Discoveries));
+	TArray<uint8> SavedProgress;
+	H.Progress->WriteSaveData(SavedProgress);
+	TestFalse(TEXT("Festival progress produces a save blob"), SavedProgress.IsEmpty());
+	TestEqual(TEXT("Progress uses a stable save part key"), H.Progress->GetSaveKey(), FName(TEXT("FacilityCodex")));
+	TestEqual(TEXT("Progress restores before facilities"), H.Progress->GetSaveLoadPhase(), EFF_SaveLoadPhase::Global);
+	H.ReloadSubsystems();
+	TestTrue(TEXT("Fresh subsystems begin without discoveries"), H.Progress->GetDiscoveredRuleIdsView().IsEmpty());
 	H.Economy->StartFestival(H.Definition);
-	TestFalse(TEXT("Starting a new festival keeps a claimed profile reward spent"),
-		Reloaded->ClaimDiscoveryReward(TEXT("ClaimedDiscovery"), 47, H.Economy));
-	TestEqual(TEXT("New festival starts with only its configured gold"), H.Economy->GetGold(), 1000);
-	TestTrue(TEXT("Previously earned unclaimed reward can be collected after restart"),
-		Reloaded->ClaimDiscoveryReward(TEXT("NewDiscovery"), 125, H.Economy));
+	H.Progress->ReadSaveData(SavedProgress);
+	TestEqual(TEXT("Restoring progress never pays rewards"), H.Economy->GetGold(), 1000);
+	TestTrue(TEXT("The festival blob restores discoveries"), H.Progress->IsDiscovered(TEXT("NewDiscovery")));
+	TestFalse(TEXT("Unclaimed rewards stay unclaimed in the same festival save"), H.Progress->IsDiscoveryRewardClaimed(TEXT("NewDiscovery")));
+	TestTrue(TEXT("Claimed rewards stay claimed in the same festival save"), H.Progress->IsDiscoveryRewardClaimed(TEXT("ClaimedDiscovery")));
+	TestFalse(TEXT("Restoring the same layout cannot record the saved rules twice"), H.Progress->RecordDiscoveries(Discoveries));
+	TestFalse(TEXT("A claimed saved reward cannot be collected again"),
+		H.Progress->ClaimDiscoveryReward(TEXT("ClaimedDiscovery"), 47, H.Economy));
+	TestTrue(TEXT("An unclaimed saved reward remains available"),
+		H.Progress->ClaimDiscoveryReward(TEXT("NewDiscovery"), 125, H.Economy));
 	TestEqual(TEXT("Deferred claim credits only its authored reward"), H.Economy->GetGold(), 1125);
-	Reloaded->Deinitialize();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityCodexFestivalResetTest,
+	"FestaFiesta.Building.Codex.Rewards.EveryFestivalResetsDiscoveriesAndClaimsOnce",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFF_FacilityCodexFestivalResetTest::RunTest(const FString& Parameters)
+{
+	FFF_CodexRewardTests::FHarness H;
+	H.Economy->StartFestival(H.Definition);
+	const TSet<FName> Recipes = {TEXT("FestivalRecipe")};
+	H.Progress->MarkIntroductionSeen();
+	H.Progress->RecordDiscoveries(Recipes);
+	TestTrue(TEXT("First festival pays the individual reward"), H.Progress->ClaimDiscoveryReward(TEXT("FestivalRecipe"), 30, H.Economy));
+	TestTrue(TEXT("First festival pays the collection stage"), H.Progress->ClaimCollectionReward(TEXT("FestivalStage"), 1, 60, Recipes, H.Economy));
+	TStrongObjectPtr<UFF_FacilityCodexTestObserver> Observer(NewObject<UFF_FacilityCodexTestObserver>());
+	H.Progress->OnProgressChanged.AddDynamic(Observer.Get(), &UFF_FacilityCodexTestObserver::HandleCodexChanged);
+	H.Economy->RestartFestival();
+	TestTrue(TEXT("Restarting the same festival definition clears all discoveries"), H.Progress->GetDiscoveredRuleIdsView().IsEmpty());
+	TestFalse(TEXT("The next festival clears individual claims"), H.Progress->IsDiscoveryRewardClaimed(TEXT("FestivalRecipe")));
+	TestFalse(TEXT("The next festival clears collection claims"), H.Progress->IsCollectionRewardClaimed(TEXT("FestivalStage")));
+	TestTrue(TEXT("Festival reset retains profile guidance"), H.Progress->HasSeenIntroduction());
+	TestEqual(TEXT("The reset publishes one coherent UI refresh"), Observer->NotificationCount, 1);
+	TestEqual(TEXT("The next festival starts with authored funds"), H.Economy->GetGold(), 1000);
+	TestFalse(TEXT("Old individual rewards require a new discovery"), H.Progress->ClaimDiscoveryReward(TEXT("FestivalRecipe"), 30, H.Economy));
+	TestFalse(TEXT("Old collection stages require new discoveries"), H.Progress->ClaimCollectionReward(TEXT("FestivalStage"), 1, 60, Recipes, H.Economy));
+	H.Progress->RecordDiscoveries(Recipes);
+	TestTrue(TEXT("The same recipe can be earned in the next festival"), H.Progress->ClaimDiscoveryReward(TEXT("FestivalRecipe"), 30, H.Economy));
+	TestTrue(TEXT("The same collection stage can be earned in the next festival"), H.Progress->ClaimCollectionReward(TEXT("FestivalStage"), 1, 60, Recipes, H.Economy));
+	TestFalse(TEXT("Repeated discovery in one festival remains idempotent"), H.Progress->RecordDiscoveries(Recipes));
+	TestFalse(TEXT("The individual reward cannot pay twice in one festival"), H.Progress->ClaimDiscoveryReward(TEXT("FestivalRecipe"), 30, H.Economy));
+	TestFalse(TEXT("The collection reward cannot pay twice in one festival"), H.Progress->ClaimCollectionReward(TEXT("FestivalStage"), 1, 60, Recipes, H.Economy));
+	TestEqual(TEXT("Successful rediscovery and claims each refresh once"), Observer->NotificationCount, 4);
+	TestEqual(TEXT("Duplicate actions do not change the wallet"), H.Economy->GetGold(), 1090);
+	H.Economy->StartFestival(H.Definition);
+	TestTrue(TEXT("Starting the same definition again creates fresh history"), H.Progress->GetDiscoveredRuleIdsView().IsEmpty());
+	TestEqual(TEXT("Each festival boundary publishes once"), Observer->NotificationCount, 5);
+	H.Progress->ResetForNewFestival();
+	TestEqual(TEXT("Even an empty festival boundary refreshes stale UI state"), Observer->NotificationCount, 6);
+	H.Progress->OnProgressChanged.RemoveDynamic(Observer.Get(), &UFF_FacilityCodexTestObserver::HandleCodexChanged);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityCodexSaveReplacementTest,
+	"FestaFiesta.Building.Codex.Rewards.SaveReplacementAndLegacyEmptyBlobClearAllHistory",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFF_FacilityCodexSaveReplacementTest::RunTest(const FString& Parameters)
+{
+	FFF_CodexRewardTests::FHarness H;
+	H.Economy->StartFestival(H.Definition);
+	H.Progress->MarkIntroductionSeen();
+	const TSet<FName> RecipesA = {TEXT("SaveAClaimed"), TEXT("SaveAUnclaimed")};
+	H.Progress->RecordDiscoveries(RecipesA);
+	H.Progress->ClaimDiscoveryReward(TEXT("SaveAClaimed"), 25, H.Economy);
+	H.Progress->ClaimCollectionReward(TEXT("SaveAStage"), 2, 50, RecipesA, H.Economy);
+	TArray<uint8> SaveA;
+	H.Progress->WriteSaveData(SaveA);
+	H.Economy->RestartFestival();
+	const TSet<FName> RecipesB = {TEXT("SaveBClaimed")};
+	H.Progress->RecordDiscoveries(RecipesB);
+	H.Progress->ClaimDiscoveryReward(TEXT("SaveBClaimed"), 10, H.Economy);
+	H.Progress->ClaimCollectionReward(TEXT("SaveBStage"), 1, 20, RecipesB, H.Economy);
+	TArray<uint8> SaveB;
+	H.Progress->WriteSaveData(SaveB);
+	TStrongObjectPtr<UFF_FacilityCodexTestObserver> Observer(NewObject<UFF_FacilityCodexTestObserver>());
+	H.Progress->OnProgressChanged.AddDynamic(Observer.Get(), &UFF_FacilityCodexTestObserver::HandleCodexChanged);
+	H.Progress->ReadSaveData(SaveA);
+	TestTrue(TEXT("First save restores its discovery"), H.Progress->IsDiscovered(TEXT("SaveAUnclaimed")));
+	TestTrue(TEXT("First save restores its individual claim"), H.Progress->IsDiscoveryRewardClaimed(TEXT("SaveAClaimed")));
+	TestFalse(TEXT("First save preserves its unclaimed reward"), H.Progress->IsDiscoveryRewardClaimed(TEXT("SaveAUnclaimed")));
+	TestTrue(TEXT("First save restores its collection claim"), H.Progress->IsCollectionRewardClaimed(TEXT("SaveAStage")));
+	TestFalse(TEXT("Loading another save removes previous discoveries"), H.Progress->IsDiscovered(TEXT("SaveBClaimed")));
+	TestFalse(TEXT("Loading another save removes previous individual claims"), H.Progress->IsDiscoveryRewardClaimed(TEXT("SaveBClaimed")));
+	TestFalse(TEXT("Loading another save removes previous collection claims"), H.Progress->IsCollectionRewardClaimed(TEXT("SaveBStage")));
+	H.Progress->ReadSaveData(SaveB);
+	TestEqual(TEXT("Replacement does not merge another slot's history"), H.Progress->GetDiscoveredRuleIdsView().Num(), 1);
+	TestFalse(TEXT("Second save drops the first save's discovery"), H.Progress->IsDiscovered(TEXT("SaveAClaimed")));
+	TestFalse(TEXT("Second save drops the first save's individual claim"), H.Progress->IsDiscoveryRewardClaimed(TEXT("SaveAClaimed")));
+	TestFalse(TEXT("Second save drops the first save's collection claim"), H.Progress->IsCollectionRewardClaimed(TEXT("SaveAStage")));
+	TestTrue(TEXT("Second save restores its individual claim"), H.Progress->IsDiscoveryRewardClaimed(TEXT("SaveBClaimed")));
+	TestTrue(TEXT("Second save restores its collection claim"), H.Progress->IsCollectionRewardClaimed(TEXT("SaveBStage")));
+	H.Progress->ReadSaveData({});
+	TestTrue(TEXT("A legacy save without a codex part starts with empty discoveries"), H.Progress->GetDiscoveredRuleIdsView().IsEmpty());
+	TestFalse(TEXT("An empty legacy blob clears previous individual claims"), H.Progress->IsDiscoveryRewardClaimed(TEXT("SaveBClaimed")));
+	TestFalse(TEXT("An empty legacy blob clears previous collection claims"), H.Progress->IsCollectionRewardClaimed(TEXT("SaveBStage")));
+	TestTrue(TEXT("Slot changes retain local first-open guidance"), H.Progress->HasSeenIntroduction());
+	TestEqual(TEXT("Each replacement publishes one coherent UI refresh"), Observer->NotificationCount, 3);
+	TestEqual(TEXT("Restore and reset never grant gold"), H.Economy->GetGold(), 1030);
+	H.Progress->OnProgressChanged.RemoveDynamic(Observer.Get(), &UFF_FacilityCodexTestObserver::HandleCodexChanged);
 	return true;
 }
 
@@ -214,6 +303,8 @@ bool FFF_FacilityCodexRewardReadinessAndOverflowTest::RunTest(const FString& Par
 	TestFalse(TEXT("Unstarted economy rejects a claim"), H.Progress->ClaimDiscoveryReward(TEXT("First"), MAX_int32, H.Economy));
 	TestFalse(TEXT("Failed claim does not consume a reward"), H.Progress->IsDiscoveryRewardClaimed(TEXT("First")));
 	H.Economy->StartFestival(H.Definition);
+	TestTrue(TEXT("Festival startup clears pre-festival discoveries"), H.Progress->GetDiscoveredRuleIdsView().IsEmpty());
+	H.Progress->RecordDiscoveries(Discoveries);
 	TestFalse(TEXT("Negative reward is rejected"), H.Progress->ClaimDiscoveryReward(TEXT("Second"), -1, H.Economy));
 	TestFalse(TEXT("Zero reward is rejected"), H.Progress->ClaimDiscoveryReward(TEXT("Second"), 0, H.Economy));
 	TestFalse(TEXT("Invalid amounts do not consume a reward"), H.Progress->IsDiscoveryRewardClaimed(TEXT("Second")));
@@ -288,7 +379,7 @@ bool FFF_FacilityCodexRewardStartupWorldTest::RunTest(const FString& Parameters)
 	UFF_FestivalProgressionSubsystem* Economy = Game->GetSubsystem<UFF_FestivalProgressionSubsystem>();
 	if (!TestNotNull(TEXT("World provides authoritative facilities"), Zones)
 		|| !TestNotNull(TEXT("World provides codex projection"), Codex)
-		|| !TestNotNull(TEXT("Game provides profile persistence"), Progress)
+		|| !TestNotNull(TEXT("Game provides festival progress"), Progress)
 		|| !TestNotNull(TEXT("Game provides wallet"), Economy)) { return false; }
 	UFF_FestivalDefinition* Definition = NewObject<UFF_FestivalDefinition>(Game);
 	UDataTable* Costs = NewObject<UDataTable>(Game);
@@ -320,14 +411,15 @@ bool FFF_FacilityCodexRewardStartupWorldTest::RunTest(const FString& Parameters)
 		if (!TestTrue(*FString::Printf(TEXT("Pre-startup pair installs: %s"), *Result.Message.ToString()), Result.bSucceeded)) { return false; }
 	}
 	TestEqual(TEXT("Installed startup pair is visible as discovered"), Codex->GetSummary().DiscoveredCount, 1);
-	TestTrue(TEXT("Startup discovery persists independently of the economy reset"), Progress->IsDiscovered(TEXT("CodexStartupPair")));
+	TestTrue(TEXT("Startup discovery records the completed pair"), Progress->IsDiscovered(TEXT("CodexStartupPair")));
 	TestEqual(TEXT("Installation spends only build costs and does not automatically pay discovery"), Economy->GetGold(), 980);
 	TestFalse(TEXT("Startup cannot consume a claim before the player-login reset"), Codex->ClaimDiscoveryReward(TEXT("CodexStartupPair")));
 	// Exercise the real world-subsystem startup callback and next-tick timer, while avoiding unrelated GameMode startup.
 	Codex->OnWorldBeginPlay(*World);
 	Economy->RestartFestival();
 	TestEqual(TEXT("Player-login economy reset starts with authored gold"), Economy->GetGold(), 1000);
-	TestFalse(TEXT("BeginPlay leaves the profile reward unclaimed"), Progress->IsDiscoveryRewardClaimed(TEXT("CodexStartupPair")));
+	TestFalse(TEXT("Player-login reset clears the pre-startup discovery"), Progress->IsDiscovered(TEXT("CodexStartupPair")));
+	TestFalse(TEXT("BeginPlay leaves the festival reward unclaimed"), Progress->IsDiscoveryRewardClaimed(TEXT("CodexStartupPair")));
 	World->GetTimerManager().Tick(0.016f);
 	TestEqual(TEXT("Startup completion never automatically grants discovery gold"), Economy->GetGold(), 1000);
 	FFF_FacilityCodexEntry Entry;
@@ -463,6 +555,7 @@ bool FFF_FacilityCodexCollectionRewardPersistenceTest::RunTest(const FString& Pa
 	TestFalse(TEXT("Collection claims wait for festival startup"),
 		H.Progress->ClaimCollectionReward(TEXT("First"), 1, 200, CurrentRecipes, H.Economy));
 	H.Economy->StartFestival(H.Definition);
+	H.Progress->RecordDiscoveries({TEXT("One"), TEXT("RemovedRecipe"), TEXT("AnotherRemovedRecipe")});
 	TestFalse(TEXT("Old removed recipes do not count toward current collection progress"),
 		H.Progress->ClaimCollectionReward(TEXT("First"), 2, 200, CurrentRecipes, H.Economy));
 	TestFalse(TEXT("Failed collection claim remains available"), H.Progress->IsCollectionRewardClaimed(TEXT("First")));
@@ -484,23 +577,29 @@ bool FFF_FacilityCodexCollectionRewardPersistenceTest::RunTest(const FString& Pa
 	TestEqual(TEXT("Collection rewards are not demolition refunds"), H.Economy->GetDayLedger().GetTotalRefund(), 0);
 	TestTrue(TEXT("Individual discovery reward is still available independently"), H.Progress->ClaimDiscoveryReward(TEXT("One"), 100, H.Economy));
 	TestEqual(TEXT("Both reward types share one currency"), H.Economy->GetGold(), 1300);
-	GConfig->UnloadFile(GGameUserSettingsIni);
-	TStrongObjectPtr<UFF_FacilityCodexProgressSubsystem> Reloaded(NewObject<UFF_FacilityCodexProgressSubsystem>(H.Game.Get()));
-	Reloaded->Initialize(H.Collection);
-	TestTrue(TEXT("Reload retains collection claim independently of discovery claims"), Reloaded->IsCollectionRewardClaimed(TEXT("First")));
-	TestTrue(TEXT("Reload also retains the recipe reward"), Reloaded->IsDiscoveryRewardClaimed(TEXT("One")));
+	TArray<uint8> SavedProgress;
+	H.Progress->WriteSaveData(SavedProgress);
+	H.ReloadSubsystems();
+	H.Economy->StartFestival(H.Definition);
+	H.Progress->ReadSaveData(SavedProgress);
+	TestTrue(TEXT("Festival save retains collection claim independently of discovery claims"), H.Progress->IsCollectionRewardClaimed(TEXT("First")));
+	TestTrue(TEXT("Festival save also retains the recipe reward"), H.Progress->IsDiscoveryRewardClaimed(TEXT("One")));
 	TestFalse(TEXT("Changing a claimed stage amount cannot repay it"),
-		Reloaded->ClaimCollectionReward(TEXT("First"), 1, 999, CurrentRecipes, H.Economy));
+		H.Progress->ClaimCollectionReward(TEXT("First"), 1, 999, CurrentRecipes, H.Economy));
 	H.Economy->RestartFestival();
-	TestFalse(TEXT("Festival restart does not reset profile collection claims"),
-		Reloaded->ClaimCollectionReward(TEXT("First"), 2, 200, CurrentRecipes, H.Economy));
+	TestFalse(TEXT("Festival restart clears collection claims"), H.Progress->IsCollectionRewardClaimed(TEXT("First")));
+	TestFalse(TEXT("Festival restart clears individual reward claims"), H.Progress->IsDiscoveryRewardClaimed(TEXT("One")));
+	TestFalse(TEXT("Reset collection stage is locked before rediscovery"),
+		H.Progress->ClaimCollectionReward(TEXT("First"), 2, 200, CurrentRecipes, H.Economy));
+	H.Progress->RecordDiscoveries({TEXT("One"), TEXT("Two")});
+	TestTrue(TEXT("A new festival can earn the same collection stage once"),
+		H.Progress->ClaimCollectionReward(TEXT("First"), 2, 200, CurrentRecipes, H.Economy));
 	TestFalse(TEXT("A later stage remains locked until enough current recipes are discovered"),
-		Reloaded->ClaimCollectionReward(TEXT("Second"), 4, 500, CurrentRecipes, H.Economy));
-	Reloaded->RecordDiscoveries({TEXT("Three"), TEXT("Four")});
+		H.Progress->ClaimCollectionReward(TEXT("Second"), 4, 500, CurrentRecipes, H.Economy));
+	H.Progress->RecordDiscoveries({TEXT("Three"), TEXT("Four")});
 	TestTrue(TEXT("Reaching the next stage makes it independently claimable"),
-		Reloaded->ClaimCollectionReward(TEXT("Second"), 4, 500, CurrentRecipes, H.Economy));
-	TestEqual(TEXT("Only the new collection reward is paid after restart"), H.Economy->GetGold(), 1500);
-	Reloaded->Deinitialize();
+		H.Progress->ClaimCollectionReward(TEXT("Second"), 4, 500, CurrentRecipes, H.Economy));
+	TestEqual(TEXT("The new festival receives both newly earned collection rewards"), H.Economy->GetGold(), 1700);
 	return true;
 }
 

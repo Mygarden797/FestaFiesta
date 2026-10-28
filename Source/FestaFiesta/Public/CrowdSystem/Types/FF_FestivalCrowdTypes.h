@@ -386,6 +386,17 @@ enum class EFF_PartyAudiencePhase : uint8
 	Exiting
 };
 
+// 좌석에 묶인 에이전트 한 명의 사실. 무슨 공연인지는 모른다 — 해석은 읽는 쪽 몫이다
+USTRUCT()
+struct FFF_CrowdSeatedAgent
+{
+	GENERATED_BODY()
+
+	int32 AgentIndex = INDEX_NONE;
+	FGuid FacilityId;
+	EFF_PartyAudiencePhase Phase = EFF_PartyAudiencePhase::None;
+};
+
 USTRUCT()
 struct FPartyDecisionState
 {

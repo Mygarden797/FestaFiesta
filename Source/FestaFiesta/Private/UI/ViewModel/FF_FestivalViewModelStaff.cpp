@@ -36,12 +36,28 @@ namespace FFStaffManagement
 		{
 		case EFF_StaffDuty::Unassigned: return LOCTEXT("Unassigned", "미배정");
 		case EFF_StaffDuty::Ready: return LOCTEXT("Ready", "출동 대기");
+		case EFF_StaffDuty::AwaitingOpening: return LOCTEXT("AwaitingOpening", "개장 대기");
 		case EFF_StaffDuty::Moving: return LOCTEXT("Moving", "현장 이동 중");
 		case EFF_StaffDuty::Working: return LOCTEXT("Working", "현장 대응 중");
 		case EFF_StaffDuty::Returning: return LOCTEXT("Returning", "복귀 중");
 		case EFF_StaffDuty::Reserved: return LOCTEXT("Reserved", "출동 준비 · 상태 확인");
 		default: return LOCTEXT("Unavailable", "출발 위치 확인 필요");
 		}
+	}
+
+	bool IsAwaitingOpening(const AFFZSFacilityActor* Facility)
+	{
+		// 정상 Close도 MovePending이 된다. 재개장 가능한 시설만 준비 시간의 대기로 표시한다.
+		// 실제 출동 자격/인원은 StaffFacilitySubsystem의 판정을 그대로 사용한다.
+		if (!Facility || Facility->GetFacilityState() != EFFZSFacilityState::MovePending
+			|| Facility->NeedsRelocation() || Facility->GetFacilitySpec().GetStaffCapacity() <= 0)
+		{
+			return false;
+		}
+		FTransform Origin;
+		const bool bHasAnchor = Facility->GetAnchorWorldTransform(EFFZSAnchorType::Exit, 0, Origin)
+			|| Facility->GetAnchorWorldTransform(EFFZSAnchorType::Entry, 0, Origin);
+		return bHasAnchor && !Origin.GetLocation().ContainsNaN();
 	}
 }
 
@@ -69,6 +85,9 @@ FFF_StaffManagementSnapshot UFF_FestivalViewModelSubsystem::GetStaffManagementSn
 	const UFF_RequiredFacilitiesSubsystem* Required = World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>();
 	const FFF_RequiredFacilitiesStatus Requirements = Required ? Required->GetRequiredFacilitiesStatus() : FFF_RequiredFacilitiesStatus();
 	const UFF_StaffSubsystem* Bodies = World->GetSubsystem<UFF_StaffSubsystem>();
+	const UFF_FestivalStageSubsystem* Stages = GI->GetSubsystem<UFF_FestivalStageSubsystem>();
+	const bool bPreparationStage = Stages && (Stages->CurrentStage == EFF_FestivalStage::Setup
+		|| Stages->CurrentStage == EFF_FestivalStage::MorningCheck);
 
 	// 프로그램 목록과 같은 GUID별 표시 번호를 사용한다. 시설 이동/철거로 남은 시설 번호가 바뀌지 않는다.
 	if (ProgramFacilityIdentityWorld.Get() != World)
@@ -156,6 +175,13 @@ FFF_StaffManagementSnapshot UFF_FestivalViewModelSubsystem::GetStaffManagementSn
 			const bool bHasOrigin = Staffing->GetStaffDispatchOrigin(Member.StaffId, Origin);
 			Row.Duty = bHasOrigin ? EFF_StaffDuty::Ready : EFF_StaffDuty::Unavailable;
 			if (bHasOrigin) { ++ReadyCount; if (Facility) { ++Facility->Ready; } }
+			else if (bPreparationStage && Facility
+				&& FFStaffManagement::IsAwaitingOpening(Zone->FindFacility(Member.AssignedFacilityId)))
+			{
+				Row.Duty = EFF_StaffDuty::AwaitingOpening;
+				++Result.AwaitingOpening;
+				++Facility->AwaitingOpening;
+			}
 			else { ++Result.Unavailable; if (Facility) { ++Facility->Unavailable; } }
 		}
 		Row.DutyLabel = FFStaffManagement::DutyText(Row.Duty);

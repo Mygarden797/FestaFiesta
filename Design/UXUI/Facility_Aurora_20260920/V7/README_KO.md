@@ -23,7 +23,7 @@
 
 카탈로그의 선택해 배치·골드 강조, 왼쪽 조작 안내, 시설명 아래 배치 도구, 그리드·대기열 가이드, 프로그램과 오늘 매출 표식, 시설 메뉴 옆 조명 편집 탭 및 축소 상태를 유지했다. 레이아웃·게임 수치와 설계 흐름은 V6를 따른다.
 
-[V6 설계 범위](../V6/README_KO.md), [V5 배치·프로그램 설계](../V5/README_KO.md), [V4 조명 상호작용](../V4/LIGHTING_INTERACTION_KO.md), [실제 이미지·데이터 출처](../V3/SOURCE_MAP_KO.md).
+[V6 설계 범위](../V6/README_KO.md), [V5 배치·프로그램 설계](../V5/README_KO.md), [V4 조명 상호작용](../V4/LIGHTING_INTERACTION_KO.md), [실제 이미지·데이터 출처](../V3/SOURCE_MAP_KO.md).（10/14 기준: `V6`·`V5`·`V4`·`V3` 폴더는 저장소에 없다. 이전 판은 상위 폴더의 `index-v3.html`~`index-v6.html` 로만 남아 있다）
 
 ## 검증 범위
 

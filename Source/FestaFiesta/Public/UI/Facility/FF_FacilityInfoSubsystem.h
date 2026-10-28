@@ -125,11 +125,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Facility Info|Pause")
 	bool IsPauseMenuPresentationSuppressed() const
 	{
-		return bPauseMenuPresentationSuppressed;
+		return bPauseMenuSuppressionRequested;
 	}
 
 	/** Keeps authoritative command failure details visible until selection changes. */
 	void SetFeedback(const FText& Feedback, bool bIsError);
+	/** Applies all queue fields atomically to the reviewed installed facility. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info|Queue")
+	bool ApplySelectedQueueSettings(FGuid FacilityInstanceId, const FFFZSQueueSettings& Settings);
 
 	static FSoftClassPath GetDefaultPanelClassPath();
 	static FSoftClassPath GetDefaultPaidProgramPickerClassPath();
@@ -182,6 +185,7 @@ private:
 		AFFZSFacilityActor* HoveredFacility,
 		AFFZSFacilityActor* SelectedFacility);
 	void ClearLiveSelectionIndicators();
+	void UpdatePresentationSuppression(bool bSuppressed);
 
 	void HandlePanelMoveRequested();
 	void HandlePanelFavoriteRequested();
@@ -251,6 +255,8 @@ private:
 	bool bThumbnailSessionAcquired = false;
 	// RootLayout보다 높은 전역 Z-order 시설 UI가 Pause Hub 위에서 클릭되지 않도록 하는 presentation lease.
 	bool bPauseMenuPresentationSuppressed = false;
+	bool bPauseMenuSuppressionRequested = false;
+	bool bForegroundWindowSuppressionRequested = false;
 	bool bRevenueRankingPresentationOpen = false;
 	// suppress 중 Collapsed 상태를 새 기준으로 덮지 않고 원래 활성 표면 하나만 복원한다.
 	bool bPanelWasVisibleBeforePause = false;

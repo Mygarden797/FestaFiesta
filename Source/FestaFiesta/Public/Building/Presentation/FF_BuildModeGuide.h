@@ -34,10 +34,12 @@ public:
 	// Separate setter preserves existing Blueprint calls to SetPlacementGuideState.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Guide")
 	void SetDragPlacementEnabled(bool bInDragPlacementEnabled);
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Guide")
+	void SetDragPlacementGapCm(int32 GapCm);
 
 	// 건축 전용 안내·도구 UI에서 사용할 공통 도움말.
 	// 격자의 공간 안내와 시설 전체의 배치 판정을 구분하며 실제 입력 처리는 소유하지 않는다.
-	static FText MakePlacementHelpText(bool bInMoving, bool bInDragPlacementEnabled = false);
+	static FText MakePlacementHelpText(bool bInMoving, bool bInDragPlacementEnabled = false, int32 DragPlacementGapCm = 0);
 	static FText MakeBuildOverviewHelpText();
 
 protected:
@@ -53,4 +55,5 @@ private:
 	float CachedYawDegrees = 0.0f;
 	float CachedSnapDegrees = 45.0f;
 	int32 CachedPositionSnapCm = 100;
+	int32 CachedDragPlacementGapCm = 0;
 };

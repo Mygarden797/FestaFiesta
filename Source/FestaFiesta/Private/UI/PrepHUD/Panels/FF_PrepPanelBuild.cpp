@@ -1991,7 +1991,7 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 			// 🔴 **한 줄로 쓴다.** 네 줄로 쌓으면 그만큼 지면을 가리는데, 배치 중에는
 			//   지면이 보여야 시설을 놓을 수 있다 (2026-09-03 백종태 요청).
 			Guide = BuildModeSubsystem && BuildModeSubsystem->IsDragPlacementEnabled()
-				? LOCTEXT("DragPlacingGuide", "[좌클릭 누른 채 이동] 연속 설치 · 놓으면 정지 · [Q/E] 회전 · [우클릭] 목록")
+				? LOCTEXT("DragPlacingGuide", "[드래그] 간격 맞춤 미리보기 · [놓기] 가능한 곳만 설치 · [Ctrl+Z] 묶음 취소 · [우클릭] 목록")
 				: LOCTEXT("PlacingGuide", "[좌클릭/Enter] 한 개씩 설치 · [Q/E] 회전 · [Shift+Q/E] 부드럽게 회전 · [우클릭] 목록");
 			break;
 		case EFF_BuildModeState::Moving:
@@ -2007,7 +2007,8 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		Text_PlacementGuide->SetText(Guide);
 		Text_PlacementGuide->SetToolTipText(bShowSeparateTools
 			? UFF_BuildModeGuide::MakePlacementHelpText(State == EFF_BuildModeState::Moving,
-				BuildModeSubsystem && BuildModeSubsystem->IsDragPlacementEnabled())
+				BuildModeSubsystem && BuildModeSubsystem->IsDragPlacementEnabled(),
+				BuildModeSubsystem ? BuildModeSubsystem->GetDragPlacementGapCm() : 0)
 			: UFF_BuildModeGuide::MakeBuildOverviewHelpText());
 	}
 	// 🔴 **패널 높이도 같이 줄인다.**

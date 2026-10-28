@@ -62,6 +62,9 @@ struct FESTAFIESTA_API FFF_DailyReportView
 	int32 TopFacilityGold = 0;
 	// 비서 한마디. FFF_DailyReportCommentRules 가 위 값으로 만든다
 	FText AssistantComment;
+	// 같은 원본 규칙에서 나눈 고정 카드용 조언과 보조 정보. 문장 파싱·별도 판정을 하지 않는다.
+	FText AssistantAdvice;
+	FText AssistantDetails;
 	// 한마디가 고른 불만 1위. 다음 날 아침 비서 브리핑이 같은 판정을 말한다
 	FFF_DailyComplaint Complaint;
 };
@@ -838,6 +841,9 @@ public:
 	/** 오늘 이미 편성한 카드 id. 하루 경계에서 비워진다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
 	TArray<FName> GetScheduledProgramIds() const;
+
+	/** 오늘의 시설별 편성 원본. 미연결과 실제 0건을 구분하며 원본 순서를 유지한다. */
+	bool TryGetScheduledPrograms(TArray<FFF_ScheduledProgram>& OutPrograms) const;
 
 	/**
 	 * 이 카드를 편성할 수 있는지. 상태를 바꾸지 않으므로 카드 잠금·사유 표시에 그대로 쓴다.

@@ -124,12 +124,15 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
     auto* Dock = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_Tools")));
     auto* Info = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_PlacementInfo")));
     auto* Help = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_PlacementHelp")));
+    auto* HelpSurface = Widget->GetWidgetFromName(TEXT("Size_BuildWorldHelp"));
     auto* TopBar = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_BuildTopBar")));
     auto* Back = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_BuildBack")));
     auto* Gold = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_BuildToolbarGold")));
     auto* Settings = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Panel_BuildSettings")));
     if (!TestNotNull(TEXT("Placement action dock"), Dock) ||
         !TestNotNull(TEXT("Placement facility summary"), Info) ||
+        !TestNotNull(TEXT("Placement instructions"), Help) ||
+        !TestNotNull(TEXT("Complete instruction surface"), HelpSurface) ||
         !TestNotNull(TEXT("Build-session top toolbar"), TopBar) ||
         !TestNotNull(TEXT("Build-session back navigation"), Back) ||
         !TestNotNull(TEXT("Build settings drawer"), Settings)) return false;
@@ -185,7 +188,10 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
         FHittestGrid HitGrid;
         TopBar->SetVisibility(ESlateVisibility::Visible);
         Settings->SetVisibility(ESlateVisibility::Collapsed);
-        for (FName Name : {TEXT("Border_PlacementHelp"), TEXT("Panel_PlacementFacts")})
+        // Reset through the production action so the previous resolution's
+        // expanded intent and the authored border cannot drift apart.
+        if (Help->IsVisible()) Widget->ToggleHelp();
+        for (FName Name : {TEXT("Panel_PlacementFacts")})
             if (UWidget* Panel = Widget->GetWidgetFromName(Name)) Panel->SetVisibility(ESlateVisibility::Collapsed);
         for (FName Name : {TEXT("Text_PlacementAdvice"), TEXT("Text_PlacementObstruction"), TEXT("Text_AssistanceMessage"),
             TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem")})
@@ -298,6 +304,19 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
                 TestFalse(ContextName + TEXT(": settings drawer and top toolbar do not overlap"),
                     Overlaps(SettingsRect, TopRect));
                 TestFalse(ContextName + TEXT(": settings drawer replaces the left summary"), bInfo);
+                TestFalse(ContextName + TEXT(": settings hides instructions through their complete parent surface"), IsRendered(Help));
+                TestEqual(ContextName + TEXT(": instruction surface is collapsed behind settings"),
+                    HelpSurface->GetVisibility(), ESlateVisibility::Collapsed);
+                TestTrue(ContextName + TEXT(": hiding instructions preserves their expanded state"), Help->IsVisible());
+                for (const FName Name : {FName(TEXT("Button_BuildHelpUndo")), FName(TEXT("Button_BuildHelpRedo"))})
+                    if (const UWidget* Action = Widget->GetWidgetFromName(Name))
+                    {
+                        const FGeometry& Geometry = Action->GetCachedGeometry();
+                        const auto Path = HitGrid.GetBubblePath(Geometry.LocalToAbsolute(Geometry.GetLocalSize() * .5f), 0.f, true);
+                        TestFalse(ContextName + TEXT(": hidden instruction action has no pointer path: ") + Name.ToString(),
+                            Path.ContainsByPredicate([&](const FWidgetAndPointer& Entry)
+                            { return &Entry.Widget.Get() == Action->GetCachedWidget().Get(); }));
+                    }
             }
             if (IsRendered(Help))
             {
@@ -321,6 +340,28 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
                     const FString Name = FString(TEXT("Text_BuildHelpKey_")) + Key;
                     TestTrue(ContextName + TEXT(": physical keyboard key is visible: ") + Key,
                         IsRendered(Widget->GetWidgetFromName(FName(*Name))));
+                }
+                for (const TCHAR* Stem : {TEXT("ShiftLock"), TEXT("Sprint")})
+                {
+                    const FName RowName(*(FString(TEXT("Row_BuildHelp")) + Stem));
+                    const UWidget* Row = Widget->GetWidgetFromName(RowName);
+                    TestTrue(ContextName + TEXT(": character shortcut fits the visible guide: ") + Stem,
+                        IsRendered(Row) && Contains(HelpViewRect, Bounds(Row)));
+                    if (!Row) continue;
+                    const FName CaptionName(*(FString(TEXT("Text_BuildHelp")) + Stem));
+                    if (const UWidget* Caption = Widget->GetWidgetFromName(CaptionName))
+                        TestTrue(ContextName + TEXT(": character shortcut caption fits: ") + Stem,
+                            Contains(Bounds(Row), Bounds(Caption)) &&
+                            Caption->GetCachedGeometry().GetLocalSize().X + 1.f >= Caption->GetDesiredSize().X);
+                }
+                for (const TCHAR* Key : {TEXT("ShiftLock"), TEXT("SprintAlt")})
+                {
+                    const FName KeyName(*(FString(TEXT("Text_BuildHelpKey_")) + Key));
+                    const UWidget* KeyText = Widget->GetWidgetFromName(KeyName);
+                    TestTrue(ContextName + TEXT(": complete character key label fits its keycap: ") + Key,
+                        IsRendered(KeyText) && KeyText->GetParent() &&
+                        Contains(Bounds(KeyText->GetParent()), Bounds(KeyText)) &&
+                        KeyText->GetCachedGeometry().GetLocalSize().X + 1.f >= KeyText->GetDesiredSize().X);
                 }
                 for (FName Name : {TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo")})
                 {
@@ -491,6 +532,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
         Click(TEXT("Button_Help")); Capture(TEXT("DefaultHelp"));
         Capture(TEXT("QueueDraftHelp"), true);
         Click(TEXT("Button_Help")); Capture(TEXT("Compact"));
+        Click(TEXT("Button_Help"));
         Info->SetVisibility(ESlateVisibility::Collapsed);
         Settings->SetVisibility(ESlateVisibility::Visible);
         Capture(TEXT("SettingsDrawer"));
@@ -503,7 +545,8 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
         Settings->SetVisibility(ESlateVisibility::Collapsed);
         Info->SetVisibility(ESlateVisibility::Visible);
         Widget->ToggleRadialMenu(); Capture(TEXT("RemovedMenuEntry"));
-        Click(TEXT("Button_Help")); Capture(TEXT("Help"));
+        TestTrue(TEXT("Closing settings restores the previously expanded instructions"), IsRendered(Help));
+        Capture(TEXT("Help"));
         Click(TEXT("Button_Facts")); Capture(TEXT("FactsAndHelp"));
         Click(TEXT("Button_Help")); Capture(TEXT("Facts"));
         Click(TEXT("Button_Help")); Widget->ToggleRadialMenu(); Capture(TEXT("HelpAfterRemovedMenuEntry"));

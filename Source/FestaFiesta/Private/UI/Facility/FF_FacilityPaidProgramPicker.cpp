@@ -167,6 +167,7 @@ void UFF_FacilityPaidProgramPicker::ShowPurchaseComplete(
 	bCommitPending = false;
 	bPurchaseCompleted = true;
 	if (Button_BackToPrograms) Button_BackToPrograms->SetVisibility(ESlateVisibility::Collapsed);
+	if (Text_Eyebrow) Text_Eyebrow->SetText(LOCTEXT("CompleteStep", "03 · 편성 완료"));
 	const FText Receipt = FText::Format(
 		LOCTEXT("PurchaseReceipt", "{0}\n{1}\n{2}\n\n결제 {3} Gold\n남은 보유금 {4} Gold\n\n오늘 프로그램이 편성되었습니다.\n당일 취소 및 환불은 불가합니다.\n이 시설의 이동·강화·철거가 제한됩니다."),
 		Card->DisplayName, CurrentViewData.FacilityName, Card->TimeText,
@@ -241,7 +242,7 @@ void UFF_FacilityPaidProgramPicker::HandleCardSelected(const FName ProgramId)
 	if (Text_PreviewDetails)
 	{
 		Text_PreviewDetails->SetText(FText::Format(
-			LOCTEXT("PreviewDetails", "{0}\n{1} · {2}\n{3} · {4}"),
+			LOCTEXT("PreviewDetails", "{0}\n{1} · {2}\n편성 비용 {3}"),
 			CardData->TimeText,
 			CardData->CapacityText,
 			CardData->TicketFeeText,
@@ -315,12 +316,20 @@ void UFF_FacilityPaidProgramPicker::SetReviewVisible(const bool bReview)
 {
 	// Older Designer assets retain the combined list and preview. The compact V2
 	// picker keeps the same selection/transaction contract but gives each step room.
-	if(!Button_BackToPrograms) return;
-	Button_BackToPrograms->SetVisibility(bReview?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
-	if(Size_ProgramList) Size_ProgramList->SetVisibility(bReview?ESlateVisibility::Collapsed:ESlateVisibility::Visible);
-	if(Border_Preview) Border_Preview->SetVisibility(bReview?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
-	if(Border_Footer) Border_Footer->SetVisibility(bReview?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
-	if(Text_Instruction) Text_Instruction->SetVisibility(bReview?ESlateVisibility::Collapsed:ESlateVisibility::HitTestInvisible);
+	if (!Button_BackToPrograms) return;
+	Button_BackToPrograms->SetVisibility(bReview ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (Size_ProgramList) Size_ProgramList->SetVisibility(bReview ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	if (Border_Preview) Border_Preview->SetVisibility(bReview ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (Border_Footer) Border_Footer->SetVisibility(bReview ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (Text_Eyebrow) Text_Eyebrow->SetText(bReview
+		? LOCTEXT("ReviewStep", "02 · 구매 확인") : LOCTEXT("SelectionStep", "01 · 프로그램 선택"));
+	if (Text_Instruction)
+	{
+		Text_Instruction->SetVisibility(ESlateVisibility::HitTestInvisible);
+		Text_Instruction->SetText(bReview
+			? LOCTEXT("ReviewInstruction", "운영 시간과 비용을 확인한 뒤 편성하세요.")
+			: LOCTEXT("SelectionInstruction", "오늘 운영할 프로그램을 선택하세요."));
+	}
 }
 
 void UFF_FacilityPaidProgramPicker::HandleBackToProgramsClicked()
@@ -343,6 +352,7 @@ const FFF_FacilityPaidProgramCardViewData* UFF_FacilityPaidProgramPicker::FindCa
 void UFF_FacilityPaidProgramPicker::ClearPreview()
 {
 	SelectedProgramId = NAME_None;
+	SetReviewVisible(false);
 
 	for (UCommonTextBlock* Metric : {Text_PreviewTime.Get(), Text_Capacity.Get(),
 

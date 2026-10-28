@@ -40,6 +40,16 @@ public:
 		meta = (DisplayName = "Lobby Intro Table"))
 	TSoftObjectPtr<UDataTable> LobbyIntroTable;
 
+	/* 축제를 S 등급으로 끝내고 로비로 돌아오면 틀 사무소 장면(2026-10-14 사용자: S 엔딩 특별 대사).
+
+	   로비 이야기와 같은 대사 표 형식이다. 라벨이 Trust_ 로 시작하는 줄은 비서 신뢰도가 '높음'일 때만 나온다.
+	   비우면 S 엔딩 없이 지나간다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
+		meta = (DisplayName = "S Grade Ending Table"))
+	TSoftObjectPtr<UDataTable> SGradeEndingTable = TSoftObjectPtr<UDataTable>(
+		FSoftObjectPath(TEXT("/Game/FestaFiesta/Data/Tutorial/DT_Dialogue_Ending_S.DT_Dialogue_Ending_S")));
+
 	/* 튜토리얼 레벨의 축제 이름. 아틀라스 카탈로그의 FestivalId 와 같아야 한다.
 
 	   튜토리얼 레벨은 대사만이 아니라 레벨 자체가 튜토리얼이다. 그래서 건너뛰면
@@ -60,6 +70,24 @@ public:
 		meta = (DisplayName = "Tutorial Level Locked Reason"))
 	FText TutorialLevelLockedReason = NSLOCTEXT("FestaFiestaTutorial", "TutorialLevelLocked",
 		"튜토리얼을 마쳤습니다. 새 게임에서 다시 할 수 있어요.");
+
+	/* 새 게임에서 튜토리얼을 마치거나 건너뛰기 전에 다른 축제 칸에 띄울 잠긴 이유.
+
+	   튜토리얼은 새 게임 시작 직후에만 한다(2026-10-13 사용자 결정). 그 전에 다른 축제로 가면 튜토리얼 레벨이
+	   그 판 내내 열린 채로 남고, 두 레벨의 저장이 섞였다. 그래서 실습장부터 가게 다른 축제를 잠가 둔다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
+		meta = (DisplayName = "Festivals Locked Until Tutorial Reason"))
+	FText FestivalsLockedUntilTutorialReason = NSLOCTEXT("FestaFiestaTutorial", "FestivalsLockedUntilTutorial",
+		"실습장을 먼저 마쳐 주세요. 오른쪽 위 '튜토리얼 건너뛰기'를 누르면 바로 열려요.");
+
+	/* 실습장을 지나기 전 국가 지도에 남기는 "튜토리얼 건너뛰기" 버튼의 화면 순서(UFF_TutorialSkipWidget).
+
+	   지도는 UI 루트(z 0) 위에 꽉 차게 뜨므로 0 보다 커야 하고, 누르면 뜨는 확인 창(SkipConfirmZOrder)보다는 작아야 한다.
+	   대사 중에는 이 버튼을 내리므로 대사창과는 겹치지 않는다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Skip")
+	int32 MapSkipButtonZOrder = 110;
 
 	/* 화자 이름 → 초상화. 대사의 Speaker 칸과 글자가 똑같아야 한다(예: 삼촌).
 
@@ -151,6 +179,35 @@ public:
 
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Skip")
 	FText SkipConfirmNoText = FText::FromString(TEXT("계속하기"));
+
+	/* 로비 이야기에서 건너뛰기를 누르면 이어서 보여 줄 줄의 라벨. 실습장으로 가는 부분의 첫 줄이다.
+
+	   로비 이야기(삼촌 · 비서)는 튜토리얼이 아니다. 거기서 누른 건너뛰기를 튜토리얼 건너뛰기로 받으면
+	   실습장이 잠겨 안내 없이 다대포부터 하게 됐다(테스터 피드백 2026-10-13). 그래서 이 줄 앞에서는
+	   묻지 않고 이 줄로 넘기기만 하고, 이 줄부터(실습장으로 가는 부분)는 실습장 안과 같이 진짜 건너뛰기다.
+
+	   이 줄이 이야기의 꼬리여야 한다 — 지금 줄이 이 줄보다 앞인지를 표 순서로 본다.
+	   비우거나 표에 없으면 어디서 누르든 진짜 건너뛰기다(예전 동작).
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Skip",
+		meta = (DisplayName = "Lobby Story Skip Label"))
+	FName LobbyStorySkipLabel = TEXT("Agency_ToMap");
+
+	/* 주인공 이름을 아직 안 받았을 때 대사의 {이름} 자리에 넣을 호칭.
+
+	   로비 이야기를 건너뛰어도 이름은 묻는다(TrySkipLobbyStory). 그래도 비는 경우 —
+	   이 칸이 생기기 전의 세이브, 레벨을 바로 연 개발 PIE — 에 쓴다. 뒤에 "님" 이 붙어도 어색하지 않은 말로 둔다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Name")
+	FText DefaultPlayerName = NSLOCTEXT("FestaFiestaTutorial", "DefaultPlayerName", "담당자");
+
+	// 주인공 이름 글자 수 한도. 화자 이름칸과 대사 한 줄에 들어가야 한다.
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Name", meta = (ClampMin = "1", ClampMax = "20"))
+	int32 PlayerNameMaxLength = 8;
+
+	// 이름 입력 창의 화면 순서. 로비 대사창(LobbyDialogueBoxZOrder)보다 위, 건너뛰기 확인 창보다 아래.
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Name")
+	int32 NameInputZOrder = 150;
 
 	// 카메라를 이 거리 이상 움직이면 이동한 것으로 본다.
 	//

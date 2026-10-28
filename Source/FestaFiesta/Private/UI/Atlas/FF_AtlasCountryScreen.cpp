@@ -88,8 +88,7 @@ void UFF_AtlasCountryScreen::NativeDestruct()
 
 void UFF_AtlasCountryScreen::NativeOnActivated()
 {
-	// 재진입 때 이전 축제의 카드가 남지 않게 선택을 지운다.
-	// 🔴 여기서 새로 고르지 않는다 — 진입 화면은 "아무것도 고르지 않은" 상태다 (2026-08-27).
+	// 재진입 때 이전 국가의 선택을 지우고, 아래 재구성에서 현재 국가의 기본 축제를 고른다.
 	SelectedFestivalId = NAME_None;
 
 	// 활성화될 때마다 다시 만든다. 국가가 바뀌었을 수 있고 위젯이 풀에서 재사용된다.
@@ -103,6 +102,10 @@ void UFF_AtlasCountryScreen::NativeOnActivated()
 void UFF_AtlasCountryScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (IsActivated())
+	{
+		RefreshFestivalAvailability();
+	}
 
 	// 창 크기가 바뀔 때만 다시 배치한다. 매 프레임 계산할 이유가 없다 —
 	// 지구본 화면과 달리 지도는 스스로 움직이지 않는다.
@@ -146,7 +149,7 @@ FReply UFF_AtlasCountryScreen::NativeOnPreviewKeyDown(
 		// 한 번 누를 때 한 핀만 간다. 키 반복은 소비하되 여러 핀을 건너뛰지 않는다.
 		if (!InKeyEvent.IsRepeat())
 		{
-			// 아직 지도 밖(브레드크럼)에 포커스가 있으면 첫 입력은 "지도로 들어가기"다.
+			// 핀 재구성 등으로 선택이 비어 있으면 첫 입력은 "지도로 들어가기"다.
 			// 곧바로 방향 탐색을 돌리면 기준 핀 자신을 건너뛰어 엉뚱한 핀이 잡힌다.
 			if (!EnterMapFocus())
 			{
@@ -161,19 +164,20 @@ FReply UFF_AtlasCountryScreen::NativeOnPreviewKeyDown(
 		|| Key == EKeys::Gamepad_FaceButton_Bottom;
 	if (bConfirmKey)
 	{
-		if (UFF_AtlasPinButton* FocusedPin = FindFocusedPin())
+		// 길게 누른 첫 Enter가 지도 진입 후 곧바로 축제 시작까지 이어지지 않게 한다.
+		if (InKeyEvent.IsRepeat())
 		{
-			SelectFestival(FocusedPin->GetPinId(), /*bMoveFocus=*/false);
-			if (CanStartSelectedFestival())
-			{
-				OnStartFestivalRequested.Broadcast(SelectedFestivalId);
-			}
 			return FReply::Handled();
 		}
 
-		// 진입 직후의 Enter 는 지도로 들어간다.
-		// 이 처리가 없으면 포커스가 브레드크럼에 있으므로 Enter 가 곧바로 `뒤로` 가 되어,
-		// 들어오자마자 지구본으로 튕겨 나간다.
+		if (UFF_AtlasPinButton* FocusedPin = FindFocusedPin())
+		{
+			SelectFestival(FocusedPin->GetPinId(), /*bMoveFocus=*/false);
+			HandleStartClicked(Button_StartFestival);
+			return FReply::Handled();
+		}
+
+		// 선택이 비어 있는 예외 경로에서도 Enter가 브레드크럼의 뒤로 동작이 되지 않게 한다.
 		if (EnterMapFocus())
 		{
 			return FReply::Handled();
@@ -181,6 +185,22 @@ FReply UFF_AtlasCountryScreen::NativeOnPreviewKeyDown(
 	}
 
 	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
+FReply UFF_AtlasCountryScreen::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	// 지구본과 같은 대체 경로. CommonUI가 먼저 처리한 Back 입력은 여기로 오지 않는다.
+	const FKey Key = InKeyEvent.GetKey();
+	if (Key == EKeys::Escape || Key == EKeys::Virtual_Gamepad_Back.GetVirtualKey()
+		|| Key == EKeys::Gamepad_FaceButton_Right)
+	{
+		if (!InKeyEvent.IsRepeat())
+		{
+			NativeOnHandleBackAction();
+		}
+		return FReply::Handled();
+	}
+	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
 }
 
 bool UFF_AtlasCountryScreen::NativeOnHandleBackAction()
@@ -200,22 +220,17 @@ UWidget* UFF_AtlasCountryScreen::NativeGetDesiredFocusTarget() const
 		}
 	}
 
-	// 🔴 아직 아무것도 고르지 않았으면 **핀에 포커스를 주지 않는다.**
-	//    핀이 포커스를 받으면 `HandlePinFocusReceived` 가 그 축제를 골라 카드를 띄운다.
-	//    진입하자마자 포커스를 핀에 주면 "고르지 않았는데 카드가 뜬" 예전 화면으로 되돌아간다.
-	//    대신 브레드크럼(`지구본`)에 둔다 — `WASD`·`Enter` 로 지도에 들어가면 그때 핀이 잡힌다.
+	// 선택이 아직 반영되기 전에도 같은 기본 핀을 반환한다. 마우스 호버 없이 바로 이동할 수 있다.
+	if (const TObjectPtr<UFF_AtlasPinButton>* DefaultPin = PinButtons.Find(FindDefaultFestivalId());
+		DefaultPin && *DefaultPin)
+	{
+		return DefaultPin->Get();
+	}
+
+	// 축제/핀 데이터가 없으면 국가 화면에서 나갈 수 있는 버튼을 사용한다.
 	if (Button_Back)
 	{
 		return Button_Back;
-	}
-
-	// 브레드크럼 버튼이 없는 WBP 라면 화면에 갇히지 않게 첫 핀으로 떨어뜨린다.
-	for (const FName FestivalId : NavigationFestivalIds)
-	{
-		if (const TObjectPtr<UFF_AtlasPinButton>* Pin = PinButtons.Find(FestivalId); Pin && *Pin)
-		{
-			return Pin->Get();
-		}
 	}
 
 	return Super::NativeGetDesiredFocusTarget();
@@ -398,13 +413,9 @@ void UFF_AtlasCountryScreen::RebuildForCountry()
 	LastCanvasSize = FVector2D::ZeroVector;	// 다음 Tick 에 강제로 다시 계산되게 한다
 	UpdateMapLayout();
 
-	// 🔴 **여기서 축제를 고르지 않는다** (2026-08-27 결정).
-	//    예전에는 첫 플레이 가능 축제를 자동 선택해서, 플레이어가 부산을 누르지도 않았는데
-	//    오른쪽에 다대포 카드가 떠 있는 화면이 나왔다. 지금은 카드가 통째로 숨은 채로 시작하고,
-	//    핀에 포커스가 가는 순간(`HandlePinFocusReceived`)에만 채운다.
-	//    `SelectFestival(NAME_None)` 을 부르는 이유는 핀 선택 표시와 카드를 **함께** 지우기
-	//    위해서다. `SelectedFestivalId` 만 비우면 재사용된 위젯에 이전 카드가 남는다.
-	SelectFestival(NAME_None, /*bMoveFocus=*/false);
+	// 2026-10-13: 진입 즉시 기본 축제와 카드를 표시한다. 포커스는 활성화/화면 전환 완료 뒤 잡는다.
+	// 플레이 가능 축제를 우선하며, 전부 잠겼으면 첫 항목으로 잠금 사유를 보여준다.
+	SelectFestival(FindDefaultFestivalId(), /*bMoveFocus=*/false);
 }
 
 FName UFF_AtlasCountryScreen::FindDefaultFestivalId() const
@@ -802,12 +813,47 @@ bool UFF_AtlasCountryScreen::CanStartSelectedFestival() const
 		&& !Festival->Level.IsNull();
 }
 
+void UFF_AtlasCountryScreen::RefreshFestivalAvailability()
+{
+	// 해금 원본에 변경 이벤트가 없어 열린 화면에서 값만 비교한다.
+	// RebuildForCountry가 이미 읽은 카탈로그만 사용하며, 매 Tick 동기 로드는 하지 않는다.
+	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();
+	const UFF_FestivalAtlasCatalog* Catalog = Settings ? Settings->AtlasCatalog.Get() : nullptr;
+	if (!Catalog || CountryId.IsNone())
+	{
+		return;
+	}
+
+	bool bChanged = false;
+	for (const TPair<FName, TObjectPtr<UFF_AtlasPinButton>>& Pair : PinButtons)
+	{
+		UFF_AtlasPinButton* Pin = Pair.Value;
+		const FFF_FestivalAtlasEntry* Festival = Catalog->FindEntry(Pair.Key);
+		if (!Pin || !Festival || Festival->CountryId != CountryId)
+		{
+			continue;
+		}
+		if (Pin->IsSelectable() != Festival->bUnlocked || !Pin->GetLockReason().EqualTo(Festival->LockReason))
+		{
+			Pin->SetPinData(Festival->FestivalId, Festival->FestivalName, Festival->RegionName,
+				Festival->bUnlocked, Festival->LockReason);
+			// SetPinData는 선택 표시를 초기화한다. 핀을 재생성하거나 포커스를 옮기지 않고 복원한다.
+			Pin->SetSelectedState(Pair.Key == SelectedFestivalId);
+			bChanged = true;
+		}
+	}
+	if (bChanged)
+	{
+		RefreshFestivalCard();
+	}
+}
+
 UFF_AtlasPinButton* UFF_AtlasCountryScreen::FindFocusedPin() const
 {
 	for (const FName FestivalId : NavigationFestivalIds)
 	{
 		if (const TObjectPtr<UFF_AtlasPinButton>* Pin = PinButtons.Find(FestivalId);
-			Pin && *Pin && Pin->Get()->HasAnyUserFocus())
+			Pin && *Pin && (Pin->Get()->HasAnyUserFocus() || Pin->Get()->HasFocusedDescendants()))
 		{
 			return Pin->Get();
 		}
@@ -852,6 +898,7 @@ void UFF_AtlasCountryScreen::HandlePinFocusReceived(UFF_AtlasPinButton* Pin)
 
 void UFF_AtlasCountryScreen::HandleStartClicked(UFF_CommonButtonBase* Button)
 {
+	RefreshFestivalAvailability();
 	if (!CanStartSelectedFestival())
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,

@@ -5,14 +5,21 @@
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/FF_BuildCatalogSubsystem.h"
+#include "Building/FF_BuildCatalogModel.h"
+#include "Building/FF_BuildingSettings.h"
+#include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
 #include "Building/Presentation/FF_BuildPlacementGuidance.h"
 #include "Components/SplineComponent.h"
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
+#include "Engine/StreamableManager.h"
 #include "Engine/World.h"
+#include "FF_FFZSBuildArea.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSWorldSubsystem.h"
@@ -353,6 +360,231 @@ bool FFF_BuildPlacementAssistanceIntegrationTest::RunTest(const FString& Paramet
         Build->LastValidation.Reasons.Contains(EFFZSPlacementFailure::WrongStage));
     TestFalse(TEXT("An actual stage rejection blocks nearby assistance even outside the zone"), Build->FindNearbyPlacement());
     ExpectPreviewOnly(TEXT("Stage rejection"));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildPlacementMemoryTest,
+    "FestaFiesta.Building.BuildMode.PlacementAssistance.LastManipulatedPose",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildPlacementMemoryTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+    auto* Settings = GetMutableDefault<UFFZSDeveloperSettings>();
+    TGuardValue<bool> Ground(Settings->bEnableGroundChecks, false);
+    TGuardValue<bool> Collision(Settings->bEnableWorldCollisionChecks, false);
+    TGuardValue<bool> Navigation(Settings->bEnableNavigationProjectionChecks, false);
+    TGuardValue<bool> Policies(Settings->bRequireProductionPolicyDomains, false);
+    TGuardValue<EFFZSChangePhase> Phase(Settings->InitialPhase, EFFZSChangePhase::InitialSetup);
+    FTestWorldWrapper Fixture;
+    if (!Fixture.CreateTestWorld(EWorldType::Game)) { Fixture.ForwardErrorMessages(this); return false; }
+    UWorld* World = Fixture.GetTestWorld();
+    UGameInstance* Game = World->GetGameInstance();
+    auto* Build = World->GetSubsystem<UFF_BuildModeSubsystem>();
+    auto* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
+    auto* Catalog = Game ? Game->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+    auto* Economy = Game ? Game->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+    if (!TestNotNull(TEXT("Production build subsystem"), Build) || !TestNotNull(TEXT("Real zone authority"), Zones) ||
+        !TestNotNull(TEXT("Real facility catalog"), Catalog) || !TestNotNull(TEXT("Real festival economy"), Economy)) return false;
+    ON_SCOPE_EXIT
+    {
+        Build->DestroyPlacementPreview();
+        Build->ResetPlacementSelection();
+        Build->State = EFF_BuildModeState::Closed;
+    };
+
+    // Keep asset discovery out of this isolated catalog. The actual StartPlacement,
+    // preview validation and install command still use the production definitions.
+    FFBuildCatalogModel::BeginNextRequest(Catalog->RequestGeneration);
+    if (Catalog->ActiveLoadHandle.IsValid()) Catalog->ActiveLoadHandle->CancelHandle();
+    Catalog->ActiveLoadHandle.Reset();
+    Catalog->Entries.Reset();
+    Catalog->EntryIndexByDefinitionId.Reset();
+    TStrongObjectPtr<UFFZSFacilityDefinition> First(NewObject<UFFZSFacilityDefinition>(Game));
+    TStrongObjectPtr<UFFZSFacilityDefinition> Second(NewObject<UFFZSFacilityDefinition>(Game));
+    for (auto* Definition : { First.Get(), Second.Get() })
+    {
+        FFFZSFacilitySpec& Spec = Definition->Spec;
+        Spec.FacilityDefinitionId = Definition == First.Get()
+            ? FName(TEXT("Road_Surface_PoseFirst")) : FName(TEXT("Road_Surface_PoseSecond"));
+        Spec.DisplayName = FText::FromString(TEXT("설치 위치 기억 테스트 바닥"));
+        Spec.Category = EFFZSFacilityCategory::Road;
+        Spec.FootprintSizeCells = FIntPoint(100, 200);
+        Spec.ClearanceCells = 0;
+        Spec.QueueRules.MaxWaitingAgents = 0;
+        Spec.QueueRules.ServiceCapacity = 0;
+        Spec.PlacementObstacleHeightCm = 8.f;
+        Spec.InstallCostKey = TEXT("Cost.Road.Default");
+        Definition->bEnableDragPlacement = true;
+        const int32 Index = Catalog->Entries.AddDefaulted();
+        Catalog->Entries[Index].Definition = Definition;
+        Catalog->EntryIndexByDefinitionId.Add(Spec.FacilityDefinitionId, Index);
+        TArray<FText> Errors;
+        if (!TestTrue(TEXT("The fixture uses valid production facility definitions"), Definition->IsDefinitionValid(Errors)))
+            return false;
+    }
+
+    TStrongObjectPtr<UDataTable> Costs(NewObject<UDataTable>(Game));
+    Costs->RowStruct = FFF_FacilityCostRow::StaticStruct();
+    FFF_FacilityCostRow Cost;
+    Cost.InstallCost = 100;
+    Costs->AddRow(TEXT("Cost.Road.Default"), Cost);
+    TStrongObjectPtr<UFF_FestivalDefinition> Festival(NewObject<UFF_FestivalDefinition>(Game));
+    Festival->FestivalId = TEXT("BuildPlacementMemoryAutomation");
+    Festival->FacilityCostTable = Costs.Get();
+    Festival->InitialGold = 10000;
+    Economy->StartFestival(Festival.Get());
+    Zones->SetChangePhase(EFFZSChangePhase::InitialSetup);
+
+    const FName ZoneId(FFProjectZoneTest::ZoneId());
+    auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
+    if (!TestNotNull(TEXT("Construction region"), Zone) ||
+        !TestTrue(TEXT("Accepted project region"), Zone->ApplyAcceptedZonePreset(ZoneId))) return false;
+    Zone->BoundarySpline->ClearSplinePoints(false);
+    for (const FVector Corner : { FVector(0, 0, 0), FVector(4000, 0, 0), FVector(4000, 4000, 0), FVector(0, 4000, 0) })
+    {
+        const int32 Index = Zone->BoundarySpline->GetNumberOfSplinePoints();
+        Zone->BoundarySpline->AddSplinePoint(Corner, ESplineCoordinateSpace::Local, false);
+        Zone->BoundarySpline->SetSplinePointType(Index, ESplinePointType::Linear, false);
+    }
+    Zone->BoundarySpline->SetClosedLoop(true, true);
+    Zone->SetActorRotation(FRotator(0, 90, 0));
+    if (!TestTrue(TEXT("Authority registers the rotated region"), Zones->RegisterZone(Zone))) return false;
+    auto* BuildArea = World->SpawnActor<AFFZSBuildArea>();
+    if (!TestNotNull(TEXT("Unified build area"), BuildArea) ||
+        !TestTrue(TEXT("The production world-angle path is enabled"), Zones->RegisterBuildArea(BuildArea))) return false;
+
+    const auto Reselect = [&](const UFFZSFacilityDefinition* Definition)
+    {
+        Build->DestroyPlacementPreview();
+        Build->ResetPlacementSelection();
+        Build->State = EFF_BuildModeState::CatalogOpen;
+        return Build->StartPlacement(Definition->Spec.FacilityDefinitionId);
+    };
+    if (!TestTrue(TEXT("First selection starts through the real catalog entry point"), Reselect(First.Get()))) return false;
+    TestFalse(TEXT("A never-used definition has no inherited position"), Build->HasPlacementTarget());
+    TestFalse(TEXT("A never-used definition starts with cursor placement"), Build->IsDirectPlacementAdjustment());
+    Build->CurrentZoneId = ZoneId;
+    Build->CurrentPlacement.OriginCell = FIntPoint(800, 800);
+    Build->bHasPlacementTarget = true;
+    Build->SetPreferredPositionSnapCm(25);
+    Build->RefreshCurrentPlacementValidation();
+    if (!TestTrue(TEXT("The initial target passes real authority validation"), Build->IsCurrentPlacementValid())) return false;
+    const int64 InitialRevision = Zones->GetWorldRevision();
+    const int32 InitialGold = Economy->GetGold();
+    Build->RotatePlacementDegrees(45.f);
+    TestFalse(TEXT("Keyboard-style rotation keeps ordinary cursor placement available"), Build->IsDirectPlacementAdjustment());
+    Build->SetPlacementYawDegrees(Build->GetPlacementYawDegrees());
+    TestTrue(TEXT("An explicit angle-field edit pins the position even when the value is unchanged"), Build->IsDirectPlacementAdjustment());
+    Build->ToggleDirectPlacementAdjustment();
+    Build->NudgePlacement(FIntPoint(1, -1));
+    TestTrue(TEXT("A manual position edit pins the preview until the user releases it"), Build->IsDirectPlacementAdjustment());
+    TestEqual(TEXT("Position adjustment retains the selected 25cm step"), Build->CurrentPlacement.OriginCell, FIntPoint(825, 775));
+    constexpr float WorldYaw = 37.25f;
+    Build->SetPlacementYawDegrees(WorldYaw);
+    Build->RefreshCurrentPlacementValidation();
+    TestTrue(TEXT("An arbitrary world angle is kept on a rotated construction region"),
+        FMath::Abs(FMath::FindDeltaAngleDegrees(Build->GetPlacementYawDegrees(), WorldYaw)) < 0.01f);
+    const FFFZSGridPlacement ManipulatedPlacement = Build->CurrentPlacement;
+    TestEqual(TEXT("Manipulating a preview does not execute an authority command"), Zones->GetWorldRevision(), InitialRevision);
+    TestEqual(TEXT("Manipulating a preview does not charge the player"), Economy->GetGold(), InitialGold);
+
+    // Reopening a definition keeps its world angle, but the first ghost must
+    // follow the cursor instead of pinning itself to the previous position.
+    Build->DestroyPlacementPreview();
+    Build->ResetPlacementSelection();
+    Zone->SetActorLocationAndRotation(FVector(0, 0, 180), FRotator(0, 270, 0));
+    Zones->RefreshBuildArea();
+    if (!TestTrue(TEXT("Reselecting a used definition starts a fresh cursor preview"), Reselect(First.Get()))) return false;
+    TestFalse(TEXT("Without a cursor hit, reselection cannot restore a stale placement target"), Build->HasPlacementTarget());
+    TestFalse(TEXT("A remembered angle cannot pin the first preview"), Build->IsDirectPlacementAdjustment());
+    TestTrue(TEXT("Reselection does not inherit the last manually adjusted grid position"),
+        Build->CurrentPlacement.OriginCell != ManipulatedPlacement.OriginCell);
+    TestTrue(TEXT("A changed region rotation cannot rotate the user's saved world angle"),
+        FMath::Abs(FMath::FindDeltaAngleDegrees(Build->GetPlacementYawDegrees(), WorldYaw)) < 0.01f);
+
+    // This authority fixture has no local controller. Supply a fresh destination
+    // explicitly, then exercise the same validation and installation commands.
+    Build->CurrentZoneId = ZoneId;
+    Build->CurrentPlacement.OriginCell = FIntPoint(1300, 800);
+    Build->bHasPlacementTarget = true;
+    Build->SetPlacementYawDegrees(WorldYaw);
+    Build->RefreshCurrentPlacementValidation();
+    TestTrue(TEXT("The fresh target derives its local angle from the remembered world angle"),
+        FMath::Abs(FMath::FindDeltaAngleDegrees(UFFZSGridLibrary::YawCentidegreesToDegrees(
+            UFFZSGridLibrary::GetEffectiveYawCentidegrees(Build->CurrentPlacement)), WorldYaw - 270.f)) < 0.01f);
+    TestTrue(TEXT("The preview recomputes height from the live region"),
+        FMath::IsNearlyEqual(Build->LastValidation.PlacementTransform.GetLocation().Z, 180.0, 0.01));
+    TestEqual(TEXT("The fresh destination uses the current authority revision"),
+        Build->PlacementPreview->PreviewCommand.ExpectedWorldRevision, Zones->GetWorldRevision());
+    const FFFZSGridPlacement CommitPose = Build->CurrentPlacement;
+    const auto* ActivePreview = Build->PlacementPreview.Get();
+    if (!TestTrue(TEXT("The pinned pose commits through the production install path"), Build->CommitPlacement())) return false;
+    TestFalse(TEXT("Successful installation releases direct adjustment for the next cursor preview"), Build->IsDirectPlacementAdjustment());
+    TestTrue(TEXT("Successful installation remains in placing mode"), Build->State == EFF_BuildModeState::Placing);
+    TestTrue(TEXT("Successful installation keeps the preview actor for the next facility"), Build->PlacementPreview.Get() == ActivePreview);
+    TestTrue(TEXT("The next cursor preview retains the selected world angle"),
+        FMath::Abs(FMath::FindDeltaAngleDegrees(Build->GetPlacementYawDegrees(), WorldYaw)) < 0.01f);
+    TestEqual(TEXT("One confirmation installs exactly one facility"), Zones->GetPlacedFacilityCount(), 1);
+    TestEqual(TEXT("One confirmation charges exactly one install cost"), Economy->GetGold(), InitialGold - Cost.InstallCost);
+
+    if (!TestTrue(TEXT("A different definition can be selected"), Reselect(Second.Get()))) return false;
+    TestFalse(TEXT("Another definition cannot inherit the first definition's position"), Build->HasPlacementTarget());
+    TestTrue(TEXT("Another definition cannot inherit the first definition's angle"), FMath::IsNearlyZero(Build->GetPlacementYawDegrees()));
+    if (!TestTrue(TEXT("Returning to the first definition restores its own angle"), Reselect(First.Get()))) return false;
+    TestFalse(TEXT("Returning to a definition does not target the occupied installation automatically"), Build->HasPlacementTarget());
+    TestFalse(TEXT("Returning to a definition remains in cursor placement"), Build->IsDirectPlacementAdjustment());
+    TestTrue(TEXT("Each definition remembers its own world angle"),
+        FMath::Abs(FMath::FindDeltaAngleDegrees(Build->GetPlacementYawDegrees(), WorldYaw)) < 0.01f);
+    Build->CurrentZoneId = ZoneId;
+    Build->CurrentPlacement = CommitPose;
+    Build->bHasPlacementTarget = true;
+    Build->SetPlacementYawDegrees(WorldYaw);
+    Build->RefreshCurrentPlacementValidation();
+    TestFalse(TEXT("Explicitly choosing an occupied destination cannot retain an old green result"), Build->IsCurrentPlacementValid());
+    TestTrue(TEXT("Authority occupancy remains visible for the chosen destination"),
+        Build->LastValidation.Reasons.Contains(EFFZSPlacementFailure::PlacementCollision));
+    const auto& FeedbackAsset = GetDefault<UFF_BuildingSettings>()->PlacementFailureFeedbackClass;
+    UClass* FeedbackClass = FeedbackAsset.LoadSynchronous();
+    if (!TestNotNull(TEXT("The configured production failure-feedback WBP loads successfully"), FeedbackClass) ||
+        !TestTrue(TEXT("The configured WBP derives from the production failure presenter"),
+            FeedbackClass->IsChildOf(UFF_BuildPlacementFailureFeedback::StaticClass())) ||
+        !TestNull(TEXT("This authority fixture intentionally has no local player controller"), Build->GetLocalPlayerController()))
+        return false;
+    // Production logs class-load failure and missing presentation owner through
+    // the same branch. The class assertions above isolate this single expected
+    // headless UI error without hiding a broken configured feedback asset.
+    AddExpectedError(FString::Printf(TEXT("건축 실패 알림 WBP를 사용할 수 없습니다: %s"),
+        *FeedbackAsset.ToSoftObjectPath().ToString()), EAutomationExpectedErrorFlags::Contains, 1);
+    TestFalse(TEXT("Confirming the occupied destination cannot purchase a duplicate"), Build->CommitPlacement());
+    TestTrue(TEXT("A rejected confirmation retains the user's chosen pose and adjustment mode"),
+        Build->CurrentPlacement == CommitPose && Build->IsDirectPlacementAdjustment());
+    TestEqual(TEXT("A rejected duplicate leaves the installation count unchanged"), Zones->GetPlacedFacilityCount(), 1);
+    TestEqual(TEXT("A rejected duplicate leaves the player's money unchanged"), Economy->GetGold(), InitialGold - Cost.InstallCost);
+
+    Build->ToggleDirectPlacementAdjustment();
+    TestFalse(TEXT("T explicitly releases a manually pinned pose back to cursor placement"), Build->IsDirectPlacementAdjustment());
+    TestTrue(TEXT("Cursor mode retains the selected definition's continuous placement support"), Build->IsDragPlacementEnabled());
+    Build->ToggleDirectPlacementAdjustment();
+    TestTrue(TEXT("The user can pin the preview again"), Build->IsDirectPlacementAdjustment());
+
+    Build->State = EFF_BuildModeState::Moving;
+    Build->CurrentPlacement.OriginCell = FIntPoint(2400, 2400);
+    Build->CurrentPlacement.YawCentidegrees = 12000;
+    Build->RememberPlacementPose();
+    if (!TestTrue(TEXT("Returning from an existing-facility edit can reselect the definition"), Reselect(First.Get()))) return false;
+    TestFalse(TEXT("Returning from an existing-facility edit starts without a pinned target"), Build->HasPlacementTarget());
+    TestTrue(TEXT("Moving an existing instance cannot replace the new-installation world angle"),
+        FMath::Abs(FMath::FindDeltaAngleDegrees(Build->GetPlacementYawDegrees(), WorldYaw)) < 0.01f);
+
+    Build->DestroyPlacementPreview();
+    Build->ResetPlacementSelection();
+    if (!TestTrue(TEXT("The fixture can unregister its coordinate region"), Zones->UnregisterZone(Zone))) return false;
+    if (!TestTrue(TEXT("An unavailable saved region still permits a fresh placement session"), Reselect(First.Get()))) return false;
+    TestFalse(TEXT("An unavailable saved region cannot produce a phantom placement target"), Build->HasPlacementTarget());
+    TestFalse(TEXT("A missing coordinate region falls back to cursor placement"), Build->IsDirectPlacementAdjustment());
+    TestTrue(TEXT("Losing a coordinate region still preserves the last user world angle"),
+        FMath::Abs(FMath::FindDeltaAngleDegrees(Build->GetPlacementYawDegrees(), WorldYaw)) < 0.01f);
     return true;
 }
 

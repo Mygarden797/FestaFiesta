@@ -169,7 +169,7 @@ struct FFF_CrowdDecisionStats
  *   → ResolveZoneAtWorldLocation  현재 Zone
  *   → BuildReadModel              시설 스냅샷 (프레임당 1회 캐시)
  *   → BuildCandidates             Zone·거리로 최대 12개
- *   → Choose                      6항 점수로 1개
+ *   → Choose                      9항 효용 + no_choice 로 1개
  *   → TryParseDestinationId       FName → FGuid
  *   → ApproachWorldTransform      Entry[0] 월드 좌표
  * Crowd: 그 좌표로 이동

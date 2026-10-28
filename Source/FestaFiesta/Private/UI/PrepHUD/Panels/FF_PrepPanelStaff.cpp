@@ -108,7 +108,7 @@ void UFF_PrepPanelStaff::NativePreConstruct()
 {
 	Super::NativePreConstruct();
 
-	// ★ 영구 고용이라는 안내는 비어 있으면 안 된다. 값을 안 넣은 WBP 도 문구가 나오게 기본을 채운다.
+	// 고용 기간은 버튼 툴팁에서 확인한다. 본문에 반복하던 안내는 공간까지 접는다.
 	if (DailyNoticeText.IsEmpty())
 	{
 		DailyNoticeText = LOCTEXT("PrepStaff_HireNotice",
@@ -118,6 +118,11 @@ void UFF_PrepPanelStaff::NativePreConstruct()
 	if (Text_DailyNotice)
 	{
 		Text_DailyNotice->SetText(DailyNoticeText);
+		Text_DailyNotice->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (Button_Hire)
+	{
+		Button_Hire->SetToolTipText(DailyNoticeText);
 	}
 }
 

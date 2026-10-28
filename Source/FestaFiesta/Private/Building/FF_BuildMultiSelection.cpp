@@ -10,6 +10,7 @@
 #include "EngineUtils.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 
 namespace
@@ -129,6 +130,7 @@ void UFF_BuildModeSubsystem::ToggleMultiSelection()
 	if (bMultiSelectionActive)
 	{
 		EndMultiSelection();
+		if (APlayerController* Controller = GetLocalPlayerController()) SetBuildInputMode(*Controller);
 		ShowStatus(TEXT("다중 선택을 종료했습니다."), false, 1.5f);
 		return;
 	}
@@ -139,7 +141,19 @@ void UFF_BuildModeSubsystem::ToggleMultiSelection()
 	if (APlayerController* Controller = GetLocalPlayerController()) CreateMultiSelectionWidget(*Controller);
 	OnBuildMultiSelectionChanged.Broadcast();
 	OnBuildToolsChanged.Broadcast();
+	RestoreMultiSelectionViewportFocus();
 	ShowStatus(TEXT("다중 선택 · 시설 클릭으로 선택/해제 · 드래그로 여러 시설 선택"), false, 3.0f);
+}
+
+void UFF_BuildModeSubsystem::RestoreMultiSelectionViewportFocus()
+{
+	// Action buttons can retain Slate focus even though the selection panel itself
+	// is not focusable. Leave text editing and modal ownership intact until an
+	// explicit selection action finishes, then restore the normal GameAndUI route.
+	if (!bMultiSelectionActive || State != EFF_BuildModeState::BuildMode ||
+		bInputSuspendedForPauseMenu || bIsExitingBuildMode ||
+		!FSlateApplication::IsInitialized() || !FSlateApplication::Get().IsActive()) return;
+	if (APlayerController* Controller = GetLocalPlayerController()) SetBuildInputMode(*Controller);
 }
 
 // 여러 시설 보기에서 한 시설의 상세 보기로 전환한다.

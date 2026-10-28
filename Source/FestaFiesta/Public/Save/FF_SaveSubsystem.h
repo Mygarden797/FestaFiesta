@@ -44,6 +44,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSaveLoaded, FName, SlotId);
    하루가 시작될 때 축제 상태를 담고, 축제가 끝나면 로비 세이브를 담는다.
    잃어도 하루치다. 매 단계마다 저장하면 잦고, 수동만 두면 사람이 잊는다.
    메타(튜토리얼 기록 등)가 바뀌면 이 판의 세이브에 그것만 고쳐 쓴다.
+   짓는 시간(셋업 · 모닝체크)에 축제를 벗어나면 그 순간도 담고, 같은 판에서 같은 축제를 다시 고르면
+   거기서 이어한다(HandlePreLoadMap · ResumeRunSaveIfSameFestival).
 */
 UCLASS()
 class FESTAFIESTA_API UFF_SaveSubsystem : public UGameInstanceSubsystem
@@ -218,6 +220,34 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void MarkLobbyIntroSeen();
 
+	// 로비 이야기에서 받은 주인공 이름. 아직 안 받았으면 빈 문자열이다(기본 호칭은 튜토리얼 쪽이 정한다).
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
+	FString GetPlayerName() const { return Meta.PlayerName; }
+
+	// 주인공 이름을 남긴다. 이 판의 세이브가 있으면 메타만 고쳐 쓴다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
+	void SetPlayerName(const FString& Name);
+
+	// 비서 신뢰도(0~100).
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
+	int32 GetSecretaryTrust() const { return Meta.SecretaryTrust; }
+
+	/* 비서 신뢰도를 더한다(빼려면 음수). 0~100 으로 묶고 바뀐 값을 돌려준다.
+
+	   세이브에 바로 고쳐 쓰지 않는다. 결산 때 바뀌는 값이라, 이 판의 세이브(그날 아침)에 고쳐 쓰면 그 세이브로
+	   하루를 다시 할 때 같은 결산의 신뢰도가 두 번 붙는다. 다음 자동 저장(다음 날 아침 · 로비)에 담긴다.
+	*/
+	int32 AddSecretaryTrust(int32 Delta, const TCHAR* Reason);
+
+	// 신뢰도가 '높음'에 처음 닿았다고 남긴다. 처음이면 true(비서가 그 순간에만 하는 말이 있다).
+	bool MarkSecretaryTrustReachedHigh();
+
+	// S 등급으로 끝낸 축제가 로비 장면을 기다리면 그 축제 이름, 아니면 None.
+	FName GetPendingSGradeEnding() const { return Meta.PendingSGradeEnding; }
+
+	// S 엔딩을 틀었다. 기다림을 비우고 이 판의 세이브(로비)에 고쳐 쓴다 — 이어하기로 다시 나오지 않게.
+	void ClearPendingSGradeEnding();
+
 	// 이 축제의 튜토리얼을 끝까지 봤다고 남긴다. FestivalId 가 비면 아무것도 하지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void MarkFestivalTutorialSeen(FName FestivalId);
@@ -237,6 +267,10 @@ public:
 	   레벨은 마치면 지도에서 잠기므로(UFF_TutorialSubsystem::SyncTutorialLevelLock) 이어하기가 그 레벨을
 	   열려다 막힌다. 로비 세이브가 있으면 이어하기가 그 나라의 레벨 선택으로 간다.
 	   판을 시작하지 않았으면(흐름 밖에서 맵을 연 개발 중) 남기지 않는다.
+
+	   이 판에 진행 중인 축제 세이브가 있으면 로비 세이브로 덮지 않고 튜토리얼 기록(메타)만 그 세이브에 고쳐 쓴다
+	   (2026-10-13 피드백: 부산 → 튜토리얼 → 부산이면 부산이 처음부터 시작). 자동 저장은 두 칸을 번갈아 써서
+	   로비 세이브가 부산 세이브 칸을 덮을 수 있고, 덮이지 않아도 이 판의 마지막 세이브가 로비가 되어 이어하기가 끊긴다.
 	*/
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void WriteLobbyAutoSaveAfterTutorial();
@@ -246,6 +280,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
 	bool HasClearedFestival(FName FestivalId) const { return Meta.HasCleared(FestivalId); }
+
+	// 이 판에서 깬 축제가 하나라도 있는가. 튜토리얼을 지난 판으로 볼 때 쓴다(UFF_TutorialSubsystem).
+	bool HasClearedAnyFestival() const { return Meta.ClearedFestivals.Num() > 0; }
+
+	// 판을 시작했는가(새 게임 · 이어하기 뒤). 편집기에서 레벨을 바로 연 개발 중에는 거짓이다.
+	bool IsRunActive() const { return bRunActive; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
 	FFF_FestivalRecord GetRecord(FName FestivalId) const;
@@ -291,6 +331,44 @@ private:
 	// 새 판이 시작됐다. 같은 날 두 번 막는 기준을 비운다.
 	UFUNCTION()
 	void HandleFestivalStarted();
+
+	/* 축제 레벨을 벗어나기 직전에 담는다(2026-10-12 피드백: 축제 선택으로 잘못 나갔다 오니 축제장이 사라짐).
+
+	   자동 저장은 하루가 시작될 때만 돌아서, 1일차 셋업에 지은 것은 나가는 순간 어디에도 없었다.
+	   다른 레벨을 열기 직전(PreLoadMap)이면 아직 지금 월드가 살아 있어 시설까지 담을 수 있다.
+	   짓는 시간(셋업 · 모닝체크)에만 담는다. 운영 도중은 하루 정산이 안 끝나 장부와 어긋난다(HandleStageChanged).
+	   튜토리얼 실습장은 연습이라 이어할 자리를 만들지 않는다.
+	*/
+	void HandlePreLoadMap(const FString& MapName);
+	FDelegateHandle PreLoadMapHandle;
+
+	/* 지금 진행 중인 축제 이름. 새 판이 시작될 때 담아 둔다.
+
+	   '축제 선택으로'를 누르면 UI 흐름이 레벨을 열기 전에 프론트엔드로 바뀐다. 그 뒤에는
+	   ResolveCurrentFestivalId 가 None 을 돌려줘서, 나갈 때 담은 세이브에 축제 이름이 비었다(PIE 확인).
+	*/
+	FName RunningFestivalId;
+
+	// 나갈 때 저장 중인가. CaptureSession 이 축제 이름을 RunningFestivalId 로 담는다.
+	bool bSavingOnLeave = false;
+
+	/* 지금 월드가 튜토리얼 실습장인가. 실습장은 자동 저장 칸을 건드리지 않는다.
+
+	   실습은 끝나면 지도에서 잠기는 연습이라 이어할 일이 없다. 여기서 담으면 실습장이 '이 판의 마지막 세이브'가 되어
+	   다른 축제의 이어하기가 끊기고, 두 칸을 번갈아 쓰는 자동 저장이 그 축제 세이브 칸을 덮을 수 있다.
+	*/
+	bool IsInTutorialLevel() const;
+
+	// 이 판의 세이브가 진행 중인 축제인가(로비 · 끝난 축제가 아니다).
+	bool HasRunFestivalInProgress() const;
+
+	/* 같은 판에서 같은 축제를 다시 골랐으면, 이 판의 세이브(진행 중)에서 이어하기로 정한다.
+
+	   새 판 시작 신호(HandleFestivalStarted)는 GameMode 의 BeginPlay 보다 먼저 온다. 여기서 이어하기를
+	   걸어 두면 1일차 자동 저장은 건너뛰고(HandleStageChanged), GameMode 가 그 세이브를 되돌린다.
+	   새 게임은 이 판의 세이브가 비어 있어(BeginNewRun) 영향이 없다. 다른 축제면 새로 시작한다.
+	*/
+	void ResumeRunSaveIfSameFestival();
 
 
 	/* 다음 틱에 자동 저장한다. 바로 담지 않는다.

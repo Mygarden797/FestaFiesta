@@ -14,6 +14,10 @@ param(
 
     [string] $ReportDirectory,
 
+    # Produced from the live appearance table before cook; never infer the
+    # expected crowd assets from an obsolete hard-coded mesh/AnimBP list.
+    [string] $CrowdRequirementsFile,
+
     [switch] $SmokeTest,
 
     # Requires a GPU/driver that supports both requested paths. Also checks the
@@ -82,6 +86,117 @@ function Get-TotalBytes {
         $total += $file.Length
     }
     return $total
+}
+
+function Read-CrowdCookRequirements {
+    param(
+        [string] $Path,
+
+        [Parameter(Mandatory = $true)]
+        [string] $PayloadRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string] $ReportsRoot
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($Path)) {
+        $requirementsPath = [System.IO.Path]::GetFullPath($Path)
+        Assert-Condition -Condition (Test-Path -LiteralPath $requirementsPath -PathType Leaf) `
+            -Message "Crowd cook requirements file was not found: $requirementsPath"
+    }
+    else {
+        $candidates = @((Join-Path $ReportsRoot 'Crowd-CookRequirements.json'))
+        # Supports both a build root and Package/Windows as PackagePath. Search
+        # only this payload's nearby metadata, never another release directory.
+        $ancestor = [System.IO.DirectoryInfo]::new($PayloadRoot)
+        for ($level = 0; $level -lt 3 -and $null -ne $ancestor; ++$level) {
+            $candidates += Join-Path $ancestor.FullName 'Metadata/Crowd-CookRequirements.json'
+            $ancestor = $ancestor.Parent
+        }
+        $requirementsPath = $candidates | Where-Object {
+            Test-Path -LiteralPath $_ -PathType Leaf
+        } | Select-Object -First 1
+        Assert-Condition -Condition (-not [string]::IsNullOrWhiteSpace($requirementsPath)) `
+            -Message 'Crowd cook requirements are mandatory. Pass -CrowdRequirementsFile or retain this build''s Metadata/Crowd-CookRequirements.json.'
+    }
+
+    $requirements = Get-Content -LiteralPath $requirementsPath -Raw | ConvertFrom-Json
+    foreach ($name in @('schemaVersion', 'sourceTable', 'sourceTableSha256', 'requiredAssets', 'animationBlueprintCount')) {
+        Assert-Condition -Condition ($null -ne $requirements.PSObject.Properties[$name]) `
+            -Message "Crowd cook requirements lack '$name': $requirementsPath"
+    }
+    Assert-Condition -Condition ($requirements.schemaVersion -eq 1) `
+        -Message "Unsupported crowd cook requirements schema: $requirementsPath"
+
+    # Require package paths, not object/class paths, extensions, or traversal.
+    $packagePattern = '^/Game/(?:[^./\\:\x00-\x20]+/)*[^./\\:\x00-\x20]+$'
+    Assert-Condition -Condition ($requirements.sourceTable -is [string] -and
+        $requirements.sourceTable -cmatch $packagePattern) `
+        -Message "Crowd sourceTable must be a /Game package path: $requirementsPath"
+    Assert-Condition -Condition ($requirements.requiredAssets -is [array] -and
+        $requirements.requiredAssets.Count -gt 0) `
+        -Message "Crowd requiredAssets must be a non-empty array: $requirementsPath"
+    foreach ($asset in $requirements.requiredAssets) {
+        Assert-Condition -Condition ($asset -is [string] -and $asset -cmatch $packagePattern) `
+            -Message "Invalid crowd required asset package path '$asset': $requirementsPath"
+    }
+    $crowdAssets = @($requirements.requiredAssets | Sort-Object -Unique)
+
+    $counts = [ordered]@{}
+    foreach ($name in @('animationBlueprintCount', 'skeletalMeshCount', 'meshCount', 'animationSequenceCount', 'blendSpaceCount', 'rowCount', 'requiredAssetCount')) {
+        $property = $requirements.PSObject.Properties[$name]
+        if ($null -eq $property) {
+            continue
+        }
+        $count = 0
+        Assert-Condition -Condition ([int]::TryParse([string]$property.Value, [ref]$count) -and $count -gt 0) `
+            -Message "Crowd '$name' must be a positive integer: $requirementsPath"
+        $counts[$name] = $count
+    }
+    Assert-Condition -Condition ($counts.animationBlueprintCount -le $crowdAssets.Count) `
+        -Message "Crowd animationBlueprintCount exceeds requiredAssets: $requirementsPath"
+    if ($counts.Contains('requiredAssetCount')) {
+        Assert-Condition -Condition ($counts.requiredAssetCount -eq $crowdAssets.Count) `
+            -Message "Crowd requiredAssetCount differs from unique requiredAssets: $requirementsPath"
+    }
+
+    Assert-Condition -Condition ($requirements.sourceTableSha256 -is [string] -and
+        $requirements.sourceTableSha256 -match '^[a-fA-F0-9]{64}$') `
+        -Message "Crowd sourceTableSha256 must be a SHA-256 digest: $requirementsPath"
+    $sourceTableFile = Join-Path (Get-FFProjectRoot) (
+        'Content/' + $requirements.sourceTable.Substring('/Game/'.Length) + '.uasset')
+    Assert-Condition -Condition (Test-Path -LiteralPath $sourceTableFile -PathType Leaf) `
+        -Message "Crowd source appearance table is missing: $sourceTableFile"
+    $sourceTableHash = (Get-FileHash -LiteralPath $sourceTableFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    Assert-Condition -Condition ($sourceTableHash -eq $requirements.sourceTableSha256) `
+        -Message "Crowd appearance table changed since requirements extraction; regenerate requirements and recook: $sourceTableFile"
+
+    # The staging directory is renamed when a release is promoted. Keep its
+    # metadata locator relative so the verification report remains usable.
+    $fullRequirementsPath = [System.IO.Path]::GetFullPath($requirementsPath)
+    $reportPath = [System.IO.Path]::GetFileName($fullRequirementsPath)
+    $reportAnchor = 'external-file'
+    $ancestor = [System.IO.DirectoryInfo]::new($PayloadRoot)
+    $anchors = @('payload-root', 'package-root', 'build-root')
+    for ($level = 0; $level -lt $anchors.Count -and $null -ne $ancestor; ++$level) {
+        $ancestorPrefix = $ancestor.FullName.TrimEnd([char[]]'\/') + [System.IO.Path]::DirectorySeparatorChar
+        if ($fullRequirementsPath.StartsWith($ancestorPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $reportPath = Get-FFRelativePath -BasePath $ancestor.FullName -Path $fullRequirementsPath
+            $reportAnchor = $anchors[$level]
+            break
+        }
+        $ancestor = $ancestor.Parent
+    }
+
+    return [pscustomobject]@{
+        Path = $fullRequirementsPath
+        ReportPath = $reportPath
+        ReportAnchor = $reportAnchor
+        SourceTable = $requirements.sourceTable
+        SourceTableSha256 = $sourceTableHash
+        Counts = $counts
+        RequiredAssets = $crowdAssets
+    }
 }
 
 function Assert-NoRuntimeSavedDirectories {
@@ -296,6 +411,8 @@ Assert-Condition -Condition (-not ($ReportDirectory.TrimEnd([char[]]'\/').Equals
     -Message 'ReportDirectory must be outside the distributable payload so verification does not add runtime files to it.'
 Assert-NoRuntimeSavedDirectories -Root $payloadRoot
 [System.IO.Directory]::CreateDirectory($ReportDirectory) | Out-Null
+$crowdRequirements = Read-CrowdCookRequirements -Path $CrowdRequirementsFile `
+    -PayloadRoot $payloadRoot -ReportsRoot $ReportDirectory
 
 $payloadFiles = @(Get-ChildItem -LiteralPath $payloadRoot -Recurse -File)
 $alternateLaunchers = @('Launch-DX11-SM5.cmd', 'Launch-DX12-SM6.cmd', 'Test-DX11-SM5.cmd', 'Test-DX12-SM6.cmd')
@@ -389,21 +506,13 @@ $requiredAssets = @(
     '/Game/FestaFiesta/Crowd/ABP_CrowdAnimation',
     '/Game/FestaFiesta/Data/UtilityAI/DT_VisitorArrivalCurve',
     '/Game/FestaFiesta/Data/Crowd/FF_CrowdAppearanceTable',
-    '/Game/FestaFiesta/Character/Crowd/50_Man/50_Man_',
-    '/Game/FestaFiesta/Character/Crowd/50_Man/ABP_50_Man',
-    '/Game/FestaFiesta/Character/Crowd/Elder_Woman/Elder_woman_',
-    '/Game/FestaFiesta/Character/Crowd/Elder_Woman/ABP_Elder_Woman',
-    '/Game/FestaFiesta/Character/Crowd/Kid_Man/Kid_Boy',
-    '/Game/FestaFiesta/Character/Crowd/Kid_Man/ABP_Boy',
-    '/Game/FestaFiesta/Character/Crowd/Young_Man/30_Man',
-    '/Game/FestaFiesta/Character/Crowd/Young_Man/ABP_30_Man',
-    '/Game/FestaFiesta/Character/Crowd/Young_woman/Blue_Girl',
-    '/Game/FestaFiesta/Character/Crowd/Young_woman/ABP_Blue_Girl',
-    '/Game/FestaFiesta/Character/Crowd/Young_woman/Causal_Girl',
-    '/Game/FestaFiesta/Character/Crowd/Young_woman/ABP_Causal_Girl',
     '/Game/FestaFiesta/UI/WBP_FF_UIRootLayout',
     '/Game/FestaFiesta/UI/LiveHUD/WBP_FF_LiveHudScreen',
     '/Game/FestaFiesta/UI/Fonts/F_UI_Pretendard',
+    # Native construction UI loads these fonts by string path (FF_BuildTypography.h).
+    '/Game/Asset/Font/NEXON_Lv2_Gothic_OTF_Font',
+    '/Game/Asset/Font/NEXON_Lv2_Gothic_OTF_Bold_Font',
+    '/Game/Asset/Font/NEXON_Lv2_Gothic_OTF_Medium_Font',
     '/Game/FestaFiesta/UI/Lv_Test/DA_FestivalAtlas',
     '/Game/FestaFiesta/Input/IMC_Camera',
     '/Game/FestaFiesta/Input/Character/IMC_Character',
@@ -414,6 +523,7 @@ $requiredAssets = @(
     '/Game/FestaFiesta/UI/Settings/WBP_FF_FestivalSettings',
     '/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan'
 )
+$requiredAssets = @($requiredAssets + $crowdRequirements.RequiredAssets | Sort-Object -Unique)
 $ioStoreContents = (Get-Content -LiteralPath $ioStoreCsv -Raw).Replace('\', '/')
 $ioStoreEntries = @(Import-Csv -LiteralPath $ioStoreCsv)
 Assert-Condition -Condition ($ioStoreEntries.Count -gt 0 -and
@@ -485,7 +595,7 @@ if ($GraphicsSmokeTest) {
 Assert-NoRuntimeSavedDirectories -Root $payloadRoot
 
 $summary = [ordered]@{
-    schemaVersion  = 2
+    schemaVersion  = 3
     configuration  = $Configuration
     executable     = "FestaFiesta/Binaries/Win64/$gameBinaryBaseName.exe"
     verifiedAtUtc  = [DateTime]::UtcNow.ToString('o')
@@ -497,6 +607,13 @@ $summary = [ordered]@{
     ucasCount      = $ucasFiles.Count
     pakCount       = $pakFiles.Count
     requiredAssetCount = $requiredAssets.Count
+    crowdRequirementsFile = $crowdRequirements.ReportPath
+    crowdRequirementsAnchor = $crowdRequirements.ReportAnchor
+    crowdSourceTable = $crowdRequirements.SourceTable
+    crowdSourceTableSha256 = $crowdRequirements.SourceTableSha256
+    crowdSourceTableHashVerified = $true
+    crowdCounts = $crowdRequirements.Counts
+    crowdVerifiedAssetCount = $crowdRequirements.RequiredAssets.Count
     presentationRuntimeFiles = $presentationRuntimeFiles
     unrealPakTested = $true
     ioStoreInspected = $true

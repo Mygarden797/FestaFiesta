@@ -96,6 +96,7 @@ void UFF_FacilityInfoPanel::NativeOnInitialized()
 	// Existing layout remains authored in WBP. Only the optional staff section gets a
 	// fallback for older assets; an authored section always takes precedence.
 	EnsureStaffControls();
+	EnsureQueueSettingsControls();
 	if (Button_AssignStaff) Button_AssignStaff->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAssignStaffClicked);
 	if (Button_UnassignStaff) Button_UnassignStaff->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUnassignStaffClicked);
 	// Legacy assets can still carry former per-person captions. The finalized Designer
@@ -209,8 +210,9 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 {
 	const bool bSelectionChanged = CurrentViewData.FacilityInstanceId != ViewData.FacilityInstanceId ||
 		CurrentViewData.Context != ViewData.Context;
-	if (bSelectionChanged) { CancelLightingEdit(); if (bLightingMinimized) HandleLightingMinimizeClicked(); }
+	if (bSelectionChanged) { bQueueSettingsDirty = false; CancelLightingEdit(); if (bLightingMinimized) HandleLightingMinimizeClicked(); }
 	CurrentViewData = ViewData;
+	if (bSelectionChanged) RefreshQueueSettingsText();
 	if (bSelectionChanged)
 	{
 		ActivePage = EFF_FacilityInfoPage::Overview;
@@ -516,6 +518,7 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 	// Legacy designer panels keep their previous presentation until explicitly migrated.
 	if (!Button_TabOverview || !Button_TabOperation || !Button_TabUpgrade)
 	{
+		RefreshQueueSettingsControls();
 		RefreshStaffControls();
 		return;
 	}
@@ -536,6 +539,7 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 		ActivePage = EFF_FacilityInfoPage::Overview;
 	if (ActivePage == EFF_FacilityInfoPage::Programs && (!Button_TabPrograms || !CurrentViewData.bShowProgramSection))
 		ActivePage = EFF_FacilityInfoPage::Overview;
+	RefreshQueueSettingsControls();
 	RefreshStaffControls();
 	auto Show = [](UWidget* Widget, const bool bShow)
 	{
@@ -874,11 +878,20 @@ void UFF_FacilityInfoPanel::EnsureStaffControls()
 			{
 				Label->SetFont(Reference->GetFont());
 				Label->SetColorAndOpacity(Reference->GetColorAndOpacity());
+				Label->SetJustification(ETextJustify::Center);
 			}
 			Button_TabStaff->AddChild(Label);
 			auto* StaffTabSlot = Tabs->AddChildToHorizontalBox(Button_TabStaff);
 			StaffTabSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 			StaffTabSlot->SetPadding(FMargin(2.f, 0.f));
+			StaffTabSlot->SetVerticalAlignment(VAlign_Fill);
+			if (const auto* ReferenceSlot = Cast<UHorizontalBoxSlot>(Button_TabOperation->Slot))
+			{
+				StaffTabSlot->SetSize(ReferenceSlot->GetSize());
+				StaffTabSlot->SetPadding(ReferenceSlot->GetPadding());
+				StaffTabSlot->SetHorizontalAlignment(ReferenceSlot->GetHorizontalAlignment());
+				StaffTabSlot->SetVerticalAlignment(ReferenceSlot->GetVerticalAlignment());
+			}
 			Tabs->ShiftChild(Tabs->GetChildIndex(Button_TabOperation) + 1, Button_TabStaff);
 		}
 	}
@@ -1062,7 +1075,7 @@ void UFF_FacilityInfoPanel::HandleLightingResetRequested(const FGuid FacilityId)
 
 void UFF_FacilityInfoPanel::CancelLightingEdit() { if(Widget_LightingControls) Widget_LightingControls->CancelEdit(); }
 bool UFF_FacilityInfoPanel::IsLightingTextInputFocused() const
-{ return GetVisibility()!=ESlateVisibility::Collapsed && Widget_LightingControls && Widget_LightingControls->IsEditingText(); }
+{ return GetVisibility()!=ESlateVisibility::Collapsed && ((Widget_LightingControls && Widget_LightingControls->IsEditingText()) || IsQueueTextInputFocused()); }
 void UFF_FacilityInfoPanel::HandleLightingRollbackRequested(FGuid FacilityId,const FFFZSFacilityLightingState& State)
 { OnLightingRollbackRequested.Broadcast(FacilityId,State); }
 void UFF_FacilityInfoPanel::HandleLightingEditFinished() { SetInfoPage(EFF_FacilityInfoPage::Overview); }

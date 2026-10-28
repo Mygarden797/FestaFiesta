@@ -1,4 +1,4 @@
-// FF_BuildModeSubsystem.h
+﻿// FF_BuildModeSubsystem.h
 
 // 월드의 건축·배치·이동·철거 세션과 관련 UI/입력 수명주기를 조정하는 서브시스템을 선언한다.
 // 흐름: 상태 전이 -> 카탈로그 선택 -> 배치 미리보기 검증 -> 권위 Zone 명령 커밋.
@@ -372,8 +372,13 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 	friend class FFF_BuildSynergyCatalogContextTest;
 	friend class FFF_BuildMultiSelectionSessionTest;
 	friend class FFFBuildFeatureGuideInputTest;
+	friend class FFFBuildToolsCatalogHelpTest;
+	friend class FFFBuildToolsForegroundViewportTest;
+	friend class FFF_UIUtilityFlyoutForegroundTest;
 	friend class FFF_BuildGroupEditingTest;
 	friend class FFF_BuildQueueLayoutDraftTest;
+	friend class FFFBuildToolsQueueSettingsTest;
+	friend class FFF_BuildPlacementMemoryTest;
 #endif
 
 public:
@@ -384,6 +389,7 @@ public:
 	static constexpr int32 DefaultPlacementPositionSnapCm = 100;
 	static constexpr int32 DefaultPrecisionPlacementPositionSnapCm = 25;
 	static constexpr int32 DefaultFreePlacementPositionSnapCm = 1;
+	static constexpr int32 MaxDragPlacementGapCm = 1000;
 
 	// 지원 월드인지와 QA 전용 맵인지 확인해 이 서브시스템을 생성할지를 결정한다.
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
@@ -527,6 +533,9 @@ public:
 	/** F1 switches to world selection; the selection never performs a destructive command. */
 	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
 	void ToggleMultiSelection();
+
+	/** Return keyboard input to the camera after a multi-selection UI action. */
+	void RestoreMultiSelectionViewportFocus();
 	UFUNCTION(BlueprintPure, Category = "Building|Multi Selection")
 	bool IsMultiSelectionActive() const { return bMultiSelectionActive; }
 	UFUNCTION(BlueprintPure, Category = "Building|Multi Selection")
@@ -543,10 +552,22 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|History")
 	bool UndoBuildEdit();
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Building")
+	bool CanUndoBuildEdit() const;
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Building")
+	bool CanRedoBuildEdit() const;
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|History")
 	bool RedoBuildEdit();
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Queue")
 	bool SetSelectedFacilityQueueLayout(EFFZSQueueLayout Layout);
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Queue")
+	bool SetSelectedFacilityQueueSettings(int32 MaxWaitingTeams, float SlotSpacingCm, float LaneWidthCm);
+	UFUNCTION(BlueprintPure, Category = "Building|Queue")
+	FFFZSQueueSettings GetEditingQueueSettings() const;
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Queue")
+	bool ResetAllFacilityQueuesToDefaults();
+	UFUNCTION(BlueprintPure, Category = "Building|Queue")
+	bool CanResetAllFacilityQueuesToDefaults() const;
 	UFUNCTION(BlueprintPure, Category = "Building|Queue")
 	bool CanChooseQueueLayout() const;
 	UFUNCTION(BlueprintPure, Category = "Building|Queue")
@@ -583,6 +604,7 @@ public:
 	void ToggleBuildSettings();
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	bool IsBuildSettingsOpen() const;
+	bool IsBuildAuxiliaryPanelOpen() const;
 
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	bool IsPlacementGridVisible() const { return bPlacementGridVisible; }
@@ -608,6 +630,8 @@ public:
 	void RefreshBuildToolsOcclusion();
 	bool HasPlacementTarget() const { return bHasPlacementTarget; }
 	bool GetPlacementMarkerLocation(FVector& OutLocation) const;
+	/** Displayed reservation corners, in world space, for keeping HUD labels off the preview. */
+	bool GetPlacementPreviewWorldCorners(TArray<FVector>& OutCorners) const;
 	bool IsCurrentPlacementValid() const { return bHasPlacementTarget && LastValidation.bIsValid; }
 	FText GetPlacementStatusText() const;
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
@@ -635,6 +659,11 @@ public:
 	/** Selected Data Asset opts in to holding the left mouse button to paint facilities. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
 	bool IsDragPlacementEnabled() const;
+	/** Additional edge-to-edge space, separate from cursor/grid snapping. Zero keeps roads joined. */
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void SetDragPlacementGapCm(int32 GapCm);
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	int32 GetDragPlacementGapCm() const { return DragPlacementGapCm; }
 
 private:
 #if WITH_DEV_AUTOMATION_TESTS
@@ -655,12 +684,15 @@ private:
 	void ResetPlacementAssistance();
 	void RefreshPlacementGizmo();
 	bool HandlePlacementGizmoInput(APlayerController& Controller, bool bPointerBlocked);
-	// A stroke owns bounded path/deduplication data; installed actors remain owned by ZoneSystem.
+	// A stroke owns bounded, non-authoritative preview data until the pointer is released.
 	TSharedPtr<FFF_BuildDragPlacementSession> DragPlacementSession;
+	int32 DragPlacementGapCm = 0;
+	FGuid PendingDragPlacementTransactionId;
 	void HandlePlacementPrimaryPress(bool bButtonDown);
-	void BeginDragPlacement(bool bOriginAlreadyProcessed = false);
+	void BeginDragPlacement(bool bOriginAlreadyProcessed = false, FGuid TransactionId = FGuid());
 	void UpdateDragPlacement(const FVector& CursorWorld);
 	void ProcessDragPlacement();
+	bool CommitDragPlacement();
 	void EndDragPlacement();
 	bool TryInstallDragCell(const FIntPoint& Cell);
 	bool ResolveDragPlacement(const FIntPoint& Cell, FName& OutZoneId, FFFZSGridPlacement& OutPlacement) const;
@@ -728,7 +760,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Building|Tools")
 	TSoftClassPtr<UFF_BuildToolsWidget> BuildToolsWidgetClass;
 
-	// 첫 클릭으로 선택해 이동·철거·취소 액션을 기다리는 시설이다. 권위 소유권은 WorldSubsystem에 있다.
+	// 시설정보에 선택된 시설이며 이동 미리보기 중에도 유지한다. 권위 소유권은 WorldSubsystem에 있다.
 	TWeakObjectPtr<AFFZSFacilityActor> PendingRemovalFacility;
 	FGuid SynergyCatalogSourceId;
 	TArray<FName> SynergyCatalogFacilityIds;
@@ -748,6 +780,8 @@ private:
 	FFFZSFacilitySpec SelectedSpec;
 	// A preview owns only this choice; the original authored spec remains unchanged until commit.
 	EFFZSQueueLayout PendingQueueLayout = EFFZSQueueLayout::Authored;
+	FFFZSQueueSettings PendingQueueSettings;
+	bool SetSelectedFacilityQueueConfiguration(EFFZSQueueLayout Layout, const FFFZSQueueSettings& Settings);
 	FFFZSGridPlacement CurrentPlacement;
 	// 가장 최근 RefreshPreview 결과. CommitPlacement가 설치 가능 여부를 판단할 때 사용한다. 
 	FFFZSPlacementValidation LastValidation;
@@ -755,10 +789,28 @@ private:
 	FName SelectedFacilityDefinitionId = NAME_None;
 	// 마지막으로 해석한 Zone이자 경계 판정의 안정화 힌트. 등록 Zone을 찾지 못하거나 종료하면 NAME_None이다. 
 	FName CurrentZoneId = NAME_None;
+	// Placement preferences belong to this world, not the facility definition asset.
+	struct FRememberedPlacementPose
+	{
+		FName ZoneId = NAME_None;
+		FFFZSGridPlacement Placement;
+		float WorldYawDegrees = 0.f;
+	};
+	TMap<FName, FRememberedPlacementPose> RememberedPlacementPoses;
+	void RememberPlacementPose();
+	bool RestorePlacementPose();
+	void ApplyPlacementYawDegrees(float YawDegrees);
 	// Move 대상의 안정 ID와 시작 위치. 동일 Zone·배치 커밋을 차단하고 등록 일치를 재검증한다.
 	FGuid MovingFacilityInstanceId;
 	FName MoveOriginZoneId = NAME_None;
 	FFFZSGridPlacement MoveOriginPlacement;
+	// A click inspects; only the same held press crossing the threshold owns a drag.
+	bool bFacilityDragPending = false;
+	bool bFacilityDragActive = false;
+	bool bReleasingFacilityDrag = false;
+	FGuid FacilityDragInstanceId;
+	FVector2D FacilityDragStartPixels = FVector2D::ZeroVector;
+	FVector FacilityDragCursorOffset = FVector::ZeroVector;
 	// 프리뷰를 재생성해도 하나의 사용자 이동 작업임을 유지하는 상관관계 ID.
 	FGuid MoveTransactionId;
 	// ExecuteCommand가 동기 방송하는 자체 Move 이벤트를 외부 변경과 구분한다.
@@ -893,6 +945,9 @@ private:
 	bool TraceGroundUnderCursor(APlayerController& Controller, FHitResult& OutGroundHit) const;
 	// BuildMode에서 커서 아래 시설을 작업 패널 대상으로 선택한다. 같은 시설 재클릭은 no-op이다.
 	bool HandleFacilityInspectionClick(APlayerController& Controller);
+	void BeginFacilityPointerDrag(APlayerController& Controller);
+	bool HandleFacilityPointerDrag(APlayerController& Controller, bool bPointerBlocked, float DeltaTime);
+	void ResetFacilityPointerDrag();
 	bool CanInspectClosedPreparation(const APlayerController& Controller) const;
 	// 현재 작업 대상을 범위로 강조하고, 이전 대상이 있으면 강조를 해제한다.
 	// 선택 강조와 약한 참조를 함께 정리한다. 카탈로그/종료/스냅샷 복원에서도 호출한다.
@@ -905,6 +960,7 @@ private:
 	// 선택 대상을 최신 단계·레지스트리·점유 상태로 재검증한 뒤 권위 Remove 명령을 실행한다.
 	bool ConfirmPendingRemoval();
 	// 현재 선택된 시설을 재검증하고 액터 Spec·GUID·회전을 복사해 Moving을 시작한다.
+	// 명시적 이동은 정보창 위 커서 대신 시설의 기존 위치·회전에서 시작한다.
 	bool StartMovingSelectedFacility();
 	// 원본 시설을 변경하지 않고 프리뷰만 정리한 뒤 BuildMode로 복귀한다.
 	void CancelMovingToBuildMode(const FString& StatusMessage, bool bIsError = false);

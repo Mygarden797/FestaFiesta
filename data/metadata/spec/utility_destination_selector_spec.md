@@ -121,7 +121,7 @@ PreferenceVectorByCategory[c] =
 3. **거리 행렬은 선택적으로 사용 가능.** 기본은 직선거리이며 `FF.Decision.WalkDistance 1`로 Zone 앵커 간 NavMesh 행렬을 켠다. WorldRevision 변경 시 재구축하고 NavMesh 빌드 중이면 미룬다（양 끝은 직선 근사, 같은 Zone·행렬 실패 시 직선 폴백. 접근점까지 완전 경로를 보장하는 필터는 아님）.
 4. **종속 아동 분기는 selector 밖에서 처리** — 실제 `bIsDependentChild` 유닛은 리더의 목적지를 상속하며, Crowd가 `LeaderAgentIndex`로 비리더 전체의 독립 결정을 막는다 (`dependent_child_npc_spec.md`).
 5. **그룹 배정(누가 누구와) — 담당이 crowdAI로 넘어갔다 (8/6 역할 재조정)**. Utility AI 쪽 몫인 **개체 태그 분포 생성은 완료**됐다(`FFF_VisitorDistributionBuilder::Build`, `NPC/Party/FF_VisitorDistributionBuilder.h`) — 개체마다 `ArchetypeId`/`CompanionSizeTag`/`TargetGroupSize`/`TargetGroupChildCount`/`bIsDependentChildSlot`을 붙여 목록으로 돌려준다. 그 태그를 보고 실제로 묶고 `GroupID`를 부여하는 것은 crowdAI다(`request/crowdai_integration_guide.md` 부록 C). 즉 이 selector 입장에서 남은 미지수는 **"지금 평가 중인 개체가 그룹 리더인지"를 어떻게 아는가** 하나이며, 현재 `FUnitData::LeaderAgentIndex`와 `PartyID`를 이용해 Crowd가 리더만 요청 큐에 넣는 경로가 구현돼 있다.
-6. **만족도(Experience) 계산 미착수** — 사용자 요청으로 홀드 중.
+6. **만족도(Experience) 계산 미착수** — 사용자 요청으로 홀드 중.（10/14 기준: 만족도는 구현됐다 — `UFF_SatisfactionMetricsSubsystem`. selector 점수식에는 들어가지 않고, 어제 만족도가 다음 날 방문객 배수(평판)와 축제 평가에 쓰인다）
 7. ~~`no_choice` 행동의 그룹 전파 미정~~ → **2026-08-06 결정: 리더가 퇴장하면 그룹 전원이 함께 퇴장한다.** 행동 3종(`Wander`/`Relocate`/`Leave`) 전부 목적지와 똑같이 리더가 결정하고 그룹원이 상속한다 — 그룹원이 각자 다른 행동을 하는 경우는 없다. `spawn_group_together`와 대칭으로 통째로 들어오고 통째로 나가며, 덕분에 아동만 장내에 남는 상태가 원리적으로 발생하지 않는다.
 8. **후보 필터가 결과를 좌우하는데 계수로 안 나와 있다** (8/6 신설) — 미구현 설계인 "전역 인기 상위 K"는 구현 시 부익부 피드백을 만들 수 있다（현재 전역 예외는 공연 중 Sunset뿐）(인기 있으면 후보에 더 자주 들어가서 더 인기 있어진다). K와 "인기"의 정의를 계수로 빼지 않으면 병목이 실제 선호 때문인지 후보 필터 때문인지 구분할 수 없다.
 

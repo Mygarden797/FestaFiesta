@@ -16,10 +16,13 @@
 class UBorder;
 class UButton;
 class UCommonTextBlock;
+class UEditableTextBox;
 class UImage;
 class UWidget;
 class UVerticalBox;
 class UFF_FacilitySynergyEntryWidget;
+
+DECLARE_DELEGATE_RetVal_TwoParams(bool, FFF_OnFacilityQueueSettingsRequested, FGuid, const FFFZSQueueSettings&);
 
 /**
  * Native contract for WBP_FF_FacilityInfoPanel.
@@ -54,6 +57,7 @@ public:
 	FFF_OnFacilityLightingRequested OnLightingRequested;
 	FFF_OnFacilityLightingRequested OnLightingRollbackRequested;
 	FFF_OnFacilityLightingResetRequested OnLightingResetRequested;
+	FFF_OnFacilityQueueSettingsRequested OnQueueSettingsRequested;
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
 	void ApplyViewData(const FFF_FacilityInfoViewData& ViewData);
@@ -74,6 +78,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Facility Info")
 	bool IsPointerOverInteractivePanel() const;
 	bool IsLightingTextInputFocused() const;
+	bool IsQueueTextInputFocused() const;
 	void CancelLightingEdit();
 	bool IsLightingIntroductionVisible() const { return bLightingIntroductionVisible; }
 
@@ -89,9 +94,25 @@ protected:
 	virtual FReply NativeOnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FReply NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FReply NativeOnMouseWheel(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event) override;
 	virtual void NativeOnMouseCaptureLost(const FCaptureLostEvent& Event) override;
 
 private:
+	void EnsureQueueSettingsControls();
+	void RefreshQueueSettingsControls();
+	void RefreshQueueSettingsText();
+	UFUNCTION() void HandleQueueSettingsChanged(const FText& Text);
+	UFUNCTION() void HandleQueueSettingsCommitted(const FText& Text, ETextCommit::Type Method);
+	UFUNCTION() void HandleApplyQueueSettings();
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_FacilityQueueSettings;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_FacilityQueueTeams;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_FacilityQueueSpacing;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_FacilityQueueWidth;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ApplyFacilityQueueSettings;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_FacilityQueueHint;
+	bool bRefreshingQueueSettings = false;
+	bool bQueueSettingsDirty = false;
+
 	UFUNCTION()
 	void HandleMoveClicked();
 

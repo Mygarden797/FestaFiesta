@@ -1218,7 +1218,7 @@ static void DecisionModeCommand(const TArray<FString>& Args, UWorld* World, FOut
 	static const TCHAR* ModeNames[] = {
 		TEXT("0 Random — 전원 배회"),
 		TEXT("1 Greedy — attraction + distance만"),
-		TEXT("2 Full — 6항 전부")
+		TEXT("2 Full — 9항 전부")
 	};
 	if (Args.Num() > 0)
 	{

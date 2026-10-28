@@ -15,6 +15,9 @@
 #include "Save/FF_SaveSubsystem.h"
 #include "Tutorial/FF_TutorialMarker.h"
 #include "Tutorial/FF_TutorialExitWidget.h"
+#include "Tutorial/FF_TutorialSkipWidget.h"
+#include "Secretary/FF_SecretaryAdvisor.h"
+#include "UI/Atlas/FF_AtlasCountryScreen.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/GameInstance.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
@@ -55,6 +58,27 @@ namespace
 	FTutorialLevelLockState& GetTutorialLevelLockState()
 	{
 		static FTutorialLevelLockState State;
+		return State;
+	}
+
+	// 튜토리얼을 지나기 전에 잠근 다른 축제 칸들의 원래 값. 되돌릴 때 쓴다(SyncFestivalsLockedUntilTutorial).
+	struct FTutorialFestivalGateState
+	{
+		struct FSavedEntry
+		{
+			FName FestivalId;
+			bool bOriginalUnlocked = true;
+			FText OriginalReason;
+		};
+
+		TWeakObjectPtr<UFF_FestivalAtlasCatalog> Catalog;
+		TArray<FSavedEntry> Entries;
+		bool bOverridden = false;
+	};
+
+	FTutorialFestivalGateState& GetTutorialFestivalGateState()
+	{
+		static FTutorialFestivalGateState State;
 		return State;
 	}
 
@@ -110,6 +134,7 @@ void UFF_TutorialSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 
 	// 지도 화면이 뜨기 전에 튜토리얼 레벨 잠금을 맞춘다. 화면은 뜰 때 잠금 값을 읽어 핀을 그린다.
 	SyncTutorialLevelLock();
+	SyncFestivalsLockedUntilTutorial();
 
 	BindGameSignals();
 }
@@ -121,6 +146,7 @@ void UFF_TutorialSubsystem::Deinitialize()
 	StopScript();
 	RemoveWidgets();
 	RestoreTutorialLevelLock();
+	RestoreFestivalsLockedUntilTutorial();
 	Super::Deinitialize();
 }
 
@@ -136,7 +162,8 @@ const FFF_DialogueLine& UFF_TutorialSubsystem::GetCurrentLine() const
 	{
 		return GetEmptyLine();
 	}
-	return ActiveLines[CurrentLineIndex];
+	// {이름} 을 바꾼 사본. GoToLine 이 줄을 옮길 때 만든다.
+	return CurrentResolvedLine;
 }
 
 bool UFF_TutorialSubsystem::IsWaitingForAction() const
@@ -215,7 +242,8 @@ void UFF_TutorialSubsystem::RecordScopeCompleted()
 		break;
 
 	case EFF_TutorialScope::Briefing:
-		// 비서 브리핑은 매일 새로 짓는 대사라 봤다는 기록이 필요 없다.
+	case EFF_TutorialScope::Story:
+		// 비서 브리핑은 매일 새로 짓는 대사라, 로비 이야기 장면(S 엔딩)은 틀 때 기다림을 비워서 봤다는 기록이 필요 없다.
 		break;
 
 	default:
@@ -316,6 +344,7 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 
 	// 끝까지 봤거나 건너뛰었으면(또는 새 게임으로 기록이 비면) 바로 지도 잠금에 반영한다.
 	SyncTutorialLevelLock();
+	SyncFestivalsLockedUntilTutorial();
 
 	if (AutoStartCountdown >= 0.f)
 	{
@@ -418,6 +447,65 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 	{
 		TryStartPendingLobbyIntro();
 	}
+
+	// 축제를 S 등급으로 끝내고 돌아왔으면 사무소 장면을 튼다.
+	TryStartPendingSGradeEnding();
+
+	// 로비 이야기를 튼 뒤에 본다. 먼저 보면 이야기가 뜨는 틱에 지도 버튼이 한 번 깜빡인다.
+	UpdateMapSkipButton();
+}
+
+void UFF_TutorialSubsystem::TryStartPendingSGradeEnding()
+{
+	if (bDialogueActive || bLobbyIntroPending)
+	{
+		return;
+	}
+
+	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!Flow || Flow->GetMode() != EFF_UIFlowMode::Frontend || Flow->GetFrontendScreen() != EFF_UIFlowScreen::AtlasCountry)
+	{
+		return;
+	}
+
+	UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this);
+	const FName Festival = Save ? Save->GetPendingSGradeEnding() : NAME_None;
+	if (Festival.IsNone())
+	{
+		return;
+	}
+
+	// 한 번만 시도한다. 표가 없거나 못 틀어도 비운다 — 매 틱 다시 시도하며 로그가 쌓이지 않게.
+	Save->ClearPendingSGradeEnding();
+	UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] %s 를 S 등급으로 끝내고 돌아왔다."), *Festival.ToString());
+	PlaySGradeEnding();
+}
+
+bool UFF_TutorialSubsystem::PlaySGradeEnding()
+{
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	UDataTable* Table = Settings ? Settings->SGradeEndingTable.LoadSynchronous() : nullptr;
+	TArray<FFF_DialogueLine> Lines;
+	if (!Table || !FFF_DialogueTable::BuildLines(Table, Lines))
+	{
+		UE_LOG(LogFestaFiestaTutorial, Warning,
+			TEXT("[튜토리얼] S 엔딩 표가 없어 장면을 건너뛴다. 튜토리얼 설정의 S Grade Ending Table 을 볼 것."));
+		return false;
+	}
+
+	// 신뢰가 높을 때만 나오는 줄(라벨 Trust_)은 그 밖에서는 뺀다.
+	const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this);
+	const bool bHighTrust = Save
+		&& FFSecretaryAdvisor::TrustTierOf(Save->GetSecretaryTrust()) == EFF_SecretaryTrustTier::High;
+	if (!bHighTrust)
+	{
+		Lines.RemoveAll([](const FFF_DialogueLine& Line) { return Line.Label.ToString().StartsWith(TEXT("Trust_")); });
+	}
+
+	const bool bStarted = PlayLines(Lines, TEXT("SGradeEnding"), EFF_TutorialScope::Story);
+	UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] S 엔딩 %s (%d줄, 신뢰 높음=%s)."),
+		bStarted ? TEXT("시작") : TEXT("못 틂"), Lines.Num(), bHighTrust ? TEXT("예") : TEXT("아니오"));
+	return bStarted;
 }
 
 void UFF_TutorialSubsystem::BindGameSignals()
@@ -499,8 +587,23 @@ void UFF_TutorialSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Even
 	   안내한 것과 다른 것을 놓은 채 다음 단계로 간다.
 	*/
 	const FFF_DialogueLine& Line = GetCurrentLine();
-	if (Line.WaitCondition == EFF_TutorialWaitCondition::FacilityPlaced && !Line.WaitTarget.IsNone()
-		&& ResolveFacilityDefinitionId(Event.FacilityInstanceId) != Line.WaitTarget)
+	const FName PlacedId = ResolveFacilityDefinitionId(Event.FacilityInstanceId);
+	if (bAwaitingSkipConfirm)
+	{
+		// 확인 창 중에는 NotifyAction 이 원래 줄을 보고 기억해 둔다.
+		NotifyAction(EFF_TutorialWaitCondition::FacilityPlaced);
+		return;
+	}
+	if (!bDialogueActive || !Line.RequiresPlayerAction() || Line.WaitCondition != EFF_TutorialWaitCondition::FacilityPlaced)
+	{
+		// 설치 대기 줄보다 먼저 놓았다. 그 줄이 오면 이미 놓은 것으로 친다(PrepareActionWatch).
+		if (!PlacedId.IsNone())
+		{
+			EarlyPlacedFacilityIds.Add(PlacedId);
+		}
+		return;
+	}
+	if (!Line.WaitTarget.IsNone() && PlacedId != Line.WaitTarget)
 	{
 		return;
 	}
@@ -680,7 +783,11 @@ void UFF_TutorialSubsystem::EnsureWidgets()
 	   "로비 레벨인가" 를 따로 묻지 않아도 된다. 이미 떠 있는 창의 순서가 다르면
 	   내렸다가 다시 올린다 — 순서는 AddToViewport 할 때만 정해진다.
 	*/
-	const int32 WantedBoxZOrder = (ActiveScope == EFF_TutorialScope::LobbyIntro)
+	// 로비에서 트는 비서 장면(S 엔딩 등)도 로비 순서를 쓴다. 축제 레벨 순서(음수)면 지도 화면 밑에 깔려 안 보인다.
+	const UFF_UIFlowSubsystem* FlowForOrder = UFF_UIFlowSubsystem::Get(this);
+	const bool bLobbyOrder = ActiveScope == EFF_TutorialScope::LobbyIntro
+		|| (FlowForOrder && FlowForOrder->GetMode() == EFF_UIFlowMode::Frontend);
+	const int32 WantedBoxZOrder = bLobbyOrder
 		? Settings->LobbyDialogueBoxZOrder
 		: Settings->DialogueBoxZOrder;
 
@@ -723,6 +830,12 @@ void UFF_TutorialSubsystem::RemoveWidgets()
 	{
 		ExitWidget->RemoveFromParent();
 		ExitWidget = nullptr;
+	}
+
+	if (MapSkipWidget)
+	{
+		MapSkipWidget->RemoveFromParent();
+		MapSkipWidget = nullptr;
 	}
 }
 
@@ -1052,13 +1165,14 @@ void UFF_TutorialSubsystem::GoToLine(const int32 LineIndex)
 	}
 
 	CurrentLineIndex = LineIndex;
+	CurrentResolvedLine = ResolvePlayerNameTokens(ActiveLines[CurrentLineIndex]);
 
 	/* 참조가 아니라 복사로 든다.
 
 	   아래 방송을 받은 쪽이 대사를 멈추거나 다른 대사를 틀 수 있다. 그러면
 	   ActiveLines 가 비거나 새로 채워져서, 참조로 들고 있던 줄이 사라진 메모리를 가리킨다.
 	*/
-	const FFF_DialogueLine Line = ActiveLines[CurrentLineIndex];
+	const FFF_DialogueLine Line = CurrentResolvedLine;
 
 	// 강조 방식을 먼저 정한다. 같은 대상을 이어서 가리켜도 줄마다 덮개 여부가 다를 수 있다.
 	bHighlightOutlineOnly = Line.bHighlightOutlineOnly;
@@ -1112,7 +1226,8 @@ void UFF_TutorialSubsystem::Advance()
 	}
 
 	// 선택지도 마찬가지다. 고르지 않고 넘어가면 분기가 무의미해진다.
-	if (Line.Kind == EFF_DialogueLineKind::Choice)
+	// 이름 입력도 이름을 넣어야 넘어간다(SubmitPlayerName).
+	if (Line.Kind == EFF_DialogueLineKind::Choice || Line.Kind == EFF_DialogueLineKind::NameInput)
 	{
 		return;
 	}
@@ -1341,6 +1456,85 @@ void UFF_TutorialSubsystem::ShowExitButton()
 	}
 }
 
+bool UFF_TutorialSubsystem::IsMapSkipAvailable() const
+{
+	// 대사 중에는 대사창의 건너뛰기가 있다. 로비 이야기가 곧 뜰 참이면 그 대사를 기다린다.
+	if (bDialogueActive || bLobbyIntroPending || bTutorialSkipped)
+	{
+		return false;
+	}
+
+	// 축제를 고르는 국가 지도에서만. 다른 화면(지구본 등)의 오른쪽 위는 무엇이 있는지 이 시스템이 모른다.
+	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!Flow || Flow->GetMode() != EFF_UIFlowMode::Frontend
+		|| Flow->GetFrontendScreen() != EFF_UIFlowScreen::AtlasCountry)
+	{
+		return false;
+	}
+
+	return GetTutorialFestivalGateState().bOverridden;
+}
+
+void UFF_TutorialSubsystem::UpdateMapSkipButton()
+{
+	if (!IsMapSkipAvailable())
+	{
+		if (MapSkipWidget)
+		{
+			MapSkipWidget->RemoveFromParent();
+			MapSkipWidget = nullptr;
+		}
+		return;
+	}
+
+	if (MapSkipWidget)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+	if (!Controller)
+	{
+		return;
+	}
+
+	MapSkipWidget = CreateWidget<UFF_TutorialSkipWidget>(Controller, UFF_TutorialSkipWidget::StaticClass());
+	if (MapSkipWidget)
+	{
+		const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+		MapSkipWidget->AddToViewport(Settings ? Settings->MapSkipButtonZOrder : 110);
+	}
+}
+
+void UFF_TutorialSubsystem::RefreshAtlasLocks()
+{
+	// 잠금 값을 지금 맞춘다. Tick 을 기다리면 아래에서 핀을 다시 그릴 때 옛 값을 읽는다.
+	SyncTutorialLevelLock();
+	SyncFestivalsLockedUntilTutorial();
+
+	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!Flow || Flow->GetMode() != EFF_UIFlowMode::Frontend || Flow->GetActiveCountryId().IsNone())
+	{
+		return;
+	}
+
+	/* 국가 지도 파일(UI 파트)은 고치지 않고 공개 함수 SetCountry 로 다시 그리게 한다.
+	   같은 국가면 아무것도 하지 않는 함수라 한 번 비웠다가 되돌린다. 화면에 올라오지 않은 지도는 올라올 때 다시 그린다.
+	*/
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, FoundWidgets, UFF_AtlasCountryScreen::StaticClass(), false);
+	for (UUserWidget* Widget : FoundWidgets)
+	{
+		UFF_AtlasCountryScreen* Screen = Cast<UFF_AtlasCountryScreen>(Widget);
+		if (Screen && Screen->IsActivated())
+		{
+			Screen->SetCountry(NAME_None);
+			Screen->SetCountry(Flow->GetActiveCountryId());
+		}
+	}
+}
+
 void UFF_TutorialSubsystem::ExitTutorialLevel()
 {
 	UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
@@ -1449,6 +1643,119 @@ void UFF_TutorialSubsystem::RestoreTutorialLevelLock()
 	State = FTutorialLevelLockState();
 }
 
+bool UFF_TutorialSubsystem::HasPassedTutorial(const UFF_SaveSubsystem& Save) const
+{
+	if (Save.IsTutorialOptedOut() || Save.HasClearedAnyFestival())
+	{
+		return true;
+	}
+	// 끝까지 본 기록은 들어온 길에 따라 카탈로그 이름이나 맵 이름으로 남는다(FindTutorialAtlasEntry 주석).
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	if (!Settings)
+	{
+		return false;
+	}
+	if (Save.WasFestivalTutorialSeen(Settings->TutorialFestivalId))
+	{
+		return true;
+	}
+	const UFF_UIFlowSettings* FlowSettings = UFF_UIFlowSettings::Get();
+	UFF_FestivalAtlasCatalog* Catalog = FlowSettings ? FlowSettings->AtlasCatalog.LoadSynchronous() : nullptr;
+	const FFF_FestivalAtlasEntry* Entry = Catalog ? FindTutorialAtlasEntry(*Catalog, Settings->TutorialFestivalId) : nullptr;
+	return Entry && Save.WasFestivalTutorialSeen(Entry->FestivalId);
+}
+
+void UFF_TutorialSubsystem::SyncFestivalsLockedUntilTutorial()
+{
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	const UFF_UIFlowSettings* FlowSettings = UFF_UIFlowSettings::Get();
+	UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this);
+	if (!Settings || Settings->TutorialFestivalId.IsNone() || !FlowSettings || FlowSettings->AtlasCatalog.IsNull() || !Save)
+	{
+		return;
+	}
+
+	bool bPassed = HasPassedTutorial(*Save);
+
+	/* 기록 없이 튜토리얼이 아닌 축제에 들어와 있다(이 기능 전의 세이브로 이어한 판). '건너뜀'으로 남긴다.
+	   이어하기가 기록을 되돌린 뒤에 본다. 먼저 남기면 세이브의 기록이 그 위를 덮는다.
+	*/
+	const UWorld* World = GetWorld();
+	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!bPassed && Save->IsRunActive() && !Save->HasPendingContinue() && Flow && Flow->GetMode() == EFF_UIFlowMode::Festival
+		&& World && Cast<AFF_FestivalGameMode>(World->GetAuthGameMode()) && !IsTutorialLevel())
+	{
+		UE_LOG(LogFestaFiestaTutorial, Log,
+			TEXT("[튜토리얼] 튜토리얼을 지나지 않은 판에서 다른 축제에 들어왔다(예전 세이브). 튜토리얼을 건너뛴 것으로 남긴다."));
+		Save->MarkTutorialOptedOut();
+		bPassed = true;
+	}
+
+	UFF_FestivalAtlasCatalog* Catalog = FlowSettings->AtlasCatalog.LoadSynchronous();
+	const FFF_FestivalAtlasEntry* TutorialEntry = Catalog ? FindTutorialAtlasEntry(*Catalog, Settings->TutorialFestivalId) : nullptr;
+
+	// 판을 시작하지 않았으면(레벨을 바로 연 개발 중) 잠그지 않는다. 튜토리얼 칸이 없으면 다른 축제도 잠그지 않는다(전부 막힌다).
+	const bool bWantLocked = !bPassed && Save->IsRunActive() && TutorialEntry != nullptr;
+
+	FTutorialFestivalGateState& State = GetTutorialFestivalGateState();
+	if (State.bOverridden && State.Catalog.Get() != Catalog)
+	{
+		// 덮어쓴 카탈로그가 내려갔다(편집기에서 애셋을 다시 불러온 경우). 새로 덮어쓴다.
+		State = FTutorialFestivalGateState();
+	}
+	if (bWantLocked == State.bOverridden)
+	{
+		return;
+	}
+	if (!bWantLocked)
+	{
+		RestoreFestivalsLockedUntilTutorial();
+		UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 튜토리얼을 지났다. 다른 축제를 지도에서 다시 열었다."));
+		return;
+	}
+
+	const FName TutorialId = TutorialEntry->FestivalId;
+	State.Catalog = Catalog;
+	State.bOverridden = true;
+	State.Entries.Reset();
+	for (FFF_FestivalAtlasEntry& Entry : Catalog->Entries)
+	{
+		// 튜토리얼 칸 · 원래 잠긴 칸 · 레벨이 없는 칸(아직 못 고르는 축제)은 그대로 둔다.
+		if (Entry.FestivalId == TutorialId || !Entry.bUnlocked || Entry.Level.IsNull())
+		{
+			continue;
+		}
+		State.Entries.Add({ Entry.FestivalId, Entry.bUnlocked, Entry.LockReason });
+		Entry.bUnlocked = false;
+		Entry.LockReason = Settings->FestivalsLockedUntilTutorialReason;
+	}
+
+	UE_LOG(LogFestaFiestaTutorial, Log,
+		TEXT("[튜토리얼] 튜토리얼을 마치거나 건너뛰기 전이라 다른 축제 %d곳을 지도에서 잠갔다."), State.Entries.Num());
+}
+
+void UFF_TutorialSubsystem::RestoreFestivalsLockedUntilTutorial()
+{
+	FTutorialFestivalGateState& State = GetTutorialFestivalGateState();
+	if (!State.bOverridden)
+	{
+		return;
+	}
+
+	if (UFF_FestivalAtlasCatalog* Catalog = State.Catalog.Get())
+	{
+		for (const FTutorialFestivalGateState::FSavedEntry& Saved : State.Entries)
+		{
+			if (FFF_FestivalAtlasEntry* Entry = FindAtlasEntry(*Catalog, Saved.FestivalId))
+			{
+				Entry->bUnlocked = Saved.bOriginalUnlocked;
+				Entry->LockReason = Saved.OriginalReason;
+			}
+		}
+	}
+	State = FTutorialFestivalGateState();
+}
+
 bool UFF_TutorialSubsystem::IsTutorialLevel() const
 {
 	if (IsTutorialFestival(ResolveCurrentFestivalId()))
@@ -1469,10 +1776,16 @@ void UFF_TutorialSubsystem::RequestSkipConfirm()
 		return;
 	}
 
-	// 비서 브리핑은 되돌릴 것이 없다. 묻지 않고 그 브리핑만 닫는다.
-	if (IsBriefingActive())
+	// 비서 브리핑 · 로비 이야기 장면은 되돌릴 것이 없다. 묻지 않고 그 대사만 닫는다.
+	if (IsCloseOnSkipActive())
 	{
 		StopScript();
+		return;
+	}
+
+	// 로비 이야기는 튜토리얼이 아니다. 묻지 않고 실습장으로 가는 줄로 넘긴다.
+	if (TrySkipLobbyStory())
+	{
 		return;
 	}
 
@@ -1510,6 +1823,161 @@ void UFF_TutorialSubsystem::RequestSkipConfirm()
 	OnLineChanged.Broadcast(SkipConfirmLine);
 }
 
+bool UFF_TutorialSubsystem::TrySkipLobbyStory()
+{
+	if (!bDialogueActive || bAwaitingSkipConfirm || ActiveScope != EFF_TutorialScope::LobbyIntro)
+	{
+		return false;
+	}
+
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	const FName Label = Settings ? Settings->LobbyStorySkipLabel : NAME_None;
+	if (Label.IsNone())
+	{
+		return false;
+	}
+
+	const int32 Target = FindLineIndexByLabel(Label);
+	if (Target == INDEX_NONE)
+	{
+		// 라벨을 잘못 적었다. 넘길 곳을 모르니 예전처럼 진짜 건너뛰기로 둔다.
+		UE_LOG(LogFestaFiestaTutorial, Warning,
+			TEXT("[튜토리얼] 로비 이야기 건너뛰기 라벨 %s 를 찾지 못했다. 진짜 건너뛰기로 처리한다."),
+			*Label.ToString());
+		return false;
+	}
+
+	// 이미 실습장으로 가는 부분이다. 실습장 안과 같이 진짜 건너뛰기다(2026-10-13 사용자 결정).
+	if (CurrentLineIndex >= Target)
+	{
+		return false;
+	}
+
+	/* 이름은 건너뛰어도 묻는다.
+
+	   이름은 이야기 뒤로도 비서 대사의 {이름} 자리에 계속 쓰인다. 건너뛴 사람만 기본 호칭으로 불리면
+	   이름을 넣을 기회가 없다. 아직 이름을 안 받았고 이름 입력 줄이 남아 있으면 거기로 먼저 가고,
+	   이름을 받으면 실습장 가는 줄로 간다(SubmitPlayerName). 이미 이름 입력 줄이면 그대로 둔다.
+	*/
+	const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this);
+	const bool bHasName = Save && !Save->GetPlayerName().IsEmpty();
+	if (!bHasName)
+	{
+		for (int32 Index = FMath::Max(0, CurrentLineIndex); Index < Target; ++Index)
+		{
+			if (ActiveLines[Index].Kind != EFF_DialogueLineKind::NameInput)
+			{
+				continue;
+			}
+			bSkipStoryAfterName = true;
+			UE_LOG(LogFestaFiestaTutorial, Log,
+				TEXT("[튜토리얼] 로비 이야기 건너뜀. 이름부터 묻고(%d) 실습장 가는 줄(%s)로 간다."),
+				Index, *Label.ToString());
+			if (Index != CurrentLineIndex)
+			{
+				GoToLine(Index);
+			}
+			return true;
+		}
+	}
+
+	UE_LOG(LogFestaFiestaTutorial, Log,
+		TEXT("[튜토리얼] 로비 이야기 건너뜀. %d → %d(%s), 건너뜀 기록 없음."),
+		CurrentLineIndex, Target, *Label.ToString());
+
+	GoToLine(Target);
+	return true;
+}
+
+bool UFF_TutorialSubsystem::SubmitPlayerName(const FString& Name)
+{
+	if (!bDialogueActive || bAwaitingSkipConfirm || GetCurrentLine().Kind != EFF_DialogueLineKind::NameInput)
+	{
+		return false;
+	}
+
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	const int32 MaxLength = Settings ? FMath::Max(1, Settings->PlayerNameMaxLength) : 8;
+	const FString Trimmed = Name.TrimStartAndEnd();
+	if (Trimmed.IsEmpty() || Trimmed.Len() > MaxLength)
+	{
+		UE_LOG(LogFestaFiestaTutorial, Log,
+			TEXT("[튜토리얼] 이름 '%s' 를 받지 않았다(비었거나 %d자 넘음)."), *Trimmed, MaxLength);
+		return false;
+	}
+
+	if (UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		Save->SetPlayerName(Trimmed);
+	}
+
+	// 이야기를 건너뛰다 이름을 물었으면 남은 이야기는 넘기고 실습장 가는 줄로 간다.
+	if (bSkipStoryAfterName)
+	{
+		bSkipStoryAfterName = false;
+		const int32 Target = Settings ? FindLineIndexByLabel(Settings->LobbyStorySkipLabel) : INDEX_NONE;
+		if (Target != INDEX_NONE && Target > CurrentLineIndex)
+		{
+			GoToLine(Target);
+			return true;
+		}
+	}
+
+	GoToLine(ResolveNextLineIndex());
+	return true;
+}
+
+FString UFF_TutorialSubsystem::GetPlayerDisplayName() const
+{
+	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		const FString Name = Save->GetPlayerName();
+		if (!Name.IsEmpty())
+		{
+			return Name;
+		}
+	}
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	return Settings ? Settings->DefaultPlayerName.ToString() : FString(TEXT("담당자"));
+}
+
+FFF_DialogueLine UFF_TutorialSubsystem::ResolvePlayerNameTokens(const FFF_DialogueLine& Line) const
+{
+	/* 대사 표 · 비서 대사에 {이름} 이라고 적으면 주인공 이름이 들어간다.
+
+	   조사(이/가, 을/를)는 이름 받침에 따라 달라져 자동으로 고르지 않는다. 대사는 "{이름} 님" 처럼
+	   뒤에 받침이 정해진 말을 붙여 쓴다.
+	*/
+	static const FString Token = TEXT("{이름}");
+
+	auto Contains = [](const FText& Text) { return Text.ToString().Contains(Token); };
+	bool bHasToken = Contains(Line.Text) || Contains(Line.Speaker);
+	for (const FFF_DialogueChoice& Choice : Line.Choices)
+	{
+		bHasToken |= Contains(Choice.Text);
+	}
+	if (!bHasToken)
+	{
+		return Line;
+	}
+
+	const FString Name = GetPlayerDisplayName();
+	auto Replace = [&Name](const FText& Text)
+	{
+		const FString Source = Text.ToString();
+		return Source.Contains(Token) ? FText::FromString(Source.Replace(*Token, *Name)) : Text;
+	};
+
+	FFF_DialogueLine Resolved = Line;
+	Resolved.Text = Replace(Line.Text);
+	Resolved.Speaker = Replace(Line.Speaker);
+	for (FFF_DialogueChoice& Choice : Resolved.Choices)
+	{
+		Choice.Text = Replace(Choice.Text);
+	}
+	return Resolved;
+}
+
 bool UFF_TutorialSubsystem::CanSkipTutorial() const
 {
 	// 진행 중이 아니면 건너뛸 것도 없다. 이미 물어보는 중이어도 마찬가지다.
@@ -1523,20 +1991,22 @@ void UFF_TutorialSubsystem::SkipTutorial()
 		return;
 	}
 
-	/* 대사가 없으면 건너뛸 것도 없다.
+	/* 대사가 없으면 건너뛸 것도 없다. 국가 지도의 건너뛰기 버튼만 예외다(IsMapSkipAvailable).
 
 	   이 검사가 없으면 대사가 끝난 뒤에도 떠 있던 확인 창에서 `예` 를 누르거나
-	   콘솔을 잘못 치면, 끝까지 본 사람의 안내가 전역으로 꺼진다.
+	   콘솔을 잘못 치면, 끝까지 본 사람의 안내가 전역으로 꺼진다. 지도 버튼은 실습장을 아직 안 지난
+	   판에서만 뜨므로 그럴 일이 없다.
 	*/
-	if (!bDialogueActive)
+	const bool bFromMap = !bDialogueActive && IsMapSkipAvailable();
+	if (!bDialogueActive && !bFromMap)
 	{
 		UE_LOG(LogFestaFiestaTutorial, Log,
 			TEXT("[튜토리얼] 진행 중인 대사가 없어 건너뛰기를 무시한다."));
 		return;
 	}
 
-	// 비서 브리핑을 닫는 건 튜토리얼 건너뛰기가 아니다. 안내를 끄거나 레벨을 떠나지 않는다.
-	if (IsBriefingActive())
+	// 비서 브리핑 · 로비 이야기 장면을 닫는 건 튜토리얼 건너뛰기가 아니다. 안내를 끄거나 레벨을 떠나지 않는다.
+	if (IsCloseOnSkipActive())
 	{
 		StopScript();
 		return;
@@ -1544,9 +2014,16 @@ void UFF_TutorialSubsystem::SkipTutorial()
 
 	bTutorialSkipped = true;
 
-	UE_LOG(LogFestaFiestaTutorial, Log,
-		TEXT("[튜토리얼] 건너뛰었다. 줄 %d/%d 에서 중단."),
-		CurrentLineIndex, ActiveLines.Num());
+	if (bFromMap)
+	{
+		UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 국가 지도의 건너뛰기 버튼으로 건너뛰었다."));
+	}
+	else
+	{
+		UE_LOG(LogFestaFiestaTutorial, Log,
+			TEXT("[튜토리얼] 건너뛰었다. 줄 %d/%d 에서 중단."),
+			CurrentLineIndex, ActiveLines.Num());
+	}
 
 	StopScript();
 
@@ -1562,6 +2039,9 @@ void UFF_TutorialSubsystem::SkipTutorial()
 	{
 		Save->MarkTutorialOptedOut();
 	}
+
+	// 지도 위에서 건너뛰었으면(지도 버튼 · 로비 이야기의 실습장 가는 줄) 핀을 바로 다시 그린다.
+	RefreshAtlasLocks();
 
 	OnTutorialSkipped.Broadcast();
 
@@ -1627,6 +2107,8 @@ void UFF_TutorialSubsystem::StopScript()
 	bActionArrivedDuringSkipConfirm = false;
 	ResumeLineIndex = INDEX_NONE;
 	CurrentLineIndex = INDEX_NONE;
+	CurrentResolvedLine = FFF_DialogueLine();
+	bSkipStoryAfterName = false;
 	bDialogueActive = false;
 
 	ApplyHighlight(NAME_None);

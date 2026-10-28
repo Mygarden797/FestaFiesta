@@ -127,6 +127,9 @@ public:
 
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 
+	// Stage 는 GameInstance 수명이라 레벨을 떠나도 남는다. 여기서 끊지 않으면 옛 월드의 군중이 계속 불린다.
+	virtual void Deinitialize() override;
+
 	virtual TStatId GetStatId() const override;
 	
 	//시간 설정을 가져오는 Wrapper Class. 다만 배속이 실행될 경우 MaxStepPerFrame에 의해 제한 될 수 있어 결정성에 원인이 될 수 있다.
@@ -506,6 +509,9 @@ public:
 	// 관람 상태에 묶여 있는 파티 수.
 	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
 	int32 GetAudiencePartyCount() const;
+
+	// 좌석에 앉은(Waiting/Spectating) 에이전트를 멤버까지 풀어서 돌려준다. 상태를 바꾸지 않는다.
+	void GetSeatedAudienceAgents(TArray<FFF_CrowdSeatedAgent>& OutAgents) const;
 
 	// 도착 불가로 돌려받은 좌석 수(파티 단위, 누적).
 	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
@@ -1160,9 +1166,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Need")
 	int32 GetNeedReliefSkipped() const { return NeedReliefSkipped; }
 	
+	// 그날 Live 길이를 모를 때(Stage 가 없는 맵)의 대신 값. 1일차 Live 와 같다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Stay")
 	float Temp_LiveStageMinutes = 240.f;
-	
+
+	// 그날 Live 길이(축제 분). 1일차 240, 2·3일차 300 이라 체류 예산은 이걸 기준으로 잡는다.
+	float GetTodayLiveStageMinutes() const;
+
 	UFUNCTION(BlueprintPure, Category = "Crowd|Stay")
 	float GetPartyRemainingStayMinutes(int32 LeaderAgentIndex) const
 	{

@@ -16,6 +16,7 @@
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
+#include "Save/FF_SaveSubsystem.h"
 #include "Subsystems/SubsystemCollection.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
@@ -31,6 +32,14 @@ namespace
 		Decision.FailureReason = EFFZSPlacementFailure::ExternalPolicyRejected;
 		Decision.Message = Message;
 		return Decision;
+	}
+
+	// 저장 복원은 이미 돈을 낸 강화를 다시 밟는 것이다. 잔액·운영 상태를 다시 보지 않고 비용도 받지 않는다.
+	bool IsRestoringSave(const UWorld* World)
+	{
+		const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+		const UFF_SaveSubsystem* Save = GameInstance ? GameInstance->GetSubsystem<UFF_SaveSubsystem>() : nullptr;
+		return Save && Save->IsRestoring();
 	}
 }
 
@@ -326,7 +335,7 @@ EFFZSPolicyDomain UFF_FacilityUpgradeSubsystem::GetFFZoneSystemPolicyDomain_Impl
 FFFZSPolicyDecision UFF_FacilityUpgradeSubsystem::ValidatePurchase(const FFFZSPolicyContext& Context, int32& OutCost) const
 {
 	OutCost = 0;
-	if (Context.Command.Type != EFFZSCommandType::Upgrade)
+	if (Context.Command.Type != EFFZSCommandType::Upgrade || IsRestoringSave(GetWorld()))
 	{
 		return FFFZSPolicyDecision();
 	}
@@ -360,7 +369,7 @@ FFFZSPolicyDecision UFF_FacilityUpgradeSubsystem::ApplyTentativeFFZoneSystemChan
 {
 	int32 Cost = 0;
 	const FFFZSPolicyDecision Decision = ValidatePurchase(Context, Cost);
-	if (!Decision.bAllowed || Context.Command.Type != EFFZSCommandType::Upgrade)
+	if (!Decision.bAllowed || Context.Command.Type != EFFZSCommandType::Upgrade || IsRestoringSave(GetWorld()))
 	{
 		return Decision;
 	}

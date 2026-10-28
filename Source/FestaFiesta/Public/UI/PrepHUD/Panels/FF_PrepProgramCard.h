@@ -37,11 +37,11 @@ public:
 	void ConfigureCard(int32 InIndex, const FFF_ProgramCard& InCard, const FText& InTimeRangeText);
 
 	/** 시설을 고르기 전에는 정원만, 고른 후에는 그 시설의 참가비로 계산한 매출을 표시한다. */
-	void SetRevenuePreview(const FFF_ProgramCard* FacilityCard);
+	void SetRevenuePreview(const FFF_ProgramCard* FacilityCard, bool bCompact = false);
 
 	/** 완료는 편성 실적이다. 다른 시설에도 열 수 있으므로 카드 선택을 막지 않는다. */
 	virtual void ApplyCardState(EFF_PrepCardState InState, const FText& InBadgeText) override;
-	void SetScheduledFacilityCount(int32 InCount);
+	void SetScheduledFacilityCount(int32 InCount, bool bCompact = false);
 
 protected:
 	virtual void CollectStateTexts(TArray<UTextBlock*>& OutTexts) const override;

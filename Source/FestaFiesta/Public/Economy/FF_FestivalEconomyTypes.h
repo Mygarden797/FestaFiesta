@@ -33,11 +33,11 @@ struct FFF_FinaleTier
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale")
 	EFF_FinaleGrade Grade = EFF_FinaleGrade::None;
 
-	// 구매 비용 (Gold). 기획서 §10: C/B/A/S = 2,000 / 4,000 / 6,000 / 8,000
+	// 구매 비용 (Gold). 값은 UFF_FestivalDefinition 생성자의 FinaleTiers 가 정한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale", meta = (ClampMin = "0"))
 	int32 CostGold = 0;
 
-	// ScoreSatisfaction 가산값 (0~100 척도). 기획서 §10: C/B/A/S = +5 / +12 / +20 / +30
+	// ScoreSatisfaction 가산값 (0~100 척도). 값은 CostGold 와 같은 곳에서 정한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Finale", meta = (ClampMin = "0"))
 	int32 SatisfactionBonus = 0;
 };
@@ -310,7 +310,7 @@ UENUM(BlueprintType)
 enum class EFF_EarnReason : uint8
 {
 	AdmissionFee		= 0     UMETA(DisplayName = "NPC 입장료"),
-	FacilityCommission  = 1		UMETA(DisplayName = "부스 수수료"),
+	FacilityCommission  = 1		UMETA(DisplayName = "부스 매출"),
 	ProgramFee          = 2		UMETA(DisplayName = "유료 프로그램 체험비"),
 	DailyGoalBonus      = 3		UMETA(DisplayName = "일일 목표 보너스"),
 	MinigameReward      = 4		UMETA(DisplayName = "미니게임 보상"),

@@ -70,6 +70,11 @@ void UFF_ZoneSaveBridge::CollectFacilities(FFF_ZoneSaveState& Out) const
 		Saved.DefinitionId = Spec.FacilityDefinitionId;
 		Saved.ZoneId = Facility->GetZoneId();
 		Saved.Placement = Facility->GetGridPlacement();
+		Saved.InstanceId = Facility->GetFacilityInstanceId();
+		Saved.UpgradeLevel = Facility->GetUpgradeLevel();
+		Saved.bHasQueueConfiguration = true;
+		Saved.QueueLayout = Facility->GetBaseFacilitySpec().QueueLayout;
+		Saved.QueueSettings = Facility->GetBaseFacilitySpec().QueueSettings;
 
 		Out.Facilities.Add(Saved);
 	}
@@ -103,6 +108,8 @@ void UFF_ZoneSaveBridge::ClearExistingFacilities()
 		FFFZSCommand Command;
 		Command.Type = EFFZSCommandType::Remove;
 		Command.CommandId = FGuid::NewGuid();
+		Command.TransactionId = Command.CommandId;
+		Command.ExpectedWorldRevision = ZoneWorld->GetWorldRevision();
 		Command.FacilityInstanceId = InstanceId;
 
 		ZoneWorld->ExecuteCommand(Command);
@@ -161,12 +168,31 @@ int32 UFF_ZoneSaveBridge::RestoreFacilities(const FFF_ZoneSaveState& In)
 		   액터를 직접 스폰하지 않는 이유는, 플레이어가 놓을 때 타는 검증을
 		   그대로 타기 위해서다. 겹침·격자·Zone 안쪽 판정이 여기서 다 걸린다.
 		*/
-		const FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommandFromDefinition(
+		FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommandFromDefinition(
 			Definition, Saved.ZoneId, Saved.Placement);
+		if (Saved.bHasQueueConfiguration)
+		{
+			Command.FacilitySpec.QueueLayout = Saved.QueueLayout;
+			Command.FacilitySpec.QueueSettings = Saved.QueueSettings;
+		}
+		else
+		{
+			// New definitions use a common queue by default. Expanding an older
+			// tightly packed layout during load could make facilities fail placement
+			// validation and disappear. Preserve authored geometry until the player
+			// explicitly applies the validated "unify all queues" operation.
+			Command.FacilitySpec.QueueLayout = EFFZSQueueLayout::Authored;
+			Command.FacilitySpec.QueueSettings.bEnabled = false;
+		}
+		if (Saved.InstanceId.IsValid() && !ZoneWorld->FindFacility(Saved.InstanceId))
+		{
+			Command.FacilityInstanceId = Saved.InstanceId;
+		}
 
 		const FFFZSCommandResult Result = ZoneWorld->ExecuteCommand(Command);
 		if (Result.bSucceeded)
 		{
+			ReapplyUpgrades(*ZoneWorld, Command.FacilityInstanceId, Saved.UpgradeLevel);
 			++Restored;
 			continue;
 		}
@@ -182,6 +208,50 @@ int32 UFF_ZoneSaveBridge::RestoreFacilities(const FFF_ZoneSaveState& In)
 	}
 
 	return Restored;
+}
+
+void UFF_ZoneSaveBridge::ReapplyUpgrades(UFFZSWorldSubsystem& ZoneWorld, const FGuid& InstanceId, const int32 TargetLevel)
+{
+	/* 강화도 명령으로 한 단계씩 밟는다. 플러그인은 "다음 단계"만 받고, 커진 크기의 겹침 검사도 거기서 돈다.
+	   비용은 강화 정책이 저장 복원 중이면 받지 않는다(UFF_FacilityUpgradeSubsystem::ValidatePurchase).
+	*/
+	while (const AFFZSFacilityActor* Facility = ZoneWorld.FindFacility(InstanceId))
+	{
+		if (Facility->GetUpgradeLevel() >= TargetLevel)
+		{
+			return;
+		}
+
+		const FFFZSFacilityUpgradeTier* Tier = FFZSFacilityUpgradeRules::FindNextTier(
+			Facility->GetBaseFacilitySpec().UpgradeTiers, Facility->GetUpgradeLevel());
+		if (!Tier)
+		{
+			UE_LOG(LogFestaFiestaSave, Warning,
+				TEXT("[저장] 시설 %s 의 강화 %d단계가 지금 정의에 없다. %d단계로 둔다."),
+				*InstanceId.ToString(), TargetLevel, Facility->GetUpgradeLevel());
+			return;
+		}
+
+		FFFZSCommand Command;
+		Command.CommandId = FGuid::NewGuid();
+		Command.TransactionId = Command.CommandId;
+		Command.ExpectedWorldRevision = ZoneWorld.GetWorldRevision();
+		Command.Type = EFFZSCommandType::Upgrade;
+		Command.FacilityInstanceId = InstanceId;
+		Command.TargetUpgradeLevel = Tier->TargetLevel;
+		Command.UpgradeServiceDurationMultiplier = Tier->ServiceDurationMultiplier;
+		Command.UpgradeSizeMultiplier = Tier->SizeMultiplier;
+		Command.UpgradeRevenueMultiplier = Tier->RevenueMultiplier;
+
+		const FFFZSCommandResult Result = ZoneWorld.ExecuteCommand(Command);
+		if (!Result.bSucceeded)
+		{
+			UE_LOG(LogFestaFiestaSave, Warning,
+				TEXT("[저장] 시설 %s 강화 %d단계 복원 실패: %s"),
+				*InstanceId.ToString(), Tier->TargetLevel, *Result.Message.ToString());
+			return;
+		}
+	}
 }
 
 void UFF_ZoneSaveBridge::WriteSaveData(TArray<uint8>& OutBytes) const

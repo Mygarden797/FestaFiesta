@@ -7,6 +7,7 @@
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
+#include "Tutorial/FF_NameInputWidget.h"
 #include "Tutorial/FF_SkipConfirmWidget.h"
 #include "Tutorial/FF_TutorialSettings.h"
 #include "Tutorial/FF_TutorialSubsystem.h"
@@ -28,6 +29,7 @@ void UFF_DialogueBoxWidget::NativeConstruct()
 	if (SkipButton)
 	{
 		SkipButton->OnClicked.AddDynamic(this, &UFF_DialogueBoxWidget::HandleSkipClicked);
+		SkipButtonShownVisibility = SkipButton->GetVisibility();
 	}
 
 	UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
@@ -82,6 +84,7 @@ void UFF_DialogueBoxWidget::NativeDestruct()
 	}
 
 	ClearChoices();
+	RemoveNameInput();
 	Super::NativeDestruct();
 }
 
@@ -177,8 +180,52 @@ void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
 	ApplyClickArea(Line);
 	ApplyBackground(Line);
 	ApplyPortrait(Line);
+	ApplySkipButton();
+	ApplyNameInput(Line);
 
 	BP_OnLineChanged(Line);
+}
+
+void UFF_DialogueBoxWidget::ApplyNameInput(const FFF_DialogueLine& Line)
+{
+	if (Line.Kind != EFF_DialogueLineKind::NameInput)
+	{
+		RemoveNameInput();
+		return;
+	}
+
+	if (NameInputWidget && NameInputWidget->IsInViewport())
+	{
+		return;
+	}
+
+	NameInputWidget = CreateWidget<UFF_NameInputWidget>(GetOwningPlayer(), UFF_NameInputWidget::StaticClass());
+	if (NameInputWidget)
+	{
+		const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+		NameInputWidget->AddToViewport(Settings ? Settings->NameInputZOrder : 150);
+	}
+}
+
+void UFF_DialogueBoxWidget::RemoveNameInput()
+{
+	if (NameInputWidget)
+	{
+		NameInputWidget->RemoveFromParent();
+		NameInputWidget = nullptr;
+	}
+}
+
+void UFF_DialogueBoxWidget::ApplySkipButton()
+{
+	if (!SkipButton)
+	{
+		return;
+	}
+
+	const UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
+	const bool bBriefing = Tutorial && Tutorial->IsBriefingActive();
+	SkipButton->SetVisibility(bBriefing ? ESlateVisibility::Collapsed : SkipButtonShownVisibility);
 }
 
 void UFF_DialogueBoxWidget::HandleDialogueActiveChanged(const bool bActive)
@@ -194,6 +241,7 @@ void UFF_DialogueBoxWidget::HandleDialogueActiveChanged(const bool bActive)
 	if (!bActive)
 	{
 		ClearChoices();
+		RemoveNameInput();
 
 		// 대사가 끝나면 배경도 치운다. 안 그러면 그림이 화면에 남는다.
 		if (BackgroundImage)
@@ -228,12 +276,19 @@ void UFF_DialogueBoxWidget::HandleSkipClicked()
 	// 확인 창을 여기서 띄우는 이유는, BP 그래프에 로직을 두면 깃에서 병합도
 	// 리뷰도 안 되기 때문이다. BP 는 배치와 모양만 맡는다.
 
-	// 비서 브리핑은 되돌릴 것이 없다. 묻지 않고 그 브리핑만 닫는다(튜토리얼 안내는 그대로).
+	// 비서 브리핑 · 로비 이야기 장면(S 엔딩)은 되돌릴 것이 없다. 묻지 않고 그 대사만 닫는다(튜토리얼 안내는 그대로).
 	if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
 	{
-		if (Tutorial->IsBriefingActive())
+		if (Tutorial->IsCloseOnSkipActive())
 		{
 			Tutorial->StopScript();
+			return;
+		}
+
+		// 로비 이야기(삼촌 · 비서)도 묻지 않는다. 실습장으로 가는 줄로 넘기기만 하고 건너뜀으로 기록하지 않는다.
+		// 그 줄부터 누르면 false 라 아래 확인 창으로 간다(실습장 안과 같은 진짜 건너뛰기).
+		if (Tutorial->TrySkipLobbyStory())
+		{
 			return;
 		}
 	}
@@ -421,9 +476,9 @@ void UFF_DialogueBoxWidget::ApplyPortrait(const FFF_DialogueLine& Line)
 
 void UFF_DialogueBoxWidget::ApplyClickArea(const FFF_DialogueLine& Line)
 {
-	// 선택지가 있으면 클릭으로 넘길 수 없다. 조작을 기다리는 줄도 마찬가지다.
-	const bool bCanAdvance =
-		Line.Kind != EFF_DialogueLineKind::Choice && !Line.RequiresPlayerAction();
+	// 선택지가 있으면 클릭으로 넘길 수 없다. 조작을 기다리는 줄 · 이름 입력 줄도 마찬가지다.
+	const bool bCanAdvance = Line.Kind != EFF_DialogueLineKind::Choice
+		&& Line.Kind != EFF_DialogueLineKind::NameInput && !Line.RequiresPlayerAction();
 
 	const bool bFullScreen = bCanAdvance
 		&& Line.ClickArea == EFF_DialogueClickArea::FullScreen;

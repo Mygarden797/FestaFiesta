@@ -10,11 +10,13 @@
 #include "FF_BuildToolsWidget.generated.h"
 
 class UBorder;
+class UCanvasPanel;
 class UComboBoxString;
 class UEditableTextBox;
 class UImage;
 class USizeBox;
 class UTextBlock;
+class UWidgetTree;
 class UFF_BuildModeSubsystem;
 class UFF_BuildCatalogEconomyReadModel;
 class UFF_BuildCatalogSubsystem;
@@ -41,6 +43,7 @@ struct FESTAFIESTA_API FFF_BuildToolsViewData
     UPROPERTY(BlueprintReadOnly) bool bGridVisible = false;
     UPROPERTY(BlueprintReadOnly) int32 PreferredSnapCm = 100;
     UPROPERTY(BlueprintReadOnly) int32 ActiveSnapCm = 100;
+    UPROPERTY(BlueprintReadOnly) int32 DragPlacementGapCm = 0;
     UPROPERTY(BlueprintReadOnly) float YawDegrees = 0.0f;
     UPROPERTY(BlueprintReadOnly) FText FacilityName;
     UPROPERTY(BlueprintReadOnly) FText CostText;
@@ -53,14 +56,28 @@ struct FESTAFIESTA_API FFF_BuildToolsViewData
 
 namespace FFBuildToolsModel
 {
+    /** Persistent toolbar controls stay above the game's ordinary window layers. */
+    inline constexpr int32 ForegroundViewportZOrder = 1000;
     FESTAFIESTA_API FText FormatAudienceSpace(const FFFZSFacilitySpec& Spec);
     FESTAFIESTA_API FText FormatProblemStatus(const FText& Title, int32 ProblemIndex, int32 ProblemCount);
     // Explicit degree input is finite, decimal and within the displayed 0..360 range.
     // Invalid edits leave the caller's previous value untouched; 360 wraps to 0.
     FESTAFIESTA_API bool TryParseYawText(const FString& Text, float& OutYawDegrees);
+    /** Extra edge-to-edge spacing for a drag stroke; invalid edits preserve the prior value. */
+    FESTAFIESTA_API bool TryParseDragPlacementGapText(const FString& Text, int32& OutGapCm);
+    /** Shared by runtime compatibility and the saved WBP builder; does not replace authored controls. */
+    FESTAFIESTA_API UEditableTextBox* EnsureDragPlacementGapControl(UWidgetTree& Tree);
+    /** Queue inputs commit together so a temporary partial edit never changes the reservation. */
+    FESTAFIESTA_API bool TryParseQueueSettingsText(const FString& TeamsText, const FString& SpacingText,
+        const FString& WidthText, int32& OutTeams, float& OutSpacingCm, float& OutWidthCm);
+    FESTAFIESTA_API bool EnsureQueueSettingsControls(UWidgetTree& Tree);
     /** Top and height of the guide, bounded above the measured catalog edge. */
     FESTAFIESTA_API FVector2D ResolveHelpVerticalBounds(float ContentHeight, float AvailableBottom,
         float PreferredTop = 525.f, float ReservedTop = 104.f);
+    /** A nearby label position clear of projected reservations and persistent HUD surfaces. */
+    FESTAFIESTA_API bool ResolveContextPingPosition(const FVector2D& Marker, const FVector2D& PingSize,
+        const FVector2D& ViewSize, const FBox2D& PreviewBounds, const TArray<FBox2D>& Occupied,
+        float Gap, FVector2D& OutPosition);
     /** Required local dimensions, not a measurement of remaining free space. */
     FESTAFIESTA_API void FormatRequiredSpace(const FFFZSFacilitySpec& Spec, FText& OutFootprint, FText& OutQueue);
 }
@@ -106,6 +123,7 @@ public:
     bool bDesignerShowHelp = true;
     bool IsPointerOverTools() const;
     bool IsEditingAngle() const;
+    bool IsEditingText() const;
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ToggleRadialMenu();
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ToggleHelp();
     bool IsRadialMenuOpen() const;
@@ -260,6 +278,14 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_FreeRotateLeft;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_FreeRotateRight;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_Angle;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_DragPlacementGap;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_QueueSettings;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_QueueMaxTeams;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_QueueSlotSpacing;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_QueueLaneWidth;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_QueueSettingsSummary;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ApplyQueueSettings;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ResetAllQueues;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_NudgeLeft;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_NudgeUp;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_NudgeDown;
@@ -271,6 +297,8 @@ private:
     friend class FFFBuildFeatureGuideAcknowledgementTest;
     friend class FFFBuildFeatureGuideInputTest;
     friend class FFFBuildFeatureGuideRenderTest;
+    friend class FFFBuildToolsCatalogHelpTest;
+    friend class FFFBuildToolsQueueSettingsTest;
     FName CurrentGuideFeature;
     FName PendingGuideAction;
     bool bUpdatingGuideTopic = false;
@@ -304,6 +332,11 @@ private:
     int32 PointerRotationDirection = 0;
     int32 PlacementProblemIndex = 0;
     bool bRestoreHelpAfterSettings = false;
+    bool bHelpExpanded = false;
+    bool bHelpDismissedByUser = false;
+    bool bHelpForegroundSuppressed = false;
+    UPROPERTY(Transient) TObjectPtr<UCanvasPanel> ForegroundBodyCanvas;
+    bool bBodyForegroundSuppressed = false;
     double LastPointerRotationTime = 0.0;
     UFUNCTION() void ToggleDetails();
     UFUNCTION() void HandleMultiSelect();
@@ -318,6 +351,13 @@ private:
     UFUNCTION() void HandleEdgeScroll();
     UFUNCTION() void ToggleFacts();
     void SetHelpExpanded(bool bExpanded);
+    void InstallHelpCloseControl();
+    void RefreshHelpPresentation();
+    void RefreshPlacementSurfaces();
+    TWeakObjectPtr<UUserWidget> FacilityInfoAvoidanceSurface;
+    double NextFacilityInfoSearchTime = 0.0;
+    void InstallToolbarForegroundLayer();
+    void RefreshBodyPresentation();
     void CloseRadialMenu();
     void StartPointerFreeRotation(int32 Direction);
     void AdvancePointerFreeRotation();
@@ -326,6 +366,16 @@ private:
     UFUNCTION() void HandleFreeRotateRightPressed();
     UFUNCTION() void HandleGoldChanged(int32 Gold);
     void RefreshAngleText();
+    void RefreshDragPlacementGapText();
+    bool IsEditingDragPlacementGap() const;
+    bool IsEditingQueueSettings() const;
+    void RefreshQueueSettingsText();
+    void RefreshQueueSettingsControls();
+    bool bRefreshingQueueSettings = false;
+    bool bQueueSettingsDirty = false;
+    FName QueueEditingDefinitionId;
+    FGuid QueueEditingInstanceId;
+    uint8 QueueEditingState = MAX_uint8;
     bool ApplyAngleText(const FText& Text);
     bool ApplyPendingAngle();
     void SetSnap(int32 StepCm);
@@ -344,4 +394,9 @@ private:
     UFUNCTION() void HandleNudgeDown();
     UFUNCTION() void HandleNudgeRight();
     UFUNCTION() void HandleAngleCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+    UFUNCTION() void HandleDragPlacementGapCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+    UFUNCTION() void HandleQueueSettingsChanged(const FText& Text);
+    UFUNCTION() void HandleQueueSettingsCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+    UFUNCTION() void HandleApplyQueueSettings();
+    UFUNCTION() void HandleResetAllQueues();
 };

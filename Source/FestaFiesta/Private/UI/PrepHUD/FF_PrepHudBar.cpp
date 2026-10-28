@@ -694,7 +694,7 @@ UFF_PrepPanelBase* UFF_PrepHudBar::EnsurePanel(EFF_PrepHudTab Tab)
 				(Custom && !Custom->IsEmpty())
 					? *Custom
 					: FText::Format(
-						LOCTEXT("PrepPanel_Placeholder", "{0} 패널은 아직 만드는 중입니다."),
+						LOCTEXT("PrepPanel_Placeholder", "{0} 화면을 불러오지 못했습니다."),
 						DisplayName));
 		}
 	}
@@ -1130,6 +1130,25 @@ void UFF_PrepHudBar::RefreshStatusRow()
 			: FText::GetEmpty());
 }
 
+void UFF_PrepHudBar::RefreshRequiredAttention(EFF_FestivalStage Stage)
+{
+	const auto* Required = GetWorld() ? GetWorld()->GetSubsystem<UFF_RequiredFacilitiesSubsystem>() : nullptr;
+	const FFF_RequiredFacilitiesStatus Status = Required ? Required->GetRequiredFacilitiesStatus() : FFF_RequiredFacilitiesStatus();
+	if (Tab_Check)
+	{
+		const int32 Count = FFF_PrepHudRules::CountPendingRequiredTasks(Status);
+		const FText Hint = Count > 0
+			? FText::Format(LOCTEXT("RequiredCheckBadge", "필수 준비 {0}건 · 점검에서 확인하세요."), FText::AsNumber(Count))
+			: LOCTEXT("RequiredCheckUnknownBadge", "필수 준비 상태를 점검에서 확인하세요.");
+		Tab_Check->SetRequiredAttention(FFF_PrepHudRules::NeedsRequiredAttention(EFF_PrepHudTab::Check, Stage, Status), Hint);
+	}
+	if (Tab_Staff)
+	{
+		Tab_Staff->SetRequiredAttention(FFF_PrepHudRules::NeedsRequiredAttention(EFF_PrepHudTab::Staff, Stage, Status),
+			LOCTEXT("RequiredStaffBadge", "안내시설에 필수 스태프 배정이 필요합니다."));
+	}
+}
+
 void UFF_PrepHudBar::RefreshCta()
 {
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
@@ -1142,11 +1161,11 @@ void UFF_PrepHudBar::RefreshCta()
 
 	const EFF_PrepCtaState State = FFF_PrepHudRules::ResolveCtaState(
 		Stage, bHasLabel, bCanAdvance, FacilityCount, bRequireFacilityForCta);
+	RefreshRequiredAttention(Stage);
 
 	// 🔴 **바의 CTA 버튼은 더 이상 띄우지 않는다** (2026-08-27 백종태 결정).
 	// 점검 패널의 `개장하기` 와 같은 행동이라 화면에 버튼이 둘이었다.
-	// 진행은 점검 패널이 맡고, 바는 **막힌 이유 문구만** 남긴다 — 그건 탭을 열지 않아도
-	// 보여야 하는 정보다 (시설이 없으면 `배치` 탭으로 가야 한다).
+	// 진행과 상세 사유는 점검 패널이 맡는다. 하단 바에는 미충족 탭의 느낌표만 남긴다.
 	//
 	// 판정은 그대로 여기서 한다. 시설 수와 단계 표를 아는 것이 바뿐이라
 	// 점검 패널은 `GetCtaState()`·`GetCtaLabelText()` 로 이 결과를 읽어 간다.
@@ -1212,26 +1231,12 @@ void UFF_PrepHudBar::RefreshCta()
 			if (!RequiredReason.IsEmpty()) { Reason = RequiredReason; }
 		}
 	}
-	// 하단 배지는 한 줄 높이이므로 여러 필수 시설의 개행 사유를 그대로 그리지 않는다.
-	// 전문은 툴팁과 GetCtaReason()에 남겨 점검 패널에서 모두 확인할 수 있게 한다.
-	TArray<FString> ReasonLines;
-	Reason.ToString().ParseIntoArrayLines(ReasonLines, true);
-	const FText BadgeReason = ReasonLines.Num() > 1
-		? FText::Format(LOCTEXT("PrepCta_MultipleReasonSummary", "{0} 외 {1}건"),
-			FText::FromString(ReasonLines[0]), FText::AsNumber(ReasonLines.Num() - 1))
-		: Reason;
-	SetGroupTextOrHide(nullptr, Text_CtaReason, BadgeReason);
-	if (Text_CtaReason)
-	{
-		Text_CtaReason->SetToolTipText(Reason);
-	}
-
-	// 버튼을 접었으니 사유가 없으면 줄째 접는다. 안 그러면 빈 띠가 남는다.
+	// 기존 WBP 바의 크기와 위치는 유지하고 중복된 긴 안내만 접는다.
+	// 원문은 아래 SetCtaState로 보존하므로 점검의 차단/실패 사유는 사라지지 않는다.
+	SetGroupTextOrHide(nullptr, Text_CtaReason, FText::GetEmpty());
 	if (Box_Cta)
 	{
-		Box_Cta->SetVisibility(Reason.IsEmpty()
-			? ESlateVisibility::Collapsed
-			: ESlateVisibility::SelfHitTestInvisible);
+		Box_Cta->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
 	// 같은 상태를 매 갱신마다 찍으면 로그가 같은 줄로 가득 찬다. 바뀔 때만 남긴다.

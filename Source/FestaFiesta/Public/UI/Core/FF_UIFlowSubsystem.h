@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Containers/Ticker.h"
+#include "Engine/EngineBaseTypes.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Time/FF_FestivalStage.h"
 #include "UI/Core/FF_UIFlowTypes.h"
@@ -14,6 +15,7 @@ class APlayerController;
 class UFF_FestivalAtlasCatalog;
 class UFF_ActivatableScreenBase;
 class UFF_LoadingScreenWidget;
+class UFF_BuildCatalogSubsystem;
 class UFF_TitleIntroScreen;
 class UFF_TitleScreen;
 class UFF_UIRootLayout;
@@ -142,6 +144,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Flow")
 	UFF_UIRootLayout* GetRootLayout() const;
+	/** Current HUD owner, for lightweight window visibility queries. */
+	UUserWidget* GetStageHudWidget() const;
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Flow")
 	EFF_UIFlowMode GetMode() const { return Mode; }
@@ -244,6 +248,11 @@ protected:
 	void HandleAtlasStartFestival(FName FestivalId);
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_FestivalThumbnailLoadingTest;
+	friend class FFF_FacilityRevenueInspectionTest;
+#endif
+
 	/** 지구본↔국가 지도만 암전으로 감싼다. 화면/히스토리는 완전히 가려진 뒤 바꾼다. */
 	bool BeginAtlasScreenTransition(EFF_UIFlowScreen Destination, bool bGoingBack);
 	void GoToScreenImmediate(EFF_UIFlowScreen Screen);
@@ -251,6 +260,13 @@ private:
 
 	/** 이 GameInstance가 시작한 축제 맵 로드에만 MoviePlayer 화면을 준비한다. */
 	void HandlePreLoadMapWithContext(const FWorldContext& WorldContext, const FString& MapName);
+
+	/** 로딩 화면의 Slate 스레드가 시작된 뒤에만 미완료 이미지 읽기를 마친다. */
+	void HandleLoadingScreenStarted();
+	void AcquireFestivalThumbnailPreload();
+	void CompleteFestivalThumbnailPreload();
+	void ReleaseFestivalThumbnailPreload();
+	void HandleFestivalTravelFailure(UWorld* World, ETravelFailure::Type FailureType, const FString& Error);
 
 	/** MoviePlayer가 끝난 뒤 UUserWidget 강참조를 놓는다. */
 	void HandleLoadingScreenFinished();
@@ -373,7 +389,13 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_LoadingScreenWidget> ActiveLoadingScreenWidget;
 
+	/** 배치 탭 수명과 별개인 축제당 참조. 카탈로그 자체는 GameInstance가 소유한다. */
+	TWeakObjectPtr<UFF_BuildCatalogSubsystem> FestivalThumbnailCatalog;
+	bool bPendingFestivalThumbnailWarmup = false;
+
 	FDelegateHandle PostLoginHandle;
 	FDelegateHandle PreLoadMapHandle;
+	FDelegateHandle MoviePlaybackStartedHandle;
 	FDelegateHandle MoviePlaybackFinishedHandle;
+	FDelegateHandle FestivalTravelFailureHandle;
 };

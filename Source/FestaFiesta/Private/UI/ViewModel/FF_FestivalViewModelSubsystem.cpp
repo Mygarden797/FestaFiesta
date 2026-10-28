@@ -562,14 +562,14 @@ FFF_SatisfactionBreakdown UFF_FestivalViewModelSubsystem::BuildSatisfactionBreak
 	Inputs.PreferenceMatchShare = DayAverage ? DayAverage->PreferenceMatchShare : Satisfaction->GetPreferenceMatchShare();
 	Inputs.PreferenceSampleCount = DayAverage ? DayAverage->PreferenceSampleCount : Satisfaction->GetPreferenceSampleCount();
 	Inputs.CoverageFloor = Coefficients.NeedCoverageFloor;
-	Inputs.CoverageTarget[0] = Coefficients.NeedCoverageTargetHunger;
-	Inputs.CoverageTarget[1] = Coefficients.NeedCoverageTargetRestroom;
-	Inputs.CoverageTarget[2] = Coefficients.NeedCoverageTargetStimulation;
-
 	static const EFF_NeedType BreakdownNeeds[FFF_SatisfactionBreakdownInputs::NeedCount] =
 	{
-		EFF_NeedType::Hunger, EFF_NeedType::Restroom, EFF_NeedType::Stimulation
+		EFF_NeedType::Hunger, EFF_NeedType::Restroom, EFF_NeedType::Stimulation, EFF_NeedType::Thirst, EFF_NeedType::Fatigue
 	};
+	for (int32 Index = 0; Index < FFF_SatisfactionBreakdownInputs::NeedCount; ++Index)
+	{
+		Inputs.CoverageTarget[Index] = Coefficients.GetNeedCoverageTarget(BreakdownNeeds[Index]);
+	}
 	const UGameInstance* GI = GetGameInstance();
 	const UWorld* World = GI ? GI->GetWorld() : nullptr;
 	if (const UFF_CrowdSimulationSubsystem* Crowd = World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr)
@@ -665,6 +665,8 @@ void UFF_FestivalViewModelSubsystem::FillReportAssistantComment(FFF_DailyReportV
 		Inputs.HungerCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Hunger);
 		Inputs.RestroomCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Restroom);
 		Inputs.StimulationCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Stimulation);
+		Inputs.ThirstCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Thirst);
+		Inputs.FatigueCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Fatigue);
 	}
 	Inputs.AdmittedVisitors = Report.AdmittedVisitors;
 	Inputs.DailyVisitorGoal = Report.DailyVisitorGoal;
@@ -703,7 +705,10 @@ void UFF_FestivalViewModelSubsystem::FillReportAssistantComment(FFF_DailyReportV
 			for (const TPair<int32, bool>& Pair : GoalMetByDay) Inputs.GoalDaysMet += Pair.Value ? 1 : 0;
 		}
 	}
-	Report.AssistantComment = FFF_DailyReportCommentRules::Build(Inputs);
+	const FFF_DailyReportCommentPresentation Comment = FFF_DailyReportCommentRules::BuildPresentation(Inputs);
+	Report.AssistantComment = Comment.FullComment;
+	Report.AssistantAdvice = Comment.Advice;
+	Report.AssistantDetails = Comment.Details;
 	Report.Complaint = FFF_DailyReportCommentRules::FindComplaint(Inputs);
 }
 
@@ -1268,6 +1273,15 @@ TArray<FName> UFF_FestivalViewModelSubsystem::GetScheduledProgramIds() const
 	return Ids;
 }
 
+bool UFF_FestivalViewModelSubsystem::TryGetScheduledPrograms(TArray<FFF_ScheduledProgram>& OutPrograms) const
+{
+	OutPrograms.Reset();
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->GetDefinition()) return false;
+	OutPrograms = Progression->GetScheduledPrograms();
+	return true;
+}
+
 EFF_ProgramPurchaseResult UFF_FestivalViewModelSubsystem::CanScheduleProgram(FName ProgramId) const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
@@ -1531,13 +1545,14 @@ namespace FFViewModelFacilityLocal
 {
 	/**
 	 * 손님 줄을 받는 시설인가. 큐 다리(`RegisterOrRefreshFacility`)와 같은 기준이다 —
-	 * 조명과 바닥면(길·타일)은 대기열을 만들지 않는다. 바닥면 판정은 원본 사양의 함수를 그대로 쓴다.
+	 * 조명·바닥면·관객석 전용 메인스테이지는 원본 사양과 같은 대기열 정책을 따른다.
 	 */
-	bool UsesPartyQueue(EFFZSFacilityCategory Category)
+	bool UsesPartyQueue(EFFZSFacilityCategory Category, FName DefinitionId)
 	{
 		FFFZSFacilitySpec Probe;
 		Probe.Category = Category;
-		return Category != EFFZSFacilityCategory::Lighting && !Probe.IsGroundSurface();
+		Probe.FacilityDefinitionId = DefinitionId;
+		return Probe.UsesServiceQueue();
 	}
 
 	/** ZoneSystem 의 설치 상태를 UI 값으로 옮긴다. 모르는 값은 지어내지 않고 `Unknown` 이다. */
@@ -1614,6 +1629,7 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 
 	const FFFZSReadModel ReadModel = Zone->BuildReadModel();
 	Views.Reserve(ReadModel.Facilities.Num());
+	const UFF_BuildCatalogSubsystem* Catalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>();
 
 	// 공연 휴지 구간에는 큐 다리가 모든 일반 시설을 `접수 불가`로 둔다. 정원이 찬 것과 가른다.
 	const UFF_FestivalStageSubsystem* StageSubsystem = GetStageSubsystem();
@@ -1638,7 +1654,7 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 		View.bNeedsRelocation = Facility.bNeedsRelocation;
 		// 관람석 판정은 NPC 목적지 선택과 같은 함수를 쓴다. 규칙을 두 곳에 두지 않는다.
 		View.bSeatedVenue = FFF_ZoneSystemBridge::IsMainStageFacility(Facility.Category, Facility.FacilityDefinitionId);
-		View.bUsesQueue = FFViewModelFacilityLocal::UsesPartyQueue(Facility.Category);
+		View.bUsesQueue = FFViewModelFacilityLocal::UsesPartyQueue(Facility.Category, Facility.FacilityDefinitionId);
 
 		// 🔴 아무도 아직 못 끝냈으면 평균이 `0.0` 으로 온다. 그것을 `0초 대기` 로 그리면
 		//    "기다림이 없다" 는 틀린 사실이 된다 — 실제로는 **아직 모르는 것**이다.
@@ -1681,16 +1697,11 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 			}
 		}
 
-		// 사람이 읽을 이름이 시설 데이터에 없다. 고유 토큰이 그나마 구분되는 값이다 —
-		// `GetEligibleFacilitiesForProgram` 과 같은 사정이고 같은 방식으로 만든다.
-		FFF_FacilityNameParts Parts;
-		FString FailureReason;
-		const bool bParsed = UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
-			Facility.Category, Facility.FacilityDefinitionId, Parts, FailureReason);
-
-		View.DisplayName = (bParsed && !Parts.UniqueToken.IsEmpty())
-			? FText::FromString(Parts.UniqueToken)
-			: FText::FromName(Facility.FacilityDefinitionId);
+		// 건축·프로그램 목록과 같은 저작 이름을 사용한다. 비동기 로드 중·누락도
+		// 카탈로그 문구를 유지하며, 두 라이브 패널의 다음 주기 조회에서 최신 이름을 받는다.
+		View.DisplayName = Catalog
+			? Catalog->ResolveFacilityDisplayName(Facility.FacilityDefinitionId)
+			: NSLOCTEXT("FestaFiestaLiveFacility", "NameUnavailable", "시설 이름 확인 중");
 	}
 
 	return Views;

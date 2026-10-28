@@ -14,6 +14,7 @@ class UFFZSWorldSubsystem;
 class UFF_BuildCatalogSubsystem;
 class UFF_FacilityCodexProgressSubsystem;
 class UFF_FestivalProgressionSubsystem;
+class UFF_SaveSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnFacilityCodexChanged);
 
@@ -36,7 +37,7 @@ public:
 	bool FindEntry(FName RuleId, FFF_FacilityCodexEntry& OutEntry) const;
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
 	TArray<FFF_FacilityCodexEntry> GetFilteredEntries(const FFF_FacilityCodexFilter& Filter) const;
-	/** Claims a discovered recipe's authored reward once per profile. */
+	/** Claims a discovered recipe's authored reward once per festival. */
 	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
 	bool ClaimDiscoveryReward(FName RuleId);
 	/** Global collection progress, independent of the screen's category/search filters. */
@@ -45,7 +46,7 @@ public:
 	/** Earned recipe or collection rewards still awaiting a claim, including during startup. */
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
 	bool HasUnclaimedRewards() const;
-	/** Claims one configured collection stage once per profile, using the same Gold wallet. */
+	/** Claims one configured collection stage once per festival, using the same Gold wallet. */
 	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
 	bool ClaimCollectionReward(FName MilestoneId);
 	/** Explicit boundary refresh, useful after external registry reconstruction. Not a per-frame call. */
@@ -61,11 +62,13 @@ private:
 	UFUNCTION() void HandleWorldChanged(const FFFZSWorldChangeEvent& Event);
 	UFUNCTION() void HandleCatalogChanged();
 	UFUNCTION() void HandleProgressChanged();
+	UFUNCTION() void HandleSaveLoaded(FName SlotId);
 	UPROPERTY(Transient) TObjectPtr<UDataTable> LoadedTable;
 	UPROPERTY(Transient) TObjectPtr<UFFZSWorldSubsystem> ZoneSystem;
 	UPROPERTY(Transient) TObjectPtr<UFF_BuildCatalogSubsystem> Catalog;
 	UPROPERTY(Transient) TObjectPtr<UFF_FacilityCodexProgressSubsystem> Progress;
 	UPROPERTY(Transient) TObjectPtr<UFF_FestivalProgressionSubsystem> Economy;
+	UPROPERTY(Transient) TObjectPtr<UFF_SaveSubsystem> Save;
 	UPROPERTY(Transient) TArray<FFF_FacilityCodexEntry> CachedEntries;
 	FFF_FacilityCodexSummary CachedSummary;
 	FFF_FacilityCodexModel Model;

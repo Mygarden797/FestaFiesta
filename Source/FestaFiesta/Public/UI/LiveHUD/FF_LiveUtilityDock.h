@@ -24,6 +24,8 @@ public:
 	static bool IsConfigured();
 	static UFF_LiveUtilityDock* FindForPlayer(const APlayerController* Player);
 	bool HasUnifiedNews() const;
+	/** A preserved flyout under a modal is not currently a foreground window. */
+	bool IsForegroundFlyoutOpen() const;
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Utility")
 	void ToggleSNS();

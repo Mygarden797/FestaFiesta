@@ -10,6 +10,8 @@ Road는 다른 시설을 설치할 수 없는 통행용 바닥이고, Tile은 �
 기존 카테고리의 저장값은 바뀌지 않는다. 카탈로그에는 길과 타일을 별도로 표시한다.
 새 Tile ID는 `Tile_Surface_<종류>`다. 종류는 `Sand`, `Asphalt`, `Wood`, `Stone`, `Herringbone`, `Concrete`다.
 
+（10/14 기준: 저장소에 커밋된 정의는 6+6이 아니다. 9/14 커밋 `9ef52a79`에서 `Road_Surface_Stone`·`Road_Surface_Wood`가 삭제되고 `Tile_Surface_Stone`·`Tile_Surface_Wood`가 추가되어, 기존 표면은 Road 4종(`Sand`·`Asphalt`·`Herringbone`·`Concrete`)과 Tile 2종(`Stone`·`Wood`)이다. 여기에 시설 70종 확장의 Road 3종·Tile 3종이 더해져 현재 Road 7개, Tile 5개다. 비용표 `facility_costs_v0.csv`에는 정의가 없는 `Cost.Road.Surface.Wood`·`Stone`과 `Cost.Tile.Surface.Sand`·`Asphalt`·`Herringbone`·`Concrete` 행이 남아 있다.）
+
 시설 정의는 `/Game/FestaFiesta/Building/FF_Data_Building/Road`와 `/Tile`에 두고,
 두 종류는 `/Game/Asset/FacilitiesAsset_HKH/Roads`의 메시·재질과 기존 썸네일을 공유한다.
 원본 제작 규격은 400 × 400 × 8 cm이나, 실제 배치와 드래그 간격은 각 PDA의 작성된 크기를 따른다.
@@ -51,7 +53,7 @@ C++ 빌드 후 작업 중인 에디터를 종료하고 아래 명령을 순서�
 
 분리 스크립트는 6개 Road의 허용 호환 플래그만 끄고, 없는 Tile을 복제하며, 없는 Tile 비용 행만 추가한다.
 기존 Tile의 작성값과 가격을 보존하고, 저장 전 패키지 백업으로 실패 시 전체 변경을 복구한다.
-새 에디터 검증은 12개 실제 PDA와 전체 가격 표를 분리 직후 보고서와 비교한다.
+새 에디터 검증은 12개 실제 PDA와 전체 가격 표를 분리 직후 보고서와 비교한다.（10/14 기준: 위 설명대로 기존 표면 정의는 6개뿐이다.）
 한 번 더 분리를 실행하면 패키지 저장 없이 완료되어야 한다. 최신 `import_roads.py`도 동일한 분리를 실행한다.
 
 이 에셋 도구는 저장 게임 파일을 직접 수정하지 않는다. 런타임 저장 복원은 스키마 7 이하의

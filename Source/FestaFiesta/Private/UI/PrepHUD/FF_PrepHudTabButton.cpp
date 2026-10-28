@@ -27,6 +27,21 @@ bool UFF_PrepHudTabButton::HasFinaleAttention() const
 	return IsDesignTime() ? bPreviewFinaleAttention : bFinaleAttention;
 }
 
+bool UFF_PrepHudTabButton::HasRequiredAttention() const
+{
+	return IsDesignTime() ? bPreviewRequiredAttention : bRequiredAttention;
+}
+
+void UFF_PrepHudTabButton::SetRequiredAttention(bool bEnabled, const FText& Hint)
+{
+	bRequiredAttention = bEnabled;
+	SetToolTipText(bEnabled ? Hint : FText::GetEmpty());
+	if (TSharedPtr<SWidget> SlateWidget = GetCachedWidget())
+	{
+		SlateWidget->Invalidate(EInvalidateWidgetReason::Paint);
+	}
+}
+
 void UFF_PrepHudTabButton::SetFinaleAttention(bool bEnabled)
 {
 	if (bFinaleAttention == bEnabled)
@@ -84,9 +99,31 @@ int32 UFF_PrepHudTabButton::NativePaint(const FPaintArgs& Args, const FGeometry&
 {
 	const int32 BaseLayer = Super::NativePaint(Args, AllottedGeometry, MyCullingRect,
 		OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+	int32 AttentionLayer = BaseLayer;
+	if (HasRequiredAttention() && Text_Label && FSlateApplication::IsInitialized())
+	{
+		const FVector2f LocalSize(AllottedGeometry.GetLocalSize());
+		const float Diameter = FMath::Clamp(RequiredBadgeDiameter, 16.f, 40.f);
+		const FVector2f BadgeSize(Diameter, Diameter);
+		// 탭 크기/슬롯을 바꾸지 않고 우상단에 겹친다. 배지 자체는 클릭을 가로채지 않는다.
+		const FVector2f Position(LocalSize.X - Diameter + 3.f, -Diameter * 0.35f);
+		const FLinearColor Tint = InWidgetStyle.GetColorAndOpacityTint();
+		const FSlateRoundedBoxBrush Brush(RequiredBadgeColor, Diameter * .5f, FLinearColor::White, 1.5f);
+		FSlateDrawElement::MakeBox(OutDrawElements, BaseLayer + 1,
+			AllottedGeometry.ToPaintGeometry(BadgeSize, FSlateLayoutTransform(Position)),
+			&Brush, ESlateDrawEffect::None, RequiredBadgeColor * Tint);
+		FSlateFontInfo Font = Text_Label->GetFont();
+		Font.Size = FMath::RoundToInt(Diameter * .64f);
+		const FText Mark = FText::FromString(TEXT("!"));
+		const FVector2f TextSize(FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Mark, Font));
+		FSlateDrawElement::MakeText(OutDrawElements, BaseLayer + 2,
+			AllottedGeometry.ToPaintGeometry(TextSize, FSlateLayoutTransform(Position + (BadgeSize - TextSize) * .5f)),
+			Mark, Font, ESlateDrawEffect::None, FLinearColor::White * Tint);
+		AttentionLayer = BaseLayer + 2;
+	}
 	if (!HasFinaleAttention())
 	{
-		return BaseLayer;
+		return AttentionLayer;
 	}
 	const FVector2f Size(AllottedGeometry.GetLocalSize());
 	if (Size.X <= 8.f || Size.Y <= 8.f)

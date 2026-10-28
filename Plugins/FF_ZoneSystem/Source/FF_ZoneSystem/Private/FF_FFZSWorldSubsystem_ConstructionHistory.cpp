@@ -11,6 +11,8 @@
 
 namespace
 {
+    constexpr int32 MaxPlacementStrokeCommands = 4096;
+
     bool IsPreparation(EFFZSChangePhase Phase)
     {
         return Phase == EFFZSChangePhase::InitialSetup || Phase == EFFZSChangePhase::MorningCheck;
@@ -19,6 +21,45 @@ namespace
     {
         return Type == EFFZSCommandType::Install || Type == EFFZSCommandType::Move || Type == EFFZSCommandType::Remove;
     }
+}
+
+void UFFZSWorldSubsystem::ResetConstructionPlacementStroke()
+{
+    ConstructionPlacementStrokeTransactionId.Invalidate();
+    ConstructionPlacementStrokeId.Invalidate();
+    ClosingPlacementStrokeCommandId.Invalidate();
+    ClosingPlacementStrokeTransactionId.Invalidate();
+    ClosingPlacementStrokeId.Invalidate();
+}
+bool UFFZSWorldSubsystem::BeginConstructionPlacementStroke(FGuid TransactionId)
+{
+    if (IsAuthorityMutationBlocked() || bIsReplayingConstruction || bIsConstructionBatch
+        || !IsPreparation(CurrentPhase) || !TransactionId.IsValid() || ConstructionPlacementStrokeId.IsValid())
+        return false;
+    ResetConstructionPlacementStroke();
+    ConstructionPlacementStrokeTransactionId = TransactionId;
+    ConstructionPlacementStrokeId = FGuid::NewGuid();
+    return true;
+}
+void UFFZSWorldSubsystem::EndConstructionPlacementStroke(FGuid TransactionId)
+{
+    if (!IsInGameThread() || bIsReplayingConstruction || bIsConstructionBatch
+        || !IsConstructionPlacementStrokeActive(TransactionId)) return;
+    const FGuid EndingStrokeId = ConstructionPlacementStrokeId;
+    ResetConstructionPlacementStroke();
+    // This only changes history grouping, so closing a stroke from a command callback is
+    // safe. Preserve its token until RecordConstructionEdit includes an in-flight install.
+    if (InFlightCommandId.IsValid())
+    {
+        ClosingPlacementStrokeCommandId = InFlightCommandId;
+        ClosingPlacementStrokeTransactionId = TransactionId;
+        ClosingPlacementStrokeId = EndingStrokeId;
+    }
+}
+bool UFFZSWorldSubsystem::IsConstructionPlacementStrokeActive(const FGuid& TransactionId) const
+{
+    return TransactionId.IsValid() && ConstructionPlacementStrokeId.IsValid()
+        && ConstructionPlacementStrokeTransactionId == TransactionId;
 }
 
 bool UFFZSWorldSubsystem::CanUndoConstruction() const
@@ -32,6 +73,7 @@ bool UFFZSWorldSubsystem::CanRedoConstruction() const
 void UFFZSWorldSubsystem::ClearConstructionHistory()
 {
     if (bIsReplayingConstruction || bIsConstructionBatch) return;
+    ResetConstructionPlacementStroke();
     ConstructionUndoStack.Reset();
     ConstructionRedoStack.Reset();
 }
@@ -39,6 +81,23 @@ void UFFZSWorldSubsystem::PushConstructionHistory(FFFZSConstructionHistoryEntry&
 {
     if (bIsReplayingConstruction || Entry.Commands.IsEmpty()) return;
     ConstructionRedoStack.Reset();
+    if (Entry.PlacementStrokeId.IsValid() && !ConstructionUndoStack.IsEmpty()
+        && ConstructionUndoStack.Last().PlacementStrokeId == Entry.PlacementStrokeId)
+    {
+        FFFZSConstructionHistoryEntry& Stroke = ConstructionUndoStack.Last();
+        if (Stroke.Commands.Num() + Entry.Commands.Num() <= MaxPlacementStrokeCommands)
+        {
+            // Only new installs enter a placement stroke, so there is no earlier state to
+            // overwrite. Every original command remains available to the economy policy.
+            Stroke.Commands.Append(MoveTemp(Entry.Commands));
+            Stroke.After.Append(MoveTemp(Entry.After));
+            return;
+        }
+        // Fail safely if a caller exceeds the gameplay limit: retain separate undoable
+        // records rather than creating an entry that cannot be replayed atomically.
+        Entry.PlacementStrokeId.Invalidate();
+    }
+    if (!Entry.PlacementStrokeId.IsValid()) ResetConstructionPlacementStroke();
     ConstructionUndoStack.Add(MoveTemp(Entry));
     if (ConstructionUndoStack.Num() > 64) ConstructionUndoStack.RemoveAt(0);
 }
@@ -47,6 +106,14 @@ void UFFZSWorldSubsystem::RecordConstructionEdit(const FFFZSCommand& Command, co
     if (bIsReplayingConstruction || bIsConstructionBatch || !IsPreparation(CurrentPhase)) return;
     FFFZSConstructionHistoryEntry Entry;
     Entry.Commands.Add(Command);
+    if (Command.Type == EFFZSCommandType::Install && !Before.FacilityInstanceId.IsValid())
+    {
+        if (IsConstructionPlacementStrokeActive(Command.TransactionId))
+            Entry.PlacementStrokeId = ConstructionPlacementStrokeId;
+        else if (ClosingPlacementStrokeCommandId == Command.CommandId
+            && ClosingPlacementStrokeTransactionId == Command.TransactionId)
+            Entry.PlacementStrokeId = ClosingPlacementStrokeId;
+    }
     if (Before.FacilityInstanceId.IsValid()) Entry.Before.Add(Before.FacilityInstanceId, Before);
     if (const AFFZSFacilityActor* Facility = FindFacility(Command.FacilityInstanceId))
         Entry.After.Add(Command.FacilityInstanceId, Facility->CaptureInstanceSnapshot());
@@ -86,6 +153,9 @@ bool UFFZSWorldSubsystem::ReplayConstructionHistory(bool bUndo, FText& OutFailur
         OutFailureReason = LOCTEXT("HistoryEmpty", "되돌릴 건축 작업이 없습니다.");
         return false;
     }
+    // A replay terminates a held placement session. A subsequent press starts a fresh
+    // generation even when an input owner retained its previous transaction ID.
+    ResetConstructionPlacementStroke();
     // Copy protects the entry from callbacks. Never capture or restore unrelated facilities.
     FFFZSConstructionHistoryEntry Entry = Source.Last();
     const auto& Expected = bUndo ? Entry.After : Entry.Before;
@@ -179,8 +249,14 @@ FFFZSCommandResult UFFZSWorldSubsystem::ProcessConstructionBatch(const TArray<FF
         return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("BatchBusy", "다른 건축 작업이 진행 중입니다."));
     if (!IsPreparation(CurrentPhase))
         return MakeFailure(EFFZSPlacementFailure::WrongStage, LOCTEXT("BatchPhase", "준비 시간에만 건축을 편집할 수 있습니다."));
-    if (Commands.IsEmpty() || Commands.Num() > 128)
-        return MakeFailure(EFFZSPlacementFailure::DataInvalid, LOCTEXT("BatchSize", "한 번에 1~128개 시설을 편집할 수 있습니다."));
+    // Public group edits remain capped at 128. Only trusted history snapshots may
+    // restore a full placement stroke; one atomic batch retains aggregate policy checks,
+    // rollback, stable identities and exactly one set of wallet notifications.
+    const int32 MaxCommands = (bIsReplayingConstruction && DesiredSnapshots) || bIsResettingAllQueueSettings ? MaxPlacementStrokeCommands : 128;
+    if (Commands.IsEmpty() || Commands.Num() > MaxCommands)
+        return MakeFailure(EFFZSPlacementFailure::DataInvalid, MaxCommands == MaxPlacementStrokeCommands
+            ? LOCTEXT("StrokeHistorySize", "한 번에 1~4096개 연속 설치 기록을 복구할 수 있습니다.")
+            : LOCTEXT("BatchSize", "한 번에 1~128개 시설을 편집할 수 있습니다."));
     if (WorldRevision > MAX_int64 - Commands.Num() - 1)
         return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("BatchRevision", "건축 기록 번호가 가득 찼습니다."));
 
@@ -189,7 +265,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ProcessConstructionBatch(const TArray<FF
     FFFZSCommandResult ReplayResult;
     for (const FFFZSCommand& Command : Commands)
     {
-        if (!IsConstruction(Command.Type) || (Command.bChangeQueueLayout && Command.Type != EFFZSCommandType::Move)
+        if (!IsConstruction(Command.Type) || ((Command.bChangeQueueLayout || Command.bChangeQueueSettings) && Command.Type != EFFZSCommandType::Move)
             || !Command.CommandId.IsValid() || !Command.TransactionId.IsValid()
             || !Command.FacilityInstanceId.IsValid() || Ids.Contains(Command.FacilityInstanceId)
             || CommandIds.Contains(Command.CommandId) || Command.TransactionId != Commands[0].TransactionId
@@ -261,6 +337,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ProcessConstructionBatch(const TArray<FF
                 Target.Queue.State = EFFZSQueueState::Closed;
             }
             if (!DesiredSnapshots && Command.bChangeQueueLayout) Target.FacilitySpec.QueueLayout = Command.QueueLayout;
+            if (!DesiredSnapshots && Command.bChangeQueueSettings) Target.FacilitySpec.QueueSettings = Command.QueueSettings;
             Target.ZoneId = Command.ZoneId;
             Target.Placement = Command.Placement;
             UFFZSGridLibrary::NormalizePlacement(Target.Placement);

@@ -9,16 +9,21 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/WrapBox.h"
+#include "Components/WrapBoxSlot.h"
 #include "Editor.h"
 #include "Engine/Texture2D.h"
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
 #include "UI/PrepHUD/Panels/FF_PrepRecommendedFacilityRow.h"
 #include "UObject/MetaData.h"
 #include "UObject/Package.h"
+#include "UObject/UnrealType.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaRecommendedFacilities"
 
@@ -157,6 +162,184 @@ namespace FFPrepRecommendedBuilder
 	}
 	FAutoConsoleCommand Command(TEXT("FF.ApplyPrepRecommendedFacilities"),
 		TEXT("점검 WBP에 권장 시설 안내를 한 번 추가한다. 기존 편집값을 보존한다."), FConsoleCommandDelegate::CreateStatic(&Apply));
+
+	void ApplyCompactDesign()
+	{
+		constexpr const TCHAR* CompactPrefix = TEXT("FF_PREP_CHECK_COMPACT");
+		if (GEditor && GEditor->PlayWorld)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: PIE 중에는 점검 디자인을 수정하지 않습니다."), CompactPrefix);
+			return;
+		}
+		auto* PanelBP = LoadExistingBlueprint(PanelPackage);
+		auto* RowBP = LoadExistingBlueprint(RowPackage);
+		if (!PanelBP || !RowBP || !PanelBP->WidgetTree || !RowBP->WidgetTree ||
+			!PanelBP->GeneratedClass || !RowBP->GeneratedClass ||
+			!PanelBP->GeneratedClass->IsChildOf(UFF_PrepPanelCheck::StaticClass()) ||
+			!RowBP->GeneratedClass->IsChildOf(UFF_PrepRecommendedFacilityRow::StaticClass()))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 기존 점검 패널과 권장 시설 행 WBP가 필요합니다."), CompactPrefix);
+			return;
+		}
+		UWidgetTree& PanelTree = *PanelBP->WidgetTree;
+		UWidgetTree& RowTree = *RowBP->WidgetTree;
+		auto* CompactProperty = FindFProperty<FBoolProperty>(PanelBP->GeneratedClass, TEXT("bUseCompactLayout"));
+		auto* RowCompactProperty = FindFProperty<FBoolProperty>(RowBP->GeneratedClass, TEXT("bCompactPresentation"));
+		auto* CompactTitleProperty = FindFProperty<FTextProperty>(RowBP->GeneratedClass, TEXT("CompactTitleText"));
+		auto* CompactActionProperty = FindFProperty<FTextProperty>(RowBP->GeneratedClass, TEXT("CompactActionText"));
+		UObject* PanelDefaults = PanelBP->GeneratedClass->GetDefaultObject();
+		auto* ExistingWrap = Cast<UWrapBox>(PanelTree.FindWidget(TEXT("WrapBox_RecommendedRows")));
+		if (CompactProperty && CompactProperty->GetPropertyValue_InContainer(PanelDefaults) && ExistingWrap &&
+			ExistingWrap->GetChildrenCount() == 8 && RowTree.FindWidget(TEXT("Border_CompactCard")))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_REUSE: 적용된 점검 디자인과 이후 Designer 편집을 보존합니다."), CompactPrefix);
+			return;
+		}
+		if (!CompactProperty || !RowCompactProperty || !CompactTitleProperty || !CompactActionProperty || ExistingWrap ||
+			PanelBP->GetOutermost()->IsDirty() || RowBP->GetOutermost()->IsDirty())
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: compact 속성, 미저장 에셋 또는 부분 적용 상태를 확인하세요."), CompactPrefix);
+			return;
+		}
+
+		auto* OldRows = Cast<UVerticalBox>(PanelTree.FindWidget(TEXT("VerticalBox_RecommendedRows")));
+		auto* WarningBody = Cast<UVerticalBox>(PanelTree.FindWidget(TEXT("VerticalBox_RecommendedContent")));
+		auto* Hint = Cast<UTextBlock>(PanelTree.FindWidget(TEXT("Text_RecommendedHint")));
+		auto* StaffActionLabel = Cast<UTextBlock>(PanelTree.FindWidget(TEXT("Text_OpenGateStaffLink")));
+		auto* Root = Cast<UVerticalBox>(RowTree.FindWidget(TEXT("VerticalBox_Row")));
+		auto* RowSize = Cast<USizeBox>(RowTree.FindWidget(TEXT("SizeBox_Row")));
+		auto* Header = Cast<UHorizontalBox>(RowTree.FindWidget(TEXT("HorizontalBox_Content")));
+		auto* Copy = Cast<UVerticalBox>(RowTree.FindWidget(TEXT("VerticalBox_Copy")));
+		auto* Icon = Cast<USizeBox>(RowTree.FindWidget(TEXT("SizeBox_Icon")));
+		auto* Title = Cast<UTextBlock>(RowTree.FindWidget(TEXT("Text_Title")));
+		auto* Description = Cast<UTextBlock>(RowTree.FindWidget(TEXT("Text_Description")));
+		auto* ActionSize = Cast<USizeBox>(RowTree.FindWidget(TEXT("SizeBox_Action")));
+		auto* Place = Cast<UButton>(RowTree.FindWidget(TEXT("Button_Place")));
+		auto* ActionText = Cast<UTextBlock>(RowTree.FindWidget(TEXT("Text_Action")));
+		UWidget* Separator = RowTree.FindWidget(TEXT("SizeBox_Separator"));
+		const TCHAR* HideNames[] = {
+			TEXT("SizeBox_GoldCard"), TEXT("Text_RequiredFacilitiesCaption"), TEXT("Button_RequiredFacilities"),
+			TEXT("Box_GoalBonusRow"), TEXT("Box_GoalBonusRow_Rule_Size"), TEXT("Text_EstimateNotice"),
+			TEXT("Border_AdmissionPreviewRevenue")
+		};
+		bool bAllHiddenGroupsExist = true;
+		for (const TCHAR* Name : HideNames) bAllHiddenGroupsExist &= PanelTree.FindWidget(Name) != nullptr;
+		if (!OldRows || !WarningBody || !Hint || !StaffActionLabel || !Root || !RowSize || !Header || !Copy ||
+			!Icon || !Title || !Description || !ActionSize || !Place || !ActionText || !Separator || !bAllHiddenGroupsExist ||
+			OldRows->GetParent() != WarningBody || OldRows->GetChildrenCount() != 8 || RowTree.RootWidget != Root ||
+			RowSize->GetParent() != Root || Header->GetParent() != RowSize || Copy->GetParent() != Header ||
+			Icon->GetParent() != Header || Title->GetParent() != Copy || Description->GetParent() != Copy ||
+			ActionSize->GetParent() != Header || Place->GetParent() != ActionSize || ActionText->GetParent() != Place ||
+			!Cast<UVerticalBoxSlot>(RowSize->Slot))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 예상한 기존 위젯 계층과 달라 자동 변경하지 않았습니다."), CompactPrefix);
+			return;
+		}
+		struct FCompactEntry { const TCHAR* Name; FText Title; };
+		const FCompactEntry Entries[] = {
+			{ TEXT("Lighting"), LOCTEXT("CompactLighting", "조명 없음") },
+			{ TEXT("Food"), LOCTEXT("CompactFood", "음식 없음") },
+			{ TEXT("Toilet"), LOCTEXT("CompactToilet", "화장실 없음") },
+			{ TEXT("Entertainment"), LOCTEXT("CompactEntertainment", "즐길거리 없음") },
+			{ TEXT("Rest"), LOCTEXT("CompactRest", "휴게 없음") },
+			{ TEXT("Drink"), LOCTEXT("CompactDrink", "음료 없음") },
+			{ TEXT("FirstAid"), LOCTEXT("CompactFirstAid", "응급 없음") },
+			{ TEXT("FireSafety"), LOCTEXT("CompactFireSafety", "소방 없음") }
+		};
+		TArray<UFF_PrepRecommendedFacilityRow*> Items;
+		for (const FCompactEntry& Entry : Entries)
+		{
+			auto* Item = Cast<UFF_PrepRecommendedFacilityRow>(PanelTree.FindWidget(FName(FString(TEXT("RecommendedRow_")) + Entry.Name)));
+			if (!Item || Item->GetParent() != OldRows || !Item->IsA(RowBP->GeneratedClass))
+			{
+				UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 권장 시설 %s 행을 확인하세요."), CompactPrefix, Entry.Name);
+				return;
+			}
+			Items.Add(Item);
+		}
+		// 두 에셋과 기존 계층을 모두 검증하고 백업한 뒤에만 변경한다.
+		const FString Backup = FPaths::ProjectSavedDir() / TEXT("UIBackups/PrepCheckCompact") / FGuid::NewGuid().ToString(EGuidFormats::Digits);
+		if (!IFileManager::Get().MakeDirectory(*Backup, true)) return;
+		for (const FString& Package : { PanelPackage, RowPackage })
+		{
+			const FString File = FPackageName::LongPackageNameToFilename(Package, FPackageName::GetAssetPackageExtension());
+			if (IFileManager::Get().IsReadOnly(*File) || IFileManager::Get().Copy(*(Backup / FPaths::GetCleanFilename(File)), *File, false, false) != COPY_OK)
+			{
+				UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 대상 에셋 백업 또는 쓰기 권한 확인 실패."), CompactPrefix);
+				return;
+			}
+		}
+		PanelBP->Modify(); PanelTree.Modify(); RowBP->Modify(); RowTree.Modify();
+		PanelTree.ForEachWidget([](UWidget* Widget) { Widget->Modify(); if (Widget->Slot) Widget->Slot->Modify(); });
+		RowTree.ForEachWidget([](UWidget* Widget) { Widget->Modify(); if (Widget->Slot) Widget->Slot->Modify(); });
+		for (const TCHAR* Name : HideNames) PanelTree.FindWidget(Name)->SetVisibility(ESlateVisibility::Collapsed);
+		Hint->SetText(LOCTEXT("CompactRecommendedHint", "없어도 개장할 수 있습니다."));
+		StaffActionLabel->bIsVariable = true;
+		if (!PanelBP->WidgetVariableNameToGuidMap.Contains(StaffActionLabel->GetFName())) PanelBP->OnVariableAdded(StaffActionLabel->GetFName());
+		auto* Wrap = MakeWidget<UWrapBox>(*PanelBP, PanelTree, TEXT("WrapBox_RecommendedRows"), true);
+		Wrap->SetInnerSlotPadding(FVector2D(12.f, 12.f));
+		Wrap->SetExplicitWrapSize(false);
+		Row(*WarningBody, *Wrap, FMargin(18.f, 0.f, 18.f, 16.f));
+		WarningBody->ShiftChild(WarningBody->GetChildIndex(OldRows), Wrap);
+		const FText CompactAction = LOCTEXT("CompactPlaceAction", "배치하기 ›");
+		for (int32 Index = 0; Index < Items.Num(); ++Index)
+		{
+			UFF_PrepRecommendedFacilityRow* Item = Items[Index];
+			UWrapBoxSlot* Slot = Wrap->AddChildToWrapBox(Item);
+			Slot->SetHorizontalAlignment(HAlign_Fill); Slot->SetVerticalAlignment(VAlign_Fill);
+			Slot->SetFillEmptySpace(false);
+			RowCompactProperty->SetPropertyValue_InContainer(Item, true);
+			CompactTitleProperty->SetPropertyValue_InContainer(Item, Entries[Index].Title);
+			CompactActionProperty->SetPropertyValue_InContainer(Item, CompactAction);
+		}
+		OldRows->SetVisibility(ESlateVisibility::Collapsed);
+
+		// 기존 행의 이름·아이콘·동작 위젯을 재사용한다. 긴 설명은 런타임 툴팁으로 제공한다.
+		Separator->SetVisibility(ESlateVisibility::Collapsed);
+		Description->SetVisibility(ESlateVisibility::Collapsed);
+		Copy->SetVisibility(ESlateVisibility::Collapsed);
+		Title->RemoveFromParent();
+		Column(*Header, *Title, FMargin(0.f), true);
+		Header->ShiftChild(1, Title);
+		CastChecked<UHorizontalBoxSlot>(Title->Slot)->SetVerticalAlignment(VAlign_Center);
+		CastChecked<UHorizontalBoxSlot>(Icon->Slot)->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
+		Icon->SetWidthOverride(26.f); Icon->SetMinDesiredHeight(26.f);
+		FSlateFontInfo TitleFont = Title->GetFont(); TitleFont.Size = 17; Title->SetFont(TitleFont);
+		FSlateFontInfo ActionFont = ActionText->GetFont(); ActionFont.Size = 15; ActionText->SetFont(ActionFont);
+		ActionSize->RemoveFromParent(); Header->RemoveFromParent();
+		auto* Card = MakeWidget<UBorder>(*RowBP, RowTree, TEXT("Border_CompactCard"));
+		Card->SetBrush(Brush(Paper, 6.f, 1.f, AmberLine)); Card->SetPadding(FMargin(12.f));
+		auto* CardBody = MakeWidget<UVerticalBox>(*RowBP, RowTree, TEXT("VerticalBox_CompactCard"));
+		Card->AddChild(CardBody);
+		RowSize->AddChild(Card);
+		RowSize->SetWidthOverride(228.f); RowSize->SetMinDesiredHeight(104.f);
+		CastChecked<UVerticalBoxSlot>(RowSize->Slot)->SetPadding(FMargin(0.f));
+		Row(*CardBody, *Header, FMargin(0.f, 0.f, 0.f, 8.f));
+		ActionSize->ClearWidthOverride(); ActionSize->SetMinDesiredHeight(32.f);
+		Row(*CardBody, *ActionSize);
+
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(RowBP);
+		FKismetEditorUtilities::CompileBlueprint(RowBP);
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(PanelBP);
+		FKismetEditorUtilities::CompileBlueprint(PanelBP);
+		if (RowBP->Status == BS_Error || PanelBP->Status == BS_Error || !PanelBP->GeneratedClass)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 점검 위젯 컴파일 실패. 저장하지 않았습니다. 백업=%s"), CompactPrefix, *Backup);
+			return;
+		}
+		PanelDefaults = PanelBP->GeneratedClass->GetDefaultObject();
+		PanelDefaults->Modify();
+		CompactProperty->SetPropertyValue_InContainer(PanelDefaults, true);
+		if (!SaveAssetPackage(CompactPrefix, *RowBP) || !SaveAssetPackage(CompactPrefix, *PanelBP))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: 점검 에셋 저장 실패. 백업=%s"), CompactPrefix, *Backup);
+			return;
+		}
+		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_APPLIED: 점검 중복 안내와 권장 시설 카드를 정리했습니다. HUD 치수·입장료 조작 보존. 백업=%s"), CompactPrefix, *Backup);
+	}
+	FAutoConsoleCommand CompactCommand(TEXT("FF.ApplyPrepCheckCompactDesign"),
+		TEXT("점검 패널과 권장 시설 행 두 WBP의 중복 안내만 간소화한다. 사용자 HUD 크기와 위치를 보존한다."),
+		FConsoleCommandDelegate::CreateStatic(&ApplyCompactDesign));
 }
 
 #undef LOCTEXT_NAMESPACE

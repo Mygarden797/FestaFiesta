@@ -30,6 +30,14 @@ void UFF_TutorialSubsystem::RegisterDebugConsoleCommands()
 		}));
 
 	DebugCommands.Add(
+		TEXT("FF.Tutorial.SEnding"),
+		TEXT("S 엔딩 장면을 지금 튼다(신뢰도가 높으면 신뢰 줄도). 로비에서 쓴다."),
+		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+		{
+			PlaySGradeEnding();
+		}));
+
+	DebugCommands.Add(
 		TEXT("FF.Tutorial.SkipAll"),
 		TEXT("튜토리얼을 통째로 건너뛴다. 확인 없이 바로 끝난다."),
 		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()

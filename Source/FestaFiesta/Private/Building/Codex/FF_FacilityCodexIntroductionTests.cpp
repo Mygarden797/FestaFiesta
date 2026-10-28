@@ -1,4 +1,4 @@
-// 역할: 첫 도감 안내 기록의 사용자별 저장과 재실행·옛 보상 기록 이전을 검증한다.
+// 역할: 첫 도감 안내 기록은 사용자별로 유지하고 발견·보상은 축제에만 저장하는지 검증한다.
 #include "Building/Codex/FF_FacilityCodexProgressSubsystem.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -16,6 +16,7 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Engine/GameInstance.h"
+#include "Festival/FF_FestivalSettings.h"
 #include "HAL/FileManager.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ConfigCacheIni.h"
@@ -59,14 +60,15 @@ namespace FFF_CodexIntroductionTests
 	{
 		FSession()
 			: Game(NewObject<UGameInstance>())
-			, Progress(NewObject<UFF_FacilityCodexProgressSubsystem>(Game.Get()))
 		{
-			Progress->Initialize(Collection);
+			TGuardValue<TSoftObjectPtr<UFF_FestivalDefinition>> StartupDefinition(
+				GetMutableDefault<UFF_FestivalSettings>()->DefaultFestival, {});
+			Game->Init();
+			Progress.Reset(Game->GetSubsystem<UFF_FacilityCodexProgressSubsystem>());
 		}
-		~FSession() { Progress->Deinitialize(); }
+		~FSession() { Game->Shutdown(); }
 		TStrongObjectPtr<UGameInstance> Game;
 		TStrongObjectPtr<UFF_FacilityCodexProgressSubsystem> Progress;
-		FSubsystemCollection<UGameInstanceSubsystem> Collection;
 	};
 
 	struct FFeatureSession
@@ -103,26 +105,30 @@ bool FFF_FacilityCodexIntroductionPersistenceTest::RunTest(const FString& Parame
 		TestEqual(TEXT("Launchers receive one refresh"), Observer->NotificationCount, 1);
 		TestFalse(TEXT("Repeated opens do not change onboarding history"), Session.Progress->MarkIntroductionSeen());
 		TestEqual(TEXT("Repeated opens do not broadcast redundant refreshes"), Observer->NotificationCount, 1);
+		Session.Progress->ResetForNewFestival();
+		TestTrue(TEXT("New festivals retain the acknowledged introduction"), Session.Progress->HasSeenIntroduction());
+		TestFalse(TEXT("New festivals clear discoveries independently of guidance"), Session.Progress->IsDiscovered(TEXT("DiscoveredBeforeOpening")));
+		TestEqual(TEXT("The festival reset refreshes launchers once"), Observer->NotificationCount, 2);
 	}
 	Profile.ReloadFromDisk();
 	{
 		FFF_CodexIntroductionTests::FSession Restarted;
 		TestTrue(TEXT("A new game instance reloads the one-time guidance history"), Restarted.Progress->HasSeenIntroduction());
-		TestTrue(TEXT("Guidance persistence preserves discovery history"), Restarted.Progress->IsDiscovered(TEXT("DiscoveredBeforeOpening")));
-		TestTrue(TEXT("The restarted profile records a new discovery"),
+		TestFalse(TEXT("A fresh game does not inherit discovery history from the profile"), Restarted.Progress->IsDiscovered(TEXT("DiscoveredBeforeOpening")));
+		TestTrue(TEXT("The fresh festival can record a new discovery"),
 			Restarted.Progress->RecordDiscoveries({TEXT("DiscoveredAfterRestart")}));
 	}
 	Profile.ReloadFromDisk();
 	{
 		FFF_CodexIntroductionTests::FSession Reloaded;
-		TestTrue(TEXT("Later discovery saves preserve guidance history"), Reloaded.Progress->HasSeenIntroduction());
-		TestTrue(TEXT("New discoveries still save normally"), Reloaded.Progress->IsDiscovered(TEXT("DiscoveredAfterRestart")));
+		TestTrue(TEXT("Later discovery changes preserve guidance history"), Reloaded.Progress->HasSeenIntroduction());
+		TestFalse(TEXT("Discovery changes are not persisted in the profile"), Reloaded.Progress->IsDiscovered(TEXT("DiscoveredAfterRestart")));
 	}
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityCodexIntroductionMigrationTest,
-	"FestaFiesta.Building.Codex.Introduction.RewardMigrationPreservesSeenHistory",
+	"FestaFiesta.Building.Codex.Introduction.LegacyProfileHistoryDoesNotLeakIntoNewFestival",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FFF_FacilityCodexIntroductionMigrationTest::RunTest(const FString& Parameters)
 {
@@ -130,16 +136,22 @@ bool FFF_FacilityCodexIntroductionMigrationTest::RunTest(const FString& Paramete
 	FFF_CodexIntroductionTests::FScopedProfile Profile;
 	GConfig->SetBool(TEXT("FestaFiesta.FacilityCodex"), TEXT("bHasSeenIntroduction"), true, Profile.Path);
 	GConfig->SetArray(TEXT("FestaFiesta.FacilityCodex"), TEXT("DiscoveredRuleIds"), {TEXT("LegacyDiscovery")}, Profile.Path);
+	GConfig->SetArray(TEXT("FestaFiesta.FacilityCodex"), TEXT("ClaimedDiscoveryRewardRuleIds"), {TEXT("LegacyDiscovery")}, Profile.Path);
+	GConfig->SetArray(TEXT("FestaFiesta.FacilityCodex"), TEXT("ClaimedCollectionRewardIds"), {TEXT("LegacyStage")}, Profile.Path);
+	GConfig->Flush(false, Profile.Path);
 	{
-		FFF_CodexIntroductionTests::FSession Migrating;
-		TestTrue(TEXT("Legacy reward migration reads existing guidance first"), Migrating.Progress->HasSeenIntroduction());
-		TestTrue(TEXT("Reward migration still preserves paid history"), Migrating.Progress->IsDiscoveryRewardClaimed(TEXT("LegacyDiscovery")));
+		FFF_CodexIntroductionTests::FSession Fresh;
+		TestTrue(TEXT("Existing profile guidance remains acknowledged"), Fresh.Progress->HasSeenIntroduction());
+		TestFalse(TEXT("Legacy profile discoveries do not enter a fresh festival"), Fresh.Progress->IsDiscovered(TEXT("LegacyDiscovery")));
+		TestFalse(TEXT("Legacy profile reward claims do not enter a fresh festival"), Fresh.Progress->IsDiscoveryRewardClaimed(TEXT("LegacyDiscovery")));
+		TestFalse(TEXT("Legacy profile collection claims do not enter a fresh festival"), Fresh.Progress->IsCollectionRewardClaimed(TEXT("LegacyStage")));
 	}
 	Profile.ReloadFromDisk();
 	{
 		FFF_CodexIntroductionTests::FSession Reloaded;
-		TestTrue(TEXT("Migration's save cannot erase existing guidance history"), Reloaded.Progress->HasSeenIntroduction());
-		TestTrue(TEXT("Migrated reward history also survives restart"), Reloaded.Progress->IsDiscoveryRewardClaimed(TEXT("LegacyDiscovery")));
+		TestTrue(TEXT("A restart preserves existing guidance history"), Reloaded.Progress->HasSeenIntroduction());
+		TestTrue(TEXT("A restart keeps festival discoveries empty"), Reloaded.Progress->GetDiscoveredRuleIdsView().IsEmpty());
+		TestFalse(TEXT("A restart never migrates old paid rewards into the festival"), Reloaded.Progress->IsDiscoveryRewardClaimed(TEXT("LegacyDiscovery")));
 	}
 	return true;
 }

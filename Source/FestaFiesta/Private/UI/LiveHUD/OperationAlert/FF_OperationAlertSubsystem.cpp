@@ -18,7 +18,9 @@ namespace
 	{
 		return Kind == EFF_OperationAlertKind::FoodShortage
 			|| Kind == EFF_OperationAlertKind::RestroomShortage
-			|| Kind == EFF_OperationAlertKind::FunShortage;
+			|| Kind == EFF_OperationAlertKind::FunShortage
+			|| Kind == EFF_OperationAlertKind::RestShortage
+			|| Kind == EFF_OperationAlertKind::DrinkShortage;
 	}
 
 	// 누적 카운터가 날마다 0 으로 돌아가면 지금 값이 곧 늘어난 수다
@@ -88,6 +90,8 @@ bool UFF_OperationAlertSubsystem::ReadInputs(FFF_OperationAlertInputs& OutInputs
 	OutInputs.HungerCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Hunger);
 	OutInputs.RestroomCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Restroom);
 	OutInputs.StimulationCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Stimulation);
+	OutInputs.FatigueCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Fatigue);
+	OutInputs.ThirstCoverage = Crowd->GetNeedCoverage(EFF_NeedType::Thirst);
 	OutInputs.QueueAbandonsDelta = DeltaSince(Crowd->GetQueuePatienceAbandons(), LastQueueAbandons);
 
 	if (const UFF_CrowdDecisionSubsystem* Decision = World->GetSubsystem<UFF_CrowdDecisionSubsystem>())

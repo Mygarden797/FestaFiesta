@@ -4,6 +4,8 @@
 > 작성자: 한광훈 (FF_ZoneSystem)
 > 읽는 사람: 이정원(Crowd), 김시리(Utility AI), 강민서(시간), 백종태(UI)
 > 중요한 전제: **팀원 소유 파일은 한 줄도 수정하지 않았다.** 이번 작업은 전부 FF_ZoneSystem 플러그인과 Zone 브리지 폴더 안에서 끝냈고, 다른 담당 영역에 필요한 일은 이 문서로만 요청한다.
+>
+> （10/14 기준: 이 문서는 2026-09-04 회의 안건 기록이다. 그 뒤 바뀐 점은 다음과 같다. 결정 코드는 현재 구역의 `DensityRatio`를 읽는다(`FF_CrowdDecisionSubsystem.cpp`의 `CurrentZoneDensityRatio` → `FF_UtilityDestinationSelector.cpp`의 개인별 밀집 기준 비교). 따라서 5절의 "고정값 한 줄 교체" 요청은 반영된 상태다. 구역은 2026-10-10 「건축 가능 구역 변경」으로 `Config/DefaultGame.ini`의 `ProjectZoneIds` 13개(`GZ_Beach01`~`05` 등)로 바뀌었으므로 "30개 구역", `GZ_TestMain_*` 출력 예시는 옛 값이다. 3절 A/B/C 중 무엇을 택했는지는 코드로 확인되지 않는다. 구역별 `UsablePublicAreaSquareMeters`·`SoftCapacityOverride` 값은 맵 에셋에 있어 확인하지 못했다.）
 
 ---
 

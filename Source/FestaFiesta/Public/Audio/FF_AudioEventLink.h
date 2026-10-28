@@ -44,6 +44,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Audio")
 	bool IsLinkEnabled() const { return bLinkEnabled; }
 
+	/** The audio owner also owns the utility dock; UI queries never scan live widgets. */
+	UUserWidget* GetPlaylistPlayerWidget() const { return PlaylistPlayerWidget.Get(); }
+
 	/* 축제 레벨에서 단계·밤낮·뱅크에 든 곡으로 틀 배경음을 정한다. 월드 없이 시험하려고 값만 받는다.
 
 	   결산(마감·리포트)은 뱅크에 폐장 곡이 있으면 그 곡, 없으면 플레이리스트를 이어 튼다.
@@ -69,6 +72,9 @@ public:
 	static float ResolveMainShowSongStart(float ShowStartSeconds, float ShowEndSeconds, float SongSeconds, float MaxLeadSeconds);
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_UIUtilityFlyoutForegroundTest;
+#endif
 	/* 지금 메인 공연곡을 틀 때인지. 그렇다면 그날(1부터)과 곡 안의 위치(초)를 낸다.
 
 	   공연 시각은 단계 시스템의 일정표에서 읽는다(TryGetMainProgramShowWindow — 관객이 앉는 공연 시작부터 다음 줄까지).

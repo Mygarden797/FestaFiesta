@@ -307,8 +307,9 @@ bool FFF_FacilityRevenueVirtualizedPreviewTest::RunTest(const FString& Parameter
 	auto* List = Cast<UFF_FacilityRevenueListView>(Panel->GetWidgetFromName(TEXT("List_Ranking")));
 	auto* Body = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Border_Panel")));
 	if (!TestNotNull(TEXT("ListView"), List) || !TestNotNull(TEXT("Panel surface"), Body)) return false;
-	if (!TestNotNull(TEXT("Adaptive centered frame is an authored binding"),
-		Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_ClarityFrame"))))) return false;
+	auto* Frame = Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_ClarityFrame")));
+	if (!TestNotNull(TEXT("Adaptive centered frame is an authored binding"), Frame)) return false;
+	const FVector2D AuthoredFrameSize(Frame->GetWidthOverride(), Frame->GetHeightOverride());
 	// Standalone captures must wait for the shared UI materials, just like BuildTools.
 	TSet<UMaterialInterface*> Materials;
 	auto Gather = [&Materials](const FSlateBrush& Brush)
@@ -349,11 +350,10 @@ bool FFF_FacilityRevenueVirtualizedPreviewTest::RunTest(const FString& Parameter
 		const FSlateRect BodyRect = Body->GetPaintSpaceGeometry().GetLayoutBoundingRect();
 		TestTrue(TEXT("Revenue panel stays above its 70-logical-unit bottom HUD reserve at project DPI"), BodyRect.Top >= 0 && BodyRect.Bottom <= Height - 69.5f * Dpi &&
 			BodyRect.Left >= 0 && BodyRect.Right <= Width && BodyRect.GetSize().GetMin() > 0);
-		// RevenueSky replaced the right-hand compact panel with a stable centered
-		// 1060x690 surface. Sparse/empty data must retain the same layout as a full list.
-		TestTrue(TEXT("Ranking retains its authored 1060x690 logical size at supported landscape viewports"),
-			FMath::IsNearlyEqual(BodyRect.GetSize().X / Dpi, 1060.f, 1.f) &&
-			FMath::IsNearlyEqual(BodyRect.GetSize().Y / Dpi, 690.f, 1.f));
+		// 최초 WBP 크기를 기준으로 런타임과 같은 논리 뷰포트 여백을 적용한다.
+		TestTrue(TEXT("Ranking retains its authored logical size within the production viewport clamp"),
+			FMath::IsNearlyEqual(BodyRect.GetSize().X / Dpi, FMath::Min(AuthoredFrameSize.X, FMath::Max(1.f, Size.X / Dpi - 48.f)), 1.f) &&
+			FMath::IsNearlyEqual(BodyRect.GetSize().Y / Dpi, FMath::Min(AuthoredFrameSize.Y, FMath::Max(1.f, Size.Y / Dpi - 176.f)), 1.f));
 		TestTrue(TEXT("Ranking is horizontally centered and raised 29 logical units above screen center"),
 			FMath::IsNearlyEqual((BodyRect.Left + BodyRect.Right) * .5f, Width * .5f, 1.f) &&
 			FMath::IsNearlyEqual((BodyRect.Top + BodyRect.Bottom) * .5f, Height * .5f - 29.f * Dpi, 1.f));

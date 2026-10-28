@@ -113,10 +113,8 @@ void UFF_FestivalProgressionSubsystem::WriteSaveData(TArray<uint8>& OutBytes) co
 		State.CurrentLedger.TotalRefund, State.CurrentLedger.FacilityIds, State.CurrentLedger.FacilityRevenue);
 	FacilityRevenueBook.Export(State.FacilityRevenueIds, State.FacilityRevenues);
 
-	/* 프로그램 편성(ScheduledPrograms)은 여전히 안 담는다.
-	   저장은 정산이 끝난 뒤에만 일어나는데(장원재, 이어하기), 그 시점엔 하루 경계가
-	   이미 편성을 해제한 뒤라 담을 것이 없다 — 호출 시점이 바뀌면 이 가정도
-	   같이 재검토할 것. */
+	// 예약 슬롯 핸들은 담지 않는다. 불러올 때 같은 카드로 새로 잡는다.
+	State.ScheduledPrograms = ScheduledPrograms;
 
 	UFF_SaveArchive::WriteStruct(OutBytes, State);
 }
@@ -181,6 +179,7 @@ void UFF_FestivalProgressionSubsystem::ReadSaveData(const TArray<uint8>& InBytes
 	DayLedger.Import(State.CurrentLedger.SpendByReason, State.CurrentLedger.EarnByReason,
 		State.CurrentLedger.TotalRefund, State.CurrentLedger.FacilityIds, State.CurrentLedger.FacilityRevenue);
 	FacilityRevenueBook.Import(State.FacilityRevenueIds, State.FacilityRevenues);
+	RestoreScheduledPrograms(State.ScheduledPrograms);
 
 	// 화면이 따라오게 알린다. 값만 바꾸면 UI 가 옛 숫자를 계속 보여준다.
 	BroadcastGoldIfChanged(PreviousGold);
@@ -207,6 +206,47 @@ void UFF_FestivalProgressionSubsystem::ReadSaveData(const TArray<uint8>& InBytes
 	UE_LOG(LogFestaFiestaEconomy, Log,
 		TEXT("[경제] 저장에서 되돌렸다. 금화 %d / 누적 %d / %d일차 / 고용 %d명"),
 		State.Gold, State.TotalRevenue, State.LastProcessedDay, State.StaffRoster.Num());
+}
+
+void UFF_FestivalProgressionSubsystem::RestoreScheduledPrograms(const TArray<FFF_ScheduledProgram>& Saved)
+{
+	const bool bHadPrograms = ScheduledPrograms.Num() > 0;
+	if (ProgramReservations != nullptr)
+	{
+		for (const FFF_ScheduledProgram& Scheduled : ScheduledPrograms)
+		{
+			ProgramReservations->RemoveReservation(Scheduled.ReservationId);
+		}
+	}
+	ScheduledPrograms.Reset();
+
+	// 돈은 이미 저장된 잔액에 빠져 있다. 차감 없이 예약 슬롯만 다시 잡는다.
+	for (const FFF_ScheduledProgram& Program : Saved)
+	{
+		const FFF_ProgramCard* Card = Definition != nullptr
+			? FFF_ProgramScheduleRules::FindCard(Definition->ProgramCatalog, Program.ProgramId) : nullptr;
+		if (Card == nullptr || ProgramReservations == nullptr)
+		{
+			UE_LOG(LogFestaFiestaEconomy, Warning,
+				TEXT("[경제] 저장된 프로그램 '%s' 를 되돌리지 못했다(카드 또는 예약 서브시스템 없음)."),
+				*Program.ProgramId.ToString());
+			continue;
+		}
+
+		FFF_ScheduledProgram Restored = Program;
+		Restored.ReservationId = ProgramReservations->RegisterProgram(
+			Program.FacilityInstanceId, Card->StartMinutes, Card->EndMinutes, Card->Capacity);
+		if (!Restored.ReservationId.IsValid())
+		{
+			continue;
+		}
+		ScheduledPrograms.Add(Restored);
+	}
+
+	if (bHadPrograms || ScheduledPrograms.Num() > 0)
+	{
+		OnScheduledProgramsChanged.Broadcast();
+	}
 }
 
 void UFF_FestivalProgressionSubsystem::StartConfiguredFestival()

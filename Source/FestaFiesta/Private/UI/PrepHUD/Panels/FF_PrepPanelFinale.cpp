@@ -169,13 +169,17 @@ void UFF_PrepPanelFinale::RefreshAll()
 			UFF_EconomyDisplayTextLibrary::GetFinaleGradeText(SummaryGrade)) : SelectTierText);
 	SetText(Text_PurchaseCost, Tier ? FText::AsNumber(Tier->CostGold) : MissingValueText);
 	// 성공 뒤에는 실제 현재 잔액을 읽는다. 이미 차감된 돈에서 비용을 또 빼지 않는다.
-	SetText(Text_GoldAfterValue, CachedViewModel && (bPurchased || Tier)
-		? FText::AsNumber(CachedViewModel->GetGold() - (bPurchased ? 0 : Tier->CostGold)) : MissingValueText);
-	SetText(Text_GoldAfterLabel, bPurchased ? CurrentBalanceLabel : AfterBalanceLabel);
+	// 모자라면 음수 잔액 대신 부족한 금액을 보인다(시설 강화·프로그램 화면과 같은 표기).
+	const bool bHasBalance = CachedViewModel && (bPurchased || Tier);
+	const int32 GoldAfter = bHasBalance ? CachedViewModel->GetGold() - (bPurchased ? 0 : Tier->CostGold) : 0;
+	const bool bShort = bHasBalance && !bPurchased && GoldAfter < 0;
+	SetText(Text_GoldAfterValue, bHasBalance ? FText::AsNumber(FMath::Abs(GoldAfter)) : MissingValueText);
+	SetText(Text_GoldAfterLabel, bPurchased ? CurrentBalanceLabel : (bShort ? ShortageLabel : AfterBalanceLabel));
 	SetText(Text_StageNotice, CachedViewModel && CachedViewModel->GetCurrentStage() == EFF_FestivalStage::MorningCheck
 		? FText::Format(StageNoticeFormat, FText::AsNumber(CachedViewModel->GetCurrentDay())) : UnavailableStageText);
 	SetText(Text_OnceNotice, OnceNoticeText);
 	SetText(Text_PurchaseLabel, bPurchased ? PurchasedLabel : PurchaseLabel);
+	SetText(Text_Later, bPurchased ? CloseLabel : LaterLabel);
 	SetText(Text_BlockReason, !LastFailureText.IsEmpty() && !bPurchased ? LastFailureText : GetBlockReason(SelectedGrade));
 	if (Button_Purchase) Button_Purchase->SetIsEnabled(IsPurchaseReady(SelectedGrade) && !PendingConfirm.IsValid());
 	RefreshConfirmDialog();

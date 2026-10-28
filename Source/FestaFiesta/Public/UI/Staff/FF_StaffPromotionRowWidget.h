@@ -36,6 +36,9 @@ public:
 	/** 관리 목록은 가능한 동작 하나 또는 짧은 불가 사유만 표시한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining")
 	bool bCompactManagementRow = false;
+	/** 라이브 표는 고용 구분을 툴팁으로 옮기고 직원마다 한 줄을 쓴다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining")
+	bool bCompactLiveLayout = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|StaffTraining|Text")
 	FText StaffNameFormat = NSLOCTEXT("FestaFiestaStaffTraining", "StaffName", "스태프 {Id}");

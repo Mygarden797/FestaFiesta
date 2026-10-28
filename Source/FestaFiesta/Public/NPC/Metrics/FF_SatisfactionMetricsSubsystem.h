@@ -15,6 +15,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSimSatisfactionChanged, int32,
  * 만족도 산출 계수.
  * UtilityCoefficient DataTable(`FFF_UtilityCoefficientRow`)에서 개별 행으로 로드하며,
  * 테이블이 없거나 행이 없으면 여기 적힌 기본값으로 대체한다.
+ * 기본값은 폴백일 뿐이다 — 게임이 쓰는 가중치는 표의 satisfaction_weight_* 행이고, 1단계·개인 부합도 축은 기본값과 다르다.
  *
  * === 2단 계층 구조 ===
  * 대기·밀도·취향매칭·Need 충족도 네 입력을 평평하게 한 번에 섞지 않고, 두 축으로 먼저 묶는다. 
@@ -64,7 +65,22 @@ struct FFF_SatisfactionCoefficients
 	float NeedCoverageTargetHunger = 7.f;
 	float NeedCoverageTargetRestroom = 2.f;
 	float NeedCoverageTargetStimulation = 10.f;
+	float NeedCoverageTargetThirst = 7.f;
+	float NeedCoverageTargetFatigue = 2.f;
 	float NeedCoverageFloor = 0.3f;
+
+	float GetNeedCoverageTarget(EFF_NeedType NeedType) const
+	{
+		switch (NeedType)
+		{
+		case EFF_NeedType::Hunger:      return NeedCoverageTargetHunger;
+		case EFF_NeedType::Thirst:      return NeedCoverageTargetThirst;
+		case EFF_NeedType::Restroom:    return NeedCoverageTargetRestroom;
+		case EFF_NeedType::Fatigue:     return NeedCoverageTargetFatigue;
+		case EFF_NeedType::Stimulation: return NeedCoverageTargetStimulation;
+		default:                        return 0.f;
+		}
+	}
 
 	// 0이면 시설이 하나도 없어도 하한만큼은 남긴다. 목표가 0 이하이면 커버리지를 보지 않는다
 	float NeedCoverageMultiplier(int32 OpenFacilityCount, float Target) const

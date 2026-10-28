@@ -267,6 +267,26 @@ UWidget* UFF_TutorialSubsystem::FindDynamicAnchorWidget(const FName AnchorId) co
 {
 	const FString Id = AnchorId.ToString();
 
+	/* 'A|B' 는 앞에서부터 찾아 처음 보이는 것을 쓴다(2026-10-12 피드백: '+ 배정'을 못 찾음).
+
+	   '+ 배정'은 시설 정보창의 '스태프' 탭 안에 있어서, 정보창을 막 열면 화면에 없다.
+	   FacilityInfo_AssignStaff|FacilityInfo_TabStaff 로 적으면 그동안은 '스태프' 탭에 박스가 씌워지고,
+	   탭을 열어 '+ 배정'이 보이는 순간 RefreshDynamicAnchor 가 박스를 그쪽으로 옮긴다.
+	*/
+	if (Id.Contains(TEXT("|")))
+	{
+		TArray<FString> Choices;
+		Id.ParseIntoArray(Choices, TEXT("|"));
+		for (const FString& Choice : Choices)
+		{
+			if (UWidget* Found = FindDynamicAnchorWidget(FName(*Choice.TrimStartAndEnd())))
+			{
+				return Found;
+			}
+		}
+		return nullptr;
+	}
+
 	// 배치 탭의 카테고리 버튼. BuildCategory_Performance 처럼 카테고리 열거형 이름을 붙인다.
 	if (Id.StartsWith(BuildCategoryAnchorPrefix))
 	{

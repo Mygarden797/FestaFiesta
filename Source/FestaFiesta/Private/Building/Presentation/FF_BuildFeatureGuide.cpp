@@ -18,7 +18,7 @@ const TArray<FFBuildFeatureGuide::FTopic>& FFBuildFeatureGuide::Topics()
         {TEXT("BuildCatalog"), LOCTEXT("CatalogTitle", "시설 목록"), LOCTEXT("CatalogBody",
             "설치할 시설을 고르는 카탈로그를 엽니다. 분류나 검색으로 시설을 찾고, 가격과 필요한 공간을 확인한 뒤 시설을 선택하세요.\n\n시설을 선택하면 배치 화면으로 이동합니다. 목록으로 돌아와 다른 시설을 고를 수 있으며, 별표로 자주 쓰는 시설을 즐겨찾기에 저장할 수 있습니다."), TEXT("Button_ToolbarCatalog"), TEXT("Size_BuildToolbarLine6")},
         {TEXT("BuildControls"), LOCTEXT("ControlsTitle", "조작 안내"), LOCTEXT("ControlsBody",
-            "현재 건축 상황에 맞는 조작법과 단축키를 화면에 표시합니다. 시설 선택, 배치, 회전, 이동 중 사용할 수 있는 입력을 확인하세요.\n\n안내의 실행 취소·다시 실행 버튼을 사용할 수 있으며, 대기열을 지원하는 시설을 배치할 때는 대기열 모양 조작법도 나타납니다.\n\n조작 안내 버튼을 다시 누르면 접을 수 있습니다."), TEXT("Button_ToolbarHelp"), TEXT("Size_BuildToolbarLine7")},
+            "현재 건축 상황에 맞는 조작법과 단축키를 화면에 표시합니다. 시설 선택, 배치, 회전, 이동 중 사용할 수 있는 입력을 확인하세요.\n\n연속 설치 시설은 누른 채 드래그하면 일정 간격의 반투명 미리보기가 나타나고, 마우스를 놓으면 가능한 곳만 한 번에 설치됩니다. 설치 불가 위치는 건너뛰며, Ctrl+Z로 설치한 묶음을 한 번에 취소할 수 있습니다.\n\n대기열을 지원하는 시설은 대기열 모양 조작법도 나타납니다. 안내창의 닫기 × 버튼으로 닫고, 상단 조작 안내 버튼으로 다시 열 수 있습니다."), TEXT("Button_ToolbarHelp"), TEXT("Size_BuildToolbarLine7")},
         {TEXT("LightingControls"), LOCTEXT("LightingTitle", "시설 조명"), LOCTEXT("LightingBody",
             "카탈로그의 전구 아이콘은 조명을 조절할 수 있는 시설을 뜻합니다.\n\n해당 시설을 설치한 뒤 선택하고 시설 정보의 조명 설정을 여세요. 조명을 켜거나 끄고 밝기와 색상을 바꿀 수 있습니다.\n\n변경한 모습을 확인한 뒤 적용으로 저장하세요. 취소로 되돌리거나 원래 색상을 다시 사용할 수 있습니다."), NAME_None},
         {TEXT("FacilityCodex"), LOCTEXT("CodexTitle", "조합 도감"), LOCTEXT("CodexBody",

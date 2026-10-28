@@ -355,9 +355,14 @@ private:
 				Row->DefaultValue = Override.Value;
 				Applied += FString::Printf(TEXT("%s=%g "), *Override.Key.ToString(), Override.Value);
 			}
-			else
+			else if (Table)
 			{
-				Test->AddWarning(FString::Printf(TEXT("계수 '%s' 가 표에 없다."), *Override.Key.ToString()));
+				// 표에 없어 코드 기본값으로 도는 계수도 실험할 수 있게 행을 이 판에만 더한다(애셋은 저장하지 않는다).
+				FFF_UtilityCoefficientRow Added;
+				Added.CoefficientId = Override.Key;
+				Added.DefaultValue = Override.Value;
+				Table->AddRow(Override.Key, Added);
+				Applied += FString::Printf(TEXT("%s=%g(추가) "), *Override.Key.ToString(), Override.Value);
 			}
 		}
 		if (!Applied.IsEmpty())

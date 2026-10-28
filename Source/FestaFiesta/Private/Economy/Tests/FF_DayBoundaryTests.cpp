@@ -396,14 +396,14 @@ bool FFF_DayBoundary_HireRejectsInsteadOfPartialHiring::RunTest(const FString& P
 		return false;
 	}
 
-	const int32 GoldAfterRent = Harness.Progression->GetGold();
+	const int32 GoldBeforeHire = Harness.Progression->GetGold();
 
 	// 상한 초과는 거부되고 상태가 그대로다.
 	TestFalse(TEXT("상한을 넘는 요청은 거부된다"),
 		Harness.Progression->TryHireStaff(FFF_DayBoundaryTestHelpers::MaxHires + 1));
 	TestEqual(TEXT("거부되면 아무도 고용되지 않는다"),
 		Harness.Progression->GetHiredStaffCount(), 0);
-	TestEqual(TEXT("거부되면 잔액이 그대로다"), Harness.Progression->GetGold(), GoldAfterRent);
+	TestEqual(TEXT("거부되면 잔액이 그대로다"), Harness.Progression->GetGold(), GoldBeforeHire);
 
 	// 정상 고용.
 	TestTrue(TEXT("상한과 같은 인원은 고용된다"),
@@ -411,7 +411,7 @@ bool FFF_DayBoundary_HireRejectsInsteadOfPartialHiring::RunTest(const FString& P
 	TestEqual(TEXT("고용 인원이 반영된다"),
 		Harness.Progression->GetHiredStaffCount(), FFF_DayBoundaryTestHelpers::MaxHires);
 	TestEqual(TEXT("고용비가 인원분만큼 빠진다"),
-		Harness.Progression->GetGold(), GoldAfterRent
+		Harness.Progression->GetGold(), GoldBeforeHire
 			- FFF_DayBoundaryTestHelpers::MaxHires * FFF_DayBoundaryTestHelpers::HireCost);
 	TestEqual(TEXT("고용비가 원장에 기록된다"),
 		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::StaffHire),

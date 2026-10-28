@@ -56,6 +56,8 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Finale")
 	TObjectPtr<UTextBlock> Text_PurchaseLabel;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Finale")
+	TObjectPtr<UTextBlock> Text_Later;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Finale")
 	TObjectPtr<UButton> Button_Later;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Finale")
 	TObjectPtr<UButton> Button_Purchase;
@@ -86,11 +88,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")
 	FText CurrentBalanceLabel = NSLOCTEXT("FestaFiestaFinale", "CurrentBalance", "현재 잔액");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")
+	FText ShortageLabel = NSLOCTEXT("FestaFiestaFinale", "Shortage", "부족한 금액");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")
 	FText MissingValueText = NSLOCTEXT("FestaFiestaFinale", "Missing", "—");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")
 	FText PurchaseLabel = NSLOCTEXT("FestaFiestaFinale", "Purchase", "피날레 구매하기");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")
 	FText PurchasedLabel = NSLOCTEXT("FestaFiestaFinale", "Purchased", "구매 완료");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")
+	FText LaterLabel = NSLOCTEXT("FestaFiestaFinale", "Later", "나중에");
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")
+	FText CloseLabel = NSLOCTEXT("FestaFiestaFinale", "Close", "닫기");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")
 	FText SelectedBadgeText = NSLOCTEXT("FestaFiestaFinale", "SelectedBadge", "✓ 선택됨");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Finale|Text")

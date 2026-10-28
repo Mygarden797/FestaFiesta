@@ -8,10 +8,13 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_ZoneSaveBridge.generated.h"
 
+class UFFZSWorldSubsystem;
+
 /* 시설 하나가 저장에 담기는 모양.
 
-   액터 참조나 인스턴스 아이디를 담지 않는다. 불러오면 그 액터는 이미 없고,
-   아이디는 설치할 때 새로 만들어진다. 다시 놓는 데 필요한 것만 담는다.
+   액터 참조는 담지 않는다. 불러오면 그 액터는 이미 없다.
+   인스턴스 아이디는 담는다. 스태프 배치·프로그램 편성이 이 아이디로 시설을 가리켜서,
+   새 아이디로 다시 놓으면 그 연결이 전부 끊긴다.
 */
 USTRUCT()
 struct FFF_ZoneFacilitySave
@@ -28,6 +31,25 @@ struct FFF_ZoneFacilitySave
 	// 격자 위치와 회전. 이 구조체는 플러그인이 SaveGame 플래그를 붙여 뒀다.
 	UPROPERTY()
 	FFFZSGridPlacement Placement;
+
+	// 옛 저장이면 비어 있다. 그때는 새 아이디로 놓는다.
+	UPROPERTY()
+	FGuid InstanceId;
+
+	// 돈을 내고 올린 강화 단계. 되돌릴 때 같은 단계까지 다시 밟는다(비용 없이).
+	UPROPERTY()
+	int32 UpgradeLevel = 1;
+
+	// Missing fields preserve the original authored queue geometry of old saves;
+	// an explicitly disabled setting in a new save is distinguishable and retained.
+	UPROPERTY()
+	bool bHasQueueConfiguration = false;
+
+	UPROPERTY()
+	EFFZSQueueLayout QueueLayout = EFFZSQueueLayout::Authored;
+
+	UPROPERTY()
+	FFFZSQueueSettings QueueSettings;
 };
 
 USTRUCT()
@@ -94,6 +116,9 @@ private:
 
 	// 이미 놓인 시설을 치운다. 복원 전에 부른다.
 	void ClearExistingFacilities();
+
+	// 갓 설치한 시설을 저장된 강화 단계까지 한 단계씩 올린다.
+	static void ReapplyUpgrades(UFFZSWorldSubsystem& ZoneWorld, const FGuid& InstanceId, int32 TargetLevel);
 
 	bool bRegistered = false;
 };

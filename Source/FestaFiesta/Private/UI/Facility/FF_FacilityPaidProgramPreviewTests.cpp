@@ -163,6 +163,22 @@ bool FFF_FacilityPaidProgramRenderedPreview::RunTest(const FString& Parameters)
 			bAllSaved &= SaveCapture(*this,Renderer,Slate,Resolution,Prefix+TEXT("ProgramList"),Dpi);
 			CheckControl(*this,*Select,Border->GetCachedGeometry().GetLayoutBoundingRect());
 			TestTrue(TEXT("Program card remains compact"),Select->GetCachedGeometry().GetLocalSize().Y<=128.f);
+			auto* CardPrice = Cast<UCommonTextBlock>(Card->GetWidgetFromName(TEXT("Text_ProgramCost")));
+			if (TestNotNull(TEXT("The source workshop card shows its separate purchase price"), CardPrice))
+			{
+				const FText ExpectedPrice = FText::Format(
+					NSLOCTEXT("PaidProgramPreview", "CardPrice", "{0} Gold"), FText::AsNumber(Source->CostGold));
+				TestEqual(TEXT("The list price uses the same source cost as the purchase review"),
+					CardPrice->GetText().ToString(), ExpectedPrice.ToString());
+				const FSlateRect PriceRect = CardPrice->GetCachedGeometry().GetLayoutBoundingRect();
+				const FSlateRect CardRect = Select->GetCachedGeometry().GetLayoutBoundingRect();
+				TestTrue(TEXT("The list price has readable, visible text geometry"),
+					CardPrice->IsVisible() && PriceRect.GetSize().X >= 24.f && PriceRect.GetSize().Y >= 8.f);
+				TestTrue(TEXT("The complete purchase price stays inside the program card"),
+					PriceRect.Left >= CardRect.Left - .5f && PriceRect.Right <= CardRect.Right + .5f &&
+					PriceRect.Top >= CardRect.Top - .5f && PriceRect.Bottom <= CardRect.Bottom + .5f &&
+					CardPrice->GetCachedGeometry().GetLocalSize().X >= CardPrice->GetDesiredSize().X - .5f);
+			}
 		}
 		Select->OnClicked.Broadcast();
 		TestTrue(TEXT("Review enables its separate explicit purchase action"), Confirm->GetIsEnabled());

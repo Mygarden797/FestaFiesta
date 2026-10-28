@@ -10,10 +10,13 @@
 #include "FF_PrepPanelCheck.generated.h"
 
 class UButton;
+class UBorder;
 class USlider;
 class UTextBlock;
 class UWidget;
 class UVerticalBox;
+class UWrapBox;
+class UPanelWidget;
 class UFF_BuildCatalogSubsystem;
 class UFF_PrepRecommendedFacilityRow;
 class UFF_FestivalViewModelSubsystem;
@@ -120,10 +123,9 @@ struct FESTAFIESTA_API FFF_PrepCheckRules
  * 근거가 되는 화면에서 빈칸은 "문제 없음"으로 읽힌다.
  *
  * 구성 —
- *   카드 4장   날씨(선택 가능) · 일일 목표 · 예상 방문객 · 보유 금화
- *   수용 위험  예상 방문객 vs Zone 정원 합. 색 + 아이콘 + 문구
+ *   카드 3장   날씨(선택 가능) · 일일 목표 · 예상 방문객과 수용 위험
  *   요약       인력 · 프로그램 · (마지막 날) 피날레
- *   견적표     고용비 · 예상 입장료 수입 · 목표 보너스
+ *   견적표     고용비 · 예상 입장료 수입
  *   버튼       `배치 계속하기` · `개장하기`
  *
  * === ★ 날씨 선택이 여기 있는 이유 ===
@@ -138,6 +140,9 @@ class FESTAFIESTA_API UFF_PrepPanelCheck : public UFF_PrepPanelBase
 
 public:
 	UFF_PrepPanelCheck(const FObjectInitializer& ObjectInitializer);
+
+	bool UsesCompactLayout() const { return bUseCompactLayout; }
+	bool UsesBalancedLayout() const { return bUseBalancedLayout; }
 
 	/**
 	 * 소유자 데이터가 없는 프리뷰에만 예상 방문객을 넣는다. 실제 게임에서는 ViewModel 값이 우선한다.
@@ -167,6 +172,9 @@ protected:
 
 	UFUNCTION()
 	void HandleStaffAssignmentGuidanceClicked();
+
+	UFUNCTION()
+	void HandleOpenGateGuidanceClicked();
 
 	UFUNCTION()
 	void HandleOpenGateClicked();
@@ -211,6 +219,8 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
 	TObjectPtr<UVerticalBox> VerticalBox_RecommendedRows;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
+	TObjectPtr<UWrapBox> WrapBox_RecommendedRows;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
 	TObjectPtr<UTextBlock> Text_RecommendedCount;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Recommended Facilities")
 	TObjectPtr<UTextBlock> Text_RecommendedSummary;
@@ -250,6 +260,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
 	TObjectPtr<UTextBlock> Text_AdmissionFeeRange;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionFeeMin;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
+	TObjectPtr<UTextBlock> Text_AdmissionFeeMax;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
 	TObjectPtr<UTextBlock> Text_AdmissionFeeState;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Admission")
 	TObjectPtr<UTextBlock> Text_AdmissionPreviewDelta;
@@ -267,7 +281,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionDeltaFormat;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Admission|Text") FText AdmissionNoChangeText;
 
-	// --- 카드 4장 ---
+	// --- 요약 카드 (금화 바인딩은 이전 WBP 호환용) ---
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_DayLabel;
@@ -372,11 +386,29 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UTextBlock> Text_OpenGateReason;
 
+	/** 스크롤 바깥의 필수 준비 안내. 기존 개장 사유/바로가기와 같은 판정을 쓴다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UBorder> Border_RequiredAttention;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UTextBlock> Text_RequiredAttentionTitle;
+
 	/** 안내 문구 오른쪽의 스태프 배정 바로가기. 배정할 대상이 없으면 숨긴다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UButton> Button_OpenGateReason;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UTextBlock> Text_OpenGateStaffLink;
+
 	// --- 설정 ---
+
+	/** 간소화한 점검 WBP에서만 중복 안내를 접는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check")
+	bool bUseCompactLayout = false;
+
+	/** 세 요약 카드와 가로 입장료 편집을 사용하는 WBP의 간결한 상태 표시. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check")
+	bool bUseBalancedLayout = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check|Text")
 	FText DayLabelFormat;
@@ -414,7 +446,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check", meta = (ClampMin = "0.0"))
 	float CapacityDangerRatio = 1.0f;
 
-	/** 견적에 넣지 않는 값이 있다는 안내. 비우지 않는다 — 표가 전부인 것처럼 읽힌다. */
+	/** 기존 견적 설명. 간소화 화면에서는 본문을 접는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Check")
 	FText EstimateNoticeText;
 
@@ -452,6 +484,9 @@ private:
 	void RefreshRequiredFacilities();
 	void RefreshStaffAssignmentLinks();
 	void RefreshRecommendedFacilities();
+	UPanelWidget* GetRecommendedRows() const;
+	FName FindRequiredPlacementTarget(FText& OutName) const;
+	bool NeedsRequiredStaffAssignment() const;
 	FName FindRecommendedCatalogTarget(EFF_PrepRecommendedFacilityKind Kind) const;
 
 	/**

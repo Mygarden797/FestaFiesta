@@ -230,11 +230,25 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin,
 		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
 	{
 		Stage->OnStageChanged.AddUniqueDynamic(this, &UFF_CrowdSimulationSubsystem::HandleStageChanged);
-		Stage->OnTimeScaleChange.AddDynamic(this,&UFF_CrowdSimulationSubsystem::GetTimeScale);
+		Stage->OnTimeScaleChange.AddUniqueDynamic(this, &UFF_CrowdSimulationSubsystem::GetTimeScale);
 		Stage->OnMainProgramStarted.AddUniqueDynamic(this, &UFF_CrowdSimulationSubsystem::HandleMainProgramStarted);
 		Stage->OnMainProgramEnded.AddUniqueDynamic(this, &UFF_CrowdSimulationSubsystem::HandleMainProgramEnded);
 		SimulationTimeScale = Stage->GetEffectiveTimeScale();
 	}
+}
+
+void UFF_CrowdSimulationSubsystem::Deinitialize()
+{
+	const UWorld* World = GetWorld();
+	if (UFF_FestivalStageSubsystem* Stage = World && World->GetGameInstance()
+		? World->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	{
+		Stage->OnStageChanged.RemoveAll(this);
+		Stage->OnTimeScaleChange.RemoveAll(this);
+		Stage->OnMainProgramStarted.RemoveAll(this);
+		Stage->OnMainProgramEnded.RemoveAll(this);
+	}
+	Super::Deinitialize();
 }
 
 // 격자 범위의 우선순위는 직접 지정 > NavMesh 경계다. 통행 가능 영역이 곧 관측 대상이다
@@ -394,12 +408,15 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 		{
 			QueueBreakSimSeconds += FixedStepSeconds;
 		}
+#if !UE_BUILD_SHIPPING
+		// 진단 전용(경제 시나리오의 화장실 차례 대기). 출시 빌드에서는 돌리지 않는다.
 		ToiletFrontSampleAccumulator += FixedStepSeconds;
 		if (ToiletFrontSampleAccumulator >= 0.25f)
 		{
 			SampleToiletFrontWaits(ToiletFrontSampleAccumulator);
 			ToiletFrontSampleAccumulator = 0.f;
 		}
+#endif
 	}
 
 	ProcessPendingDespawns();
@@ -905,7 +922,7 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 				const float StayShare = FFF_UtilityCoefficientHelpers::GetCoefficient(
 					CachedCoefficientTable.Get(), TEXT("stay_duration_share_of_live_stage_mean"), 0.5f);
 				PartyRemainingStayMinutes[LeaderIndex] =
-					FMath::Max(Temp_LiveStageMinutes * StayShare * Traits.StayDurationMultiplier, 0.f);
+					FMath::Max(GetTodayLiveStageMinutes() * StayShare * Traits.StayDurationMultiplier, 0.f);
 			}
 
 			++SpawnedCount;
@@ -974,6 +991,23 @@ void UFF_CrowdSimulationSubsystem::UpdateArrivalSchedule()
 	
 	
 	
+}
+
+float UFF_CrowdSimulationSubsystem::GetTodayLiveStageMinutes() const
+{
+	// 1 Stage 초 = 1 축제분이다(UFF_FestivalStageSubsystem::StageSecondsToFestivalMinutes).
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	if (UFF_FestivalStageSubsystem* Stage =
+		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	{
+		const float LiveDurationSeconds = Stage->GetLiveDurationForCurrentDay();
+		if (LiveDurationSeconds > 0.f)
+		{
+			return LiveDurationSeconds;
+		}
+	}
+	return Temp_LiveStageMinutes;
 }
 
 float UFF_CrowdSimulationSubsystem::GetLiveProgress01() const
@@ -3710,6 +3744,31 @@ int32 UFF_CrowdSimulationSubsystem::GetAudiencePartyCount() const
 	return Count;
 }
 
+void UFF_CrowdSimulationSubsystem::GetSeatedAudienceAgents(TArray<FFF_CrowdSeatedAgent>& OutAgents) const
+{
+	OutAgents.Reset();
+	for (int32 AgentIndex = 0; AgentIndex < UnitDatas.Num(); ++AgentIndex)
+	{
+		const FUnitData& Unit = UnitDatas[AgentIndex];
+		if (!Unit.bIsActive || !PartyDecisionStates.IsValidIndex(Unit.LeaderAgentIndex))
+		{
+			continue;
+		}
+
+		const FPartyDecisionState& State = PartyDecisionStates[Unit.LeaderAgentIndex];
+		if (State.AudiencePhase != EFF_PartyAudiencePhase::Waiting
+			&& State.AudiencePhase != EFF_PartyAudiencePhase::Spectating)
+		{
+			continue;
+		}
+
+		FFF_CrowdSeatedAgent& Seated = OutAgents.AddDefaulted_GetRef();
+		Seated.AgentIndex = AgentIndex;
+		Seated.FacilityId = State.AudienceFacilityId;
+		Seated.Phase = State.AudiencePhase;
+	}
+}
+
 void UFF_CrowdSimulationSubsystem::GetAudienceWalkDiagnostics(
 	int32& OutWalkingLeaders, float& OutMeanRemainingMeters, float& OutMaxRemainingMeters,
 	float& OutMeanSpeedMetersPerSecond, float& OutMeanCruiseMetersPerSecond, int32& OutStalledLeaders,
@@ -4874,6 +4933,15 @@ bool UFF_CrowdSimulationSubsystem::SetCrowdStateForAgent(int32 AgentIndex, EFF_C
 
 void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage)
 {
+	if (CurrentStage == EFF_FestivalStage::Finale)
+	{
+		SetCrowdState(EFF_CrowdRunState::Holding);
+	}
+	else if (PreviousStage == EFF_FestivalStage::Finale)
+	{
+		SetCrowdState(EFF_CrowdRunState::Running);
+	}
+
 	if (PreviousStage == EFF_FestivalStage::Live && CurrentStage != EFF_FestivalStage::Live)
 	{
 		bMainProgramAudienceActive = false;
@@ -6350,6 +6418,8 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Hunger)] += Relief.bRelievesHunger ? 1 : 0;
 					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Restroom)] += Relief.bRelievesRestroom ? 1 : 0;
 					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Stimulation)] += Relief.bRelievesStimulation ? 1 : 0;
+					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Thirst)] += Relief.bRelievesThirst ? 1 : 0;
+					ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Fatigue)] += Relief.bRelievesFatigue ? 1 : 0;
 				}
 			}
 		}
@@ -6359,12 +6429,14 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 			{
 				NeedReliefFacilityCounts[Index] = ReliefFacilityCounts[Index];
 			}
-			NeedCoverage[static_cast<int32>(EFF_NeedType::Hunger)] = Coefficients.NeedCoverageMultiplier(
-				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Hunger)], Coefficients.NeedCoverageTargetHunger);
-			NeedCoverage[static_cast<int32>(EFF_NeedType::Restroom)] = Coefficients.NeedCoverageMultiplier(
-				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Restroom)], Coefficients.NeedCoverageTargetRestroom);
-			NeedCoverage[static_cast<int32>(EFF_NeedType::Stimulation)] = Coefficients.NeedCoverageMultiplier(
-				ReliefFacilityCounts[static_cast<int32>(EFF_NeedType::Stimulation)], Coefficients.NeedCoverageTargetStimulation);
+			for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
+			{
+				const EFF_NeedType NeedType = static_cast<EFF_NeedType>(Index);
+				// 꺼진 욕구(상승 0)는 시설 수와 상관없이 모자라지 않다
+				NeedCoverage[Index] = NeedRiseRates.GetMinutesToLimit(NeedType) > 0.f
+					? Coefficients.NeedCoverageMultiplier(ReliefFacilityCounts[Index], Coefficients.GetNeedCoverageTarget(NeedType))
+					: 1.f;
+			}
 		}
 
 		// 밀도: 점유 셀마다 LOS 등급 점수를 매겨 그 셀의 인원 수로 가중한다 — "사람이 몇 명이나
@@ -6401,18 +6473,18 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 		}
 
 		// Need 충족도
-		// 지금 켜져 있는 성분(Hunger·Restroom·Stimulation)만 평균한다. 
-		// Thirst·Fatigue는 Phase 게이트로 상승 계수가 0이라 넣으면 항상 100% 충족으로 왜곡된다
+		// 켜져 있는 성분(상승 계수가 0 보다 큰 것)만 평균한다. 꺼진 성분을 넣으면 항상 100% 충족으로 왜곡된다
 		// NeedMetrics 표본이 0이면(아직 아무도 안 들어왔거나 집계가 안 돌았으면) 넣지 않는다 —
 		// "미해소 0%"가 진짜 0%인지 데이터 없음인지 구분해야 한다.
 		if (NeedMetrics && NeedMetrics->GetSampleCount() > 0)
 		{
-			static const EFF_NeedType ActiveNeedTypes[] =
+			for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
 			{
-				EFF_NeedType::Hunger, EFF_NeedType::Restroom, EFF_NeedType::Stimulation
-			};
-			for (const EFF_NeedType NeedType : ActiveNeedTypes)
-			{
+				const EFF_NeedType NeedType = static_cast<EFF_NeedType>(Index);
+				if (NeedRiseRates.GetMinutesToLimit(NeedType) <= 0.f)
+				{
+					continue;
+				}
 				Satisfaction->AddNeedFulfillmentSample(
 					(100.f - NeedMetrics->GetNeedUnmetRatio(NeedType)) * GetNeedCoverage(NeedType));
 			}
@@ -6864,7 +6936,10 @@ void UFF_CrowdSimulationSubsystem::ApplyAgentAppearance(int32 AgentIndex)
 		return;
 	}
 	
-	Actor->ApplyAppearance(Row->PickMesh(Unit.StableAgentID).LoadSynchronous(), Row->AnimClass.LoadSynchronous(), Row->MeshYawOffset, Row->MeshUniformScale);
+	TSoftObjectPtr<USkeletalMesh> PickedMesh;
+	TSoftClassPtr<UFF_CrowdAnimInstance> PickedAnimClass;
+	Row->PickAppearance(Unit.StableAgentID, PickedMesh, PickedAnimClass);
+	Actor->ApplyAppearance(PickedMesh.LoadSynchronous(), PickedAnimClass.LoadSynchronous(), Row->MeshYawOffset, Row->MeshUniformScale);
 	
 	
 	

@@ -35,6 +35,7 @@
 #include "Staff/FF_StaffFacilitySubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "UI/Core/FF_UIForegroundRules.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "Building/Presentation/FF_BuildFavoritesSubsystem.h"
@@ -139,6 +140,8 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 	ClosePaidProgramPicker();
 	bRevenueRankingPresentationOpen = false;
 	bPauseMenuPresentationSuppressed = false;
+	bPauseMenuSuppressionRequested = false;
+	bForegroundWindowSuppressionRequested = false;
 	bPanelWasVisibleBeforePause = false;
 	bPaidProgramPickerWasVisibleBeforePause = false;
 	PauseMenuSuppressedFacilityId.Invalidate();
@@ -162,6 +165,8 @@ bool UFF_FacilityInfoSubsystem::DoesSupportWorldType(const EWorldType::Type Worl
 
 void UFF_FacilityInfoSubsystem::Tick(const float DeltaTime)
 {
+	bForegroundWindowSuppressionRequested = FFUIForegroundRules::HasForegroundWindow(this);
+	UpdatePresentationSuppression(bPauseMenuSuppressionRequested || bForegroundWindowSuppressionRequested);
 	if (bPauseMenuPresentationSuppressed)
 	{
 		// Pause 중에는 높은 Viewport layer 표면과 hover/selection 갱신을 모두 멈춘다.
@@ -290,6 +295,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	Panel->OnUpgradeRequested.AddUObject(this, &ThisClass::HandlePanelUpgradeRequested);
 	Panel->OnAssignStaffRequested.AddUObject(this, &ThisClass::HandlePanelAssignStaffRequested);
 	Panel->OnUnassignStaffRequested.AddUObject(this, &ThisClass::HandlePanelUnassignStaffRequested);
+	Panel->OnQueueSettingsRequested.BindUObject(this, &ThisClass::ApplySelectedQueueSettings);
 	Panel->OnLightingRequested.AddUObject(this, &ThisClass::HandlePanelLightingRequested);
 	Panel->OnLightingRollbackRequested.AddUObject(this, &ThisClass::HandlePanelLightingRollbackRequested);
 	Panel->OnLightingResetRequested.AddUObject(this, &ThisClass::HandlePanelLightingResetRequested);
@@ -325,6 +331,7 @@ void UFF_FacilityInfoSubsystem::ReleasePanel()
 	Panel->OnUpgradeRequested.RemoveAll(this);
 	Panel->OnAssignStaffRequested.RemoveAll(this);
 	Panel->OnUnassignStaffRequested.RemoveAll(this);
+	Panel->OnQueueSettingsRequested.Unbind();
 	// 취소 시 원래 조명으로 되돌리는 이벤트가 필요하므로 연결을 끊기 전에 취소한다.
 	Panel->CancelLightingEdit();
 	Panel->OnLightingRollbackRequested.RemoveAll(this);
@@ -442,6 +449,8 @@ bool UFF_FacilityInfoSubsystem::SelectFacility(
 	AFFZSFacilityActor* Facility,
 	const EFF_FacilityInfoContext Context)
 {
+	bForegroundWindowSuppressionRequested = FFUIForegroundRules::HasForegroundWindow(this);
+	UpdatePresentationSuppression(bPauseMenuSuppressionRequested || bForegroundWindowSuppressionRequested);
 	if (bPauseMenuPresentationSuppressed)
 	{
 		return false;
@@ -600,6 +609,10 @@ bool UFF_FacilityInfoSubsystem::IsLightingTextInputFocused() const
 void UFF_FacilityInfoSubsystem::SetRevenueRankingPresentationOpen(const bool bOpen)
 {
 	bRevenueRankingPresentationOpen = bOpen;
+	if (!bOpen && bPauseMenuPresentationSuppressed && HasSelection())
+	{
+		bPanelWasVisibleBeforePause = !bPaidProgramPickerWasVisibleBeforePause;
+	}
 	const bool bPickerOpen = PaidProgramPicker && PaidProgramPicker->GetVisibility() != ESlateVisibility::Collapsed;
 	if (Panel) Panel->SetPanelOpen(!bOpen && !bPauseMenuPresentationSuppressed && !bPickerOpen &&
 		HasSelection() && IsContextCurrentlyAllowed(SelectionContext));
@@ -614,6 +627,21 @@ void UFF_FacilityInfoSubsystem::HandlePanelRevenueRankingRequested()
 
 void UFF_FacilityInfoSubsystem::SetPauseMenuPresentationSuppressed(const bool bSuppressed)
 {
+	// A new ESC/codex request still owns its close action when another window already hides us.
+	if (bSuppressed && !bPauseMenuSuppressionRequested)
+	{
+		if (UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
+			? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
+		{
+			if (Ranking->IsOpen()) Ranking->Close();
+		}
+	}
+	bPauseMenuSuppressionRequested = bSuppressed;
+	UpdatePresentationSuppression(bPauseMenuSuppressionRequested || bForegroundWindowSuppressionRequested);
+}
+
+void UFF_FacilityInfoSubsystem::UpdatePresentationSuppression(const bool bSuppressed)
+{
 	if (bPauseMenuPresentationSuppressed == bSuppressed)
 	{
 		return;
@@ -622,11 +650,6 @@ void UFF_FacilityInfoSubsystem::SetPauseMenuPresentationSuppressed(const bool bS
 	if (bSuppressed)
 	{
 		// Close the replacement presentation before recording the inspector surface to restore.
-		if (UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
-			? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
-		{
-			if (Ranking->IsOpen()) Ranking->Close();
-		}
 		const auto IsPresented = [](const ESlateVisibility Visibility)
 		{
 			return Visibility != ESlateVisibility::Collapsed &&
@@ -997,6 +1020,17 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		bReconfigurePhase && bQueueEmpty && Facility.CanMoveOrRemove();
 	OutViewData.bCanMove = bCanModify;
 	OutViewData.bCanRemove = bCanModify;
+	OutViewData.bHasQueueSettings = Spec.UsesServiceQueue() && Spec.QueueRules.MaxWaitingAgents > 0;
+	OutViewData.bCanEditQueueSettings = OutViewData.bHasQueueSettings && bCanModify && !bPauseMenuPresentationSuppressed;
+	OutViewData.QueueSettings = Facility.GetBaseFacilitySpec().QueueSettings;
+	if (!OutViewData.QueueSettings.bEnabled && OutViewData.bHasQueueSettings)
+	{
+		OutViewData.QueueSettings.MaxWaitingTeams = Spec.QueueRules.MaxWaitingAgents;
+		OutViewData.QueueSettings.SlotSpacingCm = Spec.QueueRules.SlotSpacingCm;
+	}
+	OutViewData.QueueSettingsHint = OutViewData.bCanEditQueueSettings
+		? LOCTEXT("QueueSettingsEditable", "이 시설의 대기 정원과 크기를 변경합니다. 공간이 확보되면 즉시 적용됩니다.")
+		: LOCTEXT("QueueSettingsReadOnly", "준비 시간에 시설을 닫고 모든 손님이 퇴장하면 변경할 수 있습니다.");
 
 	// Paid-program state is flattened here so WBP bindings never have to join progression cards,
 	// reservation handles, facility identity, and stage policy on their own.

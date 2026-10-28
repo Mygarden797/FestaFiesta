@@ -276,7 +276,7 @@ void AFF_OverviewCameraPawn::Tick(float DeltaSeconds)
 	}
 
 	Rig.Rotate(PendingRotateInput, DeltaSeconds);
-	Rig.Pan(PendingPanInput, DeltaSeconds);
+	Rig.Pan(PendingPanInput, DeltaSeconds, PanSpeedScale);
 	Rig.EdgeScroll(PendingEdgeScrollInput, DeltaSeconds);
 	PendingRotateInput = 0.f;
 	PendingPanInput = FVector2D::ZeroVector;

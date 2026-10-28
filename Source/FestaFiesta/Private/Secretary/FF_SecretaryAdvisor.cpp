@@ -118,7 +118,7 @@ namespace FFSecretaryAdvisor
 
 		const bool bIdleIncident = Signals.IdleIncidentCount > 0;
 		Offer(EFF_SecretaryTipKind::NoStaffForIncident, bIdleIncident && Signals.DispatchableStaffCount <= 0,
-			LOCTEXT("NoStaff", "사건이 났는데 출동할 스태프가 없어요. 안내 시설에 스태프를 배정해 주세요."));
+			LOCTEXT("NoStaff", "사건이 났는데 출동할 스태프가 없어요. 안내 시설을 눌러 '스태프' 탭에서 '+ 배정'을 눌러 주세요."));
 		Offer(EFF_SecretaryTipKind::IdleIncident, bIdleIncident && Signals.DispatchableStaffCount > 0,
 			LOCTEXT("IdleIncident", "아직 처리 안 된 사건이 있어요. 지도에 뜬 표시를 눌러 스태프를 보내 주세요."));
 
@@ -129,12 +129,22 @@ namespace FFSecretaryAdvisor
 				RestroomUnmet >= Thresholds.UnmetNeedPercent && Signals.ToiletCount <= 0,
 				LOCTEXT("MissingToilet", "화장실이 하나도 없어요. 내일 아침엔 화장실을 꼭 놓아 주세요."));
 
-			// 가장 많이 못 채운 필요 하나.
+			// 가장 많이 못 채운 필요 하나. "늘려 보세요"는 그 시설이 목표 개수보다 적을 때만 한다.
+			// 못 채운 비율은 걸어가는 중·줄 선 손님도 세서, 시설을 충분히 지어도 공연 직후엔 높게 나온다.
 			int32 WorstIndex = INDEX_NONE;
+			bool bRestroomCrowdedDespiteCoverage = false;
 			for (int32 Index = 0; Index < static_cast<int32>(EFF_NeedType::Count); ++Index)
 			{
-				if (Signals.NeedUnmetPercent[Index] >= Thresholds.UnmetNeedPercent
-					&& (WorstIndex == INDEX_NONE || Signals.NeedUnmetPercent[Index] > Signals.NeedUnmetPercent[WorstIndex]))
+				if (Signals.NeedUnmetPercent[Index] < Thresholds.UnmetNeedPercent)
+				{
+					continue;
+				}
+				if (Signals.NeedCoverage[Index] >= 1.f)
+				{
+					bRestroomCrowdedDespiteCoverage |= Index == SecretaryNeedIndex(EFF_NeedType::Restroom);
+					continue;
+				}
+				if (WorstIndex == INDEX_NONE || Signals.NeedUnmetPercent[Index] > Signals.NeedUnmetPercent[WorstIndex])
 				{
 					WorstIndex = Index;
 				}
@@ -142,6 +152,11 @@ namespace FFSecretaryAdvisor
 			if (WorstIndex != INDEX_NONE)
 			{
 				Offer(EFF_SecretaryTipKind::UnmetNeed, true, SecretaryLiveNeedText(static_cast<EFF_NeedType>(WorstIndex)));
+			}
+			else
+			{
+				Offer(EFF_SecretaryTipKind::UnmetNeed, bRestroomCrowdedDespiteCoverage,
+					LOCTEXT("LiveRestroomRush", "공연이 끝나면 화장실에 손님이 몰려요. 화장실을 공연장 가까이 두면 덜 기다려요."));
 			}
 		}
 
@@ -256,16 +271,125 @@ namespace FFSecretaryAdvisor
 			break;
 		}
 
-		Lines.Add(LOCTEXT("MorningBye", "오늘도 잘 부탁드려요."));
+		// 마무리 인사는 신뢰도로 갈린다. {이름} 은 대사를 보여 줄 때 바뀐다.
+		Lines.Add(Inputs.Trust == EFF_SecretaryTrustTier::High
+			? LOCTEXT("MorningByeTrusted", "오늘도 믿고 따라갈게요, {이름} 님.")
+			: LOCTEXT("MorningBye", "오늘도 잘 부탁드려요."));
 		return Lines;
 	}
 
 	TArray<FText> BuildFirstDayGreeting()
 	{
 		return {
-			LOCTEXT("FirstDay1", "오늘이 첫날이에요. 운영 중에 눈에 띄는 게 있으면 옆에서 짧게 말씀드릴게요."),
+			// {이름} 은 대사를 보여 줄 때 주인공 이름으로 바뀐다(UFF_TutorialSubsystem::ResolvePlayerNameTokens).
+			LOCTEXT("FirstDay1", "{이름} 님, 오늘이 첫날이에요. 운영 중에 눈에 띄는 게 있으면 옆에서 짧게 말씀드릴게요."),
 			LOCTEXT("FirstDay2", "아침마다 전날 운영도 짧게 정리해 드릴게요."),
+			// 해변 같은 바깥 구역에도 놓을 수 있다는 걸 첫날에 알린다(2026-10-13 사용자 요청).
+			// 앞 두 줄은 비서 자기 소개라 그 뒤에 덧붙이는 말로 둔다.
+			LOCTEXT("FirstDayArea", "참, 시설은 해변이나 다른 구역에도 놓을 수 있어요. 화면을 옮겨 가며 넓게 써 보세요."),
 		};
+	}
+
+	EFF_SecretaryDayTier ClassifyDay(const int32 Satisfaction)
+	{
+		if (Satisfaction == INDEX_NONE)
+		{
+			return EFF_SecretaryDayTier::Unknown;
+		}
+		// 축제 평가 등급 경계와 같다(FFF_FestivalEvaluationRules::GradeForScore: S 85 · A 70 · B 55).
+		if (Satisfaction >= 85)
+		{
+			return EFF_SecretaryDayTier::Great;
+		}
+		if (Satisfaction >= 70)
+		{
+			return EFF_SecretaryDayTier::Good;
+		}
+		return Satisfaction >= 55 ? EFF_SecretaryDayTier::SoSo : EFF_SecretaryDayTier::Poor;
+	}
+
+	int32 TrustDeltaForDay(const EFF_SecretaryDayTier Tier)
+	{
+		switch (Tier)
+		{
+		case EFF_SecretaryDayTier::Great: return 12;
+		case EFF_SecretaryDayTier::Good:  return 8;
+		case EFF_SecretaryDayTier::SoSo:  return 4;
+		// 못한 날도 크게 깎지 않는다. 같이 버틴 날이라 믿음이 무너질 일은 아니다.
+		case EFF_SecretaryDayTier::Poor:  return -3;
+		default:                          return 4;
+		}
+	}
+
+	int32 TrustDeltaForFestival(const EFF_FestivalEvaluationGrade Grade)
+	{
+		switch (Grade)
+		{
+		case EFF_FestivalEvaluationGrade::S: return 15;
+		case EFF_FestivalEvaluationGrade::A: return 8;
+		case EFF_FestivalEvaluationGrade::B: return 4;
+		default:                             return 0;
+		}
+	}
+
+	EFF_SecretaryTrustTier TrustTierOf(const int32 Trust)
+	{
+		if (Trust >= TrustHighAtLeast)
+		{
+			return EFF_SecretaryTrustTier::High;
+		}
+		return Trust >= TrustNormalAtLeast ? EFF_SecretaryTrustTier::Normal : EFF_SecretaryTrustTier::Low;
+	}
+
+	FText BuildReportReaction(
+		const EFF_SecretaryDayTier Tier, const EFF_SecretaryTrustTier Trust, const bool bTrustJustRoseHigh, const bool bFinalDay)
+	{
+		// 처음으로 믿음이 쌓인 순간. 성적보다 이 말이 먼저다(판마다 한 번).
+		if (bTrustJustRoseHigh)
+		{
+			return LOCTEXT("ReactTrustRose", "{이름} 님, 이제 정말 믿고 맡겨도 되겠어요. 수고 많으셨어요.");
+		}
+
+		// 결산 화면의 비서 한마디가 분석을 하므로 여기서는 반응만 한다. 신뢰가 높으면 이름을 부르며 더 다정하게.
+		const bool bClose = Trust == EFF_SecretaryTrustTier::High;
+		if (bFinalDay)
+		{
+			switch (Tier)
+			{
+			case EFF_SecretaryDayTier::Great:
+				return bClose ? LOCTEXT("FinalGreatClose", "{이름} 님, 마지막 날까지 최고였어요! 같이 해서 정말 즐거웠어요.")
+				              : LOCTEXT("FinalGreat", "마지막 날까지 완벽했어요. 정말 수고 많으셨어요.");
+			case EFF_SecretaryDayTier::Good:
+				return bClose ? LOCTEXT("FinalGoodClose", "마지막까지 든든했어요. 역시 {이름} 님이에요.")
+				              : LOCTEXT("FinalGood", "마지막 날도 순조로웠어요. 수고 많으셨어요.");
+			case EFF_SecretaryDayTier::SoSo:
+				return bClose ? LOCTEXT("FinalSoSoClose", "끝까지 버텨 주셔서 고마워요. 다음엔 더 잘될 거예요.")
+				              : LOCTEXT("FinalSoSo", "마지막 날까지 고생 많으셨어요. 아쉬운 점은 다음 축제에서 채워 봐요.");
+			case EFF_SecretaryDayTier::Poor:
+				return bClose ? LOCTEXT("FinalPoorClose", "힘든 날이었지만 끝까지 함께해서 다행이에요, {이름} 님.")
+				              : LOCTEXT("FinalPoor", "마지막 날은 쉽지 않았네요. 그래도 끝까지 해내셨어요.");
+			default:
+				return LOCTEXT("FinalUnknown", "축제 내내 수고 많으셨어요.");
+			}
+		}
+
+		switch (Tier)
+		{
+		case EFF_SecretaryDayTier::Great:
+			return bClose ? LOCTEXT("DayGreatClose", "{이름} 님, 오늘 최고였어요! 손님들이 다 웃으면서 돌아갔어요.")
+			              : LOCTEXT("DayGreat", "오늘 정말 잘하셨어요. 손님들 표정이 다 밝았어요.");
+		case EFF_SecretaryDayTier::Good:
+			return bClose ? LOCTEXT("DayGoodClose", "역시 {이름} 님이에요. 오늘도 순조로웠어요.")
+			              : LOCTEXT("DayGood", "수고하셨어요. 오늘은 순조로웠어요.");
+		case EFF_SecretaryDayTier::SoSo:
+			return bClose ? LOCTEXT("DaySoSoClose", "괜찮아요. {이름} 님이라면 내일은 더 잘하실 거예요.")
+			              : LOCTEXT("DaySoSo", "고생하셨어요. 아쉬운 데만 조금 손보면 돼요.");
+		case EFF_SecretaryDayTier::Poor:
+			return bClose ? LOCTEXT("DayPoorClose", "오늘은 좀 힘들었죠. 그래도 저는 {이름} 님 믿어요.")
+			              : LOCTEXT("DayPoor", "오늘은 쉽지 않았네요. 내일은 같이 다시 해 봐요.");
+		default:
+			return LOCTEXT("DayUnknown", "오늘도 수고하셨어요.");
+		}
 	}
 }
 

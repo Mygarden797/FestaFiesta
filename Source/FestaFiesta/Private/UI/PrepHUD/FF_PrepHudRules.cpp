@@ -1,6 +1,30 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/PrepHUD/FF_PrepHudTypes.h"
+#include "Festival/FF_RequiredFacilityTypes.h"
+
+int32 FFF_PrepHudRules::CountPendingRequiredTasks(const FFF_RequiredFacilitiesStatus& Status)
+{
+	int32 Count = 0;
+	for (const FFF_RequiredFacilityRow& Row : Status.Facilities)
+	{
+		if (!Row.IsSatisfied()) { ++Count; }
+	}
+	return Count;
+}
+
+bool FFF_PrepHudRules::NeedsRequiredAttention(EFF_PrepHudTab Tab, EFF_FestivalStage Stage,
+	const FFF_RequiredFacilitiesStatus& Status)
+{
+	if (!IsPrepStage(Stage) || Status.bCanProceed) { return false; }
+	if (Tab == EFF_PrepHudTab::Check) { return true; }
+	if (Tab != EFF_PrepHudTab::Staff) { return false; }
+	// 아직 시설을 설치할 차례라면 점검의 배치 바로가기를 먼저 안내한다.
+	return Status.Facilities.ContainsByPredicate([](const FFF_RequiredFacilityRow& Row)
+	{
+		return Row.bDefinitionValid && Row.InstalledCount > 0 && Row.MissingCount == 0 && Row.MissingStaffCount > 0;
+	});
+}
 
 bool FFF_PrepHudRules::IsPrepStage(EFF_FestivalStage Stage)
 {

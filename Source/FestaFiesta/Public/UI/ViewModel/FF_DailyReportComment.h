@@ -28,6 +28,8 @@ struct FFF_DailyReportCommentInputs
 	float HungerCoverage = 1.f;
 	float RestroomCoverage = 1.f;
 	float StimulationCoverage = 1.f;
+	float ThirstCoverage = 1.f;
+	float FatigueCoverage = 1.f;
 
 	int32 AdmittedVisitors = INDEX_NONE;
 	int32 DailyVisitorGoal = INDEX_NONE;
@@ -65,6 +67,14 @@ struct FFF_DailyComplaint
 	EFF_NeedType NeedShortage = EFF_NeedType::Hunger;
 };
 
+/** 같은 원본 문장을 강조 조언과 보조 정보로 나눈다. FullComment는 기존 표시 순서를 보존한다. */
+struct FFF_DailyReportCommentPresentation
+{
+	FText Advice;
+	FText Details;
+	FText FullComment;
+};
+
 /**
  * 결산 화면의 비서 한마디. 매출 1위 시설 · 가장 낮은 만족도 항목(불만 1위)과 고칠 방법 · 방문객 목표를 한 줄씩 말한다.
  * 마지막 날은 축제 전체 매출 1위 · 만족도 흐름(첫날 → 마지막 날) · 목표 달성 일수 · 다음 축제에 대한 조언으로 바뀐다.
@@ -73,6 +83,7 @@ struct FFF_DailyComplaint
 struct FESTAFIESTA_API FFF_DailyReportCommentRules
 {
 	static FText Build(const FFF_DailyReportCommentInputs& Inputs);
+	static FFF_DailyReportCommentPresentation BuildPresentation(const FFF_DailyReportCommentInputs& Inputs);
 
 	// 불만 1위 판정. 기준 점수 미만인 항목 중 깎은 점수(모르면 원점수가 가장 낮은 것)가 가장 큰 것.
 	// 같으면 필요 → 줄 → 붐빔 → 취향 순으로 앞의 것을 고른다

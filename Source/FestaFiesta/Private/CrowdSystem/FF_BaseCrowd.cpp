@@ -107,6 +107,7 @@ void AFF_BaseCrowd::BindToAgent(int32 NewAgentIndex, FVector SpawnLocation, FRot
 {
 	AgentIndex = NewAgentIndex;
 	SetActorLocationAndRotation(SpawnLocation,SpawnRotation);
+	SetState(EFF_CrowdRunState::Running);
 }
 
 void AFF_BaseCrowd::ReleaseFromAgent()
@@ -130,7 +131,9 @@ void AFF_BaseCrowd::PushPresentation(FVector NewPosition, FRotator NewRotator, f
 	// 없다는 경고는 BeginPlay에서 한 번만 찍는다. 여기서 찍으면 Actor 수 x 매 프레임만큼 로그가 쏟아진다.
 	if (CrowdAnimInstance)
 	{
-		CrowdAnimInstance->SetSpeed(NewSpeed);
+		const bool bInPlace = CurrentState == EFF_CrowdRunState::Holding
+			|| CurrentState == EFF_CrowdRunState::Dancing;
+		CrowdAnimInstance->SetSpeed(bInPlace ? 0.f : NewSpeed);
 	}
 }
 
@@ -142,6 +145,11 @@ void AFF_BaseCrowd::SetAnimPlayRate(float PlayRate)
 
 void AFF_BaseCrowd::SetState(EFF_CrowdRunState NewState)
 {
+	if (CurrentState == NewState)
+	{
+		return;
+	}
+
 	CurrentState = NewState;
 	ApplyStateToAnimation();
 

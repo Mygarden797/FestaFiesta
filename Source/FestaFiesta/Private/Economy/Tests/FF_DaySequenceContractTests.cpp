@@ -12,11 +12,11 @@
  * DT_DaySequence 가 경제의 정산 전제를 계속 만족하는지 본다.
  *
  * 이 표는 경제 소유가 아니다. 여기서 고정하는 것은 표의 내용이 아니라
- * **경제가 표에 대해 의존하고 있는 사실**이다 — 어느 날 어디서 임대료를 걷는가.
+ * **경제가 표에 대해 의존하고 있는 사실**이다 — 어느 날 어디서 하루 경계를 여는가.
  *
  * 🔴 깨졌을 때 표를 고쳐 맞추지 말 것. 흐름이 바뀌었다는 뜻이고, 바뀐 흐름에서
- * 임대료를 어디서 걷어야 하는지 표 소유자와 정하는 것이 먼저다. 정산 지점이
- * 조용히 사라지면 하루 2,400 이 크래시도 로그도 없이 안 걷힌다.
+ * 하루 경계를 어디서 열어야 하는지 표 소유자와 정하는 것이 먼저다. 경계가
+ * 조용히 사라지면 원장이 날짜별로 안 갈리고 어제 만족도가 크래시도 로그도 없이 빠진다.
  *
  * 단계 순서를 코드에서 grep 으로 확인할 수 없기 때문에 이 파일이 필요하다.
  * 전이 메커니즘(RequestTransition·OnStageChanged)만 코드에 있고 순서는 전부 이 표에 있다.
@@ -343,13 +343,14 @@ bool FFF_DaySequence_ReachableStagesHavePlayableDuration::RunTest(const FString&
 
 // 🔴 경제의 정산 지점이 표와 일치한다. 이 파일에서 가장 중요한 단언이다.
 //
-// 임대료는 하루에 정확히 한 번 걷혀야 하고, 걷는 곳이 날마다 다르다:
-//   Day1  MorningCheck 을 지나지 않는다 → StartFestival 이 걷는다
-//   Day2·3 MorningCheck 을 지난다      → StageEconomyBridge 가 걷는다
+// 하루 경계(원장 스냅샷·화제성 감쇠·어제 만족도 기록)는 하루에 정확히 한 번 열려야 하고,
+// 여는 곳이 날마다 다르다:
+//   Day1  MorningCheck 을 지나지 않는다 → StartFestival 이 연다
+//   Day2·3 MorningCheck 을 지난다      → StageEconomyBridge 가 연다
 //
-// Day1 에 MorningCheck 이 생기면 StartFestival 징수를 그쪽으로 옮겨야 하고,
-// Day2·3 에서 MorningCheck 이 없어지면 그 날 임대료가 아예 안 걷힌다.
-// 둘 다 3일 수지를 조용히 어긋내므로 표가 바뀌는 순간 알아야 한다.
+// Day1 에 MorningCheck 이 생기면 경계가 두 번 열리지 않는지 다시 봐야 하고,
+// Day2·3 에서 MorningCheck 이 없어지면 그 날 경계가 아예 안 열린다.
+// 둘 다 결산·평가를 조용히 어긋내므로 표가 바뀌는 순간 알아야 한다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DaySequence_SettlementStagesMatchEconomyAssumption, "FestaFiesta.Economy.DaySequence.SettlementStagesMatchEconomyAssumption", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_DaySequence_SettlementStagesMatchEconomyAssumption::RunTest(const FString& Parameters)
 {
@@ -373,7 +374,7 @@ bool FFF_DaySequence_SettlementStagesMatchEconomyAssumption::RunTest(const FStri
 		if (Day == 1)
 		{
 			TestFalse(
-				TEXT("Day1 은 MorningCheck 을 지나지 않는다 — 그래서 StartFestival 이 걷는다"),
+				TEXT("Day1 은 MorningCheck 을 지나지 않는다 — 그래서 StartFestival 이 경계를 연다"),
 				bHasMorningCheck);
 
 			// ⚠️ 위 단언은 한쪽만 본다 — 체인이 비어도 통과한다(변이 검사로 확인했다).
@@ -381,7 +382,7 @@ bool FFF_DaySequence_SettlementStagesMatchEconomyAssumption::RunTest(const FStri
 			// 그 안에 MorningCheck 이 없다"가 된다. 하나만 지우지 말 것.
 			//
 			// Day1 의 소비 단계는 Setup 이다. 이것이 Day2·3 의 MorningCheck 과 같은 슬롯이고,
-			// 임대료가 "돈 쓰는 단계 시작"에 걷힌다는 규칙이 세 날 모두 성립하는 근거다.
+			// 하루 경계가 "돈 쓰는 단계 시작"에 열린다는 규칙이 세 날 모두 성립하는 근거다.
 			TestTrue(TEXT("Day1 에는 Setup 이 있다"),
 				Chain.Contains(EFF_FestivalStage::Setup));
 		}
@@ -389,7 +390,7 @@ bool FFF_DaySequence_SettlementStagesMatchEconomyAssumption::RunTest(const FStri
 		{
 			TestTrue(
 				*FString::Printf(
-					TEXT("Day%d 는 MorningCheck 을 지난다 — 브리지가 여기서 걷는다"), Day),
+					TEXT("Day%d 는 MorningCheck 을 지난다 — 브리지가 여기서 경계를 연다"), Day),
 				bHasMorningCheck);
 		}
 	}

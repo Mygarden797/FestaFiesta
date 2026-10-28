@@ -271,10 +271,25 @@ int32 FFF_SnsFeedGenerator::ChooseTopicId(
 
 const FFF_SnsPostTemplateRow* FFF_SnsFeedGenerator::PickTemplateRow(
 	int32 GlobalSimulationSeed, int32 PostSequenceIndex, int32 TopicId,
-	const TMap<int32, TArray<const FFF_SnsPostTemplateRow*>>& TemplatesByTopic)
+	const TMap<int32, TArray<const FFF_SnsPostTemplateRow*>>& TemplatesByTopic,
+	const FFF_SnsFeedSignals& Signals)
 {
-	const TArray<const FFF_SnsPostTemplateRow*>* Pool = TemplatesByTopic.Find(TopicId);
-	if (!Pool || Pool->IsEmpty())
+	const TArray<const FFF_SnsPostTemplateRow*>* FullPool = TemplatesByTopic.Find(TopicId);
+	if (!FullPool || FullPool->IsEmpty())
+	{
+		return nullptr;
+	}
+
+	TArray<const FFF_SnsPostTemplateRow*> Pool;
+	Pool.Reserve(FullPool->Num());
+	for (const FFF_SnsPostTemplateRow* Row : *FullPool)
+	{
+		if (Row && IsTemplateRowRelevant(*Row, Signals))
+		{
+			Pool.Add(Row);
+		}
+	}
+	if (Pool.IsEmpty())
 	{
 		return nullptr;
 	}
@@ -282,8 +297,68 @@ const FFF_SnsPostTemplateRow* FFF_SnsFeedGenerator::PickTemplateRow(
 	const uint32 Seed = FFF_DeterministicRandom::MakeTraitSeed(
 		GlobalSimulationSeed, PostSequenceIndex, TEXT("sns_post_line"), TopicId, TEXT("SnsContent"));
 	const float Fraction = FFF_DeterministicRandom::MakeUniformFraction(Seed);
-	const int32 Index = FMath::Clamp(FMath::FloorToInt(Fraction * Pool->Num()), 0, Pool->Num() - 1);
-	return (*Pool)[Index];
+	const int32 Index = FMath::Clamp(FMath::FloorToInt(Fraction * Pool.Num()), 0, Pool.Num() - 1);
+	return Pool[Index];
+}
+
+bool FFF_SnsFeedGenerator::IsFinaleLineTimely(const FName TemplateId, const bool bFinalShapeFired, const bool bShowEnded)
+{
+	// 마지막 모양(태극기)과 그 뒤 일제 발사를 본 사람만 할 수 있는 말
+	static const TSet<FName> AfterFinalShape =
+	{
+		TEXT("sns_finale_s_03"), TEXT("sns_finale_s_07"), TEXT("sns_finale_s_14"),
+		TEXT("sns_finale_s_35"), TEXT("sns_finale_s_56"),
+	};
+	// 불꽃이 끝난 뒤에야 할 수 있는 말
+	static const TSet<FName> AfterShowEnd =
+	{
+		TEXT("sns_finale_c_01"), TEXT("sns_finale_c_02"), TEXT("sns_finale_c_04"), TEXT("sns_finale_c_05"),
+		TEXT("sns_finale_c_07"), TEXT("sns_finale_c_09"), TEXT("sns_finale_c_13"), TEXT("sns_finale_c_17"),
+		TEXT("sns_finale_c_25"), TEXT("sns_finale_b_06"), TEXT("sns_finale_b_26"), TEXT("sns_finale_b_31"),
+		TEXT("sns_finale_a_13"), TEXT("sns_finale_a_16"), TEXT("sns_finale_a_25"), TEXT("sns_finale_a_38"),
+		TEXT("sns_finale_s_21"),
+	};
+	if (AfterFinalShape.Contains(TemplateId))
+	{
+		return bFinalShapeFired || bShowEnded;
+	}
+	return !AfterShowEnd.Contains(TemplateId) || bShowEnded;
+}
+
+int32 FFF_SnsFeedGenerator::FindTimelyFinaleCycle(const int32 GlobalSimulationSeed, const int32 TopicId,
+	const int32 StartCycle, const TMap<int32, TArray<const FFF_SnsPostTemplateRow*>>& TemplatesByTopic,
+	const TSet<int32>& UsedCycles, const bool bFinalShapeFired, const bool bShowEnded)
+{
+	const TArray<const FFF_SnsPostTemplateRow*>* Pool = TemplatesByTopic.Find(TopicId);
+	const int32 PoolSize = Pool ? Pool->Num() : 0;
+	for (int32 Offset = 0; Offset < PoolSize; ++Offset)
+	{
+		if (UsedCycles.Contains(StartCycle + Offset))
+		{
+			continue;
+		}
+		const FFF_SnsPostTemplateRow* Row = PickCycledTemplateRow(
+			GlobalSimulationSeed, TopicId, StartCycle + Offset, TemplatesByTopic);
+		if (Row && IsFinaleLineTimely(Row->TemplateId, bFinalShapeFired, bShowEnded))
+		{
+			return StartCycle + Offset;
+		}
+	}
+	return StartCycle;
+}
+
+bool FFF_SnsFeedGenerator::IsTemplateRowRelevant(const FFF_SnsPostTemplateRow& Row, const FFF_SnsFeedSignals& Signals)
+{
+	// 시설 부족(화제 2) 문장 중 어떤 시설이 없다고 짚는 것. 나머지 문장은 시설을 가리지 않는다.
+	static const TMap<FName, EFF_NeedType> LackLineNeeds =
+	{
+		{ TEXT("sns_lack_02"), EFF_NeedType::Hunger },
+		{ TEXT("sns_lack_03"), EFF_NeedType::Fatigue },
+		{ TEXT("sns_lack_05"), EFF_NeedType::Thirst },
+		{ TEXT("sns_lack_06"), EFF_NeedType::Fatigue },
+	};
+	const EFF_NeedType* Need = LackLineNeeds.Find(Row.TemplateId);
+	return !Need || Signals.NeedCoverage[static_cast<int32>(*Need)] < 1.f;
 }
 
 const FFF_SnsPostTemplateRow* FFF_SnsFeedGenerator::PickCycledTemplateRow(
@@ -441,7 +516,7 @@ FFF_SnsPostRow FFF_SnsFeedGenerator::GeneratePost(
 	NewPost.TopicId = TopicId;
 
 	const FFF_SnsPostTemplateRow* Row = LineCycleIndex == INDEX_NONE
-		? PickTemplateRow(GlobalSimulationSeed, PostSequenceIndex, TopicId, TemplatesByTopic)
+		? PickTemplateRow(GlobalSimulationSeed, PostSequenceIndex, TopicId, TemplatesByTopic, Signals)
 		: PickCycledTemplateRow(GlobalSimulationSeed, TopicId, LineCycleIndex, TemplatesByTopic);
 	if (Row)
 	{

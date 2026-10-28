@@ -34,6 +34,9 @@
 #include "UI/LiveHUD/FF_LivePanelBase.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
 #include "UI/Settings/FF_FestivalSettingsSubsystem.h"
+#include "UI/Core/FF_UIForegroundRules.h"
+#include "Building/Presentation/FF_BuildToolsWidget.h"
+#include "Building/Presentation/FF_BuildModeGuide.h"
 
 namespace
 {
@@ -414,6 +417,16 @@ void UFF_FacilityProgramMarkerSubsystem::RefreshOcclusionWidgets()
 					if (UWidget* InnerSurface = Widget->GetWidgetFromName(Name)) OcclusionWidgets.Add(InnerSurface);
 			}
 		}
+		else if (Widget->IsA<UFF_BuildToolsWidget>())
+		{
+			for (const FName Name : { TEXT("Border_PlacementHelp"), TEXT("Panel_BuildSettings"),
+				TEXT("Panel_FeatureGuide"), TEXT("Border_PlacementInfo") })
+				if (UWidget* Surface = Widget->GetWidgetFromName(Name)) OcclusionWidgets.Add(Surface);
+		}
+		else if (Widget->IsA<UFF_BuildModeGuide>())
+		{
+			if (UWidget* Surface = Widget->GetWidgetFromName(TEXT("Border_Guide"))) OcclusionWidgets.Add(Surface);
+		}
 	}
 }
 
@@ -442,7 +455,8 @@ void UFF_FacilityProgramMarkerSubsystem::UpdateMarkerLocations()
 	if (!Controller) return;
 	const UFF_FacilityCodexPresenterSubsystem* Codex = GetWorld()->GetSubsystem<UFF_FacilityCodexPresenterSubsystem>();
 	const UFF_FestivalSettingsSubsystem* Settings = UFF_FestivalSettingsSubsystem::Get(GetWorld());
-	const bool bModalOpen = (Codex && Codex->IsCodexOpen()) || (Settings && Settings->IsPauseMenuOpen());
+	const bool bModalOpen = FFUIForegroundRules::HasForegroundWindow(this) ||
+		(Codex && Codex->IsCodexOpen()) || (Settings && Settings->IsPauseMenuOpen());
 	const FGeometry ViewportGeometry = UWidgetLayoutLibrary::GetViewportWidgetGeometry(GetWorld());
 	const FVector2D ViewportSize = UWidgetLayoutLibrary::GetViewportSize(GetWorld()) /
 		FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(GetWorld()));
@@ -458,6 +472,7 @@ void UFF_FacilityProgramMarkerSubsystem::UpdateMarkerLocations()
 			ViewportGeometry.AbsoluteToLocal(Geometry.LocalToAbsolute(Geometry.GetLocalSize()))));
 	}
 	const UFF_FacilityInfoSubsystem* Info = GetWorld()->GetSubsystem<UFF_FacilityInfoSubsystem>();
+	const int32 WindowRectangleCount = Occupied.Num();
 	const AFF_FestivalPlayerController* FestivalController = Cast<AFF_FestivalPlayerController>(Controller);
 	const bool bGroundMode = FestivalController && FestivalController->GetViewMode() == EFF_CameraViewMode::Character;
 	// 그라운드 모드에서는 현재 커서가 가리키는 시설만 표시한다. 클릭 선택은 포커스를 유지하지 않는다.
@@ -494,6 +509,19 @@ void UFF_FacilityProgramMarkerSubsystem::UpdateMarkerLocations()
 		const FMargin Safe = Marker->GetViewportSafePadding();
 		const FBox2D SafeBounds(FVector2D(Safe.Left, Safe.Top), ViewportSize - FVector2D(Safe.Right, Safe.Bottom));
 		const FVector2D Size = Marker->GetDesiredSize();
+		const FVector2D Desired(Anchor.X - Size.X * .5, Anchor.Y - Size.Y - 8.f);
+		const FBox2D BadgeRect(Desired, Desired + Size);
+		bool bCoveredByWindow = false;
+		for (int32 Index = 0; Index < WindowRectangleCount; ++Index)
+		{
+			if (BadgeRect.Intersect(Occupied[Index])) { bCoveredByWindow = true; break; }
+		}
+		// Window overlap hides the badge behind that window; only badge-to-badge collisions move it.
+		if (bCoveredByWindow)
+		{
+			Marker->SetVisibility(ESlateVisibility::Hidden);
+			continue;
+		}
 		FVector2D Position;
 		if (!FFFacilityWorldBadgeLayout::Place(Anchor, Size, SafeBounds, Occupied,
 			Marker->GetBadgeSeparation(), Marker->GetMaximumDisplacement(), Position))
