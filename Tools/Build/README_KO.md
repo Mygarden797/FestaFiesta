@@ -4,6 +4,39 @@
 빌드·검증·재빌드 절차는 이 문서에서 관리한다. 플레이어용 설치·실행·문제 보고는 [`배포본 실행 안내`](../../Distribution/README_KO.md)를 참고한다.
 이 문서는 운영 절차이며, 현재 소스의 패키징이나 QA 통과를 미리 보장하지 않는다.
 
+## 에디터 빌드: 폴더 이름에 `!`가 있을 때
+
+UE 5.7의 `Build.bat`는 Windows의 지연 변수 확장을 켠 상태로 인수를 전달한다.
+이 때문에 `FestaFiesta!`처럼 경로에 포함된 `!`가 사라져 `Unable to find project file based on argument ...`로 실패할 수 있다.
+`OtherCompilationError`나 종료 코드 6만으로 C++ 코드 오류라고 판단하지 말고 바로 위의 프로젝트 경로를 확인한다.
+
+Rider가 생성하는 프로젝트 정보만 수정하면 재생성 시 원래 `Build.bat` 명령으로 되돌아온다.
+Rider의 일반 빌드·실행 버튼을 계속 사용하려면 로컬 엔진의 빌드 진입점을 한 번 수정한다.
+프로젝트 폴더 이름은 바꾸지 않는다.
+
+```powershell
+& '.\Tools\Build\Repair-UE57BuildBatch.ps1' -EngineRoot 'C:\Unreal\UE_5.7'
+& '.\Tools\Build\Repair-UE57BuildBatch.ps1' -EngineRoot 'C:\Unreal\UE_5.7' -Apply
+```
+
+첫 명령은 원본 백업과 수정안을 준비하고, `-Apply`는 엔진의 `Engine/Build/BatchFiles/Build.bat`에 적용한다.
+적용 시 엔진 폴더 쓰기 권한이 필요하다. UE 5.7의 예상한 스크립트 형식인지 검사하고 다른 형식이면 중단한다.
+`!`를 해석하는 지연 변수 확장을 끄고, 기존 파일 잠금의 종료 코드 검사를 별도 줄로 옮겨 빌드 잠금과 실패 전달을 유지한다.
+원본은 `Saved/BuildDiagnostics/UE57BuildBatchFix/Build.bat.original`에 보관한다.
+이 수정은 로컬 엔진에 적용되므로 Rider 프로젝트 정보 재생성으로 사라지지 않는다.
+엔진 업데이트·파일 복구 또는 다른 PC에서는 다시 적용해야 할 수 있다.
+
+명령줄에서 에디터만 빌드하려면 엔진에 포함된 .NET으로 UnrealBuildTool을 직접 실행하는 다음 대체 명령을 사용할 수 있다.
+
+```powershell
+& '.\Tools\Build\Build-Editor.ps1'
+```
+
+엔진 자동 탐색이 안 되면 `-EngineRoot 'C:\Unreal\UE_5.7'`을 지정한다.
+전체 재컴파일은 `-Action Rebuild`, 정리는 `-Action Clean`을 사용한다.
+빌드 로그는 `Saved/BuildDiagnostics/EditorBuild.log`에 남긴다.
+UAT 패키징은 아래의 짧고 특수문자 없는 checkout/junction 경로를 사용한다.
+
 ## 실행 전 준비
 
 - 릴리스 후보는 검토한 커밋에서 만들고 작업 중 소스·에셋을 바꾸지 않는다.

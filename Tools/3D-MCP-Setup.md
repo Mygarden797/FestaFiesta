@@ -32,7 +32,7 @@ Codex는 프로젝트 `.mcp.json`을 자동으로 읽는 설정으로 취급하�
 
 ```powershell
 codex mcp add blender -- blender-mcp --transport stdio
-codex mcp add tripo --env TRIPO_NO_UPDATE_CHECK=1 -- cmd /c npx -y tripo-cli@0.7.2 mcp
+codex mcp add tripo --env TRIPO_NO_UPDATE_CHECK=1 -- cmd /c npx -y tripo-cli@0.8.0 mcp
 codex mcp add meshy -- cmd /c npx -y @meshy-ai/meshy-mcp-server@0.6.6
 codex mcp list
 ```
