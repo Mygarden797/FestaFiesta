@@ -1,33 +1,33 @@
 {
-    "mcpServers":  {
-                       "blender":  {
-                                       "command":  "blender-mcp",
-                                       "args":  [
-                                                    "--transport",
-                                                    "stdio"
-                                                ]
-                                   },
-                       "tripo":  {
-                                     "command":  "cmd",
-                                     "args":  [
-                                                  "/c",
-                                                  "npx",
-                                                  "-y",
-                                                  "tripo-cli@0.7.2",
-                                                  "mcp"
-                                              ],
-                                     "env":  {
-                                                 "TRIPO_NO_UPDATE_CHECK":  "1"
-                                             }
-                                 },
-                       "meshy":  {
-                                     "command":  "cmd",
-                                     "args":  [
-                                                  "/c",
-                                                  "npx",
-                                                  "-y",
-                                                  "@meshy-ai/meshy-mcp-server@0.6.6"
-                                              ]
-                                 }
-                   }
+  "mcpServers": {
+    "slack": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "slack-mcp-server@1.3.0", "--transport", "stdio"],
+      "env": {
+        "SLACK_MCP_XOXB_TOKEN": "${SLACK_BOT_TOKEN}",
+        "SLACK_MCP_ADD_MESSAGE_TOOL": "true"
+      }
+    },
+    "notion": {
+      "type": "http",
+      "url": "https://mcp.notion.com/mcp"
+    },
+    "monolith": {
+      "command": "Plugins/Monolith/Binaries/monolith_proxy.exe",
+      "args": []
+    },
+    "blender": {
+      "command": "blender-mcp",
+      "args": ["--transport", "stdio"]
+    },
+    "tripo": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "tripo-cli@0.8.0", "mcp"],
+      "env": {"TRIPO_NO_UPDATE_CHECK": "1"}
+    },
+    "meshy": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@meshy-ai/meshy-mcp-server@0.6.6"]
+    }
+  }
 }
