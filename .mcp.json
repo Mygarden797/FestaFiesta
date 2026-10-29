@@ -11,6 +11,10 @@
     "notion": {
       "type": "http",
       "url": "https://mcp.notion.com/mcp"
+    },
+    "monolith": {
+      "command": "Plugins/Monolith/Binaries/monolith_proxy.exe",
+      "args": []
     }
   }
 }
