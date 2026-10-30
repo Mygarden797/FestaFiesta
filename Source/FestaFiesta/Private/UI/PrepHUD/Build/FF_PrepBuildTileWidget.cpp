@@ -145,13 +145,14 @@ void UFF_PrepBuildTileWidget::NativePreConstruct()
 	Super::NativePreConstruct();
 	if (!bCapturedAppearance || IsDesignTime())
 	{
-		if (Border_Card) { AuthoredCardBrush = Border_Card->Background; }
+		if (Border_Card) { AuthoredCardBrush = Border_Card->Background; AuthoredCardOpacity = Border_Card->GetRenderOpacity(); }
 		if (Border_ThumbnailBackdrop) { AuthoredThumbnailBrush = Border_ThumbnailBackdrop->Background; }
 		if (Text_Cost) { AuthoredCostColor = Text_Cost->GetColorAndOpacity(); }
 		if (Text_Name) { AuthoredNameColor = Text_Name->GetColorAndOpacity(); }
 		if (Image_Thumbnail) { bAuthoredThumbnailEnabled = Image_Thumbnail->GetIsEnabled(); }
 		if (Text_State) { AuthoredStateColor = Text_State->GetColorAndOpacity(); }
 		if (Text_Favorite) { AuthoredFavoriteColor = Text_Favorite->GetColorAndOpacity(); }
+		if (Button_Favorite) { AuthoredFavoriteStyle = Button_Favorite->GetStyle(); }
 		bCapturedAppearance = true;
 	}
 	// Preview labels, clipping and wrapping are authored in the WBP, including Designer preview.
@@ -212,9 +213,13 @@ void UFF_PrepBuildTileWidget::NativeOnItemSelectionChanged(const bool bIsSelecte
 
 void UFF_PrepBuildTileWidget::NativeOnEntryReleased()
 {
+	if (HoverAnimation) StopAnimation(HoverAnimation);
+	if (Border_Card) Border_Card->SetRenderOpacity(AuthoredCardOpacity);
 	Item = nullptr;
 	bCardSelected = false;
 	bCardHovered = false;
+	if (UWidget* LightingBadge = GetWidgetFromName(TEXT("Badge_Lighting")))
+		LightingBadge->SetVisibility(ESlateVisibility::Collapsed);
 	// Released entries retain their fixed layout but no previous data or selection.
 	RefreshFromItem();
 	RefreshFavorite();
@@ -229,6 +234,7 @@ void UFF_PrepBuildTileWidget::NativeOnMouseEnter(const FGeometry& InGeometry, co
 	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
 	bCardHovered = Item != nullptr;
 	RefreshVisualState();
+	if (bCardHovered && HoverAnimation) PlayAnimation(HoverAnimation);
 }
 
 void UFF_PrepBuildTileWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
@@ -236,6 +242,7 @@ void UFF_PrepBuildTileWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEve
 	Super::NativeOnMouseLeave(InMouseEvent);
 	bCardHovered = false;
 	RefreshVisualState();
+	if (HoverAnimation) PlayAnimationReverse(HoverAnimation);
 }
 
 int32 UFF_PrepBuildTileWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
@@ -243,7 +250,10 @@ int32 UFF_PrepBuildTileWidget::NativePaint(const FPaintArgs& Args, const FGeomet
 	const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 	const int32 Layer = Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
-	return Item && Item->SupportsLighting() ? FFBuildLightingBadge::Paint(AllottedGeometry, OutDrawElements, Layer) : Layer;
+	// Newer editable cards provide the lighting badge in their widget tree.
+	// Retain the legacy painted badge only for older authored cards.
+	return Item && Item->SupportsLighting() && !GetWidgetFromName(TEXT("Badge_Lighting"))
+		? FFBuildLightingBadge::Paint(AllottedGeometry, OutDrawElements, Layer) : Layer;
 }
 
 void UFF_PrepBuildTileWidget::RefreshItemPresentation()
@@ -251,6 +261,8 @@ void UFF_PrepBuildTileWidget::RefreshItemPresentation()
 	RefreshFromItem();
 	RefreshFavorite();
 	ApplyCodexFocus();
+	if (UWidget* LightingBadge = GetWidgetFromName(TEXT("Badge_Lighting")))
+		LightingBadge->SetVisibility(Item && Item->SupportsLighting() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	SetSynergyHighlighted(Item && Item->IsSynergyHighlighted());
 	SetRequiredFacilityStatus(Item && Item->IsRequiredFacility(), Item && Item->IsRequiredFacilitySatisfied(),
 		Item ? Item->GetRequiredFacilityCurrentCount() : 0, Item ? Item->GetRequiredFacilityMinimumCount() : 0);
@@ -259,7 +271,7 @@ void UFF_PrepBuildTileWidget::RefreshItemPresentation()
 void UFF_PrepBuildTileWidget::ApplyProgramAvailability()
 {
 	bHasCompatiblePrograms = Item && Item->HasCompatiblePrograms();
-	const ESlateVisibility BadgeVisibility = bHasCompatiblePrograms && !bRequiredFacility
+	const ESlateVisibility BadgeVisibility = bHasCompatiblePrograms
 		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 	if (Border_ProgramBadge) { Border_ProgramBadge->SetVisibility(BadgeVisibility); }
 	if (Text_ProgramBadge) { Text_ProgramBadge->SetVisibility(BadgeVisibility); }
@@ -331,9 +343,12 @@ void UFF_PrepBuildTileWidget::SetRequiredFacilityStatus(const bool bRequired, co
 
 void UFF_PrepBuildTileWidget::ApplyRequiredFacilityStatus()
 {
-	const ESlateVisibility MissingVisibility = bRequiredFacility && !bRequiredFacilitySatisfied
+	UWidget* RequiredIcon = GetWidgetFromName(TEXT("Badge_RequiredIcon"));
+	if (RequiredIcon)
+		RequiredIcon->SetVisibility(bRequiredFacility ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	const ESlateVisibility MissingVisibility = !RequiredIcon && bRequiredFacility && !bRequiredFacilitySatisfied
 		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
-	const ESlateVisibility SatisfiedVisibility = bRequiredFacility && bRequiredFacilitySatisfied
+	const ESlateVisibility SatisfiedVisibility = !RequiredIcon && bRequiredFacility && bRequiredFacilitySatisfied
 		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 	if (Border_RequiredMissing) { Border_RequiredMissing->SetVisibility(MissingVisibility); }
 	if (Border_RequiredSatisfied) { Border_RequiredSatisfied->SetVisibility(SatisfiedVisibility); }
@@ -369,6 +384,18 @@ void UFF_PrepBuildTileWidget::RefreshFavorite()
 	const bool bFavorite = Item && Favorites && Favorites->IsFavorite(Item->GetFacilityDefinitionId());
 	if (Button_Favorite)
 	{
+		if (bCapturedAppearance)
+		{
+			FButtonStyle Style = AuthoredFavoriteStyle;
+			if (bFavorite)
+			{
+				Style.Normal.TintColor = FSlateColor(FMath::Lerp(FavoriteColor, FLinearColor::White, .88f));
+				Style.Normal.OutlineSettings.Color = FSlateColor(FavoriteColor);
+				Style.Hovered.OutlineSettings.Color = FSlateColor(FavoriteColor);
+				Style.Pressed.OutlineSettings.Color = FSlateColor(FavoriteColor);
+			}
+			Button_Favorite->SetStyle(Style);
+		}
 		Button_Favorite->SetIsEnabled(Item != nullptr);
 		Button_Favorite->SetToolTipText(bFavorite
 			? NSLOCTEXT("FestaFiestaPrepBuild", "Unfavorite", "즐겨찾기 해제")

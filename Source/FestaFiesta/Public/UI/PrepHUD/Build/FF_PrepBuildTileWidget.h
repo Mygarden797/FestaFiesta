@@ -17,6 +17,7 @@ class UButton;
 class UImage;
 class USizeBox;
 class UTextBlock;
+class UWidgetAnimation;
 class UFF_PrepBuildTileData;
 
 UENUM()
@@ -110,6 +111,10 @@ public:
 	bool HasCompatiblePrograms() const { return bHasCompatiblePrograms; }
 
 protected:
+	/** Optional Designer-authored hover motion for the catalog card. */
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> HoverAnimation;
+
 	virtual void NativeOnInitialized() override;
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativePreConstruct() override;
@@ -276,6 +281,8 @@ private:
 	FSlateColor AuthoredNameColor;
 	FSlateColor AuthoredStateColor;
 	FSlateColor AuthoredFavoriteColor;
+	FButtonStyle AuthoredFavoriteStyle;
+	float AuthoredCardOpacity = 1.f;
 	bool bCapturedAppearance = false;
 	bool bAuthoredThumbnailEnabled = true;
 };

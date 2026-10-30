@@ -1,5 +1,5 @@
 // FF_FacilityAuroraBuildTests.cpp
-// 역할: 카탈로그에서 카드를 선택하면 해당 시설 배치로 이어지는지 검증한다.
+// 역할: 카탈로그 선택이 기존 권위 검증을 거쳐 즉시 배치 미리보기를 시작하는지 확인한다.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 #include "Building/FF_BuildModeSubsystem.h"
@@ -31,7 +31,7 @@
 #include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AuroraCatalogSelectionTest,
-    "FestaFiesta.UI.PrepBuild.ClarityDirectCardActivation",
+    "FestaFiesta.UI.PrepBuild.CatalogSelectionStartsPlacement",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FFF_AuroraCatalogSelectionTest::RunTest(const FString& Parameters)
@@ -105,8 +105,9 @@ bool FFF_AuroraCatalogSelectionTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Inspector focus does not activate placement"), Mode->GetBuildModeState(), EFF_BuildModeState::CatalogOpen);
     TestEqual(TEXT("Retired confirmation action remains collapsed"), Panel->Button_PlaceSelected->GetVisibility(), ESlateVisibility::Collapsed);
     Panel->HandleTileClicked(Tile);
-    TestEqual(TEXT("A card click immediately starts placement"), Mode->GetBuildModeState(), EFF_BuildModeState::Placing);
-    TestNotNull(TEXT("A click creates the actual world preview"), Mode->PlacementPreview.Get());
+    TestEqual(TEXT("A card click starts placement mode"), Mode->GetBuildModeState(), EFF_BuildModeState::Placing);
+    TestNotNull(TEXT("A card click creates the actual world preview"), Mode->PlacementPreview.Get());
+    TestEqual(TEXT("Selection retains the actual definition"), Panel->GetSelectedCatalogFacilityId(), Entry.FacilityDefinitionId);
     TestEqual(TEXT("Preview uses the clicked definition"), Mode->GetSelectedFacilityDefinitionId(), Entry.FacilityDefinitionId);
     TestEqual(TEXT("Clicking a card never charges gold"), Progression->GetGold(), GoldBefore);
     TestEqual(TEXT("Starting a preview never executes a world command"), Zones->GetWorldRevision(), RevisionBefore);
@@ -176,6 +177,7 @@ bool FFF_AuroraCatalogSelectionTest::RunTest(const FString& Parameters)
     Panel->PresentationModel->Reconcile(EFF_BuildCatalogLoadState::Ready, {}, {}, 7600, true, FText::GetEmpty());
     Panel->ApplyPresentation(false);
     TestTrue(TEXT("Filtering the candidate out clears its selection"), Panel->GetSelectedCatalogFacilityId().IsNone());
+    TestFalse(TEXT("A hidden/stale card cannot be selected"), Panel->SelectCatalogFacility(Entry.FacilityDefinitionId));
     TestFalse(TEXT("A hidden/stale card cannot activate placement"), Panel->ActivateCatalogFacility(Entry.FacilityDefinitionId));
     return true;
 }

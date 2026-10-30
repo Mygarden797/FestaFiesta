@@ -132,13 +132,19 @@ namespace FFPrepHudBrightLayoutTest
 			Test.TestTrue(Context + TEXT(" 상태 정보가 중앙 일차 칩과 겹치지 않는다"),
 				LeftRect.Right <= DayRect.Left + Tolerance && DayRect.Right <= RightRect.Left + Tolerance);
 			for (const TCHAR* Name : { TEXT("Text_FestivalName"), TEXT("Text_Gold"), TEXT("Text_Staff"),
-				TEXT("Text_DayStage"), TEXT("Text_CtaReason") })
+				TEXT("Text_DayStage") })
 			{
 				UTextBlock* Text = Cast<UTextBlock>(Hud.GetWidgetFromName(Name));
 				if (!Test.TestNotNull(Context + TEXT(" 상태 문구 / ") + Name, Text)) { continue; }
-				const bool bReason = Text->GetFName() == TEXT("Text_CtaReason");
 				const bool bDay = Text->GetFName() == TEXT("Text_DayStage");
-				CheckText(Test, *Text, bReason ? RightRect : bDay ? DayRect : LeftRect, Context, bReason);
+				CheckText(Test, *Text, bDay ? DayRect : LeftRect, Context);
+			}
+			const UTextBlock* Reason = Cast<UTextBlock>(Hud.GetWidgetFromName(TEXT("Text_CtaReason")));
+			if (Test.TestNotNull(Context + TEXT(" 상태 사유"), Reason))
+			{
+				// 진행 사유는 점검 패널이 소유하고 HUD의 중복 문구는 접힌다.
+				Test.TestTrue(Context + TEXT(" 중복된 하단 진행 사유는 숨긴다"),
+					Reason->GetText().IsEmpty() && Reason->GetVisibility() == ESlateVisibility::Collapsed);
 			}
 		}
 
@@ -221,7 +227,7 @@ bool FFF_PrepHudBrightLayoutTest::RunTest(const FString& Parameters)
 		!SetDisplayFixture(TEXT("Text_Gold"), TEXT("Box_Gold"), TEXT("10,000 Gold")) ||
 		!SetDisplayFixture(TEXT("Text_Staff"), TEXT("Box_Staff"), TEXT("6명")) ||
 		!SetDisplayFixture(TEXT("Text_DayStage"), TEXT("Border_DayStage"), TEXT("1일차 · 셋업"))) { return false; }
-	// 사유는 RefreshCta가 생성한 긴 런타임 안내문을 유지해 말줄임 경계도 함께 확인한다.
+	// 진행 사유는 점검 패널에서 표시하며 하단 바의 중복 문구는 접힌다.
 	// WBP를 처음 로드하면 아이콘 텍스처 컴파일이 비동기로 남을 수 있다.
 	// 레이아웃 정착용 Draw 호출은 게임 루프를 기다리지 않으므로 첫 캡처 전에 리소스를 준비한다.
 	FAssetCompilingManager::Get().FinishAllCompilation();

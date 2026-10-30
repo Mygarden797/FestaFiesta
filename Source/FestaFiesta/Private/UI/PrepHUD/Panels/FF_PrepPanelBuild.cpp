@@ -16,8 +16,10 @@
 #include "Building/Presentation/FF_BuildFeedback.h"
 #include "Building/Presentation/FF_BuildCategoryIcons.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
+#include "Building/UI/FF_BuildFacilityCard.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/ButtonSlot.h"
@@ -26,12 +28,14 @@
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
+#include "Components/ScaleBoxSlot.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "Engine/GameInstance.h"
+#include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSWorldSubsystem.h"
@@ -51,6 +55,8 @@
 namespace FFPrepBuildPanel
 {
 	constexpr int32 AllCategoryChoiceId = INDEX_NONE;
+	// Reassign the authored 160-unit codex launcher width to the inspector.
+	constexpr float CatalogDetailsWidth = 550.f;
 }
 
 UFF_PrepPanelBuild::UFF_PrepPanelBuild(const FObjectInitializer& ObjectInitializer)
@@ -92,6 +98,13 @@ void UFF_PrepPanelBuild::NativeOnInitialized()
 void UFF_PrepPanelBuild::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (Size_ClarityCatalogDock)
+	{
+		// The existing ScaleBox centers the dock. Anchor the catalog to its left edge
+		// so the independently hosted facility information has its own space.
+		if (auto* DockSlot = Cast<UScaleBoxSlot>(Size_ClarityCatalogDock->Slot))
+			DockSlot->SetHorizontalAlignment(HAlign_Left);
+	}
 	if (!bUseDesignerCatalogLayout) MatchCatalogHeaderActions();
 	// Preserve legacy named bindings while retiring the redundant confirmation strip.
 	if (UWidget* Selection = GetWidgetFromName(TEXT("Border_AuroraSelection")))
@@ -114,7 +127,7 @@ void UFF_PrepPanelBuild::NativeConstruct()
 	{
 		// UListView applies scrollbar visibility to its live Slate widget, not a saved
 		// property. NativeConstruct runs after Slate creation, including viewport reattach.
-		TileView_Facilities->SetScrollbarVisibility(ESlateVisibility::Collapsed);
+		TileView_Facilities->SetScrollbarVisibility(ESlateVisibility::Visible);
 		// NativeConstruct can run again on the same panel instance after a viewport reattach.
 		TileView_Facilities->OnItemClicked().RemoveAll(this);
 		TileView_Facilities->OnItemClicked().AddUObject(this, &ThisClass::HandleTileClicked);
@@ -280,14 +293,24 @@ void UFF_PrepPanelBuild::NativeDestruct()
 void UFF_PrepPanelBuild::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-	if (!bUsePagination && Size_ClarityCatalogDock && BuildModeSubsystem &&
-		BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen)
+	if (bCatalogPointerDown && FSlateApplication::IsInitialized())
+	{
+		const auto& Slate = FSlateApplication::Get();
+		if (Slate.GetPressedMouseButtons().Contains(EKeys::LeftMouseButton))
+			UpdateCatalogDrag(MyGeometry, Slate.GetCursorPos());
+		else
+			FinishCatalogDrag(MyGeometry, Slate.GetCursorPos());
+	}
+	if (Size_ClarityCatalogDock && BuildModeSubsystem &&
+		(BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen ||
+		 BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::Placing))
 	{
 		const float ViewportScale = FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(this));
 		const float LogicalViewportWidth = UWidgetLayoutLibrary::GetViewportSize(this).X / ViewportScale;
-		if (bFitCatalogToViewport && LogicalViewportWidth > CatalogViewportMargin)
+		if (bFitCatalogToViewport && LogicalViewportWidth > CatalogViewportMargin + FFPrepBuildPanel::CatalogDetailsWidth)
 		{
-			const float DockWidth = LogicalViewportWidth - CatalogViewportMargin;
+			const float AvailableWidth = LogicalViewportWidth - CatalogViewportMargin - FFPrepBuildPanel::CatalogDetailsWidth;
+			const float DockWidth = AvailableWidth;
 			if (!Size_ClarityCatalogDock->IsWidthOverride() ||
 				!FMath::IsNearlyEqual(Size_ClarityCatalogDock->GetWidthOverride(), DockWidth, .5f))
 			{
@@ -309,6 +332,21 @@ void UFF_PrepPanelBuild::NativeTick(const FGeometry& MyGeometry, const float InD
 	}
 	if (!bUsePagination && TileView_Facilities && TileView_Facilities->IsVisible())
 	{
+		if (TileView_Facilities->GetOrientation() == Orient_Vertical)
+		{
+			// The Designer chooses the column count; adapt the pitch to the actual
+			// available width so a complete row survives viewport/DPI changes.
+			const float Width = TileView_Facilities->GetCachedGeometry().GetLocalSize().X;
+			const int32 Columns = FMath::Max(1, CardsPerPage);
+			if (FMath::IsFinite(Width) && Width > 0.f &&
+				(!FMath::IsNearlyEqual(Width, LastResponsiveListWidth, .5f) || Columns != LastResponsiveColumnCount))
+			{
+				LastResponsiveListWidth = Width;
+				LastResponsiveColumnCount = Columns;
+				TileView_Facilities->SetEntryWidth(FMath::Max(1.f,
+					(Width - 24.f) / Columns - TileView_Facilities->GetHorizontalEntrySpacing()));
+			}
+		}
 		if (!bCatalogPointerDown && FMath::Abs(CatalogScrollVelocity) > 0.01f)
 		{
 			const float Decay = FMath::Exp(-8.f * FMath::Min(InDeltaTime, .05f));
@@ -382,6 +420,8 @@ bool UFF_PrepPanelBuild::IsPointerOverCatalog(const FVector2D& ScreenPosition) c
 
 void UFF_PrepPanelBuild::ResetCatalogDrag()
 {
+	if (auto* Hint = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_A5CatalogDragHint"))))
+		Hint->SetText(LOCTEXT("CatalogDragHint", "위아래로 드래그 · 휠 / 오른쪽 스크롤바로 더 보기"));
 	bCatalogPointerDown = false;
 	bCatalogPointerMoved = false;
 	CatalogPressedItem.Reset();
@@ -390,9 +430,13 @@ void UFF_PrepPanelBuild::ResetCatalogDrag()
 void UFF_PrepPanelBuild::ScrollCatalogBy(const float ItemDelta)
 {
 	if (!TileView_Facilities || !FMath::IsFinite(ItemDelta)) return;
-	const float Pitch = FMath::Max(1.f, TileView_Facilities->GetEntryWidth());
-	const float VisibleCount = TileView_Facilities->GetCachedGeometry().GetLocalSize().X / Pitch;
-	const float MaxOffset = FMath::Max(0.f, TileView_Facilities->GetNumItems() - VisibleCount);
+	const bool bVertical = TileView_Facilities->GetOrientation() == Orient_Vertical;
+	const FVector2D Size = TileView_Facilities->GetCachedGeometry().GetLocalSize();
+	const int32 Columns = bVertical ? FMath::Max(1, CardsPerPage) : 1;
+	const float Pitch = FMath::Max(1.f, bVertical ? TileView_Facilities->GetEntryHeight() : TileView_Facilities->GetEntryWidth());
+	const float VisibleCount = bVertical ? Size.Y / Pitch * Columns : Size.X / Pitch;
+	const int32 PaddedCount = bVertical ? FMath::DivideAndRoundUp(TileView_Facilities->GetNumItems(), Columns) * Columns : TileView_Facilities->GetNumItems();
+	const float MaxOffset = FMath::Max(0.f, PaddedCount - VisibleCount);
 	const float Requested = TileView_Facilities->GetScrollOffset() + ItemDelta;
 	const float Offset = FMath::Clamp(Requested, 0.f, MaxOffset);
 	if (!FMath::IsNearlyEqual(Requested, Offset)) CatalogScrollVelocity = 0.f;
@@ -402,6 +446,10 @@ void UFF_PrepPanelBuild::ScrollCatalogBy(const float ItemDelta)
 FReply UFF_PrepPanelBuild::NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
 {
 	if (Event.GetEffectingButton() != EKeys::LeftMouseButton || !IsPointerOverCatalog(Event.GetScreenSpacePosition()))
+		return Super::NativeOnPreviewMouseButtonDown(Geometry, Event);
+	// Let Slate's scrollbar thumb own its pointer capture. Card swipes remain separate.
+	const FGeometry& ListGeometry = TileView_Facilities->GetCachedGeometry();
+	if (ListGeometry.AbsoluteToLocal(Event.GetScreenSpacePosition()).X >= ListGeometry.GetLocalSize().X - 24.f)
 		return Super::NativeOnPreviewMouseButtonDown(Geometry, Event);
 	CatalogPressedItem.Reset();
 	for (UUserWidget* Entry : TileView_Facilities->GetDisplayedEntryWidgets())
@@ -422,34 +470,53 @@ FReply UFF_PrepPanelBuild::NativeOnPreviewMouseButtonDown(const FGeometry& Geome
 	CatalogScrollVelocity = 0.f;
 	bCatalogPointerDown = true;
 	bCatalogPointerMoved = false;
-	return FReply::Handled().CaptureMouse(TakeWidget()).SetUserFocus(TileView_Facilities->TakeWidget());
+	// In-game HUD runs with the controller's existing input mode. Capturing here
+	// can lock/hide its cursor; polling below also handles release outside the list.
+	return FReply::Handled();
 }
 
 FReply UFF_PrepPanelBuild::NativeOnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event)
 {
 	if (!bCatalogPointerDown) return Super::NativeOnMouseMove(Geometry, Event);
-	const FVector2D Delta = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition()) - CatalogDragOrigin;
+	UpdateCatalogDrag(Geometry, Event.GetScreenSpacePosition());
+	return FReply::Handled();
+}
+
+void UFF_PrepPanelBuild::UpdateCatalogDrag(const FGeometry& Geometry, const FVector2D& ScreenPosition)
+{
+	const FVector2D Position = Geometry.AbsoluteToLocal(ScreenPosition);
+	if (Position.Equals(CatalogDragLastPosition, .01f)) return;
+	const FVector2D Delta = Position - CatalogDragOrigin;
 	bCatalogPointerMoved |= Delta.SizeSquared() >= FMath::Square(10.0);
 	if (!bUsePagination && bCatalogPointerMoved && TileView_Facilities)
 	{
-		const FVector2D Position = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition());
+		if (auto* Hint = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_A5CatalogDragHint"))))
+			Hint->SetText(LOCTEXT("CatalogDragging", "목록 이동 중 · 드래그로 더 보기"));
 		const double Now = FPlatformTime::Seconds();
-		const float Pitch = FMath::Max(1.f, TileView_Facilities->GetEntryWidth());
-		const float DesiredOffset = CatalogDragStartOffset - Delta.X / Pitch;
+		const bool bVertical = TileView_Facilities->GetOrientation() == Orient_Vertical;
+		const float Pitch = FMath::Max(1.f, bVertical ? TileView_Facilities->GetEntryHeight() : TileView_Facilities->GetEntryWidth());
+		const float ItemsPerLine = bVertical ? FMath::Max(1, CardsPerPage) : 1.f;
+		const float DesiredOffset = CatalogDragStartOffset - (bVertical ? Delta.Y : Delta.X) / Pitch * ItemsPerLine;
 		ScrollCatalogBy(DesiredOffset - TileView_Facilities->GetScrollOffset());
 		const float Seconds = FMath::Clamp(static_cast<float>(Now - CatalogDragLastTime), .001f, .1f);
-		CatalogScrollVelocity = FMath::Clamp(static_cast<float>(CatalogDragLastPosition.X - Position.X) / Pitch / Seconds, -24.f, 24.f);
+		const float DragDelta = bVertical ? CatalogDragLastPosition.Y - Position.Y : CatalogDragLastPosition.X - Position.X;
+		CatalogScrollVelocity = FMath::Clamp(DragDelta / Pitch * ItemsPerLine / Seconds, -24.f * ItemsPerLine, 24.f * ItemsPerLine);
 		CatalogDragLastPosition = Position;
 		CatalogDragLastTime = Now;
 	}
-	return FReply::Handled();
 }
 
 FReply UFF_PrepPanelBuild::NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event)
 {
 	if (!bCatalogPointerDown || Event.GetEffectingButton() != EKeys::LeftMouseButton)
 		return Super::NativeOnMouseButtonUp(Geometry, Event);
-	const FVector2D Delta = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition()) - CatalogDragOrigin;
+	FinishCatalogDrag(Geometry, Event.GetScreenSpacePosition());
+	return FReply::Handled();
+}
+
+void UFF_PrepPanelBuild::FinishCatalogDrag(const FGeometry& Geometry, const FVector2D& ScreenPosition)
+{
+	const FVector2D Delta = Geometry.AbsoluteToLocal(ScreenPosition) - CatalogDragOrigin;
 	const bool bMoved = bCatalogPointerMoved || Delta.SizeSquared() >= FMath::Square(10.0);
 	UFF_PrepBuildTileData* PressedItem = CatalogPressedItem.Get();
 	ResetCatalogDrag();
@@ -465,12 +532,12 @@ FReply UFF_PrepPanelBuild::NativeOnMouseButtonUp(const FGeometry& Geometry, cons
 	{
 		if (Delta.Y < 0) NextCatalogPage(); else PreviousCatalogPage();
 	}
-	else if (!bMoved && PressedItem && TileView_Facilities && IsPointerOverCatalog(Event.GetScreenSpacePosition()))
+	else if (!bMoved && PressedItem && TileView_Facilities && IsPointerOverCatalog(ScreenPosition))
 	{
 		for (UUserWidget* Entry : TileView_Facilities->GetDisplayedEntryWidgets())
 		{
 			auto* Tile = Cast<UFF_PrepBuildTileWidget>(Entry);
-			if (Tile && Tile->GetPresentedItem() == PressedItem && Tile->GetCachedGeometry().IsUnderLocation(Event.GetScreenSpacePosition()))
+			if (Tile && Tile->GetPresentedItem() == PressedItem && Tile->GetCachedGeometry().IsUnderLocation(ScreenPosition))
 			{
 				TileView_Facilities->SetSelectedItem(PressedItem);
 				HandleTileClicked(PressedItem);
@@ -478,7 +545,6 @@ FReply UFF_PrepPanelBuild::NativeOnMouseButtonUp(const FGeometry& Geometry, cons
 			}
 		}
 	}
-	return FReply::Handled().ReleaseMouseCapture();
 }
 
 FReply UFF_PrepPanelBuild::NativeOnMouseWheel(const FGeometry& Geometry, const FPointerEvent& Event)
@@ -525,6 +591,19 @@ TArray<UObject*> UFF_PrepPanelBuild::GetCatalogPageItems() const
 	PageItems.Reserve(Count);
 	for (int32 Index = Start; Index < Start + Count; ++Index) PageItems.Add(FilteredItems[Index]);
 	return PageItems;
+}
+
+TArray<UObject*> UFF_PrepPanelBuild::GetVisibleCatalogItemsForWeb() const
+{
+	TArray<UObject*> Items;
+	if (!PresentationModel) return Items;
+	const TArray<TObjectPtr<UFF_PrepBuildTileData>>& Visible = PresentationModel->GetVisibleTiles();
+	Items.Reserve(Visible.Num());
+	for (const TObjectPtr<UFF_PrepBuildTileData>& Tile : Visible)
+	{
+		if (Tile) Items.Add(Tile.Get());
+	}
+	return Items;
 }
 
 bool UFF_PrepPanelBuild::CanGoToPreviousPage() const
@@ -924,7 +1003,8 @@ void UFF_PrepPanelBuild::RefreshRequiredFacilitiesPresentation()
 void UFF_PrepPanelBuild::ApplyRequiredFacilitiesSnapshot()
 {
 	const bool bCatalogVisible = bPanelOpen && BuildModeSubsystem &&
-		BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen;
+		(BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen ||
+		 BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::Placing);
 	if (bRequiredFacilitiesDirty && (bCatalogVisible || !RequiredFacilitiesSubsystem))
 	{
 		RequiredFacilitiesSnapshot = RequiredFacilitiesSubsystem
@@ -984,7 +1064,8 @@ void UFF_PrepPanelBuild::HandleZoneWorldChanged(const FFFZSWorldChangeEvent& Eve
 {
 	if ((Event.Type != EFFZSCommandType::Install && Event.Type != EFFZSCommandType::Remove) ||
 		!bPanelOpen || bClosingPanel || !BuildModeSubsystem ||
-		BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen)
+		(BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen &&
+		 BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::Placing))
 	{
 		return;
 	}
@@ -997,7 +1078,8 @@ void UFF_PrepPanelBuild::HandleZoneWorldChanged(const FFFZSWorldChangeEvent& Eve
 void UFF_PrepPanelBuild::HandleZoneWorldSnapshotRestored()
 {
 	if (!bPanelOpen || bClosingPanel || !BuildModeSubsystem ||
-		BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen)
+		(BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen &&
+		 BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::Placing))
 	{
 		return;
 	}
@@ -1009,7 +1091,7 @@ void UFF_PrepPanelBuild::HandleZoneWorldSnapshotRestored()
 void UFF_PrepPanelBuild::HandleTileClicked(UObject* ItemObject)
 {
 	if (const auto* Tile = Cast<UFF_PrepBuildTileData>(ItemObject))
-		ActivateCatalogFacility(Tile->GetFacilityDefinitionId());
+		SelectCatalogFacility(Tile->GetFacilityDefinitionId());
 }
 
 void UFF_PrepPanelBuild::HandleTileSelectionChanged(UObject* ItemObject)
@@ -1029,8 +1111,29 @@ void UFF_PrepPanelBuild::BeginSelectedFacilityPlacement()
 	ActivateCatalogFacility(SelectedCatalogFacilityId);
 }
 
+bool UFF_PrepPanelBuild::SelectCatalogFacility(const FName FacilityDefinitionId)
+{
+	if (FacilityDefinitionId.IsNone() || !PresentationModel || !BuildModeSubsystem ||
+		(BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen &&
+		 BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::Placing)) return false;
+	const TArray<UObject*> Visible = GetVisibleCatalogItemsForWeb();
+	for (int32 Index = 0; Index < Visible.Num(); ++Index)
+	{
+		const auto* Tile = Cast<UFF_PrepBuildTileData>(Visible[Index]);
+		if (!Tile || Tile->GetFacilityDefinitionId() != FacilityDefinitionId) continue;
+		if (bUsePagination) SetCatalogPage(Index / FMath::Max(1, CardsPerPage));
+		// Selection begins the existing placement preview immediately. The actual
+		// installation and payment still require confirmation in the world.
+		return ActivateCatalogFacility(FacilityDefinitionId);
+	}
+	return false;
+}
+
 bool UFF_PrepPanelBuild::ActivateCatalogFacility(const FName FacilityDefinitionId)
 {
+	// Reuse the cancellation path before switching the held facility; no install/payment occurs.
+	if (BuildModeSubsystem && BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::Placing)
+		BuildModeSubsystem->ReturnToCatalog();
 	if (FacilityDefinitionId.IsNone() || !PresentationModel || !BuildModeSubsystem ||
 		BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen) return false;
 	const auto* Candidate = PresentationModel->FindTile(FacilityDefinitionId);
@@ -1047,12 +1150,13 @@ bool UFF_PrepPanelBuild::ActivateCatalogFacility(const FName FacilityDefinitionI
 	if (!Tile->IsAffordable())
 	{
 		const FText Reason = Tile->GetStateText();
-		if (Tile->GetTileState() == EFF_PrepBuildTileState::BuildLimitReached)
-		{
-			// The ribbon has no visible status footer. Keep locked cards clickable and
-			// explain their current authoritative limit in the existing screen toast.
-			BuildModeSubsystem->PresentPlacementFailure(EFFZSPlacementFailure::BuildLimitReached, Reason);
-		}
+		// The authored catalog has no status footer. Explain every rejected click
+		// through the existing non-blocking toast as well as any legacy status text.
+		const EFFZSPlacementFailure Failure = Tile->GetTileState() == EFF_PrepBuildTileState::BuildLimitReached
+			? EFFZSPlacementFailure::BuildLimitReached
+			: Tile->GetTileState() == EFF_PrepBuildTileState::InsufficientFunds
+				? EFFZSPlacementFailure::InsufficientFunds : EFFZSPlacementFailure::DataInvalid;
+		BuildModeSubsystem->PresentPlacementFailure(Failure, Reason);
 		if (Text_Status)
 		{
 			Text_Status->SetText(Reason.IsEmpty()
@@ -1122,7 +1226,7 @@ void UFF_PrepPanelBuild::RefreshSelectedFacilityPresentation()
 	}
 	if (Text_SelectionHint) Text_SelectionHint->SetText(Tile
 		? (bAvailable ? LOCTEXT("ClarityChargedOnConfirm", "위치를 정하고 확정할 때 결제됩니다") : Tile->GetStateText())
-		: LOCTEXT("ClarityActivateCard", "카드를 누르면 배치할 위치를 정할 수 있습니다"));
+		: LOCTEXT("ClaritySelectCard", "카드를 선택하면 배치를 시작합니다"));
 }
 
 void UFF_PrepPanelBuild::HandleReturnToCatalogClicked()
@@ -1939,7 +2043,7 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 {
 	ResetCatalogDrag();
 	RefreshSelectedFacilityPresentation();
-	const bool bShowCatalog = State == EFF_BuildModeState::CatalogOpen;
+	const bool bShowCatalog = State == EFF_BuildModeState::CatalogOpen || State == EFF_BuildModeState::Placing;
 	const bool bShowCompact = bUsePagination && State == EFF_BuildModeState::BuildMode;
 	const bool bShowSeparateTools = State == EFF_BuildModeState::Placing || State == EFF_BuildModeState::Moving;
 	const float ExpandedHeight = bUseDesignerCatalogLayout && AuthoredCatalogHeight > 0.f
@@ -1948,11 +2052,12 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 	{
 		Size_ClarityCatalogDock->SetHeightOverride(bShowCatalog ? ExpandedHeight : CompactHeight);
 		float CatalogWidth = bUseDesignerCatalogLayout && AuthoredCatalogWidth > 0.f ? AuthoredCatalogWidth : 1560.f;
-		if (!bUsePagination && bShowCatalog && bFitCatalogToViewport)
+		if (bShowCatalog && bFitCatalogToViewport)
 		{
 			const float Scale = FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(this));
 			const float LogicalWidth = UWidgetLayoutLibrary::GetViewportSize(this).X / Scale;
-			if (LogicalWidth > CatalogViewportMargin) CatalogWidth = LogicalWidth - CatalogViewportMargin;
+			if (LogicalWidth > CatalogViewportMargin + FFPrepBuildPanel::CatalogDetailsWidth)
+				CatalogWidth = LogicalWidth - CatalogViewportMargin - FFPrepBuildPanel::CatalogDetailsWidth;
 		}
 		Size_ClarityCatalogDock->SetWidthOverride(bShowCatalog ? CatalogWidth : 1080.f);
 	}
@@ -2033,7 +2138,7 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		Bar->SetOpenPanelLayout(Layout);
 	}
 
-	if (bShowCatalog)
+	if (State == EFF_BuildModeState::CatalogOpen)
 	{
 		FocusSelectedCategoryChoice();
 	}

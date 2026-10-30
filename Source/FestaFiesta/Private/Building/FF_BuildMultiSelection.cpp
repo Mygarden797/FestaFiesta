@@ -165,6 +165,14 @@ bool UFF_BuildModeSubsystem::InspectMultiSelectedFacility(AFFZSFacilityActor* Fa
 	return InspectFacility(Facility);
 }
 
+bool UFF_BuildModeSubsystem::RemoveMultiSelectedFacility(AFFZSFacilityActor* Facility)
+{
+	if (!bMultiSelectionActive || IsGroupPlacementActive() || !IsRegisteredMultiSelectionFacility(Facility) ||
+		!MultiSelectedFacilities.Contains(TWeakObjectPtr<AFFZSFacilityActor>(Facility))) return false;
+	ToggleMultiSelectedFacility(Facility);
+	return true;
+}
+
 void UFF_BuildModeSubsystem::AddMultiSelectedFacility(AFFZSFacilityActor* Facility)
 {
 	if (!bMultiSelectionActive || !IsRegisteredMultiSelectionFacility(Facility) ||

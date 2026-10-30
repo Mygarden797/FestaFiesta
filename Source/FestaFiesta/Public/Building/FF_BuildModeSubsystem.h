@@ -544,6 +544,9 @@ public:
 	TArray<AFFZSFacilityActor*> GetMultiSelectedFacilities() const;
 	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
 	void ClearMultiSelection();
+	/** Remove one already-selected facility, without toggling an unselected one on. */
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	bool RemoveMultiSelectedFacility(AFFZSFacilityActor* Facility);
 	/** Leaves multi-selection and opens the validated single-facility information panel. */
 	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
 	bool InspectMultiSelectedFacility(AFFZSFacilityActor* Facility);

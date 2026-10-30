@@ -5,11 +5,15 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Editor.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/UserInterfaceSettings.h"
@@ -70,6 +74,16 @@ bool FFF_BuildMultiSelectionVisualTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("Selected facilities use an editable card WBP"), CardClass)) return false;
 	UHorizontalBox* Cards = Cast<UHorizontalBox>(Widget->GetWidgetFromName(TEXT("Row_SelectedFacilities")));
 	if (!TestNotNull(TEXT("Facility card row"), Cards)) return false;
+	auto* List = Cast<UVerticalBox>(Widget->GetWidgetFromName(TEXT("Column_A5_SelectedFacilities")));
+	auto* PanelSize = Cast<USizeBox>(Widget->GetWidgetFromName(TEXT("Size_MultiSelection")));
+	auto* BoundsSlot = PanelSize ? Cast<UCanvasPanelSlot>(PanelSize->Slot) : nullptr;
+	if (!TestNotNull(TEXT("Approved vertical facility list"), List) ||
+		!TestNotNull(TEXT("Selection panel bounds"), PanelSize) ||
+		!TestNotNull(TEXT("Selection panel canvas slot"), BoundsSlot)) return false;
+	TestTrue(TEXT("Selection panel is bottom-right aligned"), PanelSize->GetWidthOverride() == 390.f &&
+		BoundsSlot->GetAnchors().Minimum.Equals(FVector2D(1.f, 1.f)) &&
+		BoundsSlot->GetAlignment().Equals(FVector2D(1.f, 1.f)));
+	TestTrue(TEXT("Original selection row hosts the vertical list"), List->GetParent() == Cards);
 	if (UWidget* Empty = Widget->GetWidgetFromName(TEXT("Text_MultiSelectionDesignerHint"))) Empty->SetVisibility(ESlateVisibility::Collapsed);
 	for (int32 Index = 0; Index < 3; ++Index)
 	{
@@ -78,7 +92,7 @@ bool FFF_BuildMultiSelectionVisualTest::RunTest(const FString& Parameters)
 		Card->TakeWidget();
 		if (UTextBlock* Text = Cast<UTextBlock>(Card->GetWidgetFromName(TEXT("Text_FacilityName"))))
 			Text->SetText(FText::FromString(Index == 0 ? TEXT("먹거리 부스") : Index == 1 ? TEXT("그늘 쉼터") : TEXT("공연 앞 휴게 공간")));
-		Cards->AddChildToHorizontalBox(Card)->SetPadding(FMargin(0.f, 0.f, 8.f, 0.f));
+		List->AddChildToVerticalBox(Card)->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
 	}
 	TArray<UButton*> Buttons;
 	Widget->WidgetTree->ForEachWidget([&](UWidget* Child)
@@ -92,7 +106,7 @@ bool FFF_BuildMultiSelectionVisualTest::RunTest(const FString& Parameters)
 	FlushRenderingCommands();
 	const FString Directory = FPaths::ProjectSavedDir() / TEXT("Automation/ConstructionEditing");
 	IFileManager::Get().MakeDirectory(*Directory, true);
-	for (const FIntPoint Size : { FIntPoint(1280, 720), FIntPoint(1920, 1080) })
+	for (const FIntPoint Size : { FIntPoint(1280, 720), FIntPoint(1600, 900), FIntPoint(1920, 1080), FIntPoint(2560, 1440) })
 	{
 		const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Size);
 		const TSharedRef<SWidget> Scaled = SNew(SDPIScaler).DPIScale(Dpi)[Slate];

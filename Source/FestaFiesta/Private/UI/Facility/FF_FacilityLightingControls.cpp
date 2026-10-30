@@ -8,9 +8,15 @@
 #include "Framework/Application/SlateApplication.h"
 
 #include "CommonTextBlock.h"
+#include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/Border.h"
 #include "Components/EditableTextBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/SizeBox.h"
+#include "Components/TextBlock.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Components/Slider.h"
 #include "InputCoreTypes.h"
 
@@ -74,8 +80,65 @@ FReply UFF_FacilityLightingControls::NativeOnMouseButtonDown(
 void UFF_FacilityLightingControls::ApplyViewData(const FFF_FacilityInfoViewData& ViewData)
 {
 	TGuardValue<bool> ApplyingGuard(bApplyingViewData, true);
+	const bool bContextChanged = CurrentViewData.Context != ViewData.Context;
 	const bool bSelectionChanged = CurrentViewData.FacilityInstanceId != ViewData.FacilityInstanceId;
 	if (bSelectionChanged) { CancelEdit(); bPrecisionVisible=false; RefreshPrecisionVisibility(); }
+	if (bContextChanged && WidgetTree)
+	{
+		const auto* GeneratedClass = Cast<UWidgetBlueprintGeneratedClass>(GetClass());
+		const auto* Owner = GeneratedClass ? GeneratedClass->FindWidgetTreeOwningClass() : nullptr;
+		const UWidgetTree* AuthoredTree = Owner ? Owner->GetWidgetTreeArchetype() : nullptr;
+		const bool bBuild = ViewData.Context == EFF_FacilityInfoContext::Build && bUseCompactBuildLayout;
+		if (auto* Wheel = Cast<USizeBox>(WidgetTree->FindWidget(TEXT("Aurora_ColorPickerSize"))))
+			if (const auto* Authored = AuthoredTree ? Cast<USizeBox>(AuthoredTree->FindWidget(TEXT("Aurora_ColorPickerSize"))) : nullptr)
+			{
+				if (bBuild) { Wheel->SetWidthOverride(BuildColorWheelSize); Wheel->SetHeightOverride(BuildColorWheelSize); }
+				else
+				{
+					if (Authored->IsWidthOverride()) Wheel->SetWidthOverride(Authored->GetWidthOverride()); else Wheel->ClearWidthOverride();
+					if (Authored->IsHeightOverride()) Wheel->SetHeightOverride(Authored->GetHeightOverride()); else Wheel->ClearHeightOverride();
+				}
+				if (auto* WheelSlot = Cast<UHorizontalBoxSlot>(Wheel->Slot))
+					if (const auto* AuthoredSlot = Cast<UHorizontalBoxSlot>(Authored->Slot))
+						WheelSlot->SetVerticalAlignment(bBuild ? VAlign_Center : AuthoredSlot->GetVerticalAlignment());
+			}
+		for (const TCHAR* ModeName : {TEXT("ClarityV2_ColorModeSize"), TEXT("Reference_LightingColorModeSize")})
+		if (auto* ModeSize = Cast<USizeBox>(WidgetTree->FindWidget(ModeName)))
+			if (const auto* Authored = AuthoredTree ? Cast<USizeBox>(AuthoredTree->FindWidget(ModeName)) : nullptr)
+			{
+				if (bBuild) ModeSize->ClearHeightOverride();
+				else if (Authored->IsHeightOverride()) ModeSize->SetHeightOverride(Authored->GetHeightOverride());
+				else ModeSize->ClearHeightOverride();
+			}
+		for (const TCHAR* SwatchName : {TEXT("Reference_CurrentColorSize"), TEXT("Reference_NewColorSize")})
+			if (auto* Swatch = Cast<USizeBox>(WidgetTree->FindWidget(SwatchName)))
+				if (const auto* Authored = AuthoredTree ? Cast<USizeBox>(AuthoredTree->FindWidget(SwatchName)) : nullptr)
+				{
+					if (bBuild) Swatch->SetHeightOverride(BuildColorSwatchHeight);
+					else if (Authored->IsHeightOverride()) Swatch->SetHeightOverride(Authored->GetHeightOverride());
+					else Swatch->ClearHeightOverride();
+				}
+		if (auto* Description = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Reference_LightingDescription"))))
+			if (const auto* Authored = AuthoredTree ? Cast<UTextBlock>(AuthoredTree->FindWidget(TEXT("Reference_LightingDescription"))) : nullptr)
+			{
+				Description->SetText(bBuild && !BuildLightingDescription.IsEmpty() ? BuildLightingDescription : Authored->GetText());
+				Description->SetToolTipText(bBuild ? Authored->GetText() : Authored->GetToolTipText());
+			}
+		for (const TCHAR* RowName : {TEXT("Reference_LightingEditorCard"), TEXT("Reference_LightingDescription"),
+			TEXT("Reference_LightingColorModeSize"), TEXT("Reference_LightingPresetRow"),
+			TEXT("Reference_LightingBrightnessHeadingSize"), TEXT("Reference_LightingBrightnessSliderSize"),
+			TEXT("Reference_LightingBrightnessLevels"), TEXT("ClarityV2_LightingActions")})
+		{
+			UWidget* Row = WidgetTree->FindWidget(RowName);
+			const UWidget* Authored = AuthoredTree ? AuthoredTree->FindWidget(RowName) : nullptr;
+			auto* RowSlot = Row ? Cast<UVerticalBoxSlot>(Row->Slot) : nullptr;
+			const auto* AuthoredSlot = Authored ? Cast<UVerticalBoxSlot>(Authored->Slot) : nullptr;
+			if (!RowSlot || !AuthoredSlot) continue;
+			FMargin RowPadding = AuthoredSlot->GetPadding();
+			if (bBuild) { RowPadding.Top = FMath::Min(RowPadding.Top, BuildMaximumVerticalPadding); RowPadding.Bottom = FMath::Min(RowPadding.Bottom, BuildMaximumVerticalPadding); }
+			RowSlot->SetPadding(RowPadding);
+		}
+	}
 	CurrentViewData = ViewData;
 	SetVisibility(ViewData.bHasLightingRig ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	SetIsEnabled(ViewData.bCanEditLighting);

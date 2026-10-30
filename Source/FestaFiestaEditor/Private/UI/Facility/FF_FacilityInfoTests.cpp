@@ -103,9 +103,11 @@ namespace
 
 	UTexture2D* LoadCaptureFoodTruckTexture(FAutomationTestBase& Test)
 	{
-		UTexture2D* Texture = LoadObject<UTexture2D>(nullptr,
-			FFBuildUIAssetPaths::FoodTruckImageObject);
-		if (!Test.TestNotNull(TEXT("실제 카탈로그 푸드트럭 썸네일"), Texture)) return nullptr;
+		const UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr,
+			TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Taco.PDA_FFZS_Booth_FoodStall_Taco"));
+		if (!Test.TestNotNull(TEXT("실제 카탈로그 음식 시설 정의"), Definition)) return nullptr;
+		UTexture2D* Texture = Definition->CatalogThumbnail.LoadSynchronous();
+		if (!Test.TestNotNull(TEXT("실제 카탈로그 음식 시설 썸네일"), Texture)) return nullptr;
 		TArray<UTexture*> Textures = {Texture};
 		FTextureCompilingManager::Get().FinishCompilation(Textures);
 		Texture->SetForceMipLevelsToBeResident(30.0f);
@@ -2697,22 +2699,50 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 	};
 	Panel->SetInfoPage(EFF_FacilityInfoPage::Lighting);
 	bool bSaved = Capture(Slate, 1920, 1080, TEXT("FacilityLightingPanelV7.png"));
+	auto IsInsideScroll = [Scroll](const UWidget* Widget)
+	{
+		if (!Widget) return false;
+		const FGeometry& Outer = Scroll->GetCachedGeometry();
+		const FGeometry& Inner = Widget->GetCachedGeometry();
+		const FVector2D Start = Outer.AbsoluteToLocal(Inner.LocalToAbsolute(FVector2D::ZeroVector));
+		const FVector2D End = Outer.AbsoluteToLocal(Inner.LocalToAbsolute(Inner.GetLocalSize()));
+		return Inner.GetLocalSize().X > 1.f && Inner.GetLocalSize().Y > 1.f
+			&& Start.Y >= -1.f && End.Y <= Outer.GetLocalSize().Y + 1.f;
+	};
+	if (const UWidget* Tab = Panel->GetWidgetFromName(TEXT("Button_TabLighting")))
+		TestTrue(TEXT("Lighting tab remains visible on the lighting page"), Tab->GetCachedGeometry().GetLocalSize().Y > 1.f);
 	const bool bClarityV2=Panel->GetWidgetFromName(TEXT("ClarityV2_Info"))!=nullptr;
 	if(bClarityV2)
 	{
-		TestTrue(*FString::Printf(TEXT("Compact lighting needs no detail scrolling at 1080p (%.1fpx)"),Scroll->GetScrollOffsetOfEnd()),Scroll->GetScrollOffsetOfEnd()<=1.f);
-		bSaved &= Capture(Slate,1280,720,TEXT("FacilityLightingPanelClarityV2_720.png"));
-		TestTrue(*FString::Printf(TEXT("Compact lighting needs no detail scrolling at 720p (%.1fpx)"),Scroll->GetScrollOffsetOfEnd()),Scroll->GetScrollOffsetOfEnd()<=1.f);
-		if(auto* Wheel=Cast<USizeBox>(Controls->GetWidgetFromName(TEXT("Aurora_ColorPickerSize"))))
-			TestEqual(TEXT("Color wheel preserves the authored compact reference size"),Wheel->GetWidthOverride(),
-				Controls->GetWidgetFromName(TEXT("Reference_LightingEditorCard")) ? 192.f : 190.f);
+		if (auto* Wheel=Cast<USizeBox>(Controls->GetWidgetFromName(TEXT("Aurora_ColorPickerSize"))))
+		{
+			TestEqual(TEXT("Build lighting uses the approved compact color wheel"), Wheel->GetWidthOverride(), 92.f);
+			TestTrue(TEXT("Color wheel is round and visible"), IsInsideScroll(Wheel)
+				&& FMath::IsNearlyEqual(Wheel->GetCachedGeometry().GetLocalSize().X, Wheel->GetCachedGeometry().GetLocalSize().Y, 1.f));
+		}
+		for (const FIntPoint Resolution : {FIntPoint(1920, 1080), FIntPoint(1280, 720)})
+		{
+			Scroll->ScrollToEnd();
+			bSaved &= Capture(Slate, Resolution.X, Resolution.Y, Resolution.Y == 1080
+				? TEXT("FacilityLightingActions1080.png") : TEXT("FacilityLightingActions720.png"));
+			TestTrue(*FString::Printf(TEXT("Lighting apply is reachable at %dp"), Resolution.Y),
+				IsInsideScroll(Controls->GetWidgetFromName(TEXT("Button_LightingApply"))));
+			Scroll->ScrollToStart();
+			bSaved &= Capture(Slate, Resolution.X, Resolution.Y, Resolution.Y == 1080
+				? TEXT("FacilityLightingPanelV7.png") : TEXT("FacilityLightingPanelClarityV2_720.png"));
+		}
 		if(auto* Precision=Cast<UButton>(Controls->GetWidgetFromName(TEXT("Button_LightingPrecision"))))
 		{
 			Precision->OnClicked.Broadcast();
 			TestEqual(TEXT("Precision capture really shows the precise channels"),Controls->GetWidgetFromName(TEXT("Panel_LightingPrecision"))->GetVisibility(),ESlateVisibility::SelfHitTestInvisible);
 			TestEqual(TEXT("Precision capture does not retain the color wheel"),Controls->GetWidgetFromName(TEXT("Panel_LightingBasic"))->GetVisibility(),ESlateVisibility::Collapsed);
 			bSaved &= Capture(Slate,1280,720,TEXT("FacilityLightingPrecisionClarityV2_720.png"));
-			TestTrue(TEXT("Precise channels fit without scrolling"),Scroll->GetScrollOffsetOfEnd()<=1.f);
+			Scroll->ScrollToEnd();
+			bSaved &= Capture(Slate,1280,720,TEXT("FacilityLightingPrecisionActions720.png"));
+			TestTrue(TEXT("Precise lighting apply is reachable"), IsInsideScroll(Controls->GetWidgetFromName(TEXT("Button_LightingApply"))));
+			Scroll->ScrollToStart();
+			bSaved &= Capture(Slate,1280,720,TEXT("FacilityLightingPrecisionClarityV2_720.png"));
+			TestTrue(TEXT("Precise RGB channel input is reachable"), IsInsideScroll(Controls->GetWidgetFromName(TEXT("Input_LightingB"))));
 			Precision->OnClicked.Broadcast();
 		}
 	}
@@ -2755,11 +2785,13 @@ bool FFF_FacilityInfoClarityNavigationTest::RunTest(const FString& Parameters)
 		!TestNotNull(TEXT("Combination page"), Page) || !TestNotNull(TEXT("Combination list"), Rows) ||
 		!TestNotNull(TEXT("Staff tab"), Staff) || !TestNotNull(TEXT("Staff assignment page"), StaffSection) ||
 		!TestNotNull(TEXT("Assign staff"), AssignStaff) || !TestNotNull(TEXT("Unassign staff"), UnassignStaff)) return false;
-	if (auto* Tabs = Cast<UHorizontalBox>(Staff->GetParent()))
+	UWidget* OperationTab = Panel->GetWidgetFromName(TEXT("Button_TabOperation"));
+	if (!TestNotNull(TEXT("Operation tab"), OperationTab)) return false;
+	if (auto* Tabs = Cast<UHorizontalBox>(OperationTab->GetParent()))
 	{
-		TestEqual(TEXT("Staff follows Operation in the main tab row"), Tabs->GetChildIndex(Staff),
-			Tabs->GetChildIndex(Panel->GetWidgetFromName(TEXT("Button_TabOperation"))) + 1);
-		TestEqual(TEXT("Primary navigation keeps four pages"), Tabs->GetChildrenCount(), 4);
+		TestTrue(TEXT("Staff uses the same secondary row as the program shortcut"),
+			Staff->GetParent() && Staff->GetParent() == Programs->GetParent() && Staff->GetParent() != Tabs);
+		TestEqual(TEXT("Primary navigation keeps the three core pages"), Tabs->GetChildrenCount(), 3);
 	}
 	FFF_FacilityInfoViewData Data;
 	Data.FacilityInstanceId = FGuid::NewGuid(); Data.Context = EFF_FacilityInfoContext::Build;
@@ -2774,6 +2806,8 @@ bool FFF_FacilityInfoClarityNavigationTest::RunTest(const FString& Parameters)
 	}
 	Panel->ApplyViewData(Data); Panel->SetPanelOpen(true);
 	const TSharedRef<SWidget> Slate = Panel->TakeWidget();
+	TestNull(TEXT("Overview no longer contains a revenue ranking shortcut"),
+		Panel->GetWidgetFromName(TEXT("Button_OverviewRevenueRanking")));
 	TestEqual(TEXT("Overview does not stack earnings below basic facts"), Panel->GetWidgetFromName(TEXT("Panel_RevenueSection"))->GetVisibility(), ESlateVisibility::Collapsed);
 	TestEqual(TEXT("Overview no longer stacks staff assignment below basic facts"), StaffSection->GetVisibility(), ESlateVisibility::Collapsed);
 	int32 AssignRequests = 0;

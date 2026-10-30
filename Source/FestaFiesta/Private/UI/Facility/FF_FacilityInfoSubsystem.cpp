@@ -7,6 +7,7 @@
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "Building/FF_BuildCatalogSubsystem.h"
+#include "Building/FF_BuildModeSubsystem.h"
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Building/FF_FacilityUpgradeSubsystem.h"
 #include "Building/FF_FacilityUpgradeTypes.h"
@@ -49,6 +50,16 @@ DEFINE_LOG_CATEGORY_STATIC(LogFestaFiestaFacilityInfo, Log, All);
 
 namespace
 {
+	bool HasBlockingInspectorWindow(const UObject* Context)
+	{
+		// The build catalog and inspector are companion panels. Keep real modal /
+		// auxiliary windows blocking selection, without treating CatalogOpen as one.
+		const UWorld* World = Context ? Context->GetWorld() : nullptr;
+		const auto* Build = World ? World->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+		return FFUIForegroundRules::HasForegroundWindow(Context, false) ||
+			(Build && Build->IsBuildAuxiliaryPanelOpen());
+	}
+
 	constexpr float FacilitySelectionTraceDistanceCm = 500000.0f;
 	constexpr float FacilitySelectionOcclusionEndToleranceCm = 2.0f;
 	constexpr int32 MaxFacilitySelectionCandidates = 32;
@@ -165,7 +176,7 @@ bool UFF_FacilityInfoSubsystem::DoesSupportWorldType(const EWorldType::Type Worl
 
 void UFF_FacilityInfoSubsystem::Tick(const float DeltaTime)
 {
-	bForegroundWindowSuppressionRequested = FFUIForegroundRules::HasForegroundWindow(this);
+	bForegroundWindowSuppressionRequested = HasBlockingInspectorWindow(this);
 	UpdatePresentationSuppression(bPauseMenuSuppressionRequested || bForegroundWindowSuppressionRequested);
 	if (bPauseMenuPresentationSuppressed)
 	{
@@ -449,7 +460,7 @@ bool UFF_FacilityInfoSubsystem::SelectFacility(
 	AFFZSFacilityActor* Facility,
 	const EFF_FacilityInfoContext Context)
 {
-	bForegroundWindowSuppressionRequested = FFUIForegroundRules::HasForegroundWindow(this);
+	bForegroundWindowSuppressionRequested = HasBlockingInspectorWindow(this);
 	UpdatePresentationSuppression(bPauseMenuSuppressionRequested || bForegroundWindowSuppressionRequested);
 	if (bPauseMenuPresentationSuppressed)
 	{
@@ -1084,9 +1095,21 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 				LOCTEXT("ManyProgramsScheduled", "오늘 {0}개 편성됨"),
 				FText::AsNumber(ScheduledProgramSummaries.Num())))
 		: LOCTEXT("NoProgramScheduled", "오늘 편성 없음");
-	OutViewData.bShowProgramSection =
-		SelectionContext == EFF_FacilityInfoContext::Build || OutViewData.bHasScheduledProgram;
-	OutViewData.bShowProgramScheduleAction = SelectionContext == EFF_FacilityInfoContext::Build;
+	// A program tab belongs to compatible facilities, not every installed object.
+	// Keep scheduled programs visible even if the catalog changes; when facility or
+	// progression data is unavailable retain the existing explanatory fallback.
+	const bool bProgramCompatibilityKnown = Progression && Progression->IsFestivalStarted() && bFacilityNameKnown;
+	const bool bHasCompatibleProgram = bProgramCompatibilityKnown && ProgramCatalog.ContainsByPredicate(
+		[&NameParts](const FFF_ProgramCard& Card)
+		{
+			return Card.IsValid() && FFF_ProgramScheduleRules::IsFacilityTypeAllowed(
+				Card, NameParts.MajorToken, NameParts.MinorToken);
+		});
+	OutViewData.bShowProgramSection = OutViewData.bHasScheduledProgram ||
+		(SelectionContext == EFF_FacilityInfoContext::Build &&
+			(!bProgramCompatibilityKnown || bHasCompatibleProgram));
+	OutViewData.bShowProgramScheduleAction = SelectionContext == EFF_FacilityInfoContext::Build &&
+		OutViewData.bShowProgramSection;
 	OutViewData.ProgramScheduleActionText = OutViewData.bHasScheduledProgram
 		? LOCTEXT("AddPaidProgram", "유료 프로그램 추가 편성")
 		: LOCTEXT("SchedulePaidProgram", "유료 프로그램 편성");

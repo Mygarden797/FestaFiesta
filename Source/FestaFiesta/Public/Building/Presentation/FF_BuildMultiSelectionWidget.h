@@ -9,12 +9,26 @@
 class UBorder;
 class UButton;
 class UHorizontalBox;
+class UVerticalBox;
 class UTextBlock;
 class UEditableTextBox;
 class UComboBoxString;
 class UFF_BuildCatalogSubsystem;
 class UFF_BuildModeSubsystem;
 class AFFZSFacilityActor;
+
+/** Per-card delegate target; the selected actor itself remains owned by the world. */
+UCLASS(Transient)
+class FESTAFIESTA_API UFF_BuildSelectionRemoveHandler : public UObject
+{
+	GENERATED_BODY()
+public:
+	void Initialize(UFF_BuildModeSubsystem* InBuildMode, AFFZSFacilityActor* InFacility);
+	UFUNCTION() void HandleClicked();
+private:
+	TWeakObjectPtr<UFF_BuildModeSubsystem> BuildMode;
+	TWeakObjectPtr<AFFZSFacilityActor> Facility;
+};
 
 /** 시설을 보여 주고 해제·종료 요청을 전달한다. 실제 선택 목록은 BuildMode가 관리한다. */
 UCLASS(Blueprintable, meta = (DisplayName = "FF Build Multi Selection", DisableNativeTick))
@@ -41,6 +55,9 @@ public:
 	/** Reusable card WBP. Its layout, font and thumbnail surface are authored in Designer. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Multi Selection|Presentation")
 	TSoftClassPtr<UUserWidget> SelectedFacilityCardClass;
+	/** Keep a bottom-anchored panel above the visible prep HUD; larger Designer insets are retained. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Multi Selection|Presentation")
+	bool bAvoidBottomHud = true;
 
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
@@ -60,6 +77,9 @@ protected:
 private:
 	void BuildNativeTree();
 	void ResolveBindings();
+	void ApplyApprovedPanelLayout();
+	void AvoidBottomHud();
+	void AddSelectedFacilityWidget(UWidget& Widget);
 	void BuildNativeGroupControls();
 	void RefreshGroupControls();
 	void AddFacilityCard(const AFFZSFacilityActor& Facility, int32 DisplayIndex);
@@ -96,6 +116,8 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Edit_PresetName;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Combo_Presets;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_MultiSelectionDesignerHint;
+	UPROPERTY(Transient) TObjectPtr<UVerticalBox> ApprovedSelectionList;
+	UPROPERTY(Transient) TArray<TObjectPtr<UFF_BuildSelectionRemoveHandler>> SelectionRemoveHandlers;
 	TArray<FString> DisplayedPresetNames;
 	bool bPresetOptionsInitialized = false;
 	bool bPresetMenuWasOpen = false;

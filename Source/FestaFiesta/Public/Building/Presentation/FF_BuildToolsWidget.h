@@ -16,6 +16,7 @@ class UEditableTextBox;
 class UImage;
 class USizeBox;
 class UTextBlock;
+class UWidgetAnimation;
 class UWidgetTree;
 class UFF_BuildModeSubsystem;
 class UFF_BuildCatalogEconomyReadModel;
@@ -29,7 +30,8 @@ enum class EFF_BuildToolsDesignerPage : uint8
 {
     Placement UMETA(DisplayName = "배치"),
     Catalog UMETA(DisplayName = "카탈로그"),
-    Settings UMETA(DisplayName = "건축 설정")
+    Settings UMETA(DisplayName = "건축 설정"),
+    Guide UMETA(DisplayName = "건축 기능 안내")
 };
 
 USTRUCT(BlueprintType)
@@ -121,6 +123,14 @@ public:
     EFF_BuildToolsDesignerPage DesignerPage = EFF_BuildToolsDesignerPage::Placement;
     UPROPERTY(EditAnywhere, Category = "Designer Preview", meta = (EditCondition = "bPreviewDesignerPage"))
     bool bDesignerShowHelp = true;
+    /** Dynamic values stay authoritative; designers can change the surrounding copy. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Appearance|Text", meta = (MultiLine = true))
+    FText InstallationCostFormat = NSLOCTEXT("FFBuildToolsDesigner", "Cost", "설치 비용  {Cost} Gold");
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Appearance|Text", meta = (MultiLine = true))
+    FText FootprintFormat = NSLOCTEXT("FFBuildToolsDesigner", "Footprint", "시설 크기  {Width} × {Depth} m");
+    /** Keys are widget names (e.g. Text_Queue); {Value} is the current data text. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Appearance|Text")
+    TMap<FName, FText> DynamicTextFormats;
     bool IsPointerOverTools() const;
     bool IsEditingAngle() const;
     bool IsEditingText() const;
@@ -174,6 +184,8 @@ protected:
     void BP_OnToolsStateChanged(const FFF_BuildToolsViewData& Data);
 
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_Tools;
+    /** Editable entry motion authored on the build tools Widget Blueprint. */
+    UPROPERTY(Transient, meta = (BindWidgetAnimOptional)) TObjectPtr<UWidgetAnimation> Anim_BuildToolsIntro;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_PlacementInfo;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_PlacementHelp;
     /** Build-session toolbar shared by catalog browsing and active placement. */
@@ -242,6 +254,13 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Footprint;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Queue;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Audience;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_PlacementSynergySummary;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_PlacementSynergyTitle1;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_PlacementSynergyDetail1;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_PlacementSynergyTitle2;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_PlacementSynergyDetail2;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_PlacementSynergyTitle3;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_PlacementSynergyDetail3;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ControlHelp;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildHelpUndo;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildHelpRedo;
@@ -260,11 +279,7 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Legend;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_FacilityName;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Cost;
-    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ActiveSnap;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_RotationHint;
-    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Catalog;
-    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Confirm;
-    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Confirm;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Grid;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Grid;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_SnapMeter;
@@ -299,10 +314,13 @@ private:
     friend class FFFBuildFeatureGuideRenderTest;
     friend class FFFBuildToolsCatalogHelpTest;
     friend class FFFBuildToolsQueueSettingsTest;
+    friend class FFFBuildToolsAdaptivePanelsTest;
     FName CurrentGuideFeature;
     FName PendingGuideAction;
     bool bUpdatingGuideTopic = false;
     bool ShowFeatureGuide(FName FeatureId, bool bRunAfterConfirm);
+    void ShowFeatureSummary(FName FeatureId);
+    void HideFeatureSummary();
     void RunFeatureToolbarAction(FName FeatureId);
     void RequestFeatureToolbarAction(FName FeatureId);
     void RefreshFeatureHints();
@@ -325,14 +343,20 @@ private:
     TWeakObjectPtr<UWidget> GroupHelpAvoidanceSurface;
     TWeakObjectPtr<UWidget> SynergyHelpAvoidanceSurface;
     double NextSynergyHelpSearchTime = 0.0;
+    double NextPlacementSynergyRefresh = 0.0;
     double NextCatalogHelpSearchTime = 0.0;
     double NextGroupHelpSearchTime = 0.0;
     UPROPERTY(Transient) FFF_BuildToolsViewData ViewData;
     FTimerHandle FreeRotationTimer;
+    FTimerHandle FeatureSummaryTimer;
+    UPROPERTY(Transient) TObjectPtr<USizeBox> FeatureSummarySize;
+    UPROPERTY(Transient) TObjectPtr<UTextBlock> FeatureSummaryTitle;
+    UPROPERTY(Transient) TObjectPtr<UTextBlock> FeatureSummaryBody;
     int32 PointerRotationDirection = 0;
     int32 PlacementProblemIndex = 0;
     bool bRestoreHelpAfterSettings = false;
     bool bHelpExpanded = false;
+    bool bBuildSessionVisible = false;
     bool bHelpDismissedByUser = false;
     bool bHelpForegroundSuppressed = false;
     UPROPERTY(Transient) TObjectPtr<UCanvasPanel> ForegroundBodyCanvas;
@@ -351,9 +375,9 @@ private:
     UFUNCTION() void HandleEdgeScroll();
     UFUNCTION() void ToggleFacts();
     void SetHelpExpanded(bool bExpanded);
-    void InstallHelpCloseControl();
     void RefreshHelpPresentation();
     void RefreshPlacementSurfaces();
+    void RefreshPlacementSynergy();
     TWeakObjectPtr<UUserWidget> FacilityInfoAvoidanceSurface;
     double NextFacilityInfoSearchTime = 0.0;
     void InstallToolbarForegroundLayer();

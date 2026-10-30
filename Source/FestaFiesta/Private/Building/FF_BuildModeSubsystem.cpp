@@ -1,4 +1,4 @@
-﻿// FF_BuildModeSubsystem.cpp
+// FF_BuildModeSubsystem.cpp
 
 // 건축 모드의 입력·UI·미리보기와 Zone System 권위 배치/이동/철거 명령을 조정한다.
 // 흐름: 세션 진입 -> 카탈로그 선택 -> 커서 기반 검증 -> 명령 커밋 또는 실패 피드백.
@@ -794,7 +794,7 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 	CurrentZoneId = NAME_None;
 	bHasPlacementTarget = false;
 
-	RemoveCatalogScreen();
+	// Keep the catalog visible beside the placement inspector.
 	SetState(EFF_BuildModeState::Placing);
 	SetFacilityRangeVisibility(true);
 	SpawnPlacementPreview();
@@ -1328,6 +1328,17 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	if (!bBlockWorldClickThisFrame && !bPointerOverDebugPanel && !bPointerOverTools && !bPointerOverFacilityInfo &&
 		Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton))
 	{
+		// Installed facilities own their click while an uncommitted ghost is held.
+		if (State == EFF_BuildModeState::Placing && FacilityInfo)
+		{
+			TWeakObjectPtr<AFFZSFacilityActor> Installed(FacilityInfo->ResolveFacilityUnderCursor(Controller));
+			if (Installed.IsValid())
+			{
+				ReturnToCatalog();
+				InspectFacility(Installed.Get());
+				return;
+			}
+		}
 		HandlePlacementPrimaryPress(Controller.IsInputKeyDown(EKeys::LeftMouseButton));
 		return;
 	}
@@ -2079,65 +2090,10 @@ void UFF_BuildModeSubsystem::RefreshBuildToolsOcclusion()
 
 void UFF_BuildModeSubsystem::RefreshBuildSynergyPreview()
 {
-	if (bInputSuspendedForPauseMenu || !bSynergyPreviewVisible || !FFBuildModeModel::IsPreviewActive(State) ||
-		(BuildToolsWidget && BuildToolsWidget->IsAuxiliaryPanelOpen()) ||
-		!bHasPlacementTarget || !LastValidation.bIsValid || !IsValid(PlacementPreview))
-	{
-		ClearBuildSynergyPreview();
-		return;
-	}
-	UWorld* World = GetWorld();
-	UFF_FacilitySynergySubsystem* Synergy = World ? World->GetSubsystem<UFF_FacilitySynergySubsystem>() : nullptr;
-	APlayerController* Controller = GetLocalPlayerController();
-	if (!Synergy || !Controller) { ClearBuildSynergyPreview(); return; }
-	const FVector Location = LastValidation.PlacementTransform.GetLocation();
-	const FName DefinitionId = SelectedSpec.FacilityDefinitionId;
-	const FGuid MovingId = State == EFF_BuildModeState::Moving ? MovingFacilityInstanceId : FGuid();
-	const uint64 Revision = Synergy->GetRevision();
-	const UFF_BuildCatalogSubsystem* Catalog = World->GetGameInstance()
-		? World->GetGameInstance()->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
-	const uint64 CatalogRevision = Catalog ? Catalog->GetCatalogRevision() : 0;
-	if (bHasSynergyPreviewKey && SynergyPreviewDefinitionId == DefinitionId &&
-		SynergyPreviewMovingId == MovingId && SynergyPreviewRevision == Revision &&
-		SynergyPreviewCatalogRevision == CatalogRevision &&
-		SynergyPreviewLocation.Equals(Location, 0.01))
-	{
-		return;
-	}
-	FFF_FacilitySynergyPreview Preview;
-	Synergy->BuildPlacementPreview(DefinitionId, Location, MovingId, Preview);
-	bHasSynergyPreviewKey = true;
-	SynergyPreviewDefinitionId = DefinitionId;
-	SynergyPreviewMovingId = MovingId;
-	SynergyPreviewLocation = Location;
-	SynergyPreviewRevision = Revision;
-	SynergyPreviewCatalogRevision = CatalogRevision;
-	if (!Preview.bRulesAvailable || Preview.Entries.IsEmpty())
-	{
-		if (BuildSynergyWidget) { BuildSynergyWidget->ClearPreview(); }
-		return;
-	}
-	if (!BuildSynergyWidget)
-	{
-		UClass* WidgetClass = BuildSynergyWidgetClass.LoadSynchronous();
-		if (!WidgetClass || !WidgetClass->IsChildOf(UFF_BuildSynergyWidget::StaticClass()))
-		{
-			UE_LOG(LogFFBuildMode, Warning,
-				TEXT("시설 조합 WBP를 찾을 수 없어 기본 안내를 사용합니다: %s"),
-				*BuildSynergyWidgetClass.ToSoftObjectPath().ToString());
-			WidgetClass = UFF_BuildSynergyWidget::StaticClass();
-		}
-		BuildSynergyWidget = CreateWidget<UFF_BuildSynergyWidget>(Controller, WidgetClass);
-		if (!BuildSynergyWidget || !BuildSynergyWidget->AddToPlayerScreen(94))
-		{
-			BuildSynergyWidget = nullptr;
-			bHasSynergyPreviewKey = false;
-			return;
-		}
-	}
-	BuildSynergyWidget->PresentPreview(Preview, Location);
+	// The placement popup was removed. Synergy calculations and the installed
+	// facility's combination tab remain in their own systems.
+	ClearBuildSynergyPreview(true);
 }
-
 void UFF_BuildModeSubsystem::ClearBuildSynergyPreview(const bool bRemoveFromParent)
 {
 	bHasSynergyPreviewKey = false;
@@ -2467,13 +2423,10 @@ bool UFF_BuildModeSubsystem::InspectFacility(AFFZSFacilityActor* Facility)
 		return false;
 	}
 	TWeakObjectPtr<AFFZSFacilityActor> RequestedFacility(Facility);
-	if (State == EFF_BuildModeState::CatalogOpen)
-	{
-		// Keep the external PrepHUD session; this compacts its catalog without closing the tab.
-		EnterBuildMode();
-	}
+	// Inspect beside the open catalog without changing its category, query or scroll.
+	if (State == EFF_BuildModeState::BuildMode) { OpenCatalog(); }
 	Facility = RequestedFacility.Get();
-	if (State != EFF_BuildModeState::BuildMode || !Facility ||
+	if ((State != EFF_BuildModeState::BuildMode && State != EFF_BuildModeState::CatalogOpen) || !Facility ||
 		ZoneSystem->FindFacility(FacilityId) != Facility)
 	{
 		return false;
@@ -2489,7 +2442,8 @@ bool UFF_BuildModeSubsystem::InspectFacility(AFFZSFacilityActor* Facility)
 	// SelectFacility broadcasts synchronously. A listener may remove or replace the actor.
 	Facility = RequestedFacility.Get();
 	if (!Facility || ZoneSystem->FindFacility(FacilityId) != Facility ||
-		FacilityInfo->GetSelectedFacilityId() != FacilityId || State != EFF_BuildModeState::BuildMode)
+		FacilityInfo->GetSelectedFacilityId() != FacilityId ||
+		(State != EFF_BuildModeState::BuildMode && State != EFF_BuildModeState::CatalogOpen))
 	{
 		FacilityInfo->ClearSelectionIfMatches(FacilityId, EFF_FacilityInfoContext::Build);
 		return false;
@@ -2506,7 +2460,7 @@ bool UFF_BuildModeSubsystem::InspectFacility(AFFZSFacilityActor* Facility)
 	ShowStatus(FString::Printf(
 		TEXT("%s · 시설 정보 확인 중 · B 조합 시설 보기 · 다른 시설 클릭: 정보 변경 · 우클릭: 닫기"),
 		*FacilityName), false, 5.0f);
-	SetSynergyCatalogContext(*Facility);
+	if (State != EFF_BuildModeState::CatalogOpen) SetSynergyCatalogContext(*Facility);
 	return true;
 }
 

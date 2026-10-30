@@ -88,6 +88,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Pages")
 	TArray<UObject*> GetCatalogPageItems() const;
 
+	/** All filtered items for the vertically scrolling web catalog; native pagination is unchanged. */
+	TArray<UObject*> GetVisibleCatalogItemsForWeb() const;
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Pages")
 	bool CanGoToPreviousPage() const;
 
@@ -104,6 +107,8 @@ public:
 	/** Activate a visible card. Starts a world preview; installation and payment require world confirmation. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build")
 	bool ActivateCatalogFacility(FName FacilityDefinitionId);
+	/** Start placement for a filtered catalog definition, switching native pages if needed. */
+	bool SelectCatalogFacility(FName FacilityDefinitionId);
 
 	/** Keyboard/legacy activation of the focused card. Focus alone never starts placement. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build")
@@ -331,6 +336,8 @@ private:
 	float CatalogDragStartOffset = 0.f;
 	float CatalogScrollVelocity = 0.f;
 	void ScrollCatalogBy(float ItemDelta);
+	void UpdateCatalogDrag(const FGeometry& Geometry, const FVector2D& ScreenPosition);
+	void FinishCatalogDrag(const FGeometry& Geometry, const FVector2D& ScreenPosition);
 	bool bCatalogPointerDown = false;
 	bool bCatalogPointerMoved = false;
 	/** The catalog tree owns dimensions and action styling after the explicit Designer migration. */

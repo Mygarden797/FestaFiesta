@@ -105,6 +105,12 @@ TSharedRef<SWidget> UFF_BuildCatalogWebView::RebuildWidget()
 	LastWebDiagnostics.Reset();
 	UWorld* World = GetWorld();
 	// Designer and playerless automation continue to use the authored native list.
+	if (GetVisibility() == ESlateVisibility::Collapsed)
+	{
+		// A collapsed authored host opts into the editable native UMG catalog.
+		// Do not start Chromium or alter the native list in this configuration.
+		return SNew(SBox).Visibility(EVisibility::Collapsed);
+	}
 	if (IsDesignTime() || !World || !World->IsGameWorld() || DocumentHTML.IsEmpty())
 	{
 		ApplyFallbackVisibility();
@@ -237,6 +243,7 @@ void UFF_BuildCatalogWebView::AcknowledgeReady()
 void UFF_BuildCatalogWebView::ApplyFallbackVisibility()
 {
 	if (!IsInGameThread()) return;
+	if (GetVisibility() == ESlateVisibility::Collapsed) return;
 	UFF_PrepPanelBuild* Panel = FindPanel();
 	const UCommonInputSubsystem* Input = Panel ? UCommonInputSubsystem::Get(Panel->GetOwningLocalPlayer()) : nullptr;
 	const bool bGamepad = Browser && Input && Input->GetCurrentInputType() == ECommonInputType::Gamepad;
@@ -328,7 +335,7 @@ void UFF_BuildCatalogWebView::PushSnapshot()
 	TArray<TSharedPtr<FJsonValue>> Items;
 	TArray<const FString*> Images;
 	bool bHasLightingFacility = false;
-	for (UObject* Item : Panel->GetCatalogPageItems())
+	for (UObject* Item : Panel->GetVisibleCatalogItemsForWeb())
 	{
 		const auto* Tile = Cast<UFF_PrepBuildTileData>(Item);
 		if (!Tile) continue;
@@ -426,7 +433,7 @@ UFF_PrepBuildTileData* UFF_BuildCatalogWebView::FindActionTile(const FString& Fa
 	const auto* Mode = World->GetSubsystem<UFF_BuildModeSubsystem>();
 	if (!Mode || Mode->GetBuildModeState() != EFF_BuildModeState::CatalogOpen) return nullptr;
 	// Resolve only an already-authorized visible ID, without interning untrusted strings into FName.
-	for (UObject* Item : Panel->GetCatalogPageItems())
+	for (UObject* Item : Panel->GetVisibleCatalogItemsForWeb())
 	{
 		if (auto* Tile = Cast<UFF_PrepBuildTileData>(Item))
 		{
@@ -442,7 +449,7 @@ bool UFF_BuildCatalogWebView::SelectFacility(const FString& FacilityId)
 	bLastWebActionSucceeded = false;
 	UFF_PrepBuildTileData* Tile = FindActionTile(FacilityId);
 	UFF_PrepPanelBuild* Panel = FindPanel();
-	if (Tile && Panel) bLastWebActionSucceeded = Panel->ActivateCatalogFacility(Tile->GetFacilityDefinitionId());
+	if (Tile && Panel) bLastWebActionSucceeded = Panel->SelectCatalogFacility(Tile->GetFacilityDefinitionId());
 	NextSnapshotTime = 0.0;
 	return bLastWebActionSucceeded;
 }
@@ -477,7 +484,7 @@ bool UFF_BuildCatalogWebView::DismissLightingIntroduction()
 	auto* Discovery = Game ? Game->GetSubsystem<UFF_BuildingFeatureDiscoverySubsystem>() : nullptr;
 	if (!Panel || !Discovery) return false;
 	// Reuse selection's world, visibility, mode and bridge-origin checks without placing a facility.
-	for (UObject* Item : Panel->GetCatalogPageItems())
+	for (UObject* Item : Panel->GetVisibleCatalogItemsForWeb())
 	{
 		const auto* Tile = Cast<UFF_PrepBuildTileData>(Item);
 		if (Tile && Tile->SupportsLighting() && FindActionTile(Tile->GetFacilityDefinitionId().ToString()))
