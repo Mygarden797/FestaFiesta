@@ -20,6 +20,7 @@ class UEditableTextBox;
 class UImage;
 class UWidget;
 class UVerticalBox;
+class UWidgetAnimation;
 class UFF_FacilitySynergyEntryWidget;
 
 DECLARE_DELEGATE_RetVal_TwoParams(bool, FFF_OnFacilityQueueSettingsRequested, FGuid, const FFFZSQueueSettings&);
@@ -40,11 +41,30 @@ public:
 	bool bPreviewDesignerPage = true;
 	UPROPERTY(EditAnywhere, Category = "Designer Preview", meta = (EditCondition = "bPreviewDesignerPage"))
 	EFF_FacilityInfoPage DesignerPage = EFF_FacilityInfoPage::Overview;
+	/** Keys are bound text widget names. Use {Value} to retain the live facility value. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Appearance|Text")
+	TMap<FName, FText> DynamicTextFormats;
 	/** Ordinary panel size comes from Panel_Size in the WBP Designer. */
 	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Layout", meta = (ClampMin = "200"))
 	float LightingPanelWidth = 480.f;
 	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Layout", meta = (ClampMin = "100"))
 	float LightingCompactHeight = 220.f;
+	/** Build-mode dock dimensions, adjustable in the WBP class defaults. */
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Build Layout", meta = (ClampMin = "200"))
+	float BuildInspectorWidth = 550.f;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Build Layout", meta = (ClampMin = "100"))
+	float BuildInspectorHeight = 630.f;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Build Layout", meta = (ClampMin = "0"))
+	float BuildInspectorRightInset = 24.f;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Build Layout", meta = (ClampMin = "0"))
+	float BuildInspectorMinimumBottomInset = 40.f;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Build Layout", meta = (ClampMin = "1"))
+	float BuildThumbnailWidth = 54.f;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Build Layout", meta = (ClampMin = "1"))
+	float BuildThumbnailHeight = 48.f;
+	/** Designer-authored entrance; optional for older inspector assets. */
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Appearance|Animation", meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> Anim_InspectorOpen;
 	FSimpleMulticastDelegate OnMoveRequested;
 	FSimpleMulticastDelegate OnRemoveRequested;
 	FSimpleMulticastDelegate OnProgramScheduleRequested;
@@ -104,6 +124,8 @@ private:
 	UFUNCTION() void HandleQueueSettingsChanged(const FText& Text);
 	UFUNCTION() void HandleQueueSettingsCommitted(const FText& Text, ETextCommit::Type Method);
 	UFUNCTION() void HandleApplyQueueSettings();
+	UFUNCTION() void HandleQueueTabClicked();
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_TabQueue;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_FacilityQueueSettings;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_FacilityQueueTeams;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Editable_FacilityQueueSpacing;
@@ -132,6 +154,7 @@ private:
 	UFUNCTION() void HandleUnassignStaffClicked();
 	void EnsureStaffControls();
 	void RefreshStaffControls();
+	void RefreshInspectorTabLayout();
 	/** Optional authored controls; older assets receive an additive staff tab and section. */
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_TabStaff;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_StaffSection;
@@ -231,6 +254,7 @@ private:
 	TObjectPtr<UButton> Button_RemoveCancel;
 
 	void SetText(UCommonTextBlock* Target, const FText& Text) const;
+	TWeakObjectPtr<UWidget> CatalogDockSurface;
 	void HandleLightingRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
 	void HandleLightingResetRequested(FGuid FacilityId);
 

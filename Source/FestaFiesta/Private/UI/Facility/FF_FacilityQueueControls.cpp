@@ -86,7 +86,7 @@ void UFF_FacilityInfoPanel::EnsureQueueSettingsControls()
 	}
 	// Reserve queue controls above the action footer. Only the longer facility
 	// details scroll; capacity, both dimensions and Apply stay visible together.
-	if (auto* Shell = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("Panel_Shell"))))
+	if (auto* Shell = !Button_TabQueue ? Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("Panel_Shell"))) : nullptr)
 	{
 		if (Panel_FacilityQueueSettings->GetParent() != Shell)
 		{
@@ -141,7 +141,8 @@ void UFF_FacilityInfoPanel::RefreshQueueSettingsText()
 void UFF_FacilityInfoPanel::RefreshQueueSettingsControls()
 {
 	const bool bShow = CurrentViewData.bHasQueueSettings && CurrentViewData.FacilityInstanceId.IsValid() &&
-		(ActivePage == EFF_FacilityInfoPage::Overview || ActivePage == EFF_FacilityInfoPage::Operation);
+		(Button_TabQueue ? ActivePage == EFF_FacilityInfoPage::Queue :
+		 ActivePage == EFF_FacilityInfoPage::Overview || ActivePage == EFF_FacilityInfoPage::Operation);
 	if (Panel_FacilityQueueSettings) Panel_FacilityQueueSettings->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	for (UEditableTextBox* Input : {Editable_FacilityQueueTeams.Get(), Editable_FacilityQueueSpacing.Get(), Editable_FacilityQueueWidth.Get()})
 		if (Input) Input->SetIsReadOnly(!CurrentViewData.bCanEditQueueSettings);

@@ -112,7 +112,11 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
     Text(TEXT("Text_BuildHelpPrecision"), TEXT("정밀 위치 맞춤"));
     for (FName Name : {TEXT("Row_BuildHelpRotate"), TEXT("Row_BuildHelpPrecision"), TEXT("Row_BuildHelpNearby")})
         if (UWidget* Row = Widget->GetWidgetFromName(Name))
+        {
             Row->SetVisibility(ESlateVisibility::HitTestInvisible);
+            if (UWidget* Strip = Row->GetParent(); Strip && Strip->GetName().StartsWith(TEXT("Border_A5_BuildHelpRows_")))
+                Strip->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        }
     Text(TEXT("Text_Legend"), TEXT("배치 가능 · 눌러서 설치"));
     Text(TEXT("Text_ActiveSnap"), TEXT("100 cm 맞춤"));
     Text(TEXT("Text_Confirm"), TEXT("배치 확정"));
@@ -176,7 +180,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
         if (TestNotNull(*Name.ToString(), Button)) Button->OnClicked.Broadcast();
     };
     bool bAllSaved = true;
-    for (const FIntPoint Resolution : {FIntPoint(1280, 720), FIntPoint(1920, 1080)})
+    for (const FIntPoint Resolution : {FIntPoint(1280, 720), FIntPoint(1600, 900), FIntPoint(1920, 1080), FIntPoint(2560, 1440)})
     {
         const FVector2D Size(Resolution.X, Resolution.Y);
         const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Resolution);
@@ -201,12 +205,23 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
             // Freeze authority-driven refresh only for this authored presentation capture.
             // Production state/queue behavior is covered by the BuildMode integration tests.
             const bool bWasTicking = Slate->GetCanTick();
+            const bool bAudiencePreview = FCString::Strcmp(State, TEXT("AudienceBoundaryProblem")) == 0;
+            if (bShowQueueDraft || bAudiencePreview) Slate->SetCanTick(false);
             if (bShowQueueDraft)
             {
-                Slate->SetCanTick(false);
                 if (UWidget* Queue = Widget->GetWidgetFromName(TEXT("Row_BuildHelpQueue")))
+                {
                     Queue->SetVisibility(ESlateVisibility::HitTestInvisible);
+                    if (UWidget* Strip = Queue->GetParent(); Strip && Strip->GetName().StartsWith(TEXT("Border_A5_BuildHelpRows_")))
+                        Strip->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+                }
                 Text(TEXT("Text_BuildHelpQueueHint"), TEXT("7 기본 · 8 좌측 · 9 우측 · 0 U자\n현재: U자형 · 배치 확정 시 적용"));
+            }
+            if (bAudiencePreview)
+            {
+                // This playerless editor world has no active build session. Keep
+                // the explicitly seeded summary visible while measuring its rows.
+                Info->SetVisibility(ESlateVisibility::Visible);
             }
             for (int32 Frame = 0; Frame < 4; ++Frame)
             {
@@ -522,7 +537,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
             bAllSaved &= bSaved;
             TestTrue(ContextName + TEXT(": screenshot saved"), bSaved);
             AddInfo(FString::Printf(TEXT("Saved %s"), *FPaths::ConvertRelativePathToFull(Path)));
-            if (bShowQueueDraft) Slate->SetCanTick(bWasTicking);
+            if (bShowQueueDraft || bAudiencePreview) Slate->SetCanTick(bWasTicking);
         };
         Dock->SetVisibility(ESlateVisibility::Collapsed);
         Info->SetVisibility(ESlateVisibility::Collapsed);

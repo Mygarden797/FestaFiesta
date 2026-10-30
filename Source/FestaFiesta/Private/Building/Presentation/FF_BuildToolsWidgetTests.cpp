@@ -502,6 +502,35 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
     Class->bCanCallInitializedWithoutPlayerContext = bPrevious;
     if (!TestNotNull(TEXT("Adaptive tools instance"), Widget.Get())) return false;
     const TSharedRef<SWidget> Slate = Widget->TakeWidget();
+    for (int32 Index = 1; Index <= 7; ++Index)
+    {
+        auto* Caption = Cast<UTextBlock>(Widget->GetWidgetFromName(
+            FName(*FString::Printf(TEXT("Label_PearlTool%d"), Index))));
+        if (TestNotNull(TEXT("Authored toolbar caption"), Caption))
+            TestEqual(TEXT("Toolbar captions do not occupy the icon-only strip"), Caption->GetVisibility(), ESlateVisibility::Collapsed);
+    }
+    auto* GuideCaption = Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Text_FeatureGuide")));
+    if (TestNotNull(TEXT("Feature guide caption"), GuideCaption))
+        TestEqual(TEXT("Feature guide keeps only its icon in the strip"), GuideCaption->GetVisibility(), ESlateVisibility::Collapsed);
+    if (UWidget* Undo = Widget->GetWidgetFromName(TEXT("Button_BuildHelpUndo")))
+        TestTrue(TEXT("Undo remains available in its own shortcut strip"), Undo->GetParent() &&
+            Undo->GetParent()->GetName().StartsWith(TEXT("Border_A5_BuildHelpRows_")));
+    Widget->ShowFeatureSummary(TEXT("BuildGrid"));
+    auto* Summary = Cast<USizeBox>(Widget->GetWidgetFromName(TEXT("Size_A5_FeatureSummary")));
+    auto* SummaryTitle = Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Text_A5_FeatureSummaryTitle")));
+    auto* SummaryBody = Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Text_A5_FeatureSummaryBody")));
+    if (TestNotNull(TEXT("Non-interactive toolbar explanation"), Summary) &&
+        TestNotNull(TEXT("Toolbar explanation title"), SummaryTitle) &&
+        TestNotNull(TEXT("Toolbar explanation body"), SummaryBody))
+    {
+        TestEqual(TEXT("Explanation never consumes mouse input"), Summary->GetVisibility(), ESlateVisibility::HitTestInvisible);
+        TestFalse(TEXT("Explanation contains a title and description"), SummaryTitle->GetText().IsEmpty() || SummaryBody->GetText().IsEmpty());
+        const FText GridTitle = SummaryTitle->GetText();
+        Widget->ShowFeatureSummary(TEXT("BuildSnap"));
+        TestFalse(TEXT("A different toolbar action replaces the description"), SummaryTitle->GetText().EqualTo(GridTitle));
+        Widget->HideFeatureSummary();
+        TestEqual(TEXT("Explanation can be dismissed"), Summary->GetVisibility(), ESlateVisibility::Collapsed);
+    }
     for (const TCHAR* Name : {TEXT("Border_PlacementSpaceLegendClearance"), TEXT("Text_PlacementSpaceLegendClearance")})
         if (UWidget* Legacy = Widget->GetWidgetFromName(Name))
             TestEqual(TEXT("Legacy safety margin legend is not displayed"), Legacy->GetVisibility(), ESlateVisibility::Collapsed);

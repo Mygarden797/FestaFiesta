@@ -89,9 +89,9 @@ void UFF_BuildSynergyWidget::BuildNativeTree()
     Panel->SetPadding(FMargin(14.0f, 8.0f));
     Size->AddChild(Panel);
     UCanvasPanelSlot* Position = Canvas->AddChildToCanvas(Size);
-    Position->SetAnchors(FAnchors(0.0f, 0.0f));
-    Position->SetAlignment(FVector2D::ZeroVector);
-    Position->SetPosition(FVector2D(32.0, 104.0));
+    Position->SetAnchors(FAnchors(1.0f, 0.0f));
+    Position->SetAlignment(FVector2D(1.0, 0.0));
+    Position->SetPosition(FVector2D(-512.0, 104.0));
     Position->SetAutoSize(true);
     UVerticalBox* Rows = WidgetTree->ConstructWidget<UVerticalBox>();
     Panel->AddChild(Rows);
@@ -144,19 +144,20 @@ void UFF_BuildSynergyWidget::PresentPreview(
     { ClearPreview(); return; }
 
     // Move only the authored card: the full-screen widget must stay in place for world
-    // connection lines. The left card leaves the entire right placement inspector
-    // available for required space; its measured bottom also bounds the help below.
-    if (USizeBox* CardSize = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_Synergy"))))
+    // connection lines. Keep it beside the right inspector, with room for its contents;
+    // the independent shortcut guide uses its measured geometry if they overlap.
+    const bool bDesignerLayout = WidgetTree && WidgetTree->FindWidget(TEXT("A5_SynergyDesignerLayout"));
+    if (!bDesignerLayout) if (USizeBox* CardSize = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_Synergy"))))
     {
         if (UCanvasPanelSlot* CardSlot = Cast<UCanvasPanelSlot>(CardSize->Slot))
         {
-            CardSlot->SetAnchors(FAnchors(0.f, 0.f));
-            CardSlot->SetAlignment(FVector2D::ZeroVector);
-            const FVector2D Desired(32.f, 104.f);
+            CardSlot->SetAnchors(FAnchors(1.f, 0.f));
+            CardSlot->SetAlignment(FVector2D(1.f, 0.f));
+            const FVector2D Desired(-512.f, 104.f);
             if (!CardSlot->GetPosition().Equals(Desired, .5f)) CardSlot->SetPosition(Desired);
         }
     }
-    if (!bPearlStyleApplied)
+    if (!bPearlStyleApplied && !bDesignerLayout)
     {
         CardPanel->SetBrush(FFBuildPearl::MaterialBrush(TEXT("Card")));
         CardPanel->SetBrushColor(FLinearColor::White);

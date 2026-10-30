@@ -176,12 +176,10 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
         TabRow->GetChildIndex(Synergy) == TabRow->GetChildIndex(Overview) + 1 &&
         TabRow->GetChildIndex(Operation) == TabRow->GetChildIndex(Synergy) + 1);
     UWidget* Staff = Panel->GetWidgetFromName(TEXT("Button_TabStaff"));
-    if (TestNotNull(TEXT("Staff has its direct primary tab"), Staff))
-        TestTrue(TEXT("Staff follows operation without displacing the core tabs"),
-            Staff->GetParent() == TabRow && TabRow->GetChildIndex(Staff) == TabRow->GetChildIndex(Operation) + 1);
-    TestTrue(TEXT("Upgrade remains available in the secondary facility actions"),
-        Upgrade->GetParent() && Upgrade->GetParent() != TabRow &&
-        Upgrade->GetParent() == Panel->GetWidgetFromName(TEXT("Reference_AdditionalFacilityPages")));
+    if (TestNotNull(TEXT("Staff has its direct tab"), Staff))
+        TestTrue(TEXT("Staff uses the same uniform tab grid"), Staff->GetParent() == TabRow);
+    TestTrue(TEXT("Upgrade uses the same authored uniform tab grid"),
+        Upgrade->GetParent() == TabRow && TabRow == Panel->GetWidgetFromName(TEXT("Grid_InspectorTabs")));
 
     FFF_FacilityInfoViewData Data;
     Data.FacilityInstanceId = FGuid::NewGuid();

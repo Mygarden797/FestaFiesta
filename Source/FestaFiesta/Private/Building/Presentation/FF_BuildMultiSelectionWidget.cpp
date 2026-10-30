@@ -9,6 +9,7 @@
 #include "Building/Presentation/FF_BuildCategoryIcons.h"
 #include "Building/Presentation/FF_BuildTypography.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -34,6 +35,7 @@
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
 #include "UI/Core/FF_BuildPearlStyle.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
 
 #define LOCTEXT_NAMESPACE "FFBuildMultiSelection"
 
@@ -88,6 +90,18 @@ UButton* MakeAction(UWidgetTree& Tree, const FName Name, const FText& Caption,
 }
 }
 
+void UFF_BuildSelectionRemoveHandler::Initialize(UFF_BuildModeSubsystem* InBuildMode, AFFZSFacilityActor* InFacility)
+{
+	BuildMode = InBuildMode;
+	Facility = InFacility;
+}
+
+void UFF_BuildSelectionRemoveHandler::HandleClicked()
+{
+	if (UFF_BuildModeSubsystem* System = BuildMode.Get())
+		if (AFFZSFacilityActor* Selected = Facility.Get()) System->RemoveMultiSelectedFacility(Selected);
+}
+
 UFF_BuildMultiSelectionWidget::UFF_BuildMultiSelectionWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -125,6 +139,131 @@ void UFF_BuildMultiSelectionWidget::ResolveBindings()
 	Edit_PresetName = Cast<UEditableTextBox>(WidgetTree->FindWidget(TEXT("Edit_PresetName")));
 	Combo_Presets = Cast<UComboBoxString>(WidgetTree->FindWidget(TEXT("Combo_Presets")));
 	Text_MultiSelectionDesignerHint = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_MultiSelectionDesignerHint")));
+	ApprovedSelectionList = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("Column_A5_SelectedFacilities")));
+}
+
+// Reflow the existing Designer controls instead of rebuilding their actions or
+// losing the group/preset tools. Older/fallback trees keep their authored layout.
+void UFF_BuildMultiSelectionWidget::ApplyApprovedPanelLayout()
+{
+	if (!WidgetTree || ApprovedSelectionList) return;
+	auto* Bounds = Cast<USizeBox>(WidgetTree->FindWidget(TEXT("Size_MultiSelection")));
+	auto* BoundsSlot = Bounds ? Cast<UCanvasPanelSlot>(Bounds->Slot) : nullptr;
+	auto* Header = Cast<UHorizontalBox>(WidgetTree->FindWidget(TEXT("Row_MultiSelectionHeader")));
+	auto* Actions = Cast<UHorizontalBox>(WidgetTree->FindWidget(TEXT("Row_GroupActions")));
+	auto* Presets = Cast<UHorizontalBox>(WidgetTree->FindWidget(TEXT("Row_PresetControls")));
+	auto* CardsSize = Cast<USizeBox>(WidgetTree->FindWidget(TEXT("Size_MultiSelectionCards")));
+	auto* Scroll = Cast<UScrollBox>(WidgetTree->FindWidget(TEXT("Scroll_SelectedFacilities")));
+	if (!Bounds || !BoundsSlot || !Header || !Actions || !Presets || !CardsSize || !Scroll ||
+		!Row_SelectedFacilities || Row_SelectedFacilities->GetParent() != Scroll) return;
+	const auto Child = [this](UHorizontalBox* Parent, const TCHAR* Name) -> UWidget*
+	{
+		UWidget* Widget = WidgetTree->FindWidget(Name);
+		return Widget && Widget->GetParent() == Parent ? Widget : nullptr;
+	};
+	UWidget* Title = Child(Header, TEXT("Text_MultiSelectionTitle"));
+	UWidget* Count = Child(Header, TEXT("Text_MultiSelectionCount"));
+	UWidget* Spacer = Child(Header, TEXT("Spacer_MultiSelectionHeader"));
+	UWidget* Inspect = Child(Header, TEXT("Button_InspectSelection"));
+	UWidget* Clear = Child(Header, TEXT("Button_ClearSelection"));
+	UWidget* Exit = Child(Header, TEXT("Button_ExitMultiSelection"));
+	UWidget* Move = Child(Actions, TEXT("Button_MoveGroup"));
+	UWidget* Duplicate = Child(Actions, TEXT("Button_DuplicateGroup"));
+	UWidget* Remove = Child(Actions, TEXT("Button_RemoveGroup"));
+	UWidget* GroupSpacer = Child(Actions, TEXT("Spacer_GroupActions"));
+	UWidget* Left = Child(Actions, TEXT("Button_RotateLeft"));
+	UWidget* Right = Child(Actions, TEXT("Button_RotateRight"));
+	UWidget* Cancel = Child(Actions, TEXT("Button_CancelGroup"));
+	UWidget* Apply = Child(Actions, TEXT("Button_ApplyGroup"));
+	UWidget* Name = Child(Presets, TEXT("Edit_PresetName"));
+	UWidget* Save = Child(Presets, TEXT("Button_SavePreset"));
+	UWidget* Combo = Child(Presets, TEXT("Combo_Presets"));
+	UWidget* Load = Child(Presets, TEXT("Button_LoadPreset"));
+	UWidget* Delete = Child(Presets, TEXT("Button_DeletePreset"));
+	for (UWidget* Required : {Title, Count, Spacer, Inspect, Clear, Exit, Move, Duplicate, Remove,
+		GroupSpacer, Left, Right, Cancel, Apply, Name, Save, Combo, Load, Delete})
+		if (!Required) return;
+	// Refuse partial migration if a newer Designer added controls to these rows.
+	if (Header->GetChildrenCount() != 6 || Actions->GetChildrenCount() != 8 || Presets->GetChildrenCount() != 5) return;
+	const auto MakeStack = [this](UHorizontalBox& Original, const TCHAR* StackName)
+	{
+		for (UWidget* Widget : Original.GetAllChildren()) Widget->RemoveFromParent();
+		auto* Stack = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), StackName);
+		AddToRow(Original, *Stack, 0.f, true);
+		return Stack;
+	};
+	const auto MakeLine = [this](UVerticalBox& Stack)
+	{
+		auto* Line = WidgetTree->ConstructWidget<UHorizontalBox>();
+		Stack.AddChildToVerticalBox(Line)->SetPadding(FMargin(0.f, 0.f, 0.f, 5.f));
+		return Line;
+	};
+	const auto Fill = [](UHorizontalBox& Line, UWidget& Widget, float Gap)
+	{
+		AddToRow(Line, Widget, Gap, true);
+	};
+	auto* HeaderStack = MakeStack(*Header, TEXT("Column_A5_MultiHeader"));
+	auto* HeaderTitle = MakeLine(*HeaderStack);
+	AddToRow(*HeaderTitle, *Title, 8.f); AddToRow(*HeaderTitle, *Count, 0.f);
+	AddToRow(*HeaderTitle, *Spacer, 0.f, true); AddToRow(*HeaderTitle, *Exit);
+	auto* HeaderActions = MakeLine(*HeaderStack);
+	Fill(*HeaderActions, *Inspect, 5.f); Fill(*HeaderActions, *Clear, 0.f);
+	auto* ActionStack = MakeStack(*Actions, TEXT("Column_A5_GroupActions"));
+	auto* GroupLine = MakeLine(*ActionStack);
+	Fill(*GroupLine, *Move, 5.f); Fill(*GroupLine, *Duplicate, 5.f); Fill(*GroupLine, *Remove, 0.f);
+	// The authored spacer is no longer needed, but stays in the live widget tree.
+	GroupSpacer->SetVisibility(ESlateVisibility::Collapsed); AddToRow(*GroupLine, *GroupSpacer);
+	auto* RotationLine = MakeLine(*ActionStack);
+	Fill(*RotationLine, *Left, 5.f); Fill(*RotationLine, *Right, 0.f);
+	auto* ConfirmLine = MakeLine(*ActionStack);
+	Fill(*ConfirmLine, *Cancel, 5.f); Fill(*ConfirmLine, *Apply, 0.f);
+	auto* PresetStack = MakeStack(*Presets, TEXT("Column_A5_PresetControls"));
+	auto* SaveLine = MakeLine(*PresetStack); Fill(*SaveLine, *Name, 5.f); Fill(*SaveLine, *Save, 0.f);
+	auto* PickLine = MakeLine(*PresetStack); Fill(*PickLine, *Combo, 0.f);
+	auto* LoadLine = MakeLine(*PresetStack); Fill(*LoadLine, *Load, 5.f); Fill(*LoadLine, *Delete, 0.f);
+	if (auto* PresetHint = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_PresetHint"))))
+	{
+		PresetHint->SetAutoWrapText(true);
+		if (auto* HintSlot = Cast<UHorizontalBoxSlot>(PresetHint->Slot))
+			HintSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+	ApprovedSelectionList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Column_A5_SelectedFacilities"));
+	Row_SelectedFacilities->ClearChildren();
+	AddToRow(*Row_SelectedFacilities, *ApprovedSelectionList, 0.f, true);
+	Scroll->SetOrientation(Orient_Vertical);
+	Scroll->SetScrollBarVisibility(ESlateVisibility::Visible);
+	CardsSize->SetHeightOverride(156.f);
+	Bounds->SetWidthOverride(390.f);
+	BoundsSlot->SetAnchors(FAnchors(1.f, 1.f));
+	BoundsSlot->SetAlignment(FVector2D(1.f, 1.f));
+	BoundsSlot->SetPosition(FVector2D(-24.f, -40.f));
+	BoundsSlot->SetAutoSize(true);
+}
+
+void UFF_BuildMultiSelectionWidget::AddSelectedFacilityWidget(UWidget& Widget)
+{
+	if (ApprovedSelectionList)
+		ApprovedSelectionList->AddChildToVerticalBox(&Widget)->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+	else if (Row_SelectedFacilities) AddToRow(*Row_SelectedFacilities, Widget, 8.f);
+}
+
+void UFF_BuildMultiSelectionWidget::AvoidBottomHud()
+{
+	if (!bAvoidBottomHud || !WidgetTree) return;
+	UWidget* Bounds = WidgetTree->FindWidget(TEXT("Size_MultiSelection"));
+	auto* CanvasSlot = Bounds ? Cast<UCanvasPanelSlot>(Bounds->Slot) : nullptr;
+	if (!CanvasSlot || CanvasSlot->GetAnchors().Minimum.Y != 1.f || CanvasSlot->GetAnchors().Maximum.Y != 1.f ||
+		CanvasSlot->GetAlignment().Y != 1.f) return;
+	TArray<UUserWidget*> Bars;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Bars, UFF_PrepHudBar::StaticClass(), false);
+	for (const UUserWidget* Candidate : Bars)
+		if (const auto* Bar = Cast<UFF_PrepHudBar>(Candidate))
+			if (Bar->GetOwningPlayer() == GetOwningPlayer() && Bar->IsVisible())
+			{
+				FVector2D Position = CanvasSlot->GetPosition();
+				Position.Y = FMath::Min(Position.Y, -static_cast<double>(Bar->GetBottomBarHeight()));
+				CanvasSlot->SetPosition(Position);
+			}
 }
 
 // Used only when no Designer tree exists. Saved WBPs are never rewritten at runtime.
@@ -264,6 +403,7 @@ void UFF_BuildMultiSelectionWidget::BuildNativeTree()
 void UFF_BuildMultiSelectionWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	ApplyApprovedPanelLayout();
 	BuildMode = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
 	Catalog = GetGameInstance() ? GetGameInstance()->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
 	if (UFF_BuildModeSubsystem* System = BuildMode.Get())
@@ -325,6 +465,7 @@ void UFF_BuildMultiSelectionWidget::NativeDestruct()
 
 void UFF_BuildMultiSelectionWidget::RefreshSelection()
 {
+	AvoidBottomHud();
 	if (!Border_MultiSelection || !Text_MultiSelectionCount || !Row_SelectedFacilities)
 	{
 		TakeWidget();
@@ -345,7 +486,9 @@ void UFF_BuildMultiSelectionWidget::RefreshSelection()
 	if (!Row_SelectedFacilities || !Text_MultiSelectionCount) { return; }
 	if (!bActive)
 	{
-		Row_SelectedFacilities->ClearChildren();
+		SelectionRemoveHandlers.Reset();
+		if (ApprovedSelectionList) ApprovedSelectionList->ClearChildren();
+		else Row_SelectedFacilities->ClearChildren();
 		if (Button_ClearSelection) { Button_ClearSelection->SetIsEnabled(false); }
 		if (Button_InspectSelection) { Button_InspectSelection->SetVisibility(ESlateVisibility::Collapsed); }
 		return;
@@ -361,7 +504,9 @@ void UFF_BuildMultiSelectionWidget::RefreshSelection()
 			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 	RefreshGroupControls();
-	Row_SelectedFacilities->ClearChildren();
+	SelectionRemoveHandlers.Reset();
+	if (ApprovedSelectionList) ApprovedSelectionList->ClearChildren();
+	else Row_SelectedFacilities->ClearChildren();
 	if (Text_MultiSelectionDesignerHint) Text_MultiSelectionDesignerHint->SetVisibility(Facilities.IsEmpty() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	if (Facilities.IsEmpty())
 	{
@@ -378,9 +523,9 @@ void UFF_BuildMultiSelectionWidget::RefreshSelection()
 void UFF_BuildMultiSelectionWidget::AddEmptyHint()
 {
 	if (!WidgetTree || !Row_SelectedFacilities) { return; }
-	AddToRow(*Row_SelectedFacilities, *MakeText(*WidgetTree, NAME_None,
+	AddSelectedFacilityWidget(*MakeText(*WidgetTree, NAME_None,
 		LOCTEXT("EmptyHint", "시설을 클릭하거나 드래그하여 선택하세요"),
-		13, FFBuildPearl::Muted), 0.0f);
+		13, FFBuildPearl::Muted));
 }
 
 void UFF_BuildMultiSelectionWidget::AddFacilityCard(const AFFZSFacilityActor& Facility,
@@ -409,8 +554,17 @@ void UFF_BuildMultiSelectionWidget::AddFacilityCard(const AFFZSFacilityActor& Fa
 					if (bHasEntry && Entry.Thumbnail.Get()) Thumbnail->SetBrushFromTexture(Entry.Thumbnail.Get(), true);
 					else Thumbnail->SetBrush(FFBuildCategoryIcons::Resolve(false, Spec.Category));
 				}
+				if (UButton* RemoveButton = Cast<UButton>(Card->GetWidgetFromName(TEXT("Button_RemoveSelection"))))
+				{
+					auto* Handler = NewObject<UFF_BuildSelectionRemoveHandler>(this);
+					Handler->Initialize(BuildMode.Get(), const_cast<AFFZSFacilityActor*>(&Facility));
+					SelectionRemoveHandlers.Add(Handler);
+					RemoveButton->OnClicked.AddDynamic(Handler, &UFF_BuildSelectionRemoveHandler::HandleClicked);
+					RemoveButton->SetIsEnabled(!BuildMode.IsValid() || !BuildMode->IsGroupPlacementActive());
+					RemoveButton->SetToolTipText(LOCTEXT("RemoveOneSelection", "이 시설 선택 해제"));
+				}
 				Card->SetToolTipText(Name);
-				AddToRow(*Row_SelectedFacilities, *Card, 8.f);
+				AddSelectedFacilityWidget(*Card);
 				return;
 			}
 		}
@@ -455,7 +609,7 @@ void UFF_BuildMultiSelectionWidget::AddFacilityCard(const AFFZSFacilityActor& Fa
 		10, FFBuildPearl::Muted));
 	Copy->AddChildToVerticalBox(MakeText(*WidgetTree, NAME_None, Name, 13, FFBuildPearl::Ink, true));
 	Card->SetToolTipText(Name);
-	AddToRow(*Row_SelectedFacilities, *Size, 7.0f);
+	AddSelectedFacilityWidget(*Size);
 }
 
 bool UFF_BuildMultiSelectionWidget::IsPointerOverStrip() const

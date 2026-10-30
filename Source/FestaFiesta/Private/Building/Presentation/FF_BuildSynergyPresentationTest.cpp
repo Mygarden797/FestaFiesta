@@ -89,10 +89,10 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
     }
     Widget->PresentPreview(Preview, FVector::ZeroVector);
     const auto* SynergySlot = SynergySize ? Cast<UCanvasPanelSlot>(SynergySize->Slot) : nullptr;
-    TestTrue(TEXT("Live combination card uses the left margin below the top toolbar"),
-        SynergySlot && SynergySlot->GetAnchors().Minimum.Equals(FVector2D::ZeroVector) &&
-        SynergySlot->GetAlignment().Equals(FVector2D::ZeroVector) &&
-        SynergySlot->GetPosition().Equals(FVector2D(32.f, 104.f)));
+    TestTrue(TEXT("Live combination card sits beside the right inspector below the toolbar"),
+        SynergySlot && SynergySlot->GetAnchors().Minimum.Equals(FVector2D(1.f, 0.f)) &&
+        SynergySlot->GetAlignment().Equals(FVector2D(1.f, 0.f)) &&
+        SynergySlot->GetPosition().Equals(FVector2D(-512.f, 104.f)));
     TestFalse(TEXT("Missing catalog never exposes internal facility IDs"),
         Widget->RowDetails[0]->GetText().ToString().Contains(TEXT("Booth_")) ||
         Widget->RowDetails[0]->GetText().ToString().Contains(TEXT("Rest_")));
@@ -121,11 +121,11 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
     Fallback->PresentPreview(Preview, FVector::ZeroVector);
     const auto* FallbackSize = Cast<USizeBox>(Fallback->GetWidgetFromName(TEXT("Size_Synergy")));
     const auto* FallbackSlot = FallbackSize ? Cast<UCanvasPanelSlot>(FallbackSize->Slot) : nullptr;
-    TestTrue(TEXT("Native fallback shares the same left placement without changing its width"),
+    TestTrue(TEXT("Native fallback shares the same right-side placement without changing its width"),
         FallbackSize && FallbackSize->GetWidthOverride() == 344.f && FallbackSlot &&
-        FallbackSlot->GetAnchors().Minimum.Equals(FVector2D::ZeroVector) &&
-        FallbackSlot->GetAlignment().Equals(FVector2D::ZeroVector) &&
-        FallbackSlot->GetPosition().Equals(FVector2D(32.f, 104.f)));
+        FallbackSlot->GetAnchors().Minimum.Equals(FVector2D(1.f, 0.f)) &&
+        FallbackSlot->GetAlignment().Equals(FVector2D(1.f, 0.f)) &&
+        FallbackSlot->GetPosition().Equals(FVector2D(-512.f, 104.f)));
     Fallback->ClearPreview();
 
     if (FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
@@ -200,7 +200,9 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
             {
                 // Match NativeTick's shared fitting rule after the real combo
                 // content has a desired height. No runtime gameplay state is seeded.
-                const float ReservedTop = 104.f + Widget->CardPanel->GetDesiredSize().Y + 16.f;
+                const float CardLeft = Size.X - 512.f - Widget->CardPanel->GetDesiredSize().X;
+                const bool bSharesColumn = CardLeft < AuthoredHelpPosition.X + HelpSize->GetWidthOverride();
+                const float ReservedTop = bSharesColumn ? 104.f + Widget->CardPanel->GetDesiredSize().Y + 16.f : 104.f;
                 const FVector2D HelpBounds = FFBuildToolsModel::ResolveHelpVerticalBounds(
                     HelpColumn->GetDesiredSize().Y + 24.f, Size.Y - 100.f, AuthoredHelpPosition.Y, ReservedTop);
                 HelpSize->SetHeightOverride(HelpBounds.Y);
@@ -213,17 +215,17 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
         const FSlateRect Tools = ToolsPanel->GetCachedGeometry().GetLayoutBoundingRect();
         const FSlateRect Inspector = InfoPanel->GetCachedGeometry().GetLayoutBoundingRect();
         TestTrue(TEXT("Placement dock has measurable rendered geometry"), Tools.GetSize().X > 0 && Tools.GetSize().Y > 0);
-        TestTrue(TEXT("Combo panel stays in the left scene margin below the upper HUD"),
-            FMath::IsNearlyEqual(Card.Left, 32.f, 1.f) && FMath::IsNearlyEqual(Card.Top, 104.f, 1.f) &&
-            Card.Right < Size.X * .4f && Card.Bottom < Tools.Top);
+        TestTrue(TEXT("Combo panel stays within the scene beside the inspector and above the dock"),
+            Card.Left >= 0.f && FMath::IsNearlyEqual(Card.Right, Size.X - 512.f, 1.f) &&
+            FMath::IsNearlyEqual(Card.Top, 104.f, 1.f) && Card.Bottom < Tools.Top);
         TestTrue(TEXT("Required placement space and all three combination rules remain separate"),
             Inspector.GetSize().X > 0.f && Inspector.GetSize().Y > 0.f && Card.Right + 16.f <= Inspector.Left);
-        if(bClarity) TestTrue(TEXT("Three wrapped recipes fit above the preferred help position"), Card.Bottom + 16.f <= 525.f);
         if (bShowHelp)
         {
             const FSlateRect Help = HelpPanel->GetCachedGeometry().GetLayoutBoundingRect();
-            TestTrue(TEXT("Open instructions remain measurable below every combination rule"),
-                Help.GetSize().Y > 0.f && Help.Top >= Card.Bottom + 15.f && Help.Bottom <= Size.Y - 99.f);
+            TestTrue(TEXT("Open instructions remain separate from the combination card"),
+                Help.GetSize().Y > 0.f && Help.Bottom <= Size.Y - 99.f &&
+                (Help.Right <= Card.Left || Help.Top >= Card.Bottom + 15.f));
             TestTrue(TEXT("Help preserves its Designer left margin and cannot cover the placement inspector"),
                 FMath::IsNearlyEqual(Help.Left, float(AuthoredHelpPosition.X), 1.f) && Help.Right + 16.f <= Inspector.Left);
             TestTrue(TEXT("A short viewport retains a scrollable guide without clipping the combination card"),

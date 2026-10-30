@@ -38,7 +38,9 @@ enum class EFF_FacilityInfoPage : uint8
 	Revenue,
 	Programs,
 	/** Staff assignment is separate from the basic facility facts. Append to preserve serialized pages. */
-	Staff
+	Staff,
+	/** Append only; queue editing now has its own inspector page. */
+	Queue UMETA(DisplayName = "대기열")
 };
 
 /** One authored combination; repeated nearby instances are summarized in this row. */

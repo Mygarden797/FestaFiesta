@@ -6,10 +6,14 @@
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilitySynergyEntryWidget.h"
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/Presentation/FF_BuildCatalogDock.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
 
 #include "CommonTextBlock.h"
+#include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/HorizontalBox.h"
@@ -20,6 +24,8 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/SizeBox.h"
+#include "Components/UniformGridPanel.h"
+#include "Components/UniformGridSlot.h"
 #include "Engine/World.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/InputSettings.h"
@@ -35,6 +41,42 @@ namespace
 {
 	constexpr const TCHAR* LightingIntroductionSection = TEXT("FestaFiesta.FacilityLighting");
 	constexpr const TCHAR* LightingIntroductionSeenKey = TEXT("bHasSeenColorIntroduction");
+
+	// The inspector is shared with live mode. Read the authored counterpart before
+	// changing a named canvas child so leaving build mode can restore its layout.
+	bool ApplyBuildInspectorDock(UWidgetTree* RuntimeTree, const UWidgetTree* AuthoredTree,
+		const FName Name, const bool bBuild, const bool bShadow, const float BottomInset,
+		const float BuildWidth, const float BuildHeight, const float RightInset)
+	{
+		USizeBox* Size = RuntimeTree ? Cast<USizeBox>(RuntimeTree->FindWidget(Name)) : nullptr;
+		UCanvasPanelSlot* Slot = Size ? Cast<UCanvasPanelSlot>(Size->Slot) : nullptr;
+		const USizeBox* AuthoredSize = AuthoredTree ? Cast<USizeBox>(AuthoredTree->FindWidget(Name)) : nullptr;
+		const UCanvasPanelSlot* AuthoredSlot = AuthoredSize ? Cast<UCanvasPanelSlot>(AuthoredSize->Slot) : nullptr;
+		if (!Slot || !AuthoredSlot) return false;
+		if (bBuild)
+		{
+			Size->SetWidthOverride(BuildWidth);
+			Size->SetHeightOverride(BuildHeight);
+			Slot->SetAnchors(FAnchors(1.f, 1.f));
+			Slot->SetAlignment(FVector2D(1.f, 1.f));
+			const float ShadowOffset = bShadow ? 4.f : 0.f;
+			Slot->SetOffsets(FMargin(-RightInset + ShadowOffset,
+				-BottomInset + ShadowOffset, BuildWidth, BuildHeight));
+			Slot->SetAutoSize(false);
+		}
+		else
+		{
+			if (AuthoredSize->IsWidthOverride()) Size->SetWidthOverride(AuthoredSize->GetWidthOverride());
+			else Size->ClearWidthOverride();
+			if (AuthoredSize->IsHeightOverride()) Size->SetHeightOverride(AuthoredSize->GetHeightOverride());
+			else Size->ClearHeightOverride();
+			Slot->SetAnchors(AuthoredSlot->GetAnchors());
+			Slot->SetAlignment(AuthoredSlot->GetAlignment());
+			Slot->SetOffsets(AuthoredSlot->GetOffsets());
+			Slot->SetAutoSize(AuthoredSlot->GetAutoSize());
+		}
+		return true;
+	}
 }
 
 void UFF_FacilityInfoPanel::HideLegacyClearanceWidgets()
@@ -76,6 +118,7 @@ void UFF_FacilityInfoPanel::NativePreConstruct()
 	Show(TEXT("Panel_LiveSection"), DesignerPage == EFF_FacilityInfoPage::Operation);
 	Show(TEXT("Panel_SynergySection"), DesignerPage == EFF_FacilityInfoPage::Synergy);
 	Show(TEXT("Panel_StaffSection"), DesignerPage == EFF_FacilityInfoPage::Staff);
+	Show(TEXT("Panel_FacilityQueueSettings"), DesignerPage == EFF_FacilityInfoPage::Queue);
 	Show(TEXT("Panel_UpgradeSection"), DesignerPage == EFF_FacilityInfoPage::Upgrade);
 	Show(TEXT("Panel_UpgradeActions"), DesignerPage == EFF_FacilityInfoPage::Upgrade);
 	Show(TEXT("Panel_RevenueSection"), DesignerPage == EFF_FacilityInfoPage::Revenue);
@@ -128,6 +171,7 @@ void UFF_FacilityInfoPanel::NativeOnInitialized()
 	if (Button_TabSynergy) Button_TabSynergy->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSynergyClicked);
 	if (Button_TabOperation) Button_TabOperation->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOperationClicked);
 	if (Button_TabStaff) Button_TabStaff->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStaffClicked);
+	if (Button_TabQueue) Button_TabQueue->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleQueueTabClicked);
 	if (Button_TabUpgrade) Button_TabUpgrade->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUpgradeTabClicked);
 	if (Button_TabLighting) Button_TabLighting->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleLightingTabClicked);
 	if (Button_LightingColorHelp) Button_LightingColorHelp->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleLightingTabClicked);
@@ -183,6 +227,15 @@ void UFF_FacilityInfoPanel::NativeTick(const FGeometry& Geometry, float DeltaTim
 		LastLayoutViewport = Viewport;
 		RefreshLightingPanelLayout();
 	}
+	if (CurrentViewData.Context == EFF_FacilityInfoContext::Build && WidgetTree)
+	{
+		const auto* Build = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+		if (Build && (Build->GetBuildModeState() == EFF_BuildModeState::CatalogOpen ||
+			Build->GetBuildModeState() == EFF_BuildModeState::Placing))
+			FFBuildCatalogDock::Align(*this, Geometry,
+				Cast<USizeBox>(WidgetTree->FindWidget(TEXT("Panel_Size"))), CatalogDockSurface, 24.f,
+				Cast<USizeBox>(WidgetTree->FindWidget(TEXT("Panel_ShadowSize"))));
+	}
 }
 
 FReply UFF_FacilityInfoPanel::NativeOnMouseButtonDown(
@@ -208,9 +261,49 @@ FReply UFF_FacilityInfoPanel::NativeOnMouseButtonDown(
 // 관리자가 모아 준 시설 정보를 각 행과 탭에 표시한다. 이 함수는 시설의 실제 상태를 변경하지 않는다.
 void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewData)
 {
+	const bool bBuildContextChanged = (CurrentViewData.Context == EFF_FacilityInfoContext::Build) !=
+		(ViewData.Context == EFF_FacilityInfoContext::Build);
 	const bool bSelectionChanged = CurrentViewData.FacilityInstanceId != ViewData.FacilityInstanceId ||
 		CurrentViewData.Context != ViewData.Context;
 	if (bSelectionChanged) { bQueueSettingsDirty = false; CancelLightingEdit(); if (bLightingMinimized) HandleLightingMinimizeClicked(); }
+	if (bBuildContextChanged && WidgetTree)
+	{
+		const auto* GeneratedClass = Cast<UWidgetBlueprintGeneratedClass>(GetClass());
+		const auto* TreeOwner = GeneratedClass ? GeneratedClass->FindWidgetTreeOwningClass() : nullptr;
+		const UWidgetTree* AuthoredTree = TreeOwner ? TreeOwner->GetWidgetTreeArchetype() : nullptr;
+		const bool bBuild = ViewData.Context == EFF_FacilityInfoContext::Build;
+        float BottomInset = BuildInspectorMinimumBottomInset;
+        if (bBuild)
+        {
+            TArray<UUserWidget*> Bars;
+            UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Bars, UFF_PrepHudBar::StaticClass(), false);
+            for (UUserWidget* Candidate : Bars)
+            {
+                const UFF_PrepHudBar* Bar = Cast<UFF_PrepHudBar>(Candidate);
+                if (Bar && Bar->GetOwningPlayer() == GetOwningPlayer() && Bar->IsVisible())
+                    BottomInset = FMath::Max(BottomInset, Bar->GetBottomBarHeight());
+            }
+        }
+        if (ApplyBuildInspectorDock(WidgetTree, AuthoredTree, TEXT("Panel_Size"), bBuild, false, BottomInset,
+			BuildInspectorWidth, BuildInspectorHeight, BuildInspectorRightInset))
+		{
+			ApplyBuildInspectorDock(WidgetTree, AuthoredTree, TEXT("Panel_ShadowSize"), bBuild, true, BottomInset,
+				BuildInspectorWidth, BuildInspectorHeight, BuildInspectorRightInset);
+			if (auto* Thumbnail = Cast<USizeBox>(WidgetTree->FindWidget(TEXT("Thumbnail_Size"))))
+				if (const auto* AuthoredThumbnail = Cast<USizeBox>(AuthoredTree->FindWidget(TEXT("Thumbnail_Size"))))
+				{
+					if (bBuild) { Thumbnail->SetWidthOverride(BuildThumbnailWidth); Thumbnail->SetHeightOverride(BuildThumbnailHeight); }
+					else
+					{
+						if (AuthoredThumbnail->IsWidthOverride()) Thumbnail->SetWidthOverride(AuthoredThumbnail->GetWidthOverride()); else Thumbnail->ClearWidthOverride();
+						if (AuthoredThumbnail->IsHeightOverride()) Thumbnail->SetHeightOverride(AuthoredThumbnail->GetHeightOverride()); else Thumbnail->ClearHeightOverride();
+					}
+				}
+			// RefreshLightingPanelLayout recomputes the appropriate authored size after context changes.
+			AuthoredPanelSize = FVector2D::ZeroVector;
+			LightingPanelTranslation = FVector2D::ZeroVector;
+		}
+	}
 	CurrentViewData = ViewData;
 	if (bSelectionChanged) RefreshQueueSettingsText();
 	if (bSelectionChanged)
@@ -539,6 +632,9 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 		ActivePage = EFF_FacilityInfoPage::Overview;
 	if (ActivePage == EFF_FacilityInfoPage::Programs && (!Button_TabPrograms || !CurrentViewData.bShowProgramSection))
 		ActivePage = EFF_FacilityInfoPage::Overview;
+	const bool bQueueAvailable = CurrentViewData.bHasQueueSettings && CurrentViewData.FacilityInstanceId.IsValid();
+	if (ActivePage == EFF_FacilityInfoPage::Queue && (!Button_TabQueue || !bQueueAvailable))
+		ActivePage = EFF_FacilityInfoPage::Overview;
 	RefreshQueueSettingsControls();
 	RefreshStaffControls();
 	auto Show = [](UWidget* Widget, const bool bShow)
@@ -573,10 +669,13 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 			? ActivePage == EFF_FacilityInfoPage::Lighting : ActivePage == EFF_FacilityInfoPage::Overview));
 	}
 	Show(Button_TabLighting, CurrentViewData.bHasLightingRig);
+	if (UWidget* SupportBadge = GetWidgetFromName(TEXT("Border_A5LightingSupport")))
+		SupportBadge->SetVisibility(CurrentViewData.bHasLightingRig ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	Show(Button_TabRevenue, bRevenueAvailable);
 	Show(Button_TabPrograms, CurrentViewData.bShowProgramSection);
+	Show(Button_TabQueue, bQueueAvailable);
 	Show(Button_LightingMinimize, ActivePage == EFF_FacilityInfoPage::Lighting && !bLightingIntroductionVisible);
-	Show(Button_TabUpgrade, (bBuild && CurrentViewData.bHasFacilityLevels) || CurrentViewData.bHasLightingRig);
+	Show(Button_TabUpgrade, bBuild && CurrentViewData.bHasFacilityLevels);
 	if (Button_TabUpgrade)
 	{
 		Button_TabUpgrade->SetRenderOpacity(bBuild && CurrentViewData.bHasFacilityLevels ? 1.f : .42f);
@@ -603,6 +702,8 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 	UpdateTab(Button_TabLighting,EFF_FacilityInfoPage::Lighting,CurrentViewData.bHasLightingRig);
 	UpdateTab(Button_TabRevenue,EFF_FacilityInfoPage::Revenue,bRevenueAvailable);
 	UpdateTab(Button_TabPrograms,EFF_FacilityInfoPage::Programs,CurrentViewData.bShowProgramSection);
+	UpdateTab(Button_TabQueue,EFF_FacilityInfoPage::Queue,bQueueAvailable);
+	RefreshInspectorTabLayout();
 	Show(Panel_Actions, ActivePage != EFF_FacilityInfoPage::Lighting && ActivePage != EFF_FacilityInfoPage::RemoveConfirmation &&
 		bBuild);
 	RefreshLightingIntroduction();
@@ -772,6 +873,7 @@ void UFF_FacilityInfoPanel::HandleDismissLightingIntroduction()
 }
 void UFF_FacilityInfoPanel::HandleRevenueTabClicked() { SetInfoPage(EFF_FacilityInfoPage::Revenue); }
 void UFF_FacilityInfoPanel::HandleProgramsTabClicked() { SetInfoPage(EFF_FacilityInfoPage::Programs); }
+void UFF_FacilityInfoPanel::HandleQueueTabClicked() { SetInfoPage(EFF_FacilityInfoPage::Queue); }
 void UFF_FacilityInfoPanel::HandleSynergyPreviousClicked()
 {
 	if (ActivePage != EFF_FacilityInfoPage::Synergy || SynergyPageIndex <= 0) return;
@@ -791,9 +893,10 @@ void UFF_FacilityInfoPanel::HandleFavoriteClicked()
 void UFF_FacilityInfoPanel::HandleRevenueRankingClicked()
 {
 	if (ActivePage == (Button_TabRevenue ? EFF_FacilityInfoPage::Revenue : EFF_FacilityInfoPage::Operation) &&
-		CurrentViewData.FacilityInstanceId.IsValid())
+		CurrentViewData.bShowRevenueSection && CurrentViewData.FacilityInstanceId.IsValid())
 		OnRevenueRankingRequested.Broadcast();
 }
+
 void UFF_FacilityInfoPanel::HandleRemoveCancelClicked()
 {
 	SetInfoPage(EFF_FacilityInfoPage::Overview);
@@ -812,15 +915,18 @@ void UFF_FacilityInfoPanel::HandleRemoveConfirmClicked()
 
 void UFF_FacilityInfoPanel::SetPanelOpen(const bool bOpen)
 {
+	const bool bWasOpen = IsVisible();
 	if (!bOpen)
 	{
 		bLightingIntroductionVisible = false;
 		CancelLightingEdit();
+		if (Anim_InspectorOpen) StopAnimation(Anim_InspectorOpen);
 	}
 	// AddToPlayerScreen gives this UUserWidget a full-screen outer slot. SelfHitTestInvisible keeps
 	// that wrapper transparent to world clicks while the visible Border and its buttons remain live.
 	SetVisibility(bOpen ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	RefreshPageVisibility();
+	if (bOpen && !bWasOpen && Anim_InspectorOpen) PlayAnimation(Anim_InspectorOpen);
 }
 
 bool UFF_FacilityInfoPanel::IsPointerOverInteractivePanel() const
@@ -895,16 +1001,16 @@ void UFF_FacilityInfoPanel::EnsureStaffControls()
 			Tabs->ShiftChild(Tabs->GetChildIndex(Button_TabOperation) + 1, Button_TabStaff);
 		}
 	}
-	// Older inspector assets may have no secondary row, even when a staff section
-	// has already been authored. Keep the same four-page contract as the migration.
-	if (Button_TabStaff && Button_TabOperation)
+	// Keep the three core pages together and put facility-specific pages in the
+	// following row, reusing existing controls and their click bindings.
+	if (Button_TabStaff && Button_TabOperation && !WidgetTree->FindWidget(TEXT("A5_InspectorDesignerLayout")))
 		if (auto* Tabs = Cast<UHorizontalBox>(Button_TabOperation->GetParent()))
 			{
 				TArray<UWidget*> Optional;
-				for (const TCHAR* Name : {TEXT("Button_TabUpgrade"), TEXT("Button_TabRevenue"),
-					TEXT("Button_TabPrograms"), TEXT("Button_TabLighting")})
+				for (const TCHAR* Name : {TEXT("Button_TabPrograms"), TEXT("Button_TabUpgrade"),
+					TEXT("Button_TabLighting"), TEXT("Button_TabStaff"), TEXT("Button_TabRevenue")})
 					if (UWidget* Tab = WidgetTree->FindWidget(Name))
-						if (Tab->GetParent() == Tabs) Optional.Add(Tab);
+						if (Cast<UHorizontalBox>(Tab->GetParent())) Optional.Add(Tab);
 				if (!Optional.IsEmpty())
 				{
 					auto* Tools = Cast<UHorizontalBox>(WidgetTree->FindWidget(TEXT("Reference_AdditionalFacilityPages")));
@@ -930,17 +1036,76 @@ void UFF_FacilityInfoPanel::EnsureStaffControls()
 							NavigationAnchor = NavigationAnchor->GetParent();
 						}
 					}
+					// Some authored revisions put this row inside the basic-information page.
+					// Move it next to the primary tabs so it stays reachable on every page.
+					if (Tools && Tools != Tabs)
+					{
+						UWidget* Anchor = Tabs;
+						while (Anchor && Anchor->GetParent())
+						{
+							if (auto* NavigationColumn = Cast<UVerticalBox>(Anchor->GetParent()))
+							{
+								if (Tools->GetParent() != NavigationColumn)
+								{
+									Tools->RemoveFromParent();
+									NavigationColumn->AddChildToVerticalBox(Tools)->SetPadding(FMargin(8, 0, 8, 6));
+								}
+								NavigationColumn->ShiftChild(NavigationColumn->GetChildIndex(Anchor) + 1, Tools);
+								break;
+							}
+							Anchor = Anchor->GetParent();
+						}
+					}
 					if (Tools && Tools != Tabs) for (UWidget* Tab : Optional)
 					{
-						Tab->RemoveFromParent();
-						auto* ToolSlot = Tools->AddChildToHorizontalBox(Tab);
+						if (Tab->GetParent() != Tools)
+						{
+							Tab->RemoveFromParent();
+							Tools->AddChildToHorizontalBox(Tab);
+						}
+						auto* ToolSlot = Cast<UHorizontalBoxSlot>(Tab->Slot);
+						if (!ToolSlot) continue;
 						ToolSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 						ToolSlot->SetPadding(FMargin(2.f, 0.f));
+						ToolSlot->SetHorizontalAlignment(HAlign_Fill);
+						ToolSlot->SetVerticalAlignment(VAlign_Fill);
+					}
+					if (Tools && Tools != Tabs)
+					{
+						int32 OptionalIndex = 0;
+						for (UWidget* Tab : Optional)
+							if (Tab->GetParent() == Tools) Tools->ShiftChild(OptionalIndex++, Tab);
+						for (const TCHAR* Name : {TEXT("Runtime_InspectorSpacer1"), TEXT("Runtime_InspectorSpacer2")})
+						{
+							UWidget* Spacer = WidgetTree->FindWidget(Name);
+							if (!Spacer)
+							{
+								Spacer = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), Name);
+								auto* SpacerSlot = Tools->AddChildToHorizontalBox(Spacer);
+								SpacerSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+								SpacerSlot->SetPadding(FMargin(2.f, 0.f));
+							}
+							Spacer->SetVisibility(ESlateVisibility::Collapsed);
+						}
 					}
 				}
 				int32 PrimaryIndex = 0;
-				for (UButton* Tab : {Button_TabOverview.Get(), Button_TabSynergy.Get(), Button_TabOperation.Get(), Button_TabStaff.Get()})
-					if (Tab && Tab->GetParent() == Tabs) Tabs->ShiftChild(PrimaryIndex++, Tab);
+				for (UButton* Tab : {Button_TabOverview.Get(), Button_TabSynergy.Get(), Button_TabOperation.Get()})
+					if (Tab && Tab->GetParent() == Tabs)
+					{
+						Tabs->ShiftChild(PrimaryIndex++, Tab);
+						if (auto* PrimarySlot = Cast<UHorizontalBoxSlot>(Tab->Slot))
+						{
+							PrimarySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+							PrimarySlot->SetHorizontalAlignment(HAlign_Fill);
+							PrimarySlot->SetVerticalAlignment(VAlign_Fill);
+						}
+					}
+				const UButton* Reference = Button_TabPrograms ? Button_TabPrograms.Get() : Button_TabOverview.Get();
+				if (Reference)
+					for (UButton* Tab : {Button_TabOverview.Get(), Button_TabSynergy.Get(), Button_TabOperation.Get(),
+						Button_TabStaff.Get(), Button_TabUpgrade.Get(), Button_TabRevenue.Get(), Button_TabLighting.Get()})
+						if (Tab) Tab->SetStyle(Reference->GetStyle());
 			}
 	if (Panel_StaffSection) return;
 	// Add within the existing scroll content, never replace/reparent the designer tree.
@@ -973,6 +1138,39 @@ void UFF_FacilityInfoPanel::EnsureStaffControls()
 	Host->AddChild(Section);
 	Panel_StaffSection = Section;
 	Panel_StaffSection->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void UFF_FacilityInfoPanel::RefreshInspectorTabLayout()
+{
+	if (auto* Grid = WidgetTree ? Cast<UUniformGridPanel>(WidgetTree->FindWidget(TEXT("Grid_InspectorTabs"))) : nullptr)
+	{
+		int32 Index = 0;
+		for (UButton* Tab : {Button_TabOverview.Get(), Button_TabSynergy.Get(), Button_TabOperation.Get(),
+			Button_TabQueue.Get(), Button_TabRevenue.Get(), Button_TabLighting.Get(), Button_TabPrograms.Get(),
+			Button_TabUpgrade.Get(), Button_TabStaff.Get()})
+			if (Tab && Tab->GetVisibility() != ESlateVisibility::Collapsed)
+				if (auto* GridSlot = Cast<UUniformGridSlot>(Tab->Slot))
+				{
+					GridSlot->SetRow(Index / 3);
+					GridSlot->SetColumn(Index % 3);
+					++Index;
+				}
+		return;
+	}
+	if (!WidgetTree || !Button_TabStaff || !Button_TabOperation) return;
+	auto* Row = Cast<UHorizontalBox>(Button_TabStaff->GetParent());
+	if (!Row || Row == Button_TabOperation->GetParent()) return;
+	int32 Count = 0;
+	for (UButton* Tab : {Button_TabPrograms.Get(), Button_TabUpgrade.Get(), Button_TabLighting.Get(),
+		Button_TabStaff.Get(), Button_TabRevenue.Get()})
+		if (Tab && Tab->GetParent() == Row && Tab->GetVisibility() != ESlateVisibility::Collapsed) ++Count;
+	// Saved designer assets may keep the optional row collapsed by default.
+	// Its children can be visible while that parent still prevents drawing and input.
+	Row->SetVisibility(Count > 0 ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	for (int32 Index = 1; Index <= 2; ++Index)
+		if (UWidget* Spacer = WidgetTree->FindWidget(FName(*FString::Printf(TEXT("Runtime_InspectorSpacer%d"), Index))))
+			Spacer->SetVisibility(Count > 0 && Count <= 3 - Index
+				? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 }
 
 void UFF_FacilityInfoPanel::RefreshStaffControls()
@@ -1057,7 +1255,10 @@ void UFF_FacilityInfoPanel::SetText(UCommonTextBlock* Target, const FText& Text)
 {
 	if (Target)
 	{
-		Target->SetText(Text);
+		const FText* Format = DynamicTextFormats.Find(Target->GetFName());
+		// An absent value must remain empty so optional sections retain their visibility rules.
+		Target->SetText(Format && !Text.IsEmpty()
+			? FText::Format(*Format, FFormatNamedArguments{{TEXT("Value"), Text}}) : Text);
 	}
 }
 
@@ -1090,8 +1291,14 @@ void UFF_FacilityInfoPanel::HandleLightingMinimizeClicked()
 	if(!bLightingMinimized)
 	{
 		// A compact card can be dragged to the bottom; expanding must keep its footer on screen.
-		const double Top = PanelSlot->GetPosition().Y;
-		const double MaxTranslation = GetCachedGeometry().GetLocalSize().Y - AuthoredPanelSize.Y - Top - 8.0;
+		const double ViewportHeight = GetCachedGeometry().GetLocalSize().Y;
+		const double ExpandedHeight = ViewportHeight > 1.0
+			? FMath::Min(AuthoredPanelSize.Y, FMath::Max(100.0, ViewportHeight - 36.0)) : AuthoredPanelSize.Y;
+		const double Top = !PanelSlot->GetAnchors().IsStretchedVertical()
+			? ViewportHeight * PanelSlot->GetAnchors().Minimum.Y + PanelSlot->GetPosition().Y -
+				ExpandedHeight * PanelSlot->GetAlignment().Y
+			: GetCachedGeometry().AbsoluteToLocal(Size->GetCachedGeometry().GetAbsolutePosition()).Y - LightingPanelTranslation.Y;
+		const double MaxTranslation = ViewportHeight - ExpandedHeight - Top - 8.0;
 		LightingPanelTranslation.Y=FMath::Clamp(LightingPanelTranslation.Y,
 			8.0-Top,FMath::Max(8.0-Top,MaxTranslation));
 	}
@@ -1117,10 +1324,17 @@ void UFF_FacilityInfoPanel::RefreshLightingPanelLayout()
 			AuthoredPanelSize.X = Size->IsWidthOverride() ? Size->GetWidthOverride() : (AuthoredCanvasSlot ? AuthoredCanvasSlot->GetSize().X : 456.f);
 			AuthoredPanelSize.Y = Size->IsHeightOverride() ? Size->GetHeightOverride() : (AuthoredCanvasSlot ? AuthoredCanvasSlot->GetSize().Y : 620.f);
 		}
-		const float DesiredWidth = bLighting ? LightingPanelWidth : float(AuthoredPanelSize.X);
+		const auto* DockSlot = Cast<UCanvasPanelSlot>(Size->Slot);
+		const bool bBuildDock = CurrentViewData.Context == EFF_FacilityInfoContext::Build && DockSlot &&
+			DockSlot->GetAnchors().Minimum.Equals(FVector2D(1.f, 1.f)) &&
+			DockSlot->GetAnchors().Maximum.Equals(FVector2D(1.f, 1.f)) &&
+			DockSlot->GetAlignment().Equals(FVector2D(1.f, 1.f));
+		const float DesiredWidth = bLighting && !bBuildDock ? LightingPanelWidth : float(AuthoredPanelSize.X);
 		const float DesiredHeight = bLightingMinimized ? LightingCompactHeight : float(AuthoredPanelSize.Y);
 		const float PanelWidth = Viewport.X > 1.f ? FMath::Min(DesiredWidth, FMath::Max(200.f, float(Viewport.X) - 36.f)) : DesiredWidth;
-		const float PanelHeight = Viewport.Y > 1.f ? FMath::Min(DesiredHeight, FMath::Max(100.f, float(Viewport.Y) - 36.f)) : DesiredHeight;
+		// A bottom-docked inspector must also reserve the visible HUD height.
+        const float VerticalReservation = bBuildDock ? FMath::Max(36.f, float(-DockSlot->GetPosition().Y) + 8.f) : 36.f;
+        const float PanelHeight = Viewport.Y > 1.f ? FMath::Min(DesiredHeight, FMath::Max(100.f, float(Viewport.Y) - VerticalReservation)) : DesiredHeight;
 		if (!Size->IsWidthOverride() || !FMath::IsNearlyEqual(Size->GetWidthOverride(), PanelWidth)) Size->SetWidthOverride(PanelWidth);
 		if (!Size->IsHeightOverride() || !FMath::IsNearlyEqual(Size->GetHeightOverride(), PanelHeight)) Size->SetHeightOverride(PanelHeight);
 		if(UCanvasPanelSlot* PanelSlot=Cast<UCanvasPanelSlot>(Size->Slot))
@@ -1130,6 +1344,28 @@ void UFF_FacilityInfoPanel::RefreshLightingPanelLayout()
 			if (!PanelSlot->GetAnchors().IsStretchedHorizontal() && !PanelSlot->GetAnchors().IsStretchedVertical() &&
 				!PanelSlot->GetSize().Equals(FVector2D(PanelWidth, PanelHeight)))
 				PanelSlot->SetSize(FVector2D(PanelWidth, PanelHeight));
+			if (bBuildDock && bLighting && Viewport.X > 1.f && Viewport.Y > 1.f &&
+				!PanelSlot->GetAnchors().IsStretchedHorizontal() && !PanelSlot->GetAnchors().IsStretchedVertical())
+			{
+				// Resizing a bottom-anchored panel changes its top-left even without a drag.
+				const FVector2D BaseTopLeft = FVector2D(Viewport.X * PanelSlot->GetAnchors().Minimum.X,
+					Viewport.Y * PanelSlot->GetAnchors().Minimum.Y) + PanelSlot->GetPosition() -
+					FVector2D(PanelWidth * PanelSlot->GetAlignment().X, PanelHeight * PanelSlot->GetAlignment().Y);
+				LightingPanelTranslation.X = FMath::Clamp(LightingPanelTranslation.X, 8.0 - BaseTopLeft.X,
+					FMath::Max(8.0, Viewport.X - PanelWidth - 8.0) - BaseTopLeft.X);
+				LightingPanelTranslation.Y = FMath::Clamp(LightingPanelTranslation.Y, 8.0 - BaseTopLeft.Y,
+					FMath::Max(8.0, Viewport.Y - PanelHeight - 8.0) - BaseTopLeft.Y);
+			}
+		}
+		if (bBuildDock)
+		{
+			if (USizeBox* ShadowSize = Cast<USizeBox>(WidgetTree->FindWidget(TEXT("Panel_ShadowSize"))))
+			{
+				ShadowSize->SetWidthOverride(PanelWidth);
+				ShadowSize->SetHeightOverride(PanelHeight);
+				if (auto* ShadowSlot = Cast<UCanvasPanelSlot>(ShadowSize->Slot))
+					ShadowSlot->SetSize(FVector2D(PanelWidth, PanelHeight));
+			}
 		}
 		Size->SetRenderTranslation(bLighting?LightingPanelTranslation:FVector2D::ZeroVector);
 	}

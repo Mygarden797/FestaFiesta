@@ -7,6 +7,7 @@
 
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
+#include "Building/Synergy/FF_FacilitySynergySubsystem.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
 #include "Building/Presentation/FF_BuildFeatureGuide.h"
@@ -17,7 +18,6 @@
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/WidgetTree.h"
-#include "Brushes/SlateRoundedBoxBrush.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "FF_FFZSFacilityDefinition.h"
@@ -40,6 +40,7 @@
 #include "InputCoreTypes.h"
 #include "Misc/DefaultValueHelper.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
+#include "Building/Presentation/FF_BuildCatalogDock.h"
 #include "UI/Settings/FF_FestivalSettingsSubsystem.h"
 #include "UI/Settings/FF_KeyBindingRuntimeSubsystem.h"
 #include "TimerManager.h"
@@ -401,6 +402,31 @@ void UFF_BuildToolsActionButton::ApplySelection(const bool bSelected, UTextBlock
     bAppliedSelected = bSelected;
 }
 
+namespace
+{
+void RefreshApprovedHelpRows(UWidgetTree& Tree)
+{
+    auto* Column = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Column_BuildIconHelp")));
+    if (!Column) return;
+    // The six authored strips are the compact reference guide. Keep older
+    // shortcut widgets in the asset for compatibility, but out of this view.
+    for (const TCHAR* Name : {TEXT("Text_BuildIconHelpHeading"), TEXT("Text_BuildHelpKeyboardHint"),
+        TEXT("Row_BuildHelpViewToggle"), TEXT("Row_BuildHelpShiftLock"), TEXT("Row_BuildHelpSprint"),
+        TEXT("Button_BuildHelpRedo"), TEXT("Row_BuildHelpQueue"), TEXT("Row_BuildHelpNearby"),
+        TEXT("Row_BuildHelpPrecision"), TEXT("Row_BuildHelpGrid"), TEXT("Row_BuildHelpPause")})
+        if (UWidget* Extra = Tree.FindWidget(Name)) Extra->SetVisibility(ESlateVisibility::Collapsed);
+    for (UWidget* Widget : Column->GetAllChildren())
+    {
+        auto* Strip = Cast<UBorder>(Widget);
+        if (!Strip || !Strip->GetName().StartsWith(TEXT("Border_A5_BuildHelpRows"))) continue;
+        UWidget* Content = Strip->GetContent();
+        const ESlateVisibility Visibility = Content && Content->GetVisibility() != ESlateVisibility::Collapsed
+            ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed;
+        if (Strip->GetVisibility() != Visibility) Strip->SetVisibility(Visibility);
+    }
+}
+}
+
 // 건설 상태·잔액 변경 알림과 화면 버튼을 연결하고 처음 값을 표시한다.
 void UFF_BuildToolsWidget::NativePreConstruct()
 {
@@ -444,7 +470,7 @@ void UFF_BuildToolsWidget::NativePreConstruct()
     Show(TEXT("Border_PlacementHelp"), bDesignerShowHelp && DesignerPage != EFF_BuildToolsDesignerPage::Settings);
     Show(TEXT("Row_BuildHelpQueue"), bPlacement);
     Show(TEXT("Border_BuildToolbarGold"), false);
-    Show(TEXT("Panel_FeatureGuide"), false);
+    Show(TEXT("Panel_FeatureGuide"), DesignerPage == EFF_BuildToolsDesignerPage::Guide);
 }
 
 void UFF_BuildToolsWidget::NativeConstruct()
@@ -473,7 +499,11 @@ void UFF_BuildToolsWidget::NativeConstruct()
         Size_BuildWorldHelp = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_BuildWorldHelp")));
     if (Size_BuildWorldHelp) Size_BuildWorldHelp->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     bHelpExpanded = Border_PlacementHelp && Border_PlacementHelp->IsVisible();
-    InstallHelpCloseControl();
+    // Toolbar and guide visuals are authored in the Widget Blueprint so artists
+    // can edit their layout and styles in the Designer.
+    FeatureSummarySize = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_A5_FeatureSummary")));
+    FeatureSummaryTitle = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_A5_FeatureSummaryTitle")));
+    FeatureSummaryBody = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_A5_FeatureSummaryBody")));
     bHelpForegroundSuppressed = false;
     if (Size_BuildWorldHelp)
         if (auto* HelpCanvasSlot = Cast<UCanvasPanelSlot>(Size_BuildWorldHelp->Slot))
@@ -524,8 +554,6 @@ void UFF_BuildToolsWidget::NativeConstruct()
     FF_BIND_TOOL(Button_FeatureGuide, OpenFeatureGuide)
     FF_BIND_TOOL(Button_FeatureGuideConfirm, ConfirmFeatureGuide)
     FF_BIND_TOOL(Button_FeatureGuideClose, CloseFeatureGuide)
-    FF_BIND_TOOL(Button_Confirm, HandleConfirm)
-    FF_BIND_TOOL(Button_Catalog, ReturnToCatalog)
     FF_BIND_TOOL(Button_Details, ToggleDetails)
     FF_BIND_TOOL(Button_BuildSettings, HandleGuidedSettings)
     FF_BIND_TOOL(Button_BuildSettingsClose, ToggleBuildSettings)
@@ -539,8 +567,6 @@ void UFF_BuildToolsWidget::NativeConstruct()
     FF_BIND_TOOL(Button_SettingsSynergyPreview, HandleSynergyPreview)
     FF_BIND_TOOL(Button_SettingsZoomToCursor, HandleZoomToCursor)
     FF_BIND_TOOL(Button_SettingsEdgeScroll, HandleEdgeScroll)
-    FF_BIND_TOOL(Button_Facts, ToggleFacts)
-    FF_BIND_TOOL(Button_Help, ToggleHelp)
     FF_BIND_TOOL(Button_BuildHelpUndo, HandleUndoConstruction)
     FF_BIND_TOOL(Button_BuildHelpRedo, HandleRedoConstruction)
     FF_BIND_TOOL(Button_ApplyQueueSettings, HandleApplyQueueSettings)
@@ -591,6 +617,8 @@ void UFF_BuildToolsWidget::NativeConstruct()
 // 회전 타이머와 외부 알림 연결을 해제해 닫힌 화면에 작업이 남지 않게 한다.
 void UFF_BuildToolsWidget::NativeDestruct()
 {
+    if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(FeatureSummaryTimer);
+    HideFeatureSummary();
     StopPointerFreeRotation();
     if (Editable_DragPlacementGap) Editable_DragPlacementGap->OnTextCommitted.RemoveAll(this);
     for (UEditableTextBox* Input : {Editable_QueueMaxTeams.Get(), Editable_QueueSlotSpacing.Get(), Editable_QueueLaneWidth.Get()})
@@ -638,6 +666,26 @@ bool UFF_BuildToolsWidget::IsPointerOverTools() const
     }
     // Reading first-use help must never place/move a facility behind the guide.
     if (!bBodyForegroundSuppressed && IsFeatureGuideOpen()) return true;
+    // The catalog also consumes raw world input while placing a facility.
+    if (BuildMode.IsValid() && (BuildMode->GetBuildModeState() == EFF_BuildModeState::CatalogOpen ||
+        BuildMode->GetBuildModeState() == EFF_BuildModeState::Placing) && FSlateApplication::IsInitialized())
+    {
+        const FVector2D Pointer = FSlateApplication::Get().GetCursorPos();
+        const UWidget* CatalogSurface = CatalogHelpAvoidanceSurface.Get();
+        if (!CatalogSurface)
+        {
+            TArray<UUserWidget*> Catalogs;
+            UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Catalogs, UFF_PrepPanelBuild::StaticClass(), false);
+            for (UUserWidget* Catalog : Catalogs)
+                if (Catalog && Catalog->GetOwningPlayer() == GetOwningPlayer() && Catalog->IsVisible())
+                {
+                    CatalogSurface = Catalog->GetWidgetFromName(TEXT("Size_ClarityCatalogDock"));
+                    break;
+                }
+        }
+        if (CatalogSurface && CatalogSurface->IsVisible() &&
+            CatalogSurface->GetCachedGeometry().IsUnderLocation(Pointer)) return true;
+    }
     // Raw BuildMode input runs before Slate's button mouse-up. Geometry also covers that
     // first mouse-down, so clicking a tool never places a building underneath the toolbar.
     for (const UBorder* Panel : { Border_Tools.Get(), Border_PlacementInfo.Get(),
@@ -708,6 +756,8 @@ bool UFF_BuildToolsWidget::ShowFeatureGuide(const FName FeatureId, const bool bR
     const auto* Topic = FFBuildFeatureGuide::Find(FeatureId);
     if (!Topic || !Panel_FeatureGuide || !Text_FeatureGuideTitle || !Text_FeatureGuideBody ||
         !Button_FeatureGuideConfirm || !Button_FeatureGuideClose) return false;
+    if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(FeatureSummaryTimer);
+    HideFeatureSummary();
     StopPointerFreeRotation();
     CurrentGuideFeature = FeatureId;
     PendingGuideAction = bRunAfterConfirm ? FeatureId : NAME_None;
@@ -753,7 +803,7 @@ void UFF_BuildToolsWidget::OpenFeatureGuide()
     if (IsFeatureGuideOpen()) { CloseFeatureGuide(); return; }
     if (const auto* System = BuildMode.Get())
         if (!FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState())) return;
-    ShowFeatureGuide(CurrentGuideFeature.IsNone() ? FName(TEXT("LightingControls")) : CurrentGuideFeature, false);
+    ShowFeatureGuide(CurrentGuideFeature.IsNone() ? FName(TEXT("BuildControls")) : CurrentGuideFeature, false);
 }
 
 bool UFF_BuildToolsWidget::OpenFeatureGuideTopic(const FName FeatureId)
@@ -768,6 +818,50 @@ void UFF_BuildToolsWidget::CloseFeatureGuide()
     if (FSlateApplication::IsInitialized() && GetOwningPlayer())
         FSlateApplication::Get().SetAllUserFocusToGameViewport();
     if (auto* System = BuildMode.Get()) System->RefreshBuildToolsOcclusion();
+}
+
+void UFF_BuildToolsWidget::HideFeatureSummary()
+{
+    if (FeatureSummarySize) FeatureSummarySize->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void UFF_BuildToolsWidget::ShowFeatureSummary(const FName FeatureId)
+{
+    const auto* Topic = FFBuildFeatureGuide::Find(FeatureId);
+    auto* Root = WidgetTree ? Cast<UCanvasPanel>(WidgetTree->RootWidget) : nullptr;
+    if (!Topic || Topic->ToolbarButton.IsNone() || !Root) return;
+    UWidget* Anchor = GetWidgetFromName(Topic->ToolbarButton);
+    if (!Anchor) return;
+    if (!FeatureSummarySize || !FeatureSummaryTitle || !FeatureSummaryBody) return;
+    FeatureSummaryTitle->SetText(Topic->Title);
+    const FString Body = Topic->Body.ToString();
+    const int32 ParagraphEnd = Body.Find(TEXT("\n\n"));
+    FeatureSummaryBody->SetText(FText::FromString(ParagraphEnd == INDEX_NONE ? Body : Body.Left(ParagraphEnd)));
+    if (auto* SummaryCanvasSlot = Cast<UCanvasPanelSlot>(FeatureSummarySize->Slot))
+    {
+        const FGeometry& RootGeometry = Root->GetCachedGeometry();
+        const FGeometry& AnchorGeometry = Anchor->GetCachedGeometry();
+        const FVector2D RootSize = RootGeometry.GetLocalSize();
+        const FVector2D AnchorSize = AnchorGeometry.GetLocalSize();
+        if (RootSize.X > 1.f && RootSize.Y > 1.f && AnchorSize.X > 1.f && AnchorSize.Y > 1.f)
+        {
+            const FVector2D Point = RootGeometry.AbsoluteToLocal(
+                AnchorGeometry.LocalToAbsolute(FVector2D(AnchorSize.X * .5f, AnchorSize.Y)));
+            SummaryCanvasSlot->SetAnchors(FAnchors(0.f, 0.f));
+            SummaryCanvasSlot->SetAlignment(FVector2D::ZeroVector);
+            const float SummaryWidth = FeatureSummarySize->IsWidthOverride() ? FeatureSummarySize->GetWidthOverride() : FeatureSummarySize->GetDesiredSize().X;
+            SummaryCanvasSlot->SetPosition(FVector2D(FMath::Clamp(float(Point.X) - SummaryWidth * .5f, 8.f, FMath::Max(8.f, float(RootSize.X) - SummaryWidth - 8.f)),
+                FMath::Clamp(float(Point.Y) + 8.f, 8.f, FMath::Max(8.f, float(RootSize.Y) - 100.f))));
+        }
+        else
+        {
+            SummaryCanvasSlot->SetAnchors(FAnchors(.5f, 0.f));
+            SummaryCanvasSlot->SetAlignment(FVector2D(.5f, 0.f));
+            SummaryCanvasSlot->SetPosition(FVector2D(0.f, 75.f));
+        }
+    }
+    FeatureSummarySize->SetVisibility(ESlateVisibility::HitTestInvisible);
+    if (GetWorld()) GetWorld()->GetTimerManager().SetTimer(FeatureSummaryTimer, this, &ThisClass::HideFeatureSummary, 4.f, false);
 }
 
 void UFF_BuildToolsWidget::ConfirmFeatureGuide()
@@ -794,6 +888,7 @@ void UFF_BuildToolsWidget::RequestFeatureToolbarAction(const FName FeatureId)
         if (!Discovery->HasSeenFeature(FeatureId) && ShowFeatureGuide(FeatureId, true)) return;
     CloseFeatureGuide();
     RunFeatureToolbarAction(FeatureId);
+    ShowFeatureSummary(FeatureId);
 }
 
 void UFF_BuildToolsWidget::RunFeatureToolbarAction(const FName FeatureId)
@@ -815,7 +910,7 @@ void UFF_BuildToolsWidget::HandleGuidedSettings() { RequestFeatureToolbarAction(
 void UFF_BuildToolsWidget::HandleGuidedCatalog() { RequestFeatureToolbarAction(TEXT("BuildCatalog")); }
 void UFF_BuildToolsWidget::HandleGuidedControls()
 {
-    if (bHelpExpanded || bHelpDismissedByUser) ToggleHelp();
+    if (bHelpExpanded || bHelpDismissedByUser) { ToggleHelp(); ShowFeatureSummary(TEXT("BuildControls")); }
     else RequestFeatureToolbarAction(TEXT("BuildControls"));
 }
 
@@ -862,66 +957,6 @@ void UFF_BuildToolsWidget::SetHelpExpanded(const bool bExpanded)
         if (auto* Label = Cast<UTextBlock>(Button_Help->GetContent()))
             Label->SetText(bExpanded ? LOCTEXT("ClosePlacementHelp", "안내 닫기") : LOCTEXT("OpenPlacementHelp", "조작 안내"));
     RefreshHelpPresentation();
-}
-
-void UFF_BuildToolsWidget::InstallHelpCloseControl()
-{
-    if (!WidgetTree || !Border_PlacementHelp) return;
-    if (auto* ExistingClose = Cast<UButton>(GetWidgetFromName(TEXT("Button_BuildHelpClose"))))
-    {
-        ExistingClose->OnClicked.AddUniqueDynamic(this, &ThisClass::ToggleHelp);
-        return;
-    }
-    UWidget* HelpContent = Border_PlacementHelp->GetContent();
-    if (!HelpContent) return;
-    auto* Heading = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_BuildIconHelpHeading")));
-
-    // Keep the close action outside the scroll area, including in already-saved WBPs.
-    HelpContent->RemoveFromParent();
-    auto* HelpShell = WidgetTree->ConstructWidget<UVerticalBox>(
-        UVerticalBox::StaticClass(), TEXT("Column_BuildHelpShell"));
-    HelpShell->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-    Border_PlacementHelp->AddChild(HelpShell);
-    auto* Header = WidgetTree->ConstructWidget<UHorizontalBox>(
-        UHorizontalBox::StaticClass(), TEXT("Row_BuildHelpHeader"));
-    Header->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-    HelpShell->AddChildToVerticalBox(Header)->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
-    if (Heading) Heading->RemoveFromParent();
-    else
-    {
-        Heading = WidgetTree->ConstructWidget<UTextBlock>(
-            UTextBlock::StaticClass(), TEXT("Text_BuildHelpCloseHeading"));
-        Heading->SetText(LOCTEXT("HelpCloseHeading", "조작 안내"));
-        Heading->SetColorAndOpacity(FSlateColor(FLinearColor::White));
-    }
-    auto* HeadingSlot = Header->AddChildToHorizontalBox(Heading);
-    HeadingSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-    HeadingSlot->SetVerticalAlignment(VAlign_Center);
-
-    auto* Close = WidgetTree->ConstructWidget<UFF_BuildToolsActionButton>(
-        UFF_BuildToolsActionButton::StaticClass(), TEXT("Button_BuildHelpClose"));
-    FButtonStyle CloseStyle = Close->GetStyle();
-    CloseStyle.Normal = FSlateRoundedBoxBrush(FLinearColor(.94f, .97f, 1.f), 6.f);
-    CloseStyle.Hovered = FSlateRoundedBoxBrush(FLinearColor(.75f, .93f, 1.f), 6.f);
-    CloseStyle.Pressed = FSlateRoundedBoxBrush(FLinearColor(.58f, .83f, .94f), 6.f);
-    Close->SetStyle(CloseStyle);
-    Close->SetToolTipText(LOCTEXT("HelpCloseTip", "조작 안내 닫기 · 상단 조작 안내 버튼으로 다시 열 수 있습니다"));
-    auto* Caption = WidgetTree->ConstructWidget<UTextBlock>(
-        UTextBlock::StaticClass(), TEXT("Text_BuildHelpClose"));
-    Caption->SetText(LOCTEXT("HelpCloseAction", "닫기 ×"));
-    Caption->SetColorAndOpacity(FSlateColor(FLinearColor(.05f, .08f, .12f)));
-    FSlateFontInfo CaptionFont = Heading->GetFont();
-    CaptionFont.Size = 13;
-    Caption->SetFont(CaptionFont);
-    Close->AddChild(Caption);
-    auto* CloseBounds = WidgetTree->ConstructWidget<USizeBox>(
-        USizeBox::StaticClass(), TEXT("Size_BuildHelpClose"));
-    CloseBounds->SetWidthOverride(72.f);
-    CloseBounds->SetHeightOverride(30.f);
-    CloseBounds->AddChild(Close);
-    Header->AddChildToHorizontalBox(CloseBounds)->SetVerticalAlignment(VAlign_Center);
-    HelpShell->AddChildToVerticalBox(HelpContent)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-    Close->OnClicked.AddUniqueDynamic(this, &ThisClass::ToggleHelp);
 }
 
 void UFF_BuildToolsWidget::InstallToolbarForegroundLayer()
@@ -992,10 +1027,86 @@ void UFF_BuildToolsWidget::RefreshPlacementSurfaces()
     // on top of that inspector, even in a narrow viewport.
     if (Border_PlacementInfo)
         Border_PlacementInfo->SetVisibility(bNewPlacement && !(Info && Info->HasSelection()) &&
-            !(Panel_BuildSettings && Panel_BuildSettings->IsVisible())
+            !(Panel_BuildSettings && Panel_BuildSettings->IsVisible()) && !IsFeatureGuideOpen()
             ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
     if (Border_Tools)
         Border_Tools->SetVisibility(bNewPlacement ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+}
+
+void UFF_BuildToolsWidget::RefreshPlacementSynergy()
+{
+    if (!Text_PlacementSynergySummary || !Border_PlacementInfo || !Border_PlacementInfo->IsVisible())
+    {
+        NextPlacementSynergyRefresh = 0.0;
+        return;
+    }
+    // Preview-only projection. The subsystem shares the authoritative capped/grouped
+    // revenue calculation; no installation or economy state is changed here.
+    const double Now = FPlatformTime::Seconds();
+    if (Now < NextPlacementSynergyRefresh) return;
+    NextPlacementSynergyRefresh = Now + .15;
+    const auto ProjectText = [this](UTextBlock* Target, const FText& Value) {
+        const FText* Format = DynamicTextFormats.Find(Target->GetFName());
+        Target->SetText(Format ? FText::Format(*Format, FFormatNamedArguments{{TEXT("Value"), Value}}) : Value);
+    };
+    UTextBlock* Titles[] = {Text_PlacementSynergyTitle1, Text_PlacementSynergyTitle2, Text_PlacementSynergyTitle3};
+    UTextBlock* Details[] = {Text_PlacementSynergyDetail1, Text_PlacementSynergyDetail2, Text_PlacementSynergyDetail3};
+    for (int32 Index = 0; Index < 3; ++Index)
+    {
+        if (Titles[Index]) Titles[Index]->SetVisibility(ESlateVisibility::Collapsed);
+        if (Details[Index]) Details[Index]->SetVisibility(ESlateVisibility::Collapsed);
+    }
+    const UFF_BuildModeSubsystem* System = BuildMode.Get();
+    const UFF_FacilitySynergySubsystem* Synergy = GetWorld()
+        ? GetWorld()->GetSubsystem<UFF_FacilitySynergySubsystem>() : nullptr;
+    FVector Location;
+    if (!System || !System->GetPlacementMarkerLocation(Location))
+    {
+        ProjectText(Text_PlacementSynergySummary, LOCTEXT("SynergyChooseLocation", "설치할 위치를 선택하면 조합 효과를 확인할 수 있습니다."));
+        return;
+    }
+    FFF_FacilitySynergyPreview Preview;
+    if (Synergy) Synergy->BuildPlacementPreview(System->GetSelectedFacilitySpec().FacilityDefinitionId,
+        Location, FGuid(), Preview);
+    if (!Preview.bRulesAvailable || Preview.Entries.IsEmpty())
+    {
+        ProjectText(Text_PlacementSynergySummary, Preview.bRulesAvailable
+            ? LOCTEXT("PlacementNoSynergy", "등록된 시설 조합이 없습니다.")
+            : LOCTEXT("PlacementSynergyUnavailable", "시설 조합 정보를 확인할 수 없습니다."));
+        return;
+    }
+    const int32 Count = FMath::Min(3, Preview.Entries.Num());
+    const auto Name = [this](FName Id) {
+        return CatalogModel.IsValid() ? CatalogModel->ResolveFacilityDisplayName(Id)
+            : LOCTEXT("SynergyNameLoading", "시설 이름 불러오는 중");
+    };
+    FNumberFormattingOptions Format;
+    Format.SetMaximumFractionalDigits(1);
+    const auto Number = [&Format](float Value) { return FText::AsNumber(Value, &Format); };
+    for (int32 Index = 0; Index < Count; ++Index)
+    {
+        if (!Titles[Index] || !Details[Index]) continue;
+        const FFF_FacilitySynergyPreviewEntry& Entry = Preview.Entries[Index];
+        const FText Partner = Name(Entry.bCandidateIsTarget ? Entry.PartnerFacilityId : Entry.TargetFacilityId);
+        const float Delta = Entry.ProposedTotalBonusPercent - Entry.CurrentTotalBonusPercent;
+        const FText Status = !Entry.bHasPartner ? LOCTEXT("SynergyMissing", "함께 둘 시설 필요")
+            : Delta < -UE_SMALL_NUMBER ? LOCTEXT("SynergyDecrease", "예상 보너스 감소")
+            : !Entry.bInRange ? LOCTEXT("SynergyTooFar", "거리 초과")
+            : Delta > UE_SMALL_NUMBER ? LOCTEXT("SynergyBonus", "조합 성립 · 보너스 증가")
+            : Entry.AppliedBonusPercent > 0.f ? LOCTEXT("SynergyUnchanged", "기존 효과 유지 · 추가 없음")
+            : LOCTEXT("SynergyCapped", "효과 중복 / 상한 적용");
+        ProjectText(Titles[Index], Entry.DisplayName.IsEmpty() ? Partner : Entry.DisplayName);
+        ProjectText(Details[Index], FText::Format(LOCTEXT("PlacementSynergyDetail",
+            "함께: {0} · {1}m 이내 · 설정 +{2}%\n{3}\n{4} 수익 보너스 +{5}% → +{6}%"),
+            Partner, Number(Entry.MaxDistanceMeters), Number(Entry.ConfiguredBonusPercent), Status,
+            Name(Entry.TargetFacilityId), Number(Entry.CurrentTotalBonusPercent), Number(Entry.ProposedTotalBonusPercent)));
+        Titles[Index]->SetVisibility(ESlateVisibility::HitTestInvisible);
+        Details[Index]->SetVisibility(ESlateVisibility::HitTestInvisible);
+    }
+    const int32 Remaining = Preview.Entries.Num() - Count;
+    ProjectText(Text_PlacementSynergySummary, Remaining > 0
+        ? FText::Format(LOCTEXT("PlacementSynergyMore", "현재 위치 기준 · 다른 조합 {0}개는 조합 도감에서 확인"), FText::AsNumber(Remaining))
+        : LOCTEXT("PlacementSynergySummary", "현재 위치 기준 · 설치 확정 후 수익에 반영"));
 }
 
 void UFF_BuildToolsWidget::RefreshHelpPresentation()
@@ -1051,6 +1162,14 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
     RefreshEditingHelp();
     RefreshHelpPresentation();
     RefreshPlacementSurfaces();
+    if (BuildMode.IsValid() && BuildMode->GetBuildModeState() == EFF_BuildModeState::Placing &&
+        Border_PlacementInfo && Border_PlacementInfo->IsVisible())
+        FFBuildCatalogDock::Align(*this, Geometry,
+            Cast<USizeBox>(GetWidgetFromName(TEXT("Size_PlacementInfo"))), CatalogHelpAvoidanceSurface);
+    if (IsFeatureGuideOpen())
+        FFBuildCatalogDock::Align(*this, Geometry,
+            Cast<USizeBox>(GetWidgetFromName(TEXT("Size_FeatureGuideCard"))), CatalogHelpAvoidanceSurface);
+    RefreshPlacementSynergy();
     if (!bHelpForegroundSuppressed && Size_BuildWorldHelp && Border_PlacementHelp && Border_PlacementHelp->IsVisible())
     {
         // Use the painted catalog edge in the same logical coordinate system.
@@ -1060,7 +1179,8 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
             const float Height = Geometry.GetLocalSize().Y;
             if (Height <= 0.f) return;
             const bool bCatalogOpen = BuildMode.IsValid() &&
-                BuildMode->GetBuildModeState() == EFF_BuildModeState::CatalogOpen;
+                (BuildMode->GetBuildModeState() == EFF_BuildModeState::CatalogOpen ||
+                 BuildMode->GetBuildModeState() == EFF_BuildModeState::Placing);
             float Bottom = Height - 100.f;
             if (bCatalogOpen)
             {
@@ -1075,7 +1195,7 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
                         UFF_PrepPanelBuild::StaticClass(), false);
                     for (UUserWidget* Panel : Panels)
                         if (Panel && Panel->GetOwningPlayer() == GetOwningPlayer() && Panel->IsVisible())
-                            if (UWidget* Surface = Panel->GetWidgetFromName(TEXT("Border_PanelRoot")))
+                            if (UWidget* Surface = Panel->GetWidgetFromName(TEXT("Size_ClarityCatalogDock")))
                             {
                                 CatalogHelpAvoidanceSurface = Surface;
                                 break;
@@ -1091,6 +1211,7 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
             if (BuildMode.IsValid() && BuildMode->IsMultiSelectionActive())
             {
                 // Keep the same guide available during group edits, above the saved group panel.
+                const float BottomWithoutGroup = Bottom;
                 Bottom = FMath::Min(Bottom, Height - 450.f);
                 const double Time = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
                 if (!GroupHelpAvoidanceSurface.IsValid() && Time >= NextGroupHelpSearchTime)
@@ -1111,7 +1232,15 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
                 {
                     const FGeometry& Bounds = Surface->GetCachedGeometry();
                     if (Bounds.GetLocalSize().Y > 0.f)
-                        Bottom = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(FVector2D::ZeroVector)).Y - 16.f;
+                    {
+                        const FVector2D Min = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(FVector2D::ZeroVector));
+                        const FVector2D Max = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(Bounds.GetLocalSize()));
+                        // The approved selection panel is on the right. A panel
+                        // beside the left guide should not push its shortcuts up.
+                        const bool bOverlapsHelpColumn = Min.X < AuthoredHelpPosition.X + Size_BuildWorldHelp->GetDesiredSize().X
+                            && Max.X > AuthoredHelpPosition.X;
+                        Bottom = bOverlapsHelpColumn ? FMath::Min(BottomWithoutGroup, float(Min.Y) - 16.f) : BottomWithoutGroup;
+                    }
                 }
             }
             const UWidget* HelpHeader = GetWidgetFromName(TEXT("Row_BuildHelpHeader"));
@@ -1154,7 +1283,7 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
             // The existing help scrollbox keeps every shortcut reachable when the
             // combination card and a long queue guide share the left column.
             const FVector2D Placement = FFBuildToolsModel::ResolveHelpVerticalBounds(
-                ContentHeight, Bottom, AuthoredHelpPosition.Y, MinimumTop);
+                ContentHeight, Bottom, bCatalogOpen ? Bottom - ContentHeight : AuthoredHelpPosition.Y, MinimumTop);
             const float HelpHeight = Placement.Y;
             if (!Size_BuildWorldHelp->IsHeightOverride() ||
                 !FMath::IsNearlyEqual(Size_BuildWorldHelp->GetHeightOverride(), HelpHeight, .5f))
@@ -1662,6 +1791,12 @@ void UFF_BuildToolsWidget::RefreshTools()
     // The compact top bar also serves catalog browsing. Placement summary and confirm
     // controls remain visible only while a world preview is active.
     const bool bSession = System && FFBuildModeModel::IsBuildSessionActive(State);
+    if (bSession && !bBuildSessionVisible)
+    {
+        if (!bHelpDismissedByUser) SetHelpExpanded(true);
+        if (Anim_BuildToolsIntro) PlayAnimation(Anim_BuildToolsIntro);
+    }
+    bBuildSessionVisible = bSession;
     if (!bSession && Panel_FeatureGuide)
     {
         Panel_FeatureGuide->SetVisibility(ESlateVisibility::Collapsed);
@@ -1724,6 +1859,9 @@ void UFF_BuildToolsWidget::RefreshTools()
     {
         const FFFZSFacilitySpec& Spec = System->GetSelectedFacilitySpec();
         FFBuildToolsModel::FormatRequiredSpace(Spec, ViewData.FootprintText, ViewData.QueueText);
+        ViewData.FootprintText = FText::Format(FootprintFormat, FFormatNamedArguments{
+            {TEXT("Width"), FText::AsNumber(Spec.FootprintSizeCells.X / 100.0)},
+            {TEXT("Depth"), FText::AsNumber(Spec.FootprintSizeCells.Y / 100.0)}});
         ViewData.AudienceText = FFBuildToolsModel::FormatAudienceSpace(Spec);
         if (System->CanChooseQueueLayout())
             ViewData.QueueText = FText::Format(LOCTEXT("RequiredQueueWithKeys", "{0}\n7 기본 · 8 좌측 · 9 우측 · 0 U자"), ViewData.QueueText);
@@ -1736,7 +1874,7 @@ void UFF_BuildToolsWidget::RefreshTools()
         FString Failure;
         const bool bCostKnown = Economy.IsValid() && Economy->TryProjectFacilityCosts(Entry, Entry.Definition.Get(), Failure);
         ViewData.CostText = ViewData.bMoving ? LOCTEXT("MoveCost", "이동 비용 없음") : bCostKnown
-            ? FText::Format(LOCTEXT("InstallCost", "설치 {0} Gold"), FText::AsNumber(Entry.InstallCost))
+            ? FText::Format(InstallationCostFormat, FFormatNamedArguments{{TEXT("Cost"), FText::AsNumber(Entry.InstallCost)}})
             : LOCTEXT("UnknownCost", "설치 비용 확인 필요");
         if (Economy.IsValid() && Economy->HasAuthoritativeGold())
         {
@@ -1749,10 +1887,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     if (Text_FacilityName) { Text_FacilityName->SetText(ViewData.FacilityName); }
     if (Text_Cost) { Text_Cost->SetText(ViewData.CostText); }
     if (Text_Balance) Text_Balance->SetText(ViewData.BalanceText);
-    // Older saved WBP versions still expose audience requirements through the bound footprint label.
-    if (Text_Footprint) Text_Footprint->SetText(!Text_Audience && !ViewData.AudienceText.IsEmpty()
-        ? FText::Format(LOCTEXT("SpaceWithAudienceFallback", "{0}\n{1}"), ViewData.FootprintText, ViewData.AudienceText)
-        : ViewData.FootprintText);
+    if (Text_Footprint) Text_Footprint->SetText(ViewData.FootprintText);
     if (Text_Audience)
     {
         Text_Audience->SetText(ViewData.AudienceText);
@@ -1776,26 +1911,13 @@ void UFF_BuildToolsWidget::RefreshTools()
     {
         HelpHint->SetAutoWrapText(true);
         HelpHint->SetText(bPreview && !ViewData.bMoving
-            ? LOCTEXT("PlacementReturnToBuildUiHint", "시설 설치 중 우클릭하면\n건축모드 UI가 다시 표시됩니다.")
+            ? LOCTEXT("PlacementCatalogVisibleHint", "목록에서 다른 시설 선택 · 우클릭으로 배치 취소")
             : ViewData.bMoving
             ? LOCTEXT("MovingFacilityInfoHint", "시설을 누른 채 드래그하고 놓으면 이동합니다.\n우클릭하면 원래 위치로 되돌아갑니다.")
             : LOCTEXT("BuildKeyboardHelpHint", "표시된 키를 누르면 실행됩니다"));
     }
-    const bool bDirectHelp = System && System->IsDirectPlacementAdjustment();
-    if (Text_BuildHelpPrimary)
-        Text_BuildHelpPrimary->SetText(!bPreview
-            ? LOCTEXT("IconHelpInspect", "클릭 정보 · 누른 채 드래그 이동")
-            : ViewData.bMoving ? LOCTEXT("IconHelpConfirmMove", "누른 채 드래그 · 놓아서 이동 확정")
-            : bDirectHelp ? LOCTEXT("KeyHelpGizmoDrag", "핸들 조정 · Enter 확정 · T 위치 다시 선택")
-            : ViewData.bDragPlacementEnabled ? FText::Format(LOCTEXT("IconHelpDragWithGap", "드래그 미리보기 · 놓아 가능한 곳만 설치 · 여유 {0}cm"),
-                FText::AsNumber(ViewData.DragPlacementGapCm))
-            : LOCTEXT("IconHelpPlace", "클릭해 시설 배치"));
-    if (Text_BuildHelpRotate)
-        Text_BuildHelpRotate->SetText(!ViewData.bMoving && ViewData.bDragPlacementEnabled
-            ? LOCTEXT("IconHelpEndDrag", "회전하면 드래그 미리보기 취소")
-            : LOCTEXT("IconHelpRotateFacility", "시설 방향 회전"));
-    if (Text_BuildHelpMove)
-        Text_BuildHelpMove->SetText(LOCTEXT("IconHelpMoveCamera", "카메라 이동"));
+    // The six guide captions are authored in the Widget Blueprint. Their keys
+    // still reflect remappable camera bindings below.
     if (Text_BuildHelpPrecision)
         Text_BuildHelpPrecision->SetText(LOCTEXT("KeyHelpPrecisionHold", "누르는 동안 정밀 맞춤"));
     // Camera and option keys are user-remappable; show the saved input, not a stale default.
@@ -1815,22 +1937,13 @@ void UFF_BuildToolsWidget::RefreshTools()
                         Current == EKeys::Tab ? FText::FromString(TEXT("TAB")) : Current.GetDisplayName());
                 }
         }
-    if (Row_BuildHelpRotate)
-        Row_BuildHelpRotate->SetVisibility(bPreview
-            ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    if (Row_BuildHelpRotate) Row_BuildHelpRotate->SetVisibility(ESlateVisibility::HitTestInvisible);
     if (Row_BuildHelpPrecision)
         Row_BuildHelpPrecision->SetVisibility(bPreview
             ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
     if (UWidget* NearbyHelp = GetWidgetFromName(TEXT("Row_BuildHelpNearby")))
         NearbyHelp->SetVisibility(bPreview ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-    if (Text_ActiveSnap)
-    {
-        Text_ActiveSnap->SetText(FText::Format(ActiveSnap == PreferredSnap
-            ? LOCTEXT("ActiveSnap", "현재 {0}cm") : LOCTEXT("TemporarySnap", "임시 {0}cm 적용 중"), FText::AsNumber(ActiveSnap)));
-    }
-    if (Button_Catalog)
-        if (auto* CatalogLabel = Cast<UTextBlock>(Button_Catalog->GetContent()))
-            CatalogLabel->SetText(LOCTEXT("PlacementCatalogAction", "시설 목록"));
+    if (WidgetTree) RefreshApprovedHelpRows(*WidgetTree);
     if (Text_RotationHint)
     {
         Text_RotationHint->SetText(FText::Format(ViewData.bDragPlacementEnabled
@@ -1959,12 +2072,6 @@ void UFF_BuildToolsWidget::RefreshTools()
     Enable(Button_SettingsEdgeScroll, bSession && RuntimeSettings);
     const bool bCanConfirm = bPreview && System->HasPlacementTarget() && System->IsCurrentPlacementValid();
     ViewData.bCanConfirm = bCanConfirm;
-    Enable(Button_Confirm, bCanConfirm);
-    if (Text_Confirm)
-    {
-        Text_Confirm->SetText(State == EFF_BuildModeState::Moving
-            ? LOCTEXT("ConfirmMove", "이동 확정") : LOCTEXT("ConfirmInstall", "배치 확정"));
-    }
     Enable(Button_SnapMeter, bSession);
     Enable(Button_SnapPrecision, bSession);
     Enable(Button_SnapFree, bSession);
@@ -1975,7 +2082,6 @@ void UFF_BuildToolsWidget::RefreshTools()
     Enable(Button_RotateRight, bPreview);
     Enable(Button_FreeRotateLeft, bPreview);
     Enable(Button_FreeRotateRight, bPreview);
-    Enable(Button_Catalog, bSession);
     Enable(Editable_Angle, bPreview);
     Enable(Editable_DragPlacementGap, bSession);
     Enable(Button_NudgeLeft, bPreview);
@@ -2032,7 +2138,6 @@ void UFF_BuildToolsWidget::RefreshTools()
         State == EFF_BuildModeState::CatalogOpen);
     SetChoiceState(Button_ToolbarHelp, Cast<UTextBlock>(Button_ToolbarHelp ? Button_ToolbarHelp->GetContent() : nullptr),
         bHelpExpanded);
-    SetChoiceState(Button_Confirm, Text_Confirm, bCanConfirm);
     SetChoiceState(Button_SnapMeter, Text_SnapMeter, PreferredSnap == 100);
     SetChoiceState(Button_SnapPrecision, Text_SnapPrecision, PreferredSnap == 25);
     SetChoiceState(Button_SnapFree, Text_SnapFree, PreferredSnap == 1);
@@ -2047,6 +2152,12 @@ void UFF_BuildToolsWidget::RefreshTools()
     }
     if (!IsEditingDragPlacementGap()) RefreshDragPlacementGapText();
     RefreshQueueSettingsControls();
+    // These fields are refreshed above on every projection; formatting never accumulates.
+    for (UTextBlock* Text : {Text_FacilityName.Get(), Text_Mode.Get(), Text_Cost.Get(),
+        Text_Balance.Get(), Text_Footprint.Get(), Text_Queue.Get(), Text_Audience.Get(), Text_Legend.Get()})
+        if (Text && !Text->GetText().IsEmpty())
+            if (const FText* Format = DynamicTextFormats.Find(Text->GetFName()))
+                Text->SetText(FText::Format(*Format, FFormatNamedArguments{{TEXT("Value"), Text->GetText()}}));
     BP_OnToolsStateChanged(ViewData);
 }
 
@@ -2144,10 +2255,6 @@ void UFF_BuildToolsWidget::RefreshEditingHelp()
         FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState());
     if (Button_BuildHelpUndo) Button_BuildHelpUndo->SetIsEnabled(bCanInteract && Zones && Zones->CanUndoConstruction());
     if (Button_BuildHelpRedo) Button_BuildHelpRedo->SetIsEnabled(bCanInteract && Zones && Zones->CanRedoConstruction());
-    if (auto* Undo = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_BuildHelpUndo"))))
-    {
-        Undo->SetText(LOCTEXT("UndoAction", "실행 취소"));
-    }
     if (Button_BuildHelpUndo) Button_BuildHelpUndo->SetToolTipText(LOCTEXT("UndoStrokeTip",
         "Ctrl+Z · 마지막 건설 작업을 취소합니다. 드래그 한 번으로 설치한 시설은 함께 취소됩니다."));
     const bool bQueueAvailable = bCanInteract && System->CanChooseQueueLayout();
@@ -2160,6 +2267,7 @@ void UFF_BuildToolsWidget::RefreshEditingHelp()
             System->GetQueueLayoutKeyHint());
         if (!Text_BuildHelpQueueHint->GetText().EqualTo(Hint)) Text_BuildHelpQueueHint->SetText(Hint);
     }
+    if (WidgetTree) RefreshApprovedHelpRows(*WidgetTree);
 }
 
 void UFF_BuildToolsWidget::HandleUndoConstruction()

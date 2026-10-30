@@ -30,6 +30,18 @@ class FESTAFIESTA_API UFF_FacilityLightingControls : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	/** Build mode can use a compact layout without changing this WBP's live-mode design. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Build Layout")
+	bool bUseCompactBuildLayout = true;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Build Layout", meta = (EditCondition = "bUseCompactBuildLayout", ClampMin = "32"))
+	float BuildColorWheelSize = 92.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Build Layout", meta = (EditCondition = "bUseCompactBuildLayout", ClampMin = "0"))
+	float BuildColorSwatchHeight = 32.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Build Layout", meta = (EditCondition = "bUseCompactBuildLayout", ClampMin = "0"))
+	float BuildMaximumVerticalPadding = 2.f;
+	/** Empty uses the description authored in the widget tree. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Build Layout", meta = (EditCondition = "bUseCompactBuildLayout", MultiLine = "true"))
+	FText BuildLightingDescription;
 	FFF_OnFacilityLightingRequested OnLightingRequested;
 	FFF_OnFacilityLightingRequested OnLightingRollbackRequested;
 	FFF_OnFacilityLightingResetRequested OnLightingResetRequested;

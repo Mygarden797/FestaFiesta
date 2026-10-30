@@ -130,12 +130,16 @@ bool FFF_FacilityQueueSettingsInspectorTest::RunTest(const FString& Parameters)
 	bool bInsideDetailsScroll = false;
 	for (UWidget* Parent = Section->GetParent(); Parent; Parent = Parent->GetParent())
 		if (Parent == Scroll) bInsideDetailsScroll = true;
-	if (!TestFalse(TEXT("Queue settings stay outside the details scroller"), bInsideDetailsScroll)) return false;
+	if (!TestTrue(TEXT("Queue page uses the shared details scroller"), bInsideDetailsScroll)) return false;
 	UWidget* Footer = Panel->GetWidgetFromName(TEXT("Panel_Actions"));
 	UWidget* Card = Panel->GetWidgetFromName(TEXT("Border_Panel"));
 	if (!TestNotNull(TEXT("Fixed action footer"), Footer) || !TestNotNull(TEXT("Facility card"), Card)) return false;
-	TestTrue(TEXT("Queue settings share the fixed shell with the action footer"), Section->GetParent() == Footer->GetParent());
-	TestTrue(TEXT("The basic facility page exposes queue editing"), Section->IsVisible() && Apply->GetIsEnabled());
+	TestFalse(TEXT("Basic facts no longer include queue controls"), Section->IsVisible());
+	auto* QueueTab = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_TabQueue")));
+	if (!TestNotNull(TEXT("Authored queue tab"), QueueTab)) return false;
+	QueueTab->OnClicked.Broadcast();
+	TestEqual(TEXT("Queue tab opens its own page"), Panel->GetInfoPage(), EFF_FacilityInfoPage::Queue);
+	TestTrue(TEXT("Queue page exposes editable settings"), Section->IsVisible() && Apply->GetIsEnabled());
 	TestEqual(TEXT("Initial queue capacity is six teams"), Teams->GetText().ToString(), FString(TEXT("6")));
 	TestEqual(TEXT("Initial spacing reads the actual installed value"), FCString::Atof(*Spacing->GetText().ToString()), 115.f);
 	TestEqual(TEXT("Initial width reads the actual installed value"), FCString::Atof(*Width->GetText().ToString()), 300.f);
@@ -200,10 +204,10 @@ bool FFF_FacilityQueueSettingsInspectorTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Inspector cannot recreate the removed main-stage queue"), Info->ApplySelectedQueueSettings(MainStage->GetFacilityInstanceId(), Applied));
 	if (!TestTrue(TEXT("Inspector reopens the current first facility after history"), Info->SelectFacility(Controller, First, EFF_FacilityInfoContext::Build))) return false;
 	Panel->SetInfoPage(EFF_FacilityInfoPage::Operation);
-	TestTrue(TEXT("The operation page exposes the same installed queue settings"), Section->IsVisible());
+	TestFalse(TEXT("Operation facts no longer include queue controls"), Section->IsVisible());
 	Panel->SetInfoPage(EFF_FacilityInfoPage::Synergy);
 	TestEqual(TEXT("Unrelated pages hide queue controls"), Section->GetVisibility(), ESlateVisibility::Collapsed);
-	Panel->SetInfoPage(EFF_FacilityInfoPage::Overview);
+	Panel->SetInfoPage(EFF_FacilityInfoPage::Queue);
 	TestTrue(TEXT("Repeated page changes reuse the same inputs"), Panel->GetWidgetFromName(TEXT("Editable_FacilityQueueTeams")) == Teams);
 
 	if (!FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
