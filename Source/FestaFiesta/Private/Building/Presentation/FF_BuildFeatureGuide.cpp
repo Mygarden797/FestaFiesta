@@ -16,7 +16,7 @@ const TArray<FFBuildFeatureGuide::FTopic>& FFBuildFeatureGuide::Topics()
         {TEXT("BuildSettings"), LOCTEXT("SettingsTitle", "건축 설정"), LOCTEXT("SettingsBody",
             "격자, 위치 간격, 시설 범위 등 건축에 필요한 설정을 한곳에서 조정합니다.\n\n배치 중에는 직접 조정과 회전·이동 도구를 사용할 수 있습니다. 커서 중심 확대와 화면 가장자리 이동도 취향에 맞게 켜거나 끄세요.\n\n설정을 마쳤으면 닫기를 누르거나 건축 설정 버튼을 다시 누르세요."), TEXT("Button_BuildSettings"), TEXT("Size_BuildToolbarLine5")},
         {TEXT("BuildCatalog"), LOCTEXT("CatalogTitle", "시설 목록"), LOCTEXT("CatalogBody",
-            "설치할 시설을 고르는 카탈로그를 엽니다. 분류나 검색으로 시설을 찾고 이미지를 선택하세요. 목록을 유지한 채 오른쪽 시설 설치 패널에서 비용·크기·시설 조합을 확인할 수 있습니다.\n\n목록은 위아래로 드래그하거나 휠·스크롤바로 더 볼 수 있습니다. 카드 오른쪽 아래의 별은 즐겨찾기입니다. 왼쪽 위의 빨간 별은 필수 시설, 전구는 조명, 보라색 아이콘은 프로그램 지원을 뜻합니다."), TEXT("Button_ToolbarCatalog"), TEXT("Size_BuildToolbarLine6")},
+            "설치할 시설을 고르는 카탈로그를 엽니다. 분류나 검색으로 시설을 찾고 이름·가격을 확인한 뒤 카드를 선택하세요. 목록을 유지한 채 오른쪽 시설 설치 패널에서 비용·크기·시설 조합을 확인할 수 있습니다.\n\n아이템 필터에서 필수 시설·배치 가능·프로그램 지원·조명 조건을 함께 선택할 수 있습니다. 배치 가능은 보유 금화와 설치 수 제한을 기준으로 합니다. 추천순·이름순·가격순으로 정렬하고, 초기화로 전체 목록을 다시 볼 수 있습니다.\n\n목록은 위아래로 드래그하거나 휠·스크롤바로 더 볼 수 있습니다. 카드의 별은 즐겨찾기입니다. 빨간 별은 필수 시설, 전구는 조명, 보라색 아이콘은 프로그램 지원을 뜻합니다."), TEXT("Button_ToolbarCatalog"), TEXT("Size_BuildToolbarLine6")},
         {TEXT("BuildControls"), LOCTEXT("ControlsTitle", "조작 안내"), LOCTEXT("ControlsBody",
             "좌클릭 · 시설 선택 / 설치\n우클릭 · 취소 / 선택 해제\nQ / E · 시설 회전\nB · 시설 목록\nCtrl + Z · 실행 취소\nW A S D · 카메라 이동\n\n시설 목록 위에는 자주 쓰는 여섯 가지 조작을 표시합니다. 실제 키 표시는 현재 키 설정을 따릅니다.\n\n연속 설치 시설은 누른 채 드래그하면 일정 간격으로 미리보기가 나타나고, 마우스를 놓으면 가능한 곳에 설치됩니다. Ctrl+Z로 설치한 묶음을 취소할 수 있습니다.\n\n대기열 설정은 설치된 시설을 선택한 뒤 시설 정보의 대기열 탭에서 변경하세요."), TEXT("Button_ToolbarHelp"), TEXT("Size_BuildToolbarLine7")},
         {TEXT("LightingControls"), LOCTEXT("LightingTitle", "시설 조명"), LOCTEXT("LightingBody",

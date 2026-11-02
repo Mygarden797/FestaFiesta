@@ -118,6 +118,7 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativePreConstruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;
 	virtual void NativeOnItemSelectionChanged(bool bIsSelected) override;
 	virtual void NativeOnEntryReleased() override;
@@ -226,6 +227,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States")
 	FLinearColor HoverTint = FLinearColor::FromSRGBColor(FColor(0xEE, 0xF2, 0xEF));
 
+	/** Subtle artwork motion leaves the card's hit target and grid spacing fixed. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States", meta = (ClampMin = "1.0", ClampMax = "1.1"))
+	float HoverThumbnailScale = 1.035f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States", meta = (ClampMin = "0.0", ClampMax = "6.0"))
+	float HoverThumbnailLift = 2.f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States")
 	FLinearColor SelectedTint = FLinearColor::FromSRGBColor(FColor(0xE4, 0xEE, 0xE0));
 
@@ -261,6 +269,7 @@ private:
 	void RefreshFavorite();
 	void RefreshFromItem();
 	void RefreshVisualState();
+	void ResetHoverMotion();
 	void ApplySynergyHighlight();
 	void ApplyCodexFocus();
 	void ApplyRequiredFacilityStatus();
@@ -283,6 +292,9 @@ private:
 	int32 RequiredFacilityMinimumCount = 0;
 	FSlateBrush AuthoredCardBrush;
 	FSlateBrush AuthoredThumbnailBrush;
+	FWidgetTransform AuthoredThumbnailTransform;
+	FVector2D AuthoredThumbnailPivot = FVector2D::ZeroVector;
+	float HoverMotionAlpha = 0.f;
 	FSlateColor AuthoredCostColor;
 	FSlateColor AuthoredNameColor;
 	FSlateColor AuthoredStateColor;

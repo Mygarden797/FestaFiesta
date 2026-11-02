@@ -151,7 +151,12 @@ void UFF_PrepBuildTileWidget::NativePreConstruct()
 		if (Border_ThumbnailBackdrop) { AuthoredThumbnailBrush = Border_ThumbnailBackdrop->Background; }
 		if (Text_Cost) { AuthoredCostColor = Text_Cost->GetColorAndOpacity(); }
 		if (Text_Name) { AuthoredNameColor = Text_Name->GetColorAndOpacity(); }
-		if (Image_Thumbnail) { bAuthoredThumbnailEnabled = Image_Thumbnail->GetIsEnabled(); }
+		if (Image_Thumbnail)
+		{
+			bAuthoredThumbnailEnabled = Image_Thumbnail->GetIsEnabled();
+			AuthoredThumbnailTransform = Image_Thumbnail->GetRenderTransform();
+			AuthoredThumbnailPivot = Image_Thumbnail->GetRenderTransformPivot();
+		}
 		if (Text_State) { AuthoredStateColor = Text_State->GetColorAndOpacity(); }
 		if (Text_Favorite) { AuthoredFavoriteColor = Text_Favorite->GetColorAndOpacity(); }
 		if (Button_Favorite) { AuthoredFavoriteStyle = Button_Favorite->GetStyle(); }
@@ -162,6 +167,39 @@ void UFF_PrepBuildTileWidget::NativePreConstruct()
 #if WITH_EDITOR
 	else { ApplyDesignerPreviewState(); }
 #endif
+}
+
+void UFF_PrepBuildTileWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (HoverAnimation || !Image_Thumbnail || !bCapturedAppearance || IsDesignTime()) return;
+	const bool bAnimateHover = Item && bCardHovered &&
+		Item->GetTileState() != EFF_PrepBuildTileState::BuildLimitReached;
+	const float Target = bAnimateHover ? 1.f : 0.f;
+	if (FMath::IsNearlyEqual(HoverMotionAlpha, Target, .001f))
+	{
+		if (!bAnimateHover && HoverMotionAlpha != 0.f) ResetHoverMotion();
+		return;
+	}
+	// Exponential easing is independent of frame rate and can reverse mid-motion.
+	// Only the artwork moves; the surrounding row never shifts under the pointer.
+	const float Blend = 1.f - FMath::Exp(-18.f * FMath::Clamp(InDeltaTime, 0.f, .1f));
+	HoverMotionAlpha = FMath::Lerp(HoverMotionAlpha, Target, Blend);
+	FWidgetTransform Transform = AuthoredThumbnailTransform;
+	Transform.Scale *= FMath::Lerp(1.f, HoverThumbnailScale, HoverMotionAlpha);
+	Transform.Translation.Y -= HoverThumbnailLift * HoverMotionAlpha;
+	Image_Thumbnail->SetRenderTransformPivot(FVector2D(.5f, .5f));
+	Image_Thumbnail->SetRenderTransform(Transform);
+}
+
+void UFF_PrepBuildTileWidget::ResetHoverMotion()
+{
+	HoverMotionAlpha = 0.f;
+	if (Image_Thumbnail && bCapturedAppearance)
+	{
+		Image_Thumbnail->SetRenderTransform(AuthoredThumbnailTransform);
+		Image_Thumbnail->SetRenderTransformPivot(AuthoredThumbnailPivot);
+	}
 }
 
 #if WITH_EDITOR
@@ -198,6 +236,8 @@ void UFF_PrepBuildTileWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
 	UFF_PrepBuildTileData* NewItem = Cast<UFF_PrepBuildTileData>(ListItemObject);
 	if (Item != NewItem)
 	{
+		if (HoverAnimation) StopAnimation(HoverAnimation);
+		ResetHoverMotion();
 		bCardSelected = false;
 		bCardHovered = false;
 	}
@@ -216,6 +256,7 @@ void UFF_PrepBuildTileWidget::NativeOnItemSelectionChanged(const bool bIsSelecte
 void UFF_PrepBuildTileWidget::NativeOnEntryReleased()
 {
 	if (HoverAnimation) StopAnimation(HoverAnimation);
+	ResetHoverMotion();
 	if (Border_Card) Border_Card->SetRenderOpacity(AuthoredCardOpacity);
 	Item = nullptr;
 	bCardSelected = false;
@@ -236,7 +277,7 @@ void UFF_PrepBuildTileWidget::NativeOnMouseEnter(const FGeometry& InGeometry, co
 	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
 	bCardHovered = Item != nullptr;
 	RefreshVisualState();
-	if (bCardHovered && HoverAnimation) PlayAnimation(HoverAnimation);
+	if (bCardHovered && HoverAnimation) PlayAnimationForward(HoverAnimation);
 }
 
 void UFF_PrepBuildTileWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)

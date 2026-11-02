@@ -35,6 +35,15 @@ enum class EFF_PrepBuildTileState : uint8
 	BuildLimitReached	UMETA(DisplayName = "건축 한도 도달")
 };
 
+UENUM(BlueprintType)
+enum class EFF_PrepBuildSortOrder : uint8
+{
+	Recommended UMETA(DisplayName = "추천순"),
+	Name UMETA(DisplayName = "이름순"),
+	PriceAscending UMETA(DisplayName = "낮은 가격순"),
+	PriceDescending UMETA(DisplayName = "높은 가격순")
+};
+
 /** 카탈로그 원본을 변경하지 않고 적용하는 화면 전용 필터입니다. */
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_PrepBuildFilter
@@ -60,9 +69,41 @@ struct FESTAFIESTA_API FFF_PrepBuildFilter
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Build")
 	bool bFavoritesOnly = false;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Build")
+	bool bRequiredOnly = false;
+
+	/** 권위 잔액, 유효 가격, 건축 한도를 모두 만족하는 시설만 표시합니다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Build")
+	bool bAffordableOnly = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Build")
+	bool bProgramsOnly = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Build")
+	bool bLightingOnly = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Build")
+	EFF_PrepBuildSortOrder SortOrder = EFF_PrepBuildSortOrder::Recommended;
+
 	/** Snapshot of personal preferences. Filtering never changes the authoritative catalog. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Build")
 	TSet<FName> FavoriteIds;
+
+	int32 GetActiveFilterCount() const
+	{
+		return static_cast<int32>(bFilterByCategory) + static_cast<int32>(!MinorToken.IsNone())
+			+ static_cast<int32>(!SearchText.TrimStartAndEnd().IsEmpty()) + static_cast<int32>(bFavoritesOnly)
+			+ static_cast<int32>(bRequiredOnly) + static_cast<int32>(bAffordableOnly)
+			+ static_cast<int32>(bProgramsOnly) + static_cast<int32>(bLightingOnly);
+	}
+
+	/** 즐겨찾기 저장값은 유지하며 화면 조건과 정렬만 초기화합니다. */
+	void ResetSelections()
+	{
+		TSet<FName> SavedFavorites = MoveTemp(FavoriteIds);
+		*this = FFF_PrepBuildFilter();
+		FavoriteIds = MoveTemp(SavedFavorites);
+	}
 };
 
 /** 패널이 한 번에 적용할 목록/빈 상태 스냅샷입니다. */

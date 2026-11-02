@@ -18,11 +18,14 @@ struct FESTAFIESTA_API FFF_PrepBuildPresentationRules
 	static FText ResolveCategoryDisplayName(EFFZSFacilityCategory Category);
 	static FText ResolveMinorDisplayName(FName MinorToken);
 	static FText ResolveCategoryPathText(EFFZSFacilityCategory Category, FName MinorToken);
+	static FText ResolveSortDisplayName(EFF_PrepBuildSortOrder SortOrder);
 
 	/** 유효 ID, 대분류, 소분류, 검색어를 모두 만족하는지 판정합니다. */
 	static bool IsEntryVisible(
 		const FFF_BuildCatalogEntry& Entry,
-		const FFF_PrepBuildFilter& Filter);
+		const FFF_PrepBuildFilter& Filter,
+		int32 Gold = 0,
+		bool bHasAuthoritativeGold = false);
 
 	/** 표시명이 비었을 때 UniqueNameToken, 정의 ID 순으로 안전하게 대체합니다. */
 	static FText ResolveDisplayName(const FFF_BuildCatalogEntry& Entry);

@@ -41,7 +41,7 @@ void UFF_PrepBuildPresentationModel::Reconcile(
 
 		// 로딩/실패 중에는 이전 프레임 목록을 눌러 배치하지 못하게 본문을 비웁니다.
 		if (LoadState == EFF_BuildCatalogLoadState::Ready
-			&& FFF_PrepBuildPresentationRules::IsEntryVisible(Entry, Filter))
+			&& FFF_PrepBuildPresentationRules::IsEntryVisible(Entry, Filter, Gold, bHasAuthoritativeGold))
 		{
 			VisibleTiles.Add(Tile);
 		}
@@ -60,7 +60,20 @@ void UFF_PrepBuildPresentationModel::Reconcile(
 	// category/search/favorite choices retain their existing ordering and membership.
 	const bool bPrioritizeRequired = !Filter.bFilterByCategory && Filter.MinorToken.IsNone() &&
 		!Filter.bFavoritesOnly && Filter.SearchText.TrimStartAndEnd().IsEmpty();
-	if (bPrioritizeRequired || !SynergyHighlightIds.IsEmpty())
+	if (Filter.SortOrder != EFF_PrepBuildSortOrder::Recommended)
+	{
+		VisibleTiles.StableSort([SortOrder = Filter.SortOrder](const UFF_PrepBuildTileData& A, const UFF_PrepBuildTileData& B)
+		{
+			if (SortOrder == EFF_PrepBuildSortOrder::Name)
+				return A.GetDisplayName().CompareTo(B.GetDisplayName()) < 0;
+			// An unresolved price is never displayed as free, including descending order.
+			if (A.HasResolvedCost() != B.HasResolvedCost()) return A.HasResolvedCost();
+			if (!A.HasResolvedCost()) return false;
+			return SortOrder == EFF_PrepBuildSortOrder::PriceDescending
+				? A.GetInstallCost() > B.GetInstallCost() : A.GetInstallCost() < B.GetInstallCost();
+		});
+	}
+	else if (bPrioritizeRequired || !SynergyHighlightIds.IsEmpty())
 	{
 		VisibleTiles.StableSort([bPrioritizeRequired](const UFF_PrepBuildTileData& A, const UFF_PrepBuildTileData& B)
 		{
