@@ -33,10 +33,21 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFBuildingAssetRelocation, Log, All);
 
 namespace FFBuildingAssetRelocation
 {
+// 기존 폴더 이관 기록과 이번 파일명 정리를 분리한다. 두 명령은 같은 참조 검증·저장 경로를 사용한다.
+static bool GFilenameCleanup = false;
 static FString WorkDir()
-{ return FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("BuildingAssetRelocation_20260921")); }
+{ return FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() /
+    (GFilenameCleanup ? TEXT("SourceOrganization/FixContracts/AssetFilenameRename") : TEXT("BuildingAssetRelocation_20260921"))); }
 static FString ObjectPath(const FString& Package)
 { return Package + TEXT(".") + FPackageName::GetLongPackageAssetName(Package); }
+
+static FString WithoutCodex(FString Name)
+{
+    Name.ReplaceInline(TEXT("Codex"), TEXT(""), ESearchCase::IgnoreCase);
+    while (Name.Contains(TEXT("__"))) Name.ReplaceInline(TEXT("__"), TEXT("_"));
+    while (Name.EndsWith(TEXT("_"))) Name.LeftChopInline(1);
+    return Name;
+}
 
 struct FEntry
 {
@@ -138,9 +149,15 @@ static bool ReadAndPreflight(FRun& Run, IAssetRegistry& Registry, bool RequireMo
         const bool Data = Entry.Old.StartsWith(TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/"));
         const FString DestinationRoot = Data ? TEXT("/Game/FestaFiesta/Building/FF_Data_Building/")
             : TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/");
+        const bool ValidName = GFilenameCleanup
+            ? Entry.Old.StartsWith(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/")) &&
+                FPackageName::GetLongPackagePath(Entry.Old) == FPackageName::GetLongPackagePath(Entry.New) &&
+                FPackageName::GetLongPackageAssetName(Entry.Old).Contains(TEXT("Codex"), ESearchCase::IgnoreCase) &&
+                WithoutCodex(FPackageName::GetLongPackageAssetName(Entry.Old)) == FPackageName::GetLongPackageAssetName(Entry.New)
+            : FPackageName::GetLongPackageAssetName(Entry.Old) == FPackageName::GetLongPackageAssetName(Entry.New);
         if (!FPackageName::IsValidLongPackageName(Entry.Old) || !FPackageName::IsValidLongPackageName(Entry.New) ||
             !Entry.Old.StartsWith(TEXT("/Game/")) || !Entry.New.StartsWith(DestinationRoot) ||
-            Entry.Old == Entry.New || FPackageName::GetLongPackageAssetName(Entry.Old) != FPackageName::GetLongPackageAssetName(Entry.New) ||
+            Entry.Old == Entry.New || !ValidName ||
             Sources.Contains(FName(Entry.Old)) || Destinations.Contains(FName(Entry.New)))
             return Run.Error(FString::Printf(TEXT("Invalid, duplicate, out-of-scope or asset-name-changing mapping: %s -> %s"), *Entry.Old, *Entry.New));
         Sources.Add(FName(Entry.Old)); Destinations.Add(FName(Entry.New));
@@ -188,8 +205,8 @@ static TMap<FSoftObjectPath, FSoftObjectPath> RedirectMap(const FRun& Run)
         if (Cast<UBlueprint>(Entry.Asset))
         {
             Map.Add(FSoftObjectPath(Old + TEXT("_C")), FSoftObjectPath(New + TEXT("_C")));
-            Map.Add(FSoftObjectPath(Entry.Old + TEXT(".Default__") + Entry.Asset->GetName() + TEXT("_C")),
-                FSoftObjectPath(Entry.New + TEXT(".Default__") + Entry.Asset->GetName() + TEXT("_C")));
+            Map.Add(FSoftObjectPath(Entry.Old + TEXT(".Default__") + FPackageName::GetLongPackageAssetName(Entry.Old) + TEXT("_C")),
+                FSoftObjectPath(Entry.New + TEXT(".Default__") + FPackageName::GetLongPackageAssetName(Entry.New) + TEXT("_C")));
         }
     }
     return Map;
@@ -372,7 +389,7 @@ static void Move()
     AssetTools.RenameReferencingSoftObjectPaths(NativePackages, Map);
     TArray<FAssetRenameData> Renames;
     for (const FEntry& Entry : Run.Entries)
-        if (!Entry.AlreadyMoved) Renames.Emplace(Entry.Asset, FPackageName::GetLongPackagePath(Entry.New), Entry.Asset->GetName());
+        if (!Entry.AlreadyMoved) Renames.Emplace(Entry.Asset, FPackageName::GetLongPackagePath(Entry.New), FPackageName::GetLongPackageAssetName(Entry.New));
     Run.Report->SetNumberField(TEXT("requested_renames"), Renames.Num());
     const bool Renamed = Renames.IsEmpty() || AssetTools.RenameAssets(Renames);
     Run.Report->SetBoolField(TEXT("rename_api_result"), Renamed);
@@ -451,5 +468,24 @@ static FAutoConsoleCommand MoveCommand(TEXT("FF.MoveBuildingAssets"),
 static FAutoConsoleCommand FixupCommand(TEXT("FF.FixupBuildingAssetRedirectors"),
     TEXT("After the path rewrite/rebuild, resave manifest referencers and remove only redirectors proven to have no remaining referencers."),
     FConsoleCommandDelegate::CreateStatic(&Fixup));
+
+static void RenameBuildingFiles()
+{
+    TGuardValue<bool> Scope(GFilenameCleanup, true);
+    Move();
+}
+
+static void FixupRenamedBuildingFiles()
+{
+    TGuardValue<bool> Scope(GFilenameCleanup, true);
+    Fixup();
+}
+
+static FAutoConsoleCommand FilenameCommand(TEXT("FF.RemoveCodexFromBuildingFilenames"),
+    TEXT("Remove only Codex from manifest asset names; preserve class identities and save all verified referencers."),
+    FConsoleCommandDelegate::CreateStatic(&RenameBuildingFiles));
+static FAutoConsoleCommand FilenameFixupCommand(TEXT("FF.FixupRenamedBuildingFiles"),
+    TEXT("Resave renamed building asset references and remove only redirectors with no remaining referencers."),
+    FConsoleCommandDelegate::CreateStatic(&FixupRenamedBuildingFiles));
 }
 #endif

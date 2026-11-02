@@ -212,14 +212,14 @@ bIsChild는 “이 캐릭터가 아이인가요?”라는 체크칸에 기본값
 	- Source/FestaFiesta/Private/UI/Minigame/FF_SurfingSceneActor.cpp
 	- Source/FestaFiesta/Public/UI/Minigame/FF_SurfingSceneActor.h
 	**구역 진단**
-	- Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSZoneAccessSubsystem.cpp
+	- Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSZoneAccessSubsystem.cpp
 	- Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSZoneAccessSubsystem.h
-	- Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSZoneAccessDiagnosticsTests.cpp
+	- Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSZoneAccessDiagnosticsTests.cpp
 	**카탈로그**
 	- Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSFacilityDefinition.h
 	- Source/FestaFiesta/Private/Building/FF_BuildCatalogSubsystem.cpp
 	- Source/FestaFiesta/Public/Building/FF_BuildCatalogSubsystem.h
-	- Source/FestaFiesta/Private/Building/FF_BuildCatalogRetirementTests.cpp
+	- Source/FestaFiesta/Private/Building/Tests/FF_BuildCatalogRetirementTests.cpp
 	**에셋**
 	- Content/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodTruck_Taco.uasset
 	- Content/FestaFiesta/Building/Guide/WBP_FF_BuildModeGuide.uasset

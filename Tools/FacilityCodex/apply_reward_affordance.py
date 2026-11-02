@@ -14,8 +14,8 @@ CONTENT = ROOT / 'Content'
 OUT = ROOT / 'Saved/FacilityCodexRewardAffordance_20260921'
 CODEX = '/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/'
 VERSION = 'FF.FacilityCodex.RewardAffordance20260921.1'
-PATHS = [CODEX + 'WBP_FF_FacilityCodex' + role for role in ('Screen', 'Card')]
-PATHS += [CODEX + 'Materials/' + name for name in ('M_FF_CodexRewardIridescent', 'MI_FF_CodexReward_LockedGift')]
+PATHS = [CODEX + 'WBP_FF_Facility' + role for role in ('Screen', 'Card')]
+PATHS += [CODEX + 'Materials/' + name for name in ('M_FF_RewardIridescent', 'MI_FF_Reward_LockedGift')]
 
 
 def file_for(path):
@@ -44,7 +44,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 owned = {file_for(path) for path in PATHS}
 for path in owned:
     if not path.exists():
-        assert path.name == "MI_FF_CodexReward_LockedGift.uasset", str(path)
+        assert path.name == "MI_FF_Reward_LockedGift.uasset", str(path)
         continue
     backup = OUT / 'before_assets' / path.relative_to(CONTENT)
     backup.parent.mkdir(parents=True, exist_ok=True)
@@ -57,7 +57,7 @@ for name in ('FacilityCodexShowcaseDiscovered1080.png', 'ProductionCodex720.png'
         shutil.copy2(source, target)
 protected = {p: digest(p) for folder in (CONTENT / 'FestaFiesta', CONTENT / 'Asset/Font')
              for p in folder.rglob('*.uasset') if p not in owned}
-blueprints = {role: unreal.load_asset(CODEX + 'WBP_FF_FacilityCodex' + role) for role in ('Screen', 'Card')}
+blueprints = {role: unreal.load_asset(CODEX + 'WBP_FF_Facility' + role) for role in ('Screen', 'Card')}
 before_trees = {role: topology(widgets(bp)) for role, bp in blueprints.items()}
 for attempt in range(2):
     runpy.run_path(str(ROOT / 'Tools/FacilityCodex/apply_reward_affordance_materials.py'), run_name='__main__')

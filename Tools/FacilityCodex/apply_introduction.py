@@ -20,9 +20,9 @@ OUT = ROOT / "Saved/FacilityCodexIntroduction"
 RUN = OUT / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
 FOLDER = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/"
 PACKAGES = {
-    "Launcher": FOLDER + "WBP_FF_FacilityCodexLauncher",
-    "CatalogLauncher": FOLDER + "WBP_FF_FacilityCodexCatalogLauncher",
-    "Screen": FOLDER + "WBP_FF_FacilityCodexScreen",
+    "Launcher": FOLDER + "WBP_FF_FacilityLauncher",
+    "CatalogLauncher": FOLDER + "WBP_FF_FacilityCatalogLauncher",
+    "Screen": FOLDER + "WBP_FF_FacilityScreen",
 }
 TARGETS = {role: ROOT / "Content" / (package.removeprefix("/Game/") + ".uasset")
            for role, package in PACKAGES.items()}

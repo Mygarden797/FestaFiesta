@@ -37,7 +37,7 @@ public class FestaFiesta : ModuleRules
 			PrivateDependencyModuleNames.AddRange(new string[]
 			{
 				// 입력 테스트는 가벼운 FViewport를, 콘텐츠 테스트는 에셋 목록을 사용한다.
-				"AssetTools", "UnrealEd", "UMGEditor", "RenderCore", "AssetRegistry"
+				"UnrealEd", "UMGEditor", "RenderCore", "AssetRegistry"
 			});
 		}
 	}

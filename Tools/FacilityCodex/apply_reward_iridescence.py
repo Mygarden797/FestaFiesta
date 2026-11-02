@@ -14,13 +14,13 @@ ROOT = Path(unreal.Paths.project_dir()).resolve()
 OUT = ROOT / "Saved/FacilityCodexRewardIridescence_20260921"
 UI = ROOT / "Content/FestaFiesta/Building/FF_WBP_Building"
 UI_ROOTS = (ROOT / "Content/FestaFiesta/UI", UI)
-CARD = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"
-CARD_FILE = UI / "FacilityCodex/WBP_FF_FacilityCodexCard.uasset"
+CARD = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCard"
+CARD_FILE = UI / "FacilityCodex/WBP_FF_FacilityCard.uasset"
 MATERIAL_DIR = UI / "FacilityCodex/Materials"
 MATERIAL_PATH = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials/"
 OWNED_MATERIAL_FILES = [MATERIAL_DIR / (name + ".uasset") for name in
-                        ("M_FF_CodexRewardIridescent", "MI_FF_CodexReward_Ready", "MI_FF_CodexReward_Hover",
-                         "MI_FF_CodexReward_Pressed", "MI_FF_CodexReward_Claimed")]
+                        ("M_FF_RewardIridescent", "MI_FF_Reward_Ready", "MI_FF_Reward_Hover",
+                         "MI_FF_Reward_Pressed", "MI_FF_Reward_Claimed")]
 
 
 def digest(path):
@@ -36,8 +36,8 @@ def verify():
     style = owned["Button_ClaimReward"].get_editor_property("widget_style")
     for brush_name, state in (("normal", "Ready"), ("hovered", "Hover"), ("pressed", "Pressed"), ("disabled", "Claimed")):
         resource = style.get_editor_property(brush_name).get_editor_property("resource_object")
-        assert resource == unreal.load_asset(MATERIAL_PATH + "MI_FF_CodexReward_" + state), brush_name
-    claimed = unreal.load_asset(MATERIAL_PATH + "MI_FF_CodexReward_Claimed")
+        assert resource == unreal.load_asset(MATERIAL_PATH + "MI_FF_Reward_" + state), brush_name
+    claimed = unreal.load_asset(MATERIAL_PATH + "MI_FF_Reward_Claimed")
     assert owned["Border_RewardClaimed"].get_editor_property("background").get_editor_property("resource_object") == claimed
     assert unreal.MaterialEditingLibrary.get_material_instance_scalar_parameter_value(claimed, "MotionStrength") == 0.0
     assert str(owned["Text_ClaimReward"].get_text()) == "받기"

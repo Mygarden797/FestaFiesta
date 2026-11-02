@@ -1,5 +1,6 @@
 #include "MapOverview/FF_MapOverviewGameBridgeSubsystem.h"
 
+// 플러그인은 게임의 구체 타입을 모른다. 이 파일에서만 게임 API로 요청을 번역한다.
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/WidgetTree.h"
@@ -7,8 +8,6 @@
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Camera/FF_OverviewCameraPawn.h"
-#include "Components/OverlaySlot.h"
-#include "Components/PanelWidget.h"
 #include "Components/Button.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
@@ -31,6 +30,7 @@ namespace
         float AddedWidth = 0.f;
         bool bAdjustedWidth = false;
     };
+    // 툴바 재생성·월드 전환 뒤에도 위젯을 살려 두지 않는다. 다음 장착 때 만료된 기록을 정리한다.
     TMap<TWeakObjectPtr<UUserWidget>, FToolbarMount> ToolbarMounts;
 
     struct FToolbarSlot

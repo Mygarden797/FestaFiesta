@@ -23,7 +23,7 @@
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Festival/FF_FestivalSettings.h"
 #include "Misc/AutomationTest.h"
-#include "Building/FF_FacilityUpgradeTestPolicy.h"
+#include "Building/Tests/FF_FacilityUpgradeTestPolicy.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 

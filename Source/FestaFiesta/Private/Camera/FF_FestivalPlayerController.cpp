@@ -22,7 +22,7 @@
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
-#include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Building/FacilityInfo/FF_FacilityInfoSubsystem.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Input/CommonUIActionRouterBase.h"
 #include "UnrealClient.h"

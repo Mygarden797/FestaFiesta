@@ -16,7 +16,7 @@
 #include "EngineUtils.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Tutorial/FF_TutorialMarker.h"
-#include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "Building/FacilityInfo/FF_FacilityInfoPanel.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildCategoryChoice.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"

@@ -4,7 +4,7 @@
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSQueueGeometry.h"
 #include "FF_FFZSWorldSubsystem.h"
-#include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Building/FacilityInfo/FF_FacilityInfoSubsystem.h"
 
 bool UFF_BuildModeSubsystem::CanUndoBuildEdit() const
 {

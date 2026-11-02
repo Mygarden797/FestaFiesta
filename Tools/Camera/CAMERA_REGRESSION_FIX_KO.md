@@ -345,7 +345,7 @@ strict 옵션과 높이 보존 개선은 해당 동작의 개선으로 남긴다
 |---|---|
 | [repair_camera_zone_parents.py](../../Tools/Build/repair_camera_zone_parents.py) | `Test_Main`에만 적용하는 재실행 가능한 이관 도구다. 예상한 13개 ID와 관리 부모를 확인하고 적용 전에 맵을 백업한다. |
 | `Content/FestaFiesta/Maps/Test_Main.umap` | 13개 Zone의 부모 연결을 해제한다. 원본의 모든 액터 월드 Transform, Zone의 월드 폴리곤·출입 앵커·Outliner 폴더를 비교해 보존한 상태에서 저장한다. |
-| [FFZAAuthoredZone.cpp](../../Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAAuthoredZone.cpp) | `CollectAuthoringIssues`에 런타임 Zone의 에디터 전용 조상 검사를 추가한다. 직접 부모 액터뿐 아니라 전체 SceneComponent 부모 체인의 컴포넌트와 소유 액터를 확인한다. |
+| [FFZAAuthoredZone.cpp](../../Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Layout/FFZAAuthoredZone.cpp) | `CollectAuthoringIssues`에 런타임 Zone의 에디터 전용 조상 검사를 추가한다. 직접 부모 액터뿐 아니라 전체 SceneComponent 부모 체인의 컴포넌트와 소유 액터를 확인한다. |
 
 제작 검사에서는 런타임 Zone이 에디터 전용 조상에 연결돼 있으면, Cook 시 월드 위치가 바뀔 수 있다는 오류와 `Keep World` 분리·Outliner 폴더 사용 안내를 제공한다. 단순히 이번 맵만 고치는 데 그치지 않고 같은 구조를 다시 만들었을 때 발견하기 위한 변경이다. 엔진의 `UWorld::IsDataValid`가 맵 액터 검사를 호출하므로 패키징 전 에셋 검증에도 연결된다. 수정한 맵을 포함한 이번 에셋 검증은 오류 0건·경고 0건으로 완료했다.
 

@@ -14,7 +14,7 @@ import unreal
 
 
 FOLDER = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials"
-BASE_NAME = "M_FF_CodexRewardIridescent"
+BASE_NAME = "M_FF_RewardIridescent"
 VERSION_KEY = "FF.FacilityCodex.RewardIridescenceVersion"
 VERSION = "1"
 
@@ -184,7 +184,7 @@ def create_materials():
     material = create_base(asset_tools, lib)
     result = {"Base": material}
     for state_name, overrides in STATES.items():
-        name = "MI_FF_CodexReward_" + state_name
+        name = "MI_FF_Reward_" + state_name
         instance = existing_owned(name)
         if not instance:
             instance = asset_tools.create_asset(

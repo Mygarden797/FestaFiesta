@@ -11,7 +11,7 @@ Owned assets are versioned; subsequent runs leave their saved bytes unchanged.
 import unreal
 
 FOLDER = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials"
-BASE_NAME = "M_FF_CodexFestivalSurface"
+BASE_NAME = "M_FF_FestivalSurface"
 VERSION_KEY = "FF.FacilityCodex.FestivalSurfaceVersion"
 VERSION = "1"
 DEFAULTS = {"SurfaceRole": 0.0, "Aspect": 20.625, "MotionStrength": 1.0}
@@ -156,7 +156,7 @@ def create_materials():
     material = create_base(tools, lib)
     result = {"Base": material}
     for state, overrides in STATES.items():
-        name = "MI_FF_CodexFestival_" + state
+        name = "MI_FF_Festival_" + state
         instance = existing_owned(name)
         if not instance:
             instance = tools.create_asset(name, FOLDER, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())

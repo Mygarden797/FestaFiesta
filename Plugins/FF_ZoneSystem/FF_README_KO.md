@@ -1,5 +1,30 @@
 # FF_ZoneSystem 기능 상세 가이드
 
+## 소스 탐색과 테스트
+
+`Source/FF_ZoneSystem/Public`는 게임·다른 플러그인이 사용하는 공개 계약이다.
+이 헤더의 경로, UObject 이름, 저장 스키마를 유지하고 내부 구현을 아래처럼 관리한다.
+
+| `Private` 하위 폴더 | 책임 |
+| --- | --- |
+| `Audience` | 관람 공간과 관객 수용량 |
+| `Facility` | 시설 정의·액터·조명 |
+| `Geometry` | 영역·회전 사각형·표시 기하 |
+| `Grid` | 배치 격자·지면 표본 |
+| `Placement` | 배치 미리보기·보호 영역·지형 추종 |
+| `Queue` | 대기열·동선·대기열 내비게이션 영역 |
+| `World` | 명령·실행 이력·지역·공간 인덱스 |
+
+각 기능의 단위 테스트는 해당 폴더의 `Tests`에 둔다. 여러 기능이 공유하는
+월드 픽스처만 `Public/Tests`와 `Private/Tests`에 둔다.
+에디터 속성창·검증과 그 테스트는 `FF_ZoneSystemEditor/Private/Facility`,
+`Audience`, `Navigation`에서 관리한다.
+
+월드·콘텐츠 통합 검증은 별도 `FF_ZoneSystemTests` 에디터 모듈에 유지하고
+같은 기능명으로 묶는다. 공용 픽스처는 그 모듈의 `Private/Support`에 둔다.
+게임 패키지가 테스트 모듈이나 프로젝트 전용 테스트 데이터에 의존하지 않게 하기 위한 경계다.
+검증할 때는 `FF_ZoneSystem` 자동화 그룹을 실행한다.
+
 > **2026-10-07 타일 기초 바닥:** Tile은 전용 경사·높이 차 기준(89도·2000cm)과 바닥 최고점 검사를 사용해 수평으로 설치된다. Road와 일반 시설의 기준은 15도·80cm다. 건축 구역·NoBuild·점유 제한은 유지된다. [비전공자용 타일 안내](../../Collaboration/TileFoundation_UserGuide_KO.md)에 설정, 메시 지면 태그, 확인 절차를 정리했다.
 
 > **2026-09-26 빌드·성능 정리:** 단순 기하 API는 필요한 타입만 선언하고, 관객 조회 API는 관람 데이터만 포함한다.
@@ -1786,21 +1811,21 @@ Spawn/Despawn을 구현하지 않는다. 프로젝트 NPC가 `IFFZSQueueAgent` C
 
 | 관심 영역 | 먼저 볼 파일 |
 |---|---|
-| 공통 enum, Command, Result, Snapshot 구조체 | `Source/FF_ZoneSystem/Public/FF_FFZSTypes.h`, `Source/FF_ZoneSystem/Private/FF_FFZSTypes.cpp` |
-| Registry, Placement, Command, Policy, Snapshot, Read Model | `Source/FF_ZoneSystem/Public/FF_FFZSWorldSubsystem.h`, `Source/FF_ZoneSystem/Private/FF_FFZSWorldSubsystem.cpp` |
-| Zone 경계·규칙·그래프 | `Source/FF_ZoneSystem/Public/FF_FFZSZoneActor.h`, `Source/FF_ZoneSystem/Private/FF_FFZSZoneActor.cpp` |
-| Protected Area | `Source/FF_ZoneSystem/Public/FF_FFZSProtectedArea.h`, `Source/FF_ZoneSystem/Private/FF_FFZSProtectedArea.cpp` |
-| Facility Definition 검증·Asset ID | `Source/FF_ZoneSystem/Public/FF_FFZSFacilityDefinition.h`, `Source/FF_ZoneSystem/Private/FF_FFZSFacilityDefinition.cpp` |
+| 공통 enum, Command, Result, Snapshot 구조체 | `Source/FF_ZoneSystem/Public/FF_FFZSTypes.h`, `Source/FF_ZoneSystem/Private/World/FF_FFZSTypes.cpp` |
+| Registry, Placement, Command, Policy, Snapshot, Read Model | `Source/FF_ZoneSystem/Public/FF_FFZSWorldSubsystem.h`, `Source/FF_ZoneSystem/Private/World/FF_FFZSWorldSubsystem.cpp` |
+| Zone 경계·규칙·그래프 | `Source/FF_ZoneSystem/Public/FF_FFZSZoneActor.h`, `Source/FF_ZoneSystem/Private/World/FF_FFZSZoneActor.cpp` |
+| Protected Area | `Source/FF_ZoneSystem/Public/FF_FFZSProtectedArea.h`, `Source/FF_ZoneSystem/Private/Placement/FF_FFZSProtectedArea.cpp` |
+| Facility Definition 검증·Asset ID | `Source/FF_ZoneSystem/Public/FF_FFZSFacilityDefinition.h`, `Source/FF_ZoneSystem/Private/Facility/FF_FFZSFacilityDefinition.cpp` |
 | Runtime Facility와 Anchor | `Source/FF_ZoneSystem/Public/FF_FFZSFacilityActor.h`, `Source/FF_ZoneSystem/Public/FF_FFZSFacilityAnchorComponent.h` |
-| Queue 상태 머신 | `Source/FF_ZoneSystem/Public/FF_FFZSQueueComponent.h`, `Source/FF_ZoneSystem/Private/FF_FFZSQueueComponent.cpp` |
+| Queue 상태 머신 | `Source/FF_ZoneSystem/Public/FF_FFZSQueueComponent.h`, `Source/FF_ZoneSystem/Private/Queue/FF_FFZSQueueComponent.cpp` |
 | Queue Agent 계약 | `Source/FF_ZoneSystem/Public/FF_FFZSQueueAgent.h` (cpp는 2026-09-26에 제거) |
-| 1 cm 격자 연산·명령 지문 | `Source/FF_ZoneSystem/Public/FF_FFZSGridLibrary.h`, `Source/FF_ZoneSystem/Private/FF_FFZSGridLibrary.cpp` |
+| 1 cm 격자 연산·명령 지문 | `Source/FF_ZoneSystem/Public/FF_FFZSGridLibrary.h`, `Source/FF_ZoneSystem/Private/Grid/FF_FFZSGridLibrary.cpp` |
 | 외부 정책 계약 | `Source/FF_ZoneSystem/Public/FF_FFZSExternalPolicy.h` (cpp는 2026-09-26에 제거) |
-| Preview | `Source/FF_ZoneSystem/Public/FF_FFZSPlacementPreviewActor.h`, `Source/FF_ZoneSystem/Private/FF_FFZSPlacementPreviewActor.cpp` |
-| Settings | `Source/FF_ZoneSystem/Public/FF_FFZSDeveloperSettings.h`, `Source/FF_ZoneSystem/Private/FF_FFZSDeveloperSettings.cpp` |
-| Runtime Unit Test | `Source/FF_ZoneSystem/Private/Tests/` |
+| Preview | `Source/FF_ZoneSystem/Public/FF_FFZSPlacementPreviewActor.h`, `Source/FF_ZoneSystem/Private/Placement/FF_FFZSPlacementPreviewActor.cpp` |
+| Settings | `Source/FF_ZoneSystem/Public/FF_FFZSDeveloperSettings.h`, `Source/FF_ZoneSystem/Private/World/FF_FFZSDeveloperSettings.cpp` |
+| Runtime Unit Test | `Source/FF_ZoneSystem/Private/<기능>/Tests/` |
 | 자동화 전용 시설 Fixture | `Source/FF_ZoneSystem/Public/Tests/FF_FFZSTestFixtures.h`, `Source/FF_ZoneSystem/Private/Tests/FF_FFZSTestFixtures.cpp` |
-| Editor Integration·SaveGame Test | `Source/FF_ZoneSystemTests/Private/` |
+| Editor Integration·SaveGame Test | `Source/FF_ZoneSystemTests/Private/<기능>/` |
 
 이 문서는 현재 소스 구현을 기준으로 작성되었다. API, Snapshot Schema, 단위 계약 또는
 Phase 규칙을 바꾸면 관련 자동화 테스트와 이 문서를 같은 변경에서 함께 갱신해야 한다.

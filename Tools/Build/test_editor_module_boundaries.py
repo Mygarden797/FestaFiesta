@@ -36,7 +36,7 @@ class EditorModuleBoundaryTests(unittest.TestCase):
 
     def test_authoring_helpers_remain_editor_private(self):
         for relative in ("UI/Core/FF_UIWbpBuilderCommon.h", "UI/Frontend/FF_FrontendCasualBuilder.h",
-                         "UI/Facility/FF_FacilityInfoWbpBuilder.h"):
+                         "Building/FacilityInfo/FF_FacilityInfoWbpBuilder.h"):
             with self.subTest(header=relative):
                 self.assertTrue((EDITOR / "Private" / relative).is_file(), relative)
                 self.assertFalse((RUNTIME / "Private" / relative).exists(), relative)

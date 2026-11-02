@@ -20,7 +20,7 @@
 
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
-#include "Building/Codex/FF_FacilityCodexSubsystem.h"
+#include "Building/FacilityCollection/FF_FacilitySubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Camera/FF_CameraTypes.h"
 #include "Camera/FF_FestivalPlayerController.h"

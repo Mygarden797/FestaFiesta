@@ -18,7 +18,7 @@
 #include "FF_FFZSFacilityActor.h"
 #include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "UI/FF_UILog.h"
-#include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Building/FacilityInfo/FF_FacilityInfoSubsystem.h"
 #include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "UI/PrepHUD/Panels/FF_PrepRecommendedFacilityRow.h"

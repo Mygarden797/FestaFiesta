@@ -7,14 +7,17 @@
 
 class AFFZSPlacementPreviewActor;
 
-// Mutates live widget instances only. Authored teammate assets remain untouched.
+// 실행 중인 건축 툴바에만 전체 지도 버튼을 붙인다. 해제할 때 원래 폭과 슬롯 배치를 복구한다.
 namespace FFMapOverviewToolbar
 {
     FESTAFIESTA_API bool AttachAfterGridToRow(UUserWidget& Tools, UUserWidget& Addon);
     FESTAFIESTA_API void DetachFromRow(UUserWidget& Tools, UUserWidget& Addon);
 }
 
-// Optional presentation adapter. No existing team implementation or asset is overridden.
+/**
+ * 지도 플러그인의 추상 계약을 프로젝트의 HUD·건축·카메라 API로 연결한다.
+ * 엔진 수명이 월드보다 길기 때문에 아래 캐시는 약한 참조만 보관하며, 종료 시 모듈 기능 등록을 해제한다.
+ */
 UCLASS()
 class FESTAFIESTA_API UFF_MapOverviewGameBridgeSubsystem final : public UEngineSubsystem,
     public IFFMapOverviewBridge

@@ -51,8 +51,8 @@
 |---|---|
 | `Plugins/FF_ZoneSystem/.../FF_FFZSWorldSubsystem.h/.cpp` | 인원 보고 함수가 "받았다/못 받았다"를 알려주도록 수정. 등록된 구역 목록을 싸게 얻는 함수 추가 |
 | `Source/FestaFiesta/Public/Zone/FF_ZonePopulationBridgeSubsystem.h` (신규) | 인원 집계 담당의 설계와 계약 |
-| `Source/FestaFiesta/Private/Zone/FF_ZonePopulationBridgeSubsystem.cpp` (신규) | 실제 집계·보고와 확인용 콘솔 명령 |
-| `Source/FestaFiesta/Private/Zone/FF_ZonePopulationBridgeTests.cpp` (신규) | 자동 검사 4종 |
+| `Source/FestaFiesta/Private/Zone/Population/FF_ZonePopulationBridgeSubsystem.cpp` (신규) | 실제 집계·보고와 확인용 콘솔 명령 |
+| `Source/FestaFiesta/Private/Zone/Population/Tests/FF_ZonePopulationBridgeTests.cpp` (신규) | 자동 검사 4종 |
 
 ---
 

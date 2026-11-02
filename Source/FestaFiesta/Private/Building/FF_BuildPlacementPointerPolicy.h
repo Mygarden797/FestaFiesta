@@ -7,6 +7,7 @@ class FWidgetPath;
 
 namespace FFBuildPlacementPointer
 {
-	// Classifies only the current hit path. The caller owns viewport bounds and focus checks.
+	// 현재 Slate 히트 경로에 입력을 소유한 UI가 있는지만 판정한다.
+	// 뷰포트 밖 포인터와 키보드 포커스 판정은 BuildModeSubsystem에서 먼저 처리한다.
 	bool IsBlockedByUiPath(const FWidgetPath& Path);
 }

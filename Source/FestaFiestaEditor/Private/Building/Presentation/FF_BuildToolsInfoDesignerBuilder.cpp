@@ -16,7 +16,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
-#include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "Building/FacilityInfo/FF_FacilityInfoPanel.h"
 #include "UObject/MetaData.h"
 #include "UObject/Package.h"
 #include "UObject/UnrealType.h"

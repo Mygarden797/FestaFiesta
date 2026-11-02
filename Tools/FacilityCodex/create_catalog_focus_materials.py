@@ -69,7 +69,7 @@ def create_materials():
     unreal.EditorAssetLibrary.make_directory(FOLDER)
     asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
     lib = unreal.MaterialEditingLibrary
-    name = "M_FF_CodexCatalogFocus"
+    name = "M_FF_CatalogFocus"
     material = existing_owned(name)
     if not material:
         material = asset_tools.create_asset(name, FOLDER, unreal.Material, unreal.MaterialFactoryNew())
@@ -110,7 +110,7 @@ def create_materials():
         save_owned(material)
     result = {"Base": material}
     for state, overrides in STATES.items():
-        name = "MI_FF_CodexCatalogFocus_" + state
+        name = "MI_FF_CatalogFocus_" + state
         instance = existing_owned(name)
         if not instance:
             instance = asset_tools.create_asset(name, FOLDER, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())

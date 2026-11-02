@@ -99,7 +99,7 @@
 
 - 시설 런타임: `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem`의 Audience 타입/API/검증/예약 영역/fingerprint/테스트, 테스트용 FacilityActor friend 선언.
 - 시설 에디터: `Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor`의 Audience 편집 섹션·정렬·도움말·크기 조정·기존 미리보기 확장·테스트.
-- 시설 월드 테스트: `Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSAudienceWorldTests.cpp`.
+- 시설 월드 테스트: `Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Audience/FF_FFZSAudienceWorldTests.cpp`.
 - 콘텐츠: 정확히 `Content/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.uasset` 하나의 Audience 설정. Mesh/조명/오디오/Queue 등 다른 Spec 값이 바뀌지 않았음을 스크립트로 확인했습니다.
 - 신규 도구: `Tools/FacilityAudience/configure_sunset_audience.py`, `sunset_audience_preset.json`.
 - 신규 문서: `Collaboration/FacilityAudience_*`.

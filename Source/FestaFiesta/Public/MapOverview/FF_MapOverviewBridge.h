@@ -10,8 +10,8 @@ class APlayerController;
 class UUserWidget;
 class UWorld;
 
-// Header-only contract: the optional presentation plugin never depends on the game module.
-// The game adapter is the only place that knows the existing HUD/build/camera classes.
+// 게임의 구현 심볼을 링크하지 않는 헤더 전용 계약이다. 선택적 지도 플러그인은 이 인터페이스만 읽고,
+// 실제 HUD·건축·카메라 클래스에 대한 접근은 FF_MapOverviewGameBridgeSubsystem에서 담당한다.
 class IFFMapOverviewBridge : public IModularFeature
 {
 public:

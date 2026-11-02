@@ -59,6 +59,10 @@ void FFF_FacilitySynergyEvaluator::SetFacilities(TArray<FFF_FacilitySynergyPoint
 	Points.Reset();
 	PointById.Reset();
 	Trees.Reset();
+	// 전체 배치 복원 직후에도 배열과 ID 색인이 한 번에 공간을 확보하게 한다.
+	// Reset은 기존 용량을 유지하므로 이후 시설 변경에서는 같은 저장 공간을 재사용한다.
+	Points.Reserve(InFacilities.Num());
+	PointById.Reserve(InFacilities.Num());
 	TMap<FName, TArray<int32>> ByDefinition;
 	for (const FFF_FacilitySynergyPoint& Point : InFacilities)
 	{

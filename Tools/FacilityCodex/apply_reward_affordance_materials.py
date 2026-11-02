@@ -16,10 +16,10 @@ import unreal
 SOURCE = runpy.run_path(str(Path(__file__).with_name("create_reward_materials.py")))
 FOLDER = SOURCE["FOLDER"]
 BASE_PATH = FOLDER + "/" + SOURCE["BASE_NAME"]
-LOCKED_NAME = "MI_FF_CodexReward_LockedGift"
+LOCKED_NAME = "MI_FF_Reward_LockedGift"
 LOCKED_PATH = FOLDER + "/" + LOCKED_NAME
-THUMBNAIL_PATH = FOLDER + "/M_FF_Codex_DiscoveryThumbnail"
-GIFT_PATH = FOLDER.rsplit("/", 1)[0] + "/Icons/T_FF_Codex_RewardGift"
+THUMBNAIL_PATH = FOLDER + "/M_FF_DiscoveryThumbnail"
+GIFT_PATH = FOLDER.rsplit("/", 1)[0] + "/Icons/T_FF_RewardGift"
 VERSION_KEY = "FF.FacilityCodex.RewardAffordance20260921.1"
 VERSION = "1"
 PREVIOUS_SHA256 = "3c6ea010c7783919a05066e9fe101bde5cf231e1cffc538516bfe1f7e270290b"
@@ -98,7 +98,7 @@ def preflight():
     require(marker in ("", VERSION), "Unknown reward affordance version")
     require(marker != VERSION or digest(before) == TARGET_SHA256, "Reward affordance marker does not match its shader")
     for name in SOURCE["STATES"]:
-        instance = unreal.load_asset(FOLDER + "/MI_FF_CodexReward_" + name)
+        instance = unreal.load_asset(FOLDER + "/MI_FF_Reward_" + name)
         require(isinstance(instance, unreal.MaterialInstanceConstant) and instance.get_editor_property("parent") == material,
                 "Existing reward state parent changed: " + name)
         require(assets.get_metadata_tag(instance, SOURCE["VERSION_KEY"]) == SOURCE["VERSION"], "Existing reward state is not owned: " + name)
