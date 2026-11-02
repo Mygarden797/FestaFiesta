@@ -79,6 +79,10 @@ Saved/*
 Config/GeneratedEngine.ini
 Config/GeneratedEngine.ini.*
 
+# Local Google Desktop OAuth compatibility credential; staged into local Windows builds.
+Config/Windows/GeneratedWindowsGame.ini
+Config/Windows/GeneratedWindowsGame.ini.*
+
 # Compiled source files for the engine to use
 Intermediate/*
 Plugins/**/Intermediate/*

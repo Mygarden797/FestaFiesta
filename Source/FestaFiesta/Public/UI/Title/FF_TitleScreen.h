@@ -7,6 +7,13 @@
 #include "FF_TitleScreen.generated.h"
 
 class UFF_CommonButtonBase;
+class UFF_GoogleAuthSubsystem;
+class UFF_GoogleAccountPanel;
+class UBorder;
+class UButton;
+class UImage;
+class UTextBlock;
+class UTexture2D;
 
 /** 타이틀 메뉴 항목 요청. 인자가 없다 — 어느 항목인지는 델리게이트가 구분한다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnTitleMenuRequested);
@@ -42,16 +49,42 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI")
 	FFF_OnTitleMenuRequested OnOptionsRequested;
 
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Google Login")
+	bool IsGoogleSignInPromptVisible() const { return bGooglePromptVisible; }
+
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Google Login")
+	void ShowGoogleSignInPrompt();
+
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Google Login")
+	void DismissGoogleSignInPrompt();
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeOnActivated() override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
-	/** 초기 포커스는 항상 `플레이`다 (규격 7절). */
+	/** First presentation focuses sign-in; after dismissal the main menu starts on Play. */
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 
 	UFUNCTION()
 	void HandleButtonClicked(UFF_CommonButtonBase* Button);
+
+	/** Optional account connection lives beside the menu and never gates Play. */
+	void EnsureGoogleAccountPanel();
+	void EnsureGoogleSignInPrompt();
+	void SetTitleMenuEnabled(bool bEnabled);
+	void FocusAccountOrPlay();
+
+	UFUNCTION()
+	void RefreshGoogleAccount();
+
+	UFUNCTION()
+	void HandleGoogleAccountClicked();
+
+	UFUNCTION()
+	void RefreshGoogleAccountButtonStyle();
 
 	/** 플레이 허브 화면이 생기기 전까지의 임시 연결점. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|UI", meta = (DisplayName = "On Play Requested"))
@@ -71,4 +104,41 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI")
 	TObjectPtr<UFF_CommonButtonBase> Btn_Quit;
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_GoogleAuthSubsystem> GoogleAuth;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> GoogleAccountPanel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> GoogleAccountProfile;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> GoogleAccountStatus;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> GoogleAccountButton;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> GoogleAccountButtonLabel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UImage> GoogleSignInImage;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> GoogleSignInTexture;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> GooglePromptRoot;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_GoogleAccountPanel> GooglePromptAccount;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> GoogleContinueOffline;
+
+	bool bGooglePromptVisible = false;
+	bool bInitialGooglePromptHandled = false;
 };

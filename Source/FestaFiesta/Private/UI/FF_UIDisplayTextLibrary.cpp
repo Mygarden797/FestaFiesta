@@ -86,6 +86,7 @@ FText UFF_UIDisplayTextLibrary::GetOptionCategoryText(EFF_OptionCategory Categor
 	case EFF_OptionCategory::Graphics:		return LOCTEXT("OptionCategory_Graphics", "그래픽");
 	case EFF_OptionCategory::Controls:		return LOCTEXT("OptionCategory_Controls", "조작");
 	case EFF_OptionCategory::Credits:		return LOCTEXT("OptionCategory_Credits", "크레딧");
+	case EFF_OptionCategory::Account:		return LOCTEXT("OptionCategory_Account", "계정정보");
 	}
 
 	return FText::GetEmpty();

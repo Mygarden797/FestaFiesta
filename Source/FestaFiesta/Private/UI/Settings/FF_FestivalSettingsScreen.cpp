@@ -31,6 +31,7 @@
 #include "Misc/App.h"
 #include "Save/FF_SaveBeforeQuitPolicy.h"
 #include "Tutorial/FF_TutorialSubsystem.h"
+#include "UI/Account/FF_GoogleAccountPanel.h"
 #include "UI/Core/FF_UIAccessibilitySubsystem.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/FF_UILog.h"
@@ -559,7 +560,7 @@ void UFF_FestivalSettingsScreen::SelectCategory(const EFF_FestivalSettingsCatego
 			Intro = LOCTEXT("CreditsIntro", "축제의 화면과 글꼴에 사용된 외부 에셋의 출처입니다.");
 			break;
 		case EFF_FestivalSettingsCategory::Account:
-			Intro = LOCTEXT("AccountIntro", "현재 플레이어와 이 기기의 설정 정보를 확인하세요.");
+			Intro = LOCTEXT("GoogleAccountIntro", "Google 계정 연결 상태와 이 기기의 설정 정보를 확인하세요.");
 			break;
 		default:
 			break;
@@ -843,12 +844,27 @@ void UFF_FestivalSettingsScreen::BuildAccountRows()
 
 	const FString BuildVersion(FApp::GetBuildVersion());
 	const FString ProjectVersion = BuildVersion.IsEmpty() ? TEXT("개발 빌드") : BuildVersion;
-	AddSectionHeader(LOCTEXT("AccountPlayerSection", "플레이어"));
-	AddInfoRow(LOCTEXT("AccountProfile", "프로필"), FText::FromString(PlayerName),
-		LOCTEXT("AccountProfileDesc", "현재 게임 안에서 사용하는 로컬 플레이어 이름입니다"));
-	AddInfoRow(LOCTEXT("AccountStatus", "계정 상태"), LOCTEXT("AccountLocal", "로컬 플레이"),
-		LOCTEXT("AccountStatusDesc", "이 프로젝트에는 온라인 계정 연결 기능이 없습니다"));
+	// The shared panel owns its auth subscription. A login result updates the visible name,
+	// email and action without rebuilding settings rows or changing this screen's draft.
+	if (UFF_GoogleAccountPanel* AccountPanel = CreateWidget<UFF_GoogleAccountPanel>(
+		this, UFF_GoogleAccountPanel::StaticClass()))
+	{
+		if (UVerticalBoxSlot* PanelSlot = VerticalBox_Rows->AddChildToVerticalBox(AccountPanel))
+		{
+			PanelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			PanelSlot->SetHorizontalAlignment(HAlign_Fill);
+			PanelSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+		}
+		AccountPanel->RefreshAccount();
+	}
+	else
+	{
+		AddInfoRow(LOCTEXT("GoogleAccountLabel", "Google 계정"),
+			LOCTEXT("GoogleAccountUnavailable", "지금은 계정 정보를 표시할 수 없습니다"));
+	}
 	AddSectionHeader(LOCTEXT("AccountLocalSection", "로컬 환경"));
+	AddInfoRow(LOCTEXT("AccountLocalPlayer", "게임 내 플레이어"), FText::FromString(PlayerName),
+		LOCTEXT("AccountLocalPlayerDesc", "이 기기에서 사용하는 로컬 플레이어 이름입니다"));
 	AddInfoRow(LOCTEXT("AccountStorage", "설정 저장 위치"), LOCTEXT("AccountDevice", "이 기기"),
 		LOCTEXT("AccountStorageDesc", "개인 옵션은 Windows 사용자 설정에 저장됩니다"));
 	AddInfoRow(LOCTEXT("AccountVersion", "게임 버전"), FText::FromString(ProjectVersion),
