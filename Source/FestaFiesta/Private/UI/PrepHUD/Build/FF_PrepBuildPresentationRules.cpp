@@ -107,9 +107,22 @@ FText FFF_PrepBuildPresentationRules::ResolveCategoryPathText(
 		ResolveCategoryDisplayName(Category), ResolveMinorDisplayName(MinorToken));
 }
 
+FText FFF_PrepBuildPresentationRules::ResolveSortDisplayName(const EFF_PrepBuildSortOrder SortOrder)
+{
+	switch (SortOrder)
+	{
+	case EFF_PrepBuildSortOrder::Name: return LOCTEXT("SortName", "이름순");
+	case EFF_PrepBuildSortOrder::PriceAscending: return LOCTEXT("SortPriceAscending", "낮은 가격순");
+	case EFF_PrepBuildSortOrder::PriceDescending: return LOCTEXT("SortPriceDescending", "높은 가격순");
+	default: return LOCTEXT("SortRecommended", "추천순");
+	}
+}
+
 bool FFF_PrepBuildPresentationRules::IsEntryVisible(
 	const FFF_BuildCatalogEntry& Entry,
-	const FFF_PrepBuildFilter& Filter)
+	const FFF_PrepBuildFilter& Filter,
+	const int32 Gold,
+	const bool bHasAuthoritativeGold)
 {
 	// 배치 명령의 유일한 키가 없으면 화면에 눌러도 수행할 수 없는 카드를 만들지 않습니다.
 	if (Entry.FacilityDefinitionId.IsNone())
@@ -128,6 +141,13 @@ bool FFF_PrepBuildPresentationRules::IsEntryVisible(
 	}
 
 	if (!Filter.MinorToken.IsNone() && Entry.MinorToken != Filter.MinorToken)
+	{
+		return false;
+	}
+	if ((Filter.bRequiredOnly && !Entry.bRequiredForSetup)
+		|| (Filter.bProgramsOnly && Entry.CompatibleProgramCount <= 0)
+		|| (Filter.bLightingOnly && !Entry.bSupportsLighting && Entry.Category != EFFZSFacilityCategory::Lighting)
+		|| (Filter.bAffordableOnly && ResolveTileState(Entry, Gold, bHasAuthoritativeGold) != EFF_PrepBuildTileState::Available))
 	{
 		return false;
 	}

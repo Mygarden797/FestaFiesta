@@ -23,6 +23,8 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/ButtonSlot.h"
+#include "Components/CheckBox.h"
+#include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
@@ -176,6 +178,17 @@ void UFF_PrepPanelBuild::NativeConstruct()
 	}
 	if (Button_FavoritesOnly) { Button_FavoritesOnly->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleFavoritesOnlyClicked); }
 	if (Button_ResetFilters) { Button_ResetFilters->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleResetFiltersClicked); }
+	if (Check_FilterRequired) Check_FilterRequired->OnCheckStateChanged.AddUniqueDynamic(this, &ThisClass::HandleRequiredFilterChanged);
+	if (Check_FilterAffordable) Check_FilterAffordable->OnCheckStateChanged.AddUniqueDynamic(this, &ThisClass::HandleAffordableFilterChanged);
+	if (Check_FilterPrograms) Check_FilterPrograms->OnCheckStateChanged.AddUniqueDynamic(this, &ThisClass::HandleProgramsFilterChanged);
+	if (Check_FilterLighting) Check_FilterLighting->OnCheckStateChanged.AddUniqueDynamic(this, &ThisClass::HandleLightingFilterChanged);
+	if (ComboBox_CatalogSort)
+	{
+		ComboBox_CatalogSort->OnSelectionChanged.RemoveDynamic(this, &ThisClass::HandleCatalogSortChanged);
+		InitializeCatalogSortOptions(*ComboBox_CatalogSort, Filter.SortOrder);
+		ComboBox_CatalogSort->OnSelectionChanged.AddUniqueDynamic(this, &ThisClass::HandleCatalogSortChanged);
+	}
+	RefreshAdvancedFilterControls();
 	for (UFF_PrepChoiceButton* Choice : CategoryChoices)
 	{
 		if (Choice)
@@ -234,6 +247,11 @@ void UFF_PrepPanelBuild::NativeDestruct()
 	if (Button_NextPage) Button_NextPage->OnClicked.RemoveDynamic(this, &ThisClass::NextCatalogPage);
 	if (Button_FavoritesOnly) { Button_FavoritesOnly->OnClicked.RemoveDynamic(this, &ThisClass::HandleFavoritesOnlyClicked); }
 	if (Button_ResetFilters) { Button_ResetFilters->OnClicked.RemoveDynamic(this, &ThisClass::HandleResetFiltersClicked); }
+	if (Check_FilterRequired) Check_FilterRequired->OnCheckStateChanged.RemoveDynamic(this, &ThisClass::HandleRequiredFilterChanged);
+	if (Check_FilterAffordable) Check_FilterAffordable->OnCheckStateChanged.RemoveDynamic(this, &ThisClass::HandleAffordableFilterChanged);
+	if (Check_FilterPrograms) Check_FilterPrograms->OnCheckStateChanged.RemoveDynamic(this, &ThisClass::HandleProgramsFilterChanged);
+	if (Check_FilterLighting) Check_FilterLighting->OnCheckStateChanged.RemoveDynamic(this, &ThisClass::HandleLightingFilterChanged);
+	if (ComboBox_CatalogSort) ComboBox_CatalogSort->OnSelectionChanged.RemoveDynamic(this, &ThisClass::HandleCatalogSortChanged);
 	// World teardown can bypass the bar's normal close callback. Keep opt-in and delegates balanced.
 	EndPanelSession();
 
@@ -437,7 +455,9 @@ bool UFF_PrepPanelBuild::IsPointerOverCatalog(const FVector2D& ScreenPosition) c
 void UFF_PrepPanelBuild::ResetCatalogDrag()
 {
 	if (auto* Hint = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_A5CatalogDragHint"))))
-		Hint->SetText(LOCTEXT("CatalogDragHint", "위아래로 드래그 · 휠 / 오른쪽 스크롤바로 더 보기"));
+		Hint->SetText(TileView_Facilities && TileView_Facilities->GetOrientation() == Orient_Horizontal
+			? LOCTEXT("CatalogHorizontalDragHint", "좌우로 드래그 · 휠로 더 보기")
+			: LOCTEXT("CatalogDragHint", "위아래로 드래그 · 휠로 더 보기"));
 	bCatalogPointerDown = false;
 	bCatalogPointerMoved = false;
 	CatalogPressedItem.Reset();
@@ -463,6 +483,9 @@ FReply UFF_PrepPanelBuild::NativeOnPreviewMouseButtonDown(const FGeometry& Geome
 {
 	if (Event.GetEffectingButton() != EKeys::LeftMouseButton || !IsPointerOverCatalog(Event.GetScreenSpacePosition()))
 		return Super::NativeOnPreviewMouseButtonDown(Geometry, Event);
+	// A new direct interaction stops the previous fling, including interactions
+	// owned by the independent scrollbar or favorite button below.
+	CatalogScrollVelocity = 0.f;
 	// Let Slate's scrollbar thumb own its pointer capture. Card swipes remain separate.
 	const FGeometry& ListGeometry = TileView_Facilities->GetCachedGeometry();
 	if (ListGeometry.AbsoluteToLocal(Event.GetScreenSpacePosition()).X >= ListGeometry.GetLocalSize().X - 24.f)
@@ -501,6 +524,7 @@ FReply UFF_PrepPanelBuild::NativeOnMouseMove(const FGeometry& Geometry, const FP
 void UFF_PrepPanelBuild::UpdateCatalogDrag(const FGeometry& Geometry, const FVector2D& ScreenPosition)
 {
 	const FVector2D Position = Geometry.AbsoluteToLocal(ScreenPosition);
+	if (!FMath::IsFinite(Position.X) || !FMath::IsFinite(Position.Y)) return;
 	if (Position.Equals(CatalogDragLastPosition, .01f)) return;
 	const FVector2D Delta = Position - CatalogDragOrigin;
 	bCatalogPointerMoved |= Delta.SizeSquared() >= FMath::Square(10.0);
@@ -513,10 +537,16 @@ void UFF_PrepPanelBuild::UpdateCatalogDrag(const FGeometry& Geometry, const FVec
 		const float Pitch = FMath::Max(1.f, bVertical ? TileView_Facilities->GetEntryHeight() : TileView_Facilities->GetEntryWidth());
 		const float ItemsPerLine = bVertical ? FMath::Max(1, CardsPerPage) : 1.f;
 		const float DesiredOffset = CatalogDragStartOffset - (bVertical ? Delta.Y : Delta.X) / Pitch * ItemsPerLine;
-		ScrollCatalogBy(DesiredOffset - TileView_Facilities->GetScrollOffset());
 		const float Seconds = FMath::Clamp(static_cast<float>(Now - CatalogDragLastTime), .001f, .1f);
 		const float DragDelta = bVertical ? CatalogDragLastPosition.Y - Position.Y : CatalogDragLastPosition.X - Position.X;
-		CatalogScrollVelocity = FMath::Clamp(DragDelta / Pitch * ItemsPerLine / Seconds, -24.f * ItemsPerLine, 24.f * ItemsPerLine);
+		const float SampleVelocity = FMath::Clamp(DragDelta / Pitch * ItemsPerLine / Seconds,
+			-12.f * ItemsPerLine, 12.f * ItemsPerLine);
+		// Smooth only the release velocity; the list itself tracks the pointer
+		// exactly. Sub-millisecond event bursts must not create an abrupt fling.
+		const float Blend = 1.f - FMath::Exp(-24.f * Seconds);
+		CatalogScrollVelocity = FMath::Lerp(CatalogScrollVelocity, SampleVelocity, Blend);
+		// Clamp after sampling so a boundary also cancels the new outward momentum.
+		ScrollCatalogBy(DesiredOffset - TileView_Facilities->GetScrollOffset());
 		CatalogDragLastPosition = Position;
 		CatalogDragLastTime = Now;
 	}
@@ -532,6 +562,9 @@ FReply UFF_PrepPanelBuild::NativeOnMouseButtonUp(const FGeometry& Geometry, cons
 
 void UFF_PrepPanelBuild::FinishCatalogDrag(const FGeometry& Geometry, const FVector2D& ScreenPosition)
 {
+	// Some platforms coalesce the last move into pointer-up. Commit that final
+	// sample before clearing the gesture so a short swipe is never discarded.
+	UpdateCatalogDrag(Geometry, ScreenPosition);
 	const FVector2D Delta = Geometry.AbsoluteToLocal(ScreenPosition) - CatalogDragOrigin;
 	const bool bMoved = bCatalogPointerMoved || Delta.SizeSquared() >= FMath::Square(10.0);
 	UFF_PrepBuildTileData* PressedItem = CatalogPressedItem.Get();
@@ -569,7 +602,14 @@ FReply UFF_PrepPanelBuild::NativeOnMouseWheel(const FGeometry& Geometry, const F
 		return Super::NativeOnMouseWheel(Geometry, Event);
 	if (!bUsePagination)
 	{
-		CatalogScrollVelocity = FMath::Clamp(CatalogScrollVelocity - Event.GetWheelDelta() * 12.f, -30.f, 30.f);
+		// Keep direct dragging anchored under the pointer if the wheel is touched
+		// while the button is held. Wheel distance is expressed in visual rows,
+		// not individual items, so it stays consistent across column counts.
+		if (bCatalogPointerDown) return FReply::Handled();
+		const float ItemsPerLine = TileView_Facilities->GetOrientation() == Orient_Vertical
+			? FMath::Max(1, CardsPerPage) : 1.f;
+		CatalogScrollVelocity = FMath::Clamp(CatalogScrollVelocity - Event.GetWheelDelta() * 10.f * ItemsPerLine,
+			-24.f * ItemsPerLine, 24.f * ItemsPerLine);
 	}
 	else if (Event.GetWheelDelta() < 0) NextCatalogPage(); else PreviousCatalogPage();
 	return FReply::Handled();
@@ -666,6 +706,10 @@ void UFF_PrepPanelBuild::NativeOnPanelOpened()
 	// Search and favorites remain scoped to each browsing session.
 	Filter.SearchText.Reset();
 	Filter.bFavoritesOnly = false;
+	Filter.bRequiredOnly = false;
+	Filter.bAffordableOnly = false;
+	Filter.bProgramsOnly = false;
+	Filter.bLightingOnly = false;
 	Filter.FavoriteIds.Reset();
 	CatalogPageIndex = 0;
 	RefreshCategoryChoiceSelection();
@@ -872,6 +916,12 @@ void UFF_PrepPanelBuild::HandleGoldChanged(const int32 NewGold)
 	}
 
 	const bool bHasGold = EconomyReadModel && EconomyReadModel->HasAuthoritativeGold();
+	if (Filter.bAffordableOnly)
+	{
+		// A balance change can add or remove visible entries when this filter is active.
+		ReconcilePresentation();
+		return;
+	}
 	PresentationModel->RefreshGold(NewGold, bHasGold);
 	RefreshVisibleTiles();
 	ApplyPresentation(false);
@@ -1057,6 +1107,10 @@ void UFF_PrepPanelBuild::RevealSynergyRecommendations()
 	Filter.MinorToken = NAME_None;
 	Filter.SearchText.Reset();
 	Filter.bFavoritesOnly = false;
+	Filter.bRequiredOnly = false;
+	Filter.bAffordableOnly = false;
+	Filter.bProgramsOnly = false;
+	Filter.bLightingOnly = false;
 	CatalogPageIndex = 0;
 	if (Search_Facilities) { Search_Facilities->SetText(FText::GetEmpty()); }
 	RefreshCategoryChoiceSelection();
@@ -1307,14 +1361,95 @@ void UFF_PrepPanelBuild::HandleFavoritesOnlyClicked()
 void UFF_PrepPanelBuild::HandleResetFiltersClicked()
 {
 	CatalogPageIndex = 0;
-	Filter.bFilterByCategory = false;
-	Filter.MinorToken = NAME_None;
-	Filter.SearchText.Reset();
-	if (Filter.FavoriteIds.IsEmpty()) { Filter.bFavoritesOnly = false; }
-	if (Search_Facilities) { Search_Facilities->SetText(FText::GetEmpty()); }
+	Filter.ResetSelections();
+	{
+		TGuardValue<bool> Guard(bApplyingCatalogFocus, true);
+		if (Search_Facilities) { Search_Facilities->SetText(FText::GetEmpty()); }
+	}
 	RefreshCategoryChoiceSelection();
 	RefreshMinorCategorySurface();
+	if (TileView_Facilities) TileView_Facilities->ScrollToTop();
 	ReconcilePresentation();
+}
+
+void UFF_PrepPanelBuild::ApplyAdvancedFilterChange()
+{
+	CatalogPageIndex = 0;
+	if (TileView_Facilities) TileView_Facilities->ScrollToTop();
+	ReconcilePresentation();
+}
+
+void UFF_PrepPanelBuild::HandleRequiredFilterChanged(const bool bChecked)
+{
+	if (bApplyingCatalogFocus || Filter.bRequiredOnly == bChecked) return;
+	Filter.bRequiredOnly = bChecked;
+	ApplyAdvancedFilterChange();
+}
+
+void UFF_PrepPanelBuild::HandleAffordableFilterChanged(const bool bChecked)
+{
+	if (bApplyingCatalogFocus || Filter.bAffordableOnly == bChecked) return;
+	Filter.bAffordableOnly = bChecked;
+	ApplyAdvancedFilterChange();
+}
+
+void UFF_PrepPanelBuild::HandleProgramsFilterChanged(const bool bChecked)
+{
+	if (bApplyingCatalogFocus || Filter.bProgramsOnly == bChecked) return;
+	Filter.bProgramsOnly = bChecked;
+	ApplyAdvancedFilterChange();
+}
+
+void UFF_PrepPanelBuild::HandleLightingFilterChanged(const bool bChecked)
+{
+	if (bApplyingCatalogFocus || Filter.bLightingOnly == bChecked) return;
+	Filter.bLightingOnly = bChecked;
+	ApplyAdvancedFilterChange();
+}
+
+void UFF_PrepPanelBuild::HandleCatalogSortChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+{
+	if (bApplyingCatalogFocus || !ComboBox_CatalogSort) return;
+	const int32 Index = ComboBox_CatalogSort->FindOptionIndex(SelectedItem);
+	if (Index < 0 || Index > static_cast<int32>(EFF_PrepBuildSortOrder::PriceDescending)) return;
+	const auto NewOrder = static_cast<EFF_PrepBuildSortOrder>(Index);
+	if (Filter.SortOrder == NewOrder) return;
+	Filter.SortOrder = NewOrder;
+	ApplyAdvancedFilterChange();
+}
+
+void UFF_PrepPanelBuild::InitializeCatalogSortOptions(UComboBoxString& Combo, const EFF_PrepBuildSortOrder SortOrder)
+{
+	TArray<FString> ExpectedOptions;
+	for (int32 Index = 0; Index <= static_cast<int32>(EFF_PrepBuildSortOrder::PriceDescending); ++Index)
+		ExpectedOptions.Add(FFF_PrepBuildPresentationRules::ResolveSortDisplayName(static_cast<EFF_PrepBuildSortOrder>(Index)).ToString());
+	bool bOptionsMatch = Combo.GetOptionCount() == ExpectedOptions.Num();
+	for (int32 Index = 0; bOptionsMatch && Index < ExpectedOptions.Num(); ++Index)
+		bOptionsMatch = Combo.GetOptionAtIndex(Index) == ExpectedOptions[Index];
+	const int32 SelectedIndex = FMath::Clamp(static_cast<int32>(SortOrder), 0, ExpectedOptions.Num() - 1);
+	if (!bOptionsMatch)
+	{
+		Combo.ClearOptions();
+		for (const FString& Option : ExpectedOptions) Combo.AddOption(Option);
+		// UE 5.7 ClearOptions clears the Slate content but can retain SelectedOption.
+		// Selecting that same string then skips UpdateOrGenerateWidget. Change the
+		// value once while our selection delegate is detached to rebuild the label.
+		Combo.SetSelectedIndex((SelectedIndex + 1) % ExpectedOptions.Num());
+	}
+	// Preserve already-correct authored options/content on viewport reattachment.
+	Combo.SetSelectedIndex(SelectedIndex);
+}
+
+void UFF_PrepPanelBuild::RefreshAdvancedFilterControls()
+{
+	TGuardValue<bool> Guard(bApplyingCatalogFocus, true);
+	if (Check_FilterRequired) Check_FilterRequired->SetIsChecked(Filter.bRequiredOnly);
+	if (Check_FilterAffordable) Check_FilterAffordable->SetIsChecked(Filter.bAffordableOnly);
+	if (Check_FilterPrograms) Check_FilterPrograms->SetIsChecked(Filter.bProgramsOnly);
+	if (Check_FilterLighting) Check_FilterLighting->SetIsChecked(Filter.bLightingOnly);
+	if (ComboBox_CatalogSort) ComboBox_CatalogSort->SetSelectedIndex(static_cast<int32>(Filter.SortOrder));
+	if (Text_ActiveFilterCount) Text_ActiveFilterCount->SetText(FText::Format(
+		LOCTEXT("ActiveFilterCount", "필터 {0}"), FText::AsNumber(Filter.GetActiveFilterCount())));
 }
 
 void UFF_PrepPanelBuild::HandleCategoryChoiceClicked(const int32 ChoiceId)
@@ -1845,6 +1980,10 @@ void UFF_PrepPanelBuild::ReconcilePresentation()
 			Filter.MinorToken = Target->MinorToken;
 			Filter.SearchText.Reset();
 			Filter.bFavoritesOnly = false;
+			Filter.bRequiredOnly = false;
+			Filter.bAffordableOnly = false;
+			Filter.bProgramsOnly = false;
+			Filter.bLightingOnly = false;
 			if (Search_Facilities) { Search_Facilities->SetText(FText::GetEmpty()); }
 			RefreshCategoryChoiceSelection();
 			RefreshMinorCategorySurface();
@@ -1911,6 +2050,7 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 	}
 
 	const FFF_PrepBuildPresentationSnapshot Snapshot = PresentationModel->GetSnapshot();
+	RefreshAdvancedFilterControls();
 	const int32 ClampedPageIndex = GetCatalogPageIndex();
 	const bool bPageClamped = ClampedPageIndex != CatalogPageIndex;
 	CatalogPageIndex = ClampedPageIndex;
@@ -1951,7 +2091,7 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 				: LOCTEXT("NoMatchingFacilitiesTitle", "조건에 맞는 시설이 없어요")));
 		if (Text_EmptyHint) Text_EmptyHint->SetText(bNoFavorites
 			? LOCTEXT("NoFavoritesHint", "자주 쓰는 시설의 ☆을 눌러 모아보세요.")
-			: LOCTEXT("NoMatchingFacilitiesHint", "분류나 검색어를 바꾸어 보세요."));
+			: LOCTEXT("NoMatchingFacilitiesHint", "검색어나 필터를 바꾸거나 초기화해 보세요."));
 	}
 	if (Button_FavoritesOnly && bHasFavoritesFilterStyle)
 	{
@@ -1966,11 +2106,12 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 	if (Button_ResetFilters)
 	{
 		Button_ResetFilters->SetVisibility(Snapshot.SurfaceState == EFF_PrepBuildSurfaceState::Empty
+			|| Filter.GetActiveFilterCount() > 0 || Filter.SortOrder != EFF_PrepBuildSortOrder::Recommended
 			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		if (UTextBlock* Label = Cast<UTextBlock>(Button_ResetFilters->GetContent()))
 		{
 			Label->SetText(Filter.bFavoritesOnly && Filter.FavoriteIds.IsEmpty()
-				? LOCTEXT("ShowAllFacilities", "전체 시설 보기") : LOCTEXT("ClearCategorySearch", "분류·검색 초기화"));
+				? LOCTEXT("ShowAllFacilities", "전체 시설 보기") : LOCTEXT("ClearCatalogFilters", "필터 초기화"));
 		}
 	}
 	if (TileView_Facilities)
@@ -2028,7 +2169,7 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 			Status = (ThumbnailState == EFF_BuildCatalogThumbnailLoadState::Loading ||
 				ThumbnailState == EFF_BuildCatalogThumbnailLoadState::WaitingForCatalog)
 				? LOCTEXT("ThumbnailsLoading", "시설 이미지를 불러오는 중입니다. 목록은 먼저 선택할 수 있습니다.")
-				: LOCTEXT("PearlCatalogReady", "카드 선택 → 위치 지정  ·  확정 시 결제  ·  좌우 드래그 / 휠로 넘기기  ·  ☆ 즐겨찾기");
+				: LOCTEXT("IntuitiveCatalogReady", "카드 선택 → 위치 지정  ·  확정 시 결제  ·  드래그 / 휠로 둘러보기  ·  ☆ 즐겨찾기");
 		}
 		const FText SynergySource = BuildModeSubsystem
 			? BuildModeSubsystem->GetSynergyCatalogSourceName() : FText::GetEmpty();

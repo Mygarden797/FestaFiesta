@@ -15,6 +15,8 @@
 #include "FF_PrepPanelBuild.generated.h"
 
 class UButton;
+class UCheckBox;
+class UComboBoxString;
 class UEditableTextBox;
 class UHorizontalBox;
 class UVerticalBox;
@@ -190,6 +192,12 @@ protected:
 	UFUNCTION()
 	void HandleResetFiltersClicked();
 
+	UFUNCTION() void HandleRequiredFilterChanged(bool bChecked);
+	UFUNCTION() void HandleAffordableFilterChanged(bool bChecked);
+	UFUNCTION() void HandleProgramsFilterChanged(bool bChecked);
+	UFUNCTION() void HandleLightingFilterChanged(bool bChecked);
+	UFUNCTION() void HandleCatalogSortChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UWidget> Panel_Catalog;
 
@@ -299,6 +307,24 @@ protected:
 	TObjectPtr<UTextBlock> Text_FavoriteCount;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UCheckBox> Check_FilterRequired;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UCheckBox> Check_FilterAffordable;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UCheckBox> Check_FilterPrograms;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UCheckBox> Check_FilterLighting;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UComboBoxString> ComboBox_CatalogSort;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UTextBlock> Text_ActiveFilterCount;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UWidget> Panel_Empty;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
@@ -331,6 +357,7 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_AuroraCatalogSelectionTest;
 	friend class FFF_ClarityCatalogDragTest;
+	friend class FFF_PrepBuildCatalogSortInitializationTest;
 #endif
 	bool IsPointerOverCatalog(const FVector2D& ScreenPosition) const;
 	void ResetCatalogDrag();
@@ -419,6 +446,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build")
 	float CompactOffsetY = -41.f;
 	void SetCategoryFilter(bool bEnabled, EFFZSFacilityCategory Category);
+	void RefreshAdvancedFilterControls();
+	static void InitializeCatalogSortOptions(UComboBoxString& Combo, EFF_PrepBuildSortOrder SortOrder);
+	void ApplyAdvancedFilterChange();
 	TArray<FFF_BuildCatalogEntry> MakePricedEntries() const;
 
 	UPROPERTY(Transient)
