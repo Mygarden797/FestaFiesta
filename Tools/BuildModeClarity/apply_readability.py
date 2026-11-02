@@ -24,7 +24,7 @@ READABILITY_VERSION = "FF.BuildReadability.20260929.v2"
 BASE = "/Game/FestaFiesta/Building/FF_WBP_Building/"
 LAYOUT_PACKAGES = tuple(BASE + suffix for suffix in (
     "Catalog/WBP_FF_PrepPanelBuild", "Catalog/WBP_FF_PrepBuildTile",
-    "FacilityCodex/WBP_FF_FacilityCodexScreen", "FacilityCodex/WBP_FF_FacilityCodexCard",
+    "FacilityCodex/WBP_FF_FacilityScreen", "FacilityCodex/WBP_FF_FacilityCard",
     "Facility/WBP_FF_FacilityInfoPanel", "Controls/WBP_FF_BuildTools",
 ))
 REPORT = {"status": "RUNNING", "commands": list(COMMANDS), "executed": [],

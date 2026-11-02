@@ -1,5 +1,17 @@
 # FF_ZoneAuthoring (Zone 저작 계층)
 
+## 소스 탐색과 테스트
+
+공개 헤더는 `Source/FF_ZoneAuthoring/Public`의 기존 경로를 유지한다. 구현은
+`Private/Layout`(구획·정책·칸 지도), `Geometry`(다각형·경계 보정),
+`Weld`(경계 용접), `Visualization`(오버레이)으로 나눈다.
+에디터의 속성창·검증은 `FF_ZoneAuthoringEditor/Private/Layout`에,
+선택 용접 도구는 `Private/Weld`에 둔다. 자동화 테스트는 같은 에디터 모듈의
+`Layout/Tests`, `Geometry/Tests`, `Weld/Tests`에서 해당 기능과 함께 찾는다.
+
+런타임 모듈은 에디터 테스트에 의존하지 않는다. 용접과 보정 결과를 변경할 때는
+`FF_ZoneAuthoring` 자동화 그룹을 실행해 실제 레이아웃과 경계 합의가 유지되는지 확인한다.
+
 FF_ZoneSystem **위에 얹는** 디자이너용 Zone 설정 도구입니다. FF_ZoneSystem 소스는 한 줄도 수정하지 않습니다.
 자세한 설명(비전공자용 가이드, 언리얼에서 Zone 설정하는 법)은 팀 Notion 문서를 보세요.
 

@@ -27,7 +27,7 @@
 #include "UI/Atlas/FF_FestivalAtlasCatalog.h"
 #include "UI/Core/FF_UIFlowSettings.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
-#include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Building/FacilityInfo/FF_FacilityInfoSubsystem.h"
 #include "UI/Settings/FF_FestivalSettingsSubsystem.h"
 #include "UnrealClient.h"
 #include "Widgets/SOverlay.h"

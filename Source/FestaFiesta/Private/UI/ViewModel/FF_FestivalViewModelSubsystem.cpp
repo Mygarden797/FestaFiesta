@@ -37,7 +37,7 @@
 #include "UI/ViewModel/FF_DailyReportComment.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
-#include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Building/FacilityInfo/FF_FacilityInfoSubsystem.h"
 #include "Widgets/SViewport.h"
 
 void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collection)

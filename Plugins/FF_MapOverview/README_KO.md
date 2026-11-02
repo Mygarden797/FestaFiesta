@@ -1,5 +1,21 @@
 # FF Map Overview
 
+## 소스 탐색과 테스트
+
+`Source/FF_MapOverview/Public`는 다른 모듈이 사용하는 공개 계약이다. 기존 헤더 경로와
+리플렉션 이름을 유지하며 구현은 `Private` 아래 기능별로 관리한다.
+
+| 구현 폴더 | 책임과 검증 위치 |
+| --- | --- |
+| `Camera` | 카메라 맞춤·이전 시점 복원. `Camera/Tests`에서 입력·복원 계약 검증 |
+| `Grid` | 지면을 따르는 격자와 전체 격자 버튼. `Grid/Tests`에서 예산·표시 검증 |
+| `Overview` | 지도 투영·위젯·지형 캡처·서브시스템. `Overview/Tests`에서 미니맵 검증 |
+
+에셋 최초 생성기는 `FF_MapOverviewEditor/Private/Grid`에만 둔다.
+투영 모델은 지도 UV 원형 반경을 한 상수로 공유하고, 다각형 경계를 자를 때 두 배열의
+저장 공간을 재사용한다. 경계 변경은 `FF_MapOverview.Minimap.ViewportClipping`과
+`FF_MapOverview.Minimap.Local100mProjection`으로 검증한다.
+
 기존 팀원 소스·설정·WBP·맵을 수정하지 않고 추가하는 건축 격자/지도 표시 기능입니다. UE 5.7 기준이며, 플러그인은 `EnabledByDefault`로 활성화됩니다. 에디터를 다시 실행하기 전에 C++ 빌드가 필요합니다.
 
 ## 사용

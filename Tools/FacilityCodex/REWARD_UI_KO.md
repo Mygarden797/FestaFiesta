@@ -10,10 +10,10 @@
 
 ## 저장 에셋
 
-- 카드: `/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard`
-- 선물: `/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Icons/T_FF_Codex_RewardGift`
-- 재질: `/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials/M_FF_CodexRewardIridescent`
-- 상태 인스턴스: `MI_FF_CodexReward_Ready`, `_Hover`, `_Pressed`, `_Claimed`
+- 카드: `/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCard`
+- 선물: `/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Icons/T_FF_RewardGift`
+- 재질: `/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials/M_FF_RewardIridescent`
+- 상태 인스턴스: `MI_FF_Reward_Ready`, `_Hover`, `_Pressed`, `_Claimed`
 
 UI 도메인의 투명 재질이 둥근 윤곽, 입체 테두리, 금빛·민트·보랏빛 간섭색과 느린 광택을 그립니다. UV와 시간에 따른 위상 변화로 이리디센스를 표현하며, 글자와 선물은 별도의 UMG 위젯으로 유지합니다. 수령 완료 재질은 시간과 무관한 정적인 색을 출력합니다. 매 카드에 동적 재질이나 타이머를 만들지 않고 저장된 상태 인스턴스를 공유합니다.
 

@@ -47,7 +47,7 @@
 #include "Layout/WidgetPath.h"
 #include "Widgets/SViewport.h"
 #include "Time/FF_FestivalStageSubsystem.h"
-#include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Building/FacilityInfo/FF_FacilityInfoSubsystem.h"
 #include "UI/Core/FF_UIForegroundRules.h"
 #include "Building/UI/FF_BuildCatalogScreen.h"
 #include "TimerManager.h"
@@ -2581,6 +2581,9 @@ bool UFF_BuildModeSubsystem::HandleFacilityInspectionClick(APlayerController& Co
 	if (bEnterFromPreparation) { EnterBuildMode(); }
 	// Inspection owns the click. A drag may begin only if this exact press stays held.
 	if (!InspectFacility(RequestedFacility.Get())) { return false; }
+	// 카탈로그를 함께 열어도 이번 입력은 월드 시설을 향했다. 검색란 포커스가
+	// 이어지는 드래그나 M 단축키를 가로채지 않도록 게임 뷰포트에 입력을 돌려준다.
+	SetBuildInputMode(Controller);
 	BeginFacilityPointerDrag(Controller);
 	return true;
 }
@@ -2652,7 +2655,7 @@ bool UFF_BuildModeSubsystem::HandleFacilityPointerDrag(APlayerController& Contro
 	}
 	const bool bSelectionValid = PendingRemovalFacility.IsValid() &&
 		PendingRemovalFacility->GetFacilityInstanceId() == FacilityDragInstanceId &&
-		(State == EFF_BuildModeState::BuildMode || State == EFF_BuildModeState::Moving);
+		(FFBuildModeModel::CanInspectInstalledFacility(State) || State == EFF_BuildModeState::Moving);
 	if (!bSelectionValid || bPointerBlocked || !IsPlacementPointerInsideViewport(Controller))
 	{
 		if (bFacilityDragActive) CancelMovingToBuildMode(TEXT("시설 이동을 취소했습니다."));
@@ -2793,7 +2796,7 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
 	{
 		return false;
 	}
-	if (bIsExitingBuildMode || State != EFF_BuildModeState::BuildMode)
+	if (bIsExitingBuildMode || !FFBuildModeModel::CanInspectInstalledFacility(State))
 	{
 		return false;
 	}

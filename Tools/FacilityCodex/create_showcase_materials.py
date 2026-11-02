@@ -15,8 +15,8 @@ import unreal
 
 
 FOLDER = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials"
-BASE_NAME = "M_FF_CodexShowcase"
-STAGE_NAME = "MI_FF_CodexShowcase_Stage"
+BASE_NAME = "M_FF_Showcase"
+STAGE_NAME = "MI_FF_Showcase_Stage"
 VERSION_KEY = "FF.FacilityCodex.ShowcaseMaterialVersion"
 VERSION = "1"
 DEFAULTS = {

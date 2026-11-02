@@ -1,5 +1,5 @@
 #include "Building/Presentation/FF_BuildingFeatureDiscoverySubsystem.h"
-#include "Building/Codex/FF_FacilityCodexProgressSubsystem.h"
+#include "Building/FacilityCollection/FF_FacilityProgressSubsystem.h"
 #include "Engine/GameInstance.h"
 
 #include "Misc/ConfigCacheIni.h"

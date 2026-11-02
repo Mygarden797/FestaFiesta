@@ -1,6 +1,6 @@
 // FF_ZoneAuthoringEditorModule.cpp
 // 역할: 에디터 전용 기능 등록(FF Authored Zone 디테일 패널 정리). 모듈 종료 시 해제한다.
-#include "FFZAAuthoredZoneCustomization.h"
+#include "Layout/FFZAAuthoredZoneCustomization.h"
 #include "FFZAAuthoredZone.h"
 #include "FF_ZoneAuthoringModule.h"
 #include "Weld/FFZASelectedWeldTool.h"

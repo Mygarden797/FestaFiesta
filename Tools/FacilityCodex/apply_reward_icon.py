@@ -13,10 +13,10 @@ ROOT = Path(unreal.Paths.project_dir()).resolve()
 UI_ROOTS = (ROOT / "Content/FestaFiesta/UI", ROOT / "Content/FestaFiesta/Building/FF_WBP_Building")
 OUT = ROOT / "Saved/FacilityCodexRewardIcon_20260921"
 SOURCE = ROOT / "Design/UXUI/FacilityCodex/Generated/reward_gift_v1.png"
-CARD = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"
-ICON = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Icons/T_FF_Codex_RewardGift"
-CARD_FILE = ROOT / "Content/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard.uasset"
-ICON_FILE = ROOT / "Content/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Icons/T_FF_Codex_RewardGift.uasset"
+CARD = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCard"
+ICON = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Icons/T_FF_RewardGift"
+CARD_FILE = ROOT / "Content/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCard.uasset"
+ICON_FILE = ROOT / "Content/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Icons/T_FF_RewardGift.uasset"
 
 
 def digest(path):

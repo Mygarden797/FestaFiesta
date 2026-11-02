@@ -113,7 +113,7 @@ NavMesh는 관람객이 보는 보행 지도다. 건축 허가는 관리자가 �
 ## 확인할 코드와 설정
 
 - `Config/DefaultGame.ini`: 프로젝트의 설치 검사 설정.
-- `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSWorldSubsystem.cpp`: 범위·점유·보호 영역·지면·장애물·선택적 내비게이션 검사.
+- `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSWorldSubsystem.cpp`: 범위·점유·보호 영역·지면·장애물·선택적 내비게이션 검사.
 - `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSBuildArea.h`: 통합 건설 영역과 에디터 갱신 버튼.
 - `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSZoneActor.h`: 개별 구역 경계와 시설 종류 허용.
 - `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSProtectedArea.h`: NoBuild 및 보호 통로.

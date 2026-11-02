@@ -32,7 +32,7 @@
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include "Time/FF_FestivalStageSubsystem.h"
-#include "UI/Facility/FF_FacilityProgramMarkerSubsystem.h"
+#include "Building/FacilityInfo/FF_FacilityProgramMarkerSubsystem.h"
 #include "UObject/UnrealType.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 

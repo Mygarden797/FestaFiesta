@@ -1,0 +1,84 @@
+// FF_FacilityPaidProgramCard.cpp
+// 역할: 유료 프로그램 하나의 이름·가격·편성 가능 여부를 표시한다.
+
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "Building/FacilityInfo/FF_FacilityPaidProgramCard.h"
+
+#include "CommonTextBlock.h"
+#include "Components/Button.h"
+#include "UI/Core/FF_BuildPearlStyle.h"
+#include "UI/Data/FF_UIPalette.h"
+
+#define LOCTEXT_NAMESPACE "FFFacilityPaidProgramCard"
+
+void UFF_FacilityPaidProgramCard::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+	// The palette seeds Class Defaults; designer edits must survive preview and play.
+}
+
+void UFF_FacilityPaidProgramCard::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	if (Button_Select)
+	{
+		Button_Select->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSelectClicked);
+	}
+}
+
+void UFF_FacilityPaidProgramCard::ApplyViewData(
+	const FFF_FacilityPaidProgramCardViewData& ViewData)
+{
+	CurrentViewData = ViewData;
+	if (Text_ProgramName)
+	{
+		Text_ProgramName->SetText(ViewData.DisplayName);
+	}
+	if (Text_ProgramMeta)
+	{
+		Text_ProgramMeta->SetText(Text_ProgramCost
+			? ViewData.TimeText
+			: FText::Format(LOCTEXT("CardMeta", "{0} · {1}"), ViewData.TimeText, ViewData.CostText));
+	}
+	if (Text_ProgramCost)
+	{
+		Text_ProgramCost->SetText(FText::Format(
+			LOCTEXT("CardCost", "{0} Gold"), FText::AsNumber(ViewData.CostGold)));
+	}
+	if (Text_ProgramAvailability)
+	{
+		Text_ProgramAvailability->SetText(ViewData.AvailabilityText);
+		Text_ProgramAvailability->SetColorAndOpacity(FSlateColor(
+			ViewData.bCanSchedule ? AvailableColor : UnavailableColor));
+	}
+	SetSelected(false);
+}
+
+void UFF_FacilityPaidProgramCard::SetSelected(const bool bSelected)
+{
+	if (Button_Select)
+	{
+		FButtonStyle Style = Button_Select->GetStyle();
+		Style.Normal = bSelected
+			? FFBuildPearl::Rounded(SelectedColor, 18.f, FFBuildPearl::Cyan, 2.f)
+			: FFBuildPearl::Rounded(UnselectedColor, 18.f, FFBuildPearl::Line, 1.f);
+		Style.Hovered = bSelected
+			? Style.Normal
+			: FFBuildPearl::Rounded(FFBuildPearl::Color(237, 248, 255), 18.f,
+				FFBuildPearl::Cyan, 1.f);
+		Style.Pressed = FFBuildPearl::Rounded(FFBuildPearl::Cyan, 18.f);
+		Button_Select->SetStyle(Style);
+		Button_Select->SetBackgroundColor(FLinearColor::White);
+	}
+}
+
+void UFF_FacilityPaidProgramCard::HandleSelectClicked()
+{
+	if (!CurrentViewData.ProgramId.IsNone())
+	{
+		OnSelected.Broadcast(CurrentViewData.ProgramId);
+	}
+}
+
+#undef LOCTEXT_NAMESPACE

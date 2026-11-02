@@ -13,6 +13,8 @@
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Engine/PrimaryAssetLabel.h"
 #include "Components/HorizontalBox.h"
+#include "Components/Image.h"
+#include "Components/TextBlock.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildCategoryChoice.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
@@ -102,12 +104,27 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 			FName(TEXT("Border_RequiredSatisfied")),
 			FName(TEXT("Text_RequiredSatisfied")),
 			FName(TEXT("Border_ProgramBadge")),
-			FName(TEXT("Text_ProgramBadge")),
 			FName(TEXT("SizeBox_Card")) })
 		{
 			TestNotNull(
 				*FString::Printf(TEXT("타일 계약 위젯이 존재한다: %s"), *RequiredName.ToString()),
 				TileTree->FindWidget(RequiredName));
+		}
+		// 프로그램 표시는 현재 저작된 그림을 사용한다. 기존 텍스트형 카드도
+		// 같은 배지 부모의 표시·숨김 계약을 충족하면 호환된다.
+		UWidget* ProgramIndicator = TileTree->FindWidget(TEXT("Image_A5Program"));
+		if (!ProgramIndicator) ProgramIndicator = TileTree->FindWidget(TEXT("Text_ProgramBadge"));
+		if (TestNotNull(TEXT("프로그램 지원 배지에 실제 표시 자원이 있다"), ProgramIndicator))
+		{
+			bool bOwnedByProgramBadge = false;
+			for (const UWidget* Parent = ProgramIndicator->GetParent(); Parent; Parent = Parent->GetParent())
+				if (Parent->GetFName() == TEXT("Border_ProgramBadge")) { bOwnedByProgramBadge = true; break; }
+			TestTrue(TEXT("프로그램 지원 표시가 배지의 조건부 가시성을 따른다"), bOwnedByProgramBadge);
+			if (const auto* Icon = Cast<UImage>(ProgramIndicator))
+				TestNotNull(TEXT("프로그램 배지 그림은 저작된 자원을 참조한다"), Icon->GetBrush().GetResourceObject());
+			else if (const auto* Label = Cast<UTextBlock>(ProgramIndicator))
+				TestFalse(TEXT("텍스트형 프로그램 배지는 빈 라벨이 아니다"), Label->GetText().IsEmpty());
+			else AddError(TEXT("프로그램 배지 표시는 그림 또는 텍스트여야 한다"));
 		}
 #if WITH_EDITORONLY_DATA
 		for (const FName Conditional : { FName(TEXT("Border_RequiredMissing")), FName(TEXT("Border_RequiredSatisfied")),

@@ -134,14 +134,14 @@ bEnableGroundChecks=True
 | --- | --- |
 | `Config/DefaultGame.ini` | 이 프로젝트에 실제 적용하는 타일·일반 지면 기준 |
 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSDeveloperSettings.h` | 설정창 항목과 기본값 |
-| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSDeveloperSettings.cpp` | 시설 분류에 맞는 설정을 고르고 잘못된 숫자를 보정하는 공통 진입점 |
-| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSWorldSubsystem.cpp` | 구역·점유 등 기존 설치 검사와 타일 지면 검사 연결 |
-| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSTileGroundPlacement.cpp` | 타일 최고점 추가 검사와 `FFZS_TileGround` 지면 구분 |
-| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSPlacementGroundSupport.h` | 검사에서 확인한 지면 정보. 저장 파일에는 기록하지 않는 임시 자료 |
-| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSFacilityActor.cpp` | 설치된 타일의 평평한 `TileSupportSurface` 유지 |
-| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildGridSurface.cpp` | 선택한 시설의 지면 기준에 맞는 격자 안내와 검사 결과 재사용 |
-| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSRoadTerrainPlacementTests.cpp` | 타일 높이·제한·타일 위 건축과 기존 길 동작의 자동 검사 |
-| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildGridSurfaceTests.cpp` | 타일·길을 바꿔 선택했을 때 격자와 장애물 높이 판단의 자동 검사 |
+| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSDeveloperSettings.cpp` | 시설 분류에 맞는 설정을 고르고 잘못된 숫자를 보정하는 공통 진입점 |
+| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSWorldSubsystem.cpp` | 구역·점유 등 기존 설치 검사와 타일 지면 검사 연결 |
+| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSTileGroundPlacement.cpp` | 타일 최고점 추가 검사와 `FFZS_TileGround` 지면 구분 |
+| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSPlacementGroundSupport.h` | 검사에서 확인한 지면 정보. 저장 파일에는 기록하지 않는 임시 자료 |
+| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Facility/FF_FFZSFacilityActor.cpp` | 설치된 타일의 평평한 `TileSupportSurface` 유지 |
+| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSBuildGridSurface.cpp` | 선택한 시설의 지면 기준에 맞는 격자 안내와 검사 결과 재사용 |
+| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Placement/FF_FFZSRoadTerrainPlacementTests.cpp` | 타일 높이·제한·타일 위 건축과 기존 길 동작의 자동 검사 |
+| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Grid/FF_FFZSBuildGridSurfaceTests.cpp` | 타일·길을 바꿔 선택했을 때 격자와 장애물 높이 판단의 자동 검사 |
 
 새 설치 기능에서도 분류를 받는 `ResolveGroundValidationSettings(Category)`를 사용하면 타일 기준과 일반 기준이 어긋나지 않습니다. 분류 없는 기존 호출은 일반 시설 기준을 유지합니다. 최고점 계산, 타일의 평면, 화면 격자는 각각 맡은 파일에서 관리하며 같은 숫자를 여러 곳에 임의로 복사하지 않습니다.
 

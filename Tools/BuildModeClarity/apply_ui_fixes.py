@@ -23,7 +23,7 @@ PACKAGES = (
     BASE_PACKAGE + "Controls/WBP_FF_BuildTools",
     BASE_PACKAGE + "Facility/WBP_FF_FacilityInfoPanel",
     BASE_PACKAGE + "Facility/WBP_FF_FacilitySynergyEntry",
-    BASE_PACKAGE + "FacilityCodex/WBP_FF_FacilityCodexLauncher",
+    BASE_PACKAGE + "FacilityCodex/WBP_FF_FacilityLauncher",
 )
 COMMANDS = ("FF.ApplyBuildReferenceTools", "FF.ApplyFacilitySynergyPearl")
 VERSIONS = {

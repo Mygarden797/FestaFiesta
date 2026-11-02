@@ -17,7 +17,7 @@ OWNER_KEY = "FF.FacilityCodex.GlassSurfaceVersion"
 OWNER_VERSION = "1"
 VERSION_KEY = "FF.FacilityCodex.Contrast20260921.1"
 VERSION = "1"
-BASE_PATH = FOLDER + "/M_FF_CodexGlass"
+BASE_PATH = FOLDER + "/M_FF_Glass"
 OVERRIDES = {
     "Screen": {"SurfaceOpacity": 0.86},
     "Header": {"SurfaceOpacity": 0.96, "EdgeWidthPixels": 1.5},
@@ -66,7 +66,7 @@ def preflight():
     result = {}
     # Validate every destination before changing any instance.
     for index, role in enumerate(OVERRIDES):
-        path = FOLDER + "/MI_FF_CodexGlass_" + role
+        path = FOLDER + "/MI_FF_Glass_" + role
         asset = unreal.load_asset(path)
         require(isinstance(asset, unreal.MaterialInstanceConstant), "Existing glass instance is missing: " + path)
         require(unreal.EditorAssetLibrary.get_metadata_tag(asset, OWNER_KEY) == OWNER_VERSION,

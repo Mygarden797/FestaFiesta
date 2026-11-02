@@ -88,18 +88,18 @@ inline constexpr const TCHAR* FacilitySynergyEntryClass = TEXT("/Game/FestaFiest
 inline constexpr const TCHAR* FacilityCodexFolder = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex");
 
 // FacilityCodex/Icons
-inline constexpr const TCHAR* T_FF_Codex_RewardGiftObject = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Icons/T_FF_Codex_RewardGift.T_FF_Codex_RewardGift");
+inline constexpr const TCHAR* T_FF_RewardGiftObject = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Icons/T_FF_RewardGift.T_FF_RewardGift");
 
 // FacilityCodex/Materials
-inline constexpr const TCHAR* M_FF_Codex_DiscoveryThumbnailObject = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials/M_FF_Codex_DiscoveryThumbnail.M_FF_Codex_DiscoveryThumbnail");
+inline constexpr const TCHAR* M_FF_DiscoveryThumbnailObject = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials/M_FF_DiscoveryThumbnail.M_FF_DiscoveryThumbnail");
 
 // FacilityCodex
-inline constexpr const TCHAR* FacilityCodexCardPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard");
-inline constexpr const TCHAR* FacilityCodexCatalogLauncherPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher");
-inline constexpr const TCHAR* FacilityCodexCatalogLauncherClass = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher.WBP_FF_FacilityCodexCatalogLauncher_C");
-inline constexpr const TCHAR* FacilityCodexLauncherPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexLauncher");
-inline constexpr const TCHAR* FacilityCodexScreenPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen");
-inline constexpr const TCHAR* FacilityCodexScreenClass = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen.WBP_FF_FacilityCodexScreen_C");
+inline constexpr const TCHAR* FacilityCodexCardPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCard");
+inline constexpr const TCHAR* FacilityCodexCatalogLauncherPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCatalogLauncher");
+inline constexpr const TCHAR* FacilityCodexCatalogLauncherClass = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCatalogLauncher.WBP_FF_FacilityCatalogLauncher_C");
+inline constexpr const TCHAR* FacilityCodexLauncherPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityLauncher");
+inline constexpr const TCHAR* FacilityCodexScreenPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityScreen");
+inline constexpr const TCHAR* FacilityCodexScreenClass = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityScreen.WBP_FF_FacilityScreen_C");
 
 // /Game/FestaFiesta/Building/FF_WBP_Building
 inline constexpr const TCHAR* FacilityRevenueFolder = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue");

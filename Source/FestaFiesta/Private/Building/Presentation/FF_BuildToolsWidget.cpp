@@ -47,8 +47,8 @@
 #include "TimerManager.h"
 #include "UI/Settings/FF_RuntimeSettingsSubsystem.h"
 #include "UI/Core/FF_UIForegroundRules.h"
-#include "UI/Facility/FF_FacilityInfoSubsystem.h"
-#include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "Building/FacilityInfo/FF_FacilityInfoSubsystem.h"
+#include "Building/FacilityInfo/FF_FacilityInfoPanel.h"
 
 #define LOCTEXT_NAMESPACE "FFBuildTools"
 

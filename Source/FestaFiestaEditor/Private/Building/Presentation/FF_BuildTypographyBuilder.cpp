@@ -58,8 +58,8 @@ const TCHAR* Paths[] = {
     FFBuildUIAssetPaths::FacilityCodexCatalogLauncherPackage,
     FFBuildUIAssetPaths::FacilityCodexScreenPackage,
     FFBuildUIAssetPaths::FacilityCodexCardPackage,
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Controls/WBP_FF_CodexCollectionCategory"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Controls/WBP_FF_CodexCollectionReward")
+    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Controls/WBP_FF_CollectionCategory"),
+    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Controls/WBP_FF_CollectionReward")
 };
 
 static bool Contains(const FString& Value, std::initializer_list<const TCHAR*> Tokens)

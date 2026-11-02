@@ -195,14 +195,14 @@ Artifacts/Validation/UnifiedConstruction/Backup/Test_Main.before-unified.umap
 | 용도 | 경로 |
 | --- | --- |
 | 현재 레벨에 통합 관리자 준비 | `Tools/ZoneSystem/enable_unified_build_area.py` |
-| 통합 관리자와 경계 상태 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildArea.cpp` |
-| 원본 다각형의 합집합·빈틈·구멍 판정 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildAreaGeometry.cpp` |
-| 시설·지역의 공간 검색 목록 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSSpatialHash.cpp` |
-| 배치·선택·저장 복원·검색 목록 갱신 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSWorldSubsystem.cpp` |
+| 통합 관리자와 경계 상태 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/FF_FFZSBuildArea.cpp` |
+| 원본 다각형의 합집합·빈틈·구멍 판정 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/FF_FFZSBuildAreaGeometry.cpp` |
+| 시설·지역의 공간 검색 목록 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSSpatialHash.cpp` |
+| 배치·선택·저장 복원·검색 목록 갱신 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSWorldSubsystem.cpp` |
 | 월드 스냅·각도와 지역 로컬 명령 변환 | `Source/FestaFiesta/Private/Building/FF_BuildModeSubsystem.cpp` |
-| 통합 영역의 단일 격자 표시 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildableGridActor.cpp` |
-| 격자선과 주요선의 월드 정렬 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildableGridComponent.cpp` |
-| 공간 검색 단위 테스트 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSSpatialHashTests.cpp` |
-| 격자 표시 통합 테스트 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildableGridPresentationTests.cpp` |
+| 통합 영역의 단일 격자 표시 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSBuildableGridActor.cpp` |
+| 격자선과 주요선의 월드 정렬 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSBuildableGridComponent.cpp` |
+| 공간 검색 단위 테스트 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSSpatialHashTests.cpp` |
+| 격자 표시 통합 테스트 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Grid/FF_FFZSBuildableGridPresentationTests.cpp` |
 
 공간 검색은 시설별 등록·변경·해제 시 갱신되며, 저장 복원은 복원할 시설들의 인덱스를 구성한 뒤 반영합니다. 시설 검색 기본 버킷은 `2,000cm`, 지역 검색 버킷은 `10,000cm`입니다. 시설 한 개가 지나치게 많은 버킷을 차지하면 보조 목록을 사용하고, 질의 범위가 너무 크면 저장된 대상 목록을 검사합니다. 이는 극단적인 크기 때문에 빈 버킷을 무제한 만들거나 순회하지 않기 위한 처리이며, 모든 질의가 일정한 비용으로 끝난다는 보장은 아닙니다.

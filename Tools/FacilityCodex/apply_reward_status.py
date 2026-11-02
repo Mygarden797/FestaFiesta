@@ -12,8 +12,8 @@ import unreal
 ROOT = Path(unreal.Paths.project_dir()).resolve()
 UI_ROOTS = (ROOT / "Content/FestaFiesta/UI", ROOT / "Content/FestaFiesta/Building/FF_WBP_Building")
 OUT = ROOT / "Saved/FacilityCodexRewardStatus_20260921"
-CARD = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"
-CARD_FILE = ROOT / "Content/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard.uasset"
+CARD = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCard"
+CARD_FILE = ROOT / "Content/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCard.uasset"
 
 
 def digest(path):

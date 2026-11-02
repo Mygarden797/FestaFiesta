@@ -112,7 +112,9 @@ namespace FFBuildModeModel
 
 	inline bool CanRemoveInstalledFacility(const EFF_BuildModeState State)
 	{
-		return State == EFF_BuildModeState::BuildMode;
+		// 카탈로그 옆 시설 정보에서도 명시적인 이동·철거 버튼을 사용할 수 있다.
+		// 실제 철거는 선택한 시설과 별도 확인 버튼을 거치며 프리뷰 중에는 허용하지 않는다.
+		return State == EFF_BuildModeState::BuildMode || State == EFF_BuildModeState::CatalogOpen;
 	}
 
 	inline bool CanInspectInstalledFacility(const EFF_BuildModeState State)
@@ -354,7 +356,7 @@ namespace FFBuildModeModel
 // ExecuteCommand 경로만 사용한다. 따라서 단계·충돌·보호 동선·정책 검증을 우회하지 않는다.
 
 // 상태 전환은 `Closed -> CatalogOpen <-> BuildMode`, `CatalogOpen -> Placing`과
-// `BuildMode -> Moving -> BuildMode`를 따른다. B는 활성 프리뷰를 정리하고 카탈로그를
+// `BuildMode/CatalogOpen -> Moving -> BuildMode`를 따른다. B는 활성 프리뷰를 정리하고 카탈로그를
 // 열고 닫으며 ESC/F5는 상태를 보존한 채 공용 Pause Hub를 연다. BuildMode에서는 설치 시설의 예약 범위를 보여 주고
 // 선택 후 액션 패널에서 이동·철거·취소를 선택한다. Placing과 Moving은 제한된 주기로 커서 위치를 다시 검증한다.
  

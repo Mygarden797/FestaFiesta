@@ -106,7 +106,7 @@ def preflight():
         require(shader_digest(before) in (previous, target), "Refusing to replace an unknown shader: " + path)
         records.append({"kind": "base", "asset": material, "custom": custom, "source": source,
                         "before": before, "target": target})
-    screen_path = GLASS["FOLDER"] + "/MI_FF_CodexGlass_Screen"
+    screen_path = GLASS["FOLDER"] + "/MI_FF_Glass_Screen"
     screen = unreal.load_asset(screen_path)
     require(isinstance(screen, unreal.MaterialInstanceConstant), "Existing Screen instance is missing")
     require(assets.get_metadata_tag(screen, GLASS["VERSION_KEY"]) == GLASS["VERSION"], "Screen ownership marker is missing")

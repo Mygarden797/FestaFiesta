@@ -10,7 +10,7 @@ Existing owned assets are reused without saving, preserving repeat-run hashes.
 import unreal
 
 FOLDER = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials"
-NAME = "M_FF_Codex_DiscoveryThumbnail"
+NAME = "M_FF_DiscoveryThumbnail"
 VERSION_KEY = "FF.FacilityCodex.ThumbnailDiscoveryVersion"
 VERSION = "1"
 

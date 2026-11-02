@@ -109,9 +109,9 @@ INI 파일을 직접 수정했다면 실행 중인 에디터가 이전 설정을
 | --- | --- |
 | `Config/DefaultGame.ini` | 이 게임 프로젝트에 적용할 경사·높이 차 기준을 지정합니다. |
 | `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSDeveloperSettings.h` | 설정 항목과 공용 기본값을 정의합니다. 설정 누락 시 사용할 기본값도 이곳에서 관리합니다. |
-| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSDeveloperSettings.cpp` | 설정을 검증에 사용할 값으로 정리합니다. 잘못된 숫자는 공용 기본값이나 허용 범위로 처리합니다. |
+| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSDeveloperSettings.cpp` | 설정을 검증에 사용할 값으로 정리합니다. 잘못된 숫자는 공용 기본값이나 허용 범위로 처리합니다. |
 | `Plugins/FF_ZoneSystem/Config/DefaultFF_ZoneSystem.ini` | 플러그인의 출하 기본값을 명시합니다. 현재 배포 기준과 일치하도록 관리합니다. |
-| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSFacilityActor.cpp` | 클릭한 위치가 시설 범위 안인지 판단할 때 높이 차 설정을 참조합니다. 설정이 없을 때도 공용 기본값을 사용합니다. |
+| `Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Facility/FF_FFZSFacilityActor.cpp` | 클릭한 위치가 시설 범위 안인지 판단할 때 높이 차 설정을 참조합니다. 설정이 없을 때도 공용 기본값을 사용합니다. |
 
 설정 클래스는 `Config=Game`으로 선언되어 있습니다.
 따라서 `DefaultFF_ZoneSystem.ini`만 고친다고 `DefaultGame.ini`의 게임 설정이 자동으로 바뀌지는 않습니다.

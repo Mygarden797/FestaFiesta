@@ -15,132 +15,475 @@
     "Source/FestaFiesta/Private/Building/Presentation/FF_BuildModeGuideWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildModeGuideWbpBuilder.cpp",
     "Source/FestaFiesta/Private/Building/Presentation/FF_BuildMultiSelectionWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildMultiSelectionWbpBuilder.cpp",
     "Source/FestaFiesta/Private/Building/Presentation/FF_BuildPlacementFailureFeedbackWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildPlacementFailureFeedbackWbpBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/Facility/FF_BuildModeClarityFacilityV2Builder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildModeClarityFacilityV2Builder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_BuildModeClarityFacilityV2Builder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_BuildModeClarityFacilityV2Builder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Title/FF_TitleCleanCasualWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Title/FF_TitleCleanCasualWbpBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityAuroraThemeBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraThemeBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityAuroraThemeBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityAuroraThemeBuilder.cpp",
     "Source/FestaFiesta/Private/Building/Presentation/FF_FacilityAuroraBuildWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_FacilityAuroraBuildWbpBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenuePearlBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenuePearlBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityAuroraLightingBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraLightingBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenuePearlBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityRevenuePearlBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityAuroraLightingBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityAuroraLightingBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Atlas/FF_AtlasNaturalWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Atlas/FF_AtlasNaturalWbpBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Core/FF_UIWbpBuilderCommon.cpp": "Source/FestaFiestaEditor/Private/UI/Core/FF_UIWbpBuilderCommon.cpp",
     "Source/FestaFiesta/Private/UI/LiveHUD/FF_LiveHudWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/LiveHUD/FF_LiveHudWbpBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueClarityBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueClarityBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityAuroraInfoBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraInfoBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityAuroraRevenueProgramsMigration.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityAuroraRevenueProgramsMigration.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueClarityBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityRevenueClarityBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityAuroraInfoBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityAuroraInfoBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityAuroraRevenueProgramsMigration.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityAuroraRevenueProgramsMigration.cpp",
     "Source/FestaFiesta/Private/Building/Presentation/FF_BuildTypographyBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildTypographyBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/Facility/FF_BuildReferenceFacilityInfoBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildReferenceFacilityInfoBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_BuildReferenceFacilityInfoBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_BuildReferenceFacilityInfoBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Atlas/FF_AtlasWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Atlas/FF_AtlasWbpBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Core/FF_UIFlowStubWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Core/FF_UIFlowStubWbpBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/Facility/FF_BuildModeClarityInfoBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildModeClarityInfoBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_BuildModeClarityInfoBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_BuildModeClarityInfoBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityInfoWbpBuilder.cpp",
     "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildToolsWbpBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Core/FF_LoadingScreenWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Core/FF_LoadingScreenWbpBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_BuildPearlCodexBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildPearlCodexBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_BuildPearlCodexBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildPearlBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Frontend/FF_FrontendWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Frontend/FF_FrontendWbpBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_BuildReferenceFacilityCodexBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildReferenceFacilityCodexBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_BuildReferenceCodexCatalogTabBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildReferenceCodexCatalogTabBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_BuildReferenceFacilityCodexBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildReferenceFacilityBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_BuildReferenceCodexCatalogTabBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildReferenceCatalogTabBuilder.cpp",
     "Source/FestaFiesta/Private/Building/Presentation/FF_BuildStudioWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildStudioWbpBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Frontend/FF_FrontendSetupStyleWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Frontend/FF_FrontendSetupStyleWbpBuilder.cpp",
     "Source/FestaFiesta/Private/Building/Presentation/FF_BuildSynergyCardWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildSynergyCardWbpBuilder.cpp",
     "Source/FestaFiesta/Private/Building/Presentation/FF_BuildReferenceToolsWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildReferenceToolsWbpBuilder.cpp",
     "Source/FestaFiesta/Private/Building/Presentation/FF_BuildSynergyWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildSynergyWbpBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexActionsBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexActionsBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/Facility/FF_FacilitySynergyPearlBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilitySynergyPearlBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexClarityBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexClarityBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/Facility/FF_ProgramPearlWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_ProgramPearlWbpBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCatalogBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexCatalogBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityWorldBadgeWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityWorldBadgeWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexActionsBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityActionsBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilitySynergyPearlBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilitySynergyPearlBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexClarityBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityClarityBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_ProgramPearlWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_ProgramPearlWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCatalogBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCatalogBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityWorldBadgeWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityWorldBadgeWbpBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Settings/FF_FullscreenOptionsWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Settings/FF_FullscreenOptionsWbpBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Settings/FF_SettingsWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Settings/FF_SettingsWbpBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Settings/FF_KeyBindingWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Settings/FF_KeyBindingWbpBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexFestivalBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexFestivalBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexContrastBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexContrastBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexFestivalBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityFestivalBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexContrastBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityContrastBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Report/FF_ReportScreenWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Report/FF_ReportScreenWbpBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexGlassBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexGlassBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexGlassBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityGlassBuilder.cpp",
     "Source/FestaFiesta/Private/UI/Pause/FF_PauseWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/Pause/FF_PauseWbpBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexInspectorBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexInspectorBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexRewardAffordanceBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexRewardAffordanceBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_CodexCatalogFocusBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_CodexCatalogFocusBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexRefinementBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexRefinementBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexInspectorBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityInspectorBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexRewardAffordanceBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityRewardAffordanceBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_CodexCatalogFocusBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_CatalogFocusBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexRefinementBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityRefinementBuilder.cpp",
     "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_BuildReferenceCatalogBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_BuildReferenceCatalogBuilder.cpp",
     "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_BuildModeClarityCatalogBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_BuildModeClarityCatalogBuilder.cpp",
     "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_BuildPearlCatalogBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_BuildPearlCatalogBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexShowcaseBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexShowcaseBuilder.cpp",
-    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexShowcaseBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityShowcaseBuilder.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityWbpBuilder.cpp",
     "Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_PrepBuildWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_PrepBuildWbpBuilder.cpp",
     "Source/FestaFiesta/Private/UI/PrepHUD/FF_PrepHudWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/FF_PrepHudWbpBuilder.cpp",
     "Source/FestaFiesta/Private/Building/Presentation/FF_BuildTypography.h": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildTypography.h",
     "Source/FestaFiesta/Private/Building/Presentation/FF_BuildUIAssetPaths.h": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildUIAssetPaths.h",
     "Source/FestaFiesta/Private/UI/Core/FF_BuildPearlStyle.h": "Source/FestaFiesta/Public/UI/Core/FF_BuildPearlStyle.h",
     "Source/FestaFiesta/Private/UI/Core/FF_PauseOptionsLightTealStyle.h": "Source/FestaFiesta/Public/UI/Core/FF_PauseOptionsLightTealStyle.h",
-    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramLayout.h": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramLayout.h",
-    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoUpgradeLayout.h": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoUpgradeLayout.h",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramLayout.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityPaidProgramLayout.h",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoUpgradeLayout.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityInfoUpgradeLayout.h",
     "Source/FestaFiesta/Private/UI/Settings/FF_KeyBindingLayoutMetrics.h": "Source/FestaFiesta/Public/UI/Settings/FF_KeyBindingLayoutMetrics.h",
-    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoSelection.h": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoSelection.h",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoSelection.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityInfoSelection.h",
     "Source/FestaFiesta/Private/UI/Frontend/FF_FrontendCasualStyle.h": "Source/FestaFiesta/Public/UI/Frontend/FF_FrontendCasualStyle.h",
     "Source/FestaFiesta/Private/UI/Core/FF_UIWbpBuilderCommon.h": "Source/FestaFiestaEditor/Private/UI/Core/FF_UIWbpBuilderCommon.h",
     "Source/FestaFiesta/Private/UI/Frontend/FF_FrontendCasualBuilder.h": "Source/FestaFiestaEditor/Private/UI/Frontend/FF_FrontendCasualBuilder.h",
-    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoWbpBuilder.h": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoWbpBuilder.h",
-    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoTests.cpp": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoTests.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoWbpBuilder.h": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityInfoWbpBuilder.h",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoTests.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/Tests/FF_FacilityInfoTests.cpp",
     "Source/FestaFiesta/Private/Building/FF_BuildingAssetRelocation.cpp": "Source/FestaFiestaEditor/Private/Building/FF_BuildingAssetRelocation.cpp",
-    "Source/FestaFiesta/Private/Editor/FF_PackagingInteractionRepair.cpp": "Source/FestaFiestaEditor/Private/Editor/FF_PackagingInteractionRepair.cpp"
+    "Source/FestaFiesta/Private/Editor/FF_PackagingInteractionRepair.cpp": "Source/FestaFiestaEditor/Private/Editor/FF_PackagingInteractionRepair.cpp",
+    "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexModel.h": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityModel.h",
+    "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexProgressSubsystem.h": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityProgressSubsystem.h",
+    "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexSettings.h": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilitySettings.h",
+    "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexSubsystem.h": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilitySubsystem.h",
+    "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexTypes.h": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityTypes.h",
+    "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexFestivalSaveTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityFestivalSaveTests.cpp",
+    "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexIntroductionTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityIntroductionTests.cpp",
+    "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexModel.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilityModel.cpp",
+    "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexProgressSubsystem.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilityProgressSubsystem.cpp",
+    "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexRewardTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityRewardTests.cpp",
+    "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexSettings.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilitySettings.cpp",
+    "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexSubsystem.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilitySubsystem.cpp",
+    "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexTestObserver.h": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityTestObserver.h",
+    "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityTests.cpp",
+    "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexCard.h": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityCard.h",
+    "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexImage.h": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityImage.h",
+    "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexLauncher.h": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityLauncher.h",
+    "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexPresenterSubsystem.h": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityPresenterSubsystem.h",
+    "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexPreview.h": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityPreview.h",
+    "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexScreen.h": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityScreen.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityColorPicker.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityColorPicker.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoPanel.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityInfoPanel.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoSelection.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityInfoSelection.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoSubsystem.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityInfoSubsystem.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoTypes.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityInfoTypes.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoUpgradeLayout.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityInfoUpgradeLayout.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityLightingControls.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityLightingControls.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramCard.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityPaidProgramCard.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramLayout.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityPaidProgramLayout.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramPicker.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityPaidProgramPicker.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramTypes.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityPaidProgramTypes.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityProgramMarkerSubsystem.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityProgramMarkerSubsystem.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilityProgramMarkerWidget.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityProgramMarkerWidget.h",
+    "Source/FestaFiesta/Public/UI/Facility/FF_FacilitySynergyEntryWidget.h": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilitySynergyEntryWidget.h",
+    "Source/FestaFiesta/Public/UI/FacilityRevenue/FF_FacilityRevenueRanking.h": "Source/FestaFiesta/Public/Building/FacilityRevenue/FF_FacilityRevenueRanking.h",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCard.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCard.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCatalogUiTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCatalogUiTests.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCollection.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCollection.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCollectionTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCollectionTests.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexGlassTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityGlassTests.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexImage.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityImage.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexIntroductionUiTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityIntroductionUiTests.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexLauncher.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityLauncher.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexParallelDataTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityParallelDataTests.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPresentation.h": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityPresentation.h",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPresenterSubsystem.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityPresenterSubsystem.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPresenterTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityPresenterTests.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPreview.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityPreview.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPreviewTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityPreviewTests.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexRewardFeedbackTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityRewardFeedbackTests.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexRewardNotificationTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityRewardNotificationTests.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexScreen.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityScreen.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexThumbnailTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityThumbnailTests.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexUiTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityUiTests.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityColorPicker.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityColorPicker.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoPanel.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityInfoPanel.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoPanelTests.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilityInfoPanelTests.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoSubsystem.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityInfoSubsystem.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoTypes.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityInfoTypes.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityLightingControls.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityLightingControls.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityLightingDraftTests.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilityLightingDraftTests.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityLightingIntroductionTests.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilityLightingIntroductionTests.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramCard.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityPaidProgramCard.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramPicker.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityPaidProgramPicker.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramPreviewTests.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilityPaidProgramPreviewTests.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityProgramMarkerSubsystem.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityProgramMarkerSubsystem.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityProgramMarkerTests.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilityProgramMarkerTests.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityProgramMarkerWidget.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityProgramMarkerWidget.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityQueueControls.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityQueueControls.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityQueueSettingsTests.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilityQueueSettingsTests.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityStaffPanelTests.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilityStaffPanelTests.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilitySynergyEntryWidget.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilitySynergyEntryWidget.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilitySynergyTabTests.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilitySynergyTabTests.cpp",
+    "Source/FestaFiesta/Private/UI/Facility/FF_FacilityTeamRevenueModelTests.cpp": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilityTeamRevenueModelTests.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueInspectionTests.cpp": "Source/FestaFiesta/Private/Building/FacilityRevenue/Tests/FF_FacilityRevenueInspectionTests.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueRanking.cpp": "Source/FestaFiesta/Private/Building/FacilityRevenue/FF_FacilityRevenueRanking.cpp",
+    "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueTests.cpp": "Source/FestaFiesta/Private/Building/FacilityRevenue/Tests/FF_FacilityRevenueTests.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildPearlCodexBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildPearlBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildReferenceCodexCatalogTabBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildReferenceCatalogTabBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildReferenceFacilityCodexBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildReferenceFacilityBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexActionsBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityActionsBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexCatalogBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCatalogBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexClarityBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityClarityBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexContrastBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityContrastBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexFestivalBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityFestivalBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexGlassBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityGlassBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexInspectorBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityInspectorBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexIntroductionBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityIntroductionBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexNavigationBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityNavigationBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexRefinementBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityRefinementBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexRewardAffordanceBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityRewardAffordanceBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexShowcaseBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityShowcaseBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityWbpBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildFacilityA5DesignerBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_BuildFacilityA5DesignerBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildModeClarityFacilityV2Builder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_BuildModeClarityFacilityV2Builder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildModeClarityInfoBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_BuildModeClarityInfoBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildReferenceFacilityInfoBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_BuildReferenceFacilityInfoBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraInfoBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityAuroraInfoBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraLightingBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityAuroraLightingBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraThemeBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityAuroraThemeBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoTests.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/Tests/FF_FacilityInfoTests.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityInfoWbpBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoWbpBuilder.h": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityInfoWbpBuilder.h",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityLightingIntroductionBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityLightingIntroductionBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilitySynergyPearlBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilitySynergyPearlBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityTeamRevenueBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityTeamRevenueBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityTeamRevenueLayoutTests.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/Tests/FF_FacilityTeamRevenueLayoutTests.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityWorldBadgeWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityWorldBadgeWbpBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/Facility/FF_ProgramPearlWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_ProgramPearlWbpBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityAuroraRevenueProgramsMigration.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityAuroraRevenueProgramsMigration.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueClarityBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityRevenueClarityBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueCloseIconFix.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityRevenueCloseIconFix.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenuePearlBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityRevenuePearlBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueSkyBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityRevenueSkyBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildCatalogProgramTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildCatalogProgramTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildCatalogRetirementTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildCatalogRetirementTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildCatalogSubsystemTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildCatalogSubsystemTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildCatalogThumbnailTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildCatalogThumbnailTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildDragPlacementPathTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildDragPlacementPathTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildDragPlacementTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildDragPlacementTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildFacilityInspectionTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildFacilityInspectionTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildGridOverviewTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildGridOverviewTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildLightingCatalogTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildLightingCatalogTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildModeSubsystemTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildModeSubsystemTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildMultiSelectionTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildMultiSelectionTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildNoRoadPlacementTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildNoRoadPlacementTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildPlacementAssistanceTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildPlacementAssistanceTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildPlacementPointerPolicyTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildPlacementPointerPolicyTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildQueueLayoutTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildQueueLayoutTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildRoadCatalogTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildRoadCatalogTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_BuildSynergyCatalogContextTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_BuildSynergyCatalogContextTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_FacilityDefinitionContentTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityDefinitionContentTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_FacilityNamingLibraryTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityNamingLibraryTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_FacilityTeamRevenuePreviewTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityTeamRevenuePreviewTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_FacilityUpgradeIntegrationTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityUpgradeIntegrationTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_FacilityUpgradeRulesTests.cpp": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityUpgradeRulesTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildApprovedQuickKeysTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildApprovedQuickKeysTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildFacilityCostTooltipTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildFacilityCostTooltipTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildFeatureGuideButtonTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildFeatureGuideButtonTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildFeatureGuideInputTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildFeatureGuideInputTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildMultiSelectionVisualTest.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildMultiSelectionVisualTest.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildPlacementFailureFeedbackTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildPlacementFailureFeedbackTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildPlacementGizmoTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildPlacementGizmoTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildStudioWidgetTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildStudioWidgetTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildSynergyPresentationTest.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildSynergyPresentationTest.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolbarFeaturePopupTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildToolbarFeaturePopupTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsCatalogHelpTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildToolsCatalogHelpTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsForegroundViewportTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildToolsForegroundViewportTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsQueueSettingsTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildToolsQueueSettingsTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsVisualTest.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildToolsVisualTest.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsWidgetTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildToolsWidgetTests.cpp",
+    "Source/FestaFiesta/Private/Building/Presentation/FF_FacilityAuroraBuildTests.cpp": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_FacilityAuroraBuildTests.cpp",
+    "Source/FestaFiesta/Private/Building/UI/FF_BuildCatalogGoldTests.cpp": "Source/FestaFiesta/Private/Building/UI/Tests/FF_BuildCatalogGoldTests.cpp",
+    "Source/FestaFiesta/Private/Building/UI/FF_BuildCatalogWidgetBlueprintTests.cpp": "Source/FestaFiesta/Private/Building/UI/Tests/FF_BuildCatalogWidgetBlueprintTests.cpp",
+    "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyTests.cpp": "Source/FestaFiesta/Private/Building/Synergy/Tests/FF_FacilitySynergyTests.cpp",
+    "Source/FestaFiesta/Private/Building/Testing/FF_FacilityServiceDurationTests.cpp": "Source/FestaFiesta/Private/Building/Testing/Tests/FF_FacilityServiceDurationTests.cpp",
+    "Source/FestaFiesta/Private/Building/Testing/FF_ZoneLifecycleTestPanelTests.cpp": "Source/FestaFiesta/Private/Building/Testing/Tests/FF_ZoneLifecycleTestPanelTests.cpp",
+    "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildDesignerPreviewTests.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/Tests/FF_BuildDesignerPreviewTests.cpp",
+    "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildFeatureGuideRenderTests.cpp": "Source/FestaFiestaEditor/Private/Building/Presentation/Tests/FF_BuildFeatureGuideRenderTests.cpp",
+    "Source/FestaFiesta/Private/Building/FF_FacilityUpgradeTestPolicy.h": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityUpgradeTestPolicy.h",
+    "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyTableBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/Synergy/FF_FacilitySynergyTableBuilder.cpp",
+    "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyTableBuilder.h": "Source/FestaFiestaEditor/Private/Building/Synergy/FF_FacilitySynergyTableBuilder.h",
+    "Source/FestaFiesta/Private/Zone/FF_ZoneSystemQueueBridgeSubsystem.cpp": "Source/FestaFiesta/Private/Zone/Queue/FF_ZoneSystemQueueBridgeSubsystem.cpp",
+    "Source/FestaFiesta/Private/Zone/FF_ZoneQueueProjection.cpp": "Source/FestaFiesta/Private/Zone/Queue/FF_ZoneQueueProjection.cpp",
+    "Source/FestaFiesta/Private/Zone/FF_ZoneQueuePolicy.cpp": "Source/FestaFiesta/Private/Zone/Queue/FF_ZoneQueuePolicy.cpp",
+    "Source/FestaFiesta/Private/Zone/FF_ZoneQueueSettingsProjectionTests.cpp": "Source/FestaFiesta/Private/Zone/Queue/Tests/FF_ZoneQueueSettingsProjectionTests.cpp",
+    "Source/FestaFiesta/Private/Zone/FF_ZonePopulationBridgeSubsystem.cpp": "Source/FestaFiesta/Private/Zone/Population/FF_ZonePopulationBridgeSubsystem.cpp",
+    "Source/FestaFiesta/Private/Zone/FF_ZonePopulationBridgeTests.cpp": "Source/FestaFiesta/Private/Zone/Population/Tests/FF_ZonePopulationBridgeTests.cpp",
+    "Source/FestaFiesta/Private/Zone/FF_ZoneLayoutAuthoringLibrary.cpp": "Source/FestaFiesta/Private/Zone/Layout/FF_ZoneLayoutAuthoringLibrary.cpp",
+    "Source/FestaFiesta/Private/Zone/FF_ZoneLayoutConsole.cpp": "Source/FestaFiesta/Private/Zone/Layout/FF_ZoneLayoutConsole.cpp",
+    "Source/FestaFiesta/Private/Zone/FF_ZoneSystemStageBridgeSubsystem.cpp": "Source/FestaFiesta/Private/Zone/Stage/FF_ZoneSystemStageBridgeSubsystem.cpp",
+    "Source/FestaFiesta/Private/Zone/FF_ZoneFacilityLifecycleTests.cpp": "Source/FestaFiesta/Private/Zone/Stage/Tests/FF_ZoneFacilityLifecycleTests.cpp",
+    "Source/FestaFiesta/Private/Zone/FF_ZoneAccessExitTests.cpp": "Source/FestaFiesta/Private/Zone/Access/Tests/FF_ZoneAccessExitTests.cpp",
+    "Source/FestaFiesta/Private/Zone/FF_ZoneSystemIntegrationTests.cpp": "Source/FestaFiesta/Private/Zone/Tests/FF_ZoneSystemIntegrationTests.cpp",
+    "Source/FestaFiesta/Private/Zone/FF_TimeHudWidgetBlueprintTests.cpp": "Source/FestaFiesta/Private/Time/Tests/FF_TimeHudWidgetBlueprintTests.cpp",
+    "Source/FestaFiesta/Private/MapOverview/FF_MapOverviewBridgeTests.cpp": "Source/FestaFiesta/Private/MapOverview/Tests/FF_MapOverviewBridgeTests.cpp",
+    "Source/FestaFiesta/Private/MapOverview/FF_MapOverviewBridgeToolbarTests.cpp": "Source/FestaFiesta/Private/MapOverview/Tests/FF_MapOverviewBridgeToolbarTests.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/FF_MapCameraLibrary.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Camera/FF_MapCameraLibrary.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/FF_MapOverviewViewTarget.h": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Camera/FF_MapOverviewViewTarget.h",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/FF_MapGridActor.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Grid/FF_MapGridActor.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/FF_MapGridComponent.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Grid/FF_MapGridComponent.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/FF_MapWholeGridButtonWidget.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Grid/FF_MapWholeGridButtonWidget.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/FF_MapOverviewModel.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Overview/FF_MapOverviewModel.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/FF_MapOverviewMarkerWidget.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Overview/FF_MapOverviewMarkerWidget.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/FF_MapOverviewSubsystem.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Overview/FF_MapOverviewSubsystem.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/FF_MapOverviewWidget.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Overview/FF_MapOverviewWidget.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/FF_MapTerrainCapture.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Overview/FF_MapTerrainCapture.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Tests/FF_MapCameraTests.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Camera/Tests/FF_MapCameraTests.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Tests/FF_MapGridTests.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Grid/Tests/FF_MapGridTests.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Tests/FF_MapWholeGridButtonTests.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Grid/Tests/FF_MapWholeGridButtonTests.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Tests/FF_MapOverviewMinimapTests.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverview/Private/Overview/Tests/FF_MapOverviewMinimapTests.cpp",
+    "Plugins/FF_MapOverview/Source/FF_MapOverviewEditor/Private/FF_MapWholeGridButtonBuilder.cpp": "Plugins/FF_MapOverview/Source/FF_MapOverviewEditor/Private/Grid/FF_MapWholeGridButtonBuilder.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAAuthoredZone.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Layout/FFZAAuthoredZone.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZADistrict.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Layout/FFZADistrict.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAPlot.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Layout/FFZAPlot.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZALayerPolicy.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Layout/FFZALayerPolicy.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZALayerPolicy.h": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Layout/FFZALayerPolicy.h",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAZoneAuthoringSubsystem.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Layout/FFZAZoneAuthoringSubsystem.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAZoneCellMap.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Layout/FFZAZoneCellMap.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAZoneDefinition.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Layout/FFZAZoneDefinition.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAZoneLayoutManager.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Layout/FFZAZoneLayoutManager.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZABoundaryNormalize.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Geometry/FFZABoundaryNormalize.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAGapAreaRepair.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Geometry/FFZAGapAreaRepair.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAOverlapRepair.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Geometry/FFZAOverlapRepair.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAPolygonMath.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Geometry/FFZAPolygonMath.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAPolygonAreaActor.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Geometry/FFZAPolygonAreaActor.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAAutoWeld.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Weld/FFZAAutoWeld.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZALayoutOps.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Weld/FFZALayoutOps.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZASeamConsensus.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Weld/FFZASeamConsensus.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZASplineAuthoring.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Weld/FFZASplineAuthoring.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAWeldDiagnostics.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Weld/FFZAWeldDiagnostics.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAOverlayMeshBuilder.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Visualization/FFZAOverlayMeshBuilder.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAOverlayMeshBuilder.h": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Visualization/FFZAOverlayMeshBuilder.h",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/FFZAZoneOverlayActor.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoring/Private/Visualization/FFZAZoneOverlayActor.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/FFZAAuthoredZoneCustomization.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Layout/FFZAAuthoredZoneCustomization.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/FFZAAuthoredZoneCustomization.h": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Layout/FFZAAuthoredZoneCustomization.h",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/FFZAZoneDefinitionValidator.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Layout/FFZAZoneDefinitionValidator.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/FFZAZoneDefinitionValidator.h": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Layout/FFZAZoneDefinitionValidator.h",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Tests/FFZAZoneAuthoringTests.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Layout/Tests/FFZAZoneAuthoringTests.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Tests/FFZABoundaryNormalizeTests.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Geometry/Tests/FFZABoundaryNormalizeTests.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Tests/FFZAGapAreaRepairTests.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Geometry/Tests/FFZAGapAreaRepairTests.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Tests/FFZAAutoWeldTests.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Weld/Tests/FFZAAutoWeldTests.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Tests/FFZAGroupedWeldTests.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Weld/Tests/FFZAGroupedWeldTests.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Tests/FFZALayoutOpsTests.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Weld/Tests/FFZALayoutOpsTests.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Tests/FFZARealLayoutWeldTests.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Weld/Tests/FFZARealLayoutWeldTests.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Tests/FFZASeamConsensusTests.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Weld/Tests/FFZASeamConsensusTests.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Tests/FFZASelectedWeldTests.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Weld/Tests/FFZASelectedWeldTests.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Tests/FFZAWeldDiagnosticsTests.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Weld/Tests/FFZAWeldDiagnosticsTests.cpp",
+    "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Tests/FFZAWeldSplineTests.cpp": "Plugins/FF_ZoneAuthoring/Source/FF_ZoneAuthoringEditor/Private/Weld/Tests/FFZAWeldSplineTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSAudienceLibrary.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Audience/FF_FFZSAudienceLibrary.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSAudienceLayout.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Audience/FF_FFZSAudienceLayout.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSFacilityActor.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Facility/FF_FFZSFacilityActor.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSFacilityDefinition.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Facility/FF_FFZSFacilityDefinition.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSFacilityLightingRig.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Facility/FF_FFZSFacilityLightingRig.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildableGrid.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSBuildableGrid.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildableGridActor.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSBuildableGridActor.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildableGridComponent.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSBuildableGridComponent.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildGridSurface.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSBuildGridSurface.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSGridLibrary.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSGridLibrary.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildArea.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/FF_FFZSBuildArea.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildAreaGeometry.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/FF_FFZSBuildAreaGeometry.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildAreaGeometry.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/FF_FFZSBuildAreaGeometry.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSOrientedGeometry.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/FF_FFZSOrientedGeometry.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSVisualGeometry.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/FF_FFZSVisualGeometry.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildRangeComponent.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSBuildRangeComponent.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildRangePresentation.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSBuildRangePresentation.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildRangePresentation.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSBuildRangePresentation.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildPresentationSettings.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSBuildPresentationSettings.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSPlacementGroundSupport.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSPlacementGroundSupport.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSPlacementPreviewActor.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSPlacementPreviewActor.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSProtectedArea.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSProtectedArea.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSTileGroundPlacement.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSTileGroundPlacement.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSTileGroundPlacement.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSTileGroundPlacement.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSNavArea_QueueLane.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Queue/FF_FFZSNavArea_QueueLane.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSQueueComponent.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Queue/FF_FFZSQueueComponent.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSQueueGeometry.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Queue/FF_FFZSQueueGeometry.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSQueueLayoutGeometry.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Queue/FF_FFZSQueueLayoutGeometry.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSDeveloperSettings.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSDeveloperSettings.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSSpatialHash.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSSpatialHash.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSSpatialHash.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSSpatialHash.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSTypes.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSTypes.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSWorldSubsystem.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSWorldSubsystem.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSWorldSubsystem_ConstructionHistory.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSWorldSubsystem_ConstructionHistory.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSWorldSubsystem_QueueLayout.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSWorldSubsystem_QueueLayout.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSZoneAccessSubsystem.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSZoneAccessSubsystem.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSZoneActor.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSZoneActor.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSAudienceTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Audience/Tests/FF_FFZSAudienceTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSFacilityDefinitionTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Facility/Tests/FF_FFZSFacilityDefinitionTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSBuildableGridTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/Tests/FF_FFZSBuildableGridTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSGridTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/Tests/FF_FFZSGridTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSBuildAreaGeometryTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/Tests/FF_FFZSBuildAreaGeometryTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSOrientedGeometryTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/Tests/FF_FFZSOrientedGeometryTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSVisualGeometryTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/Tests/FF_FFZSVisualGeometryTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSBuildRangePresentationTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/Tests/FF_FFZSBuildRangePresentationTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSQueueGeometryTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Queue/Tests/FF_FFZSQueueGeometryTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSQueueLayoutTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Queue/Tests/FF_FFZSQueueLayoutTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSQueueTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Queue/Tests/FF_FFZSQueueTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSDeveloperSettingsTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/Tests/FF_FFZSDeveloperSettingsTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSAudienceCapacityEditor.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Audience/FF_FFZSAudienceCapacityEditor.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSAudienceCapacityEditor.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Audience/FF_FFZSAudienceCapacityEditor.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityDefinitionCrossAssetValidation.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/FF_FFZSFacilityDefinitionCrossAssetValidation.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityDefinitionCrossAssetValidation.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/FF_FFZSFacilityDefinitionCrossAssetValidation.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityDefinitionCustomization.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/FF_FFZSFacilityDefinitionCustomization.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityDefinitionCustomization.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/FF_FFZSFacilityDefinitionCustomization.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityDefinitionValidator.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/FF_FFZSFacilityDefinitionValidator.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityDefinitionValidator.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/FF_FFZSFacilityDefinitionValidator.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityEditorHelpers.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/FF_FFZSFacilityEditorHelpers.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityLevelPreview.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/FF_FFZSFacilityLevelPreview.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityLevelPreview.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/FF_FFZSFacilityLevelPreview.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSNavigationEditorLibrary.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Navigation/FF_FFZSNavigationEditorLibrary.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Tests/FF_FFZSAudienceCapacityTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Audience/Tests/FF_FFZSAudienceCapacityTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Tests/FF_FFZSAudienceEditorTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Audience/Tests/FF_FFZSAudienceEditorTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Tests/FF_FFZSFacilityDefinitionCrossAssetValidationTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/Tests/FF_FFZSFacilityDefinitionCrossAssetValidationTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Tests/FF_FFZSFacilityEditorHelpersTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/Tests/FF_FFZSFacilityEditorHelpersTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Tests/FF_FFZSFacilityKoreanTooltipsTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/Tests/FF_FFZSFacilityKoreanTooltipsTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSAudienceWorldTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Audience/FF_FFZSAudienceWorldTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildCatalogLightingTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSBuildCatalogLightingTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSFacilityLevelPresentationTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSFacilityLevelPresentationTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSFacilityLightingTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSFacilityLightingTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSFacilityPlayerCollisionTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSFacilityPlayerCollisionTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSLightingTestRig.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSLightingTestRig.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSLightingTestRig.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSLightingTestRig.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSNonServicePresentationTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSNonServicePresentationTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSProductionLightingTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSProductionLightingTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildableGridPresentationTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Grid/FF_FFZSBuildableGridPresentationTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildableGridRenderedPreviewTest.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Grid/FF_FFZSBuildableGridRenderedPreviewTest.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildableGridWorldTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Grid/FF_FFZSBuildableGridWorldTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildGridSurfaceTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Grid/FF_FFZSBuildGridSurfaceTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSNavigationObstacleTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Placement/FF_FFZSNavigationObstacleTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSRoadTerrainPlacementTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Placement/FF_FFZSRoadTerrainPlacementTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSRoadTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Placement/FF_FFZSRoadTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSUnifiedConstructionTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Placement/FF_FFZSUnifiedConstructionTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSQueueLayoutWorldTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Queue/FF_FFZSQueueLayoutWorldTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSConstructionHistoryTestPolicy.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSConstructionHistoryTestPolicy.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSConstructionHistoryTestPolicy.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSConstructionHistoryTestPolicy.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSConstructionHistoryTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSConstructionHistoryTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSPolicyTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSPolicyTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSSaveGameTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSSaveGameTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSSpatialHashTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSSpatialHashTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSWorldTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSWorldTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSZoneAccessDiagnosticsTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSZoneAccessDiagnosticsTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSZoneBoundaryTransformTests.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSZoneBoundaryTransformTests.cpp",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSProjectZoneTestFixture.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Support/FF_FFZSProjectZoneTestFixture.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSSaveGameTestObject.h": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Support/FF_FFZSSaveGameTestObject.h",
+    "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSTestExternalPolicy.cpp": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Support/FF_FFZSTestExternalPolicy.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilityCodexModel.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilityModel.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilityCodexProgressSubsystem.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilityProgressSubsystem.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilityCodexSettings.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilitySettings.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilityCodexSubsystem.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilitySubsystem.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityCodexFestivalSaveTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityFestivalSaveTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityCodexIntroductionTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityIntroductionTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityCodexRewardTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityRewardTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityCodexTestObserver.h": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityTestObserver.h",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityCodexTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCodexCard.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCard.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCodexCollection.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCollection.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCodexImage.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityImage.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCodexLauncher.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityLauncher.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCodexPresentation.h": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityPresentation.h",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCodexPresenterSubsystem.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityPresenterSubsystem.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCodexPreview.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityPreview.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCodexScreen.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityScreen.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCodexCatalogUiTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCatalogUiTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCodexCollectionTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCollectionTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCodexGlassTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityGlassTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCodexIntroductionUiTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityIntroductionUiTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCodexParallelDataTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityParallelDataTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCodexPresenterTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityPresenterTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCodexPreviewTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityPreviewTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCodexRewardFeedbackTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityRewardFeedbackTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCodexRewardNotificationTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityRewardNotificationTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCodexThumbnailTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityThumbnailTests.cpp",
+    "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCodexUiTests.cpp": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityUiTests.cpp",
+    "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityCodexModel.h": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityModel.h",
+    "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityCodexProgressSubsystem.h": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityProgressSubsystem.h",
+    "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityCodexSettings.h": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilitySettings.h",
+    "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityCodexSubsystem.h": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilitySubsystem.h",
+    "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityCodexTypes.h": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityTypes.h",
+    "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityCodexCard.h": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityCard.h",
+    "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityCodexImage.h": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityImage.h",
+    "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityCodexLauncher.h": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityLauncher.h",
+    "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityCodexPresenterSubsystem.h": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityPresenterSubsystem.h",
+    "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityCodexPreview.h": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityPreview.h",
+    "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityCodexScreen.h": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityScreen.h",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildPearlCodexBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildPearlBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildReferenceCodexCatalogTabBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildReferenceCatalogTabBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildReferenceFacilityCodexBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildReferenceFacilityBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexActionsBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityActionsBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexCatalogBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCatalogBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexClarityBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityClarityBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexContrastBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityContrastBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexFestivalBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityFestivalBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexGlassBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityGlassBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexInspectorBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityInspectorBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexIntroductionBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityIntroductionBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexNavigationBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityNavigationBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexRefinementBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityRefinementBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexRewardAffordanceBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityRewardAffordanceBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexShowcaseBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityShowcaseBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCodexWbpBuilder.cpp": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityWbpBuilder.cpp",
+    "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_CodexCatalogFocusBuilder.cpp": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_CatalogFocusBuilder.cpp",
+    "Tools/BuildModeClarity/apply_codex_navigation.py": "Tools/BuildModeClarity/apply_navigation.py",
+    "Tools/FacilityCodex/apply_contrast_codex.py": "Tools/FacilityCodex/apply_contrast.py",
+    "Tools/FacilityCodex/apply_festival_codex.py": "Tools/FacilityCodex/apply_festival.py",
+    "Tools/FacilityCodex/apply_glass_codex.py": "Tools/FacilityCodex/apply_glass.py",
+    "Tools/FacilityCodex/apply_pearl_codex.py": "Tools/FacilityCodex/apply_pearl.py",
+    "Tools/FacilityCodex/apply_showcase_codex.py": "Tools/FacilityCodex/apply_showcase.py",
+    "Tools/FacilityCodex/apply_white_codex.py": "Tools/FacilityCodex/apply_white.py"
   },
   "support": [
     "Source/FestaFiesta/Private/Building/FF_BuildCatalogModel.cpp",
     "Source/FestaFiesta/Private/Building/FF_BuildMultiSelection.cpp",
     "Source/FestaFiestaEditor/FestaFiestaEditor.Build.cs",
+    "Source/FestaFiestaEditor/Private/Building/Synergy/Tests/FF_FacilitySynergyAuthoringTests.cpp",
+    "Source/FestaFiestaEditor/Private/Building/UI/FF_BuildCatalogAssetRepair.cpp",
     "Source/FestaFiestaEditor/Private/FestaFiestaEditorModule.cpp"
   ],
   "files": [
-    {
-      "path": "Design/UXUI/Facility_Aurora_20260920/V7/catalog-v5.js",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Design/UXUI/Facility_Aurora_20260920/V7/flow-refinements.js",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Design/UXUI/Facility_Aurora_20260920/V7/lighting-refine.js",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Design/UXUI/Facility_Aurora_20260920/V7/lighting-tabs-v6.js",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Design/UXUI/Facility_Aurora_20260920/V7/lighting.js",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Design/UXUI/Facility_Aurora_20260920/V7/placement-v5.js",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Design/UXUI/Facility_Aurora_20260920/V7/program-marker-v5.js",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Design/UXUI/Facility_Aurora_20260920/V7/ui.js",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
     {
       "path": "Plugins/FF_ZoneSystem/Config/DefaultFF_ZoneSystem.ini",
       "scope": "owned",
@@ -160,172 +503,22 @@
       "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSAudienceLayout.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Audience/FF_FFZSAudienceLayout.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSAudienceLibrary.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Audience/FF_FFZSAudienceLibrary.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildArea.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Audience/Tests/FF_FFZSAudienceTests.cpp",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildAreaGeometry.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildAreaGeometry.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildGridSurface.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildPresentationSettings.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildRangePresentation.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildRangePresentation.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildableGrid.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildableGridActor.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSBuildableGridComponent.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSDeveloperSettings.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSFacilityActor.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSFacilityDefinition.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSFacilityLightingRig.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSGridLibrary.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSNavArea_QueueLane.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "adf3be73d973021a3b482de3abf0165588a93a91"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSOrientedGeometry.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "5ed94017e2046f16ef8c6be38fd878c06a0a86d7"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSPlacementPreviewActor.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSProtectedArea.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSQueueComponent.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSSpatialHash.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSSpatialHash.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSTypes.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSWorldSubsystem.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSZoneAccessSubsystem.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "f27bd53e6b032b3edf50b62acc8c2953d638fb4f"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_FFZSZoneActor.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
     },
     {
       "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/FF_ZoneSystem.cpp",
@@ -334,55 +527,157 @@
       "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSAudienceTests.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Facility/FF_FFZSFacilityActor.cpp",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSBuildAreaGeometryTests.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Facility/FF_FFZSFacilityDefinition.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Facility/FF_FFZSFacilityLightingRig.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Facility/Tests/FF_FFZSFacilityDefinitionTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/FF_FFZSBuildArea.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSBuildRangePresentationTests.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/FF_FFZSBuildAreaGeometry.cpp",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSBuildableGridTests.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/FF_FFZSBuildAreaGeometry.h",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSDeveloperSettingsTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSFacilityDefinitionTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSGridTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSOrientedGeometryTests.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/FF_FFZSOrientedGeometry.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "5ed94017e2046f16ef8c6be38fd878c06a0a86d7"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/FF_FFZSQueueTests.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/Tests/FF_FFZSBuildAreaGeometryTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Geometry/Tests/FF_FFZSOrientedGeometryTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "5ed94017e2046f16ef8c6be38fd878c06a0a86d7"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSBuildGridSurface.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSBuildableGrid.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSBuildableGridActor.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSBuildableGridComponent.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/FF_FFZSGridLibrary.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/Tests/FF_FFZSBuildableGridTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Grid/Tests/FF_FFZSGridTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSBuildPresentationSettings.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSBuildRangePresentation.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSBuildRangePresentation.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSPlacementPreviewActor.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/FF_FFZSProtectedArea.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Placement/Tests/FF_FFZSBuildRangePresentationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Queue/FF_FFZSNavArea_QueueLane.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "adf3be73d973021a3b482de3abf0165588a93a91"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Queue/FF_FFZSQueueComponent.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Queue/Tests/FF_FFZSQueueTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
@@ -392,6 +687,54 @@
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "4f035fe8c177c60c71bd205acb1f7ae73d9ff81c"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSDeveloperSettings.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSSpatialHash.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSSpatialHash.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSTypes.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSWorldSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSZoneAccessSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "f27bd53e6b032b3edf50b62acc8c2953d638fb4f"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/FF_FFZSZoneActor.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/World/Tests/FF_FFZSDeveloperSettingsTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
     },
     {
       "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Public/FF_FFZSAudienceLayout.h",
@@ -562,52 +905,52 @@
       "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSAudienceCapacityEditor.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Audience/FF_FFZSAudienceCapacityEditor.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSAudienceCapacityEditor.h",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Audience/FF_FFZSAudienceCapacityEditor.h",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityEditorHelpers.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Audience/Tests/FF_FFZSAudienceCapacityTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Audience/Tests/FF_FFZSAudienceEditorTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/FF_FFZSFacilityEditorHelpers.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "4f035fe8c177c60c71bd205acb1f7ae73d9ff81c"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityLevelPreview.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/FF_FFZSFacilityLevelPreview.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSFacilityLevelPreview.h",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Facility/FF_FFZSFacilityLevelPreview.h",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/FF_FFZSNavigationEditorLibrary.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Navigation/FF_FFZSNavigationEditorLibrary.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Tests/FF_FFZSAudienceCapacityTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Private/Tests/FF_FFZSAudienceEditorTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
     },
     {
       "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemEditor/Public/FF_FFZSNavigationEditorLibrary.h",
@@ -622,136 +965,10 @@
       "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSAudienceWorldTests.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Audience/FF_FFZSAudienceWorldTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "81f87883d58e30e82e822f2728eaec8602ed6aee"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildCatalogLightingTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "66443ca778f251b60d13c502947290ca628c1b09"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildGridSurfaceTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildableGridPresentationTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildableGridRenderedPreviewTest.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSBuildableGridWorldTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSFacilityLevelPresentationTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSFacilityLightingTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSFacilityPlayerCollisionTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSLightingTestRig.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSLightingTestRig.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSNavigationObstacleTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "5ed94017e2046f16ef8c6be38fd878c06a0a86d7"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSPolicyTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSProductionLightingTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSRoadTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSSaveGameTestObject.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSSaveGameTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSSpatialHashTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSTestExternalPolicy.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSUnifiedConstructionTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSWorldTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
-    },
-    {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSZoneAccessDiagnosticsTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
     },
     {
       "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_ZoneSystemTests.cpp",
@@ -760,52 +977,136 @@
       "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
     },
     {
-      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Public/FF_FFZSTestExternalPolicy.h",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSBuildCatalogLightingTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "66443ca778f251b60d13c502947290ca628c1b09"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSFacilityLevelPresentationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSFacilityLightingTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSFacilityPlayerCollisionTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSLightingTestRig.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSLightingTestRig.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Facility/FF_FFZSProductionLightingTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Grid/FF_FFZSBuildGridSurfaceTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Grid/FF_FFZSBuildableGridPresentationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Grid/FF_FFZSBuildableGridRenderedPreviewTest.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Grid/FF_FFZSBuildableGridWorldTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Placement/FF_FFZSNavigationObstacleTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "5ed94017e2046f16ef8c6be38fd878c06a0a86d7"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Placement/FF_FFZSRoadTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Placement/FF_FFZSUnifiedConstructionTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Support/FF_FFZSSaveGameTestObject.h",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexModel.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/Support/FF_FFZSTestExternalPolicy.cpp",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexProgressSubsystem.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSPolicyTests.cpp",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexRewardTests.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSSaveGameTests.cpp",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexSettings.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSSpatialHashTests.cpp",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexSubsystem.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSWorldTests.cpp",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexTestObserver.h",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/World/FF_FFZSZoneAccessDiagnosticsTests.cpp",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "599c2edcd2cf9baa6a1dd2c6679fb9917e7555fb"
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Codex/FF_FacilityCodexTests.cpp",
+      "path": "Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Public/FF_FFZSTestExternalPolicy.h",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+      "creation_commit": "ca961f8b1906bbedb471c93733c74123164c93e1"
     },
     {
       "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogEconomyReadModel.cpp",
@@ -820,31 +1121,7 @@
       "creation_commit": ""
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogProgramTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "fe1c3ea3f72c3f764b28cb023e5509968a16e02f"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogRetirementTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
-    },
-    {
       "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogSubsystem.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogSubsystemTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildCatalogThumbnailTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
@@ -862,46 +1139,10 @@
       "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildDragPlacementPathTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildDragPlacementTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildFacilityInspectionTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildGridOverviewTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildLightingCatalogTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "66443ca778f251b60d13c502947290ca628c1b09"
-    },
-    {
       "path": "Source/FestaFiesta/Private/Building/FF_BuildModeSubsystem.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildModeSubsystemTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "f45182f90acc03c09ea8413aac9065f6249ccd0b"
     },
     {
       "path": "Source/FestaFiesta/Private/Building/FF_BuildMultiSelection.cpp",
@@ -910,25 +1151,7 @@
       "creation_commit": ""
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildMultiSelectionTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildNoRoadPlacementTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
-    },
-    {
       "path": "Source/FestaFiesta/Private/Building/FF_BuildPlacementAssistance.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildPlacementAssistanceTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
@@ -952,34 +1175,10 @@
       "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildPlacementPointerPolicyTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildRoadCatalogTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_BuildSynergyCatalogContextTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
-    },
-    {
       "path": "Source/FestaFiesta/Private/Building/FF_BuildingSettings.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_FacilityDefinitionContentTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "4f035fe8c177c60c71bd205acb1f7ae73d9ff81c"
     },
     {
       "path": "Source/FestaFiesta/Private/Building/FF_FacilityNamingLibrary.cpp",
@@ -988,31 +1187,7 @@
       "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/FF_FacilityNamingLibraryTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_FacilityUpgradeIntegrationTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_FacilityUpgradeRulesTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
-    },
-    {
       "path": "Source/FestaFiesta/Private/Building/FF_FacilityUpgradeSubsystem.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/FF_FacilityUpgradeTestPolicy.h",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
@@ -1024,6 +1199,240 @@
       "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
     },
     {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilityModel.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilityProgressSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilitySettings.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/FF_FacilitySubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityRewardTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityTestObserver.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "599c2edcd2cf9baa6a1dd2c6679fb9917e7555fb"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/Tests/FF_FacilityTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCard.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityCollection.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityImage.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityLauncher.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityPresentation.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityPresenterSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityPreview.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/FF_FacilityScreen.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCatalogUiTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityCollectionTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityGlassTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityPresenterTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityPreviewTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityRewardFeedbackTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityThumbnailTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityCollection/UI/Tests/FF_FacilityUiTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityColorPicker.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityInfoPanel.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityInfoSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityInfoTypes.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityLightingControls.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityPaidProgramCard.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityPaidProgramPicker.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityProgramMarkerSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilityProgramMarkerWidget.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/FF_FacilitySynergyEntryWidget.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilityLightingDraftTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilityPaidProgramPreviewTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "78c10d0e333de5ba7d31933fc8f05c3e3d8109b1"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilityProgramMarkerTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityInfo/Tests/FF_FacilitySynergyTabTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityRevenue/FF_FacilityRevenueRanking.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/FacilityRevenue/Tests/FF_FacilityRevenueTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
       "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildCategoryIcons.cpp",
       "scope": "owned",
       "author": "Asera",
@@ -1031,12 +1440,6 @@
     },
     {
       "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildFacilityCostTooltip.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildFacilityCostTooltipTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
@@ -1072,19 +1475,7 @@
       "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildPlacementFailureFeedbackTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
-    },
-    {
       "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildPlacementGizmo.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildPlacementGizmoTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
@@ -1096,28 +1487,10 @@
       "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildStudioWidgetTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildSynergyPresentationTest.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
-    },
-    {
       "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildSynergyWidget.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsVisualTest.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
     },
     {
       "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsWidget.cpp",
@@ -1126,13 +1499,49 @@
       "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_BuildToolsWidgetTests.cpp",
+      "path": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildFacilityCostTooltipTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildPlacementFailureFeedbackTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildPlacementGizmoTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildStudioWidgetTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Presentation/FF_FacilityAuroraBuildTests.cpp",
+      "path": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildSynergyPresentationTest.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildToolsVisualTest.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_BuildToolsWidgetTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Presentation/Tests/FF_FacilityAuroraBuildTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
@@ -1162,25 +1571,13 @@
       "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyTableBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyTableBuilder.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
-    },
-    {
       "path": "Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyTypes.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Synergy/Tests/FF_FacilitySynergyTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
@@ -1204,10 +1601,106 @@
       "creation_commit": "b280911a37b24d86b6da0921f96cdbc8ec937716"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/Testing/FF_ZoneLifecycleTestPanelTests.cpp",
+      "path": "Source/FestaFiesta/Private/Building/Testing/Tests/FF_ZoneLifecycleTestPanelTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "b280911a37b24d86b6da0921f96cdbc8ec937716"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildCatalogProgramTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "fe1c3ea3f72c3f764b28cb023e5509968a16e02f"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildCatalogRetirementTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "6c6c8292fb0175f7de62e71f7b1f9d118fdab153"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildCatalogSubsystemTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildCatalogThumbnailTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildDragPlacementPathTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildDragPlacementTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildFacilityInspectionTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildGridOverviewTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "d875185937b1353b59099c275705b2f1792ddb07"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildLightingCatalogTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "66443ca778f251b60d13c502947290ca628c1b09"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildModeSubsystemTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "f45182f90acc03c09ea8413aac9065f6249ccd0b"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildMultiSelectionTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildNoRoadPlacementTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildPlacementAssistanceTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildPlacementPointerPolicyTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "0590f19070ba6f63b12144b84e66e3f63ab0cc03"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildRoadCatalogTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "91ad1457a145405a45db1b5f1878cdca024ff081"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_BuildSynergyCatalogContextTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
     },
     {
       "path": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityCatalogDataTests.cpp",
@@ -1216,19 +1709,37 @@
       "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/UI/FF_BuildCatalogGoldTests.cpp",
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityDefinitionContentTests.cpp",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+      "creation_commit": "4f035fe8c177c60c71bd205acb1f7ae73d9ff81c"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/UI/FF_BuildCatalogScreen.cpp",
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityNamingLibraryTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
     },
     {
-      "path": "Source/FestaFiesta/Private/Building/UI/FF_BuildCatalogWidgetBlueprintTests.cpp",
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityUpgradeIntegrationTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityUpgradeRulesTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/Tests/FF_FacilityUpgradeTestPolicy.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/UI/FF_BuildCatalogScreen.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
@@ -1253,6 +1764,18 @@
     },
     {
       "path": "Source/FestaFiesta/Private/Building/UI/FF_BuildTopButtonStyle.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/UI/Tests/FF_BuildCatalogGoldTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "2c0d0873e08d327f5d9324c6c803fcada54b18f5"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Building/UI/Tests/FF_BuildCatalogWidgetBlueprintTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "4f1a105ee31f699b76ddfa6c3c3fb7cc5b09e3a8"
@@ -1372,196 +1895,10 @@
       "creation_commit": "17289a122fb98a6a6112e19b3419546fbd1b55c7"
     },
     {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityColorPicker.cpp",
+      "path": "Source/FestaFiesta/Private/Time/Tests/FF_TimeHudWidgetBlueprintTests.cpp",
       "scope": "owned",
       "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoPanel.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoSubsystem.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoTypes.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityLightingControls.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityLightingDraftTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramCard.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramPicker.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramPreviewTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "78c10d0e333de5ba7d31933fc8f05c3e3d8109b1"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityProgramMarkerSubsystem.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityProgramMarkerTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilityProgramMarkerWidget.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilitySynergyEntryWidget.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/Facility/FF_FacilitySynergyTabTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCard.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCatalogUiTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCollection.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexCollectionTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexGlassTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexImage.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexLauncher.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPresentation.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPresenterSubsystem.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPresenterTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPreview.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPreviewTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexRewardFeedbackTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexScreen.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexThumbnailTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexUiTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueRanking.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+      "creation_commit": "0f6eb33128979cefdbeb0b888888fd02448d778b"
     },
     {
       "path": "Source/FestaFiesta/Private/UI/Pause/FF_PauseHubScreen.cpp",
@@ -1738,100 +2075,64 @@
       "creation_commit": "858aae5dc65d70383f8511ab32206ea95192d344"
     },
     {
-      "path": "Source/FestaFiesta/Private/Zone/FF_TimeHudWidgetBlueprintTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "0f6eb33128979cefdbeb0b888888fd02448d778b"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneAccessExitTests.cpp",
+      "path": "Source/FestaFiesta/Private/Zone/Access/Tests/FF_ZoneAccessExitTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
     },
     {
-      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneFacilityLifecycleTests.cpp",
+      "path": "Source/FestaFiesta/Private/Zone/Layout/FF_ZoneLayoutAuthoringLibrary.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/Population/FF_ZonePopulationBridgeSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c37a670b4510a7e5b511dfedf279fb215dc3c4bc"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/Population/Tests/FF_ZonePopulationBridgeTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c37a670b4510a7e5b511dfedf279fb215dc3c4bc"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/Queue/FF_ZoneQueuePolicy.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/Queue/FF_ZoneQueueProjection.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/Queue/FF_ZoneSystemQueueBridgeSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "9295457293fab7d61ffd20be13e340ed47a9bc57"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/Stage/FF_ZoneSystemStageBridgeSubsystem.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "9295457293fab7d61ffd20be13e340ed47a9bc57"
+    },
+    {
+      "path": "Source/FestaFiesta/Private/Zone/Stage/Tests/FF_ZoneFacilityLifecycleTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "b280911a37b24d86b6da0921f96cdbc8ec937716"
     },
     {
-      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneLayoutAuthoringLibrary.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Zone/FF_ZonePopulationBridgeSubsystem.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c37a670b4510a7e5b511dfedf279fb215dc3c4bc"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Zone/FF_ZonePopulationBridgeTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c37a670b4510a7e5b511dfedf279fb215dc3c4bc"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneQueuePolicy.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneQueueProjection.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "69a4bd73cbf715d11164eb00eaea5808f8ab0246"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneSystemIntegrationTests.cpp",
+      "path": "Source/FestaFiesta/Private/Zone/Tests/FF_ZoneSystemIntegrationTests.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "9295457293fab7d61ffd20be13e340ed47a9bc57"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneSystemQueueBridgeSubsystem.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "9295457293fab7d61ffd20be13e340ed47a9bc57"
-    },
-    {
-      "path": "Source/FestaFiesta/Private/Zone/FF_ZoneSystemStageBridgeSubsystem.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "9295457293fab7d61ffd20be13e340ed47a9bc57"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexModel.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexProgressSubsystem.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexSettings.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexSubsystem.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/Building/Codex/FF_FacilityCodexTypes.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
     },
     {
       "path": "Source/FestaFiesta/Public/Building/FF_BuildCatalogEconomyReadModel.h",
@@ -1898,6 +2199,162 @@
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityModel.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityProgressSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilitySettings.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilitySubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityCollection/FF_FacilityTypes.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityCard.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityImage.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityLauncher.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityPresenterSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityPreview.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityCollection/UI/FF_FacilityScreen.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityColorPicker.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityInfoPanel.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityInfoSelection.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityInfoSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityInfoTypes.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityInfoUpgradeLayout.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityLightingControls.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityPaidProgramCard.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityPaidProgramLayout.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityPaidProgramPicker.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityPaidProgramTypes.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityProgramMarkerSubsystem.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilityProgramMarkerWidget.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityInfo/FF_FacilitySynergyEntryWidget.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiesta/Public/Building/FacilityRevenue/FF_FacilityRevenueRanking.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
     },
     {
       "path": "Source/FestaFiesta/Public/Building/Presentation/FF_BuildCategoryIcons.h",
@@ -2098,132 +2555,6 @@
       "creation_commit": "554c3e2d67a7e77b9c50bca229bce794a31cbc03"
     },
     {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityColorPicker.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoPanel.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoSelection.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoSubsystem.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoTypes.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityInfoUpgradeLayout.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "11a7369eea2f9b5b81a67b48acac5b17d8378928"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityLightingControls.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "46a7def5044f43f8baab1b6684f4aa49b5feb0d6"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramCard.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramLayout.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "a27083db588b871b70eb57eeb17c5914bab4a626"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramPicker.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityPaidProgramTypes.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "de74a3188a333621b1f0b735857b336d7017f051"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityProgramMarkerSubsystem.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilityProgramMarkerWidget.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/Facility/FF_FacilitySynergyEntryWidget.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexCard.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexImage.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexLauncher.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexPresenterSubsystem.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexPreview.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/FacilityCodex/FF_FacilityCodexScreen.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiesta/Public/UI/FacilityRevenue/FF_FacilityRevenueRanking.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
-    },
-    {
       "path": "Source/FestaFiesta/Public/UI/Frontend/FF_FrontendCasualStyle.h",
       "scope": "integration",
       "author": "bjt",
@@ -2380,6 +2711,186 @@
       "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
     },
     {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildPearlBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildReferenceCatalogTabBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_BuildReferenceFacilityBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityActionsBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityCatalogBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityClarityBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityContrastBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityFestivalBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityGlassBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityInspectorBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityRefinementBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityRewardAffordanceBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityShowcaseBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityCollection/FF_FacilityWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_BuildModeClarityFacilityV2Builder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_BuildModeClarityInfoBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_BuildReferenceFacilityInfoBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityAuroraInfoBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityAuroraLightingBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityAuroraThemeBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityInfoWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityInfoWbpBuilder.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilitySynergyPearlBuilder.cpp",
+      "scope": "owned",
+      "author": "HanKwangHoon",
+      "creation_commit": "ff1dba5d1c43d64998095ca7f8196ea13f35e4a2"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_FacilityWorldBadgeWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/FF_ProgramPearlWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityInfo/Tests/FF_FacilityInfoTests.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityAuroraRevenueProgramsMigration.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityRevenueClarityBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityRevenuePearlBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
       "path": "Source/FestaFiestaEditor/Private/Building/Presentation/FF_BuildFacilityCostTooltipWbpBuilder.cpp",
       "scope": "owned",
       "author": "Asera",
@@ -2458,10 +2969,34 @@
       "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
     },
     {
+      "path": "Source/FestaFiestaEditor/Private/Building/Synergy/FF_FacilitySynergyTableBuilder.cpp",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "a25bf9f7898b879678fdbc677bdbfc33e74e41c6"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Synergy/FF_FacilitySynergyTableBuilder.h",
+      "scope": "owned",
+      "author": "Asera",
+      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/Synergy/Tests/FF_FacilitySynergyAuthoringTests.cpp",
+      "scope": "new_support",
+      "author": "",
+      "creation_commit": ""
+    },
+    {
       "path": "Source/FestaFiestaEditor/Private/Building/Testing/FF_ZoneLifecycleTestPanelWbpBuilder.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "b280911a37b24d86b6da0921f96cdbc8ec937716"
+    },
+    {
+      "path": "Source/FestaFiestaEditor/Private/Building/UI/FF_BuildCatalogAssetRepair.cpp",
+      "scope": "new_support",
+      "author": "",
+      "creation_commit": ""
     },
     {
       "path": "Source/FestaFiestaEditor/Private/Building/UI/FF_BuildCatalogWbpBuilder.cpp",
@@ -2518,186 +3053,6 @@
       "creation_commit": "a2557801906a95dc59fe91de1c90345f96f93ac3"
     },
     {
-      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildModeClarityFacilityV2Builder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildModeClarityInfoBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_BuildReferenceFacilityInfoBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraInfoBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraLightingBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityAuroraThemeBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoTests.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoWbpBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "06a91316896c92a05cededec1d299c5901bdf18f"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityInfoWbpBuilder.h",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "436584b55a6d6ca2311f19d82743fec87c7eba6b"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilitySynergyPearlBuilder.cpp",
-      "scope": "owned",
-      "author": "HanKwangHoon",
-      "creation_commit": "ff1dba5d1c43d64998095ca7f8196ea13f35e4a2"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_FacilityWorldBadgeWbpBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/Facility/FF_ProgramPearlWbpBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildPearlCodexBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildReferenceCodexCatalogTabBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_BuildReferenceFacilityCodexBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexActionsBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexCatalogBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexClarityBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexContrastBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexFestivalBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexGlassBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexInspectorBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexRefinementBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexRewardAffordanceBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexShowcaseBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityCodex/FF_FacilityCodexWbpBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "e0cde70af0731b92213b43142297de3a8eb5ca5e"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityAuroraRevenueProgramsMigration.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueClarityBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "c7b0044b9a0a6f7a2616a41394050f09ab3f3b76"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenuePearlBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
-    },
-    {
-      "path": "Source/FestaFiestaEditor/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp",
-      "scope": "owned",
-      "author": "Asera",
-      "creation_commit": "b5632cbb0302d577a97e05d37b6d8c42cc46c7d0"
-    },
-    {
       "path": "Source/FestaFiestaEditor/Private/UI/Frontend/FF_FrontendCasualBuilder.h",
       "scope": "integration",
       "author": "bjt",
@@ -2746,7 +3101,7 @@
       "creation_commit": "84f0c9b6042c565fcf03c7d6037dd5cb145d425e"
     },
     {
-      "path": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_CodexCatalogFocusBuilder.cpp",
+      "path": "Source/FestaFiestaEditor/Private/UI/PrepHUD/Build/FF_CatalogFocusBuilder.cpp",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
@@ -3076,7 +3431,7 @@
       "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
     },
     {
-      "path": "Tools/FacilityCodex/apply_contrast_codex.py",
+      "path": "Tools/FacilityCodex/apply_contrast.py",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
@@ -3088,19 +3443,19 @@
       "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
     },
     {
-      "path": "Tools/FacilityCodex/apply_festival_codex.py",
+      "path": "Tools/FacilityCodex/apply_festival.py",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
     },
     {
-      "path": "Tools/FacilityCodex/apply_glass_codex.py",
+      "path": "Tools/FacilityCodex/apply_glass.py",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
     },
     {
-      "path": "Tools/FacilityCodex/apply_pearl_codex.py",
+      "path": "Tools/FacilityCodex/apply_pearl.py",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
@@ -3154,13 +3509,13 @@
       "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
     },
     {
-      "path": "Tools/FacilityCodex/apply_showcase_codex.py",
+      "path": "Tools/FacilityCodex/apply_showcase.py",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"
     },
     {
-      "path": "Tools/FacilityCodex/apply_white_codex.py",
+      "path": "Tools/FacilityCodex/apply_white.py",
       "scope": "owned",
       "author": "Asera",
       "creation_commit": "34498df5c68aa8125443e0dddeadd68c20bae307"

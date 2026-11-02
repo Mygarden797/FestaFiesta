@@ -1,0 +1,392 @@
+// FF_FacilityPaidProgramPicker.cpp
+// 역할: 시설에서 편성할 유료 프로그램 목록과 선택 결과를 보여 준다.
+
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "Building/FacilityInfo/FF_FacilityPaidProgramPicker.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
+
+#include "CommonTextBlock.h"
+#include "Components/Border.h"
+#include "Components/Button.h"
+#include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
+#include "Framework/Application/SlateApplication.h"
+#include "UI/Data/FF_UIPalette.h"
+#include "Building/FacilityInfo/FF_FacilityPaidProgramCard.h"
+
+#define LOCTEXT_NAMESPACE "FFFacilityPaidProgramPicker"
+
+FSoftClassPath UFF_FacilityPaidProgramPicker::GetDefaultCardClassPath()
+{
+	return FSoftClassPath(FFBuildUIAssetPaths::FacilityPaidProgramCardClass);
+}
+
+void UFF_FacilityPaidProgramPicker::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+	// State colors remain editable in the WBP Class Defaults.
+}
+
+void UFF_FacilityPaidProgramPicker::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	if(Button_BackToPrograms) Button_BackToPrograms->OnClicked.AddUniqueDynamic(this,&ThisClass::HandleBackToProgramsClicked);
+	if (Button_ReturnToFacility)
+		Button_ReturnToFacility->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
+	if (Button_Close)
+	{
+		Button_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
+	}
+	if (Button_Confirm)
+	{
+		Button_Confirm->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleConfirmClicked);
+	}
+	if (Text_NoRefundNotice)
+	{
+		Text_NoRefundNotice->SetText(
+			LOCTEXT("NoRefundNotice", "오늘만 운영 · 당일 취소 및 환불 불가\n편성 후 시설 이동·강화·철거가 제한됩니다."));
+	}
+	ClearPreview();
+}
+
+void UFF_FacilityPaidProgramPicker::ApplyViewData(
+	const FFF_FacilityPaidProgramPickerViewData& ViewData)
+{
+	CurrentViewData = ViewData;
+	bCommitPending = false;
+	bPurchaseCompleted = false;
+	if (Border_Body) Border_Body->SetVisibility(ESlateVisibility::Visible);
+	if (Border_Footer) Border_Footer->SetVisibility(ESlateVisibility::Visible);
+	if (Panel_PurchaseComplete) Panel_PurchaseComplete->SetVisibility(ESlateVisibility::Collapsed);
+	SelectedProgramId = NAME_None;
+	if (Text_FacilityName)
+	{
+		Text_FacilityName->SetText(FText::Format(
+			LOCTEXT("FacilityContext", "{0} 전용 프로그램"), ViewData.FacilityName));
+	}
+	if (Text_Empty)
+	{
+		Text_Empty->SetVisibility(
+			ViewData.Cards.IsEmpty() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		Text_Empty->SetText(LOCTEXT(
+			"NoCompatiblePrograms", "이 시설에서 운영할 수 있는 유료 프로그램이 없습니다."));
+	}
+	if (Text_Feedback)
+	{
+		Text_Feedback->SetText(ViewData.FeedbackText);
+		Text_Feedback->SetVisibility(
+			ViewData.FeedbackText.IsEmpty()
+				? ESlateVisibility::Collapsed
+				: ESlateVisibility::HitTestInvisible);
+		Text_Feedback->SetColorAndOpacity(FSlateColor(
+			ViewData.bFeedbackIsError ? FeedbackErrorColor : FeedbackSuccessColor));
+	}
+
+	SpawnedCards.Reset();
+	if (ScrollBox_Programs)
+	{
+		ScrollBox_Programs->ClearChildren();
+		UClass* CardClass = CardWidgetClass
+			? CardWidgetClass.Get()
+			: GetDefaultCardClassPath().TryLoadClass<UFF_FacilityPaidProgramCard>();
+		if (CardClass && CardClass->IsChildOf(UFF_FacilityPaidProgramCard::StaticClass()))
+		{
+			for (const FFF_FacilityPaidProgramCardViewData& CardData : ViewData.Cards)
+			{
+				UFF_FacilityPaidProgramCard* Card = GetOwningPlayer()
+					? CreateWidget<UFF_FacilityPaidProgramCard>(GetOwningPlayer(), CardClass)
+					: CreateWidget<UFF_FacilityPaidProgramCard>(GetWorld(), CardClass);
+				if (!Card)
+				{
+					continue;
+				}
+				Card->ApplyViewData(CardData);
+				Card->OnSelected.AddUObject(this, &ThisClass::HandleCardSelected);
+				if (UScrollBoxSlot* CardSlot = Cast<UScrollBoxSlot>(
+					ScrollBox_Programs->AddChild(Card)))
+				{
+					CardSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+					CardSlot->SetHorizontalAlignment(HAlign_Fill);
+				}
+				SpawnedCards.Add(Card);
+			}
+		}
+	}
+	ClearPreview();
+	// A sole compatible program is already the useful review selection. Selection itself
+	// never broadcasts OnConfirmed; the separate purchase button still commits explicitly.
+	if (ViewData.Cards.Num() == 1) HandleCardSelected(ViewData.Cards[0].ProgramId);
+	OnViewDataApplied(ViewData);
+}
+
+void UFF_FacilityPaidProgramPicker::RefreshViewData(
+	const FFF_FacilityPaidProgramPickerViewData& ViewData)
+{
+	if (bPurchaseCompleted || bCommitPending || ViewData.FacilityInstanceId != CurrentViewData.FacilityInstanceId)
+	{
+		return;
+	}
+	FFF_FacilityPaidProgramPickerViewData RefreshedData = ViewData;
+	RefreshedData.FeedbackText = CurrentViewData.FeedbackText;
+	RefreshedData.bFeedbackIsError = CurrentViewData.bFeedbackIsError;
+	const FName PreviousSelection = SelectedProgramId;
+	bool bSamePrograms = CurrentViewData.Cards.Num() == ViewData.Cards.Num();
+	for (int32 Index = 0; bSamePrograms && Index < ViewData.Cards.Num(); ++Index)
+	{
+		bSamePrograms = CurrentViewData.Cards[Index].ProgramId == ViewData.Cards[Index].ProgramId;
+	}
+	if (!bSamePrograms)
+	{
+		ApplyViewData(RefreshedData);
+		if (FindCard(PreviousSelection)) HandleCardSelected(PreviousSelection);
+		return;
+	}
+
+	// Keep the same widgets so polling does not reset the scroll position or an ongoing pointer action.
+	CurrentViewData = MoveTemp(RefreshedData);
+	for (UFF_FacilityPaidProgramCard* CardWidget : SpawnedCards)
+	{
+		if (CardWidget)
+		{
+			if (const FFF_FacilityPaidProgramCardViewData* CardData = FindCard(CardWidget->GetProgramId()))
+			{
+				CardWidget->ApplyViewData(*CardData);
+			}
+		}
+	}
+	if (!PreviousSelection.IsNone()) HandleCardSelected(PreviousSelection);
+	OnViewDataApplied(CurrentViewData);
+}
+
+void UFF_FacilityPaidProgramPicker::ShowPurchaseComplete(
+	const FName ProgramId, const int32 RemainingGold)
+{
+	const FFF_FacilityPaidProgramCardViewData* Card = FindCard(ProgramId);
+	if (!Card) return;
+	bCommitPending = false;
+	bPurchaseCompleted = true;
+	if (Button_BackToPrograms) Button_BackToPrograms->SetVisibility(ESlateVisibility::Collapsed);
+	if (Text_Eyebrow) Text_Eyebrow->SetText(LOCTEXT("CompleteStep", "03 · 편성 완료"));
+	const FText Receipt = FText::Format(
+		LOCTEXT("PurchaseReceipt", "{0}\n{1}\n{2}\n\n결제 {3} Gold\n남은 보유금 {4} Gold\n\n오늘 프로그램이 편성되었습니다.\n당일 취소 및 환불은 불가합니다.\n이 시설의 이동·강화·철거가 제한됩니다."),
+		Card->DisplayName, CurrentViewData.FacilityName, Card->TimeText,
+		FText::AsNumber(Card->CostGold), FText::AsNumber(RemainingGold));
+	if (Panel_PurchaseComplete && Text_PurchaseReceipt && Button_ReturnToFacility)
+	{
+		if (Text_ReceiptProgramName) Text_ReceiptProgramName->SetText(Card->DisplayName);
+		if (Text_ReceiptResources) Text_ReceiptResources->SetText(FText::Format(
+			LOCTEXT("ReceiptResources", "남은 보유금 {0} Gold"),
+			FText::AsNumber(RemainingGold)));
+		Text_PurchaseReceipt->SetText(Text_ReceiptProgramName && Text_ReceiptResources
+			? FText::Format(LOCTEXT("ReceiptBody", "{0}\n{1}\n결제 {2} Gold\n\n오늘 프로그램이 편성되었습니다.\n당일 취소 및 환불은 불가합니다.\n이 시설의 이동·강화·철거가 제한됩니다."),
+				CurrentViewData.FacilityName, Card->TimeText, FText::AsNumber(Card->CostGold))
+			: Receipt);
+		Panel_PurchaseComplete->SetVisibility(ESlateVisibility::Visible);
+		if (Border_Body) Border_Body->SetVisibility(ESlateVisibility::Collapsed);
+		if (Border_Footer) Border_Footer->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	else
+	{
+		if (Text_PreviewName) Text_PreviewName->SetText(LOCTEXT("PurchaseCompleted", "구매·편성 완료"));
+		if (Text_PreviewDetails) Text_PreviewDetails->SetText(Receipt);
+		if (Text_Confirm) Text_Confirm->SetText(LOCTEXT("ReturnToFacility", "시설 정보로 돌아가기"));
+		if (Button_Confirm) Button_Confirm->SetIsEnabled(true);
+		if (ScrollBox_Programs) ScrollBox_Programs->SetIsEnabled(false);
+	}
+}
+
+void UFF_FacilityPaidProgramPicker::SetPickerOpen(const bool bOpen)
+{
+	SetVisibility(bOpen ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+}
+
+bool UFF_FacilityPaidProgramPicker::IsPointerOverInteractivePanel() const
+{
+	if (GetVisibility() == ESlateVisibility::Collapsed ||
+		GetVisibility() == ESlateVisibility::Hidden || !Border_Picker)
+	{
+		return false;
+	}
+	return Border_Picker->IsHovered() ||
+		(FSlateApplication::IsInitialized() &&
+			Border_Picker->GetCachedGeometry().IsUnderLocation(
+				FSlateApplication::Get().GetCursorPos()));
+}
+
+void UFF_FacilityPaidProgramPicker::HandleCardSelected(const FName ProgramId)
+{
+	if (bPurchaseCompleted || bCommitPending) return;
+	const FFF_FacilityPaidProgramCardViewData* CardData = FindCard(ProgramId);
+	if (!CardData)
+	{
+		return;
+	}
+	SelectedProgramId = ProgramId;
+	SetReviewVisible(true);
+	for (UFF_FacilityPaidProgramCard* Card : SpawnedCards)
+	{
+		if (Card)
+		{
+			Card->SetSelected(Card->GetProgramId() == ProgramId);
+		}
+	}
+	if (Text_PreviewName)
+	{
+		Text_PreviewName->SetText(CardData->DisplayName);
+	}
+	if (Text_PreviewDescription)
+	{
+		Text_PreviewDescription->SetText(CardData->Description);
+	}
+	if (Text_PreviewDetails)
+	{
+		Text_PreviewDetails->SetText(FText::Format(
+			LOCTEXT("PreviewDetails", "{0}\n{1} · {2}\n편성 비용 {3}"),
+			CardData->TimeText,
+			CardData->CapacityText,
+			CardData->TicketFeeText,
+			CardData->CostText));
+	}
+	const bool bSeparateMetrics = Text_PreviewTime && Text_Capacity &&
+		Text_TicketFee && Text_MaxRevenue && Text_PurchaseCost;
+	if (Text_PreviewDetails) Text_PreviewDetails->SetVisibility(bSeparateMetrics
+		? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	if (Text_PreviewDescription) Text_PreviewDescription->SetVisibility(CardData->Description.IsEmpty()
+		? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	if (Text_PreviewTime) Text_PreviewTime->SetText(CardData->TimeText);
+	if (Text_Capacity) Text_Capacity->SetText(FText::Format(
+		LOCTEXT("CapacityMetric", "{0}명"), FText::AsNumber(CardData->CapacityPeople)));
+	if (Text_TicketFee) Text_TicketFee->SetText(FText::Format(
+		LOCTEXT("TicketFeeMetric", "{0} Gold"), FText::AsNumber(CardData->TicketFeeGold)));
+	if (Text_MaxRevenue) Text_MaxRevenue->SetText(FText::Format(
+		LOCTEXT("MaxRevenueMetric", "최대 매출 {0} Gold\n정원 모두 참여 시 · 확정 수익이 아닙니다"),
+		FText::AsNumber(CardData->MaxRevenueGold)));
+	if (Text_PurchaseCost) Text_PurchaseCost->SetText(FText::Format(
+		LOCTEXT("PurchaseCostMetric", "{0} Gold"), FText::AsNumber(CardData->CostGold)));
+	if (Text_PreviewAvailability)
+	{
+		Text_PreviewAvailability->SetText(CardData->AvailabilityText);
+		Text_PreviewAvailability->SetColorAndOpacity(FSlateColor(
+			CardData->bCanSchedule ? FeedbackSuccessColor : FeedbackErrorColor));
+	}
+	if (Text_Confirm)
+	{
+		Text_Confirm->SetText(FText::Format(
+			LOCTEXT("ConfirmWithCost", "{0} Gold로 구매·편성"),
+			FText::AsNumber(CardData->CostGold)));
+	}
+	if (Button_Confirm)
+	{
+		Button_Confirm->SetIsEnabled(CardData->bCanSchedule);
+	}
+	if (Text_ResourcePreview)
+	{
+		const int32 GoldAfter = CurrentViewData.AvailableGold - CardData->CostGold;
+		const FText GoldResult = GoldAfter >= 0
+			? FText::Format(LOCTEXT("GoldAfterPurchase", "{0} Gold"), FText::AsNumber(GoldAfter))
+			: FText::Format(LOCTEXT("GoldShortfall", "{0} Gold 부족"), FText::AsNumber(-GoldAfter));
+		// 프로그램은 인력을 쓰지 않는다. 걸리는 자원은 Gold 하나뿐이다.
+		Text_ResourcePreview->SetText(FText::Format(
+			LOCTEXT("ResourcePreview", "보유금 {0} Gold → {1}"),
+			FText::AsNumber(CurrentViewData.AvailableGold),
+			GoldResult));
+	}
+}
+
+void UFF_FacilityPaidProgramPicker::HandleConfirmClicked()
+{
+	if (bPurchaseCompleted) { HandleCloseClicked(); return; }
+	if (bCommitPending) return;
+	const FFF_FacilityPaidProgramCardViewData* CardData = FindCard(SelectedProgramId);
+	if (CardData && CardData->bCanSchedule && CurrentViewData.FacilityInstanceId.IsValid())
+	{
+		bCommitPending = true;
+		if (Button_Confirm) Button_Confirm->SetIsEnabled(false);
+		OnConfirmed.Broadcast(CardData->ProgramId, CurrentViewData.FacilityInstanceId);
+	}
+}
+
+void UFF_FacilityPaidProgramPicker::HandleCloseClicked()
+{
+	OnCloseRequested.Broadcast();
+}
+
+void UFF_FacilityPaidProgramPicker::SetReviewVisible(const bool bReview)
+{
+	// Older Designer assets retain the combined list and preview. The compact V2
+	// picker keeps the same selection/transaction contract but gives each step room.
+	if (!Button_BackToPrograms) return;
+	Button_BackToPrograms->SetVisibility(bReview ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (Size_ProgramList) Size_ProgramList->SetVisibility(bReview ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	if (Border_Preview) Border_Preview->SetVisibility(bReview ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (Border_Footer) Border_Footer->SetVisibility(bReview ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (Text_Eyebrow) Text_Eyebrow->SetText(bReview
+		? LOCTEXT("ReviewStep", "02 · 구매 확인") : LOCTEXT("SelectionStep", "01 · 프로그램 선택"));
+	if (Text_Instruction)
+	{
+		Text_Instruction->SetVisibility(ESlateVisibility::HitTestInvisible);
+		Text_Instruction->SetText(bReview
+			? LOCTEXT("ReviewInstruction", "운영 시간과 비용을 확인한 뒤 편성하세요.")
+			: LOCTEXT("SelectionInstruction", "오늘 운영할 프로그램을 선택하세요."));
+	}
+}
+
+void UFF_FacilityPaidProgramPicker::HandleBackToProgramsClicked()
+{
+	if(bCommitPending || bPurchaseCompleted) return;
+	ClearPreview();
+	for(UFF_FacilityPaidProgramCard* Card:SpawnedCards) if(Card) Card->SetSelected(false);
+}
+
+const FFF_FacilityPaidProgramCardViewData* UFF_FacilityPaidProgramPicker::FindCard(
+	const FName ProgramId) const
+{
+	return CurrentViewData.Cards.FindByPredicate(
+		[ProgramId](const FFF_FacilityPaidProgramCardViewData& Card)
+		{
+			return Card.ProgramId == ProgramId;
+		});
+}
+
+void UFF_FacilityPaidProgramPicker::ClearPreview()
+{
+	SelectedProgramId = NAME_None;
+	SetReviewVisible(false);
+
+	for (UCommonTextBlock* Metric : {Text_PreviewTime.Get(), Text_Capacity.Get(),
+
+		Text_TicketFee.Get(), Text_MaxRevenue.Get(), Text_PurchaseCost.Get()})
+		if (Metric) Metric->SetText(FText::FromString(TEXT("—")));
+	if (ScrollBox_Programs) ScrollBox_Programs->SetIsEnabled(true);
+	if (Text_ResourcePreview) Text_ResourcePreview->SetText(FText::Format(
+		LOCTEXT("CurrentResources", "보유금 {0} Gold"),
+		FText::AsNumber(CurrentViewData.AvailableGold)));
+	if (Text_PreviewName)
+	{
+		Text_PreviewName->SetText(LOCTEXT("SelectProgram", "프로그램을 선택하세요"));
+	}
+	if (Text_PreviewDescription)
+	{
+		Text_PreviewDescription->SetText(LOCTEXT(
+			"SelectionIsPreview", "카드 선택만으로는 결제되지 않습니다."));
+	}
+	if (Text_PreviewDetails)
+	{
+		Text_PreviewDetails->SetText(FText::GetEmpty());
+	}
+	if (Text_PreviewAvailability)
+	{
+		Text_PreviewAvailability->SetText(FText::GetEmpty());
+	}
+	if (Text_Confirm)
+	{
+		Text_Confirm->SetText(LOCTEXT("ConfirmDisabled", "구매·편성"));
+	}
+	if (Button_Confirm)
+	{
+		Button_Confirm->SetIsEnabled(false);
+	}
+}
+
+#undef LOCTEXT_NAMESPACE

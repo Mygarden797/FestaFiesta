@@ -22,7 +22,7 @@ OUT = ROOT / "Saved/FacilityCodex/Actions20260921"
 COMMAND = "FF.ApplyFacilityCodexActions"
 VERSION = "FF.FacilityCodex.Actions20260921.1"
 ASSETS = {
-    role: "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodex" + role
+    role: "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_Facility" + role
     for role in ("Screen", "Card")
 }
 ADDITIONS = {

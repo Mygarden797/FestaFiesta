@@ -21,7 +21,7 @@
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
-#include "UI/FacilityCodex/FF_FacilityCodexCard.h"
+#include "Building/FacilityCollection/UI/FF_FacilityCard.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
 #include "UObject/MetaData.h"
 #include "UObject/Package.h"

@@ -24,7 +24,7 @@
 #include "UI/Core/FF_UIFlowSettings.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/Core/FF_UIRootLayout.h"
-#include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Building/FacilityInfo/FF_FacilityInfoSubsystem.h"
 #include "UI/Settings/FF_FestivalSettingsScreen.h"
 #include "UI/Settings/FF_RuntimeSettingsSubsystem.h"
 

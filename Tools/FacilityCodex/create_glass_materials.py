@@ -16,7 +16,7 @@ import unreal
 
 
 FOLDER = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials"
-BASE_NAME = "M_FF_CodexGlass"
+BASE_NAME = "M_FF_Glass"
 VERSION_KEY = "FF.FacilityCodex.GlassSurfaceVersion"
 VERSION = "1"
 DEFAULTS = {
@@ -204,7 +204,7 @@ def create_base(asset_tools, lib):
 
 def create_materials():
     # Validate every existing destination before creating anything new.
-    for name in [BASE_NAME] + ["MI_FF_CodexGlass_" + state for state in STATES]:
+    for name in [BASE_NAME] + ["MI_FF_Glass_" + state for state in STATES]:
         existing_owned(name)
     unreal.EditorAssetLibrary.make_directory(FOLDER)
     asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
@@ -212,7 +212,7 @@ def create_materials():
     material = create_base(asset_tools, lib)
     result = {"Base": material}
     for state, overrides in STATES.items():
-        name = "MI_FF_CodexGlass_" + state
+        name = "MI_FF_Glass_" + state
         instance = existing_owned(name)
         if not instance:
             instance = asset_tools.create_asset(name, FOLDER, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())

@@ -566,7 +566,7 @@ Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우
 > - Live 에서 사건 마커를 누르면 `UFF_LiveHudScreen::HandleIncidentMarkerClicked` 가 `ClearSelection()` 을 불러 시설 정보 창을 닫고 사건 상세를 엽니다(10/14 추가). 두 창이 겹치지 않게 하는 규칙입니다.
 > - 카드 배치 `388 × 500`, `(-24, 72)` 와 Picker `520`·하단 `400` 예약은 생성기·자동화 테스트 기준과 다릅니다. 지금 기준은 `FF_FacilityPaidProgramLayout.h`(기본 폭 405 · 우측/상단 18 · 하단 예약 126)와 `FestaFiesta.UI.FacilityInfo.AssetContract`(Clarity 456×620, Aurora 592 등 변형별 값)입니다. 저장된 WBP 가 어느 변형인지는 바이너리라 문서에서 확인하지 못했습니다.
 
-- **헤더**: `Public/UI/Facility/FF_FacilityInfoTypes.h`, `FF_FacilityInfoSubsystem.h`,
+- **헤더**: `Public/Building/FacilityInfo/FF_FacilityInfoTypes.h`, `FF_FacilityInfoSubsystem.h`,
   `FF_FacilityInfoPanel.h`, `FF_FacilityPaidProgramTypes.h`,
   `FF_FacilityPaidProgramPicker.h`, `FF_FacilityPaidProgramCard.h`
 - **접근**: `UFF_FacilityInfoSubsystem` (`TickableWorldSubsystem`)

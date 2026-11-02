@@ -33,9 +33,9 @@ GOLD_TEXTURES = (
 )
 GOLD_CONSUMER_WBPS = (
     "/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools",
-    "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen",
-    "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard",
-    "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Controls/WBP_FF_CodexCollectionReward",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityScreen",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCard",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Controls/WBP_FF_CollectionReward",
     "/Game/FestaFiesta/UI/LiveHUD/WBP_FF_LiveHudScreen",
     "/Game/FestaFiesta/UI/LiveHUD/WBP_FF_LiveHudStatusBar",
 )

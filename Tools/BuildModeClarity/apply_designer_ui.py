@@ -18,8 +18,8 @@ GROUPS = (
     ("FF.FinalizeBuildToolsInfoDesigner", "FF.ToolsInfoDesigner.20260929.v3", (
         "Controls/WBP_FF_BuildTools", "Facility/WBP_FF_FacilityInfoPanel")),
     ("FF.ApplyCodexNavigation", "FF.Codex.NavigationRewards.20260929.v4", (
-        "FacilityCodex/WBP_FF_FacilityCodexScreen", "FacilityCodex/WBP_FF_FacilityCodexCard",
-        "FacilityCodex/Controls/WBP_FF_CodexCollectionReward", "FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher")),
+        "FacilityCodex/WBP_FF_FacilityScreen", "FacilityCodex/WBP_FF_FacilityCard",
+        "FacilityCodex/Controls/WBP_FF_CollectionReward", "FacilityCodex/WBP_FF_FacilityCatalogLauncher")),
 )
 PACKAGES = [BASE + suffix for _, _, suffixes in GROUPS for suffix in suffixes]
 REPORT = {"status": "RUNNING", "packages": PACKAGES, "commands": [group[0] for group in GROUPS],

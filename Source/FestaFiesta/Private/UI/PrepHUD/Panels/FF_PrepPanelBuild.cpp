@@ -41,7 +41,7 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/Data/FF_UIPalette.h"
-#include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
+#include "Building/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"
