@@ -41,6 +41,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Feature Guide|Icon Atlas", meta = (EditCondition = "bUseIconAtlas", ClampMin = "0", UIMin = "0"))
 	int32 IconAtlasCell = 0;
 
+	/** Subtle, frame-rate independent motion. Only the icon moves, never its hit target. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Feature Guide|Motion")
+	bool bEnableIconMotion = true;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Feature Guide|Motion", meta = (ClampMin = "1.0", ClampMax = "1.15"))
+	float IconHoverScale = 1.075f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Feature Guide|Motion", meta = (ClampMin = "0.85", ClampMax = "1.0"))
+	float IconPressedScale = .94f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Feature Guide|Motion", meta = (ClampMin = "0.0", ClampMax = "4.0"))
+	float IconHoverLift = 1.5f;
+
 	/** Returns the authored brush with the chosen normalized atlas UVs applied. */
 	FSlateBrush ResolveIconBrush() const;
 
@@ -59,6 +69,8 @@ protected:
 	virtual void NativePreConstruct() override;
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	/** Required designer-owned controls; names must match in the derived WBP. */
 	UPROPERTY(meta = (BindWidget))
@@ -68,6 +80,13 @@ protected:
 	TObjectPtr<UImage> Image_GuideIcon;
 
 private:
+	FWidgetTransform AuthoredIconTransform;
+	FVector2D AuthoredIconPivot = FVector2D(.5f, .5f);
+	float MotionScale = 1.f;
+	float MotionLift = 0.f;
+	bool bCapturedIconTransform = false;
+	void ResetIconMotion();
+
 	UFUNCTION()
 	void HandleGuideClicked();
 };

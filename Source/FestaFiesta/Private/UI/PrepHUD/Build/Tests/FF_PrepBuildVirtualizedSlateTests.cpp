@@ -1333,7 +1333,10 @@ namespace FFPrepBuildVirtualizedSlateTest
             if (!Test.TestNotNull(TEXT("Full real category list"), Majors) ||
                 !Test.TestNotNull(TEXT("Full real minor choices"), Minors)) { return false; }
             Test.TestEqual(TEXT("All and all ten categories are present"), Majors->GetChildrenCount(), 11);
-            int32 ExpectedAtlasIndex = 0;
+            constexpr const TCHAR* CategoryIconNames[] = {
+                TEXT("All"), TEXT("Booth"), TEXT("Toilet"), TEXT("Info"), TEXT("Rest"),
+                TEXT("Performance"), TEXT("Safety"), TEXT("PhotoSpot"), TEXT("Lighting"),
+                TEXT("Road"), TEXT("Tile")};
             for (UWidget* Child : Majors->GetAllChildren())
             {
                 auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(Child);
@@ -1344,23 +1347,32 @@ namespace FFPrepBuildVirtualizedSlateTest
                 if (!Test.TestNotNull(TEXT("Every saved category keeps its editable choice widget"), Choice) ||
                     !Test.TestNotNull(TEXT("Every existing category keeps an icon"), Icon) ||
                     !Test.TestNotNull(TEXT("Every existing category keeps its keyboard button"), Button) ||
-                    !Test.TestNotNull(TEXT("Pictograms retain their readable Korean captions"), Caption) ||
-                    !Test.TestNotNull(TEXT("Generated pictograms have their contrast backdrop"), Backdrop)) return false;
+                    !Test.TestNotNull(TEXT("Pictograms retain their readable Korean captions"), Caption)) return false;
                 UObject* Resource = Icon->GetBrush().GetResourceObject();
-                Test.TestTrue(TEXT("Category pictograms use the approved generated atlas"),
-                    Resource && Resource == Choice->IconAtlas.Get() && Resource->GetName() == TEXT("T_FF_BuildCategoryAtlas"));
-                Test.TestTrue(TEXT("Each category maps to its own ordered atlas cell"),
-                    Choice->IconAtlasColumns == 4 && Choice->IconAtlasRows == 3 && Choice->IconAtlasIndex == ExpectedAtlasIndex);
+                const int32 IconIndex = Choice->GetChoiceId() + 1;
+                if (!Test.TestTrue(TEXT("Each category has a known standalone icon identity"),
+                    IconIndex >= 0 && IconIndex < UE_ARRAY_COUNT(CategoryIconNames))) return false;
+                const FString ExpectedIconPath = FString::Printf(TEXT("/Game/Asset/Icon_HKH/T_HKH_Category_%s.T_HKH_Category_%s"),
+                    CategoryIconNames[IconIndex], CategoryIconNames[IconIndex]);
+                Test.TestTrue(TEXT("Each category displays its own generated HKH texture"),
+                    Cast<UTexture2D>(Resource) && Resource->GetPathName() == ExpectedIconPath &&
+                    Resource == Choice->AuthoredIcon.GetResourceObject());
+                Test.TestNull(TEXT("Standalone category icons do not retain the old atlas"), Choice->IconAtlas.Get());
                 const FBox2f UV = Icon->GetBrush().GetUVRegion();
-                Test.TestTrue(TEXT("The displayed brush has the expected atlas UV bounds"),
-                    UV.bIsValid && UV.Min.Equals(FVector2f(float(ExpectedAtlasIndex % 4) / 4.f, float(ExpectedAtlasIndex / 4) / 3.f), .0001f) &&
-                    UV.Max.Equals(FVector2f(float(ExpectedAtlasIndex % 4 + 1) / 4.f, float(ExpectedAtlasIndex / 4 + 1) / 3.f), .0001f));
-                Test.TestTrue(TEXT("Generated icon colors and contrast backdrop are preserved"),
-                    Choice->bPreserveIconColours && Icon->GetColorAndOpacity().Equals(FLinearColor::White, .001f) &&
-                    Backdrop->GetVisibility() == ESlateVisibility::HitTestInvisible);
-                ++ExpectedAtlasIndex;
-                Test.TestTrue(TEXT("Each schematic icon occupies the authored compact 22px square"),
-                    Icon->GetCachedGeometry().GetLocalSize().Equals(FVector2D(22, 22), .5));
+                Test.TestTrue(TEXT("Standalone category glyphs use the entire uncropped image"),
+                    !UV.bIsValid || (UV.Min.Equals(FVector2f(0.f, 0.f), .0001f) &&
+                        UV.Max.Equals(FVector2f(1.f, 1.f), .0001f)));
+                const auto* TintProperty = FindFProperty<FStructProperty>(Choice->GetClass(),
+                    Choice->IsSelected() ? TEXT("SelectedContentColor") : TEXT("NormalContentColor"));
+                Test.TestTrue(TEXT("White category glyphs follow their authored selection tint"),
+                    !Choice->bPreserveIconColours && TintProperty &&
+                    Icon->GetColorAndOpacity().Equals(*TintProperty->ContainerPtrToValuePtr<FLinearColor>(Choice), .001f));
+                Test.TestTrue(TEXT("Standalone glyphs do not show the old atlas contrast backdrop"),
+                    !Backdrop || Backdrop->GetVisibility() == ESlateVisibility::Collapsed);
+                // The 32px tab has 3px vertical padding. Keep a square glyph inside that content area.
+                const FVector2D IconLocalSize = Icon->GetCachedGeometry().GetLocalSize();
+                Test.TestTrue(FString::Printf(TEXT("Each standalone category icon occupies its authored compact 24px square (actual %.2f x %.2f)"), IconLocalSize.X, IconLocalSize.Y),
+                    IconLocalSize.Equals(FVector2D(24, 24), .5));
                 Test.TestTrue(TEXT("Category buttons preserve native keyboard focusability"),
                     Button->GetIsFocusable() && Button->TakeWidget()->SupportsKeyboardFocus());
                 const FSlateRect IconRect = Icon->GetCachedGeometry().GetLayoutBoundingRect();
@@ -1407,9 +1419,12 @@ namespace FFPrepBuildVirtualizedSlateTest
                 Test.TestTrue(TEXT("Activating a pictogram preserves the current category selection"), Choice->IsSelected());
                 auto* SelectedIcon = Cast<UImage>(Choice->GetWidgetFromName(TEXT("Image_Icon")));
                 auto* SelectedBackdrop = Cast<UBorder>(Choice->GetWidgetFromName(TEXT("Border_IconBackdrop")));
-                Test.TestTrue(TEXT("Selected category retains its original icon colors and contrast backdrop"),
-                    SelectedIcon && SelectedIcon->GetColorAndOpacity().Equals(FLinearColor::White, .001f) &&
-                    SelectedBackdrop && SelectedBackdrop->GetVisibility() == ESlateVisibility::HitTestInvisible);
+                const auto* SelectedTintProperty = FindFProperty<FStructProperty>(Choice->GetClass(), TEXT("SelectedContentColor"));
+                Test.TestTrue(TEXT("Selected category glyph uses its authored selected content tint"),
+                    SelectedIcon && SelectedTintProperty &&
+                    SelectedIcon->GetColorAndOpacity().Equals(*SelectedTintProperty->ContainerPtrToValuePtr<FLinearColor>(Choice), .001f));
+                Test.TestTrue(TEXT("Selected standalone glyph keeps the old atlas backdrop hidden"),
+                    !SelectedBackdrop || SelectedBackdrop->GetVisibility() == ESlateVisibility::Collapsed);
                 TSet<FName> ExpectedMinors;
                 for (const auto& Entry : SourceEntries) { if (Entry.Category == Category) { ExpectedMinors.Add(Entry.MinorToken); } }
                 Test.TestEqual(TEXT("Selecting a category resets the ribbon's logical index"), Panel->GetCatalogPageIndex(), 0);

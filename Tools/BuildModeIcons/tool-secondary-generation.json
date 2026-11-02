@@ -1,0 +1,84 @@
+{
+  "nativeTool": "image_gen__imagegen",
+  "effectiveAgentModel": "Inherited Codex model; image model not exposed",
+  "processing": "byte-for-byte copy of native saved PNG. No procedural pixel generation or edits.",
+  "items": [
+    {
+      "name": "Group",
+      "prompt": "Use case: logo-brand. Asset type: exactly ONE standalone production game UI pictogram, square512 PNG with genuine transparent background. Subject: three rounded squares linked by short connecting lines, representing editing a group of buildings. Style: precise SVG-like optical geometry, flat PURE WHITE solid filled strokes only, thick rounded strokes about 6% canvas width, clear silhouette at28 pixels. Center the entire icon in70%of square,15%transparent padding on all sides. No texture, no distressed edges, no artifacts or speckles, no gradients/shadows/lighting, no baked background, no button, no frame, no text, no logo, no watermark.",
+      "source": "${CODEX_HOME}/generated_images\\01a19b8a-0328-73f1-b412-3d792bc151e2\\exec-8d799380-73ff-443c-b33a-4c60a12168e8.png",
+      "destination": "Content/Asset/Icon_HKH/T_HKH_Tool_Group.png",
+      "sha256": "d62ecc1637835332a465e58af4d899d536faec7569ef1023abbfdbd57d655da4"
+    },
+    {
+      "name": "Preset",
+      "prompt": "Use case: logo-brand. Asset type: exactly ONE standalone production game UI pictogram, square512 PNG with genuine transparent background. Subject: a simple folder with a small five-point star centered inside, representing saved building group presets. Style: precise SVG-like optical geometry, flat PURE WHITE solid filled strokes only, thick rounded strokes about 6% canvas width, clear silhouette at28 pixels. Center the entire icon in70%of square,15%transparent padding on all sides. No texture, no distressed edges, no artifacts or speckles, no gradients/shadows/lighting, no baked background, no button, no frame, no text, no logo, no watermark.",
+      "source": "${CODEX_HOME}/generated_images\\01a19b8a-0328-73f1-b412-3d792bc151e2\\exec-62d74e20-3c58-4f65-8d23-d3752d2e3f96.png",
+      "destination": "Content/Asset/Icon_HKH/T_HKH_Tool_Preset.png",
+      "sha256": "00366f5e4f418ca11c93b82372247cf4ac1bfc62624834dec5790c826d7948a2"
+    },
+    {
+      "name": "Rotate",
+      "prompt": "Use case: logo-brand. Asset type: exactly ONE standalone production game UI pictogram, square512 PNG with genuine transparent background. Subject: one thick circular clockwise arrow with a clear arrowhead, representing rotating a building. Style: precise SVG-like optical geometry, flat PURE WHITE solid filled strokes only, thick rounded strokes about 6% canvas width, clear silhouette at28 pixels. Center the entire icon in70%of square,15%transparent padding on all sides. No texture, no distressed edges, no artifacts or speckles, no gradients/shadows/lighting, no baked background, no button, no frame, no text, no logo, no watermark.",
+      "source": "${CODEX_HOME}/generated_images\\01a19b8a-0328-73f1-b412-3d792bc151e2\\exec-84e98a80-b1a1-4aff-830b-0c8c46fd2de4.png",
+      "destination": "Content/Asset/Icon_HKH/T_HKH_Tool_Rotate.png",
+      "sha256": "e81c3000490ae9e197b083f7c6118332eaa606e1144d928e708ae90921caa360"
+    },
+    {
+      "name": "Adjust",
+      "prompt": "Use case: logo-brand. Asset type: exactly ONE standalone production game UI pictogram, square512 PNG with genuine transparent background. Subject: four outward pointing arrows, up right down left, joined at one central hub, representing position adjustment. Style: precise SVG-like optical geometry, flat PURE WHITE solid filled strokes only, thick rounded strokes about 6% canvas width, clear silhouette at28pixels. Center entire icon in70%of square,15%transparent padding each side. No texture, no distressed edges, artifacts or speckles, no gradients/shadows/lighting, no baked background/button/frame, no text/logo/watermark.",
+      "source": "${CODEX_HOME}/generated_images\\01a19b8a-0328-73f1-b412-3d792bc151e2\\exec-5dbb4e53-25ce-4159-aee4-0b48494f4cb2.png",
+      "destination": "Content/Asset/Icon_HKH/T_HKH_Tool_Adjust.png",
+      "sha256": "e203d260f9d06d96dbf72950e1b93324f7631488feb3c96500b2cec38ecc4214"
+    },
+    {
+      "name": "Synergy",
+      "prompt": "Use case: logo-brand. Asset type: exactly ONE standalone production game UI pictogram, square512 PNG with genuine transparent background. Subject: two interlocking chain links tilted diagonally, representing building synergy. Style: precise SVG-like optical geometry, flat PURE WHITE solid filled strokes only, thick rounded strokes about 6% canvas width, clear silhouette at28pixels. Center entire icon in70%of square,15%transparent padding each side. No texture, no distressed edges, artifacts or speckles, no gradients/shadows/lighting, no baked background/button/frame, no text/logo/watermark.",
+      "source": "${CODEX_HOME}/generated_images\\01a19b8a-0328-73f1-b412-3d792bc151e2\\exec-0d95e490-da29-48d8-9be0-de2200d21417.png",
+      "destination": "Content/Asset/Icon_HKH/T_HKH_Tool_Synergy.png",
+      "sha256": "053f98cde0a4da4dc5509e2adafd36b0249517361b5a499789e1eb30049a7fe9"
+    },
+    {
+      "name": "Queue",
+      "prompt": "Use case: logo-brand. Asset type: exactly ONE standalone production game UI pictogram, square512 PNG with genuine transparent background. Subject: three people silhouettes in a clear horizontal queue, each a simple circle head and rounded shoulders, representing facility queues. Style: precise SVG-like optical geometry, flat PURE WHITE solid filled strokes only, thick rounded strokes about 6% canvas width, clear silhouette at28pixels. Center entire icon in70%of square,15%transparent padding each side. No texture, no distressed edges, artifacts or speckles, no gradients/shadows/lighting, no baked background/button/frame, no text/logo/watermark.",
+      "source": "${CODEX_HOME}/generated_images\\01a19b8a-0328-73f1-b412-3d792bc151e2\\exec-981e1a20-e684-4988-9781-ed41d2e2c1ed.png",
+      "destination": "Content/Asset/Icon_HKH/T_HKH_Tool_Queue.png",
+      "sha256": "15fd1c8720be39307fcf15f60c673f3b1b58053dee819621f078eca9af851bb4"
+    },
+    {
+      "name": "Repeat",
+      "prompt": "Use case: logo-brand. Asset type: exactly ONE standalone production game UI pictogram, square512 PNG with genuine transparent background. Subject: two thick arrows chasing each other in a circular loop, representing continuous repeated building placement. Style: precise SVG-like optical geometry, flat PURE WHITE solid filled strokes only, thick rounded strokes about 6% canvas width, clear silhouette at28pixels. Center entire icon in70%of square,15%transparent padding each side. No texture, no distressed edges, artifacts or speckles, no gradients/shadows/lighting, no baked background/button/frame, no text/logo/watermark.",
+      "source": "${CODEX_HOME}/generated_images\\01a19b8a-0328-73f1-b412-3d792bc151e2\\exec-9ae89b21-5ece-48be-89c1-0c59106a761d.png",
+      "destination": "Content/Asset/Icon_HKH/T_HKH_Tool_Repeat.png",
+      "sha256": "062756b8899d8a3c2551c4a988842530481c04ac28a78768018c8cc7e55629d0"
+    },
+    {
+      "name": "Program",
+      "prompt": "Use case: logo-brand. Asset type: exactly ONE standalone production game UI pictogram, square512 PNG with genuine transparent background. Subject: a single music note centered inside the outline of a rounded event admission ticket, representing facility programs. Style: precise SVG-like optical geometry, flat PURE WHITE solid filled strokes only, thick rounded strokes about 6% canvas width, clear silhouette at28pixels. Center entire icon in70%of square,15%transparent padding each side. No texture, no distressed edges, artifacts or speckles, no gradients/shadows/lighting, no baked background/button/frame, no text/logo/watermark.",
+      "source": "${CODEX_HOME}/generated_images\\01a19b8a-0328-73f1-b412-3d792bc151e2\\exec-36155d91-330e-4518-9fa0-a9f0a031b8dd.png",
+      "destination": "Content/Asset/Icon_HKH/T_HKH_Tool_Program.png",
+      "sha256": "25f78d89c5d75a7c95dbad00143e31475bf115c34c32e13ed5b8341f122dbda8"
+    },
+    {
+      "name": "Undo",
+      "prompt": "Use case: logo-brand. Asset type: exactly ONE standalone production game UI pictogram, square512 PNG with genuine transparent background. Subject: a single thick curved backward arrow pointing left, with a large clear triangular arrowhead and long curved tail, representing undo. Style: precise SVG-like optical geometry, flat PURE WHITE solid filled strokes only, thick rounded strokes about 6% canvas width, clear silhouette at28pixels. Center entire icon in70%of square,15%transparent padding each side. No texture, no distressed edges, artifacts or speckles, no gradients/shadows/lighting, no baked background/button/frame, no text/logo/watermark.",
+      "source": "${CODEX_HOME}/generated_images\\01a19b8a-0328-73f1-b412-3d792bc151e2\\exec-723e24e8-6c58-4466-a8c4-0e1889330a22.png",
+      "destination": "Content/Asset/Icon_HKH/T_HKH_Tool_Undo.png",
+      "sha256": "acd9ef814443d3af187952175fbd9925d8bdb3b7b8d697b1229bb235de73f86c"
+    },
+    {
+      "name": "Redo",
+      "prompt": "Use case: logo-brand. Asset type: exactly ONE standalone production game UI pictogram, square512 PNG with genuine transparent background. Subject: a single thick curved forward arrow pointing right, with a large clear triangular arrowhead and long curved tail, representing redo. Style: precise SVG-like optical geometry, flat PURE WHITE solid filled strokes only, thick rounded strokes about 6% canvas width, clear silhouette at28pixels. Center entire icon in70%of square,15%transparent padding each side. No texture, no distressed edges, artifacts or speckles, no gradients/shadows/lighting, no baked background/button/frame, no text/logo/watermark.",
+      "source": "${CODEX_HOME}/generated_images\\01a19b8a-0328-73f1-b412-3d792bc151e2\\exec-da4be3a6-9e6a-42d8-a5cb-d5d8dd686f56.png",
+      "destination": "Content/Asset/Icon_HKH/T_HKH_Tool_Redo.png",
+      "sha256": "9a023a84f64a637b943e58d4ef742873e856dd89b46f2dd83f3734402f932ee2"
+    },
+    {
+      "name": "Camera",
+      "prompt": "Use case: logo-brand. Asset type: exactly ONE standalone production game UI pictogram, square512 PNG with genuine transparent background. Subject: a simple small camera body centered over a four-way directional cross with four arrowheads pointing up right down left, representing camera movement. Style: precise SVG-like optical geometry, flat PURE WHITE solid filled strokes only, thick rounded strokes about 6% canvas width, clear silhouette at28pixels. Center entire icon in70%of square,15%transparent padding each side. No texture, no distressed edges, artifacts or speckles, no gradients/shadows/lighting, no baked background/button/frame, no text/logo/watermark.",
+      "source": "${CODEX_HOME}/generated_images\\01a19b8a-0328-73f1-b412-3d792bc151e2\\exec-86ccc07f-57ff-437f-8654-bcc360b9e185.png",
+      "destination": "Content/Asset/Icon_HKH/T_HKH_Tool_Camera.png",
+      "sha256": "e76a7a301e3a8064ef348c733e19897a009b4792ce6932102fd1268bea5311b8"
+    }
+  ]
+}
