@@ -30,7 +30,9 @@
 
 ## 생성 아이콘 편집
 
-- 원본 텍스처는 `/Game/FestaFiesta/UI/Generated/Building`의 `T_FF_BuildIconAtlas`, `T_FF_BuildCategoryAtlas`, `T_FF_BuildUtilityAtlas`, `T_FF_ProgramBadge`입니다. 전체 격자 이미지는 지도 플러그인의 `/FF_MapOverview/UI/T_FF_WholeGridGenerated`에 있습니다.
+- 2026-11-02부터 상단 기능 22개와 시설 분류 11개는 `/Game/Asset/Icon_HKH/T_HKH_*`의 개별 텍스처를 사용합니다. 같은 폴더의 PNG가 원본입니다. 상단 `Guide_*`의 `IconBrush`와 분류 `Choice_Category*`의 `AuthoredIcon`에서 교체하며, 상단의 아틀라스 사용과 분류의 `IconAtlas`를 비웁니다. 흰색 단색 분류 아이콘은 원본 색 유지 옵션을 꺼야 기존 선택 상태 틴트가 적용됩니다.
+- 상단 버튼의 **Feature Guide → Motion**에서 반응 모션을 끄거나 확대·눌림·상승 강도를 조절합니다. 그림만 움직이고 클릭 영역은 고정됩니다. 마우스와 키보드 포커스 모두 반응합니다. 제작 프롬프트와 적용 도구는 `Tools/BuildModeIcons/README_KO.md`에 있습니다.
+- 나머지 배지와 구형 화면의 아틀라스는 `/Game/FestaFiesta/UI/Generated/Building`의 `T_FF_BuildIconAtlas`, `T_FF_BuildCategoryAtlas`, `T_FF_BuildUtilityAtlas`, `T_FF_ProgramBadge`입니다. 전체 격자 이미지는 지도 플러그인의 `/FF_MapOverview/UI/T_FF_WholeGridGenerated`에 있습니다.
 - `FF Build Atlas Image`를 선택하면 Details의 **Appearance → Atlas**에서 텍스처, 열과 행의 수, 0부터 시작하는 셀 인덱스를 바꿀 수 있습니다. 셀은 왼쪽에서 오른쪽, 위에서 아래 순서입니다. 이미지 크기와 색은 일반 UMG 이미지 설정에서 편집합니다.
 - 상단 바의 각 `Guide_*` 인스턴스는 **Feature Guide → Icon Atlas**의 사용 여부, 열·행·셀과 `IconBrush`의 텍스처를 편집합니다. `FeatureTopicId`는 설명 연결에 사용하므로 유지하세요. 카테고리 인스턴스는 **Catalog Tab → Atlas**의 텍스처와 셀을 편집합니다. 원본 색 유지 옵션을 끄면 기존 선택 상태 색상 처리가 적용됩니다.
 - 일반 Image에 연결된 아이콘은 Brush의 리소스와 UV 영역으로 특정 셀을 표시합니다. 원본의 분할 수나 셀 순서를 변경할 때는 해당 위젯의 설정도 함께 수정하세요. 아틀라스는 UI 텍스처 그룹이며 밉맵을 사용하지 않습니다.

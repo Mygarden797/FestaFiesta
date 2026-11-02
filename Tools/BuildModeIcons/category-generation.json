@@ -1,0 +1,209 @@
+{
+  "schema": 1,
+  "outerModel": "inherited Codex model, exact slug not exposed",
+  "imageModel": "native tool implementation, exact model not exposed",
+  "records": [
+    {
+      "name": "Booth",
+      "prompt": "Use case: ui-mockup. Asset type: one production game UI icon, not a mockup. Generate a SINGLE pure-white festival vendor BOOTH pictogram: front-facing square stall with a bold striped/scalloped awning, two supports and simple counter. Flat clean geometric white silhouette and thick uniform rounded strokes, about 6% of canvas width, no tiny details. True transparent background alpha. Square 512x512 if possible. Icon centered with 15% clear margin on every side, about 70% overall occupancy, readable at 28px. All visible foreground pixels pure white; transparency makes interior negative spaces. No colored pixels, gray, shadows, gradients, lighting, outlines around canvas, button plate, border, frame, words, letters, logos, watermark or decorative sparkles. One icon only.",
+      "nativeHint": "Generated images are saved to ${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042 as ${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042\\exec-2b348f96-edfb-4906-8b39-3c34777ff66e.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link.",
+      "finalPath": "Content/Asset/Icon_HKH/T_HKH_Category_Booth.png",
+      "attempts": 2,
+      "correctionPrompt": "Asset: one clean white BOOTH icon for a 28px game interface. Correct the reference image's visibly rough, speckled alpha and colored dirty edges; redraw ONLY the same simple front-facing awning kiosk as a mathematically smooth flat pictogram with pure solid white surfaces and crisp antialiased edges. Keep the same general kiosk silhouette but use large perfectly empty transparent negative spaces. NO mottling, texture, noise, speckles, sketching, shadows, shading, gray, offwhite, irregular edges or grain. Uniform heavy rounded white strokes. One centered icon on true transparent alpha background, square canvas, 15% clear margin. No words, frame, background or button plate. Target512x512. Production-quality clean vector-like raster.",
+      "correctionHint": "Generated images are saved to ${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042 as ${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042\\exec-d05955b7-2418-4c04-8367-d50414ab8ce0.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link.",
+      "qa": "Accepted: visually reviewed actual alpha-composited source at88px and28px; recognizable distinct silhouette; no clipping, frames or text; transparent pixels verified.",
+      "sourcePath": "${CODEX_HOME}/generated_images/01a19b88-193e-7582-8035-2aaa05923042/exec-2b348f96-edfb-4906-8b39-3c34777ff66e.png",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG RGBA",
+      "sha256": "24bc58dfc8f203dfe74a03732aa556ad0d10e24951a2b0663b174d58e5d869d1",
+      "qaPreview": "Saved/BuildModeIcons/category-qa-dark.png",
+      "alphaSample": {
+        "opaqueFraction": 0.2808227514300783,
+        "transparentFraction": 0.6361312832163577,
+        "cornerAlpha": 0
+      },
+      "sourcePixelsAltered": false
+    },
+    {
+      "name": "Toilet",
+      "prompt": "Use case: ui-mockup. Asset: ONE production game UI category icon. Single pure-white monochrome pictogram, flat geometric design, uniform heavy rounded strokes about 6% canvas width, crisp smooth clean edges. True transparent alpha background. Centered in square512x512 with 15% clear margin, about70% occupancy. Readable at28px. No button plate, frame, shadow, gray, shading, texture, noise, logos, text or decoration. Subject: familiar restroom pictogram, two simplified standing male and female people side by side, circle heads, minimal clear silhouettes.",
+      "tool": "image_gen__imagegen",
+      "sourcePath": "${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042\\exec-d21bbf9f-d773-4c41-8535-2c41122b6e0a.png",
+      "finalPath": "Content/Asset/Icon_HKH/T_HKH_Category_Toilet.png",
+      "attempts": 1,
+      "qa": "Accepted: visually reviewed actual alpha-composited source at88px and28px; recognizable distinct silhouette; no clipping, frames or text; transparent pixels verified.",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG RGBA",
+      "sha256": "6f19304c1a7cb930c69dc68496603c6afb01000eebe9637afe2d98f57bff9187",
+      "qaPreview": "Saved/BuildModeIcons/category-qa-dark.png",
+      "alphaSample": {
+        "opaqueFraction": 0.26147105359243783,
+        "transparentFraction": 0.6731713254087387,
+        "cornerAlpha": 0
+      },
+      "sourcePixelsAltered": false
+    },
+    {
+      "name": "Info",
+      "prompt": "Use case: ui-mockup. Asset: ONE production game UI category icon. Single pure-white monochrome pictogram, flat geometric design, uniform heavy rounded strokes about 6% canvas width, crisp smooth clean edges. True transparent alpha background. Centered in square512x512 with 15% clear margin, about70% occupancy. Readable at28px. No button plate, frame, shadow, gray, shading, texture, noise, logos, text or decoration. Subject: lowercase letter i enclosed by a simple bold circle, universal information icon. Only the information symbol i is permitted, no other text.",
+      "tool": "image_gen__imagegen",
+      "sourcePath": "${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042\\exec-8768b391-020d-4eab-8c0d-a246347aa5fa.png",
+      "finalPath": "Content/Asset/Icon_HKH/T_HKH_Category_Info.png",
+      "attempts": 1,
+      "qa": "Accepted: visually reviewed actual alpha-composited source at88px and28px; recognizable distinct silhouette; no clipping, frames or text; transparent pixels verified.",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG RGBA",
+      "sha256": "694d52419b70f78befc06c34dc1af99b9a8e674b0b297fd2be6a53dce3be52cd",
+      "qaPreview": "Saved/BuildModeIcons/category-qa-dark.png",
+      "alphaSample": {
+        "opaqueFraction": 0.1713659783358351,
+        "transparentFraction": 0.7611262120167147,
+        "cornerAlpha": 0
+      },
+      "sourcePixelsAltered": false
+    },
+    {
+      "name": "Rest",
+      "prompt": "Use case: ui-mockup. Asset: ONE production game UI category icon. Single pure-white monochrome pictogram, flat geometric design, uniform heavy rounded strokes about 6% canvas width, crisp smooth clean edges. True transparent alpha background. Centered in square512x512 with 15% clear margin, about70% occupancy. Readable at28px. No button plate, frame, shadow, gray, shading, texture, noise, logos, text or decoration. Subject: a simple front-facing park bench with rounded horizontal backrest slats, seat, and two legs. One isolated bench, minimal clean silhouette.",
+      "tool": "image_gen__imagegen",
+      "sourcePath": "${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042\\exec-5e6eb809-1594-480d-823f-3fb29a569e89.png",
+      "finalPath": "Content/Asset/Icon_HKH/T_HKH_Category_Rest.png",
+      "attempts": 1,
+      "qa": "Accepted: visually reviewed actual alpha-composited source at88px and28px; recognizable distinct silhouette; no clipping, frames or text; transparent pixels verified.",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG RGBA",
+      "sha256": "41dfaf51e753e14e1b60d2035b4dd285560959d30662032f5f7ac2a207f4c5d8",
+      "qaPreview": "Saved/BuildModeIcons/category-qa-dark.png",
+      "alphaSample": {
+        "opaqueFraction": 0.22893423668302973,
+        "transparentFraction": 0.7158099720069779,
+        "cornerAlpha": 0
+      },
+      "sourcePixelsAltered": false
+    },
+    {
+      "name": "Performance",
+      "prompt": "Use case: ui-mockup. Asset: ONE production game UI category icon. Single pure-white monochrome pictogram, flat geometric design, uniform heavy rounded strokes about 6% canvas width, crisp smooth clean edges. True transparent alpha background. Centered in square512x512 with 15% clear margin, about70% occupancy. Readable at28px. No button plate, frame, shadow, gray, shading, texture, noise, logos, text or decoration. Subject: compact festival performance stage: simple raised stage base, two short side supports, large musical eighth note above center. One clear stage with music icon, no intricate rigging.",
+      "tool": "image_gen__imagegen",
+      "sourcePath": "${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042\\exec-6b46fef4-d878-4ef5-aed0-971097570ffb.png",
+      "finalPath": "Content/Asset/Icon_HKH/T_HKH_Category_Performance.png",
+      "attempts": 1,
+      "qa": "Accepted: visually reviewed actual alpha-composited source at88px and28px; recognizable distinct silhouette; no clipping, frames or text; transparent pixels verified.",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG RGBA",
+      "sha256": "1540515d6697fbb57f06e11356e5b7f990e761ddd3c68ec562f40ac996d3c5e6",
+      "qaPreview": "Saved/BuildModeIcons/category-qa-dark.png",
+      "alphaSample": {
+        "opaqueFraction": 0.23976631912045113,
+        "transparentFraction": 0.6495598198709887,
+        "cornerAlpha": 0
+      },
+      "sourcePixelsAltered": false
+    },
+    {
+      "name": "Safety",
+      "prompt": "Use case: ui-mockup. Asset: ONE production game UI category icon. Single pure-white monochrome pictogram, flat geometric design, uniform heavy rounded strokes about 6% canvas width, crisp smooth clean edges. True transparent alpha background. Centered in square512x512 with 15% clear margin, about70% occupancy. Readable at28px. No button plate, frame, shadow, gray, shading, texture, noise, logos, text or decoration. Subject: safety shield with a large centered plus-shaped cross, bold rounded shield contour and white plus with transparent negative space between. Minimal clear safety protection icon.",
+      "tool": "image_gen__imagegen",
+      "sourcePath": "${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042\\exec-cc74bc0e-8960-4e5f-aced-d92bf94e00bd.png",
+      "finalPath": "Content/Asset/Icon_HKH/T_HKH_Category_Safety.png",
+      "attempts": 1,
+      "qa": "Accepted: visually reviewed actual alpha-composited source at88px and28px; recognizable distinct silhouette; no clipping, frames or text; transparent pixels verified.",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG RGBA",
+      "sha256": "f1ae41b4ff860f564c563f81eb2ace5e019b6fc78870f5535c1058b710ea2aa2",
+      "qaPreview": "Saved/BuildModeIcons/category-qa-dark.png",
+      "alphaSample": {
+        "opaqueFraction": 0.22313278429145197,
+        "transparentFraction": 0.6840845470404479,
+        "cornerAlpha": 1
+      },
+      "sourcePixelsAltered": false
+    },
+    {
+      "name": "PhotoSpot",
+      "prompt": "Use case: ui-mockup. Asset: ONE production game UI category icon. Single pure-white monochrome pictogram, flat geometric design, uniform heavy rounded strokes about 6% canvas width, crisp smooth clean edges. True transparent alpha background. Centered in square512x512 with 15% clear margin, about70% occupancy. Readable at28px. No button plate, frame, shadow, gray, shading, texture, noise, logos, text or decoration. Subject: front-facing photographic camera with rounded rectangular body, small top viewfinder bump, large circular lens cutout. One simple camera, minimal details.",
+      "tool": "image_gen__imagegen",
+      "sourcePath": "${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042\\exec-f252a3b7-64b8-438b-86a0-cd3e710986d4.png",
+      "finalPath": "Content/Asset/Icon_HKH/T_HKH_Category_PhotoSpot.png",
+      "attempts": 1,
+      "qa": "Accepted: visually reviewed actual alpha-composited source at88px and28px; recognizable distinct silhouette; no clipping, frames or text; transparent pixels verified.",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG RGBA",
+      "sha256": "6cb6f29ee433fb4dd9d599a045974db3e095fe5d0518eeb9c62d674a3b8efb68",
+      "qaPreview": "Saved/BuildModeIcons/category-qa-dark.png",
+      "alphaSample": {
+        "opaqueFraction": 0.22049576047709846,
+        "transparentFraction": 0.6863564444805063,
+        "cornerAlpha": 0
+      },
+      "sourcePixelsAltered": false
+    },
+    {
+      "name": "Lighting",
+      "prompt": "Use case: ui-mockup. Asset: ONE production game UI category icon. Single pure-white monochrome pictogram, flat geometric design, uniform heavy rounded strokes about 6% canvas width, crisp smooth clean edges. True transparent alpha background. Centered in square512x512 with 15% clear margin, about70% occupancy. Readable at28px. No button plate, frame, shadow, gray, shading, texture, noise, logos, text or decoration. Subject: a single stage spotlight lamp angled down-right, with a short mounting yoke and exactly three bold emitted light rays. Minimal unmistakable light fixture pictogram.",
+      "tool": "image_gen__imagegen",
+      "sourcePath": "${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042\\exec-c452aa4c-4ec7-4e70-bb70-6e8c74412db7.png",
+      "finalPath": "Content/Asset/Icon_HKH/T_HKH_Category_Lighting.png",
+      "attempts": 1,
+      "qa": "Accepted: visually reviewed actual alpha-composited source at88px and28px; recognizable distinct silhouette; no clipping, frames or text; transparent pixels verified.",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG RGBA",
+      "sha256": "e72e3b50cf3c8a25d95f8fa3e31f26584fc5713b36bb3ce1a149da5f517d552f",
+      "qaPreview": "Saved/BuildModeIcons/category-qa-dark.png",
+      "alphaSample": {
+        "opaqueFraction": 0.17444926771877156,
+        "transparentFraction": 0.7647369061625218,
+        "cornerAlpha": 0
+      },
+      "sourcePixelsAltered": false
+    },
+    {
+      "name": "Road",
+      "prompt": "Use case: ui-mockup. Asset: ONE production game UI category icon. Single pure-white monochrome pictogram, flat geometric design, uniform heavy rounded strokes about 6% canvas width, crisp smooth clean edges. True transparent alpha background. Centered in square512x512 with 15% clear margin, about70% occupancy. Readable at28px. No button plate, frame, shadow, gray, shading, texture, noise, logos, text or decoration. Subject: a simple straight road in slightly tapered perspective, two bold side edges and three central dashed markings, open transparent roadway. Minimal clean road navigation icon.",
+      "tool": "image_gen__imagegen",
+      "sourcePath": "${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042\\exec-ae35d98f-aa92-4db2-ad4b-c1b02d132b2c.png",
+      "finalPath": "Content/Asset/Icon_HKH/T_HKH_Category_Road.png",
+      "attempts": 1,
+      "qa": "Accepted: visually reviewed actual alpha-composited source at88px and28px; recognizable distinct silhouette; no clipping, frames or text; transparent pixels verified.",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG RGBA",
+      "sha256": "ac465b9686c1b1e62c85f2610094154203724be3753f08cb50439631ae308c43",
+      "qaPreview": "Saved/BuildModeIcons/category-qa-dark.png",
+      "alphaSample": {
+        "opaqueFraction": 0.1249137896060692,
+        "transparentFraction": 0.8523672359933466,
+        "cornerAlpha": 0
+      },
+      "sourcePixelsAltered": false
+    },
+    {
+      "name": "Tile",
+      "prompt": "Use case: ui-mockup. Asset: ONE production game UI category icon. Single pure-white monochrome pictogram, flat geometric design, uniform heavy rounded strokes about 6% canvas width, crisp smooth clean edges. True transparent alpha background. Centered in square512x512 with 15% clear margin, about70% occupancy. Readable at28px. No button plate, frame, shadow, gray, shading, texture, noise, logos, text or decoration. Subject: four equal square floor tiles in a precise 2 by2 grid separated by wide transparent gutters. Slightly rounded corners, four white tile shapes, no extra outer frame.",
+      "tool": "image_gen__imagegen",
+      "sourcePath": "${CODEX_HOME}/generated_images\\01a19b88-193e-7582-8035-2aaa05923042\\exec-bf459d57-31be-48ea-8701-cb76595c3b9d.png",
+      "finalPath": "Content/Asset/Icon_HKH/T_HKH_Category_Tile.png",
+      "attempts": 1,
+      "qa": "Accepted: visually reviewed actual alpha-composited source at88px and28px; recognizable distinct silhouette; no clipping, frames or text; transparent pixels verified.",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG RGBA",
+      "sha256": "bb0d78713c45a7a5539520d537f3517e8a10b77ae08fec1d5d961dcd1047d179",
+      "qaPreview": "Saved/BuildModeIcons/category-qa-dark.png",
+      "alphaSample": {
+        "opaqueFraction": 0.4389630410970019,
+        "transparentFraction": 0.5218467280619904,
+        "cornerAlpha": 0
+      },
+      "sourcePixelsAltered": false
+    }
+  ]
+}

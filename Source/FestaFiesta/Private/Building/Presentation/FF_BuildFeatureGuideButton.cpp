@@ -26,9 +26,61 @@ void UFF_BuildFeatureGuideButton::NativeOnInitialized()
 void UFF_BuildFeatureGuideButton::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (Image_GuideIcon && !bCapturedIconTransform)
+	{
+		AuthoredIconTransform = Image_GuideIcon->GetRenderTransform();
+		AuthoredIconPivot = Image_GuideIcon->GetRenderTransformPivot();
+		bCapturedIconTransform = true;
+	}
 	// The inner Slate button exists after construction; apply the accessibility
 	// label there as well as the UMG tooltip used by mouse and keyboard users.
 	RefreshGuidePresentation();
+}
+
+void UFF_BuildFeatureGuideButton::ResetIconMotion()
+{
+	MotionScale = 1.f;
+	MotionLift = 0.f;
+	if (Image_GuideIcon && bCapturedIconTransform)
+	{
+		Image_GuideIcon->SetRenderTransform(AuthoredIconTransform);
+		Image_GuideIcon->SetRenderTransformPivot(AuthoredIconPivot);
+	}
+}
+
+void UFF_BuildFeatureGuideButton::NativeDestruct()
+{
+	ResetIconMotion();
+	bCapturedIconTransform = false;
+	Super::NativeDestruct();
+}
+
+void UFF_BuildFeatureGuideButton::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (IsDesignTime() || !Image_GuideIcon || !Button_Guide || !bCapturedIconTransform) return;
+	if (!bEnableIconMotion)
+	{
+		if (MotionScale != 1.f || MotionLift != 0.f) ResetIconMotion();
+		return;
+	}
+	const bool bInteractive = GetIsEnabled() && Button_Guide->GetIsEnabled();
+	const bool bPressed = bInteractive && Button_Guide->IsPressed();
+	const bool bHighlighted = bInteractive && (Button_Guide->IsHovered() || Button_Guide->HasAnyUserFocus());
+	const float TargetScale = bPressed ? IconPressedScale : (bHighlighted ? IconHoverScale : 1.f);
+	const float TargetLift = !bPressed && bHighlighted ? IconHoverLift : 0.f;
+	if (FMath::IsNearlyEqual(MotionScale, TargetScale, .001f) &&
+		FMath::IsNearlyEqual(MotionLift, TargetLift, .001f)) return;
+	const float Blend = 1.f - FMath::Exp(-24.f * FMath::Clamp(InDeltaTime, 0.f, .1f));
+	MotionScale = FMath::Lerp(MotionScale, TargetScale, Blend);
+	MotionLift = FMath::Lerp(MotionLift, TargetLift, Blend);
+	if (FMath::IsNearlyEqual(MotionScale, TargetScale, .001f)) MotionScale = TargetScale;
+	if (FMath::IsNearlyEqual(MotionLift, TargetLift, .001f)) MotionLift = TargetLift;
+	FWidgetTransform Transform = AuthoredIconTransform;
+	Transform.Scale *= MotionScale;
+	Transform.Translation.Y -= MotionLift;
+	Image_GuideIcon->SetRenderTransformPivot(AuthoredIconPivot);
+	Image_GuideIcon->SetRenderTransform(Transform);
 }
 
 FSlateBrush UFF_BuildFeatureGuideButton::ResolveIconBrush() const

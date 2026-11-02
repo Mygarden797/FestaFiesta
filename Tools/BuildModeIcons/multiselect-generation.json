@@ -1,0 +1,15 @@
+{
+  "image_tool": "image_gen__imagegen",
+  "image_model": "Not exposed by native tool",
+  "prompt": "Use case: logo-brand. Asset type: single isolated production game UI icon, square PNG, transparent background. Create exactly ONE pictogram for MULTI SELECT: a small pointer arrow overlapping the lower right corner of a dashed rounded rectangular selection marquee. Style: clean bold rounded flat optical glyph, pure opaque WHITE foreground only, true transparent background, uniform stroke about 6 percent of canvas width, centered, entire symbol occupies about 70 percent of square, 15 percent clear padding on all sides. Design for 28px readability in a clean Korean festival-building game toolbar. No colors, no gradients, no lighting, no shadows, no texture, no text, no logo, no watermark, no circular background/button/tile/frame. Request 512x512 square.",
+  "prompt_transparency": true,
+  "source": "${CODEX_HOME}/generated_images/01a19b84-6fa2-7e33-916d-54fbe3fa8166/exec-b420788f-fd21-4dd7-99b8-1bbe323f25e6.png",
+  "destination": "Content/Asset/Icon_HKH/T_HKH_Tool_MultiSelect.png",
+  "dimensions": [
+    1254,
+    1254
+  ],
+  "sha256": "2d705d7bbb7dfbc38962364223070dec32ac33b4c243fae60c0e089c6a6c65de",
+  "processing": "Native PNG data saved without pixel edits",
+  "qa": "PASS: actual alpha composite inspected; centered silhouette, recognizable at small size"
+}
