@@ -4,6 +4,9 @@
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "FF_PrepBuildCategoryChoice.generated.h"
 
+class UTexture2D;
+class UBorder;
+
 /** Saved catalog tabs expose their preview and identity in the Widget Blueprint Designer. */
 UCLASS(Blueprintable, meta = (DisplayName = "FF Build Catalog Category Choice"))
 class FESTAFIESTA_API UFF_PrepBuildCategoryChoice : public UFF_PrepChoiceButton
@@ -21,10 +24,35 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Catalog Tab", meta = (DisplayName = "탭 아이콘"))
 	FSlateBrush AuthoredIcon;
 
+	/** Optional generated icon atlas. Empty retains the authored brush unchanged. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Catalog Tab|Atlas")
+	TObjectPtr<UTexture2D> IconAtlas;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Catalog Tab|Atlas", meta = (ClampMin = "1", ClampMax = "128"))
+	int32 IconAtlasColumns = 4;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Catalog Tab|Atlas", meta = (ClampMin = "1", ClampMax = "128"))
+	int32 IconAtlasRows = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Catalog Tab|Atlas", meta = (ClampMin = "0"))
+	int32 IconAtlasIndex = 0;
+
+	/** Keep the image's original colours while preserving normal label and selected-state styling. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Catalog Tab|Atlas")
+	bool bPreserveIconColours = false;
+
+	/** Resolved from Designer settings with the original brush as a safe fallback. */
+	FSlateBrush GetEffectiveIcon() const;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Catalog Tab", meta = (DisplayName = "디자이너에서 선택 표시"))
 	bool bPreviewSelected = false;
 
 protected:
+	/** Optional authored background keeps dark generated art readable on a selected tab. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_IconBackdrop;
+
 	virtual void NativeOnInitialized() override;
 	virtual void NativePreConstruct() override;
+	virtual void RefreshVisualState() override;
 };

@@ -120,6 +120,8 @@ void UFF_PrepPanelBuild::NativeConstruct()
 	}
 	LastResponsiveListWidth = -1.0f;
 	LastResponsiveColumnCount = 0;
+	LastResponsiveListHeight = -1.0f;
+	LastResponsiveRowCount = 0;
 	if (Button_PreviousPage) Button_PreviousPage->OnClicked.AddUniqueDynamic(this, &ThisClass::PreviousCatalogPage);
 	if (Button_NextPage) Button_NextPage->OnClicked.AddUniqueDynamic(this, &ThisClass::NextCatalogPage);
 
@@ -345,6 +347,20 @@ void UFF_PrepPanelBuild::NativeTick(const FGeometry& MyGeometry, const float InD
 				LastResponsiveColumnCount = Columns;
 				TileView_Facilities->SetEntryWidth(FMath::Max(1.f,
 					(Width - 24.f) / Columns - TileView_Facilities->GetHorizontalEntrySpacing()));
+			}
+			// Opt in per WBP: keep a complete number of rows visible as the list's
+			// authored height changes. A zero value keeps the old Designer pitch.
+			const float Height = TileView_Facilities->GetCachedGeometry().GetLocalSize().Y;
+			if (VisibleCatalogRows > 0 && FMath::IsFinite(Height) && Height > 1.f &&
+				(!FMath::IsNearlyEqual(Height, LastResponsiveListHeight, .5f) || VisibleCatalogRows != LastResponsiveRowCount))
+			{
+				LastResponsiveListHeight = Height;
+				LastResponsiveRowCount = VisibleCatalogRows;
+				// The tile WBP owns all inner spacing; do not change the source data
+				// or the list offset when the viewport is resized.
+				const float EntryHeight = FMath::Max(1.f, Height / VisibleCatalogRows);
+				if (!FMath::IsNearlyEqual(TileView_Facilities->GetEntryHeight(), EntryHeight, .01f))
+					TileView_Facilities->SetEntryHeight(EntryHeight);
 			}
 		}
 		if (!bCatalogPointerDown && FMath::Abs(CatalogScrollVelocity) > 0.01f)
@@ -1477,7 +1493,7 @@ void UFF_PrepPanelBuild::BuildCategoryFilterSurface()
 			{
 				if (auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(Child))
 				{
-					Choice->ConfigureTab(Choice->AuthoredChoiceId, Choice->AuthoredLabel, Choice->AuthoredIcon);
+					Choice->ConfigureTab(Choice->AuthoredChoiceId, Choice->AuthoredLabel, Choice->GetEffectiveIcon());
 					Choice->OnHudTabButtonClicked.BindUObject(this, &ThisClass::HandleCategoryChoiceClicked);
 					CategoryChoices.Add(Choice);
 				}

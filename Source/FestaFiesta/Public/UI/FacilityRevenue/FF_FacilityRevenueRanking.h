@@ -20,6 +20,7 @@ class UFF_FacilityCodexImage;
 class UFF_FestivalProgressionSubsystem;
 class UFF_BuildCatalogSubsystem;
 class UFF_BuildingFeatureDiscoverySubsystem;
+class UWorld;
 enum class EFF_BuildModeState : uint8;
 struct FFFZSWorldChangeEvent;
 
@@ -39,11 +40,15 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankItem : public UObject
 	UPROPERTY(BlueprintReadOnly) float RelativeRevenue = 0.f;
 	UPROPERTY(BlueprintReadOnly) double Share = 0.;
 	UPROPERTY(BlueprintReadOnly) bool bHasShare = false;
+	/** Live presentation data; never used to calculate the revenue ledger. */
+	UPROPERTY(BlueprintReadOnly) FText OperationStateText;
 };
 namespace FFFacilityRevenueRanking
 {
 // Sorts a presentation copy only; never changes an economy ledger or its ordering contract.
 FESTAFIESTA_API int64 Rank(TArray<UFF_FacilityRevenueRankItem *> &Items, bool bCumulative);
+/** Resolve a facility's real queue state using the shared facility-info wording. */
+FESTAFIESTA_API FText ResolveOperationStateText(const UWorld* World, FGuid FacilityId);
 } // namespace FFFacilityRevenueRanking
 UCLASS(meta = (DisplayName = "FF Revenue List View"))
 class FESTAFIESTA_API UFF_FacilityRevenueListView : public UListView
@@ -61,7 +66,9 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankRow : public UUserWidget, public IU
 {
 	GENERATED_BODY()
   public:
-	void ApplyItem(const UFF_FacilityRevenueRankItem *Item);
+	void ApplyItem(UFF_FacilityRevenueRankItem *Item);
+	/** Refresh only this realized virtualized row without changing selection or order. */
+	void RefreshOperationState(UFF_FacilityRevenueRankItem* Item);
 
   protected:
 	virtual void NativeOnListItemObjectSet(UObject *Object) override;
@@ -72,6 +79,7 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankRow : public UUserWidget, public IU
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_Location;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_Amount;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Share;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_OperationState;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SelectionMark;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_ThumbnailFallback;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UFF_FacilityCodexImage> Image_Thumbnail;
@@ -146,6 +154,7 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 	bool bCapturedFrameSize = false;
 	bool bCumulative = false;
 	bool bForegroundSuppressed = false;
+	float OperationRefreshAccumulator = 0.f;
 	FText AuthoredFootnote;
 	FGuid FailedInspectionFacilityId;
 	bool bCapturedFootnote = false;

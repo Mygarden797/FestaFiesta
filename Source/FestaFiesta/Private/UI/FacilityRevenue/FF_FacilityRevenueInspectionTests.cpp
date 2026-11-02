@@ -36,6 +36,8 @@
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
 #include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
+#include "Queue/FF_QueueSubsystem.h"
+#include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "UI/LiveHUD/FF_LiveHudScreen.h"
 #include "UObject/StrongObjectPtr.h"
 #include "Widgets/SOverlay.h"
@@ -243,6 +245,53 @@ bool FFF_FacilityRevenueInspectionTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("준비 단계에서는 Build 경로 유지"), Info->GetSelectionContext(), EFF_FacilityInfoContext::Build);
 	TestEqual(TEXT("정보 보기는 월드 리비전을 변경하지 않음"), Zones->GetWorldRevision(), Revision);
 	TestTrue(TEXT("정보 보기는 시설 위치를 변경하지 않음"), Facility->GetActorTransform().Equals(Transform));
+
+	// Ranking status uses exactly the same real queue state and wording as the
+	// facility inspector, including an unregistered or missing instance.
+	const FText Unavailable = FFFacilityInfoModel::GetOperationStateText(false, false, false, false);
+	TestTrue(TEXT("Missing world does not invent an operating facility"),
+		FFFacilityRevenueRanking::ResolveOperationStateText(nullptr, Item->FacilityId).EqualTo(Unavailable));
+	TestTrue(TEXT("Unknown facility GUID is unavailable, not operating"),
+		FFFacilityRevenueRanking::ResolveOperationStateText(World, FGuid::NewGuid()).EqualTo(Unavailable));
+	const auto* Bridge = World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>();
+	const auto* Queue = World->GetSubsystem<UFF_QueueSubsystem>();
+	if (!TestNotNull(TEXT("Queue bridge"), Bridge) || !TestNotNull(TEXT("Queue authority"), Queue)) return false;
+	const int32 QueueId = Bridge->FindQueueFacilityId(Item->FacilityId);
+	const bool bRegistered = QueueId != INDEX_NONE && Queue->IsFacilityRegistered(QueueId);
+	const FFF_QueueState QueueState = bRegistered ? Bridge->GetZoneFacilityQueueState(Item->FacilityId) : FFF_QueueState();
+	const FText Expected = FFFacilityInfoModel::GetOperationStateText(true,
+		bRegistered && QueueState.FacilityId == QueueId, QueueState.bIsOpen, QueueState.bAcceptingNew);
+	TestTrue(TEXT("Installed service facility matches inspector queue wording"),
+		FFFacilityRevenueRanking::ResolveOperationStateText(World, Item->FacilityId).EqualTo(Expected));
+
+	// A genuine non-service surface has no queue status and must not be labelled open.
+	FFFZSFacilitySpec Road;
+	Road.FacilityDefinitionId = TEXT("Road_Surface_RevenueStatusFixture");
+	Road.DisplayName = FText::FromString(TEXT("Revenue status road"));
+	Road.Category = EFFZSFacilityCategory::Road;
+	Road.FootprintSizeCells = FIntPoint(400, 400);
+	Road.ClearanceCells = 0;
+	Road.PlacementObstacleHeightCm = 8.f;
+	Road.QueueRules.MaxWaitingAgents = 0;
+	Road.QueueRules.ServiceCapacity = 0;
+	Road.InstallCostKey = TEXT("Cost.Booth.Default");
+	FFFZSGridPlacement RoadPlacement;
+	RoadPlacement.OriginCell = FIntPoint(3000, 4000);
+	const FFFZSCommand RoadInstall = UFFZSGridLibrary::MakeInstallCommand(
+		Road, FFProjectZoneTest::ZoneId(), RoadPlacement, Zones->GetWorldRevision());
+	const FFFZSCommandResult RoadResult = Zones->ExecuteCommand(RoadInstall);
+	if (!TestTrue(*FString::Printf(TEXT("Non-service surface installs: %s"), *RoadResult.Message.ToString()), RoadResult.bSucceeded)) return false;
+	TestTrue(TEXT("Non-service facility does not invent queue operation"),
+		FFFacilityRevenueRanking::ResolveOperationStateText(World, RoadInstall.FacilityInstanceId).EqualTo(Unavailable));
+	FFFZSCommand Remove;
+	Remove.CommandId = FGuid::NewGuid();
+	Remove.TransactionId = FGuid::NewGuid();
+	Remove.Type = EFFZSCommandType::Remove;
+	Remove.FacilityInstanceId = RoadInstall.FacilityInstanceId;
+	Remove.ExpectedWorldRevision = Zones->GetWorldRevision();
+	if (!TestTrue(TEXT("Non-service surface can be removed"), Zones->ExecuteCommand(Remove).bSucceeded)) return false;
+	TestTrue(TEXT("Removed facility does not retain stale operation text"),
+		FFFacilityRevenueRanking::ResolveOperationStateText(World, RoadInstall.FacilityInstanceId).EqualTo(Unavailable));
 	return true;
 }
 

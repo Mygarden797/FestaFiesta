@@ -372,6 +372,7 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 	friend class FFF_BuildSynergyCatalogContextTest;
 	friend class FFF_BuildMultiSelectionSessionTest;
 	friend class FFFBuildFeatureGuideInputTest;
+	friend class FFFBuildToolbarFeaturePopupTest;
 	friend class FFFBuildToolsCatalogHelpTest;
 	friend class FFFBuildToolsForegroundViewportTest;
 	friend class FFF_UIUtilityFlyoutForegroundTest;
@@ -559,6 +560,9 @@ public:
 	bool CanUndoBuildEdit() const;
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Building")
 	bool CanRedoBuildEdit() const;
+	/** Whether construction history commands are allowed in the current session and phase. */
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Building|History")
+	bool CanExecuteBuildHistory() const;
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|History")
 	bool RedoBuildEdit();
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Queue")

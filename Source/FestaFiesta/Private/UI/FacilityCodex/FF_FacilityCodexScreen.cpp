@@ -71,6 +71,10 @@ void UFF_FacilityCodexScreen::NativeOnInitialized()
 		TileView_Entries->OnItemClicked().AddUObject(this, &ThisClass::HandleCollectionClicked);
 	if (Button_CollectionPrevious) Button_CollectionPrevious->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCollectionPrevious);
 	if (Button_CollectionNext) Button_CollectionNext->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCollectionNext);
+	if (auto* OpenPreview = Cast<UButton>(GetWidgetFromName(TEXT("Button_ApprovedOpen3D"))))
+		OpenPreview->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOpenCollectionPreview);
+	if (auto* ClosePreview = Cast<UButton>(GetWidgetFromName(TEXT("Button_ApprovedClose3D"))))
+		ClosePreview->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseCollectionPreview);
 	if (Column_CollectionCategories && Search_Entries && !bUseAuthoredCollectionLayout)
 	{
 		// ContrastBuilder supplies a full-contrast passive label in place of Slate's
@@ -448,7 +452,8 @@ FReply UFF_FacilityCodexScreen::NativeOnPreviewKeyDown(const FGeometry& Geometry
 	}
 	if (Column_CollectionCategories && !KeyEvent.IsRepeat())
 	{
-		if (bCollectionDetailOpen && (KeyEvent.GetKey() == EKeys::Left || KeyEvent.GetKey() == EKeys::Right))
+		if (bCollectionDetailOpen && (!bUseParallelCollectionLayout || bCollectionPreviewOpen) &&
+			(KeyEvent.GetKey() == EKeys::Left || KeyEvent.GetKey() == EKeys::Right))
 		{
 			NavigateCollectionDetail(KeyEvent.GetKey() == EKeys::Right ? 1 : -1);
 			return FReply::Handled();
@@ -629,7 +634,12 @@ void UFF_FacilityCodexScreen::RefreshFilter()
 	}
 	// A claim can remove the last result from the reward-ready filter while its
 	// detail page is open. Keep the empty state and filter controls reachable.
-	if (Column_CollectionCategories && bCollectionDetailOpen && VisibleItems.IsEmpty())
+	if (Column_CollectionCategories && bUseParallelCollectionLayout)
+	{
+		const bool bHasSelection = !SelectedRuleId.IsNone();
+		if (bHasSelection != bCollectionDetailOpen) SetCollectionDetailOpen(bHasSelection);
+	}
+	else if (Column_CollectionCategories && bCollectionDetailOpen && VisibleItems.IsEmpty())
 		SetCollectionDetailOpen(false);
 	RefreshDetail();
 	RefreshCollectionNavigation();
@@ -641,6 +651,8 @@ void UFF_FacilityCodexScreen::HandleSelectionChanged(UObject* SelectedItem)
 	if (bApplyingFilter) return;
 	const auto* Item = Cast<UFF_FacilityCodexItem>(SelectedItem);
 	SelectedRuleId = Item ? Item->Entry.RuleId : NAME_None;
+	if (bUseParallelCollectionLayout && (Item != nullptr) != bCollectionDetailOpen)
+		SetCollectionDetailOpen(Item != nullptr);
 	RefreshDetail();
 }
 
@@ -711,6 +723,18 @@ void UFF_FacilityCodexScreen::RefreshDetail()
 			FText::AsNumber(Entry.EffectAppliedCount), Number(Entry.AppliedBonusPercent))
 		: Entry.bConditionMet ? LOCTEXT("EffectCapped", "배치 조건은 충족했어요. 더 높은 같은 그룹 효과 또는 수익 상한으로 현재 추가 적용은 없어요.")
 		: LOCTEXT("NoEffect", "현재 적용 효과 없음 · 배치 조건을 충족하면 자동으로 적용됩니다."));
+	if (bUseParallelCollectionLayout)
+	{
+		if (auto* SummaryText = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_ApprovedSummaryStatus"))))
+			SummaryText->SetText(FText::Format(LOCTEXT("ParallelCodexStatus", "발견 상태  {0}\n배치 조건  {1}\n현재 효과  {2}"),
+				Entry.bDiscovered ? LOCTEXT("ParallelDiscovered", "발견") : LOCTEXT("ParallelUndiscovered", "미발견"),
+				Entry.bConditionMet ? LOCTEXT("ParallelConditionMet", "충족") : LOCTEXT("ParallelConditionUnmet", "미충족"),
+				Entry.bEffectApplied ? LOCTEXT("ParallelEffectApplied", "적용 중") : LOCTEXT("ParallelEffectInactive", "미적용")));
+		if (auto* ConditionSummary = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_ApprovedSummaryCondition"))))
+			ConditionSummary->SetText(Text_Condition ? Text_Condition->GetText() : FText::GetEmpty());
+		if (auto* EffectSummary = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_ApprovedSummaryEffect"))))
+			EffectSummary->SetText(Text_Applied ? Text_Applied->GetText() : FText::GetEmpty());
+	}
 	Thumbnail(Image_Target, Text_TargetFallback, Entry.TargetThumbnail, ShownTarget);
 	Thumbnail(Image_Partner, Text_PartnerFallback, Entry.PartnerThumbnail, ShownPartner);
 }
@@ -814,8 +838,20 @@ void UFF_FacilityCodexScreen::RefreshShowcase()
 	SetTabSelected(Button_PreviewPartner, bPreviewPartner);
 	const FPrimaryAssetId PrimaryId(UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(), FacilityId);
 	const auto DefinitionPath = UAssetManager::Get().GetPrimaryAssetPath(PrimaryId);
-	const auto* Definition = FacilityId.IsNone() || DefinitionPath.IsNull() ? nullptr
+	// Browsing the side-by-side list must not synchronously load one definition per
+	// selection. Resolve the mesh only after the player explicitly opens 3D preview.
+	const bool bResolveDefinition = !bUseParallelCollectionLayout || bCollectionPreviewOpen;
+	const auto* Definition = !bResolveDefinition || FacilityId.IsNone() || DefinitionPath.IsNull() ? nullptr
 		: Cast<UFFZSFacilityDefinition>(DefinitionPath.TryLoad());
+	const bool bCanShowModel = Entry->bDiscovered && Definition && !Definition->Spec.VisualMesh.IsNull();
+	if (auto* OpenPreview = Cast<UButton>(GetWidgetFromName(TEXT("Button_ApprovedOpen3D"))))
+	{
+		const bool bCanOpen = Entry->bDiscovered && Viewport_Showcase && !FacilityId.IsNone();
+		OpenPreview->SetIsEnabled(bCanOpen);
+		OpenPreview->SetToolTipText(bCanOpen
+			? LOCTEXT("OpenModelPreview", "시설 3D 미리보기 열기 · 모델이 없으면 이미지로 표시합니다.")
+			: LOCTEXT("ModelPreviewUnavailable", "조합을 발견하면 시설 미리보기를 열 수 있습니다."));
+	}
 	if (Text_PreviewCategory) Text_PreviewCategory->SetText(Definition
 		? FFF_PrepBuildPresentationRules::ResolveCategoryDisplayName(Definition->Spec.Category)
 		: bPreviewPartner ? LOCTEXT("PartnerFacility", "함께 놓는 시설")
@@ -824,7 +860,7 @@ void UFF_FacilityCodexScreen::RefreshShowcase()
 	{
 		// The collection detail uses the authored transparent facility cutout, matching
 		// its stamp card and keeping the sea backdrop continuous behind the visual.
-		bShowPreviewModel = !Column_CollectionCategories && Entry->bDiscovered && Definition && !Definition->Spec.VisualMesh.IsNull();
+		bShowPreviewModel = bCanShowModel && (bUseParallelCollectionLayout ? bCollectionPreviewOpen : !Column_CollectionCategories);
 		if (bShowPreviewModel)
 		{
 			// Give the preview a Slate viewport even while it is loading. Hidden (not
@@ -834,7 +870,8 @@ void UFF_FacilityCodexScreen::RefreshShowcase()
 		}
 		else Viewport_Showcase->ResetPreview();
 	}
-	if (Text_PreviewHint) Text_PreviewHint->SetText(Entry->bDiscovered
+	if (Text_PreviewHint) Text_PreviewHint->SetText(bUseParallelCollectionLayout && bCollectionPreviewOpen && Entry->bDiscovered && !bCanShowModel
+		? LOCTEXT("ShowcaseNoModelHint", "3D 모델이 없어 시설 이미지를 표시합니다.") : Entry->bDiscovered
 		? LOCTEXT("ShowcaseKnownHint", "시설 이름을 누르면 건축 카탈로그로 이동합니다")
 		: bInstalled ? LOCTEXT("ShowcaseInstalledHint", "설치한 시설 · 함께 놓을 시설을 찾아 조합을 발견하세요")
 			: LOCTEXT("ShowcaseUnknownHint", "미발견 시설 · 조합을 발견하면 컬러로 확인할 수 있어요"));
@@ -880,7 +917,12 @@ void UFF_FacilityCodexScreen::HandleClose()
 		HandleDismissIntroduction();
 		return;
 	}
-	if (Column_CollectionCategories && bCollectionDetailOpen)
+	if (bUseParallelCollectionLayout && bCollectionPreviewOpen)
+	{
+		HandleCloseCollectionPreview();
+		return;
+	}
+	if (Column_CollectionCategories && bCollectionDetailOpen && !bUseParallelCollectionLayout)
 	{
 		SetCollectionDetailOpen(false);
 		if (TileView_Entries) TileView_Entries->SetKeyboardFocus();

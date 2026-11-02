@@ -9,6 +9,9 @@
 | 배치 중 시설 설치·건축 기능 안내 | `/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools` |
 | 설치된 시설의 정보·탭 | `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel` |
 | 조명 편집 | `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls` |
+| 매출 순위와 행 | `/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking`, `WBP_FF_FacilityRevenueRankRow` |
+| 시설 도감과 카드 | `/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen`, `WBP_FF_FacilityCodexCard` |
+| 상단 아이콘 버튼과 바 | `/Game/FestaFiesta/Building/FF_WBP_Building/Controls/FeatureGuide/WBP_FF_BuildFeatureGuideButton`, `WBP_FF_BuildFeatureGuideToolbar` |
 
 ## 크기와 배치
 
@@ -16,9 +19,21 @@
 - 여백 60은 현재 왼쪽 HUD 여백 12 + 오른쪽 24 + 패널 사이 24입니다. 다른 담당자의 하단 HUD는 변경하지 않습니다.
 - 배치 정보: `Size_PlacementInfo`의 크기·캔버스 슬롯, `Border_PlacementInfo`의 배경·패딩을 편집합니다.
 - 설치된 시설 정보: Class Defaults → Appearance / Build Layout에서 크기와 여백을 편집합니다. 오른쪽 패널 폭을 변경하면 목록에 예약하는 폭도 함께 맞춰야 합니다.
-- 목록의 `VerticalBox_CatalogBody`는 Fill을 유지하세요. `Size_A5CatalogRows` 높이 224는 카드 112 높이의 두 줄입니다. 이 제한을 없애면 스크롤 영역이 내용만큼 늘어나 스크롤과 하단 안내가 가려집니다.
-- 카드와 하단 범례의 `Size_A5RequiredBadge`, `Size_A5LightingBadge`, `Size_A5ProgramBadge`는 표시 영역의 가로·세로를 고정합니다. 필수는 빨간 ★(투명 Border), 조명·프로그램은 원형입니다. 즐겨찾기는 카드 오른쪽 아래의 금색 별입니다.
+- 목록의 `VerticalBox_CatalogBody`는 Fill을 유지하세요. Class Defaults의 `CardsPerPage=12`, `bUsePagination=false`, `VisibleCatalogRows=2`와 `TileView_Facilities`의 세로 Entry Spacing `0`이 두 줄을 구성합니다. `Size_A5CatalogRows`는 기본 높이 224이며, 크기 변경 시 각 행의 높이가 목록 높이에 맞춰 조정됩니다. 카드 내부 여백은 카드 WBP에서 편집합니다.
+- 카드와 하단 범례의 `Size_A5RequiredBadge`, `Size_A5LightingBadge`, `Size_A5ProgramBadge`는 표시 영역의 가로·세로를 고정합니다. 필수는 생성된 빨간 별, 조명은 노란 전구, 프로그램은 보라색 배지를 사용합니다. 즐겨찾기는 카드 오른쪽 아래에 별도 상태로 표시합니다.
 - 건축 기능 안내는 `Size_FeatureGuideCard`의 크기·슬롯과 `Border_FeatureGuideCard`의 배경을 편집합니다. Class Defaults → Designer Page → **건축 기능 안내**로 미리 볼 수 있습니다. 안내가 열리면 같은 위치의 시설 설치·정보 패널은 잠시 접히고, 닫으면 복원됩니다.
+- 자주 쓰는 키는 건축 도구 WBP의 `Size_ApprovedQuickKeys` 아래 7개 행을 편집합니다. 각 행은 별도의 반투명 배경과 텍스트로 구성하며 `T_BuildQuickKeyFade`를 공유합니다. `Text_ApprovedKey_W/A/S/D`는 실행 중 사용자 키 설정으로 갱신되므로 이름을 바꾸지 마세요. 안내는 입력을 가로채지 않도록 설정합니다.
+- 상단 아이콘은 `WBP_FF_BuildFeatureGuideToolbar`의 각 버튼에서 아이콘 브러시와 `FeatureTopicId`를 편집합니다. 팝오버 디자인은 건축 도구 WBP의 `Size_ToolbarFeaturePopup`을 수정합니다. `Slot_WholeGridAddon`은 지도 플러그인이 전체 격자 버튼을 삽입하므로 삭제하지 마세요.
+- 목록 스크롤 손잡이는 `TileView_Facilities`의 Scroll Bar Style과 두께에서 수정합니다. 손잡이의 세 상태는 기본·마우스 오버·드래그 색상으로 구분하며 별도의 흰색 선은 없습니다.
+- 매출 순위의 운영 상태 열은 순위 WBP의 헤더와 행 WBP의 `Text_OperationState`에서 편집합니다. 문구는 시설의 실제 운영 정보를 사용하므로 이름과 데이터 연결을 유지하고 고정 텍스트를 입력하지 마세요.
+- 시설 도감의 목록과 상세는 `bUseAuthoredCollectionLayout`, `bUseParallelCollectionLayout`을 함께 켠 상태로 편집합니다. `Vertical_ApprovedSummary`와 `Button_ApprovedOpen3D`/`Button_ApprovedClose3D`는 실제 선택 데이터 및 별도 3D 화면에 연결되어 있으므로 이름을 유지하세요.
+
+## 생성 아이콘 편집
+
+- 원본 텍스처는 `/Game/FestaFiesta/UI/Generated/Building`의 `T_FF_BuildIconAtlas`, `T_FF_BuildCategoryAtlas`, `T_FF_BuildUtilityAtlas`, `T_FF_ProgramBadge`입니다. 전체 격자 이미지는 지도 플러그인의 `/FF_MapOverview/UI/T_FF_WholeGridGenerated`에 있습니다.
+- `FF Build Atlas Image`를 선택하면 Details의 **Appearance → Atlas**에서 텍스처, 열과 행의 수, 0부터 시작하는 셀 인덱스를 바꿀 수 있습니다. 셀은 왼쪽에서 오른쪽, 위에서 아래 순서입니다. 이미지 크기와 색은 일반 UMG 이미지 설정에서 편집합니다.
+- 상단 바의 각 `Guide_*` 인스턴스는 **Feature Guide → Icon Atlas**의 사용 여부, 열·행·셀과 `IconBrush`의 텍스처를 편집합니다. `FeatureTopicId`는 설명 연결에 사용하므로 유지하세요. 카테고리 인스턴스는 **Catalog Tab → Atlas**의 텍스처와 셀을 편집합니다. 원본 색 유지 옵션을 끄면 기존 선택 상태 색상 처리가 적용됩니다.
+- 일반 Image에 연결된 아이콘은 Brush의 리소스와 UV 영역으로 특정 셀을 표시합니다. 원본의 분할 수나 셀 순서를 변경할 때는 해당 위젯의 설정도 함께 수정하세요. 아틀라스는 UI 텍스처 그룹이며 밉맵을 사용하지 않습니다.
 
 ## 문구와 스타일
 
@@ -37,5 +52,5 @@
 - 설치된 시설을 클릭하면 미확정 배치 미리보기를 취소하고 같은 카탈로그 옆에서 시설 정보를 엽니다. 이 동작은 설치나 결제를 실행하지 않습니다.
 - 기본·운영·프로그램·강화·조명·스태프 탭은 기존 데이터와 기능 연결을 유지합니다.
 - 대기열 설정은 `Button_TabQueue` → `Panel_FacilityQueueSettings`에서 편집합니다. 대기열을 사용하는 시설에만 탭이 보이며, 운영 중에는 기존 규칙에 따라 읽기 전용입니다. 각 입력란·설명·적용 버튼은 모두 이 WBP 안의 UMG 위젯입니다.
-- 탭은 `Grid_InspectorTabs`의 3열 UniformGrid입니다. 지원하지 않는 탭은 런타임에 접고 빈칸 없이 정렬합니다. 버튼의 동일한 크기는 Grid의 최소 슬롯 크기·Slot Padding으로, 글자는 각 버튼 아래 CommonTextBlock에서 편집합니다(현재 전부 14).
+- 건축 모드 탭은 `Grid_InspectorTabs`의 5열 UniformGrid입니다. Class Defaults의 `BuildInspectorTabColumns`와 `bShowUnavailableBuildTabs`에서 열 수와 미지원 탭 표시를 조절합니다. 지원하지 않는 탭은 기본 설정에서 비활성으로 남습니다. Live 모드는 기존 3열·미지원 탭 숨김을 유지합니다. 버튼의 크기는 Grid 최소 슬롯 크기·Slot Padding으로, 글자는 각 버튼 아래 CommonTextBlock에서 편집합니다.
 - 기본 탭의 매출 순위 바로가기는 제거했습니다. 매출 정보와 순위 이동은 매출 탭에서 확인합니다.

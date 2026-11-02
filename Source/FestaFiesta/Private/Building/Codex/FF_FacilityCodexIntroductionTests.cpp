@@ -347,7 +347,7 @@ bool FFFBuildFeatureGuideTopicsTest::RunTest(const FString& Parameters)
 		Ids.Add(Topic.Id);
 		if (!Topic.ToolbarButton.IsNone()) Buttons.Add(Topic.ToolbarButton);
 	}
-	TestEqual(TEXT("The guide includes all eleven requested subjects"), Ids.Num(), 11);
+	TestEqual(TEXT("The guide includes the original and approved toolbar subjects"), Ids.Num(), 23);
 	TestEqual(TEXT("Seven toolbar controls have independent first-use history"), Buttons.Num(), 7);
 	TestNull(TEXT("Unknown feature IDs do not show misleading guidance"), FFBuildFeatureGuide::Find(TEXT("Unknown")));
 	if (!TestNotNull(TEXT("Profile persistence is available"), GConfig)) return false;
