@@ -32,6 +32,7 @@
 #include "UI/FacilityCodex/FF_FacilityCodexScreen.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "UObject/StrongObjectPtr.h"
+#include "UObject/UnrealType.h"
 
 namespace
 {
@@ -121,6 +122,11 @@ bool FFF_FacilityCodexCollectionScreenTest::RunTest(const FString& Parameters)
 	FPlayerlessWidgetClassContext CategoryContext(*CategoryClass);
 	FPlayerlessWidgetClassContext RewardContext(*RewardClass);
 	TStrongObjectPtr<UFF_FacilityCodexScreen> Screen(NewObject<UFF_FacilityCodexScreen>(World, ScreenClass));
+	auto* Parallel = FindFProperty<FBoolProperty>(ScreenClass, TEXT("bUseParallelCollectionLayout"));
+	if (!TestNotNull(TEXT("Parallel collection opt-in"), Parallel)) return false;
+	// The production WBP defaults to parallel mode. Exercise the retained legacy
+	// page transition explicitly before switching this transient fixture to parallel.
+	Parallel->SetPropertyValue_InContainer(Screen.Get(), false);
 	if (!Screen->Initialize()) return false;
 	// Match the real presenter: launch filtering happens before AddToViewport/NativeConstruct.
 	Screen->SetFacilityFilter(NAME_None);
@@ -151,13 +157,21 @@ bool FFF_FacilityCodexCollectionScreenTest::RunTest(const FString& Parameters)
 	Close->OnClicked.Broadcast();
 	TestFalse(TEXT("First back returns to the list"), Screen->IsCombinationDetailOpen());
 	TestEqual(TEXT("Detail back does not close the modal"), CloseRequests, 0);
-	Tile->OnItemClicked().Broadcast(Tile->GetSelectedItem<UFF_FacilityCodexItem>());
-	TestTrue(TEXT("Clicking the already selected card opens detail again"), Screen->IsCombinationDetailOpen());
+	Parallel->SetPropertyValue_InContainer(Screen.Get(), true);
 	Screen->SetDiscoveryFilter(EFF_FacilityCodexFilterState::RewardReady);
+	UWidget* Browse = Screen->GetWidgetFromName(TEXT("Size_Browse"));
+	UWidget* Detail = Screen->GetWidgetFromName(TEXT("Size_Detail"));
+	if (!TestNotNull(TEXT("Parallel browse"), Browse) || !TestNotNull(TEXT("Parallel detail"), Detail)) return false;
+	TestTrue(TEXT("Reward-ready selection keeps list and detail visible"),
+		Screen->IsCombinationDetailOpen() && Browse->IsVisible() && Detail->IsVisible());
 	for (int32 Index = 0; Index < 3; ++Index) Claim->OnClicked.Broadcast();
 	TestEqual(TEXT("All three individual rewards remain claimable through detail"), Economy->GetGold(), 1300);
 	TestEqual(TEXT("The reward-ready list is empty after the final individual claim"), Screen->GetVisibleEntryCount(), 0);
 	TestFalse(TEXT("Final filtered claim returns to list controls instead of an empty detail"), Screen->IsCombinationDetailOpen());
+	TestTrue(TEXT("Final filtered claim keeps browsing controls accessible"), Browse->IsVisible());
+	TestFalse(TEXT("Final filtered claim hides stale detail"), Detail->IsVisible());
+	Claim->OnClicked.Broadcast();
+	TestEqual(TEXT("An extra claim after the filtered list empties cannot duplicate payment"), Economy->GetGold(), 1300);
 	Screen->SetDiscoveryFilter(EFF_FacilityCodexFilterState::All);
 	Screen->SetFacilityFilter(TEXT("CollectionUiTarget1"));
 	TestEqual(TEXT("Inspector launch filtering selects one recipe"), Screen->GetVisibleEntryCount(), 1);

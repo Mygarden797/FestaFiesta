@@ -583,7 +583,6 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	SetText(Text_RemoveInstallCost, ViewData.InstallCostText);
 	if (Button_RemoveConfirm) Button_RemoveConfirm->SetIsEnabled(bBuildContext && ViewData.bCanRemove);
 	RefreshPageVisibility();
-	RefreshStaffControls();
 	OnViewDataApplied(ViewData);
 }
 
@@ -616,6 +615,8 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 		return;
 	}
 	const bool bBuild = CurrentViewData.Context == EFF_FacilityInfoContext::Build;
+	const bool bKeepUnavailableTabs = bBuild && bShowUnavailableBuildTabs && WidgetTree &&
+		WidgetTree->FindWidget(TEXT("Grid_InspectorTabs"));
 	if (ActivePage == EFF_FacilityInfoPage::Upgrade && (!bBuild || !CurrentViewData.bHasFacilityLevels))
 		ActivePage = EFF_FacilityInfoPage::Overview;
 	if (ActivePage == EFF_FacilityInfoPage::RemoveConfirmation && (!bBuild || !CurrentViewData.bCanRemove))
@@ -668,28 +669,33 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 		Show(Widget_LightingControls, !bLightingIntroductionVisible && CurrentViewData.bHasLightingRig && (Button_TabLighting
 			? ActivePage == EFF_FacilityInfoPage::Lighting : ActivePage == EFF_FacilityInfoPage::Overview));
 	}
-	Show(Button_TabLighting, CurrentViewData.bHasLightingRig);
+	Show(Button_TabLighting, bKeepUnavailableTabs || CurrentViewData.bHasLightingRig);
 	if (UWidget* SupportBadge = GetWidgetFromName(TEXT("Border_A5LightingSupport")))
 		SupportBadge->SetVisibility(CurrentViewData.bHasLightingRig ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	Show(Button_TabRevenue, bRevenueAvailable);
-	Show(Button_TabPrograms, CurrentViewData.bShowProgramSection);
-	Show(Button_TabQueue, bQueueAvailable);
+	Show(Button_TabRevenue, bKeepUnavailableTabs || bRevenueAvailable);
+	Show(Button_TabPrograms, bKeepUnavailableTabs || CurrentViewData.bShowProgramSection);
+	Show(Button_TabQueue, bKeepUnavailableTabs || bQueueAvailable);
+	if (bKeepUnavailableTabs) Show(Button_TabStaff, true);
 	Show(Button_LightingMinimize, ActivePage == EFF_FacilityInfoPage::Lighting && !bLightingIntroductionVisible);
-	Show(Button_TabUpgrade, bBuild && CurrentViewData.bHasFacilityLevels);
+	Show(Button_TabUpgrade, bKeepUnavailableTabs || (bBuild && CurrentViewData.bHasFacilityLevels));
 	if (Button_TabUpgrade)
 	{
 		Button_TabUpgrade->SetRenderOpacity(bBuild && CurrentViewData.bHasFacilityLevels ? 1.f : .42f);
 		Button_TabUpgrade->SetToolTipText(CurrentViewData.bHasFacilityLevels ? FText::GetEmpty() : LOCTEXT("NoFacilityUpgrade", "이 시설은 강화가 지원되지 않습니다."));
 	}
-	auto UpdateTab=[this](UButton* Tab,const EFF_FacilityInfoPage Page,const bool bAvailable=true)
+	auto UpdateTab=[this,bKeepUnavailableTabs](UButton* Tab,const EFF_FacilityInfoPage Page,const bool bAvailable=true)
 	{
 		if(!Tab)return;
 		if(!AuthoredTabStyles.Contains(Page))AuthoredTabStyles.Add(Page,Tab->GetStyle());
 		FButtonStyle TabStyle=AuthoredTabStyles.FindChecked(Page);
 		const bool bSelected=bAvailable&&ActivePage==Page;
 		if(bSelected)TabStyle.Normal=TabStyle.Hovered=TabStyle.Pressed=TabStyle.Disabled;
+		// Some authored styles use Disabled as the selected-tab brush; an actually
+		// unavailable tab must instead retain the neutral brush and reduced opacity.
+		else if (!bAvailable && bKeepUnavailableTabs) TabStyle.Disabled=TabStyle.Normal;
 		Tab->SetStyle(TabStyle);
 		Tab->SetIsEnabled(bAvailable);
+		if (bKeepUnavailableTabs || bAvailable) Tab->SetRenderOpacity(bAvailable ? 1.f : .42f);
 		if(Panel_PersistentIdentity)
 			if(auto* Label=Cast<UCommonTextBlock>(Tab->GetContent()))
 				Label->SetColorAndOpacity(FSlateColor(bSelected?SelectedTabTextColor:InactiveTabTextColor));
@@ -1144,17 +1150,33 @@ void UFF_FacilityInfoPanel::RefreshInspectorTabLayout()
 {
 	if (auto* Grid = WidgetTree ? Cast<UUniformGridPanel>(WidgetTree->FindWidget(TEXT("Grid_InspectorTabs"))) : nullptr)
 	{
+		const bool bBuild = CurrentViewData.Context == EFF_FacilityInfoContext::Build;
+		const int32 Columns = bBuild ? FMath::Clamp(BuildInspectorTabColumns, 1, 9) : 3;
 		int32 Index = 0;
-		for (UButton* Tab : {Button_TabOverview.Get(), Button_TabSynergy.Get(), Button_TabOperation.Get(),
-			Button_TabQueue.Get(), Button_TabRevenue.Get(), Button_TabLighting.Get(), Button_TabPrograms.Get(),
-			Button_TabUpgrade.Get(), Button_TabStaff.Get()})
+		const auto PlaceTab = [&Index, Columns](UButton* Tab)
+		{
 			if (Tab && Tab->GetVisibility() != ESlateVisibility::Collapsed)
 				if (auto* GridSlot = Cast<UUniformGridSlot>(Tab->Slot))
 				{
-					GridSlot->SetRow(Index / 3);
-					GridSlot->SetColumn(Index % 3);
+					const int32 Row = Index / Columns;
+					const int32 Column = Index % Columns;
+					if (GridSlot->GetRow() != Row) GridSlot->SetRow(Row);
+					if (GridSlot->GetColumn() != Column) GridSlot->SetColumn(Column);
 					++Index;
 				}
+		};
+		if (bBuild)
+		{
+			for (UButton* Tab : {Button_TabOverview.Get(), Button_TabOperation.Get(), Button_TabQueue.Get(),
+				Button_TabSynergy.Get(), Button_TabUpgrade.Get(), Button_TabRevenue.Get(), Button_TabLighting.Get(),
+				Button_TabPrograms.Get(), Button_TabStaff.Get()}) PlaceTab(Tab);
+		}
+		else
+		{
+			for (UButton* Tab : {Button_TabOverview.Get(), Button_TabSynergy.Get(), Button_TabOperation.Get(),
+				Button_TabQueue.Get(), Button_TabRevenue.Get(), Button_TabLighting.Get(), Button_TabPrograms.Get(),
+				Button_TabUpgrade.Get(), Button_TabStaff.Get()}) PlaceTab(Tab);
+		}
 		return;
 	}
 	if (!WidgetTree || !Button_TabStaff || !Button_TabOperation) return;

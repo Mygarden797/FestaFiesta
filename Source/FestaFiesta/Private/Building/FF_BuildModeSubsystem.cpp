@@ -1157,7 +1157,7 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 
 void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const float DeltaTime)
 {
-	if (BuildToolsWidget && BuildToolsWidget->IsFeatureGuideOpen())
+	if (BuildToolsWidget && (BuildToolsWidget->IsFeatureGuideOpen() || BuildToolsWidget->IsToolbarFeaturePopupOpen()))
 	{
 		if (bFacilityDragActive) { CancelMovingToBuildMode(TEXT("시설 이동을 취소했습니다.")); }
 		ResetFacilityPointerDrag();

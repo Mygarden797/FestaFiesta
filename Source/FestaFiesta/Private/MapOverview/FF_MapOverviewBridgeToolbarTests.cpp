@@ -8,11 +8,15 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/SizeBox.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Layout/Children.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/Package.h"
 #include "UObject/StrongObjectPtr.h"
 #include "Widgets/SWidget.h"
+#include "Widgets/SWindow.h"
+#include "Widgets/SVirtualWindow.h"
+#include "Misc/ScopeExit.h"
 
 namespace
 {
@@ -177,6 +181,75 @@ bool FFFMapToolbarAuthoredAssetTest::RunTest(const FString&)
     CheckLiveOrder(*this, *Row);
     TestTrue(TEXT("Authored CDO tree was never replaced"), CDO->WidgetTree == OriginalDefaultTree);
     TestEqual(TEXT("Source teammate asset dirtiness unchanged"), Package->IsDirty(), bOriginalDirty);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFMapToolbarDedicatedSlotTest, "FF_MapOverview.Bridge.ToolbarDedicatedSlot",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFMapToolbarDedicatedSlotTest::RunTest(const FString&)
+{
+    FToolbarFixture Fixture;
+    if (!Fixture.Create(*this)) return false;
+    TStrongObjectPtr<UFF_BuildToolsWidget> Nested(NewObject<UFF_BuildToolsWidget>());
+    if (!Nested->Initialize()) return false;
+    UButton* NestedButton = Nested->WidgetTree->ConstructWidget<UButton>();
+    NestedButton->OnClicked.AddDynamic(Fixture.Tools.Get(), &UFF_BuildToolsWidget::ToggleHelp);
+    Nested->WidgetTree->RootWidget = NestedButton;
+    Fixture.Row->AddChildToHorizontalBox(Nested.Get());
+    auto* Dedicated = Fixture.Tools->WidgetTree->ConstructWidget<UHorizontalBox>(
+        UHorizontalBox::StaticClass(), TEXT("Slot_WholeGridAddon"));
+    Fixture.Row->AddChildToHorizontalBox(Dedicated);
+    Fixture.Bounds->ClearWidthOverride();
+    const TArray<UWidget*> OriginalChildren = Fixture.Row->GetAllChildren();
+    const TSharedRef<SWidget> NestedSlate = Nested->TakeWidget();
+    // This synthetic nested widget uses the build-tools class; NativeConstruct
+    // hides it without a build session. Make the fixture visible before testing
+    // focus, matching the real, visible icon toolbar in an active session.
+    Nested->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    const int32 OriginalBindings = NestedButton->OnClicked.GetAllObjects().Num();
+    TSharedPtr<SVirtualWindow> Window;
+    TSharedPtr<SWidget> PreviousFocus;
+    if (FSlateApplication::IsInitialized())
+    {
+        PreviousFocus = FSlateApplication::Get().GetKeyboardFocusedWidget();
+        Window = SNew(SVirtualWindow).Size(FVector2D(1920.f, 1080.f));
+        Window->SetContent(Fixture.ToolsSlate.ToSharedRef());
+        FSlateApplication::Get().RegisterVirtualWindow(Window.ToSharedRef());
+        Window->SlatePrepass();
+        TestTrue(TEXT("Nested button is in a focusable Slate path"),
+            FSlateApplication::Get().SetKeyboardFocus(NestedButton->GetCachedWidget(), EFocusCause::SetDirectly));
+        TestTrue(TEXT("Nested button starts with focus"), NestedButton->HasKeyboardFocus());
+    }
+    ON_SCOPE_EXIT
+    {
+        if (Window.IsValid())
+        {
+            FSlateApplication::Get().ClearKeyboardFocus(EFocusCause::Cleared);
+            FSlateApplication::Get().UnregisterVirtualWindow(Window.ToSharedRef());
+            if (PreviousFocus) FSlateApplication::Get().SetKeyboardFocus(PreviousFocus);
+        }
+    };
+    TestTrue(TEXT("Dedicated slot accepts addon without removing nested WBP"),
+        FFMapOverviewToolbar::AttachAfterGridToRow(*Fixture.Tools.Get(), *Fixture.Addon.Get()));
+    TestTrue(TEXT("Addon occupies dedicated slot"), Fixture.Addon->GetParent() == Dedicated);
+    TestTrue(TEXT("Original row remains in exact order"), Fixture.Row->GetAllChildren() == OriginalChildren);
+    TestTrue(TEXT("Nested Slate is not recreated"), Nested->GetCachedWidget().Get() == &NestedSlate.Get());
+    TestEqual(TEXT("Nested binding remains intact"), NestedButton->OnClicked.GetAllObjects().Num(), OriginalBindings);
+    if (Window.IsValid()) TestTrue(TEXT("Nested focus survives insertion"), NestedButton->HasKeyboardFocus());
+    TestFalse(TEXT("Automatic width remains automatic"), Fixture.Bounds->IsWidthOverride());
+    TestTrue(TEXT("Repeated mount is idempotent"), FFMapOverviewToolbar::AttachAfterGridToRow(*Fixture.Tools.Get(), *Fixture.Addon.Get()));
+    TestEqual(TEXT("Only one addon is attached"), Dedicated->GetChildrenCount(), 1);
+    FFMapOverviewToolbar::DetachFromRow(*Fixture.Tools.Get(), *Fixture.Addon.Get());
+    TestEqual(TEXT("Detach empties only dedicated slot"), Dedicated->GetChildrenCount(), 0);
+    TestTrue(TEXT("Nested Slate survives detach"), Nested->GetCachedWidget().Get() == &NestedSlate.Get());
+    if (Window.IsValid()) TestTrue(TEXT("Nested focus survives detach"), NestedButton->HasKeyboardFocus());
+    TestFalse(TEXT("Detach does not force automatic width"), Fixture.Bounds->IsWidthOverride());
+    Fixture.Bounds->SetWidthOverride(216.f);
+    TestTrue(TEXT("Dedicated slot also supports fixed width"), FFMapOverviewToolbar::AttachAfterGridToRow(*Fixture.Tools.Get(), *Fixture.Addon.Get()));
+    TestEqual(TEXT("Fixed width expands for addon"), Fixture.Bounds->GetWidthOverride(), 296.f);
+    FFMapOverviewToolbar::DetachFromRow(*Fixture.Tools.Get(), *Fixture.Addon.Get());
+    TestEqual(TEXT("Fixed width is restored"), Fixture.Bounds->GetWidthOverride(), 216.f);
     return true;
 }
 

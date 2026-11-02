@@ -239,12 +239,19 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UTextBlock> Text_PageIndex;
 
-	/** Number of columns and items advanced per page; the following row is partially visible. */
+	/** Number of columns and items advanced per page. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Pages", meta = (ClampMin = "1"))
 	int32 CardsPerPage = 6;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Pages")
 	bool bUsePagination = true;
+
+	/** In the vertical continuous catalog, fit this many rows to the authored list height.
+	 * Zero preserves the TileView's authored entry height. Use zero vertical entry spacing
+	 * and author the card's internal padding in the entry WBP when this option is enabled. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Pages",
+		meta = (ClampMin = "0", UIMin = "0", DisplayName = "Visible catalog rows (0 = authored)"))
+	int32 VisibleCatalogRows = 0;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UTextBlock> Text_PlacementGuide;
@@ -460,6 +467,8 @@ private:
 	int32 CatalogPageIndex = 0;
 	float LastResponsiveListWidth = -1.0f;
 	int32 LastResponsiveColumnCount = 0;
+	float LastResponsiveListHeight = -1.0f;
+	int32 LastResponsiveRowCount = 0;
 	FButtonStyle LegacySelectedCategoryStyle;
 	FButtonStyle LegacyIdleCategoryStyle;
 	FButtonStyle FavoritesFilterStyle;

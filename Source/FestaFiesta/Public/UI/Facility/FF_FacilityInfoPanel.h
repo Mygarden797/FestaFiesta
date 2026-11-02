@@ -62,6 +62,12 @@ public:
 	float BuildThumbnailWidth = 54.f;
 	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Build Layout", meta = (ClampMin = "1"))
 	float BuildThumbnailHeight = 48.f;
+	/** Number of tab columns in the build inspector. Match Grid_InspectorTabs slot width in the WBP. */
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Build Layout", meta = (ClampMin = "1", ClampMax = "9", UIMin = "1", UIMax = "9"))
+	int32 BuildInspectorTabColumns = 5;
+	/** Keep unsupported feature tabs visible but disabled in the build inspector. */
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Build Layout")
+	bool bShowUnavailableBuildTabs = true;
 	/** Designer-authored entrance; optional for older inspector assets. */
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Appearance|Animation", meta = (BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> Anim_InspectorOpen;

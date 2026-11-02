@@ -24,11 +24,29 @@
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
 #include "UI/FacilityCodex/FF_FacilityCodexImage.h"
+#include "Queue/FF_QueueSubsystem.h"
+#include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityRevenueRanking"
 namespace
 {
 	const FName RevenueRankingFeatureId(TEXT("FacilityRevenueRanking"));
+}
+
+// Use the same queue authority and localized presentation policy as facility
+// information. A missing actor or a non-service facility is never guessed open.
+FText FFFacilityRevenueRanking::ResolveOperationStateText(const UWorld* World, const FGuid FacilityId)
+{
+	const UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const AFFZSFacilityActor* Facility = Zones && FacilityId.IsValid() ? Zones->FindFacility(FacilityId) : nullptr;
+	const UFF_ZoneSystemQueueBridgeSubsystem* Bridge = World ? World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>() : nullptr;
+	const UFF_QueueSubsystem* Queue = World ? World->GetSubsystem<UFF_QueueSubsystem>() : nullptr;
+	const bool bSupported = Facility && Facility->GetFacilitySpec().UsesServiceQueue() && Bridge && Queue;
+	const int32 QueueId = bSupported ? Bridge->FindQueueFacilityId(FacilityId) : INDEX_NONE;
+	const bool bRegistered = bSupported && QueueId != INDEX_NONE && Queue->IsFacilityRegistered(QueueId);
+	const FFF_QueueState State = bRegistered ? Bridge->GetZoneFacilityQueueState(FacilityId) : FFF_QueueState();
+	return FFFacilityInfoModel::GetOperationStateText(bSupported,
+		bRegistered && State.FacilityId == QueueId, State.bIsOpen, State.bAcceptingNew);
 }
 int64 FFFacilityRevenueRanking::Rank(TArray<UFF_FacilityRevenueRankItem *> &Items, bool bCumulative)
 {
@@ -66,7 +84,7 @@ void UFF_FacilityRevenueRankRow::NativeOnListItemObjectSet(UObject *Object)
 	ApplyItem(Cast<UFF_FacilityRevenueRankItem>(Object));
 	IUserObjectListEntry::NativeOnListItemObjectSet(Object);
 }
-void UFF_FacilityRevenueRankRow::ApplyItem(const UFF_FacilityRevenueRankItem *Item)
+void UFF_FacilityRevenueRankRow::ApplyItem(UFF_FacilityRevenueRankItem *Item)
 {
 	if (!Item)
 		return;
@@ -90,6 +108,14 @@ void UFF_FacilityRevenueRankRow::ApplyItem(const UFF_FacilityRevenueRankItem *It
 	}
 	Bar_Revenue->SetPercent(Item->RelativeRevenue);
 	Image_Thumbnail->ShowThumbnail(Item->Thumbnail, Text_ThumbnailFallback);
+	RefreshOperationState(Item);
+}
+void UFF_FacilityRevenueRankRow::RefreshOperationState(UFF_FacilityRevenueRankItem* Item)
+{
+	if (!Item || !Text_OperationState) return;
+	const FText NewState = FFFacilityRevenueRanking::ResolveOperationStateText(GetWorld(), Item->FacilityId);
+	if (!Item->OperationStateText.EqualTo(NewState)) Item->OperationStateText = NewState;
+	if (!Text_OperationState->GetText().EqualTo(NewState)) Text_OperationState->SetText(NewState);
 }
 void UFF_FacilityRevenueRankRow::NativeOnItemSelectionChanged(bool bSelected)
 {
@@ -175,6 +201,16 @@ void UFF_FacilityRevenueRankingPanel::NativeTick(const FGeometry& Geometry, floa
 	}
 	if (bForegroundSuppressed) return;
 	UpdateFrameSize(Geometry.GetLocalSize());
+	// Queue occupancy can change without a world or ledger event. Sample only
+	// realized rows while visible; this neither rebuilds nor sorts the list.
+	OperationRefreshAccumulator += FMath::Max(0.f, DeltaTime);
+	if (OperationRefreshAccumulator >= .25f && List_Ranking)
+	{
+		OperationRefreshAccumulator = FMath::Fmod(OperationRefreshAccumulator, .25f);
+		for (UUserWidget* Entry : List_Ranking->GetDisplayedEntryWidgets())
+			if (auto* Row = Cast<UFF_FacilityRevenueRankRow>(Entry))
+				Row->RefreshOperationState(Row->GetListItem<UFF_FacilityRevenueRankItem>());
+	}
 }
 void UFF_FacilityRevenueRankingPanel::UpdateFrameSize(const FVector2D& Viewport)
 {
@@ -584,6 +620,7 @@ void UFF_FacilityRevenueRankingSubsystem::Refresh()
 										   FText::AsNumber(FMath::RoundToInt(Facility.WorldLocation.Y / 100.)));
 			Item->TodayGold = Revenue.TodayGold;
 			Item->TotalGold = Revenue.TotalGold;
+			Item->OperationStateText = FFFacilityRevenueRanking::ResolveOperationStateText(GetWorld(), Facility.FacilityInstanceId);
 			FFF_BuildCatalogEntry Entry;
 			if (Catalog && Catalog->FindEntry(Facility.FacilityDefinitionId, Entry))
 			{

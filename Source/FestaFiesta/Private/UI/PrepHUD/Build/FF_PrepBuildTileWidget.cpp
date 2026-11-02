@@ -5,6 +5,8 @@
 
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
 
+#include "UI/Core/FF_BuildAtlasImage.h"
+
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Building/Presentation/FF_BuildFavoritesSubsystem.h"
 #include "Building/Presentation/FF_BuildLightingBadge.h"
@@ -401,10 +403,19 @@ void UFF_PrepBuildTileWidget::RefreshFavorite()
 			? NSLOCTEXT("FestaFiestaPrepBuild", "Unfavorite", "즐겨찾기 해제")
 			: NSLOCTEXT("FestaFiestaPrepBuild", "Favorite", "즐겨찾기 등록"));
 	}
+	// An authored atlas image can replace the legacy glyph while the existing
+	// button, focus, tooltip and virtualized item state stay unchanged.
+	bool bUsingGeneratedIcon = false;
+	if (auto* FavoriteIcon = Cast<UFF_BuildAtlasImage>(GetWidgetFromName(TEXT("Image_ApprovedFavorite"))))
+	{
+		bUsingGeneratedIcon = FavoriteIcon->SetAtlasIndex(bFavorite ? FavoriteOnAtlasIndex : FavoriteOffAtlasIndex);
+		FavoriteIcon->SetVisibility(bUsingGeneratedIcon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 	if (Text_Favorite)
 	{
 		Text_Favorite->SetText(FText::FromString(bFavorite ? TEXT("★") : TEXT("☆")));
 		Text_Favorite->SetColorAndOpacity(bFavorite ? FSlateColor(FavoriteColor) : AuthoredFavoriteColor);
+		Text_Favorite->SetVisibility(bUsingGeneratedIcon ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
 }
 

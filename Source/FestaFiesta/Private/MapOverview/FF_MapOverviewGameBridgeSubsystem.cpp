@@ -29,6 +29,7 @@ namespace
         TWeakObjectPtr<USizeBox> Bounds;
         float OriginalWidth = 0.f;
         float AddedWidth = 0.f;
+        bool bAdjustedWidth = false;
     };
     TMap<TWeakObjectPtr<UUserWidget>, FToolbarMount> ToolbarMounts;
 
@@ -82,14 +83,47 @@ bool FFMapOverviewToolbar::AttachAfterGridToRow(UUserWidget& Tools, UUserWidget&
     auto* Row = Cast<UHorizontalBox>(Tools.GetWidgetFromName(TEXT("Row_BuildReferenceTopBar")));
     auto* Grid = Cast<UButton>(Tools.GetWidgetFromName(TEXT("Button_Grid")));
     auto* Bounds = Cast<USizeBox>(Tools.GetWidgetFromName(TEXT("Size_BuildTopBar")));
-    if (!Row || !Grid || !Bounds || !Bounds->IsWidthOverride() || Bounds->GetWidthOverride() <= 0.f) return false;
+    auto* DedicatedSlot = Cast<UHorizontalBox>(Tools.GetWidgetFromName(TEXT("Slot_WholeGridAddon")));
+    if (!Row || !Bounds) return false;
+    UHorizontalBox* Target = DedicatedSlot ? DedicatedSlot : Row;
     if (const FToolbarMount* Existing = ToolbarMounts.Find(&Addon))
     {
-        if (Existing->Tools.Get() == &Tools && Existing->Row.Get() == Row && Addon.GetParent() == Row) return true;
+        if (Existing->Tools.Get() == &Tools && Existing->Row.Get() == Target && Addon.GetParent() == Target) return true;
         if (Existing->Tools.IsValid()) DetachFromRow(*Existing->Tools.Get(), Addon);
         else ToolbarMounts.Remove(&Addon);
     }
     if (Addon.GetParent() || &Tools == &Addon) return false;
+    if (DedicatedSlot)
+    {
+        // The designer-owned slot allows the plugin to attach without removing
+        // the nested guide WBP, preserving its Slate focus and event bindings.
+        const UWidget* Ancestor = DedicatedSlot;
+        while (Ancestor && Ancestor != Row) Ancestor = Ancestor->GetParent();
+        if (!Ancestor || DedicatedSlot->GetChildrenCount() != 0) return false;
+        Ancestor = Row;
+        while (Ancestor && Ancestor != Bounds) Ancestor = Ancestor->GetParent();
+        if (!Ancestor) return false;
+
+        FToolbarMount Mount;
+        Mount.Tools = &Tools; Mount.Row = DedicatedSlot; Mount.Bounds = Bounds;
+        Mount.bAdjustedWidth = Bounds->IsWidthOverride();
+        if (Mount.bAdjustedWidth)
+        {
+            Addon.TakeWidget();
+            Addon.ForceLayoutPrepass();
+            const double Width = Addon.GetDesiredSize().X;
+            if (!FMath::IsFinite(Width) || Width <= 0.0 || Bounds->GetWidthOverride() <= 0.f) return false;
+            Mount.OriginalWidth = Bounds->GetWidthOverride();
+            Mount.AddedWidth = static_cast<float>(Width);
+        }
+        auto* AddonSlot = DedicatedSlot->AddChildToHorizontalBox(&Addon);
+        if (!AddonSlot) return false;
+        AddonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+        if (Mount.bAdjustedWidth) Bounds->SetWidthOverride(Mount.OriginalWidth + Mount.AddedWidth);
+        ToolbarMounts.Add(&Addon, Mount);
+        return true;
+    }
+    if (!Grid || !Bounds->IsWidthOverride() || Bounds->GetWidthOverride() <= 0.f) return false;
     UWidget* GridCell = Grid;
     while (GridCell->GetParent() && GridCell->GetParent() != Row) GridCell = GridCell->GetParent();
     const int32 GridIndex = Row->GetChildIndex(GridCell);
@@ -123,6 +157,7 @@ bool FFMapOverviewToolbar::AttachAfterGridToRow(UUserWidget& Tools, UUserWidget&
     const FToolbarSlot GridLayout(*GridCell);
     FToolbarMount Mount;
     Mount.Tools = &Tools; Mount.Row = Row; Mount.Bounds = Bounds;
+    Mount.bAdjustedWidth = true;
     Mount.OriginalWidth = Bounds->GetWidthOverride();
     Mount.AddedWidth = static_cast<float>(Width) + GridLayout.Padding.Left + GridLayout.Padding.Right;
     // InsertChildAt only changes UObject order in UE 5.7. Remove/reappend the
@@ -144,7 +179,7 @@ void FFMapOverviewToolbar::DetachFromRow(UUserWidget& Tools, UUserWidget& Addon)
     const FToolbarMount Mount = *Found;
     ToolbarMounts.Remove(&Addon);
     if (Mount.Row.IsValid() && Addon.GetParent() == Mount.Row.Get()) Mount.Row->RemoveChild(&Addon);
-    if (Mount.Bounds.IsValid())
+    if (Mount.bAdjustedWidth && Mount.Bounds.IsValid() && Mount.Bounds->IsWidthOverride())
     {
         USizeBox* Bounds = Mount.Bounds.Get();
         const float CurrentWidth = Bounds->GetWidthOverride();

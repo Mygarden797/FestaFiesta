@@ -242,6 +242,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|States")
 	FLinearColor FavoriteColor = FLinearColor::FromSRGBColor(FColor(0x99, 0x73, 0x21));
 
+	/** Zero-based cells in the authored favorite image's atlas. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Favorite Icon", meta = (ClampMin = "0"))
+	int32 FavoriteOffAtlasIndex = 0;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Favorite Icon", meta = (ClampMin = "0"))
+	int32 FavoriteOnAtlasIndex = 1;
+
 	/** Used only when a custom WBP omits SizeBox_Thumbnail or clears one of its size overrides. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Thumbnail", meta = (ClampMin = "1.0"))
 	FVector2D ThumbnailFallbackBounds = FVector2D(150.0, 70.0);

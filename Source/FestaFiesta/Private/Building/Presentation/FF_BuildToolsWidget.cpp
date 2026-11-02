@@ -11,6 +11,7 @@
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
 #include "Building/Presentation/FF_BuildFeatureGuide.h"
+#include "Building/Presentation/FF_BuildFeatureGuideButton.h"
 #include "Building/Presentation/FF_BuildingFeatureDiscoverySubsystem.h"
 #include "Building/Presentation/FF_BuildMultiSelectionWidget.h"
 #include "Building/Presentation/FF_BuildSynergyWidget.h"
@@ -508,6 +509,10 @@ void UFF_BuildToolsWidget::NativeConstruct()
     if (Size_BuildWorldHelp)
         if (auto* HelpCanvasSlot = Cast<UCanvasPanelSlot>(Size_BuildWorldHelp->Slot))
             AuthoredHelpPosition = HelpCanvasSlot->GetPosition();
+    ApprovedQuickKeys = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_ApprovedQuickKeys")));
+    if (USizeBox* QuickKeys = ApprovedQuickKeys.Get())
+        if (const auto* QuickKeysSlot = Cast<UCanvasPanelSlot>(QuickKeys->Slot))
+            AuthoredQuickKeysPosition = QuickKeysSlot->GetPosition();
     if (Size_BuildSettings && Size_BuildSettings->IsHeightOverride())
         AuthoredSettingsHeight = Size_BuildSettings->GetHeightOverride();
     BuildMode = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
@@ -584,6 +589,15 @@ void UFF_BuildToolsWidget::NativeConstruct()
     FF_BIND_TOOL(Button_NudgeDown, HandleNudgeDown)
     FF_BIND_TOOL(Button_NudgeRight, HandleNudgeRight)
 #undef FF_BIND_TOOL
+    if (auto* Button = Cast<UButton>(GetWidgetFromName(TEXT("Button_ToolbarFeatureAction"))))
+        Button->OnClicked.AddUniqueDynamic(this, &ThisClass::ExecuteToolbarFeatureAction);
+    if (auto* Button = Cast<UButton>(GetWidgetFromName(TEXT("Button_ToolbarFeatureClose"))))
+        Button->OnClicked.AddUniqueDynamic(this, &ThisClass::CloseToolbarFeaturePopup);
+    if (auto* Button = Cast<UButton>(GetWidgetFromName(TEXT("Button_ToolbarAllGuide"))))
+        Button->OnClicked.AddUniqueDynamic(this, &ThisClass::OpenToolbarFullGuide);
+    if (UWidget* Popup = GetWidgetFromName(TEXT("Size_ToolbarFeaturePopup")))
+        Popup->SetVisibility(ESlateVisibility::Collapsed);
+    CurrentToolbarFeature = NAME_None;
     if (Button_FreeRotateLeft)
     {
         Button_FreeRotateLeft->OnPressed.AddUniqueDynamic(this, &ThisClass::HandleFreeRotateLeftPressed);
@@ -698,6 +712,9 @@ bool UFF_BuildToolsWidget::IsPointerOverTools() const
         if (Panel && Panel->IsVisible() && (Panel->IsHovered() || (FSlateApplication::IsInitialized() &&
             Panel->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos())))) return true;
     }
+    if (const UWidget* Popup = GetWidgetFromName(TEXT("Border_ToolbarFeaturePopup")); IsToolbarFeaturePopupOpen() && Popup && Popup->IsVisible() &&
+        (Popup->IsHovered() || (FSlateApplication::IsInitialized() &&
+         Popup->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos())))) return true;
     return false;
 }
 
@@ -800,6 +817,7 @@ bool UFF_BuildToolsWidget::ShowFeatureGuide(const FName FeatureId, const bool bR
 
 void UFF_BuildToolsWidget::OpenFeatureGuide()
 {
+    if (IsToolbarFeaturePopupOpen()) DismissToolbarFeaturePopup(false);
     if (IsFeatureGuideOpen()) { CloseFeatureGuide(); return; }
     if (const auto* System = BuildMode.Get())
         if (!FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState())) return;
@@ -809,6 +827,150 @@ void UFF_BuildToolsWidget::OpenFeatureGuide()
 bool UFF_BuildToolsWidget::OpenFeatureGuideTopic(const FName FeatureId)
 {
     return ShowFeatureGuide(FeatureId, false);
+}
+
+bool UFF_BuildToolsWidget::IsToolbarFeaturePopupOpen() const
+{
+    const UWidget* Popup = GetWidgetFromName(TEXT("Size_ToolbarFeaturePopup"));
+    return Popup && Popup->IsVisible();
+}
+
+bool UFF_BuildToolsWidget::OpenToolbarFeatureTopic(const FName FeatureId, UWidget* Anchor)
+{
+    const auto* Topic = FFBuildFeatureGuide::Find(FeatureId);
+    UFF_BuildModeSubsystem* System = BuildMode.Get();
+    auto* Popup = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_ToolbarFeaturePopup")));
+    auto* Title = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_ToolbarFeatureTitle")));
+    auto* Body = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_ToolbarFeatureBody")));
+    auto* Action = Cast<UButton>(GetWidgetFromName(TEXT("Button_ToolbarFeatureAction")));
+    auto* ActionText = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_ToolbarFeatureAction")));
+    auto* Status = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_ToolbarFeatureStatus")));
+    auto* Close = Cast<UButton>(GetWidgetFromName(TEXT("Button_ToolbarFeatureClose")));
+    auto* AllGuide = Cast<UButton>(GetWidgetFromName(TEXT("Button_ToolbarAllGuide")));
+    if (!Topic || !System || System->IsInputSuspendedForPauseMenu() ||
+        !FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState()) ||
+        !Anchor || Anchor->GetTypedOuter<UFF_BuildToolsWidget>() != this ||
+        !Popup || !Title || !Body || !Action || !ActionText || !Close || !AllGuide || IsAuxiliaryPanelOpen() ||
+        ((FeatureId == TEXT("BuildUndo") || FeatureId == TEXT("BuildRedo")) && !Status)) return false;
+
+    FText ActionLabel;
+    if (FeatureId == TEXT("MultiSelection")) ActionLabel = System->IsMultiSelectionActive()
+        ? LOCTEXT("PopupMultiOff", "다중 선택 종료") : LOCTEXT("PopupMultiOn", "다중 선택 시작");
+    else if (FeatureId == TEXT("BuildGrid")) ActionLabel = System->IsPlacementGridVisible()
+        ? LOCTEXT("PopupGridOff", "격자 끄기") : LOCTEXT("PopupGridOn", "격자 켜기");
+    else if (FeatureId == TEXT("BuildSnap")) ActionLabel = LOCTEXT("PopupSnap", "이동 간격 변경");
+    else if (FeatureId == TEXT("FacilityRanges")) ActionLabel = System->AreFacilityRangesVisible()
+        ? LOCTEXT("PopupRangesOff", "시설 범위 숨기기") : LOCTEXT("PopupRangesOn", "시설 범위 표시");
+    else if (FeatureId == TEXT("BuildSettings")) ActionLabel = LOCTEXT("PopupSettings", "건축 설정 열기");
+    else if (FeatureId == TEXT("BuildCatalog")) ActionLabel = LOCTEXT("PopupCatalog", "시설 목록 열기");
+    else if (FeatureId == TEXT("BuildControls")) ActionLabel = bHelpExpanded
+        ? LOCTEXT("PopupHelpOff", "빠른 키 숨기기") : LOCTEXT("PopupHelpOn", "빠른 키 보기");
+    else if (FeatureId == TEXT("BuildUndo")) ActionLabel = LOCTEXT("PopupUndo", "실행 취소");
+    else if (FeatureId == TEXT("BuildRedo")) ActionLabel = LOCTEXT("PopupRedo", "다시 실행");
+
+    StopPointerFreeRotation();
+    CurrentToolbarFeature = FeatureId;
+    ToolbarFeatureAnchor = Cast<UFF_BuildFeatureGuideButton>(Anchor);
+    Title->SetText(Topic->Title);
+    Body->SetText(Topic->Body);
+    ActionText->SetText(ActionLabel);
+    Action->SetVisibility(ActionLabel.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+    Action->SetIsEnabled(!ActionLabel.IsEmpty());
+    Action->SetToolTipText(FText::GetEmpty());
+    if (Status) Status->SetVisibility(ESlateVisibility::Collapsed);
+    AllGuide->SetVisibility(FeatureId == TEXT("BuildControls") ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+    if (auto* Scroll = Cast<UScrollBox>(GetWidgetFromName(TEXT("Scroll_ToolbarFeatureBody")))) Scroll->ScrollToStart();
+    if (auto* PopupCanvasSlot = Cast<UCanvasPanelSlot>(Popup->Slot))
+    {
+        const FGeometry& RootGeometry = GetCachedGeometry();
+        const FGeometry& AnchorGeometry = Anchor->GetCachedGeometry();
+        const FVector2D RootSize = RootGeometry.GetLocalSize();
+        if (RootSize.X > 1.f && RootSize.Y > 1.f && AnchorGeometry.GetLocalSize().X > 1.f)
+        {
+            const FVector2D AnchorBottom = RootGeometry.AbsoluteToLocal(AnchorGeometry.LocalToAbsolute(
+                FVector2D(AnchorGeometry.GetLocalSize().X * .5f, AnchorGeometry.GetLocalSize().Y)));
+            const float Width = Popup->IsWidthOverride() ? Popup->GetWidthOverride() : 380.f;
+            const float Height = Popup->IsHeightOverride() ? Popup->GetHeightOverride() : 230.f;
+            PopupCanvasSlot->SetPosition(FVector2D(FMath::Clamp(float(AnchorBottom.X) - Width * .5f, 8.f,
+                FMath::Max(8.f, float(RootSize.X) - Width - 8.f)),
+                FMath::Clamp(float(AnchorBottom.Y) + 8.f, 8.f, FMath::Max(8.f, float(RootSize.Y) - Height - 8.f))));
+        }
+    }
+    Popup->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    RefreshToolbarHistoryState();
+    if (GetOwningPlayer()) (ActionLabel.IsEmpty() || !Action->GetIsEnabled() ? Close : Action)->SetFocus();
+    System->NotifyBuildToolsInteraction();
+    System->RefreshBuildToolsOcclusion();
+    return true;
+}
+
+void UFF_BuildToolsWidget::CloseToolbarFeaturePopup()
+{
+    DismissToolbarFeaturePopup(true);
+}
+
+void UFF_BuildToolsWidget::DismissToolbarFeaturePopup(const bool bRestoreAnchorFocus)
+{
+    TWeakObjectPtr<UFF_BuildFeatureGuideButton> PreviousAnchor = ToolbarFeatureAnchor;
+    if (UWidget* Popup = GetWidgetFromName(TEXT("Size_ToolbarFeaturePopup"))) Popup->SetVisibility(ESlateVisibility::Collapsed);
+    CurrentToolbarFeature = NAME_None;
+    ToolbarFeatureAnchor.Reset();
+    const bool bRestored = bRestoreAnchorFocus && PreviousAnchor.IsValid() &&
+        PreviousAnchor->GetOwningLocalPlayer() == GetOwningLocalPlayer() && PreviousAnchor->RestoreGuideFocus();
+    if (!bRestored && FSlateApplication::IsInitialized() && GetOwningPlayer()) FSlateApplication::Get().SetAllUserFocusToGameViewport();
+    if (auto* System = BuildMode.Get()) System->RefreshBuildToolsOcclusion();
+}
+
+void UFF_BuildToolsWidget::RefreshToolbarHistoryState()
+{
+    if (!IsToolbarFeaturePopupOpen() || (CurrentToolbarFeature != TEXT("BuildUndo") && CurrentToolbarFeature != TEXT("BuildRedo"))) return;
+    UFF_BuildModeSubsystem* System = BuildMode.Get();
+    auto* Action = Cast<UButton>(GetWidgetFromName(TEXT("Button_ToolbarFeatureAction")));
+    auto* Status = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_ToolbarFeatureStatus")));
+    if (!Action || !Status) return;
+    const bool bUndo = CurrentToolbarFeature == TEXT("BuildUndo");
+    const bool bAllowed = System && System->CanExecuteBuildHistory();
+    const bool bAvailable = bAllowed && (bUndo ? System->CanUndoBuildEdit() : System->CanRedoBuildEdit());
+    Action->SetIsEnabled(bAvailable);
+    const FText Reason = bAvailable ? FText::GetEmpty() : !bAllowed
+        ? LOCTEXT("PopupHistoryUnavailablePhase", "현재 축제 단계 또는 건축 상태에서는 사용할 수 없습니다.") : bUndo
+        ? LOCTEXT("PopupUndoUnavailable", "되돌릴 수 있는 건축 작업이 없습니다.")
+        : LOCTEXT("PopupRedoUnavailable", "다시 실행할 수 있는 건축 작업이 없습니다.");
+    Status->SetText(Reason);
+    Status->SetVisibility(bAvailable ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+    Action->SetToolTipText(Reason);
+}
+
+void UFF_BuildToolsWidget::ExecuteToolbarFeatureAction()
+{
+    if (!IsToolbarFeaturePopupOpen() || CurrentToolbarFeature.IsNone()) return;
+    const FName FeatureId = CurrentToolbarFeature;
+    UFF_BuildModeSubsystem* System = BuildMode.Get();
+    if (!System || System->IsInputSuspendedForPauseMenu() || !FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState())) return;
+    if (FeatureId == TEXT("BuildUndo") || FeatureId == TEXT("BuildRedo"))
+    {
+        const bool bCanRun = System->CanExecuteBuildHistory() &&
+            (FeatureId == TEXT("BuildUndo") ? System->CanUndoBuildEdit() : System->CanRedoBuildEdit());
+        if (!bCanRun) { RefreshToolbarHistoryState(); return; }
+        DismissToolbarFeaturePopup(false);
+        if (FeatureId == TEXT("BuildUndo")) System->UndoBuildEdit(); else System->RedoBuildEdit();
+        RefreshTools();
+        return;
+    }
+    if (FeatureId != TEXT("MultiSelection") && FeatureId != TEXT("BuildGrid") && FeatureId != TEXT("BuildSnap") &&
+        FeatureId != TEXT("FacilityRanges") && FeatureId != TEXT("BuildSettings") && FeatureId != TEXT("BuildCatalog") &&
+        FeatureId != TEXT("BuildControls")) return;
+    if (auto* Discovery = FeatureDiscovery.Get()) Discovery->MarkFeatureSeen(FeatureId);
+    DismissToolbarFeaturePopup(false);
+    RunFeatureToolbarAction(FeatureId);
+    RefreshTools();
+}
+
+void UFF_BuildToolsWidget::OpenToolbarFullGuide()
+{
+    if (!IsToolbarFeaturePopupOpen() || CurrentToolbarFeature != TEXT("BuildControls")) return;
+    DismissToolbarFeaturePopup(false);
+    OpenFeatureGuide();
 }
 
 void UFF_BuildToolsWidget::CloseFeatureGuide()
@@ -1118,11 +1280,25 @@ void UFF_BuildToolsWidget::RefreshHelpPresentation()
     // window suppresses the guide; opening the catalog must still allow Help.
     bHelpForegroundSuppressed = IsAuxiliaryPanelOpen() || bBodyForegroundSuppressed ||
         (Info && (Info->HasSelection() || Info->IsRevenueRankingPresentationOpen()));
+    // The compact guide is optional, so existing widget assets retain their
+    // original guide behavior until a designer adds it to the Widget Blueprint.
+    const UFF_BuildModeSubsystem* System = BuildMode.Get();
+    const bool bCatalogContext = System &&
+        (System->GetBuildModeState() == EFF_BuildModeState::CatalogOpen ||
+         System->GetBuildModeState() == EFF_BuildModeState::Placing);
+    if (USizeBox* QuickKeys = ApprovedQuickKeys.Get())
+    {
+        const bool bShow = bCatalogContext && bHelpExpanded && !IsAuxiliaryPanelOpen() &&
+            !bBodyForegroundSuppressed && !(Info && Info->IsRevenueRankingPresentationOpen());
+        const ESlateVisibility DesiredQuickKeyVisibility = bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+        if (QuickKeys->GetVisibility() != DesiredQuickKeyVisibility) QuickKeys->SetVisibility(DesiredQuickKeyVisibility);
+    }
     // Hide the complete surface while preserving the user's expanded/dismissed state.
     // Closing the covering window therefore restores only a previously open guide.
     if (Size_BuildWorldHelp)
     {
-        const ESlateVisibility HelpVisibility = bHelpForegroundSuppressed ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible;
+        const ESlateVisibility HelpVisibility = bHelpForegroundSuppressed || (ApprovedQuickKeys.IsValid() && bCatalogContext)
+            ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible;
         if (Size_BuildWorldHelp->GetVisibility() != HelpVisibility) Size_BuildWorldHelp->SetVisibility(HelpVisibility);
     }
     else if (Border_PlacementHelp)
@@ -1170,7 +1346,42 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
         FFBuildCatalogDock::Align(*this, Geometry,
             Cast<USizeBox>(GetWidgetFromName(TEXT("Size_FeatureGuideCard"))), CatalogHelpAvoidanceSurface);
     RefreshPlacementSynergy();
-    if (!bHelpForegroundSuppressed && Size_BuildWorldHelp && Border_PlacementHelp && Border_PlacementHelp->IsVisible())
+    if (USizeBox* QuickKeys = ApprovedQuickKeys.Get(); QuickKeys && QuickKeys->IsVisible())
+    {
+        // Follow the real catalog edge in Slate coordinates without affecting
+        // its input or altering a designer's authored horizontal position.
+        const double Time = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+        if ((!CatalogHelpAvoidanceSurface.IsValid() || !CatalogHelpAvoidanceSurface->IsVisible()) &&
+            Time >= NextCatalogHelpSearchTime)
+        {
+            NextCatalogHelpSearchTime = Time + .5;
+            CatalogHelpAvoidanceSurface.Reset();
+            TArray<UUserWidget*> Panels;
+            UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Panels, UFF_PrepPanelBuild::StaticClass(), false);
+            for (UUserWidget* Panel : Panels)
+                if (Panel && Panel->GetOwningPlayer() == GetOwningPlayer() && Panel->IsVisible())
+                    if (UWidget* Surface = Panel->GetWidgetFromName(TEXT("Size_ClarityCatalogDock")); Surface && Surface->IsVisible())
+                    {
+                        CatalogHelpAvoidanceSurface = Surface;
+                        break;
+                    }
+        }
+        if (const UWidget* Surface = CatalogHelpAvoidanceSurface.Get(); Surface && Surface->IsVisible())
+            if (auto* QuickKeysCanvasSlot = Cast<UCanvasPanelSlot>(QuickKeys->Slot))
+            {
+                const FGeometry& Bounds = Surface->GetCachedGeometry();
+                const float ContentHeight = QuickKeys->GetDesiredSize().Y;
+                if (Bounds.GetLocalSize().Y > 0.f && ContentHeight > 0.f)
+                {
+                    const float Bottom = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(FVector2D::ZeroVector)).Y - 15.f;
+                    const float Top = FMath::Max(104.f, Bottom - ContentHeight);
+                    if (!FMath::IsNearlyEqual(QuickKeysCanvasSlot->GetPosition().Y, Top, .5f))
+                        QuickKeysCanvasSlot->SetPosition(FVector2D(AuthoredQuickKeysPosition.X, Top));
+                }
+            }
+    }
+    if (!bHelpForegroundSuppressed && Size_BuildWorldHelp && Size_BuildWorldHelp->IsVisible() &&
+        Border_PlacementHelp && Border_PlacementHelp->IsVisible())
     {
         // Use the painted catalog edge in the same logical coordinate system.
         // The old fixed 170px reservation was shorter than the 326px catalog itself.
@@ -1470,6 +1681,7 @@ void UFF_BuildToolsWidget::HandleSnapCycle()
 
 void UFF_BuildToolsWidget::HandleBuildBack()
 {
+    if (IsToolbarFeaturePopupOpen()) { CloseToolbarFeaturePopup(); return; }
     if (IsFeatureGuideOpen()) { CloseFeatureGuide(); return; }
     UFF_BuildModeSubsystem* System = BuildMode.Get();
     if (!System) return;
@@ -1562,6 +1774,11 @@ bool UFF_BuildToolsWidget::IsEditingQueueSettings() const
 FReply UFF_BuildToolsWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
 {
     if (bBodyForegroundSuppressed) return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
+    if (IsToolbarFeaturePopupOpen() && KeyEvent.GetKey() == EKeys::Escape)
+    {
+        CloseToolbarFeaturePopup();
+        return FReply::Handled();
+    }
     // Escape first cancels the editor buffer. It must not also open the pause menu.
     if (IsEditingQueueSettings())
     {
@@ -1593,6 +1810,28 @@ FReply UFF_BuildToolsWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, c
             if (UFF_FestivalSettingsSubsystem* PauseSubsystem = UFF_FestivalSettingsSubsystem::Get(this))
                 PauseSubsystem->OpenPauseMenu(GetOwningPlayer());
         }
+        return FReply::Handled();
+    }
+    if (IsToolbarFeaturePopupOpen())
+    {
+        if (KeyEvent.GetKey() == EKeys::Tab)
+        {
+            TArray<UWidget*> Controls;
+            for (const TCHAR* Name : {TEXT("Button_ToolbarFeatureAction"), TEXT("Button_ToolbarAllGuide"), TEXT("Button_ToolbarFeatureClose")})
+                if (UWidget* Control = GetWidgetFromName(Name); Control && Control->IsVisible() && Control->GetIsEnabled()) Controls.Add(Control);
+            if (!Controls.IsEmpty())
+            {
+                const int32 Current = Controls.IndexOfByPredicate([](const UWidget* Control)
+                    { return Control->HasKeyboardFocus() || Control->HasFocusedDescendants(); });
+                const int32 Next = Current == INDEX_NONE ? 0
+                    : (Current + (KeyEvent.IsShiftDown() ? -1 : 1) + Controls.Num()) % Controls.Num();
+                Controls[Next]->SetKeyboardFocus();
+            }
+            return FReply::Handled();
+        }
+        if (KeyEvent.GetKey() == EKeys::Enter || KeyEvent.GetKey() == EKeys::SpaceBar ||
+            KeyEvent.GetKey() == EKeys::Up || KeyEvent.GetKey() == EKeys::Down)
+            return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
         return FReply::Handled();
     }
     if (IsFeatureGuideOpen())
@@ -1797,6 +2036,7 @@ void UFF_BuildToolsWidget::RefreshTools()
         if (Anim_BuildToolsIntro) PlayAnimation(Anim_BuildToolsIntro);
     }
     bBuildSessionVisible = bSession;
+    if (!bSession && IsToolbarFeaturePopupOpen()) DismissToolbarFeaturePopup(false);
     if (!bSession && Panel_FeatureGuide)
     {
         Panel_FeatureGuide->SetVisibility(ESlateVisibility::Collapsed);
@@ -1929,14 +2169,17 @@ void UFF_BuildToolsWidget::RefreshTools()
                 {TEXT("S"), TEXT("FF.Camera.Move.Backward")}, {TEXT("D"), TEXT("FF.Camera.Move.Right")},
                 {TEXT("Esc"), TEXT("FF.System.Options.Primary")}, {TEXT("Tab"), TEXT("FF.Camera.ToggleView")}};
             for (const auto& Key : Keys)
-                if (auto* Text = Cast<UTextBlock>(GetWidgetFromName(
-                    FName(*(FString(TEXT("Text_BuildHelpKey_")) + Key.Key)))))
-                {
-                    const FKey Current = Bindings->GetCurrentKey(FName(Key.Value));
-                    Text->SetText(Current == EKeys::Escape ? FText::FromString(TEXT("Esc")) :
-                        Current == EKeys::Tab ? FText::FromString(TEXT("TAB")) : Current.GetDisplayName());
-                }
+            {
+                const FKey Current = Bindings->GetCurrentKey(FName(Key.Value));
+                const FText Display = Current == EKeys::Escape ? FText::FromString(TEXT("Esc")) :
+                    Current == EKeys::Tab ? FText::FromString(TEXT("TAB")) : Current.GetDisplayName();
+                for (const TCHAR* Prefix : {TEXT("Text_BuildHelpKey_"), TEXT("Text_ApprovedKey_")})
+                    if (auto* Text = Cast<UTextBlock>(GetWidgetFromName(FName(*(FString(Prefix) + Key.Key)))))
+                        Text->SetText(Display);
+            }
         }
+    for (const TCHAR* Name : {TEXT("Row_ApprovedKey_Rotate"), TEXT("Row_ApprovedKey_Adjust")})
+        if (UWidget* Row = GetWidgetFromName(Name)) Row->SetRenderOpacity(bPreview ? 1.f : .8f);
     if (Row_BuildHelpRotate) Row_BuildHelpRotate->SetVisibility(ESlateVisibility::HitTestInvisible);
     if (Row_BuildHelpPrecision)
         Row_BuildHelpPrecision->SetVisibility(bPreview
@@ -2146,6 +2389,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     SetChoiceState(Button_SettingsSnapFree, Text_SettingsSnapFree, PreferredSnap == 1);
     RefreshFeatureHints();
     RefreshHelpPresentation();
+    RefreshToolbarHistoryState();
     if (!IsEditingAngle())
     {
         RefreshAngleText();

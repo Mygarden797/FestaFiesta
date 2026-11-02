@@ -162,6 +162,10 @@ bool FFF_FacilityRevenueAuthoredWidgetsTest::RunTest(const FString& Parameters)
 		if (!TestTrue(*FString::Printf(TEXT("Row Designer binding %s"), *Name.ToString()),
 			Widget && Widget->bIsVariable && RowBlueprint->WidgetVariableNameToGuidMap.Contains(Name))) return false;
 	}
+	UWidget* OperationWidget = RowBlueprint->WidgetTree ? RowBlueprint->WidgetTree->FindWidget(TEXT("Text_OperationState")) : nullptr;
+	if (!TestTrue(TEXT("Operation status remains an editable, bound Designer text widget"),
+		OperationWidget && OperationWidget->bIsVariable &&
+		RowBlueprint->WidgetVariableNameToGuidMap.Contains(FName(TEXT("Text_OperationState"))))) return false;
 	FScopedRevenuePlayerless PanelContext(*PanelClass), RowContext(*RowClass);
 	TStrongObjectPtr<UFF_FacilityRevenueRankingPanel> Panel(CreateWidget<UFF_FacilityRevenueRankingPanel>(World, PanelClass));
 	if (!TestNotNull(TEXT("Actual panel instance"), Panel.Get())) return false;
@@ -194,6 +198,20 @@ bool FFF_FacilityRevenueAuthoredWidgetsTest::RunTest(const FString& Parameters)
 	Panel->Present(Rows, FFFacilityRevenueRanking::Rank(Rows, false), true, Second->FacilityId);
 	TestEqual(TEXT("Requested installation is selected by GUID even with equal names"), Panel->GetSelectedFacilityId(), Second->FacilityId);
 	TestEqual(TEXT("Both installations remain separate list items"), List->GetNumItems(), 2);
+	TStrongObjectPtr<UFF_FacilityRevenueRankRow> OperationRow(CreateWidget<UFF_FacilityRevenueRankRow>(World, RowClass));
+	if (!TestNotNull(TEXT("Virtualized row instance"), OperationRow.Get())) return false;
+	OperationRow->TakeWidget();
+	OperationRow->ApplyItem(First);
+	auto* OperationText = Cast<UTextBlock>(OperationRow->GetWidgetFromName(TEXT("Text_OperationState")));
+	if (!TestNotNull(TEXT("Runtime operation text binding"), OperationText)) return false;
+	UObject* FirstBefore = List->GetItemAt(0);
+	UObject* SecondBefore = List->GetItemAt(1);
+	OperationRow->RefreshOperationState(First);
+	TestTrue(TEXT("Missing facility shows the shared unavailable state"), OperationText->GetText().EqualTo(
+		FFFacilityInfoModel::GetOperationStateText(false, false, false, false)));
+	TestEqual(TEXT("Status-only row update keeps selection"), Panel->GetSelectedFacilityId(), Second->FacilityId);
+	TestTrue(TEXT("Status-only row update does not reorder virtualized list"),
+		List->GetItemAt(0) == FirstBefore && List->GetItemAt(1) == SecondBefore);
 	int32 PeriodRequests = 0;
 	const FDelegateHandle PeriodHandle = Panel->OnPeriodChanged.AddLambda([&]()
 	{

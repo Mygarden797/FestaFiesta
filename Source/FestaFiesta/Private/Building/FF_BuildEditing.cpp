@@ -15,10 +15,15 @@ bool UFF_BuildModeSubsystem::CanRedoBuildEdit() const
 	const auto* Zones=GetZoneSystem(); return Zones && Zones->CanRedoConstruction();
 }
 
+bool UFF_BuildModeSubsystem::CanExecuteBuildHistory() const
+{
+	return !bInputSuspendedForPauseMenu && !bIsExitingBuildMode && CanReconfigure() &&
+		FFBuildModeModel::IsBuildSessionActive(State);
+}
+
 bool UFF_BuildModeSubsystem::UndoBuildEdit()
 {
-	if (bInputSuspendedForPauseMenu || bIsExitingBuildMode || !CanReconfigure() ||
-		!FFBuildModeModel::IsBuildSessionActive(State)) return false;
+	if (!CanExecuteBuildHistory()) return false;
 	NotifyBuildToolsInteraction();
 	CancelGroupPlacement();
 	EndDragPlacement();
@@ -33,8 +38,7 @@ bool UFF_BuildModeSubsystem::UndoBuildEdit()
 
 bool UFF_BuildModeSubsystem::RedoBuildEdit()
 {
-	if (bInputSuspendedForPauseMenu || bIsExitingBuildMode || !CanReconfigure() ||
-		!FFBuildModeModel::IsBuildSessionActive(State)) return false;
+	if (!CanExecuteBuildHistory()) return false;
 	NotifyBuildToolsInteraction();
 	CancelGroupPlacement();
 	EndDragPlacement();

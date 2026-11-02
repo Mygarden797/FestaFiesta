@@ -60,6 +60,8 @@ bool UFF_FacilityCodexScreen::UpdateCollectionLayout(const FVector2D& Viewport)
 	if (!Column_CollectionCategories) return false;
 	if (bUseAuthoredCollectionLayout)
 	{
+		if (bUseParallelCollectionLayout && TileView_Entries)
+			TileView_Entries->SetResponsiveColumns(2);
 		// Saved Fill slots stretch the reward track. The saved six-column tile
 		// view measures its own pitch in Slate, including in Designer without Tick.
 		return true;
@@ -287,11 +289,37 @@ void UFF_FacilityCodexScreen::OpenCombinationDetail(FName RuleId)
 	SetCollectionDetailOpen(true);
 	SetDetailPage(1);
 	RefreshDetail();
-	SetKeyboardFocus();
+	if (!bUseParallelCollectionLayout) SetKeyboardFocus();
 }
 void UFF_FacilityCodexScreen::SetCollectionDetailOpen(bool bOpen)
 {
 	bCollectionDetailOpen=bOpen;
+	if (bUseParallelCollectionLayout)
+	{
+		if (!bOpen) bCollectionPreviewOpen = false;
+		for (const TCHAR* Name : {TEXT("Horizontal_Toolbar"), TEXT("Size_CollectionSearch"),
+			TEXT("Scroll_CollectionCategories"), TEXT("Size_Browse"), TEXT("Row_CollectionProgress")})
+			if (UWidget* Widget = GetWidgetFromName(Name))
+				Widget->SetVisibility(bCollectionPreviewOpen ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+		if (Size_Detail) Size_Detail->SetVisibility(bOpen ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		for (const TCHAR* Name : {TEXT("Size_Showcase"), TEXT("Horizontal_PreviewRotation"),
+			TEXT("Button_CollectionPrevious"), TEXT("Button_CollectionNext")})
+			if (UWidget* Widget = GetWidgetFromName(Name))
+				Widget->SetVisibility(bCollectionPreviewOpen ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		for (const TCHAR* Name : {TEXT("Horizontal_DetailTabs"), TEXT("Horizontal_ShowcaseFooter")})
+			if (UWidget* Widget = GetWidgetFromName(Name))
+				Widget->SetVisibility(bCollectionPreviewOpen ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+		if (UWidget* SummaryWidget = GetWidgetFromName(TEXT("Vertical_ApprovedSummary")))
+			SummaryWidget->SetVisibility(bCollectionPreviewOpen ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+		if (UWidget* OpenPreview = GetWidgetFromName(TEXT("Button_ApprovedOpen3D")))
+			OpenPreview->SetVisibility(bCollectionPreviewOpen ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		if (!bCollectionPreviewOpen)
+		{
+			bShowPreviewModel = false;
+			if (Viewport_Showcase) Viewport_Showcase->ResetPreview();
+		}
+		return;
+	}
 	for(const TCHAR* Name:{TEXT("Horizontal_Toolbar"),TEXT("Size_CollectionSearch"),TEXT("Scroll_CollectionCategories"),TEXT("Size_Browse"),TEXT("Row_CollectionProgress")})
 		if(auto* W=GetWidgetFromName(Name)) W->SetVisibility(bOpen?ESlateVisibility::Collapsed:ESlateVisibility::SelfHitTestInvisible);
 	for(const TCHAR* Name:{TEXT("Size_Detail"),TEXT("Size_Showcase"),TEXT("Horizontal_PreviewRotation"),TEXT("Button_CollectionPrevious"),TEXT("Button_CollectionNext")})
@@ -304,6 +332,23 @@ void UFF_FacilityCodexScreen::SetCollectionDetailOpen(bool bOpen)
 		bShowPreviewModel=false;
 		if(Viewport_Showcase) Viewport_Showcase->ResetPreview();
 	}
+}
+
+void UFF_FacilityCodexScreen::HandleOpenCollectionPreview()
+{
+	if (!bUseParallelCollectionLayout || !bCollectionDetailOpen || !ItemsByRule.Contains(SelectedRuleId)) return;
+	bCollectionPreviewOpen = true;
+	SetCollectionDetailOpen(true);
+	RefreshShowcase();
+}
+
+void UFF_FacilityCodexScreen::HandleCloseCollectionPreview()
+{
+	if (!bUseParallelCollectionLayout || !bCollectionPreviewOpen) return;
+	bCollectionPreviewOpen = false;
+	SetCollectionDetailOpen(bCollectionDetailOpen);
+	RefreshDetail();
+	if (TileView_Entries) TileView_Entries->SetKeyboardFocus();
 }
 // 필터로 남은 항목 안에서만 앞·뒤 조합으로 이동하며 목록 끝에서는 현재 항목을 유지한다.
 void UFF_FacilityCodexScreen::NavigateCollectionDetail(int32 Direction)

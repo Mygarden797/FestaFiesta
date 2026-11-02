@@ -48,8 +48,9 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	auto* RequiredSatisfied = Cast<UBorder>(Tile->GetWidgetFromName(TEXT("Border_RequiredSatisfied")));
 	auto* RequiredMissingText = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_RequiredMissing")));
 	auto* RequiredSatisfiedText = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_RequiredSatisfied")));
+	auto* RequiredIcon = Cast<UBorder>(Tile->GetWidgetFromName(TEXT("Badge_RequiredIcon")));
 	auto* ProgramBadge = Cast<UBorder>(Tile->GetWidgetFromName(TEXT("Border_ProgramBadge")));
-	auto* ProgramText = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_ProgramBadge")));
+	auto* ProgramIcon = Cast<UImage>(Tile->GetWidgetFromName(TEXT("Image_A5Program")));
 	auto* ThumbnailBackdrop = Cast<UBorder>(Tile->GetWidgetFromName(TEXT("Border_ThumbnailBackdrop")));
 	const auto* ProgramBrushProperty = FindFProperty<FStructProperty>(Class, TEXT("ProgramThumbnailBrush"));
 	const auto* RequiredBrushProperty = FindFProperty<FStructProperty>(Class, TEXT("RequiredThumbnailBrush"));
@@ -66,8 +67,9 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 		!TestNotNull(TEXT("Designer required satisfied badge"), RequiredSatisfied) ||
 		!TestNotNull(TEXT("Designer required missing text"), RequiredMissingText) ||
 		!TestNotNull(TEXT("Designer required satisfied text"), RequiredSatisfiedText) ||
+		!TestNotNull(TEXT("Designer required icon"), RequiredIcon) ||
 		!TestNotNull(TEXT("Designer program badge"), ProgramBadge) ||
-		!TestNotNull(TEXT("Designer program caption"), ProgramText) ||
+		!TestNotNull(TEXT("Designer program icon"), ProgramIcon) ||
 		!TestNotNull(TEXT("Designer thumbnail surface"), ThumbnailBackdrop) ||
 		!TestNotNull(TEXT("Authored program material property"), ProgramBrushProperty) ||
 		!TestNotNull(TEXT("Authored required material property"), RequiredBrushProperty) ||
@@ -124,13 +126,9 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	FSlateBrush AuthoredProgramBrush = ProgramBadge->Background;
 	AuthoredProgramBrush.TintColor = FSlateColor(FLinearColor(0.19f, 0.11f, 0.38f, 1.0f));
 	ProgramBadge->SetBrush(AuthoredProgramBrush);
-	const FText AuthoredProgramLabel = FText::FromString(TEXT("체험 프로그램"));
-	ProgramText->SetText(AuthoredProgramLabel);
-	FSlateFontInfo ProgramFont = ProgramText->GetFont();
-	ProgramFont.Size = 12;
-	ProgramText->SetFont(ProgramFont);
-	const FSlateColor AuthoredProgramColor(FLinearColor(0.96f, 0.90f, 1.0f, 1.0f));
-	ProgramText->SetColorAndOpacity(AuthoredProgramColor);
+	const FLinearColor AuthoredProgramColor(0.96f, 0.90f, 1.0f, 1.0f);
+	ProgramIcon->SetColorAndOpacity(AuthoredProgramColor);
+	const FSlateBrush AuthoredProgramIcon = ProgramIcon->GetBrush();
 	ThumbnailFrame->SetWidthOverride(176.f);
 	ThumbnailFrame->SetHeightOverride(88.f);
 	TStrongObjectPtr<UTexture2D> WideTexture(UTexture2D::CreateTransient(400, 200));
@@ -214,16 +212,15 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	Entry.CurrentInstanceCount = 0;
 	Data->Initialize(Entry, 1000, true);
 	Tile->RefreshItemPresentation();
-	TestTrue(TEXT("Missing requirement takes badge priority while program data and combination highlight coexist"),
+	TestTrue(TEXT("Required and program icons coexist independently with combination highlight"),
 		Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() && Tile->IsSynergyHighlighted() && Tile->HasCompatiblePrograms() &&
-		RequiredMissing->GetVisibility() == ESlateVisibility::HitTestInvisible &&
+		RequiredIcon->GetVisibility() == ESlateVisibility::HitTestInvisible &&
+		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed &&
 		RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed &&
-		ProgramBadge->GetVisibility() == ESlateVisibility::Collapsed &&
-		ProgramText->GetVisibility() == ESlateVisibility::Collapsed);
-	TestTrue(TEXT("Program compatibility preserves the Designer badge brush, caption, font and color"),
+		ProgramBadge->GetVisibility() == ESlateVisibility::HitTestInvisible);
+	TestTrue(TEXT("Program compatibility preserves the Designer badge brush, icon and color"),
 		ProgramBadge->Background.TintColor == AuthoredProgramBrush.TintColor &&
-		ProgramText->GetText().EqualTo(AuthoredProgramLabel) && ProgramText->GetFont().Size == ProgramFont.Size &&
-		ProgramText->GetColorAndOpacity() == AuthoredProgramColor);
+		ProgramIcon->GetBrush() == AuthoredProgramIcon && ProgramIcon->GetColorAndOpacity() == AuthoredProgramColor);
 	TestTrue(TEXT("An unmet requirement takes surface priority while programs remain in the tooltip"),
 		ThumbnailBackdrop->Background == RequiredSurface &&
 		Card->Background.TintColor != AuthoredBrush.TintColor);
@@ -233,7 +230,7 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 		Tile->GetToolTipText().ToString().Contains(TEXT("선셋 요가")));
 	TestEqual(TEXT("Required facility explains the installation amount in the original state slot"),
 		StateLabel->GetText().ToString(), FString(TEXT("1개 설치")));
-	TestTrue(TEXT("Missing requirement preserves Designer brush and font with a count instruction"),
+	TestTrue(TEXT("Legacy required caption remains hidden while retaining its Designer style and count instruction"),
 		RequiredMissing->Background.TintColor == AuthoredRequiredBrush.TintColor &&
 		RequiredMissingText->GetFont().Size == RequiredFont.Size && RequiredMissingText->GetText().ToString() == TEXT("필수 · 1개 설치"));
 	TestTrue(TEXT("Requirement minimum is available alongside the original price tooltip"),
@@ -245,11 +242,12 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	Entry.bBuildLimitReached = true;
 	Data->Initialize(Entry, 1000, true);
 	Tile->RefreshItemPresentation();
-	TestTrue(TEXT("Installing required facility swaps badges while preserving combination recommendation"),
+	TestTrue(TEXT("Installing required facility retains both icons and combination recommendation"),
 		Tile->IsRequiredFacilitySatisfied() && Tile->IsSynergyHighlighted() && Tile->HasCompatiblePrograms() &&
+		RequiredIcon->GetVisibility() == ESlateVisibility::HitTestInvisible &&
 		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed &&
-		RequiredSatisfied->GetVisibility() == ESlateVisibility::HitTestInvisible &&
-		ProgramBadge->GetVisibility() == ESlateVisibility::Collapsed);
+		RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed &&
+		ProgramBadge->GetVisibility() == ESlateVisibility::HitTestInvisible);
 	TestEqual(TEXT("A capped facility displays a compact lock rather than its full rejection sentence"),
 		StateLabel->GetText().ToString(), FString(TEXT("잠김")));
 	const FLinearColor LockedTint = Card->Background.TintColor.GetSpecifiedColor();
@@ -280,6 +278,7 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	Tile->RefreshItemPresentation();
 	TestTrue(TEXT("Removing requirement clears both badge surfaces on a reused row"),
 		!Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() &&
+		RequiredIcon->GetVisibility() == ESlateVisibility::Collapsed &&
 		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed && RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed);
 	TestTrue(TEXT("Recycling a required program row into a program-only row restores its authored lavender surface"),
 		ThumbnailBackdrop->Background == ProgramSurface &&
@@ -290,7 +289,7 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	Tile->RefreshItemPresentation();
 	TestTrue(TEXT("Reusing a program row for an ordinary facility clears both program badge surfaces"),
 		!Tile->HasCompatiblePrograms() && ProgramBadge->GetVisibility() == ESlateVisibility::Collapsed &&
-		ProgramText->GetVisibility() == ESlateVisibility::Collapsed && Tile->IsSynergyHighlighted());
+		Tile->IsSynergyHighlighted());
 	TestFalse(TEXT("Ordinary facility tooltip cannot retain the previous program names"),
 		Tile->GetToolTipText().ToString().Contains(TEXT("바다향기 공방")));
 	TestTrue(TEXT("Reusing a program card restores the exact ordinary thumbnail and card style"),
@@ -305,10 +304,10 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Released row contains no stale recommendation badge"), SynergyHighlight->GetVisibility() == ESlateVisibility::Collapsed);
 	TestTrue(TEXT("Released row contains no stale required status"),
 		!Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() &&
+		RequiredIcon->GetVisibility() == ESlateVisibility::Collapsed &&
 		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed && RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed);
 	TestTrue(TEXT("Released row contains no stale program compatibility badge"),
-		!Tile->HasCompatiblePrograms() && ProgramBadge->GetVisibility() == ESlateVisibility::Collapsed &&
-		ProgramText->GetVisibility() == ESlateVisibility::Collapsed);
+		!Tile->HasCompatiblePrograms() && ProgramBadge->GetVisibility() == ESlateVisibility::Collapsed);
 	TestTrue(TEXT("Released row contains no stale pearl thumbnail or required/program outline"),
 		ThumbnailBackdrop->Background == AuthoredThumbnailBrush && Card->Background == AuthoredBrush);
 	return true;

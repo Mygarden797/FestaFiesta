@@ -22,6 +22,7 @@ class UFF_BuildModeSubsystem;
 class UFF_BuildCatalogEconomyReadModel;
 class UFF_BuildCatalogSubsystem;
 class UFF_BuildingFeatureDiscoverySubsystem;
+class UFF_BuildFeatureGuideButton;
 struct FKey;
 struct FFFZSFacilitySpec;
 
@@ -143,6 +144,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void OpenFeatureGuide();
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") bool OpenFeatureGuideTopic(FName FeatureId);
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void CloseFeatureGuide();
+    /** Opens the compact icon description without executing a build command. */
+    bool OpenToolbarFeatureTopic(FName FeatureId, UWidget* Anchor);
+    bool IsToolbarFeaturePopupOpen() const;
 
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools")
     void RefreshTools();
@@ -312,12 +316,20 @@ private:
     friend class FFFBuildFeatureGuideAcknowledgementTest;
     friend class FFFBuildFeatureGuideInputTest;
     friend class FFFBuildFeatureGuideRenderTest;
+    friend class FFFBuildToolbarFeaturePopupTest;
     friend class FFFBuildToolsCatalogHelpTest;
     friend class FFFBuildToolsQueueSettingsTest;
     friend class FFFBuildToolsAdaptivePanelsTest;
     FName CurrentGuideFeature;
     FName PendingGuideAction;
+    FName CurrentToolbarFeature;
+    TWeakObjectPtr<UFF_BuildFeatureGuideButton> ToolbarFeatureAnchor;
     bool bUpdatingGuideTopic = false;
+    UFUNCTION() void CloseToolbarFeaturePopup();
+    void DismissToolbarFeaturePopup(bool bRestoreAnchorFocus);
+    void RefreshToolbarHistoryState();
+    UFUNCTION() void ExecuteToolbarFeatureAction();
+    UFUNCTION() void OpenToolbarFullGuide();
     bool ShowFeatureGuide(FName FeatureId, bool bRunAfterConfirm);
     void ShowFeatureSummary(FName FeatureId);
     void HideFeatureSummary();
@@ -335,6 +347,9 @@ private:
     UFUNCTION() void HandleGuidedCatalog();
     UFUNCTION() void HandleGuidedControls();
     FVector2D AuthoredHelpPosition = FVector2D(32.f, 525.f);
+    // Optional designer-authored compact guide. The widget tree owns its lifetime.
+    TWeakObjectPtr<USizeBox> ApprovedQuickKeys;
+    FVector2D AuthoredQuickKeysPosition = FVector2D(32.f, 320.f);
     float AuthoredSettingsHeight = 950.f;
     TWeakObjectPtr<UFF_BuildModeSubsystem> BuildMode;
     TWeakObjectPtr<UFF_BuildCatalogEconomyReadModel> Economy;

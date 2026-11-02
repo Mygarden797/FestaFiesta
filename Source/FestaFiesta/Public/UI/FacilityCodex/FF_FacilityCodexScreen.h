@@ -164,6 +164,9 @@ protected:
 	/** Modern screens use editable Canvas anchors/offsets instead of legacy runtime coordinates. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Collection|Layout")
 	bool bUseAuthoredCollectionLayout = false;
+	/** Opt-in for the authored side-by-side collection. Older screens keep their page flow. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Collection|Layout")
+	bool bUseParallelCollectionLayout = false;
 #if WITH_EDITORONLY_DATA
 	/** Preview the detail page in Designer; never changes the page opened during play. */
 	UPROPERTY(EditAnywhere, Category="Collection|Designer Preview")
@@ -195,6 +198,9 @@ private:
 	UPROPERTY(Transient) TArray<TObjectPtr<UFF_PrepChoiceButton>> CollectionMilestones;
 	TArray<FName> CollectionMilestoneIds;
 	bool bCollectionDetailOpen = false;
+	bool bCollectionPreviewOpen = false;
+	UFUNCTION() void HandleOpenCollectionPreview();
+	UFUNCTION() void HandleCloseCollectionPreview();
 	void UpdateResponsiveLayout();
 	UFUNCTION() void RefreshFromSubsystem();
 	UFUNCTION() void HandleClose();
