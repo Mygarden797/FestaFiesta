@@ -9,6 +9,7 @@
 #include "FF_OptionsScreen.generated.h"
 
 class UFF_CommonButtonBase;
+class UFF_GoogleAccountPanel;
 class UFF_KeyBindingPanel;
 class UFF_SettingSelectRow;
 class UFF_SettingSliderRow;
@@ -16,7 +17,7 @@ class UFF_SettingToggleRow;
 class UTextBlock;
 class UVerticalBox;
 
-/** 옵션 분류 6종. `docs/ui/main-menu-and-save.md` 3절의 목록과 같다. */
+/** 옵션 분류. 기존 여섯 항목의 저장된 값은 유지하고 계정정보를 뒤에 추가한다. */
 UENUM(BlueprintType)
 enum class EFF_OptionCategory : uint8
 {
@@ -25,7 +26,8 @@ enum class EFF_OptionCategory : uint8
 	Sound			UMETA(DisplayName = "사운드"),
 	Graphics		UMETA(DisplayName = "그래픽"),
 	Controls		UMETA(DisplayName = "조작"),
-	Credits			UMETA(DisplayName = "크레딧")
+	Credits			UMETA(DisplayName = "크레딧"),
+	Account			UMETA(DisplayName = "계정정보")
 };
 
 /**
@@ -53,7 +55,7 @@ struct FESTAFIESTA_API FFF_OptionCreditEntry
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnOptionsBackRequested);
 
 /**
- * 옵션. 좌측 분류 6개 + 우측 설정 행.
+ * 옵션. 좌측 분류 7개 + 우측 설정 행.
  *
  * === 값을 소유하지 않는다 (AGENTS.md 규칙 2) ===
  * 이 화면은 읽고 요청만 한다. 실제 소유자는 다음과 같다.
@@ -78,10 +80,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnOptionsBackRequested);
  *
  * `Button_Apply` 가 없는 구형 WBP 는 확정할 길이 없으므로 그때만 즉시 반영으로 되돌아간다.
  *
- * === 분류 버튼을 런타임에 만들지 않는다 ===
+ * === 기존 분류는 제작 WBP의 명시 바인딩을 사용한다 ===
  * 6개를 컨테이너에 런타임으로 채우면 **디자이너에서 하나도 보이지 않아 위치·크기를 손으로
  * 만질 수 없다.** Live HUD 탭 9개에서 실제로 겪고 명시 바인딩으로 되돌린 문제다
  * (`docs/memory/wbp-codegen-workflow.md`). 그래서 여섯 개를 각각 바인딩한다.
+ * 계정정보는 선택 바인딩으로 받으며, 추가 전 WBP에는 같은 탐색 버튼을 한 번만 붙인다.
  * 설정 행은 분류마다 개수가 달라 런타임 생성이 맞다.
  *
  * === 문구를 `UMETA` 에서 읽지 않는다 ===
@@ -185,6 +188,13 @@ protected:
 	void BuildGraphicsRows();
 	void BuildControlsRows();
 	void BuildCreditsRows();
+	void BuildAccountRows();
+
+	/** 기존 제작 WBP에도 계정정보를 붙인다. 이미 배치된 버튼은 그대로 사용한다. */
+	void EnsureAccountCategory();
+
+	/** 늘어난 분류가 바닥 동작을 덮지 않도록 레일의 가용 높이 안에 맞춘다. */
+	void EnsureCategoryViewportFit();
 
 	/** 저장된 값을 draft 로 복사한다. 화면을 열 때와 `적용` 뒤에 부른다. */
 	void CaptureDraft();
@@ -262,6 +272,10 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI")
 	TObjectPtr<UFF_CommonButtonBase> Button_Credits;
+
+	/** 계정 추가 전의 WBP도 열리도록 선택 바인딩하며 없을 때만 같은 탐색 버튼을 만든다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UFF_CommonButtonBase> Button_Account;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI")
 	TObjectPtr<UFF_CommonButtonBase> Button_Back;
@@ -381,6 +395,10 @@ private:
 	/** 조작 분류에 지금 올라가 있는 키 배치 패널. 행을 다시 그리기 전에 캡처를 반드시 해제한다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_KeyBindingPanel> ActiveKeyBindingPanel;
+
+	/** 인증 상태는 계정 서브시스템이 소유한다. 옵션 draft와 별도로 보여 주는 계정 패널. */
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_GoogleAccountPanel> GoogleAccountPanel;
 
 	bool bDirty = false;
 	bool bSavedNotice = false;

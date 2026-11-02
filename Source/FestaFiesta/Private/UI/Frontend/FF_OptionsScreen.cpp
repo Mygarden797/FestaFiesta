@@ -6,13 +6,21 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CheckBox.h"
+#include "Components/Image.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/ScaleBox.h"
+#include "Components/ScaleBoxSlot.h"
+#include "Components/SizeBox.h"
+#include "Components/SizeBoxSlot.h"
 #include "Components/Slider.h"
 #include "UI/Frontend/FF_FrontendCasualStyle.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/Engine.h"
+#include "Engine/Texture2D.h"
 #include "GameFramework/GameUserSettings.h"
+#include "UI/Account/FF_GoogleAccountPanel.h"
 #include "UI/Core/FF_UIAccessibilitySubsystem.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/FF_CommonButtonBase.h"
@@ -80,14 +88,15 @@ namespace
 			}
 		}
 	}
-	// 옵션 분류 여섯 개. 구독·문구·되돌아보기가 같은 목록을 봐야 한다.
+	// 구독·문구·선택 상태는 기존 분류와 계정정보에 같은 목록을 사용한다.
 	const EFF_OptionCategory AllOptionCategories[] = {
 		EFF_OptionCategory::Language,
 		EFF_OptionCategory::Accessibility,
 		EFF_OptionCategory::Sound,
 		EFF_OptionCategory::Graphics,
 		EFF_OptionCategory::Controls,
-		EFF_OptionCategory::Credits
+		EFF_OptionCategory::Credits,
+		EFF_OptionCategory::Account
 	};
 
 	// WBP 에서 행 클래스를 지정하지 않았을 때의 대비책.
@@ -197,6 +206,8 @@ void UFF_OptionsScreen::ApplyGeneratedRowClasses(
 void UFF_OptionsScreen::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	EnsureAccountCategory();
+	EnsureCategoryViewportFit();
 
 	// 문구는 인스턴스에 한 번만 넣으면 된다.
 	for (const EFF_OptionCategory Category : AllOptionCategories)
@@ -241,6 +252,8 @@ void UFF_OptionsScreen::NativeOnInitialized()
 void UFF_OptionsScreen::NativeConstruct()
 {
 	Super::NativeConstruct();
+	EnsureAccountCategory();
+	EnsureCategoryViewportFit();
 
 	// 🔴 구독은 `NativeConstruct` 다. CommonUI 스택이 위젯을 풀에서 재사용하므로
 	// `NativeOnInitialized`(인스턴스당 한 번)에 구독하고 `NativeDestruct`(내려갈 때마다)에
@@ -345,7 +358,7 @@ void UFF_OptionsScreen::SelectCategory(EFF_OptionCategory Category)
 	SelectedCategory = Category;
 	bHasSelectedCategory = true;
 
-	// 부분 갱신을 하지 않는다. 여섯 개의 선택 상태를 매번 전체로 다시 선언한다.
+	// 부분 갱신을 하지 않는다. 모든 분류의 선택 상태를 매번 전체로 다시 선언한다.
 	for (const EFF_OptionCategory Each : AllOptionCategories)
 	{
 		if (UFF_CommonButtonBase* Button = GetCategoryButton(Each))
@@ -397,7 +410,123 @@ void UFF_OptionsScreen::RebuildRows()
 	case EFF_OptionCategory::Graphics:		BuildGraphicsRows();		break;
 	case EFF_OptionCategory::Controls:		BuildControlsRows();		break;
 	case EFF_OptionCategory::Credits:		BuildCreditsRows();			break;
+	case EFF_OptionCategory::Account:		BuildAccountRows();			break;
 	}
+}
+
+void UFF_OptionsScreen::EnsureAccountCategory()
+{
+	if (Button_Account || !WidgetTree)
+	{
+		return;
+	}
+	Button_Account = Cast<UFF_CommonButtonBase>(WidgetTree->FindWidget(TEXT("Button_Account")));
+	if (Button_Account)
+	{
+		return;
+	}
+	UFF_CommonButtonBase* Template = Button_Credits ? Button_Credits.Get() : Button_Controls.Get();
+	UVerticalBox* Categories = Template ? Cast<UVerticalBox>(Template->GetParent()) : nullptr;
+	if (!Categories)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning, TEXT("UFF_OptionsScreen: 계정정보를 추가할 탐색 분류 상자가 없다."));
+		return;
+	}
+	Button_Account = CreateWidget<UFF_CommonButtonBase>(this, Template->GetClass(), TEXT("Button_Account"));
+	if (!Button_Account)
+	{
+		return;
+	}
+	Button_Account->SetButtonLabel(UFF_UIDisplayTextLibrary::GetOptionCategoryText(EFF_OptionCategory::Account));
+	Button_Account->SetIsSelectable(true);
+	Button_Account->SetIsToggleable(true);
+	if (UImage* Icon = Cast<UImage>(Button_Account->GetWidgetFromName(TEXT("Image_Icon"))))
+	{
+		FSlateBrush AccountIcon;
+		AccountIcon.DrawAs = ESlateBrushDrawType::Image;
+		AccountIcon.ImageSize = FVector2D(32.f, 32.f);
+		AccountIcon.SetResourceObject(LoadObject<UTexture2D>(nullptr,
+			TEXT("/Game/FestaFiesta/UI/Frontend/Art/T_FF_Save.T_FF_Save")));
+		Icon->SetBrush(AccountIcon);
+	}
+	// Match the authored navigation sizing without changing the button Blueprint or its defaults.
+	if (const USizeBox* OriginalSize = Cast<USizeBox>(Template->GetWidgetFromName(TEXT("SizeBox_Root"))))
+	{
+		if (USizeBox* AccountSize = Cast<USizeBox>(Button_Account->GetWidgetFromName(TEXT("SizeBox_Root"))))
+		{
+			if (OriginalSize->IsWidthOverride()) AccountSize->SetWidthOverride(OriginalSize->GetWidthOverride());
+			if (OriginalSize->IsHeightOverride()) AccountSize->SetHeightOverride(OriginalSize->GetHeightOverride());
+		}
+	}
+	if (UVerticalBoxSlot* PreviousSlot = Cast<UVerticalBoxSlot>(Template->Slot))
+	{
+		FMargin CategoryPadding = PreviousSlot->GetPadding();
+		CategoryPadding.Bottom = FMath::Max(CategoryPadding.Bottom, RowGap);
+		PreviousSlot->SetPadding(CategoryPadding);
+	}
+	if (UVerticalBoxSlot* CategorySlot = Categories->AddChildToVerticalBox(Button_Account))
+	{
+		CategorySlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		CategorySlot->SetHorizontalAlignment(HAlign_Fill);
+		CategorySlot->SetVerticalAlignment(VAlign_Top);
+	}
+}
+
+void UFF_OptionsScreen::EnsureCategoryViewportFit()
+{
+	if (!WidgetTree || WidgetTree->FindWidget(TEXT("ScaleBox_AccountCategories")))
+	{
+		return;
+	}
+	USizeBox* CategoryRail = Cast<USizeBox>(WidgetTree->FindWidget(TEXT("SizeBox_Rail")));
+	UVerticalBox* Categories = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("VerticalBox_Categories")));
+	if (!CategoryRail || !Categories || CategoryRail->GetContent() != Categories)
+	{
+		return;
+	}
+	// The authored rail used top alignment, so its desired height could extend behind the footer.
+	// Keep every authored button, font, gap and brush; scale only this column when height is short.
+	UScaleBox* CategoryFit = WidgetTree->ConstructWidget<UScaleBox>(UScaleBox::StaticClass(), TEXT("ScaleBox_AccountCategories"));
+	CategoryFit->SetStretch(EStretch::ScaleToFit);
+	CategoryFit->SetStretchDirection(EStretchDirection::DownOnly);
+	CategoryRail->SetContent(CategoryFit);
+	if (UScaleBoxSlot* FitSlot = Cast<UScaleBoxSlot>(CategoryFit->SetContent(Categories)))
+	{
+		FitSlot->SetHorizontalAlignment(HAlign_Left);
+		FitSlot->SetVerticalAlignment(VAlign_Top);
+	}
+	if (USizeBoxSlot* FitContainerSlot = Cast<USizeBoxSlot>(CategoryFit->Slot))
+	{
+		FitContainerSlot->SetHorizontalAlignment(HAlign_Fill);
+		FitContainerSlot->SetVerticalAlignment(VAlign_Fill);
+	}
+	if (UHorizontalBoxSlot* RailSlot = Cast<UHorizontalBoxSlot>(CategoryRail->Slot))
+	{
+		RailSlot->SetVerticalAlignment(VAlign_Fill);
+	}
+}
+
+void UFF_OptionsScreen::BuildAccountRows()
+{
+	if (!VerticalBox_Rows)
+	{
+		return;
+	}
+	if (!GoogleAccountPanel)
+	{
+		GoogleAccountPanel = CreateWidget<UFF_GoogleAccountPanel>(this, UFF_GoogleAccountPanel::StaticClass(), TEXT("GoogleAccountPanel"));
+	}
+	if (!GoogleAccountPanel)
+	{
+		AddPendingRow(LOCTEXT("OptionAccountUnavailable", "계정 정보를 표시하지 못했습니다. 화면을 다시 열어 주세요."));
+		return;
+	}
+	if (UVerticalBoxSlot* AccountPanelSlot = VerticalBox_Rows->AddChildToVerticalBox(GoogleAccountPanel))
+	{
+		AccountPanelSlot->SetHorizontalAlignment(HAlign_Fill);
+		AccountPanelSlot->SetPadding(FMargin(0.f, 0.f, 0.f, RowGap));
+	}
+	GoogleAccountPanel->RefreshAccount();
 }
 
 void UFF_OptionsScreen::BuildLanguageRows()
@@ -654,6 +783,7 @@ UFF_CommonButtonBase* UFF_OptionsScreen::GetCategoryButton(EFF_OptionCategory Ca
 	case EFF_OptionCategory::Graphics:		return Button_Graphics;
 	case EFF_OptionCategory::Controls:		return Button_Controls;
 	case EFF_OptionCategory::Credits:		return Button_Credits;
+	case EFF_OptionCategory::Account:		return Button_Account;
 	}
 	return nullptr;
 }

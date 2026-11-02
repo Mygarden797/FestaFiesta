@@ -29,6 +29,12 @@ public class FestaFiesta : ModuleRules
 		PrivateDependencyModuleNames.Add("MediaAssets");
 		// Building-only embedded HTML card ribbon; no editor Python dependency at runtime.
 		PrivateDependencyModuleNames.AddRange(new string[] { "WebBrowser", "Json" });
+		// Native Google OAuth: HTTPS calls and a loopback-only callback; no hosted auth service.
+		PrivateDependencyModuleNames.AddRange(new string[] { "HTTP", "Sockets" });
+		if (Target.Platform == UnrealTargetPlatform.Win64)
+		{
+			PublicSystemLibraries.Add("bcrypt.lib");
+		}
 		
 		// 제작 도구는 FestaFiestaEditor에 있다. 여기에는 기존 회귀 테스트와
 		// 런타임 타입의 에디터 전용 검증 함수가 직접 사용하는 의존성만 둔다.
