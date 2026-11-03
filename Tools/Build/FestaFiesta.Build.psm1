@@ -5,6 +5,169 @@ Set-StrictMode -Version Latest
 
 $script:FFProjectFileOverride = $null
 
+function Initialize-FFProcessPathApi {
+    if ('FestaFiestaBuildIsolation.NativeMethods' -as [type]) { return }
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+        throw 'Project build isolation requires Windows process/path APIs.'
+    }
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+namespace FestaFiestaBuildIsolation {
+    public static class NativeMethods {
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CommandLineToArgvW(string commandLine, out int count);
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr LocalFree(IntPtr memory);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern SafeFileHandle CreateFileW(string path, uint access, uint share,
+            IntPtr security, uint creation, uint flags, IntPtr template);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetFinalPathNameByHandleW(SafeFileHandle handle,
+            StringBuilder path, uint capacity, uint flags);
+        public static string[] SplitCommandLine(string commandLine) {
+            int count;
+            IntPtr memory = CommandLineToArgvW(commandLine, out count);
+            if (memory == IntPtr.Zero) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+            try {
+                string[] result = new string[count];
+                for (int index = 0; index < count; index++) {
+                    result[index] = Marshal.PtrToStringUni(Marshal.ReadIntPtr(memory, index * IntPtr.Size));
+                }
+                return result;
+            } finally { LocalFree(memory); }
+        }
+        public static string PhysicalPath(string path) {
+            // Zero access, read/write/delete sharing, OPEN_EXISTING,
+            // BACKUP_SEMANTICS: inspect a directory without locking build outputs.
+            using (SafeFileHandle handle = CreateFileW(path, 0, 7, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero)) {
+                if (handle.IsInvalid) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+                StringBuilder buffer = new StringBuilder(512);
+                uint length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
+                if (length == 0) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+                if (length >= buffer.Capacity) {
+                    buffer = new StringBuilder(checked((int)length + 1));
+                    length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
+                    if (length == 0 || length >= buffer.Capacity) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+                }
+                string result = buffer.ToString();
+                if (result.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)) { return @"\\" + result.Substring(8); }
+                if (result.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase)) { return result.Substring(4); }
+                return result;
+            }
+        }
+    }
+}
+'@
+}
+
+function Get-FFProjectBuildBlockers {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $ProjectFile,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]] $Processes
+    )
+    Initialize-FFProcessPathApi
+    $selectedFile = [IO.Path]::GetFullPath($ProjectFile.Replace('/', '\'))
+    if (-not (Test-Path -LiteralPath $selectedFile -PathType Leaf)) {
+        throw 'The project file must exist before checking build isolation.'
+    }
+    $selectedName = [IO.Path]::GetFileName($selectedFile)
+    $selectedStem = [IO.Path]::GetFileNameWithoutExtension($selectedFile)
+    # Compare directory identity, since Binaries/Intermediate belong to the
+    # directory. A hard-linked descriptor in another checkout is still isolated.
+    $physicalRoot = [FestaFiestaBuildIsolation.NativeMethods]::PhysicalPath(
+        [IO.Path]::GetDirectoryName($selectedFile)).TrimEnd('\')
+    foreach ($candidateProcess in $Processes) {
+        $processName = if ($candidateProcess.PSObject.Properties['Name']) { [string]$candidateProcess.Name } else { '' }
+        $processIdValue = if ($candidateProcess.PSObject.Properties['ProcessId']) { $candidateProcess.ProcessId } else { $null }
+        $executablePath = if ($candidateProcess.PSObject.Properties['ExecutablePath']) { [string]$candidateProcess.ExecutablePath } else { '' }
+        $commandLine = if ($candidateProcess.PSObject.Properties['CommandLine']) { [string]$candidateProcess.CommandLine } else { '' }
+        $reason = $null
+        $executable = $null
+        if ($executablePath -and [IO.Path]::IsPathRooted($executablePath.Replace('/', '\'))) {
+            try {
+                $executable = [IO.Path]::GetFullPath($executablePath.Replace('/', '\'))
+                $physicalExecutable = [FestaFiestaBuildIsolation.NativeMethods]::PhysicalPath($executable)
+                if ($physicalExecutable.StartsWith($physicalRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                    $reason = 'ExecutableInCheckout'
+                }
+            } catch {
+                # An unavailable executable cannot prove a different directory.
+                # Resolve its existing parent when a process exits during the query.
+                try {
+                    $physicalParent = [FestaFiestaBuildIsolation.NativeMethods]::PhysicalPath([IO.Path]::GetDirectoryName($executable))
+                    if ($physicalParent -ieq $physicalRoot -or
+                        $physicalParent.StartsWith($physicalRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                        $reason = 'ExecutableInCheckout'
+                    }
+                } catch { }
+            }
+        }
+        if (-not $reason -and $processName -like 'UnrealEditor*.exe' -and $commandLine) {
+            try { $tokens = @([FestaFiestaBuildIsolation.NativeMethods]::SplitCommandLine($commandLine)) }
+            catch {
+                if ($commandLine.IndexOf($selectedName, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                    $reason = 'UnresolvedProjectPath'
+                }
+                $tokens = @()
+            }
+            for ($index = 0; -not $reason -and $index -lt $tokens.Count; $index++) {
+                $token = [string]$tokens[$index]
+                $projectArgument = $null
+                if ($token -match '^-project=(.+)$') { $projectArgument = $Matches[1] }
+                elseif ($token -ieq '-project' -and $index + 1 -lt $tokens.Count) {
+                    $index++
+                    $projectArgument = [string]$tokens[$index]
+                }
+                elseif (-not $token.StartsWith('-') -and $token.EndsWith('.uproject', [StringComparison]::OrdinalIgnoreCase)) {
+                    $projectArgument = $token
+                }
+                elseif (-not $token.StartsWith('-') -and $token -ieq $selectedStem) {
+                    $reason = 'UnresolvedProjectPath'
+                }
+                if (-not $projectArgument -or -not $projectArgument.EndsWith('.uproject', [StringComparison]::OrdinalIgnoreCase)) { continue }
+                $projectArgument = $projectArgument.Replace('/', '\')
+                $sameName = [IO.Path]::GetFileName($projectArgument) -ieq $selectedName
+                # CIM has no working-directory field. Do not guess it from the
+                # launcher's cwd or mistake a bare filename for another checkout.
+                if ($projectArgument -notmatch '^(?:[A-Za-z]:\\|\\\\)') {
+                    if ($sameName) { $reason = 'UnresolvedProjectPath' }
+                    continue
+                }
+                try {
+                    $projectDirectory = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($projectArgument))
+                    $physicalProjectDirectory = [FestaFiestaBuildIsolation.NativeMethods]::PhysicalPath($projectDirectory).TrimEnd('\')
+                    if ($physicalProjectDirectory -ieq $physicalRoot) { $reason = 'EditorUsingCheckout' }
+                } catch {
+                    if ($sameName) { $reason = 'UnresolvedProjectPath' }
+                }
+            }
+        }
+        elseif (-not $reason -and $processName -like 'UnrealEditor*.exe' -and -not $commandLine) {
+            $reason = 'UnresolvedEditorProject'
+        }
+        if ($reason) {
+            [pscustomobject]@{ Name = $processName; ProcessId = $processIdValue; Reason = $reason }
+        }
+    }
+}
+
+function Assert-FFProjectBuildAvailable {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string] $ProjectFile)
+    $processes = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop)
+    $blockers = @(Get-FFProjectBuildBlockers -ProjectFile $ProjectFile -Processes $processes)
+    if ($blockers.Count -gt 0) {
+        $details = ($blockers | ForEach-Object { '  - {0} (PID {1}; {2})' -f $_.Name, $_.ProcessId, $_.Reason }) -join [Environment]::NewLine
+        throw ("The selected build checkout is in use or its editor project path is unresolved:$([Environment]::NewLine)$details$([Environment]::NewLine)" +
+            'Preserve unsaved work. Close only an editor/game using this checkout; an unresolved relative project path must first be distinguished using an absolute path.')
+    }
+}
+
 function Set-FFProjectFileOverride {
     [CmdletBinding()]
     param(
@@ -656,6 +819,7 @@ function Write-FFSizeReport {
 }
 
 Export-ModuleMember -Function @(
+    'Assert-FFProjectBuildAvailable',
     'Set-FFProjectFileOverride',
     'Get-FFProjectRoot',
     'Get-FFProjectFile',
