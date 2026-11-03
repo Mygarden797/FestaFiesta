@@ -336,17 +336,9 @@ if ($driveInfo.AvailableFreeSpace -lt 10GB) {
         ($driveInfo.AvailableFreeSpace / 1GB), $outputDriveRoot)
 }
 
-# A clean build deletes the project's editor DLLs; an open editor (or a game
-# started from Binaries) holds them and fails UAT only after validation ran.
-$projectFileName = [System.IO.Path]::GetFileName($projectFile)
-$lockingProcesses = @(Get-CimInstance Win32_Process | Where-Object {
-        ($_.Name -like 'UnrealEditor*.exe' -and [string]$_.CommandLine -like "*$projectFileName*") -or
-        ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($projectRoot, [System.StringComparison]::OrdinalIgnoreCase))
-    })
-if ($lockingProcesses.Count -gt 0) {
-    $processText = ($lockingProcesses | ForEach-Object { "  - $($_.Name) (PID $($_.ProcessId))" }) -join [Environment]::NewLine
-    throw "Close the editor/game using this project before packaging:$([Environment]::NewLine)$processText"
-}
+# Identify the physical checkout: another FestaFiesta checkout has independent
+# editor/game binaries, while an alias of this checkout still holds our files.
+Assert-FFProjectBuildAvailable -ProjectFile $projectFile
 
 Assert-FFAssetsMaterialized
 $gitLfsVersion = Assert-FFGitLfsHealth -MinimumVersion ([string]$toolchainLock.sourceControl.gitLfsMinimum)
@@ -505,6 +497,11 @@ try {
         "-clientconfig=$Configuration",
         '-nodebuginfo',
         '-makebinaryconfig',
+        # Run-AutomationTests has already built and validated this Editor target.
+        # Preserve it for the cooker; UAT's clean/build agenda needs only the game.
+        # UBT checks the engine-wide Live Coding mutex for Editor targets even
+        # when their project modules belong to independent checkouts.
+        '-nocompileeditor',
         '-build',
         '-cook',
         '-stage',
@@ -520,6 +517,10 @@ try {
         $uatArguments += '-clean'
     }
 
+    # Validation can take long enough for a user to open this checkout afterward.
+    $currentPhase = 'pre-uat-process-check'
+    $currentLog = $null
+    Assert-FFProjectBuildAvailable -ProjectFile $projectFile
     Write-Host 'Running Unreal AutomationTool BuildCookRun...'
     $currentPhase = 'build-cook-stage-package-archive'
     $currentLog = 'Logs/BuildCookRun.log'

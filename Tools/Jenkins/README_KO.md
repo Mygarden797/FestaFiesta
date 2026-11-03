@@ -116,7 +116,9 @@ Job은 `TZ=Asia/Seoul`과 `0 19 * * *`로 예약한다. 실행 중 중복 Job을
 & 'C:\FestaFiestaCI\scripts\Manage-FestaFiestaJenkins.ps1' -Action Build
 ```
 
-19시 전에 `FestaFiesta.uproject`를 연 Unreal Editor, Live Coding, 실행 중인 해당 게임을 종료한다. 현재 패키징 사전 검사는 프로젝트 파일명으로 에디터를 찾으므로, 다른 checkout의 같은 프로젝트 에디터도 빌드를 막을 수 있다. 자동화가 개발 에디터를 강제 종료하지는 않는다.
+빌드 중에는 전용 checkout `C:\FFCI\Dev`의 에디터나 게임을 열지 않는다. 사전 검사는 프로젝트 파일명 대신 실제 물리 경로를 대조하므로, 다른 개발 checkout의 에디터·Live Coding은 유지할 수 있다. junction이나 symlink처럼 경로만 다르고 실제 파일이 같은 checkout은 사용 중으로 판정한다. 이 검사를 시작 시점과 UAT 직전에 반복하며, 자동화가 개발 에디터를 강제 종료하지는 않는다.
+
+검증 단계에서 CI의 Development Editor를 먼저 빌드하고 자동 검사·데이터 검사를 수행한다. 이후 UAT에는 공식 `-nocompileeditor`를 전달해 방금 검증한 Editor DLL을 보존하고 Cook에 사용한다. 배포용 게임 타깃의 clean build, Cook, 패키지·그래픽 실행 검증은 그대로 수행한다. 별도 checkout에서 열린 개발 에디터 때문에 공유 엔진 실행 파일의 Live Coding mutex에 걸려 CI Editor를 다시 빌드하지 못하는 상황을 피하는 구성이다.
 
 ## 처음 검증할 때
 
