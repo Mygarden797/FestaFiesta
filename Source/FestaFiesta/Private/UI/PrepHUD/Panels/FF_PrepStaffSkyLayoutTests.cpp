@@ -75,7 +75,6 @@ namespace FFPrepStaffSkyLayoutTest
 		const TPair<const TCHAR*, const TCHAR*> ManagementValues[] = {
 			{ TEXT("Text_Phase"), TEXT("셋업") },
 			{ TEXT("Text_TotalStaff"), TEXT("6명") },
-			{ TEXT("Text_StaffBreakdown"), TEXT("기본 6 · 고용 0") },
 			{ TEXT("Text_SecondValue"), TEXT("6명") },
 			{ TEXT("Text_ThirdValue"), TEXT("0명") },
 			{ TEXT("Text_FourthValue"), TEXT("6명") },
@@ -211,9 +210,25 @@ namespace FFPrepStaffSkyLayoutTest
 			Contains(CurrentRect, ScrollRect) && ScrollRect.GetSize().Y > 100.f);
 		CheckText(Test, Panel, TEXT("Text_PanelTitle"), HeaderRect, Context);
 		CheckText(Test, Panel, TEXT("Text_HireAction"), HireButton->GetCachedGeometry().GetLayoutBoundingRect(), Context);
-		CheckText(Test, Panel, TEXT("Text_DailyNotice"), FooterRect, Context);
-		for (const TCHAR* Name : { TEXT("Text_TotalStaff"), TEXT("Text_StaffBreakdown"),
-			TEXT("Text_SecondValue"), TEXT("Text_ThirdValue"), TEXT("Text_FourthValue"), TEXT("Text_ManagementNote") })
+		// The current prep design keeps the hire-duration explanation in the button
+		// tooltip. Its retired footer text must not consume layout space.
+		auto* DailyNotice = Cast<UTextBlock>(Panel.GetWidgetFromName(TEXT("Text_DailyNotice")));
+		if (!Test.TestNotNull(Context + TEXT(" 고용 기간 원문"), DailyNotice)) { return false; }
+		Test.TestEqual(Context + TEXT(" 반복 고용 안내는 본문에서 접는다"),
+			DailyNotice->GetVisibility(), ESlateVisibility::Collapsed);
+		Test.TestTrue(Context + TEXT(" 고용 기간 안내 원문을 보존한다"), !DailyNotice->GetText().IsEmpty());
+		Test.TestEqual(Context + TEXT(" 실제 고용 버튼의 툴팁에 기간 안내를 제공한다"),
+			HireButton->GetToolTipText().ToString(), DailyNotice->GetText().ToString());
+		for (const TCHAR* Name : { TEXT("Text_StaffBreakdown"), TEXT("Text_ManagementNote") })
+		{
+			auto* RetiredText = Cast<UTextBlock>(Management->GetWidgetFromName(Name));
+			if (!Test.TestNotNull(Context + TEXT(" / ") + Name, RetiredText)) { return false; }
+			Test.TestEqual(Context + TEXT(" 준비 단계의 반복 설명은 접는다 / ") + Name,
+				RetiredText->GetVisibility(), ESlateVisibility::Collapsed);
+			Test.TestTrue(Context + TEXT(" 준비 단계의 반복 설명은 비운다 / ") + Name, RetiredText->GetText().IsEmpty());
+		}
+		for (const TCHAR* Name : { TEXT("Text_TotalStaff"), TEXT("Text_SecondValue"),
+			TEXT("Text_ThirdValue"), TEXT("Text_FourthValue") })
 		{
 			CheckText(Test, *Management, Name, BodyRect, Context);
 		}

@@ -126,10 +126,24 @@ bool FFFBuildDesignerPreviewTest::RunTest(const FString& Parameters)
                 }
             }
             if (PreviewName == TEXT("Catalog"))
-                if (auto* Tiles = Cast<UListViewBase>(Preview->GetWidgetFromName(TEXT("TileView_Facilities"))))
+            {
+                if (Preview->GetWidgetFromName(TEXT("Overlay_V9Catalog")))
+                    for (const TCHAR* HiddenName : {TEXT("Panel_V9Retired"), TEXT("Popup_V9Filters"), TEXT("Popup_V9More")})
+                    {
+                        UWidget* Hidden = Preview->GetWidgetFromName(HiddenName);
+                        if (TestNotNull(TEXT("Designer V9 conditional surface"), Hidden))
+                            TestTrue(FString(HiddenName) + TEXT(" does not cover the Designer catalog"), Hidden->bHiddenInDesigner);
+                    }
+                auto* Tiles = Cast<UListViewBase>(Preview->GetWidgetFromName(TEXT("TileView_Facilities")));
+                if (TestNotNull(TEXT("Designer facility list"), Tiles))
+                {
+                    TestTrue(TEXT("Designer facility list has a rendered area"), Tiles->GetCachedGeometry().GetLocalSize().GetMin() > 0.f);
+                    TestTrue(TEXT("Designer facility list supplies preview entries"), Tiles->GetDisplayedEntryWidgets().Num() > 0);
+                    bool bCheckedThumbnail = false;
                     for (UUserWidget* Entry : Tiles->GetDisplayedEntryWidgets())
                         if (auto* Thumbnail = Cast<UImage>(Entry->GetWidgetFromName(TEXT("Image_Thumbnail"))))
                         {
+                            bCheckedThumbnail = true;
                             AddInfo(FString::Printf(TEXT("Catalog designer thumbnail: brush=%s desired=%s geometry=%s hidden=%d resource=%s"),
                                 *FVector2D(Thumbnail->GetBrush().ImageSize).ToString(), *Thumbnail->GetDesiredSize().ToString(),
                                 *Thumbnail->GetCachedGeometry().GetLocalSize().ToString(), Thumbnail->bHiddenInDesigner,
@@ -147,6 +161,9 @@ bool FFFBuildDesignerPreviewTest::RunTest(const FString& Parameters)
                                     Placeholder->GetCachedGeometry().GetLocalSize().GetMin() > 0.f);
                             break;
                         }
+                    TestTrue(TEXT("Designer preview validates an actual thumbnail entry"), bCheckedThumbnail);
+                }
+            }
             if (PreviewName == TEXT("BuildSettings"))
                 for (const TCHAR* LabelName : {TEXT("Text_SettingsGrid"), TEXT("Text_SettingsFacilityRanges"),
                     TEXT("Text_SettingsSynergyPreview"), TEXT("Text_SettingsDirectAdjustment"),

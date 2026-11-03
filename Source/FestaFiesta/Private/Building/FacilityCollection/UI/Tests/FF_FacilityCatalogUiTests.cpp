@@ -1,18 +1,20 @@
 // FF_FacilityCatalogUiTests.cpp
 // 역할: 시설 도감의 동작과 저장된 화면 연결을 자동 검증한다.
 
-// Verifies the additive codex button in the saved production facility catalog.
+// Verifies the saved catalog header and the codex/ranking actions in its More popup.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
+#include "Components/Border.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
 #include "Editor.h"
 #include "Engine/Texture2D.h"
 #include "Engine/TextureRenderTarget2D.h"
@@ -109,23 +111,25 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 	}
 	if (UWidget* Compact = Panel->GetWidgetFromName(TEXT("Panel_PlacementCompact"))) Compact->SetVisibility(ESlateVisibility::Collapsed);
 
-	auto* CodexRow = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("Row_BuildCodexCategory")));
-	auto* CategoryScroll = Cast<UScrollBox>(Panel->GetWidgetFromName(TEXT("ScrollBox_Categories")));
-	auto* CategorySize = Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_CategoryRow")));
+	auto* Header = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("Row_V9CatalogHeader")));
+	auto* More = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_V9More")));
+	auto* MorePopup = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Popup_V9More")));
+	auto* MoreColumn = Cast<UVerticalBox>(Panel->GetWidgetFromName(TEXT("Column_V9More")));
+	auto* Categories = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Categories")));
 	auto* Search = Cast<UEditableTextBox>(Panel->GetWidgetFromName(TEXT("Search_Facilities")));
 	auto* Launcher = Cast<UFF_FacilityCodexLauncher>(Panel->GetWidgetFromName(TEXT("Widget_FacilityCodexCatalogLauncher")));
 	auto* Ranking = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_RevenueRanking")));
-	auto* SubcategoryHeader = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_SubcategoryHeader")));
 	auto* SearchBounds = Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_PearlSearch")));
 	auto* RankingBounds = Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_PearlRevenueRanking")));
 	auto* Tiles = Cast<UFF_PrepBuildTileView>(Panel->GetWidgetFromName(TEXT("TileView_Facilities")));
-	if (!TestNotNull(TEXT("Pinned bottom codex tab row"), CodexRow) ||
-		!TestNotNull(TEXT("Category filters retain their scrollbox"), CategoryScroll) ||
-		!TestNotNull(TEXT("Category row retains its designer sizebox"), CategorySize) ||
+	if (!TestNotNull(TEXT("Current compact catalog header"), Header) ||
+		!TestNotNull(TEXT("Current More action"), More) ||
+		!TestNotNull(TEXT("Saved More popup"), MorePopup) ||
+		!TestNotNull(TEXT("Saved additional-action column"), MoreColumn) ||
+		!TestNotNull(TEXT("Saved icon category controls"), Categories) ||
 		!TestNotNull(TEXT("Existing search field"), Search) ||
 		!TestNotNull(TEXT("Added catalog codex launcher"), Launcher) ||
 		!TestNotNull(TEXT("Added revenue ranking action"), Ranking) ||
-		!TestNotNull(TEXT("Pearl search and ranking row"), SubcategoryHeader) ||
 		!TestNotNull(TEXT("Search bounds"), SearchBounds) ||
 		!TestNotNull(TEXT("Ranking bounds"), RankingBounds) ||
 		!TestNotNull(TEXT("Actual facility tile view"), Tiles)) return false;
@@ -137,17 +141,18 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 		TEXT("Size_CategoryDivider"), TEXT("Panel_PlacementCompact"), TEXT("Text_CategoryBreadcrumb")})
 		TestNull(*FString::Printf(TEXT("Retired catalog presentation is removed: %s"), Retired), Panel->GetWidgetFromName(Retired));
 	TestTrue(TEXT("Additive entry is the saved compact launcher class"), Launcher->GetClass() == LauncherClass);
-	TestTrue(TEXT("Search, ranking and codex share the action row below the category filters"),
-        // 검색 힌트용 Overlay가 입력창을 감싸므로 직접 부모 대신 저작된 크기 영역의 소속을 검사한다.
-        IsWithin(Search, SearchBounds) && SearchBounds->GetParent() == SubcategoryHeader &&
-		// The revenue introduction badge adds a noninteractive overlay inside its bounds.
-		IsWithin(Ranking, RankingBounds) && RankingBounds->GetParent() == SubcategoryHeader &&
-		Launcher->GetParent() == CodexRow &&
-		CategoryScroll->GetParent() == Panel->GetWidgetFromName(TEXT("Size_BuildCodexCategoryViewport")) &&
-		CodexRow->GetParent() == SubcategoryHeader &&
-		Panel->GetWidgetFromName(TEXT("Size_BuildCodexCategoryViewport"))->GetParent() == CategorySize);
-	TestEqual(TEXT("Revenue ranking immediately follows search"),
-		SubcategoryHeader->GetChildIndex(RankingBounds), SubcategoryHeader->GetChildIndex(SearchBounds) + 1);
+	// search-v9 deliberately moved secondary actions out of the compact header.
+	// Exercise the real More button instead of forcing archived rows to be visible.
+	TestTrue(TEXT("Search and More retain their authored compact header"),
+		IsWithin(Search, SearchBounds) && SearchBounds->GetParent() == Header && IsWithin(More, Header));
+	TestTrue(TEXT("Ranking and codex retain their authored popup, not the archived search row"),
+		IsWithin(Ranking, RankingBounds) && RankingBounds->GetParent() == MoreColumn &&
+		Launcher->GetParent() == MoreColumn && MorePopup->GetContent() == MoreColumn);
+	TestEqual(TEXT("Codex follows ranking in the popup"),
+		MoreColumn->GetChildIndex(Launcher), MoreColumn->GetChildIndex(RankingBounds) + 1);
+	TestEqual(TEXT("More popup is collapsed before opening"), MorePopup->GetVisibility(), ESlateVisibility::Collapsed);
+	More->OnClicked.Broadcast();
+	TestEqual(TEXT("The real header button opens More"), MorePopup->GetVisibility(), ESlateVisibility::Visible);
 	auto* Button = Cast<UButton>(Launcher->GetWidgetFromName(TEXT("Button_OpenCodex")));
 	auto* Label = Button ? Cast<UTextBlock>(Button->GetContent()) : nullptr;
 	if (!TestNotNull(TEXT("Compact launcher button"), Button) || !TestNotNull(TEXT("Authored button label"), Label)) return false;
@@ -231,11 +236,11 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 				TestFalse(TEXT("Codex button does not overlap search"), Overlaps(SearchRect, ButtonRect));
 				TestFalse(TEXT("Codex button does not overlap ranking"), Overlaps(ButtonRect, RankingRect));
 				TestFalse(TEXT("Search does not overlap ranking"), Overlaps(SearchRect, RankingRect));
-				TestTrue(TEXT("Codex action follows ranking on the search row"),
-					ButtonRect.Left >= RankingRect.Right - 1.f &&
-					FMath::IsNearlyEqual(ButtonRect.GetCenter().Y, SearchRect.GetCenter().Y, 1.f));
-				TestTrue(TEXT("Codex action remains inside its authored action row"),
-					Contains(SubcategoryHeader->GetPaintSpaceGeometry().GetLayoutBoundingRect(), ButtonRect));
+				TestTrue(TEXT("Codex action follows ranking vertically in the More popup"),
+					ButtonRect.Top >= RankingRect.Bottom - 1.f);
+				const FSlateRect PopupRect = MorePopup->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+				TestTrue(TEXT("The popup and both actions stay inside their authored bounds"),
+					Contains(Viewport, PopupRect) && Contains(PopupRect, ButtonRect) && Contains(PopupRect, RankingRect));
 				TestTrue(TEXT("Complete button label stays inside its button"), Contains(ButtonRect, LabelRect));
 				for (UTextBlock* ActionLabel : { Label, Cast<UTextBlock>(Ranking->GetContent()) })
 				{
@@ -261,6 +266,13 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("Catalog header screenshot saved"), FFileHelper::SaveArrayToFile(Png, *Path));
 			AddInfo(FString::Printf(TEXT("Saved catalog header: %s (project DPI %.3f)"), *FPaths::ConvertRelativePathToFull(Path), Dpi));
 			// Repeated paints must preserve both adjacent actions and their labels.
+			Paint();
+			CheckBounds();
+			More->OnClicked.Broadcast();
+			TestEqual(TEXT("More closes through its real header action"), MorePopup->GetVisibility(), ESlateVisibility::Collapsed);
+			Paint();
+			More->OnClicked.Broadcast();
+			TestEqual(TEXT("More can be reopened without rebuilding the catalog"), MorePopup->GetVisibility(), ESlateVisibility::Visible);
 			Paint();
 			CheckBounds();
 		}

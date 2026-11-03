@@ -99,8 +99,27 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("Screen instance"), Screen.Get()) || !TestNotNull(TEXT("Inspector instance"), Inspector.Get())) return false;
     const TSharedRef<SWidget> Slate = Screen->TakeWidget();
     auto* Launcher = Cast<UFF_FacilityCodexLauncher>(Inspector->GetWidgetFromName(TEXT("Widget_FacilityCodexLauncher")));
-    TestTrue(TEXT("Inspector's original synergy section contains authored codex launcher"), Launcher &&
-        Launcher->GetParent() == Inspector->GetWidgetFromName(TEXT("Panel_SynergySection")));
+    // The compact V10 inspector deliberately archives its duplicate launcher;
+    // the active catalog exposes the same feature through the V9 More popup.
+    const auto IsWithin = [](const UWidget* Widget, const UWidget* Container)
+    {
+        for (const UWidget* Current = Widget; Current; Current = Current->GetParent())
+            if (Current == Container) return true;
+        return false;
+    };
+    const UWidget* RetiredInspector = Inspector->GetWidgetFromName(TEXT("Panel_V10Retired"));
+    TestTrue(TEXT("Inspector's retired launcher remains in its collapsed compatibility archive"),
+        Launcher && RetiredInspector && RetiredInspector->GetVisibility() == ESlateVisibility::Collapsed &&
+        IsWithin(Launcher, RetiredInspector));
+    auto* CatalogClass = Cast<UWidgetBlueprintGeneratedClass>(
+        FSoftClassPath(FFBuildUIAssetPaths::BuildPanelClass).TryLoadClass<UUserWidget>());
+    const UWidgetTree* CatalogTree = CatalogClass ? CatalogClass->GetWidgetTreeArchetype() : nullptr;
+    if (!TestNotNull(TEXT("The current catalog retains its authored codex entry point"), CatalogTree)) return false;
+    const auto* CatalogLauncher = Cast<UFF_FacilityCodexLauncher>(CatalogTree->FindWidget(TEXT("Widget_FacilityCodexCatalogLauncher")));
+    const UWidget* MoreColumn = CatalogTree->FindWidget(TEXT("Column_V9More"));
+    TestTrue(TEXT("The active codex launcher belongs to the production More popup"),
+        CatalogLauncher && MoreColumn && IsWithin(CatalogLauncher, MoreColumn) &&
+        IsWithin(MoreColumn, CatalogTree->FindWidget(TEXT("Popup_V9More"))));
     auto* Tile = Cast<UTileView>(Screen->GetWidgetFromName(TEXT("TileView_Entries")));
     auto* Search = Cast<UEditableTextBox>(Screen->GetWidgetFromName(TEXT("Search_Entries")));
     auto* Close = Cast<UButton>(Screen->GetWidgetFromName(TEXT("Button_Close")));

@@ -2,7 +2,7 @@
 
 // Festival 골드 변경이 카탈로그 읽기 모델과 화면 표시까지 전달되는 계약을 검증한다.
 // 흐름: 테스트 GameInstance/진행 상태 구성 -> 카탈로그 화면 생성 -> 골드 변경 전후 텍스트 확인.
-// 불변식: 저장된 WBP 유무와 무관하게 디자이너 경로와 네이티브 폴백은 같은 골드를 보여야 한다.
+// 불변식: 남아 있는 네이티브 안전 화면은 실제 골드를 표시하고 현재 PrepBuild 디자인은 바꾸지 않는다.
 // 실패/수명: 자동화용 클래스 override와 Root 객체는 테스트 범위를 벗어나기 전에 원상 복구한다.
 
 #include "Building/UI/FF_BuildCatalogScreen.h"
@@ -14,7 +14,6 @@
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/FF_BuildCatalogTypes.h"
-#include "Components/HorizontalBox.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "FF_FFZSFacilityDefinition.h"
@@ -24,30 +23,6 @@
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
-
-namespace
-{
-	// Unity 빌드는 여러 cpp의 익명 네임스페이스를 합치므로 보조 함수 이름을 파일 고유하게 유지한다.
-	class FScopedBuildCatalogPlayerlessWidgetInitialization
-	{
-	public:
-		explicit FScopedBuildCatalogPlayerlessWidgetInitialization(UWidgetBlueprintGeneratedClass& InClass)
-			: WidgetClass(InClass)
-			, bPreviousValue(InClass.bCanCallInitializedWithoutPlayerContext)
-		{
-			WidgetClass.bCanCallInitializedWithoutPlayerContext = true;
-		}
-
-		~FScopedBuildCatalogPlayerlessWidgetInitialization()
-		{
-			WidgetClass.bCanCallInitializedWithoutPlayerContext = bPreviousValue;
-		}
-
-	private:
-		UWidgetBlueprintGeneratedClass& WidgetClass;
-		bool bPreviousValue;
-	};
-}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_BuildCatalogCurrentGoldTest,
@@ -151,45 +126,33 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 	TestDefinition->FacilityCostTable = OriginalCostTable;
 	TestDefinition->FacilityDemolitionRefundRate = 0.5f;
 
-	const TCHAR* ScreenClassPath =
-		FFBuildUIAssetPaths::CatalogScreenClass;
-	UWidgetBlueprintGeneratedClass* ScreenClass =
-		Cast<UWidgetBlueprintGeneratedClass>(LoadObject<UClass>(nullptr, ScreenClassPath));
-	TestNotNull(TEXT("Build catalog WBP generated class loads"), ScreenClass);
-	if (!ScreenClass)
+	// The saved full-screen catalog is intentionally retired. Keep the native
+	// fallback's economy/lifetime coverage without recreating its old gold header
+	// in the production PrepBuild panel.
+	UWidgetBlueprintGeneratedClass* PanelClass = Cast<UWidgetBlueprintGeneratedClass>(
+		LoadObject<UClass>(nullptr, FFBuildUIAssetPaths::BuildPanelClass));
+	TestNotNull(TEXT("The current production PrepBuild WBP loads"), PanelClass);
+	if (!PanelClass)
 	{
 		return false;
 	}
-
-	// 기존 팀 WBP에는 기능 노드를 저장하지 않습니다. 인스턴스에만 추가되는지와 패키지 dirty
-	// 상태가 바뀌지 않는지를 함께 고정해 런타임 확장이 에셋을 오염시키는 회귀를 막습니다.
-	const UWidgetTree* ArchetypeTree = ScreenClass->GetWidgetTreeArchetype();
-	UHorizontalBox* ArchetypeTopBar = ArchetypeTree
-		? Cast<UHorizontalBox>(ArchetypeTree->FindWidget(TEXT("Top_Bar")))
-		: nullptr;
-	TestNotNull(TEXT("Production catalog WBP exposes its existing Top_Bar archetype"), ArchetypeTopBar);
-	TestNull(TEXT("Production catalog WBP is not modified with a persisted Gold panel"),
-		ArchetypeTree ? ArchetypeTree->FindWidget(TEXT("Gold_Size")) : nullptr);
-	TestNull(TEXT("Production catalog WBP is not modified with a persisted Gold text"),
-		ArchetypeTree ? ArchetypeTree->FindWidget(TEXT("TXT_Gold")) : nullptr);
-	const int32 ArchetypeTopBarChildCount = ArchetypeTopBar
-		? ArchetypeTopBar->GetChildrenCount()
-		: INDEX_NONE;
-	const bool bPackageWasDirty = ScreenClass->GetOutermost()->IsDirty();
-
-	// 자동화 Game 월드는 LocalPlayer를 만들지 않는다. 다른 테스트나 PIE가 클래스를 재사용하기 전에
-	// 이 범위 한정 override를 원래 값으로 복구한다.
-	FScopedBuildCatalogPlayerlessWidgetInitialization PlayerlessInitializationGuard(*ScreenClass);
-	UFF_BuildCatalogScreen* Screen = CreateWidget<UFF_BuildCatalogScreen>(World, ScreenClass);
-	TestNotNull(TEXT("Build catalog screen can be created in the isolated Game world"), Screen);
+	const UWidgetTree* ArchetypeTree = PanelClass->GetWidgetTreeArchetype();
+	if (!TestNotNull(TEXT("The current production panel retains its authored tree"), ArchetypeTree)) return false;
+	TArray<UWidget*> ArchetypeWidgets;
+	ArchetypeTree->GetAllWidgets(ArchetypeWidgets);
+	const int32 ArchetypeWidgetCount = ArchetypeWidgets.Num();
+	const bool bPackageWasDirty = PanelClass->GetOutermost()->IsDirty();
+	TestNull(TEXT("The retired full-screen Gold display is absent from the production panel"),
+		ArchetypeTree->FindWidget(TEXT("TXT_Gold")));
+	UFF_BuildCatalogScreen* Screen = CreateWidget<UFF_BuildCatalogScreen>(World, UFF_BuildCatalogScreen::StaticClass());
+	TestNotNull(TEXT("Native fallback catalog can be created in the isolated Game world"), Screen);
 	if (!Screen)
 	{
 		return false;
 	}
 
 	TSharedPtr<SWidget> ScreenSlateWidget = Screen->TakeWidget();
-	TestNotNull(TEXT("Runtime screen injects Gold_Size into its own WidgetTree"),
-		Screen->GetWidgetFromName(TEXT("Gold_Size")));
+	TestFalse(TEXT("The compatibility catalog uses its native Slate fallback"), Screen->IsUsingDesignerWidgetTree());
 	const FText InitialExpected = FText::Format(
 		FText::FromString(TEXT("{0} Gold")), FText::AsNumber(12'345));
 	TestTrue(TEXT("Top-right Gold display uses the actual current balance"),
@@ -210,13 +173,14 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("NativeDestruct removes the screen's Read Model subscription"),
 		EconomyReadModel->OnGoldChanged.IsAlreadyBound(
 			Screen, &UFF_BuildCatalogScreen::HandleGoldChanged));
-	TestEqual(TEXT("Runtime extension preserves the WBP Top_Bar archetype child count"),
-		ArchetypeTopBar ? ArchetypeTopBar->GetChildrenCount() : INDEX_NONE,
-		ArchetypeTopBarChildCount);
-	TestNull(TEXT("Runtime extension never adds Gold_Size to the WBP archetype"),
-		ArchetypeTree ? ArchetypeTree->FindWidget(TEXT("Gold_Size")) : nullptr);
-	TestEqual(TEXT("Runtime extension preserves the production WBP package dirty state"),
-		ScreenClass->GetOutermost()->IsDirty(), bPackageWasDirty);
+	ArchetypeWidgets.Reset();
+	ArchetypeTree->GetAllWidgets(ArchetypeWidgets);
+	TestEqual(TEXT("Native fallback preserves the active panel's authored widget count"),
+		ArchetypeWidgets.Num(), ArchetypeWidgetCount);
+	TestNull(TEXT("Native fallback never adds its Gold panel to the production WBP"),
+		ArchetypeTree->FindWidget(TEXT("Gold_Size")));
+	TestEqual(TEXT("Native fallback preserves the production WBP package dirty state"),
+		PanelClass->GetOutermost()->IsDirty(), bPackageWasDirty);
 	return true;
 }
 

@@ -7,6 +7,7 @@
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Components/Button.h"
 #include "Components/ScrollBox.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/WrapBox.h"
 #include "Editor.h"
@@ -330,6 +331,23 @@ bool FFF_PrepPromotionSkyLayoutTest::RunTest(const FString& Parameters)
 	};
 	TStrongObjectPtr<UFF_PrepPanelPromotion> Panel(CreateWidget<UFF_PrepPanelPromotion>(World, PanelClass));
 	if (!TestNotNull(TEXT("홍보 패널 검사 인스턴스"), Panel.Get())) { return false; }
+	{
+		// A disabled Designer minimum may retain an old numeric value. Switching
+		// presentation modes must restore that disabled state, not reactivate it.
+		TStrongObjectPtr<UFF_PrepPromotionCard> Card(CreateWidget<UFF_PrepPromotionCard>(Panel.Get(), CardClass));
+		if (!TestNotNull(TEXT("카드 최소 높이 설정 보존 인스턴스"), Card.Get())) { return false; }
+		auto* Bounds = Cast<USizeBox>(Card->GetWidgetFromName(TEXT("SizeBox_Card")));
+		if (!TestNotNull(TEXT("카드 원본 크기 설정"), Bounds)) { return false; }
+		Bounds->SetMinDesiredHeight(320.f);
+		Bounds->ClearMinDesiredHeight();
+		const FFF_PromotionOptionView Option;
+		Card->ConfigureOption(Option, FText::FromString(TEXT("홍보 없음")), false);
+		TestFalse(TEXT("일반 카드는 Designer에서 해제한 최소 높이를 되살리지 않는다"), Bounds->IsMinDesiredHeightOverride());
+		Card->ConfigureOption(Option, FText::FromString(TEXT("홍보 없음")), true);
+		TestTrue(TEXT("간소화 카드는 전용 최소 높이를 적용한다"), Bounds->IsMinDesiredHeightOverride());
+		Card->ConfigureOption(Option, FText::FromString(TEXT("홍보 없음")), false);
+		TestFalse(TEXT("일반 모드로 돌아오면 원본 최소 높이 해제 상태를 복원한다"), Bounds->IsMinDesiredHeightOverride());
+	}
 	const TSharedRef<SOverlay> Surface = SNew(SOverlay)
 		+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Fill)[Panel->TakeWidget()];
 	if (!SetFixture(*this, *Panel, CardClass, false, false)) { return false; }

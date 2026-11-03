@@ -5,6 +5,7 @@
 #include "Components/Button.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Engine/GameInstance.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/Core/FF_UIRootLayout.h"
@@ -104,6 +105,26 @@ TOptional<int32> FFF_PrepPromotionRules::ResolveSummaryBalance(
 void UFF_PrepPanelPromotion::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	if (bUseCompactLayout)
+	{
+		// The purchased-status row adds 25px to the fixed footer. Recover 8px
+		// from the old intro gaps so complete cards remain visible at 1140x620.
+		// Preserve custom Designer spacing instead of rewriting every slot.
+		const auto AdjustCompactIntroGap = [](UTextBlock* Text, const float Previous, const float Current)
+		{
+			if (auto* Slot = Text ? Cast<UVerticalBoxSlot>(Text->Slot) : nullptr)
+			{
+				FMargin Padding = Slot->GetPadding();
+				if (FMath::IsNearlyEqual(Padding.Bottom, Previous))
+				{
+					Padding.Bottom = Current;
+					Slot->SetPadding(Padding);
+				}
+			}
+		};
+		AdjustCompactIntroGap(Text_OnceNotice, 16.f, 12.f);
+		AdjustCompactIntroGap(Text_ForecastBasis, 12.f, 8.f);
+	}
 
 	// 홍보가 반영된 예상 방문객은 군중 유입에도 전달된다. 예상치와 실제 입장 인원은 구분한다.
 	SetTextOrHide(Text_NotAppliedNotice, NotAppliedNoticeText);

@@ -10,7 +10,6 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
-#include "Components/ScrollBox.h"
 #include "Building/FacilityInfo/FF_FacilityInfoPanel.h"
 #include "Building/FacilityInfo/FF_FacilityInfoSubsystem.h"
 #include "ImageUtils.h"
@@ -190,19 +189,28 @@ bool FFFBuildToolsForegroundViewportTest::RunTest(const FString& Parameters)
     Inspector->SetInfoPage(EFF_FacilityInfoPage::Queue);
     Build->State = EFF_BuildModeState::Moving;
     Tools->RefreshTools();
-    auto* Scroll = Cast<UScrollBox>(Inspector->GetWidgetFromName(TEXT("ScrollBox_Details")));
+    UWidget* InspectorFrame = Inspector->GetWidgetFromName(TEXT("Panel_Size"));
+    UWidget* PageBody = Inspector->GetWidgetFromName(TEXT("Body_Surface"));
+    UWidget* QueuePage = Inspector->GetWidgetFromName(TEXT("Panel_FacilityQueueSettings"));
     UWidget* Footer = Inspector->GetWidgetFromName(TEXT("Button_Move"));
     UWidget* ApplyQueue = Inspector->GetWidgetFromName(TEXT("Button_ApplyFacilityQueueSettings"));
-    if (!TestNotNull(TEXT("Scrollable inspector body"), Scroll) || !TestNotNull(TEXT("Fixed move footer"), Footer) ||
+    if (!TestNotNull(TEXT("Production inspector frame"), InspectorFrame) ||
+        !TestNotNull(TEXT("Active inspector page body"), PageBody) || !TestNotNull(TEXT("Dedicated queue page"), QueuePage) ||
+        !TestNotNull(TEXT("Fixed move footer"), Footer) ||
         !TestNotNull(TEXT("Queue apply control"), ApplyQueue)) return false;
+    const auto Contains = [](const FSlateRect& Outer, const FSlateRect& Inner)
+    {
+        return Inner.Left >= Outer.Left - 1.f && Inner.Right <= Outer.Right + 1.f &&
+            Inner.Top >= Outer.Top - 1.f && Inner.Bottom <= Outer.Bottom + 1.f;
+    };
     for (const FVector2D InspectSize : {FVector2D(1280.f, 720.f), FVector2D(1920.f, 1080.f)})
     {
+        Inspector->SetInfoPage(EFF_FacilityInfoPage::Queue);
         Window->Resize(InspectSize);
         TStrongObjectPtr<UTextureRenderTarget2D> InspectTarget(FWidgetRenderer::CreateTargetFor(InspectSize, TF_Bilinear, true));
         if (!TestNotNull(TEXT("Inspector viewport render target"), InspectTarget.Get())) return false;
         for (int32 Frame = 0; Frame < 12; ++Frame)
         {
-            Scroll->ScrollToEnd();
             Renderer.DrawWindow(InspectTarget.Get(), Grid, Window, 1.f, InspectSize, .016f, false);
         }
         FlushRenderingCommands();
@@ -210,14 +218,27 @@ bool FFFBuildToolsForegroundViewportTest::RunTest(const FString& Parameters)
             Tools->GetWidgetFromName(TEXT("Border_PlacementInfo"))->GetVisibility(), ESlateVisibility::Collapsed);
         TestNull(TEXT("Release-to-confirm moving has no retired install dock"),
             Tools->GetWidgetFromName(TEXT("Border_Tools")));
-        const FSlateRect ScrollBounds = Scroll->GetCachedGeometry().GetRenderBoundingRect();
-        const FSlateRect FooterBounds = Footer->GetCachedGeometry().GetRenderBoundingRect();
-        const FSlateRect ApplyBounds = ApplyQueue->GetCachedGeometry().GetRenderBoundingRect();
-        TestTrue(TEXT("The scrollable facility details stop above the fixed action footer"),
-            ScrollBounds.Bottom <= FooterBounds.Top + 1.f);
-        TestTrue(TEXT("Queue apply remains fully reachable above the footer at each window size"),
-            ApplyBounds.Top >= ScrollBounds.Top - 1.f && ApplyBounds.Bottom <= ScrollBounds.Bottom + 1.f &&
-            ApplyBounds.GetSize().Y >= 20.f);
+        // The compact inspector has a dedicated queue page. The retired details
+        // scroller and move footer are not its geometry or input boundary.
+        const FSlateRect FrameBounds = InspectorFrame->GetCachedGeometry().GetRenderBoundingRect();
+        const FSlateRect BodyBounds = PageBody->GetCachedGeometry().GetRenderBoundingRect();
+        TestEqual(TEXT("Queue controls remain on their dedicated page"), Inspector->GetInfoPage(), EFF_FacilityInfoPage::Queue);
+        TestTrue(TEXT("The inspector frame fits every tested viewport"),
+            Contains(FSlateRect(0.f, 0.f, InspectSize.X, InspectSize.Y), FrameBounds));
+        TestTrue(TEXT("The active queue page fits its inspector body"),
+            Contains(FrameBounds, BodyBounds) && Contains(BodyBounds, QueuePage->GetCachedGeometry().GetRenderBoundingRect()));
+        for (const TCHAR* Name : {TEXT("Editable_FacilityQueueTeams"), TEXT("Editable_FacilityQueueSpacing"),
+            TEXT("Editable_FacilityQueueWidth"), TEXT("Button_ApplyFacilityQueueSettings")})
+        {
+            UWidget* Control = Inspector->GetWidgetFromName(Name);
+            if (!TestNotNull(Name, Control)) return false;
+            const FGeometry& Geometry = Control->GetCachedGeometry();
+            const FSlateRect Bounds = Geometry.GetRenderBoundingRect();
+            TestTrue(FString(Name) + TEXT(" remains fully visible without scrolling"),
+                Contains(BodyBounds, Bounds) && Bounds.GetSize().X > 20.f && Bounds.GetSize().Y >= 20.f);
+            const auto Path = Grid.GetBubblePath(Geometry.LocalToAbsolute(Geometry.GetLocalSize() * .5f), 0.f, false);
+            TestTrue(FString(Name) + TEXT(" receives input in the production viewport stack"), HasWidget(Path, *Control));
+        }
         TArray<FColor> Pixels;
         FReadSurfaceDataFlags Flags; Flags.SetLinearToGamma(false);
         if (TestTrue(TEXT("Combined inspector/toolbar capture supplies pixels"),
@@ -231,6 +252,18 @@ bool FFFBuildToolsForegroundViewportTest::RunTest(const FString& Parameters)
             TestTrue(TEXT("Combined inspector screenshot saved"), FFileHelper::SaveArrayToFile(Png, *Path));
             AddInfo(FPaths::ConvertRelativePathToFull(Path));
         }
+        // The fixed action footer belongs to Overview. Verify its live hit target
+        // separately rather than comparing Queue against a collapsed footer.
+        Inspector->SetInfoPage(EFF_FacilityInfoPage::Overview);
+        for (int32 Frame = 0; Frame < 4; ++Frame)
+            Renderer.DrawWindow(InspectTarget.Get(), Grid, Window, 1.f, InspectSize, .016f, false);
+        FlushRenderingCommands();
+        const FGeometry& FooterGeometry = Footer->GetCachedGeometry();
+        TestTrue(TEXT("The overview move action remains inside the inspector"),
+            Contains(InspectorFrame->GetCachedGeometry().GetRenderBoundingRect(), FooterGeometry.GetRenderBoundingRect()) &&
+            FooterGeometry.GetLocalSize().GetMin() >= 20.f);
+        TestTrue(TEXT("The overview move action receives input"),
+            HasWidget(Grid.GetBubblePath(FooterGeometry.LocalToAbsolute(FooterGeometry.GetLocalSize() * .5f), 0.f, false), *Footer));
     }
     Inspector->SetPanelOpen(false);
     Build->State = EFF_BuildModeState::Placing;

@@ -1,7 +1,7 @@
 // FF_BuildCatalogWidgetBlueprintTests.cpp
 
-// 저장된 카탈로그 WBP/텍스처와 네이티브 BindWidget·동적 생성 계약을 통합 검증한다.
-// 흐름: 에셋 경로/부모 클래스/WidgetTree 검사 -> 다섯 화면 인스턴스화 -> 섹션·카드 생성 확인.
+// 현재 PrepBuild WBP의 BindWidget·팝업과 네이티브 호환 버튼의 동작을 통합 검증한다.
+// 흐름: 활성 에셋 경로/부모/WidgetTree 검사 -> 실제 패널 생성 -> 더보기 팝업 열기·닫기.
 // 불변식: 저장 콘텐츠를 변경하지 않고 런타임과 같은 클래스·바인딩·클릭 경로를 사용한다.
 // 실패/수명: 이름·타입 변경을 null 바인딩 전에 보고하고 Slate 래퍼를 상호작용 검사 끝까지 유지한다.
 
@@ -11,8 +11,8 @@
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 // 이 테스트는 C++ 단위 로직만 검사하지 않는다. 에디터에서 생성/저장된 WBP와 텍스처가
-// 다섯 네이티브 클래스의 이름·타입 계약을 실제로 만족하는지 확인하고, 다섯 생성 클래스를 인스턴스화해
-// 런타임 동적 섹션/카드 생성까지 이어지는 통합 스모크 경로를 검증한다.
+// 활성 PrepBuild 클래스의 이름·타입 계약을 확인하고 실제 위젯 이벤트를 실행한다.
+// 삭제된 Legacy 에셋을 되살리거나 현재 화면 디자인을 과거 전체화면으로 되돌리지 않는다.
 
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
@@ -40,6 +40,15 @@
 #include "Building/UI/FF_BuildTopButtonStyle.h"
 #include "UI/FF_CommonButtonBase.h"
 #include "UObject/UnrealType.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildCategoryChoice.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
+#include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
+#include "Building/FacilityCollection/UI/FF_FacilityLauncher.h"
+#include "Components/Button.h"
+#include "Components/EditableTextBox.h"
+#include "Components/TextBlock.h"
+#include "Components/UniformGridPanel.h"
+#include "UObject/StrongObjectPtr.h"
 
 namespace
 {
@@ -297,592 +306,192 @@ namespace
 	}
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FFF_BuildCatalogWidgetBlueprintContractTest,
-	"FestaFiesta.Building.UI.WidgetBlueprintContracts",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+// The full-screen WBP assets were deliberately retired. Validate their authored
+// PrepBuild replacements and keep native compatibility behavior covered separately.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildCatalogWidgetBlueprintContractTest,
+    "FestaFiesta.Building.UI.WidgetBlueprintContracts",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Parameters)
 {
-	(void)Parameters;
+    (void)Parameters;
+    const TArray<FWidgetBlueprintContract> Contracts = {
+        {
+            FFBuildUIAssetPaths::BuildPanelPackage, UFF_PrepPanelBuild::StaticClass(),
+            {
+                {TEXT("Panel_Catalog"), UVerticalBox::StaticClass()},
+                {TEXT("Row_V9CatalogHeader"), UHorizontalBox::StaticClass()},
+                {TEXT("HorizontalBox_Categories"), UHorizontalBox::StaticClass()},
+                {TEXT("Grid_V9Categories"), UUniformGridPanel::StaticClass()},
+                {TEXT("Search_Facilities"), UEditableTextBox::StaticClass()},
+                {TEXT("TileView_Facilities"), UFF_PrepBuildTileView::StaticClass()},
+                {TEXT("Button_V9More"), UButton::StaticClass()},
+                {TEXT("Button_V9Close"), UButton::StaticClass()},
+                {TEXT("Popup_V9More"), UBorder::StaticClass()},
+                {TEXT("Column_V9More"), UVerticalBox::StaticClass()},
+                {TEXT("Button_RevenueRanking"), UButton::StaticClass()},
+                {TEXT("Widget_FacilityCodexCatalogLauncher"), UFF_FacilityCodexLauncher::StaticClass()},
+            },
+            {TEXT("Top_Bar"), TEXT("Gold_Size"), TEXT("TXT_Gold")}
+        },
+        {
+            FFBuildUIAssetPaths::BuildTilePackage, UFF_PrepBuildTileWidget::StaticClass(),
+            {
+                {TEXT("Border_Card"), UBorder::StaticClass()},
+                {TEXT("SizeBox_Card"), USizeBox::StaticClass()},
+                {TEXT("Image_Thumbnail"), UImage::StaticClass()},
+                {TEXT("Text_Name"), UTextBlock::StaticClass()},
+                {TEXT("Text_Cost"), UTextBlock::StaticClass()},
+                {TEXT("Text_State"), UTextBlock::StaticClass()},
+                {TEXT("Button_Favorite"), UButton::StaticClass()},
+            }
+        },
+        {
+            FFBuildUIAssetPaths::CategoryChoicePackage, UFF_PrepBuildCategoryChoice::StaticClass(),
+            {{TEXT("Text_Label"), UTextBlock::StaticClass()}}
+        },
+    };
+    for (const FWidgetBlueprintContract& Contract : Contracts) CheckWidgetBlueprintContract(*this, Contract);
+    CheckUiTextureContract(*this, IconAtlasPackagePath);
+    CheckUiTextureContract(*this, FoodTruckThumbnailPackagePath);
 
-	// 생성기가 책임지는 다섯 WBP의 정적 계약이다. 각 항목은 정확한 에셋 경로와 네이티브 부모를 고정하고,
-	// BindWidget 여부와 별개로 기준 디자인 계층에서 반드시 살아 있어야 하는 핵심 위젯도 열거한다.
-	const TArray<FWidgetBlueprintContract> Contracts = {
-		{
-			FFBuildUIAssetPaths::CatalogScreenPackage,
-			UFF_BuildCatalogScreen::StaticClass(),
-			{
-				{ TEXT("Background_Dim"), UBorder::StaticClass() },
-				{ TEXT("Catalog_Panel"), UBorder::StaticClass() },
-				{ TEXT("Top_Bar"), UHorizontalBox::StaticClass() },
-				{ TEXT("BTN_BuildTab"), UFF_BuildTopButton::StaticClass() },
-				{ TEXT("BTN_SkinTab"), UFF_BuildTopButton::StaticClass() },
-				{ TEXT("BTN_Close"), UFF_BuildTopButton::StaticClass() },
-				{ TEXT("BOX_CategoryButtons"), UHorizontalBox::StaticClass() },
-				{ TEXT("Divider"), UBorder::StaticClass() },
-				{ TEXT("SWITCHER_Content"), UWidgetSwitcher::StaticClass() },
-				{ TEXT("Build_Scroll"), UScrollBox::StaticClass() },
-				{ TEXT("BOX_MinorSections"), UVerticalBox::StaticClass() },
-				{ TEXT("Status_Surface"), UBorder::StaticClass() },
-				{ TEXT("TXT_Status"), UCommonTextBlock::StaticClass() },
-			},
-			{ TEXT("Background_Blur") }
-		},
-		{
-			FFBuildUIAssetPaths::TopButtonPackage,
-			UFF_BuildTopButton::StaticClass(),
-			{
-				{ TEXT("Text_Label"), UCommonTextBlock::StaticClass() },
-				{ TEXT("Image_Icon"), UImage::StaticClass() },
-				{ TEXT("Image_SelectedIndicator"), UImage::StaticClass() },
-				{ TEXT("Image_FocusRing"), UImage::StaticClass() },
-			}
-		},
-		{
-			FFBuildUIAssetPaths::CategoryButtonPackage,
-			UFF_CommonButtonBase::StaticClass(),
-			{
-				{ TEXT("Surface"), UBorder::StaticClass() },
-				{ TEXT("Text_Label"), UCommonTextBlock::StaticClass() },
-				{ TEXT("Image_Icon"), UImage::StaticClass() },
-			}
-		},
-		{
-			FFBuildUIAssetPaths::MinorSectionPackage,
-			UFF_BuildMinorSection::StaticClass(),
-			{
-				{ TEXT("Text_MinorTitle"), UCommonTextBlock::StaticClass() },
-				{ TEXT("Box_Cards"), UWrapBox::StaticClass() },
-			}
-		},
-		{
-			FFBuildUIAssetPaths::FacilityCardPackage,
-			UFF_BuildFacilityCard::StaticClass(),
-			{
-				{ TEXT("Card_Surface"), UBorder::StaticClass() },
-				{ TEXT("Text_Label"), UCommonTextBlock::StaticClass() },
-				{ TEXT("Text_DefinitionId"), UCommonTextBlock::StaticClass() },
-				{ TEXT("Image_Thumbnail"), UImage::StaticClass() },
-			}
-		},
-	};
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    auto* PanelClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepPanelBuild>(nullptr, FFBuildUIAssetPaths::BuildPanelClass));
+    auto* TileClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepBuildTileWidget>(nullptr, FFBuildUIAssetPaths::PrepBuildTileClass));
+    const FString CategoryChoiceClassPath = MakeAssetObjectPath(FFBuildUIAssetPaths::CategoryChoicePackage) + TEXT("_C");
+    auto* ChoiceClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepBuildCategoryChoice>(nullptr, *CategoryChoiceClassPath));
+    if (!TestNotNull(TEXT("Editor world for the active catalog contract"), World) ||
+        !TestNotNull(TEXT("Current catalog generated class"), PanelClass) ||
+        !TestNotNull(TEXT("Current tile generated class"), TileClass) ||
+        !TestNotNull(TEXT("Current category generated class"), ChoiceClass)) return false;
 
-	// 한 에셋 실패가 나머지 진단을 막지 않도록 모든 계약을 순회해 한 번의 테스트에서 전체 오류를 수집한다.
-	for (const FWidgetBlueprintContract& Contract : Contracts)
-	{
-		CheckWidgetBlueprintContract(*this, Contract);
-	}
-	CheckTransparentTopButtonStyleContract(*this);
+    struct FPlayerlessCatalogContractScope
+    {
+        explicit FPlayerlessCatalogContractScope(UWidgetBlueprintGeneratedClass& InClass)
+            : Class(InClass), bPrevious(InClass.bCanCallInitializedWithoutPlayerContext)
+        { Class.bCanCallInitializedWithoutPlayerContext = true; }
+        ~FPlayerlessCatalogContractScope() { Class.bCanCallInitializedWithoutPlayerContext = bPrevious; }
+        UWidgetBlueprintGeneratedClass& Class;
+        bool bPrevious;
+    };
+    FPlayerlessCatalogContractScope PanelScope(*PanelClass), TileScope(*TileClass), ChoiceScope(*ChoiceClass);
+    const bool bPanelWasDirty = PanelClass->GetOutermost()->IsDirty();
+    const bool bTileWasDirty = TileClass->GetOutermost()->IsDirty();
+    TStrongObjectPtr<UFF_PrepPanelBuild> Panel(CreateWidget<UFF_PrepPanelBuild>(World, PanelClass));
+    TStrongObjectPtr<UFF_PrepBuildTileWidget> Tile(CreateWidget<UFF_PrepBuildTileWidget>(World, TileClass));
+    if (!TestNotNull(TEXT("Current authored catalog instance"), Panel.Get()) ||
+        !TestNotNull(TEXT("Current authored tile instance"), Tile.Get())) return false;
+    const TSharedRef<SWidget> PanelSlate = Panel->TakeWidget();
+    const TSharedRef<SWidget> TileSlate = Tile->TakeWidget();
+    auto* List = Cast<UFF_PrepBuildTileView>(Panel->GetWidgetFromName(TEXT("TileView_Facilities")));
+    TestTrue(TEXT("The live catalog uses the saved production tile class"), List && List->GetEntryWidgetClass() == TileClass);
+    TestTrue(TEXT("The production tile preserves its authored thumbnail-only design"), Tile->IsThumbnailOnly());
+    int32 CategoryChoiceCount = 0;
+    Panel->WidgetTree->ForEachWidget([&](UWidget* Widget)
+    {
+        if (const auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(Widget))
+        {
+            ++CategoryChoiceCount;
+            TestTrue(TEXT("Saved category instances use the dedicated production choice WBP"), Choice->IsA(ChoiceClass));
+        }
+    });
+    TestTrue(TEXT("The active catalog instantiates its authored category controls"), CategoryChoiceCount > 0);
+    auto* Popup = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Popup_V9More")));
+    auto* More = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_V9More")));
+    if (!TestNotNull(TEXT("The authored More popup exists at runtime"), Popup) ||
+        !TestNotNull(TEXT("The authored More button exists at runtime"), More)) return false;
+    TestEqual(TEXT("NativeConstruct keeps additional catalog actions closed initially"), Popup->GetVisibility(), ESlateVisibility::Collapsed);
+    More->OnClicked.Broadcast();
+    TestEqual(TEXT("The real button binding opens the additional actions"), Popup->GetVisibility(), ESlateVisibility::Visible);
+    More->OnClicked.Broadcast();
+    TestEqual(TEXT("The same real button binding closes the additional actions"), Popup->GetVisibility(), ESlateVisibility::Collapsed);
+    // Keyboard routing belongs to the surviving native compatibility class,
+    // independently of the deliberately retired full-screen Widget Blueprint.
+    TStrongObjectPtr<UFF_BuildCatalogScreen> NativeScreen(
+        CreateWidget<UFF_BuildCatalogScreen>(World, UFF_BuildCatalogScreen::StaticClass()));
+    if (!TestNotNull(TEXT("Native catalog for keyboard routing"), NativeScreen.Get())) return false;
+    const TSharedRef<SWidget> NativeScreenSlate = NativeScreen->TakeWidget();
+    int32 BuildModeRequests = 0;
+    const FDelegateHandle BuildModeHandle = NativeScreen->OnBuildModeKeyRequested.AddLambda(
+        [&BuildModeRequests]() { ++BuildModeRequests; });
+    TestTrue(TEXT("Focused native catalog handles B"), NativeScreen->NativeOnPreviewKeyDown(
+        FGeometry(), FKeyEvent(EKeys::B, FModifierKeysState(), 0, false, 0, 0)).IsEventHandled());
+    TestEqual(TEXT("B requests BuildMode exactly once"), BuildModeRequests, 1);
+    NativeScreen->NativeOnPreviewKeyDown(
+        FGeometry(), FKeyEvent(EKeys::B, FModifierKeysState(), 0, true, 0, 0));
+    TestEqual(TEXT("Holding B does not request BuildMode again"), BuildModeRequests, 1);
+    NativeScreen->OnBuildModeKeyRequested.Remove(BuildModeHandle);
 
-	// 텍스처 import 계약을 먼저 확인하고, 성공한 포인터는 이후 실제 Image 브러시가 같은 리소스를 쓰는지 비교한다.
-	UTexture2D* IconAtlas = CheckUiTextureContract(*this, IconAtlasPackagePath);
-	UTexture2D* FoodTruckThumbnail =
-		CheckUiTextureContract(*this, FoodTruckThumbnailPackagePath);
+    int32 PauseMenuRequests = 0;
+    const FDelegateHandle PauseMenuHandle = NativeScreen->OnPauseMenuKeyRequested.AddLambda(
+        [&PauseMenuRequests]() { ++PauseMenuRequests; });
+    for (const FKey& PauseKey : {EKeys::Escape, EKeys::F5})
+    {
+        const int32 RequestsBeforePress = PauseMenuRequests;
+        TestTrue(FString::Printf(TEXT("Focused native catalog handles %s"), *PauseKey.ToString()),
+            NativeScreen->NativeOnPreviewKeyDown(FGeometry(),
+                FKeyEvent(PauseKey, FModifierKeysState(), 0, false, 0, 0)).IsEventHandled());
+        TestEqual(FString::Printf(TEXT("%s requests Pause Hub exactly once"), *PauseKey.ToString()),
+            PauseMenuRequests, RequestsBeforePress + 1);
+        for (int32 Repeat = 0; Repeat < 2; ++Repeat)
+            NativeScreen->NativeOnPreviewKeyDown(FGeometry(),
+                FKeyEvent(PauseKey, FModifierKeysState(), 0, true, 0, 0));
+        TestEqual(FString::Printf(TEXT("Holding %s does not request Pause Hub again"), *PauseKey.ToString()),
+            PauseMenuRequests, RequestsBeforePress + 1);
+    }
+    const int32 RequestsBeforeRetiredKeys = PauseMenuRequests;
+    for (const FKey& RetiredKey : {EKeys::F1, EKeys::F2, EKeys::F3, EKeys::F4, EKeys::F6, EKeys::F7})
+    {
+        TestTrue(FString::Printf(TEXT("Focused native catalog consumes retired %s"), *RetiredKey.ToString()),
+            NativeScreen->NativeOnPreviewKeyDown(FGeometry(),
+                FKeyEvent(RetiredKey, FModifierKeysState(), 0, false, 0, 0)).IsEventHandled());
+        TestEqual(TEXT("Retired toolbar keys never request Pause Hub"), PauseMenuRequests, RequestsBeforeRetiredKeys);
+    }
+    NativeScreen->OnPauseMenuKeyRequested.Remove(PauseMenuHandle);
 
-	// 여기부터는 정적 archetype 검사를 넘어 실제 WidgetTree 초기화와 데이터 바인딩을 실행하는 스모크 테스트다.
-	const TCHAR* ScreenClassPath =
-		FFBuildUIAssetPaths::CatalogScreenClass;
-	UClass* ScreenClass = LoadClass<UFF_BuildCatalogScreen>(nullptr, ScreenClassPath);
-	UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-	if (ScreenClass && EditorWorld)
-	{
-		// 에디터/Commandlet 자동화에는 LocalPlayer가 없지만 UserWidget은 기본적으로 플레이어 컨텍스트를 요구한다.
-		// 다섯 생성 클래스에 한해 playerless 초기화를 임시 허용하여 PIE 세션 없이도 NativeOnInitialized와
-		// 동일한 WidgetTree/데이터 채우기 경로를 실행한다. 테스트가 끝나면 반드시 원래 false로 복원한다.
-		TArray<UWidgetBlueprintGeneratedClass*> PlayerlessClasses;
-		const TCHAR* GeneratedClassPaths[] = {
-			ScreenClassPath,
-			FFBuildUIAssetPaths::TopButtonClass,
-			FFBuildUIAssetPaths::CategoryButtonClass,
-			FFBuildUIAssetPaths::MinorSectionClass,
-			FFBuildUIAssetPaths::FacilityCardClass,
-		};
-		for (const TCHAR* GeneratedClassPath : GeneratedClassPaths)
-		{
-			// 일부 보조 클래스 로드가 실패해도 앞선 계약 검사가 별도 오류를 제공하므로, 로드된 클래스만 임시 변경한다.
-			if (UWidgetBlueprintGeneratedClass* GeneratedClass =
-				Cast<UWidgetBlueprintGeneratedClass>(LoadObject<UClass>(nullptr, GeneratedClassPath)))
-			{
-				GeneratedClass->bCanCallInitializedWithoutPlayerContext = true;
-				PlayerlessClasses.Add(GeneratedClass);
-			}
-		}
-
-		// 화면 클래스의 CreateWidget부터 시작해 실제 인스턴스 수명주기를 확인한다.
-		UFF_BuildCatalogScreen* Screen = CreateWidget<UFF_BuildCatalogScreen>(EditorWorld, ScreenClass);
-		TestNotNull(TEXT("Generated build catalog screen can be instantiated"), Screen);
-		if (Screen)
-		{
-			// TakeWidget이 RebuildWidget을 실행한다. 생성된 WBP RootWidget이 있다면 네이티브 Slate 폴백이 아니라
-			// 디자이너 WidgetTree 경로를 선택해야 하므로 진단 API로 이를 명시적으로 검증한다.
-			// 런타임 바인딩을 검사하는 동안 Slate 래퍼를 유지한다. 이 참조를 즉시 놓으면
-			// NativeDestruct가 호출되어 아래 상호작용 검사가 분리된 WidgetTree를 대상으로 바뀐다.
-			const TSharedRef<SWidget> ScreenSlateWidget = Screen->TakeWidget();
-			TestTrue(TEXT("Generated screen uses its Designer WidgetTree"), Screen->IsUsingDesignerWidgetTree());
-
-			USizeBox* GoldSize = Cast<USizeBox>(Screen->GetWidgetFromName(TEXT("Gold_Size")));
-			UCommonTextBlock* GoldText = Cast<UCommonTextBlock>(
-				Screen->GetWidgetFromName(TEXT("TXT_Gold")));
-			TestNotNull(TEXT("Runtime-compatible screen provides the top-bar Gold panel"), GoldSize);
-			TestNotNull(TEXT("Runtime-compatible screen provides the current Gold text"), GoldText);
-			if (GoldSize)
-			{
-				TestTrue(TEXT("Gold panel has an explicit width"), GoldSize->IsWidthOverride());
-				TestEqual(TEXT("Gold panel occupies the requested top-right width"),
-					GoldSize->GetWidthOverride(), 320.0f);
-			}
-			if (GoldText)
-			{
-				TestEqual(TEXT("A playerless screen does not invent a Gold balance"),
-					GoldText->GetText().ToString(), FString(TEXT("—")));
-			}
-			if (UHorizontalBox* TopBar = Cast<UHorizontalBox>(
-				Screen->GetWidgetFromName(TEXT("Top_Bar")));
-				TopBar && GoldSize)
-			{
-				UWidget* CloseButton = Screen->GetWidgetFromName(TEXT("BTN_Close"));
-				if (CloseButton)
-				{
-					TestEqual(TEXT("Gold panel is immediately before the top-right Close button"),
-						TopBar->GetChildIndex(GoldSize), TopBar->GetChildIndex(CloseButton) - 1);
-				}
-			}
-
-			bool bBuildModeKeyRequested = false;
-			const FDelegateHandle BuildModeKeyHandle = Screen->OnBuildModeKeyRequested.AddLambda(
-				[&bBuildModeKeyRequested]() { bBuildModeKeyRequested = true; });
-			const FKeyEvent BuildModeKeyEvent(
-				EKeys::B, FModifierKeysState(), 0, false, 0, 0);
-			const FReply BuildModeKeyReply = Screen->NativeOnPreviewKeyDown(
-				FGeometry(), BuildModeKeyEvent);
-			TestTrue(TEXT("Focused catalog handles B"), BuildModeKeyReply.IsEventHandled());
-			TestTrue(TEXT("Focused catalog requests BuildMode on B"), bBuildModeKeyRequested);
-			Screen->OnBuildModeKeyRequested.Remove(BuildModeKeyHandle);
-
-			int32 PauseMenuRequestCount = 0;
-			const FDelegateHandle PauseMenuKeyHandle = Screen->OnPauseMenuKeyRequested.AddLambda(
-				[&PauseMenuRequestCount]() { ++PauseMenuRequestCount; });
-			for (const FKey& PauseKey : {EKeys::Escape, EKeys::F5})
-			{
-				const int32 RequestsBeforePress = PauseMenuRequestCount;
-				const FKeyEvent PauseMenuKeyEvent(
-					PauseKey, FModifierKeysState(), 0, false, 0, 0);
-				const FReply PauseMenuKeyReply = Screen->NativeOnPreviewKeyDown(
-					FGeometry(), PauseMenuKeyEvent);
-				TestTrue(*FString::Printf(TEXT("Focused catalog handles %s"), *PauseKey.ToString()),
-					PauseMenuKeyReply.IsEventHandled());
-				TestEqual(*FString::Printf(TEXT("Focused catalog requests Pause Hub exactly once on %s"),
-					*PauseKey.ToString()), PauseMenuRequestCount, RequestsBeforePress + 1);
-				const FKeyEvent RepeatedPauseMenuKeyEvent(
-					PauseKey, FModifierKeysState(), 0, true, 0, 0);
-				Screen->NativeOnPreviewKeyDown(FGeometry(), RepeatedPauseMenuKeyEvent);
-				Screen->NativeOnPreviewKeyDown(FGeometry(), RepeatedPauseMenuKeyEvent);
-				TestEqual(*FString::Printf(TEXT("Holding %s does not request Pause Hub again"),
-					*PauseKey.ToString()), PauseMenuRequestCount, RequestsBeforePress + 1);
-			}
-			const int32 RequestsBeforeRetiredKeys = PauseMenuRequestCount;
-			for (const FKey& RetiredKey : {EKeys::F1, EKeys::F2, EKeys::F3,
-				EKeys::F4, EKeys::F6, EKeys::F7})
-			{
-				const FKeyEvent RetiredEvent(RetiredKey, FModifierKeysState(), 0, false, 0, 0);
-				TestTrue(TEXT("Focused catalog consumes every retired toolbar key"),
-					Screen->NativeOnPreviewKeyDown(FGeometry(), RetiredEvent).IsEventHandled());
-				TestEqual(TEXT("Retired toolbar keys never request Pause Hub"),
-					PauseMenuRequestCount, RequestsBeforeRetiredKeys);
-			}
-			Screen->OnPauseMenuKeyRequested.Remove(PauseMenuKeyHandle);
-
-			const TCHAR* TopButtonNames[] = {
-				TEXT("BTN_BuildTab"),
-				TEXT("BTN_SkinTab"),
-				TEXT("BTN_Close"),
-			};
-			for (const TCHAR* TopButtonName : TopButtonNames)
-			{
-				UFF_BuildTopButton* TopButton = Cast<UFF_BuildTopButton>(
-					Screen->GetWidgetFromName(TopButtonName));
-				TestNotNull(
-					FString::Printf(TEXT("%s uses the dedicated transparent top-button class"), TopButtonName),
-					TopButton);
-				if (!TopButton)
-				{
-					continue;
-				}
-
-				TestNull(
-					FString::Printf(TEXT("%s has no colored Surface layer"), TopButtonName),
-					TopButton->GetWidgetFromName(TEXT("Surface")));
-				const UCommonButtonStyle* AppliedStyle = TopButton->GetStyleCDO();
-				TestTrue(
-					FString::Printf(TEXT("%s uses the native transparent style"), TopButtonName),
-					AppliedStyle && AppliedStyle->IsA<UFF_BuildTopButtonStyle>());
-
-				UImage* TopIcon = Cast<UImage>(
-					TopButton->GetWidgetFromName(TEXT("Image_Icon")));
-				TestNotNull(
-					FString::Printf(TEXT("%s binds Image_Icon"), TopButtonName),
-					TopIcon);
-				if (TopIcon && IconAtlas)
-				{
-					TestEqual(
-						FString::Printf(TEXT("%s loads the transparent icon atlas"), TopButtonName),
-						TopIcon->GetBrush().GetResourceObject(),
-						static_cast<UObject*>(IconAtlas));
-				}
-			}
-
-			UFF_BuildTopButton* BuildTab = Cast<UFF_BuildTopButton>(
-				Screen->GetWidgetFromName(TEXT("BTN_BuildTab")));
-			UFF_BuildTopButton* SkinTab = Cast<UFF_BuildTopButton>(
-				Screen->GetWidgetFromName(TEXT("BTN_SkinTab")));
-			if (BuildTab && SkinTab)
-			{
-				TestTrue(TEXT("Build tab starts selected"), BuildTab->GetSelected());
-				TestFalse(TEXT("Skin tab starts deselected"), SkinTab->GetSelected());
-				UImage* BuildSelectedIndicator = Cast<UImage>(
-					BuildTab->GetWidgetFromName(TEXT("Image_SelectedIndicator")));
-				UImage* SkinSelectedIndicator = Cast<UImage>(
-					SkinTab->GetWidgetFromName(TEXT("Image_SelectedIndicator")));
-				TestNotNull(TEXT("Build tab binds selected indicator"), BuildSelectedIndicator);
-				TestNotNull(TEXT("Skin tab binds selected indicator"), SkinSelectedIndicator);
-				if (BuildSelectedIndicator && SkinSelectedIndicator)
-				{
-					TestEqual(TEXT("Selected Build tab shows its underline"),
-						BuildSelectedIndicator->GetVisibility(), ESlateVisibility::HitTestInvisible);
-					TestEqual(TEXT("Deselected Skin tab hides its underline"),
-						SkinSelectedIndicator->GetVisibility(), ESlateVisibility::Hidden);
-				}
-
-				SkinTab->OnFFButtonClicked.Broadcast(SkinTab);
-				TestFalse(TEXT("Selecting Skin clears Build selection"), BuildTab->GetSelected());
-				TestTrue(TEXT("Selecting Skin activates only Skin"), SkinTab->GetSelected());
-				if (BuildSelectedIndicator && SkinSelectedIndicator)
-				{
-					TestEqual(TEXT("Deselected Build tab hides its underline"),
-						BuildSelectedIndicator->GetVisibility(), ESlateVisibility::Hidden);
-					TestEqual(TEXT("Selected Skin tab shows its underline"),
-						SkinSelectedIndicator->GetVisibility(), ESlateVisibility::HitTestInvisible);
-				}
-				if (UWidgetSwitcher* ContentSwitcher = Cast<UWidgetSwitcher>(
-					Screen->GetWidgetFromName(TEXT("SWITCHER_Content"))))
-				{
-					TestEqual(TEXT("Selecting Skin opens only the Skin page"),
-						ContentSwitcher->GetActiveWidgetIndex(), 1);
-				}
-
-				BuildTab->OnFFButtonClicked.Broadcast(BuildTab);
-				TestTrue(TEXT("Selecting Build activates Build"), BuildTab->GetSelected());
-				TestFalse(TEXT("Selecting Build clears Skin selection"), SkinTab->GetSelected());
-				if (BuildSelectedIndicator && SkinSelectedIndicator)
-				{
-					TestEqual(TEXT("Returning to Build shows only the Build underline"),
-						BuildSelectedIndicator->GetVisibility(), ESlateVisibility::HitTestInvisible);
-					TestEqual(TEXT("Returning to Build hides the Skin underline"),
-						SkinSelectedIndicator->GetVisibility(), ESlateVisibility::Hidden);
-				}
-				if (UWidgetSwitcher* ContentSwitcher = Cast<UWidgetSwitcher>(
-					Screen->GetWidgetFromName(TEXT("SWITCHER_Content"))))
-				{
-					TestEqual(TEXT("Selecting Build opens only the Build page"),
-						ContentSwitcher->GetActiveWidgetIndex(), 0);
-				}
-			}
-
-			// 단 하나의 Booth/FoodStall 항목을 주입해 대분류 전체 생성, 소분류 그룹화,
-			// 시설 카드 데이터/기본 썸네일 바인딩을 결정론적으로 검증한다.
-			FFF_BuildCatalogEntry Entry;
-			Entry.FacilityDefinitionId = TEXT("Booth_FoodStall_AutomationCard");
-			Entry.DisplayName = FText::FromString(TEXT("Automation Card"));
-			Entry.Category = EFFZSFacilityCategory::Booth;
-			Entry.MinorToken = TEXT("FoodStall");
-			Entry.UniqueNameToken = TEXT("AutomationCard");
-			Screen->SetCatalogEntries({ Entry });
-
-			// 진단 카운터는 실제 성공적으로 생성된 위젯만 세므로 템플릿 로드나 CreateWidget 실패도 감지한다.
-			TestEqual(TEXT("Designer screen creates ten major-category buttons"),
-				Screen->GetDisplayedCategoryCount(), 10);
-			TestEqual(TEXT("Designer screen creates one facility card from one entry"),
-				Screen->GetDisplayedFacilityCardCount(), 1);
-
-			// 숫자만 맞는 잘못된 자식도 통과하지 않도록 실제 트리를 내려가 각 대분류 버튼의 타입과 아이콘 바인딩을 확인한다.
-			UHorizontalBox* CategoryButtons = Cast<UHorizontalBox>(
-				Screen->GetWidgetFromName(TEXT("BOX_CategoryButtons")));
-			TestNotNull(TEXT("Designer screen exposes the category-button row"), CategoryButtons);
-			if (CategoryButtons)
-			{
-				TestEqual(TEXT("Category row contains ten button widgets"),
-					CategoryButtons->GetChildrenCount(), 10);
-				for (int32 Index = 0; Index < CategoryButtons->GetChildrenCount(); ++Index)
-				{
-					UFF_CommonButtonBase* CategoryButton =
-						Cast<UFF_CommonButtonBase>(CategoryButtons->GetChildAt(Index));
-					TestNotNull(
-						FString::Printf(TEXT("Category child %d uses FF common button"), Index),
-						CategoryButton);
-					if (!CategoryButton)
-					{
-						continue;
-					}
-
-					UBorder* CategorySurface = Cast<UBorder>(
-						CategoryButton->GetWidgetFromName(TEXT("Surface")));
-					TestNotNull(
-						FString::Printf(TEXT("Category child %d binds Surface"), Index),
-						CategorySurface);
-					if (CategorySurface)
-					{
-						TestEqual(
-							FString::Printf(TEXT("Category child %d has a transparent background"), Index),
-							CategorySurface->GetBrushColor().A, 0.0f);
-					}
-					const UCommonButtonStyle* CategoryStyle = CategoryButton->GetStyleCDO();
-					TestTrue(
-						FString::Printf(TEXT("Category child %d uses the no-draw button style"), Index),
-						CategoryStyle && CategoryStyle->IsA<UFF_BuildTopButtonStyle>());
-
-					UImage* CategoryIcon = Cast<UImage>(
-						CategoryButton->GetWidgetFromName(TEXT("Image_Icon")));
-					TestNotNull(
-						FString::Printf(TEXT("Category child %d binds Image_Icon"), Index),
-						CategoryIcon);
-					// 앞선 텍스처 로드가 성공했을 때만 리소스 동일성을 비교해 하나의 누락이 연쇄 nullptr 실패를 만들지 않게 한다.
-					if (CategoryIcon && Index >= 7)
-					{
-						TestEqual(TEXT("Lighting, road, and tile categories hide the missing legacy atlas glyph"),
-							CategoryIcon->GetVisibility(), ESlateVisibility::Hidden);
-					}
-					else if (CategoryIcon && IconAtlas)
-					{
-						TestEqual(
-							FString::Printf(TEXT("Category child %d loads the icon atlas"), Index),
-							CategoryIcon->GetBrush().GetResourceObject(),
-							static_cast<UObject*>(IconAtlas));
-					}
-				}
-			}
-
-			// 데이터 바인딩 결과의 실제 계층(Screen -> MinorSection -> WrapBox -> FacilityCard -> Image)을 순서대로 검사한다.
-			// 각 단계는 직전 포인터/자식 수를 가드해 실패해도 크래시 없이 구체적인 TestNotNull 진단을 남긴다.
-			UVerticalBox* MinorSections = Cast<UVerticalBox>(
-				Screen->GetWidgetFromName(TEXT("BOX_MinorSections")));
-			TestNotNull(TEXT("Designer screen exposes the minor-section container"), MinorSections);
-			if (MinorSections && MinorSections->GetChildrenCount() > 0)
-			{
-				UFF_BuildMinorSection* MinorSection =
-					Cast<UFF_BuildMinorSection>(MinorSections->GetChildAt(0));
-				TestNotNull(TEXT("Catalog entry creates a minor-section widget"), MinorSection);
-				UWrapBox* CardBox = MinorSection
-					? Cast<UWrapBox>(MinorSection->GetWidgetFromName(TEXT("Box_Cards")))
-					: nullptr;
-				TestNotNull(TEXT("Minor section exposes its card container"), CardBox);
-				UFF_BuildFacilityCard* FacilityCard =
-					CardBox && CardBox->GetChildrenCount() > 0
-					? Cast<UFF_BuildFacilityCard>(CardBox->GetChildAt(0))
-					: nullptr;
-				TestNotNull(TEXT("Minor section contains the generated facility card"), FacilityCard);
-				UBorder* CardSurface = FacilityCard
-					? Cast<UBorder>(FacilityCard->GetWidgetFromName(TEXT("Card_Surface")))
-					: nullptr;
-				TestNotNull(TEXT("Facility card binds Card_Surface"), CardSurface);
-				if (CardSurface)
-				{
-					TestEqual(TEXT("Facility card has a transparent background"),
-						CardSurface->GetBrushColor().A, 0.0f);
-				}
-				const UCommonButtonStyle* CardStyle = FacilityCard ? FacilityCard->GetStyleCDO() : nullptr;
-				TestTrue(TEXT("Facility card uses the no-draw button style"),
-					CardStyle && CardStyle->IsA<UFF_BuildTopButtonStyle>());
-				UImage* ThumbnailImage = FacilityCard
-					? Cast<UImage>(FacilityCard->GetWidgetFromName(TEXT("Image_Thumbnail")))
-					: nullptr;
-				TestNotNull(TEXT("Facility card binds Image_Thumbnail"), ThumbnailImage);
-				// Entry.Thumbnail을 비워 두었으므로 카드의 방어적 기본 이미지 경로가 실제 브러시까지 적용되어야 한다.
-				if (ThumbnailImage && FoodTruckThumbnail)
-				{
-					TestEqual(
-						TEXT("Facility card uses the generated default thumbnail when metadata is empty"),
-						ThumbnailImage->GetBrush().GetResourceObject(),
-						static_cast<UObject*>(FoodTruckThumbnail));
-				}
-			}
-		}
-		// GeneratedClass는 전역 에셋 객체이므로 임시 플래그를 남기면 이후 테스트/에디터 동작에 영향을 준다.
-		// 화면 생성 성공 여부와 관계없이 로드해 변경한 모든 클래스의 기본 정책을 복원한다.
-		for (UWidgetBlueprintGeneratedClass* GeneratedClass : PlayerlessClasses)
-		{
-			GeneratedClass->bCanCallInitializedWithoutPlayerContext = false;
-		}
-	}
-	else
-	{
-		// 스모크 검증의 전제(Screen _C와 EditorWorld)가 없으면 조용히 건너뛰지 않고 환경/에셋 문제를 실패로 노출한다.
-		AddError(TEXT("Could not load the generated screen class or acquire the editor world for runtime UMG smoke validation."));
-	}
-
-	return true;
+    TestEqual(TEXT("Using the catalog preserves its saved package"), PanelClass->GetOutermost()->IsDirty(), bPanelWasDirty);
+    TestEqual(TEXT("Instantiating the virtualized tile preserves its saved package"), TileClass->GetOutermost()->IsDirty(), bTileWasDirty);
+    return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FFF_BuildCatalogTransparentTopButtonsTest,
-	"FestaFiesta.Building.UI.TransparentTopButtons",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildCatalogTransparentTopButtonsTest,
+    "FestaFiesta.Building.UI.TransparentTopButtons",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FFF_BuildCatalogTransparentTopButtonsTest::RunTest(const FString& Parameters)
 {
-	(void)Parameters;
-
-	// 이 회귀 테스트는 상단 바 마이그레이션에만 집중한다. 전체 기준 레이아웃 계약은
-	// 카탈로그 화면의 다른 디자이너 변경도 별도로 보고할 수 있다.
-	CheckWidgetBlueprintContract(*this, {
-		FFBuildUIAssetPaths::CatalogScreenPackage,
-		UFF_BuildCatalogScreen::StaticClass(),
-		{
-			{ TEXT("BTN_BuildTab"), UFF_BuildTopButton::StaticClass() },
-			{ TEXT("BTN_SkinTab"), UFF_BuildTopButton::StaticClass() },
-			{ TEXT("BTN_Close"), UFF_BuildTopButton::StaticClass() },
-		}
-	});
-	CheckWidgetBlueprintContract(*this, {
-		FFBuildUIAssetPaths::TopButtonPackage,
-		UFF_BuildTopButton::StaticClass(),
-		{
-			{ TEXT("Text_Label"), UCommonTextBlock::StaticClass() },
-			{ TEXT("Image_Icon"), UImage::StaticClass() },
-			{ TEXT("Image_SelectedIndicator"), UImage::StaticClass() },
-			{ TEXT("Image_FocusRing"), UImage::StaticClass() },
-		}
-	});
-	CheckTransparentTopButtonStyleContract(*this);
-
-	const FString TopButtonObjectPath = MakeAssetObjectPath(
-		FFBuildUIAssetPaths::TopButtonPackage);
-	UClass* TopButtonClass = LoadClass<UFF_BuildTopButton>(
-		nullptr, *(TopButtonObjectPath + TEXT("_C")));
-	if (const UWidgetBlueprintGeneratedClass* TopGeneratedClass =
-		Cast<UWidgetBlueprintGeneratedClass>(TopButtonClass))
-	{
-		const UWidgetTree* TopTree = TopGeneratedClass->GetWidgetTreeArchetype();
-		TestNotNull(TEXT("Transparent top-button WBP has a compiled WidgetTree"), TopTree);
-		if (TopTree)
-		{
-			TestNull(TEXT("Transparent top-button WBP has no colored Surface layer"),
-				TopTree->FindWidget(TEXT("Surface")));
-		}
-	}
-	else
-	{
-		AddError(TEXT("Could not load the transparent top-button generated class."));
-	}
-
-	UTexture2D* IconAtlas = CheckUiTextureContract(*this, IconAtlasPackagePath);
-	const TCHAR* ScreenClassPath =
-		FFBuildUIAssetPaths::CatalogScreenClass;
-	UClass* ScreenClass = LoadClass<UFF_BuildCatalogScreen>(nullptr, ScreenClassPath);
-	UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-	if (!ScreenClass || !EditorWorld)
-	{
-		AddError(TEXT("Could not load the generated catalog screen or acquire the editor world."));
-		return true;
-	}
-
-	struct FPlayerlessFlagRestore
-	{
-		UWidgetBlueprintGeneratedClass* GeneratedClass = nullptr;
-		bool bPreviousValue = false;
-	};
-	TArray<FPlayerlessFlagRestore> FlagRestores;
-	const TCHAR* GeneratedClassPaths[] = {
-		ScreenClassPath,
-		FFBuildUIAssetPaths::TopButtonClass,
-		FFBuildUIAssetPaths::CategoryButtonClass,
-		FFBuildUIAssetPaths::MinorSectionClass,
-		FFBuildUIAssetPaths::FacilityCardClass,
-	};
-	for (const TCHAR* GeneratedClassPath : GeneratedClassPaths)
-	{
-		if (UWidgetBlueprintGeneratedClass* GeneratedClass =
-			Cast<UWidgetBlueprintGeneratedClass>(LoadObject<UClass>(nullptr, GeneratedClassPath)))
-		{
-			FPlayerlessFlagRestore& Restore = FlagRestores.AddDefaulted_GetRef();
-			Restore.GeneratedClass = GeneratedClass;
-			Restore.bPreviousValue = GeneratedClass->bCanCallInitializedWithoutPlayerContext;
-			GeneratedClass->bCanCallInitializedWithoutPlayerContext = true;
-		}
-	}
-
-	UFF_BuildCatalogScreen* Screen = CreateWidget<UFF_BuildCatalogScreen>(EditorWorld, ScreenClass);
-	TestNotNull(TEXT("Catalog screen with transparent top buttons can be instantiated"), Screen);
-	if (Screen)
-	{
-		Screen->TakeWidget();
-		TestTrue(TEXT("Catalog screen uses its saved Designer WidgetTree"),
-			Screen->IsUsingDesignerWidgetTree());
-
-		const TCHAR* TopButtonNames[] = {
-			TEXT("BTN_BuildTab"),
-			TEXT("BTN_SkinTab"),
-			TEXT("BTN_Close"),
-		};
-		for (const TCHAR* TopButtonName : TopButtonNames)
-		{
-			UFF_BuildTopButton* Button = Cast<UFF_BuildTopButton>(
-				Screen->GetWidgetFromName(TopButtonName));
-			TestNotNull(
-				FString::Printf(TEXT("%s is the dedicated transparent top button"), TopButtonName),
-				Button);
-			if (!Button)
-			{
-				continue;
-			}
-
-			TestNull(
-				FString::Printf(TEXT("%s has no colored Surface layer"), TopButtonName),
-				Button->GetWidgetFromName(TEXT("Surface")));
-			const UCommonButtonStyle* AppliedStyle = Button->GetStyleCDO();
-			TestTrue(
-				FString::Printf(TEXT("%s uses the native transparent style"), TopButtonName),
-				AppliedStyle && AppliedStyle->IsA<UFF_BuildTopButtonStyle>());
-
-			UImage* Icon = Cast<UImage>(Button->GetWidgetFromName(TEXT("Image_Icon")));
-			TestNotNull(FString::Printf(TEXT("%s binds Image_Icon"), TopButtonName), Icon);
-			if (Icon && IconAtlas)
-			{
-				TestEqual(
-					FString::Printf(TEXT("%s loads the transparent icon atlas"), TopButtonName),
-					Icon->GetBrush().GetResourceObject(), static_cast<UObject*>(IconAtlas));
-			}
-		}
-
-		UFF_BuildTopButton* BuildTab = Cast<UFF_BuildTopButton>(
-			Screen->GetWidgetFromName(TEXT("BTN_BuildTab")));
-		UFF_BuildTopButton* SkinTab = Cast<UFF_BuildTopButton>(
-			Screen->GetWidgetFromName(TEXT("BTN_SkinTab")));
-		if (BuildTab && SkinTab)
-		{
-			TestTrue(TEXT("Build tab starts selected"), BuildTab->GetSelected());
-			TestFalse(TEXT("Skin tab starts deselected"), SkinTab->GetSelected());
-			UImage* BuildIndicator = Cast<UImage>(
-				BuildTab->GetWidgetFromName(TEXT("Image_SelectedIndicator")));
-			UImage* SkinIndicator = Cast<UImage>(
-				SkinTab->GetWidgetFromName(TEXT("Image_SelectedIndicator")));
-			TestNotNull(TEXT("Build tab binds selected indicator"), BuildIndicator);
-			TestNotNull(TEXT("Skin tab binds selected indicator"), SkinIndicator);
-			if (BuildIndicator && SkinIndicator)
-			{
-				TestEqual(TEXT("Selected Build tab shows its underline"),
-					BuildIndicator->GetVisibility(), ESlateVisibility::HitTestInvisible);
-				TestEqual(TEXT("Deselected Skin tab hides its underline"),
-					SkinIndicator->GetVisibility(), ESlateVisibility::Hidden);
-			}
-		}
-	}
-
-	for (const FPlayerlessFlagRestore& Restore : FlagRestores)
-	{
-		Restore.GeneratedClass->bCanCallInitializedWithoutPlayerContext = Restore.bPreviousValue;
-	}
-	return true;
+    (void)Parameters;
+    // Bind a transient indicator as a generated WidgetTree would do, without
+    // restoring the retired Build/Skin screen or changing the production panel.
+    CheckTransparentTopButtonStyleContract(*this);
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!TestNotNull(TEXT("Editor world for native transparent button contract"), World)) return false;
+    TStrongObjectPtr<UFF_BuildTopButton> Button(CreateWidget<UFF_BuildTopButton>(World, UFF_BuildTopButton::StaticClass()));
+    if (!TestNotNull(TEXT("Native transparent button can be instantiated"), Button.Get()) ||
+        !TestNotNull(TEXT("Native button initializes a transient WidgetTree"), Button->WidgetTree.Get())) return false;
+    auto* Content = Button->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("TransientTopContent"));
+    auto* Label = Button->WidgetTree->ConstructWidget<UCommonTextBlock>(UCommonTextBlock::StaticClass(), TEXT("Text_Label"));
+    auto* Indicator = Button->WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("Image_SelectedIndicator"));
+    Button->WidgetTree->RootWidget = Content;
+    Content->AddChild(Label);
+    Content->AddChild(Indicator);
+    auto* LabelProperty = FindFProperty<FObjectPropertyBase>(Button->GetClass(), TEXT("Text_Label"));
+    auto* IndicatorProperty = FindFProperty<FObjectPropertyBase>(Button->GetClass(), TEXT("Image_SelectedIndicator"));
+    if (!TestNotNull(TEXT("Native button retains its label binding"), LabelProperty) ||
+        !TestNotNull(TEXT("Native button retains its selection-indicator binding"), IndicatorProperty)) return false;
+    LabelProperty->SetObjectPropertyValue_InContainer(Button.Get(), Label);
+    IndicatorProperty->SetObjectPropertyValue_InContainer(Button.Get(), Indicator);
+    const TSharedRef<SWidget> ButtonSlate = Button->TakeWidget();
+    TestTrue(TEXT("Native button retains the transparent CommonUI style"),
+        Button->GetStyleCDO() && Button->GetStyleCDO()->IsA<UFF_BuildTopButtonStyle>());
+    Button->SetIsSelectable(true);
+    Button->SetIsSelected(true, false);
+    TestTrue(TEXT("The native compatibility button becomes selected"), Button->GetSelected());
+    TestEqual(TEXT("Selection shows only the indicator"), Indicator->GetVisibility(), ESlateVisibility::HitTestInvisible);
+    Button->ClearSelection();
+    TestFalse(TEXT("The native compatibility button clears its selection"), Button->GetSelected());
+    TestEqual(TEXT("Deselection hides the indicator without changing layout"), Indicator->GetVisibility(), ESlateVisibility::Hidden);
+    return true;
 }
 
 #endif // WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS

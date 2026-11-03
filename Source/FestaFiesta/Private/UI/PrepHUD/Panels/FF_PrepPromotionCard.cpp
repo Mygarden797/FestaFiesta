@@ -3,6 +3,7 @@
 #include "UI/PrepHUD/Panels/FF_PrepPromotionCard.h"
 
 #include "Components/Button.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaPrepPromotion"
@@ -10,6 +11,25 @@
 void UFF_PrepPromotionCard::ConfigureOption(const FFF_PromotionOptionView& InOption, const FText& InLabel, bool bCompact)
 {
 	Option = InOption;
+	if (auto* CardBounds = Cast<USizeBox>(GetWidgetFromName(TEXT("SizeBox_Card"))))
+	{
+		if (!AuthoredMinDesiredHeight.IsSet())
+		{
+			AuthoredMinDesiredHeight = CardBounds->GetMinDesiredHeight();
+			bAuthoredMinDesiredHeightOverride = CardBounds->IsMinDesiredHeightOverride();
+		}
+		// The compact footer and shared forecast basis leave less room at 600px.
+		// Remove only the old full-detail minimum; wrapped content can still grow
+		// naturally and use the panel's scroll surface on smaller windows.
+		if (bCompact)
+		{
+			const float CompactHeight = FMath::Max(0.f, CompactMinDesiredHeight);
+			CardBounds->SetMinDesiredHeight(bAuthoredMinDesiredHeightOverride
+				? FMath::Min(AuthoredMinDesiredHeight.GetValue(), CompactHeight) : CompactHeight);
+		}
+		else if (bAuthoredMinDesiredHeightOverride) { CardBounds->SetMinDesiredHeight(AuthoredMinDesiredHeight.GetValue()); }
+		else { CardBounds->ClearMinDesiredHeight(); }
+	}
 
 	const FSlateBrush* IconBrush = ChoiceIconBrushes.Find(InOption.Choice);
 	ConfigureTab(static_cast<int32>(InOption.Choice), InLabel,

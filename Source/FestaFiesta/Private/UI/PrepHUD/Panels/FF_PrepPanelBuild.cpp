@@ -224,6 +224,28 @@ void UFF_PrepPanelBuild::NativePreConstruct()
 #if WITH_EDITOR
 	if (IsDesignTime())
 	{
+		if (WidgetTree && GetWidgetFromName(TEXT("Overlay_V9Catalog")))
+		{
+			// V9's archive and closed popups must not consume the Designer's layout.
+			// GetVisibility() reads the already-built Slate widget here, whose Designer
+			// visibility is based on bHiddenInDesigner rather than the saved Visibility.
+			// Set only these known inactive hosts; preserve other authored eye settings.
+			for (const TCHAR* Name : {TEXT("Panel_V9Retired"), TEXT("Popup_V9Filters"), TEXT("Popup_V9More"),
+				TEXT("Text_A5CatalogHeading"), TEXT("Text_ItemCount"), TEXT("Text_ActiveFilterCount"), TEXT("Row_A5CatalogFooter")})
+				if (UWidget* Host = GetWidgetFromName(Name))
+				{
+					Host->bHiddenInDesigner = true;
+					Host->InvalidateLayoutAndVolatility();
+				}
+			// These layout paths were explicitly reactivated by the V9 migration.
+			// Clear inherited hiding on their containers, not on every descendant.
+			for (const TCHAR* Name : {TEXT("TileView_Facilities"), TEXT("Row_V9CatalogHeader"), TEXT("Size_V9CategoryRail")})
+				for (UWidget* Host = GetWidgetFromName(Name); Host; Host = Host->GetParent())
+				{
+					Host->bHiddenInDesigner = false;
+					Host->InvalidateLayoutAndVolatility();
+				}
+		}
 		// UMG Designer does not honor runtime Collapsed, so show either the empty
 		// message or the preview cards, never both. No gameplay state is touched.
 		if (Panel_Empty)
