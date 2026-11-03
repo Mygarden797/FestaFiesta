@@ -35,6 +35,10 @@ public:
 
 	EFF_PromotionChoice GetChoice() const { return Option.Choice; }
 
+	/** Compact cards retain their content height without the full-detail card's empty space. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Promotion|Layout", meta = (ClampMin = "0"))
+	float CompactMinDesiredHeight = 280.f;
+
 protected:
 	virtual void CollectStateTexts(TArray<UTextBlock*>& OutTexts) const override;
 
@@ -73,4 +77,6 @@ protected:
 
 private:
 	FFF_PromotionOptionView Option;
+	TOptional<float> AuthoredMinDesiredHeight;
+	bool bAuthoredMinDesiredHeightOverride = false;
 };

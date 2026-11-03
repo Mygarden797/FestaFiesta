@@ -273,9 +273,9 @@ namespace FFPrepPromotionSkyBuilder
 		Basis->SetFont(BasisFont); Basis->SetColorAndOpacity(FSlateColor(Ink));
 		Basis->SetAutoWrapText(true);
 		Basis->SetText(LOCTEXT("CompactBasisPreview", "예상 방문객 · 현재 입장료 기준"));
-		Row(*Body, *Basis, FMargin(0.f, 0.f, 0.f, 12.f));
+		Row(*Body, *Basis, FMargin(0.f, 0.f, 0.f, 8.f));
 		Body->ShiftChild(0, Once); Body->ShiftChild(1, Basis); Body->ShiftChild(2, Cards); Body->ShiftChild(3, Notice);
-		FMargin OncePadding = OnceSlot->GetPadding(); OncePadding.Bottom = 16.f; OnceSlot->SetPadding(OncePadding);
+		FMargin OncePadding = OnceSlot->GetPadding(); OncePadding.Bottom = 12.f; OnceSlot->SetPadding(OncePadding);
 		FMargin NoticePadding = NoticeSlot->GetPadding(); NoticePadding.Top = 12.f; NoticePadding.Bottom = 0.f; NoticeSlot->SetPadding(NoticePadding);
 
 		Selected->SetVisibility(ESlateVisibility::Collapsed);

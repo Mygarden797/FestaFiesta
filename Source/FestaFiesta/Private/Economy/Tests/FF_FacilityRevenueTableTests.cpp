@@ -9,6 +9,7 @@
 #include "Engine/AssetManager.h"
 #include "Engine/DataTable.h"
 #include "FF_FFZSFacilityDefinition.h"
+#include "FF_FFZSQueueGeometry.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalSettings.h"
 #include "Misc/AutomationTest.h"
@@ -326,28 +327,53 @@ bool FFF_FacilityRevenueTable_ContentCoverage::RunTest(const FString& Parameters
 				UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(Definition->Spec, FTransform::Identity, Lane))) continue;
 			const FFF_QueueConfig Config = UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(
 				Definition->Spec.QueueRules, FVector::ZeroVector);
-			FFF_FacilityQueue Queue;
-			Queue.Configure(-2, Config, Lane);
-			FFF_JoinRequest Visit;
-			Visit.PartyId = 700001;
-			Visit.MemberCount = 4;
-			int32 Slot = INDEX_NONE;
-			float Wait = 0.f;
-			if (!TestEqual(*FString::Printf(TEXT("Paid facility admits a team: %s"), *Id.ToString()),
-				Queue.TryJoin(Visit, 0.f, Slot, Wait), EFF_QueueJoinResult::Accepted)) continue;
-			Queue.NotifyPartyArrived(Visit.PartyId);
-			Queue.Advance(Config.ServiceSecondsPerParty + .1f, Config.ServiceSecondsPerParty + .1f);
-			TArray<FFF_QueueLog> Logs;
-			Queue.ConsumePendingLogs(Logs);
-			if (!TestEqual(*FString::Printf(TEXT("Paid facility completes one visit: %s"), *Id.ToString()), Logs.Num(), 1)) continue;
-			TestEqual(*FString::Printf(TEXT("Paid visit completes rather than cancels: %s"), *Id.ToString()), Logs[0].ExitType, EFF_QueueExit::Served);
-			TestEqual(*FString::Printf(TEXT("Completed visit preserves four billable people: %s"), *Id.ToString()), Logs[0].MemberCount, 4);
-			const float Rate = FFF_BoothRevenueRules::ResolveCommissionRate(Definition->Spec, Festival->BoothCommissionRate, Table);
-			const float Multiplier = FFF_BoothRevenueRules::ResolveRevenueMultiplier(Definition->Spec, 1, 1.f, Table);
-			if (Rate > 0.f && Multiplier > 0.f)
+			// Party capacity also respects the authored lane width. The common 300cm
+			// lane cannot promise the four lateral member positions of a 600cm lane.
+			// Every paid definition must serve a solo visitor, and every larger party
+			// that physically fits must retain its full per-person billing.
+			for (const int32 MemberCount : {1, 2, 3, 4})
 			{
-				TestTrue(*FString::Printf(TEXT("Paid completed visit produces gold: %s"), *Id.ToString()),
-					FFF_BoothRevenueRules::ResolveCommission(Row->RevenuePerUseGold, Logs[0].MemberCount, Rate, Multiplier) > 0);
+				FFF_FacilityQueue Queue;
+				Queue.Configure(-2, Config, Lane);
+				FFF_JoinRequest Visit;
+				Visit.PartyId = 700001;
+				Visit.MemberCount = MemberCount;
+				int32 Slot = INDEX_NONE;
+				float Wait = 0.f;
+				const EFF_QueueJoinResult JoinResult = Queue.TryJoin(Visit, 0.f, Slot, Wait);
+				const FString VisitLabel = FString::Printf(TEXT("%s (%d people)"), *Id.ToString(), MemberCount);
+				if (JoinResult != EFF_QueueJoinResult::Accepted)
+				{
+					if (MemberCount == 1)
+					{
+						TestEqual(*FString::Printf(TEXT("Every paid facility admits a solo visitor: %s"), *VisitLabel),
+							JoinResult, EFF_QueueJoinResult::Accepted);
+					}
+					else
+					{
+						TestEqual(*FString::Printf(TEXT("An incompatible party is rejected only by physical capacity: %s"), *VisitLabel),
+							JoinResult, EFF_QueueJoinResult::RejectedFull);
+					}
+					TestEqual(*FString::Printf(TEXT("A rejected party occupies no queue slot: %s"), *VisitLabel), Queue.GetWaitingPartyCount(), 0);
+					TArray<FFF_QueueLog> RejectedLogs;
+					Queue.ConsumePendingLogs(RejectedLogs);
+					TestTrue(*FString::Printf(TEXT("A rejected party cannot be billed: %s"), *VisitLabel), RejectedLogs.IsEmpty());
+					continue;
+				}
+				Queue.NotifyPartyArrived(Visit.PartyId);
+				Queue.Advance(Config.ServiceSecondsPerParty + .1f, Config.ServiceSecondsPerParty + .1f);
+				TArray<FFF_QueueLog> Logs;
+				Queue.ConsumePendingLogs(Logs);
+				if (!TestEqual(*FString::Printf(TEXT("Paid facility completes one visit: %s"), *VisitLabel), Logs.Num(), 1)) continue;
+				TestEqual(*FString::Printf(TEXT("Paid visit completes rather than cancels: %s"), *VisitLabel), Logs[0].ExitType, EFF_QueueExit::Served);
+				TestEqual(*FString::Printf(TEXT("Completed visit preserves every billable person: %s"), *VisitLabel), Logs[0].MemberCount, MemberCount);
+				const float Rate = FFF_BoothRevenueRules::ResolveCommissionRate(Definition->Spec, Festival->BoothCommissionRate, Table);
+				const float Multiplier = FFF_BoothRevenueRules::ResolveRevenueMultiplier(Definition->Spec, 1, 1.f, Table);
+				if (Rate > 0.f && Multiplier > 0.f)
+				{
+					TestTrue(*FString::Printf(TEXT("Paid completed visit produces gold: %s"), *VisitLabel),
+						FFF_BoothRevenueRules::ResolveCommission(Row->RevenuePerUseGold, Logs[0].MemberCount, Rate, Multiplier) > 0);
+				}
 			}
 		}
 	}
@@ -357,5 +383,74 @@ bool FFF_FacilityRevenueTable_ContentCoverage::RunTest(const FString& Parameters
 	}
 	return true;
 }
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityRevenueTable_WideQueuesPreservePartyRevenue,
+	"FestaFiesta.Economy.FacilityRevenueTable.WideQueuesPreservePartyRevenue",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityRevenueTable_WideQueuesPreservePartyRevenue::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	const UFF_FestivalSettings* Settings = UFF_FestivalSettings::Get();
+	const UFF_FestivalDefinition* Festival = Settings ? Settings->DefaultFestival.LoadSynchronous() : nullptr;
+	if (!TestNotNull(TEXT("The configured Festival asset loads"), Festival)) return false;
+	const UDataTable* Table = Festival->GetFacilityRevenueTable();
+	if (!TestNotNull(TEXT("The Festival supplies its facility revenue table"), Table)) return false;
+	if (!TestTrue(TEXT("The production table has the revenue row schema"), Table->GetRowStruct() == FFF_FacilityRevenueTableRow::StaticStruct())) return false;
+	UAssetManager& AssetManager = UAssetManager::Get();
+	TArray<FPrimaryAssetId> Assets;
+	AssetManager.GetPrimaryAssetIdList(UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(), Assets);
+	int32 PaidFacilityCount = 0;
+	for (const FPrimaryAssetId& AssetId : Assets)
+	{
+		const UFFZSFacilityDefinition* Definition = Cast<UFFZSFacilityDefinition>(AssetManager.GetPrimaryAssetPath(AssetId).TryLoad());
+		if (!TestNotNull(*FString::Printf(TEXT("Facility loads: %s"), *AssetId.ToString()), Definition)) continue;
+		const FName Id = Definition->Spec.FacilityDefinitionId;
+		const FFF_FacilityRevenueTableRow* Row = Table->FindRow<FFF_FacilityRevenueTableRow>(Id, TEXT("FacilityRevenueWideQueueTest"), false);
+		if (!TestNotNull(*FString::Printf(TEXT("Facility has its own revenue row: %s"), *Id.ToString()), Row)) continue;
+		if (Row->RevenuePerUseGold <= 0) continue;
+		++PaidFacilityCount;
+		// Use a supported wide layout without modifying the production asset.
+		// ContentCoverage still checks its authored 300cm default. This separate
+		// positive control must fail if all larger parties regress to rejection.
+		FFFZSFacilitySpec WideSpec = Definition->Spec;
+		WideSpec.QueueLayout = EFFZSQueueLayout::Right;
+		WideSpec.QueueSettings.bEnabled = true;
+		WideSpec.QueueSettings.LaneWidthCm = 600.f;
+		FText LayoutError;
+		const bool bGenerated = FFFZSQueueGeometry::ApplySelectedLayout(WideSpec, LayoutError);
+		if (!TestTrue(*FString::Printf(TEXT("600cm right layout generates for %s: %s"), *Id.ToString(), *LayoutError.ToString()), bGenerated)) continue;
+		FFF_QueueLaneGeometry Lane;
+		if (!TestTrue(*FString::Printf(TEXT("The wide layout projects for %s"), *Id.ToString()),
+			UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(WideSpec, FTransform::Identity, Lane))) continue;
+		const FFF_QueueConfig Config = UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(WideSpec.QueueRules, FVector::ZeroVector);
+		FFF_FacilityQueue Queue;
+		Queue.Configure(-3, Config, Lane);
+		FFF_JoinRequest Visit;
+		Visit.PartyId = 700004;
+		Visit.MemberCount = 4;
+		int32 Slot = INDEX_NONE;
+		float Wait = 0.f;
+		if (!TestEqual(*FString::Printf(TEXT("Wide paid facility admits all four people: %s"), *Id.ToString()),
+			Queue.TryJoin(Visit, 0.f, Slot, Wait), EFF_QueueJoinResult::Accepted)) continue;
+		Queue.NotifyPartyArrived(Visit.PartyId);
+		Queue.Advance(Config.ServiceSecondsPerParty + .1f, Config.ServiceSecondsPerParty + .1f);
+		TArray<FFF_QueueLog> Logs;
+		Queue.ConsumePendingLogs(Logs);
+		if (!TestEqual(*FString::Printf(TEXT("Wide paid facility completes one team: %s"), *Id.ToString()), Logs.Num(), 1)) continue;
+		TestEqual(*FString::Printf(TEXT("The four-person visit is served: %s"), *Id.ToString()), Logs[0].ExitType, EFF_QueueExit::Served);
+		TestEqual(*FString::Printf(TEXT("The served team retains four billable people: %s"), *Id.ToString()), Logs[0].MemberCount, 4);
+		const float Rate = FFF_BoothRevenueRules::ResolveCommissionRate(WideSpec, Festival->BoothCommissionRate, Table);
+		const float Multiplier = FFF_BoothRevenueRules::ResolveRevenueMultiplier(WideSpec, 1, 1.f, Table);
+		if (Rate > 0.f && Multiplier > 0.f)
+		{
+			TestTrue(*FString::Printf(TEXT("The actual four-person completion produces gold: %s"), *Id.ToString()),
+				FFF_BoothRevenueRules::ResolveCommission(Row->RevenuePerUseGold, Logs[0].MemberCount, Rate, Multiplier) > 0);
+		}
+	}
+	TestTrue(TEXT("The positive control exercised actual paid facility definitions"), PaidFacilityCount > 0);
+	return true;
+}
+
 
 #endif // WITH_DEV_AUTOMATION_TESTS

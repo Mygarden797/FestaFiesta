@@ -19,6 +19,7 @@
 #include "Editor.h"
 #include "Engine/Blueprint.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/UnrealType.h"
 
 namespace
 {
@@ -28,8 +29,6 @@ namespace
 		FFBuildUIAssetPaths::FacilityCostTooltipObject;
 	const TCHAR* TooltipClassPath =
 		FFBuildUIAssetPaths::FacilityCostTooltipClass;
-	const TCHAR* FacilityCardClassPath =
-		FFBuildUIAssetPaths::FacilityCardClass;
 
 	// Unity 빌드는 여러 cpp의 익명 네임스페이스를 합치므로 보조 함수 이름을 파일 고유하게 유지한다.
 	class FScopedBuildFacilityCostTooltipPlayerlessWidgetInitialization
@@ -142,11 +141,12 @@ bool FFF_BuildFacilityCostTooltipCardIntegrationTest::RunTest(const FString& Par
 	UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	UWidgetBlueprintGeneratedClass* TooltipClass =
 		Cast<UWidgetBlueprintGeneratedClass>(LoadObject<UClass>(nullptr, TooltipClassPath));
-	UWidgetBlueprintGeneratedClass* CardClass =
-		Cast<UWidgetBlueprintGeneratedClass>(LoadObject<UClass>(nullptr, FacilityCardClassPath));
+	// The full-screen card WBP was retired with the virtualized PrepBuild catalog.
+	// Its native compatibility path still owns this custom cost-tooltip contract.
+	UClass* CardClass = UFF_BuildFacilityCard::StaticClass();
 	TestNotNull(TEXT("Editor world is available for the UMG integration test"), EditorWorld);
 	TestNotNull(TEXT("Editable tooltip class is available"), TooltipClass);
-	TestNotNull(TEXT("Existing production card class is available"), CardClass);
+	TestNotNull(TEXT("Native compatibility card class is available"), CardClass);
 	if (!EditorWorld || !TooltipClass || !CardClass)
 	{
 		return false;
@@ -154,7 +154,6 @@ bool FFF_BuildFacilityCostTooltipCardIntegrationTest::RunTest(const FString& Par
 
 	const bool bCardPackageWasDirty = CardClass->GetOutermost()->IsDirty();
 	FScopedBuildFacilityCostTooltipPlayerlessWidgetInitialization TooltipGuard(*TooltipClass);
-	FScopedBuildFacilityCostTooltipPlayerlessWidgetInitialization CardGuard(*CardClass);
 
 	FFF_BuildCatalogEntry Entry;
 	Entry.FacilityDefinitionId = TEXT("Booth_FoodStall_UMGTooltipTest");
@@ -180,16 +179,25 @@ bool FFF_BuildFacilityCostTooltipCardIntegrationTest::RunTest(const FString& Par
 	}
 
 	UFF_BuildFacilityCard* Card = CreateWidget<UFF_BuildFacilityCard>(EditorWorld, CardClass);
-	TestNotNull(TEXT("The existing production card can be instantiated without modification"), Card);
+	TestNotNull(TEXT("The native card can be instantiated without restoring a retired WBP"), Card);
 	if (!Card)
 	{
 		return false;
 	}
+	// Supply the native button's required label in a transient tree; the retired
+	// WBP is not needed to exercise Configure and the real authored tooltip.
+	if (!TestNotNull(TEXT("Native card owns its transient WidgetTree"), Card->WidgetTree.Get())) return false;
+	UCommonTextBlock* CardLabel = Card->WidgetTree->ConstructWidget<UCommonTextBlock>(
+		UCommonTextBlock::StaticClass(), TEXT("Text_Label"));
+	Card->WidgetTree->RootWidget = CardLabel;
+	FObjectPropertyBase* LabelProperty = FindFProperty<FObjectPropertyBase>(Card->GetClass(), TEXT("Text_Label"));
+	if (!TestNotNull(TEXT("Native card retains the required label binding"), LabelProperty)) return false;
+	LabelProperty->SetObjectPropertyValue_InContainer(Card, CardLabel);
 	Card->Configure(Entry);
 	const TSharedRef<SWidget> CardSlate = Card->TakeWidget();
 	UFF_BuildFacilityCostTooltip* AttachedTooltip =
 		Cast<UFF_BuildFacilityCostTooltip>(Card->GetToolTip());
-	TestNotNull(TEXT("The existing card receives the custom UMG tooltip at runtime"), AttachedTooltip);
+	TestNotNull(TEXT("The native card receives the authored custom UMG tooltip at runtime"), AttachedTooltip);
 	TestTrue(TEXT("The Slate card has a registered custom tooltip"),
 		CardSlate->GetToolTip().IsValid());
 	TestTrue(TEXT("Custom UMG replaces the plain text tooltip on the production path"),
@@ -241,7 +249,7 @@ bool FFF_BuildFacilityCostTooltipCardIntegrationTest::RunTest(const FString& Par
 	TestEqual(TEXT("Unavailable recovery cost never leaves a stale or misleading zero value"),
 		AttachedTooltip->GetDisplayedRecoveryCostText().ToString(),
 		FString(TEXT("가격 정보 없음")));
-	TestEqual(TEXT("Runtime attachment preserves the existing card WBP dirty state"),
+	TestEqual(TEXT("Runtime attachment preserves the native class package dirty state"),
 		CardClass->GetOutermost()->IsDirty(), bCardPackageWasDirty);
 	return true;
 }

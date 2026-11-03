@@ -9,6 +9,7 @@
 #include "HAL/FileManager.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/CommandLine.h"
+#include "Misc/Guid.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "Misc/ScopeExit.h"
@@ -25,24 +26,84 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FestivalThumbnailLoadingTest,
 bool FFF_FestivalThumbnailLoadingTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
-	// GameInstance 초기화의 저장 목록 정리가 개인 세이브를 건드리지 않도록 빈 격리 경로만 허용한다.
+	// GameInstance 초기화의 저장 목록 정리가 개인 세이브를 건드리지 않도록
+	// runner가 지정한 격리 UserDir 안에서만 테스트한다.
 	FString IsolatedUserDirectory;
 	const FString OrdinarySaved = FPaths::ConvertRelativePathToFull(
 		FPaths::Combine(FPaths::ProjectDir(), TEXT("Saved")));
+	const FString ActualSaved = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir());
 	if (!FParse::Value(FCommandLine::Get(), TEXT("UserDir="), IsolatedUserDirectory)
 		|| IsolatedUserDirectory.IsEmpty() || FPaths::IsRelative(IsolatedUserDirectory)
-		|| FPaths::IsSamePath(FPaths::ProjectSavedDir(), OrdinarySaved))
+		|| FPaths::IsSamePath(ActualSaved, OrdinarySaved)
+		|| FPaths::IsUnderDirectory(ActualSaved, OrdinarySaved)
+		|| !FPaths::IsUnderDirectory(ActualSaved, IsolatedUserDirectory))
 	{
 		AddError(TEXT("Festival thumbnail test requires -UserDir=<isolated absolute directory>."));
 		return false;
 	}
-	TArray<FString> ExistingSaves;
-	IFileManager::Get().FindFilesRecursive(ExistingSaves,
-		*FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SaveGames")), TEXT("*.sav"), true, false);
-	if (!ExistingSaves.IsEmpty())
+
+	// UserDir is isolated per automation filter, not per test. Save integration
+	// tests earlier in the same filter may legitimately leave .sav files behind.
+	// Preserve those bytes outside SaveGames, then restore them after the fixture
+	// shuts down. Never delete either prior saves or files produced by this test.
+	const FString SaveDirectory = FPaths::Combine(ActualSaved, TEXT("SaveGames"));
+	const FString SaveEvidence = FPaths::Combine(ActualSaved, TEXT("Automation/FestivalThumbnailLifetime"),
+		FGuid::NewGuid().ToString(EGuidFormats::Digits));
+	TArray<TPair<FString, FString>> PreservedSaves;
+	bool bSaveIsolationReady = false;
+	const auto MoveSaveToEvidence = [&](const FString& Source, const FString& EvidenceDirectory, FString& OutEvidencePath)
 	{
-		AddError(TEXT("Festival thumbnail test requires an isolated directory without existing saves."));
-		return false;
+		const FString FullSource = FPaths::ConvertRelativePathToFull(Source);
+		FString RelativePath = FullSource;
+		if (!FPaths::IsUnderDirectory(FullSource, SaveDirectory)
+			|| !FPaths::MakePathRelativeTo(RelativePath, *(SaveDirectory + TEXT("/"))))
+		{
+			AddError(TEXT("Refusing to move a save outside the isolated fixture directory."));
+			return false;
+		}
+		OutEvidencePath = FPaths::Combine(EvidenceDirectory, RelativePath);
+		return IFileManager::Get().Move(*OutEvidencePath, *FullSource, false, false, false, true);
+	};
+	ON_SCOPE_EXIT
+	{
+		// Declared before Fixture so world/subsystem shutdown happens first.
+		if (bSaveIsolationReady)
+		{
+			TArray<FString> GeneratedSaves;
+			IFileManager::Get().FindFilesRecursive(GeneratedSaves, *SaveDirectory, TEXT("*.sav"), true, false);
+			for (const FString& Generated : GeneratedSaves)
+			{
+				FString EvidencePath;
+				if (!MoveSaveToEvidence(Generated, SaveEvidence / TEXT("GeneratedSaveGames"), EvidencePath))
+				{
+					AddError(FString::Printf(TEXT("Could not preserve a generated fixture save: %s"), *Generated));
+				}
+			}
+		}
+		for (const TPair<FString, FString>& Preserved : PreservedSaves)
+		{
+			if (!IFileManager::Get().Move(*Preserved.Key, *Preserved.Value, false, false, false, true))
+			{
+				AddError(FString::Printf(TEXT("Could not restore an earlier automation save; original bytes remain at: %s"), *Preserved.Value));
+			}
+		}
+	};
+	TArray<FString> ExistingSaves;
+	IFileManager::Get().FindFilesRecursive(ExistingSaves, *SaveDirectory, TEXT("*.sav"), true, false);
+	for (const FString& Existing : ExistingSaves)
+	{
+		FString EvidencePath;
+		if (!MoveSaveToEvidence(Existing, SaveEvidence / TEXT("OriginalSaveGames"), EvidencePath))
+		{
+			AddError(FString::Printf(TEXT("Could not isolate an earlier automation save: %s"), *Existing));
+			return false;
+		}
+		PreservedSaves.Emplace(FPaths::ConvertRelativePathToFull(Existing), EvidencePath);
+	}
+	bSaveIsolationReady = true;
+	if (!PreservedSaves.IsEmpty())
+	{
+		AddInfo(FString::Printf(TEXT("Temporarily isolated %d earlier automation saves for the thumbnail fixture."), PreservedSaves.Num()));
 	}
 
 	FTestWorldWrapper Fixture;
