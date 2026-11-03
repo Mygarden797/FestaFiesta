@@ -325,7 +325,7 @@ $lockedMsvcInstallation = Resolve-FFMsvcInstallation -InstallVersion ([string]$t
 Write-Verbose "Locked MSVC installation: $lockedMsvcInstallation"
 
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
-    $OutputRoot = Join-Path $projectRoot 'Artifacts\Releases'
+    $OutputRoot = 'C:\FestaFiestaBuild'
 }
 $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 
@@ -376,7 +376,7 @@ $payloadPathBudget = 100
 $deepestPayloadRoot = Join-Path $releaseRoot 'Package\Windows\'
 if ($deepestPayloadRoot.Length + $payloadPathBudget -ge 260) {
     throw ("Output path is too deep for Windows MAX_PATH: '{0}' ({1} chars) leaves less than {2} characters for staged files. " +
-        'Use a shorter -OutputRoot (for example C:\Builds\FestaFiesta) or a shorter -BuildLabel.') -f
+        'Use a shorter -OutputRoot (for example C:\FestaFiestaBuild) or a shorter -BuildLabel.') -f
         $deepestPayloadRoot, $deepestPayloadRoot.Length, $payloadPathBudget
 }
 

@@ -72,6 +72,7 @@
 #include "Building/FacilityInfo/FF_FacilityPaidProgramLayout.h"
 #include "Building/FacilityInfo/FF_FacilityPaidProgramPicker.h"
 #include "WidgetBlueprint.h"
+#include "UObject/UnrealType.h"
 #include "Widgets/Layout/SDPIScaler.h"
 
 namespace
@@ -1221,9 +1222,12 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	{
 		bUpgradeInsideScroll |= Ancestor == Tree->FindWidget(TEXT("ScrollBox_Details"));
 	}
-	TestTrue(TEXT("강화 비교 본문은 기존 상세 스크롤 안에 있다"), bUpgradeInsideScroll);
+	const UPanelWidget* CompactPages = Cast<UPanelWidget>(Tree->FindWidget(TEXT("Overlay_V10InfoPages")));
+	if (CompactPages)
+		TestTrue(TEXT("강화 비교는 스크롤 없는 독립 페이지다"), UpgradeSection && UpgradeSection->GetParent() == CompactPages && !bUpgradeInsideScroll);
+	else TestTrue(TEXT("강화 비교 본문은 기존 상세 스크롤 안에 있다"), bUpgradeInsideScroll);
 	UVerticalBox* DetailContent = Cast<UVerticalBox>(Tree->FindWidget(TEXT("Panel_Content")));
-	if (TestNotNull(TEXT("시설 상세 스크롤 콘텐츠"), DetailContent) && UpgradeSection)
+	if (TestNotNull(TEXT("시설 상세 콘텐츠"), DetailContent) && UpgradeSection && !CompactPages)
 	{
 		const int32 UpgradeIndex = DetailContent->GetChildIndex(UpgradeSection);
 		TestNull(TEXT("폐기한 옛 요약 카드는 Designer에 남지 않는다"), Tree->FindWidget(TEXT("Summary_Card")));
@@ -1625,17 +1629,31 @@ bool FFF_FacilityInfoInspectorV2MigrationTest::RunTest(const FString& Parameters
 	TestTrue(TEXT("Common identity stays outside the scroll body"), Identity->GetParent() == Shell && !IsWithin(Identity, Scroll));
 	TestTrue(TEXT("Thumbnail/name/category remain bound under the common identity"),
 		IsWithin(Tree->FindWidget(TEXT("Thumbnail_Size")), Identity) &&
-		IsWithin(Tree->FindWidget(TEXT("Text_FacilityName")), Identity) && IsWithin(Tree->FindWidget(TEXT("Meta_Row")), Identity));
+		IsWithin(Tree->FindWidget(TEXT("Text_FacilityName")), Identity) && IsWithin(Tree->FindWidget(
+			Tree->FindWidget(TEXT("Overlay_V10InfoPages")) ? TEXT("Text_Category") : TEXT("Meta_Row")), Identity));
 	TestTrue(TEXT("Destructive confirmation buttons remain visible in a fixed footer"), RemoveActions->GetParent() == Shell &&
 		IsWithin(Tree->FindWidget(TEXT("Button_RemoveConfirm")), RemoveActions) &&
 		IsWithin(Tree->FindWidget(TEXT("Button_RemoveCancel")), RemoveActions));
-	TestTrue(TEXT("Data-heavy sections stay inside the original scroll body"),
-		IsWithin(Tree->FindWidget(TEXT("Panel_UpgradeMetricRows")), Scroll) &&
-		IsWithin(Tree->FindWidget(TEXT("Panel_RemoveConfirmation")), Scroll));
-	TestTrue(TEXT("The guarded upgrade action and refund notice stay outside the scrolling values"),
-		IsWithin(Tree->FindWidget(TEXT("Button_Upgrade")), Tree->FindWidget(TEXT("Panel_UpgradeActions"))) &&
-		IsWithin(Tree->FindWidget(TEXT("V2_UpgradeRefundNotice")), Tree->FindWidget(TEXT("Panel_UpgradeActions"))) &&
-		!IsWithin(Tree->FindWidget(TEXT("Panel_UpgradeActions")), Scroll));
+	if (UWidget* Pages = Tree->FindWidget(TEXT("Overlay_V10InfoPages")))
+	{
+		TestTrue(TEXT("Task values remain within their independent non-scrolling pages"),
+			IsWithin(Tree->FindWidget(TEXT("Panel_UpgradeMetricRows")), Pages) &&
+			IsWithin(Tree->FindWidget(TEXT("Panel_RemoveConfirmation")), Pages));
+		TestTrue(TEXT("The guarded upgrade action stays in its fixed footer below page values"),
+			IsWithin(Tree->FindWidget(TEXT("Button_Upgrade")), Tree->FindWidget(TEXT("Panel_UpgradeActions"))) &&
+			Tree->FindWidget(TEXT("Panel_UpgradeActions"))->GetParent() == Shell &&
+			!IsWithin(Tree->FindWidget(TEXT("Panel_UpgradeActions")), Pages));
+	}
+	else
+	{
+		TestTrue(TEXT("Data-heavy sections stay inside the original scroll body"),
+			IsWithin(Tree->FindWidget(TEXT("Panel_UpgradeMetricRows")), Scroll) &&
+			IsWithin(Tree->FindWidget(TEXT("Panel_RemoveConfirmation")), Scroll));
+		TestTrue(TEXT("The guarded upgrade action and refund notice stay outside the scrolling values"),
+			IsWithin(Tree->FindWidget(TEXT("Button_Upgrade")), Tree->FindWidget(TEXT("Panel_UpgradeActions"))) &&
+			IsWithin(Tree->FindWidget(TEXT("V2_UpgradeRefundNotice")), Tree->FindWidget(TEXT("Panel_UpgradeActions"))) &&
+			!IsWithin(Tree->FindWidget(TEXT("Panel_UpgradeActions")), Scroll));
+	}
 	for (const FName Name : {FName(TEXT("Panel_PersistentIdentity")), FName(TEXT("Panel_UpgradeMetricRows")),
 		FName(TEXT("Panel_UpgradeQuote")), FName(TEXT("Panel_UpgradeActions")), FName(TEXT("Panel_RemoveActions")), FName(TEXT("Button_RevenueRanking")),
 		FName(TEXT("Text_UpgradeCurrentRevenue")), FName(TEXT("Text_UpgradeNextRevenue")),
@@ -1725,7 +1743,13 @@ bool FFF_FacilityInfoRevenueSectionContractTest::RunTest(const FString& Paramete
 	}
 	UVerticalBox* Content = Cast<UVerticalBox>(Tree->FindWidget(TEXT("Panel_Content")));
 	UWidget* Section = Tree->FindWidget(TEXT("Panel_RevenueSection"));
-	if (TestNotNull(TEXT("상세 스크롤 콘텐츠"), Content) && TestNotNull(TEXT("수익 섹션"), Section))
+	if (UPanelWidget* Pages = Cast<UPanelWidget>(Tree->FindWidget(TEXT("Overlay_V10InfoPages"))))
+	{
+		TestTrue(TEXT("수익은 스크롤 없는 독립 페이지다"), Section && Section->GetParent() == Pages);
+		for (const TCHAR* Name : {TEXT("Panel_BuildSection"), TEXT("Panel_LiveSection"), TEXT("Panel_ProgramSection"), TEXT("Panel_UpgradeSection")})
+			TestTrue(FString(Name) + TEXT("는 같은 페이지 호스트의 독립 섹션이다"), Tree->FindWidget(Name) && Tree->FindWidget(Name)->GetParent() == Pages);
+	}
+	else if (TestNotNull(TEXT("상세 스크롤 콘텐츠"), Content) && TestNotNull(TEXT("수익 섹션"), Section))
 	{
 		UWidget* SectionInContent = FFFacilityInfoUpgradeLayout::FindContentChild(Section, *Content);
 		const UWidget* Upgrade = FFFacilityInfoUpgradeLayout::FindContentChild(
@@ -1793,6 +1817,7 @@ bool FFF_FacilityInfoUpgradeVisualPreviewTest::RunTest(const FString& Parameters
 	ViewData.bCanRemove = true;
 	ViewData.FootprintText = FText::FromString(TEXT("4 × 4 m"));
 	ViewData.ServiceDurationText = FText::FromString(TEXT("4초"));
+	ViewData.bHasService = true;
 	FFF_FacilityUpgradePreview Preview;
 	Preview.CurrentLevel = 1;
 	Preview.TargetLevel = 2;
@@ -1848,6 +1873,15 @@ bool FFF_FacilityInfoUpgradeVisualPreviewTest::RunTest(const FString& Parameters
 		if (!UpgradeButton || !DetailScroll) return false;
 		const FSlateRect ButtonRect = UpgradeButton->GetPaintSpaceGeometry().GetLayoutBoundingRect();
 		const FSlateRect ScrollRect = DetailScroll->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		if (Panel->GetWidgetFromName(TEXT("Overlay_V10InfoPages")))
+		{
+			const FSlateRect CardRect = Card->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+			const FSlateRect ActionsRect = UpgradeActions->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+			return UpgradeActions->IsVisible() && ButtonRect.GetSize().Y >= 24.f &&
+				ButtonRect.Top >= ActionsRect.Top && ButtonRect.Bottom <= ActionsRect.Bottom + 1.f &&
+				ButtonRect.Left >= CardRect.Left && ButtonRect.Right <= CardRect.Right &&
+				ButtonRect.Top >= CardRect.Top && ButtonRect.Bottom <= CardRect.Bottom + 1.f;
+		}
 		if (UpgradeActions && NormalActions)
 		{
 			const FSlateRect ActionsRect = UpgradeActions->GetPaintSpaceGeometry().GetLayoutBoundingRect();
@@ -1956,6 +1990,7 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 	Data.RecoveryCostText = FText::FromString(TEXT("60 Gold"));
 	Data.InstanceLimitText = FText::FromString(TEXT("2 / 8개"));
 	Data.QueueCapacityText = FText::FromString(TEXT("8팀"));
+	Data.bHasService = true;
 	Data.QueueCapacityValueText = FText::FromString(TEXT("8팀"));
 	Data.ServiceCapacityValueText = FText::FromString(TEXT("1팀"));
 	Data.ServiceDurationText = FText::FromString(TEXT("4초"));
@@ -1995,7 +2030,8 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 		if (!TestTrue(TEXT("720p 실제 WBP 렌더"), Resource && Resource->ReadPixels(Pixels, ReadFlags) && Pixels.Num() == Width * Height)) return false;
 		const bool bClarityPanel = Panel->GetWidgetFromName(TEXT("Clarity_InfoV1")) != nullptr;
 		const bool bAuroraMaterial = !bClarityPanel && Panel->GetWidgetFromName(TEXT("Aurora_InfoV7")) != nullptr;
-		const UBorder* Header = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Header_Surface")));
+		const UBorder* Header = Cast<UBorder>(Panel->GetWidgetFromName(Panel->GetWidgetFromName(TEXT("Overlay_V10InfoPages"))
+			? TEXT("Panel_PersistentIdentity") : TEXT("Header_Surface")));
 		if (!TestNotNull(TEXT("Designer header surface"), Header)) return false;
 		// 실제 헤더의 가운데 배경을 검사한다. 왼쪽 제목의 흰 글자를 배경으로 오인하지 않는다.
 		const FGeometry& HeaderGeometry = Header->GetPaintSpaceGeometry();
@@ -2010,7 +2046,14 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 		const FColor HeaderPixel = Pixels[SampleY * Width + SampleX];
 		const FColor ExpectedHeader = (Header->Background.TintColor.GetSpecifiedColor() * Header->GetBrushColor()).ToFColor(true);
 		const UMaterialInterface* HeaderMaterial=Cast<UMaterialInterface>(Header->Background.GetResourceObject());
-		if(Panel->GetWidgetFromName(TEXT("ClarityV2_Info")))
+		if (Panel->GetWidgetFromName(TEXT("Overlay_V10InfoPages")))
+		{
+			const auto* Surface = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Border_Panel")));
+			TestTrue(TEXT("The compact header uses the slightly translucent shared pearl surface"), Surface &&
+				Surface->Background.TintColor.GetSpecifiedColor().A >= .85f && Surface->Background.TintColor.GetSpecifiedColor().A <= .95f);
+			TestTrue(TEXT("The rendered compact identity remains visible"), HeaderPixel.A >= 150);
+		}
+		else if(Panel->GetWidgetFromName(TEXT("ClarityV2_Info")))
 		{
 			TestTrue(TEXT("Build inspector retains its opaque authored Pearl header"),
 				Header->Background.DrawAs == ESlateBrushDrawType::RoundedBox && ExpectedHeader.A >= 250);
@@ -2710,10 +2753,12 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 	};
 	Panel->SetInfoPage(EFF_FacilityInfoPage::Lighting);
 	bool bSaved = Capture(Slate, 1920, 1080, TEXT("FacilityLightingPanelV7.png"));
-	auto IsInsideScroll = [Scroll](const UWidget* Widget)
+	UWidget* LightingViewport = Panel->GetWidgetFromName(TEXT("Overlay_V10InfoPages"))
+		? Panel->GetWidgetFromName(TEXT("Body_Surface")) : static_cast<UWidget*>(Scroll);
+	auto IsInsideScroll = [LightingViewport](const UWidget* Widget)
 	{
 		if (!Widget) return false;
-		const FGeometry& Outer = Scroll->GetCachedGeometry();
+		const FGeometry& Outer = LightingViewport->GetCachedGeometry();
 		const FGeometry& Inner = Widget->GetCachedGeometry();
 		const FVector2D Start = Outer.AbsoluteToLocal(Inner.LocalToAbsolute(FVector2D::ZeroVector));
 		const FVector2D End = Outer.AbsoluteToLocal(Inner.LocalToAbsolute(Inner.GetLocalSize()));
@@ -2727,7 +2772,7 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 	{
 		if (auto* Wheel=Cast<USizeBox>(Controls->GetWidgetFromName(TEXT("Aurora_ColorPickerSize"))))
 		{
-			TestEqual(TEXT("Build lighting uses the approved compact color wheel"), Wheel->GetWidthOverride(), 92.f);
+			TestEqual(TEXT("Build lighting uses the approved compact color wheel"), Wheel->GetWidthOverride(), Controls->BuildColorWheelSize);
 			TestTrue(TEXT("Color wheel is round and visible"), IsInsideScroll(Wheel)
 				&& FMath::IsNearlyEqual(Wheel->GetCachedGeometry().GetLocalSize().X, Wheel->GetCachedGeometry().GetLocalSize().Y, 1.f));
 		}
@@ -2850,7 +2895,17 @@ bool FFF_FacilityInfoClarityNavigationTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Programs open directly"), Panel->GetWidgetFromName(TEXT("Panel_ProgramSection"))->GetVisibility(), ESlateVisibility::Visible);
 	TestTrue(TEXT("Selected program tab stays enabled instead of receiving disabled tint"),Programs->GetIsEnabled());
 	if(auto* SelectedLabel=Cast<UCommonTextBlock>(Programs->GetContent()))
-		TestTrue(TEXT("Selected tab retains bright text"),SelectedLabel->GetColorAndOpacity().GetSpecifiedColor().Equals(FLinearColor::White,.01f));
+	{
+		FLinearColor ExpectedSelectedColor = FLinearColor::White;
+		if (Panel->GetWidgetFromName(TEXT("Overlay_V10InfoPages")))
+		{
+			const auto* ColorProperty = FindFProperty<FStructProperty>(Class, TEXT("SelectedTabTextColor"));
+			if (!TestNotNull(TEXT("Selected tab color remains authored in class defaults"), ColorProperty)) return false;
+			ExpectedSelectedColor = *ColorProperty->ContainerPtrToValuePtr<FLinearColor>(Class->GetDefaultObject());
+		}
+		TestTrue(TEXT("Selected tab retains the authored contrasting text color"),
+			SelectedLabel->GetColorAndOpacity().GetSpecifiedColor().Equals(ExpectedSelectedColor, .01f));
+	}
 	TestTrue(TEXT("Selected tab uses the authored selection surface"),Programs->GetStyle().Normal==Programs->GetStyle().Disabled);
 	Programs->OnClicked.Broadcast();
 	TestEqual(TEXT("Clicking the current tab preserves the current page"),Panel->GetWidgetFromName(TEXT("Panel_ProgramSection"))->GetVisibility(),ESlateVisibility::Visible);
@@ -2958,7 +3013,8 @@ bool FFF_FacilityInfoStaffMigrationTest::RunTest(const FString& Parameters)
 	}
 	UWidget* Section = Tree.FindWidget(TEXT("Panel_StaffSection"));
 	TestTrue(TEXT("Staff page sits beside other pages, outside the basic facts"),
-		Section && Section->GetParent() == Tree.FindWidget(TEXT("Panel_Content")));
+		Section && Section->GetParent() == Tree.FindWidget(Tree.FindWidget(TEXT("Overlay_V10InfoPages"))
+			? TEXT("Overlay_V10InfoPages") : TEXT("Panel_Content")));
 	bool bAddedAgain = true;
 	TestTrue(TEXT("Staff migration can be repeated"), FFFacilityInfoWbpBuilder::EnsureStaffWidgetContract(*Copy, Tree, bAddedAgain));
 	TestFalse(TEXT("Repeated staff migration leaves authored controls untouched"), bAddedAgain);
@@ -3032,6 +3088,7 @@ bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Paramet
 	Data.InstallCostText = FText::FromString(TEXT("300 Gold"));
 	Data.RecoveryCostText = FText::FromString(TEXT("150 Gold"));
 	Data.QueueCapacityValueText = FText::FromString(TEXT("5팀"));
+	Data.bHasService = true;
 	Data.ServiceCapacityValueText = FText::FromString(TEXT("1팀"));
 	Data.ServiceDurationText = FText::FromString(TEXT("6초"));
 	Data.FootprintText = FText::FromString(TEXT("3.2 × 1.97 m"));
@@ -3049,6 +3106,8 @@ bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Paramet
 	Data.ThroughputText = FText::FromString(TEXT("팀당 5초"));
 	Data.SynergySummaryText = FText::FromString(TEXT("이 시설에 등록된 조합이 없습니다."));
 	Data.bShowStaffSection = Data.bCanAssignStaff = true;
+	Data.StaffCapacity = 1;
+	Data.StaffRequirementText = FText::FromString(TEXT("필수 배정 1명 · 1명 부족"));
 	Data.StaffSummaryText = FText::FromString(TEXT("스태프 배정 0 / 1명 · 출동 중 0명\n! 필수 배정: 스태프를 1명 이상 배정해야 개장할 수 있습니다. 아래 + 배정을 누르세요."));
 	FFF_FacilityInstanceRevenue Revenue;
 	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, true, true, 0, Data);
@@ -3076,32 +3135,43 @@ bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Paramet
 			Panel->ForceLayoutPrepass();
 			Target = DrawCaptureWidget(Renderer, Slate, FVector2D(Resolution.X, Resolution.Y), true);
 		}
-		UWidget* Footer = Page == EFF_FacilityInfoPage::RemoveConfirmation ? RemoveActions : NormalActions;
+		const bool bCompact = Panel->GetWidgetFromName(TEXT("Overlay_V10InfoPages")) != nullptr;
+		UWidget* Footer = Page == EFF_FacilityInfoPage::RemoveConfirmation ? RemoveActions :
+			(bCompact && Page == EFF_FacilityInfoPage::Upgrade ? UpgradeActions : NormalActions);
 		const FSlateRect FooterRect = Footer->GetPaintSpaceGeometry().GetLayoutBoundingRect();
 		const FSlateRect HeaderRect = Header->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-		const FSlateRect ScrollRect = Scroll->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		const FSlateRect ScrollRect = (bCompact ? Panel->GetWidgetFromName(TEXT("Body_Surface")) : static_cast<UWidget*>(Scroll))->GetPaintSpaceGeometry().GetLayoutBoundingRect();
 		const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Resolution);
 		const float ReservedBottom = Panel->BuildInspectorMinimumBottomInset * Dpi;
 		TestTrue(TEXT("Identity remains outside scrolling content"), HeaderRect.Bottom <= ScrollRect.Top + 1.f && HeaderRect.GetSize().Y > 0);
-		TestTrue(TEXT("The visible footer remains fully above the protected toolbar reserve"), Footer->IsVisible() &&
-			FooterRect.GetSize().Y >= 24.f && FooterRect.Bottom <= Resolution.Y - ReservedBottom + .5f && FooterRect.Top >= ScrollRect.Bottom - 1.f);
+		if (!bCompact || Footer->IsVisible())
+			TestTrue(TEXT("The visible footer remains fully above the protected toolbar reserve"), Footer->IsVisible() &&
+				FooterRect.GetSize().Y >= 24.f * (bCompact ? Dpi : 1.f) && FooterRect.Bottom <= Resolution.Y - ReservedBottom + .5f &&
+				FooterRect.Top >= (bCompact ? HeaderRect.Bottom : ScrollRect.Bottom) - 1.f);
 		if (Page == EFF_FacilityInfoPage::Upgrade)
 		{
 			const FSlateRect ActionsRect = UpgradeActions->GetPaintSpaceGeometry().GetLayoutBoundingRect();
 			const UWidget* Button = Panel->GetWidgetFromName(TEXT("Button_Upgrade"));
 			const FSlateRect ButtonRect = Button->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-			TestTrue(TEXT("Upgrade stays visible between scroll body and existing actions"), UpgradeActions->IsVisible() &&
-				ActionsRect.Top >= ScrollRect.Bottom - 1.f && ActionsRect.Bottom <= FooterRect.Top + 1.f &&
-				ButtonRect.Top >= ActionsRect.Top && ButtonRect.Bottom <= ActionsRect.Bottom && ButtonRect.GetSize().Y >= 24.f);
+			TestTrue(TEXT("Upgrade stays visible in its dedicated action area"), UpgradeActions->IsVisible() &&
+				(bCompact ? (ActionsRect.Top >= ScrollRect.Bottom - 1.f &&
+					ActionsRect.Bottom <= Resolution.Y - ReservedBottom + .5f && !NormalActions->IsVisible())
+					: (ActionsRect.Top >= ScrollRect.Bottom - 1.f && ActionsRect.Bottom <= FooterRect.Top + 1.f)) &&
+				ButtonRect.Top >= ActionsRect.Top && ButtonRect.Bottom <= ActionsRect.Bottom && ButtonRect.GetSize().Y >= 24.f * (bCompact ? Dpi : 1.f));
 		}
 		if (Page == EFF_FacilityInfoPage::Staff)
 		{
 			for (const FName Name : {FName(TEXT("Button_AssignStaff")), FName(TEXT("Button_UnassignStaff"))})
 			{
 				UWidget* Button = Panel->GetWidgetFromName(Name);
+				if (bCompact && Name == TEXT("Button_UnassignStaff") && Data.AssignedStaffCount == 0)
+				{
+					TestEqual(TEXT("Unassigned facilities omit the irrelevant release action"), Button->GetVisibility(), ESlateVisibility::Collapsed);
+					continue;
+				}
 				const FSlateRect Rect = Button->GetPaintSpaceGeometry().GetLayoutBoundingRect();
 				TestTrue(TEXT("Staff assignment actions fit in the visible page"), Button->IsVisible() &&
-					Rect.GetSize().Y >= 24.f &&
+					Rect.GetSize().Y >= 24.f * (bCompact ? Dpi : 1.f) &&
 					Rect.Top >= ScrollRect.Top && Rect.Bottom <= ScrollRect.Bottom + 1.f);
 			}
 		}

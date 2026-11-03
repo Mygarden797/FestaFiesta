@@ -45,7 +45,8 @@ UAT 패키징은 아래의 짧고 특수문자 없는 checkout/junction 경로�
 - Git LFS 에셋을 내려받고 출력 SSD에 여유를 확보한다. 사전 검사의 최소치는 10 GiB다.
 - 짧은 checkout을 권장한다. 깊은 기존 checkout은 같은 소스를 가리키는 junction을 사용할 수 있다.
 
-아래 `C:\FFProj`, `C:\Unreal\UE_5.7`, `C:\Builds\FestaFiesta`는 팀원별로 조정하는 예시 경로다.
+기본 출력 폴더는 `C:\FestaFiestaBuild`이며 `-OutputRoot`로 변경할 수 있다.
+아래 `C:\FFProj`, `C:\Unreal\UE_5.7`는 팀원별로 조정하는 예시 경로다.
 엔진 폴더 이름이 같아도 실제 빌드는 잠금 파일과 일치해야 한다.
 `C:\FFProj`가 없다면 다음처럼 실제 checkout을 연결한다. 기존 경로를 덮어쓰지 않는다.
 
@@ -67,7 +68,7 @@ New-Item -ItemType Junction -Path 'C:\FFProj' -Target $FFCheckout
 Set-Location 'C:\FFProj'
 $FFEngine = 'C:\Unreal\UE_5.7'
 $FFProject = 'C:\FFProj\FestaFiesta.uproject'
-$FFOutput = 'C:\Builds\FestaFiesta'
+$FFOutput = 'C:\FestaFiestaBuild'
 $FFLabel = 'FF-Win64-Shipping-20260930-01'
 git status --short
 git rev-parse HEAD

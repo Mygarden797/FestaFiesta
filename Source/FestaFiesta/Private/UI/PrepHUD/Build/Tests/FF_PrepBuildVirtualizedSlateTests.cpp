@@ -24,6 +24,8 @@
 #include "Components/HorizontalBox.h"
 #include "Components/Image.h"
 #include "Components/OverlaySlot.h"
+#include "Components/PanelWidget.h"
+#include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Editor.h"
@@ -49,6 +51,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "Misc/ScopeExit.h"
 #include "Rendering/DrawElements.h"
 #include "RenderingThread.h"
 #include "ShaderCompiler.h"
@@ -76,6 +79,31 @@
 
 namespace FFPrepBuildVirtualizedSlateTest
 {
+    bool IsEffectivelyVisible(const UWidget* Widget)
+    {
+        for (const UWidget* Current = Widget; Current; Current = Current->GetParent())
+            if (!Current->IsVisible()) return false;
+        return Widget != nullptr;
+    }
+
+    void CollectCategoryChoices(UWidget* Root, TArray<UFF_PrepBuildCategoryChoice*>& Choices)
+    {
+        if (auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(Root))
+        {
+            Choices.Add(Choice);
+            return;
+        }
+        if (auto* Panel = Cast<UPanelWidget>(Root))
+            for (UWidget* Child : Panel->GetAllChildren()) CollectCategoryChoices(Child, Choices);
+    }
+
+    TArray<UFF_PrepBuildCategoryChoice*> CategoryChoicesUnder(UWidget* Root)
+    {
+        TArray<UFF_PrepBuildCategoryChoice*> Choices;
+        CollectCategoryChoices(Root, Choices);
+        return Choices;
+    }
+
     constexpr int32 ItemCount = 144;
     constexpr const TCHAR* PanelPath =
         FFBuildUIAssetPaths::BuildPanelClass;
@@ -127,9 +155,12 @@ namespace FFPrepBuildVirtualizedSlateTest
                 LoadClass<UFF_PrepPanelBuild>(nullptr, PanelPath));
             UWidgetBlueprintGeneratedClass* TileClass = Cast<UWidgetBlueprintGeneratedClass>(
                 LoadClass<UFF_PrepBuildTileWidget>(nullptr, TilePath));
+            UWidgetBlueprintGeneratedClass* LauncherClass = Cast<UWidgetBlueprintGeneratedClass>(
+                LoadClass<UUserWidget>(nullptr, FFBuildUIAssetPaths::FacilityCodexCatalogLauncherClass));
             if (!Test.TestNotNull(TEXT("Playerless editor world"), World) ||
                 !Test.TestNotNull(TEXT("Actual catalog WBP"), PanelClass) ||
-                !Test.TestNotNull(TEXT("Actual pooled tile WBP"), TileClass))
+                !Test.TestNotNull(TEXT("Actual pooled tile WBP"), TileClass) ||
+                !Test.TestNotNull(TEXT("Actual nested catalog codex launcher WBP"), LauncherClass))
             {
                 return false;
             }
@@ -138,6 +169,9 @@ namespace FFPrepBuildVirtualizedSlateTest
             const float PanelHeight = HeightProperty->GetPropertyValue_InContainer(PanelClass->GetDefaultObject());
             if (!Test.TestTrue(TEXT("Authored catalog height fits the fixture viewport"), PanelHeight > 0 && PanelHeight < ViewportSize.Y)) { return false; }
             FPlayerlessInitialization PanelInitialization(*PanelClass);
+            // Nested user widgets perform their own initialization-context check.
+            // The launcher's production OnClicked binding belongs to that lifecycle.
+            FPlayerlessInitialization LauncherInitialization(*LauncherClass);
             TileInitialization = MakeUnique<FPlayerlessInitialization>(*TileClass);
             Panel.Reset(CreateWidget<UFF_PrepPanelBuild>(World, PanelClass));
             if (!Test.TestNotNull(TEXT("Catalog instance"), Panel.Get()))
@@ -147,6 +181,9 @@ namespace FFPrepBuildVirtualizedSlateTest
             // NativeConstruct runs without opening a gameplay session. Only presentation
             // visibility/labels and the list's public item API are supplied by this fixture.
             const TSharedRef<SWidget> PanelSlate = Panel->TakeWidget();
+            // This playerless geometry fixture supplies presentation only. Opening a
+            // gameplay session would request a HUD close and local-player focus.
+            SetVisibility(TEXT("Size_ClarityCatalogDock"), ESlateVisibility::SelfHitTestInvisible);
             SetVisibility(TEXT("Panel_Catalog"), ESlateVisibility::SelfHitTestInvisible);
             SetVisibility(TEXT("Panel_PlacementCompact"), ESlateVisibility::Collapsed);
             SetVisibility(TEXT("Box_Header"), ESlateVisibility::SelfHitTestInvisible);
@@ -287,6 +324,7 @@ namespace FFPrepBuildVirtualizedSlateTest
             if (!Test.TestTrue(TEXT("Pointer fixture is isolated from the user's GameInstance/preferences"),
                 Panel->GetGameInstance() == nullptr)) { return false; }
             UButton* Favorite = nullptr;
+            UUserWidget* FavoriteRow = nullptr;
             const FSlateRect ListRect = List->GetCachedGeometry().GetLayoutBoundingRect();
             for (UUserWidget* Row : List->GetDisplayedEntryWidgets())
             {
@@ -294,15 +332,32 @@ namespace FFPrepBuildVirtualizedSlateTest
                 if (!FacilityId.IsNone() && (!Item || Item->GetFacilityDefinitionId() != FacilityId)) { continue; }
                 auto* Candidate = Cast<UButton>(Row->GetWidgetFromName(TEXT("Button_Favorite")));
                 if (!Candidate) { continue; }
-                const FSlateRect Rect = Candidate->GetCachedGeometry().GetLayoutBoundingRect();
+                const auto* Tile = Cast<UFF_PrepBuildTileWidget>(Row);
+                const UWidget* HitSurface = Tile && Tile->IsThumbnailOnly()
+                    ? Row->GetWidgetFromName(TEXT("Border_Card")) : Candidate;
+                if (!HitSurface) continue;
+                // Hidden favorites may not have painted child geometry until hover. Select
+                // a complete row first, reveal its action, and only then probe the button.
+                const FSlateRect Rect = HitSurface->GetCachedGeometry().GetLayoutBoundingRect();
                 if (Rect.Left >= ListRect.Left && Rect.Right <= ListRect.Right &&
                     Rect.Top >= ListRect.Top && Rect.Bottom <= ListRect.Bottom && Rect.GetSize().X > 10)
                 {
                     Favorite = Candidate;
+                    FavoriteRow = Row;
                     break;
                 }
             }
             if (!Test.TestNotNull(TEXT("A visible production card has its independent favorite button"), Favorite)) { return false; }
+            if (const auto* Tile = Cast<UFF_PrepBuildTileWidget>(FavoriteRow); Tile && Tile->IsThumbnailOnly())
+            {
+                const FGeometry& RowGeometry = FavoriteRow->GetCachedGeometry();
+                const FVector2D HoverPoint = RowGeometry.LocalToAbsolute(RowGeometry.GetLocalSize() * .5f);
+                const TSet<FKey> NoButtons;
+                const FPointerEvent Hover(0, HoverPoint, HoverPoint, NoButtons, EKeys::Invalid, 0.f, FModifierKeysState());
+                FavoriteRow->GetCachedWidget()->OnMouseEnter(RowGeometry, Hover);
+                Paint();
+                Test.TestTrue(TEXT("Hover reveals the compact favorite action"), IsEffectivelyVisible(Favorite));
+            }
             const FGeometry& Geometry = Favorite->GetCachedGeometry();
             const FVector2D Point = Geometry.LocalToAbsolute(Geometry.GetLocalSize() * 0.5);
             TArray<FWidgetAndPointer> Bubble = HitGrid.GetBubblePath(Point, 0.0f, false);
@@ -330,6 +385,7 @@ namespace FFPrepBuildVirtualizedSlateTest
             Test.TestFalse(TEXT("The star releases its pressed state"), Favorite->IsPressed());
             List->OnItemClicked().Remove(ClickHandle);
             if (PreviousFocus) { App.SetUserFocus(0, PreviousFocus, EFocusCause::SetDirectly); }
+            if (FavoriteRow) FavoriteRow->GetCachedWidget()->OnMouseLeave(Up);
             Test.TestEqual(TEXT("A full favorite click emits no facility placement activation"), PlacementActivations, 0);
             return true;
         }
@@ -338,6 +394,8 @@ namespace FFPrepBuildVirtualizedSlateTest
         {
             Panel->SetCatalogPage(0);
             Paint();
+            const bool bProgressiveActions = Panel->GetWidgetFromName(TEXT("Button_V9More")) != nullptr;
+            if (bProgressiveActions && !SetCatalogPopup(Test, TEXT("Button_V9More"), TEXT("Popup_V9More"), true)) return false;
             auto* Ranking = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_RevenueRanking")));
             auto* RankingLabel = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_RevenueRanking")));
             auto* Launcher = Cast<UUserWidget>(Panel->GetWidgetFromName(TEXT("Widget_FacilityCodexCatalogLauncher")));
@@ -348,8 +406,8 @@ namespace FFPrepBuildVirtualizedSlateTest
             Test.TestTrue(TEXT("The pinned combination codex tab is large enough to click"),
                 Codex->GetCachedGeometry().GetLocalSize().X >= 100.f &&
                 Codex->GetCachedGeometry().GetLocalSize().Y >= 25.f);
-            Test.TestTrue(TEXT("The codex tab is distinct from the header actions"),
-                Launcher->GetParent() == Panel->GetWidgetFromName(TEXT("Row_BuildCodexCategory")) &&
+            Test.TestTrue(TEXT("The codex action is reachable without replacing its existing identity"),
+                IsEffectivelyVisible(Launcher) &&
                 CodexLabel->GetText().ToString().Contains(TEXT("조합 도감")));
             for (const TPair<UButton*, UTextBlock*>& Action : {
                 TPair<UButton*, UTextBlock*>(Ranking, RankingLabel), {Codex, CodexLabel} })
@@ -362,6 +420,7 @@ namespace FFPrepBuildVirtualizedSlateTest
                     LabelRect.Left >= ButtonRect.Left - 1.5 && LabelRect.Right <= ButtonRect.Right + 1.5 &&
                     LabelRect.Top >= ButtonRect.Top - 1.5 && LabelRect.Bottom <= ButtonRect.Bottom + 1.5);
             }
+            if (bProgressiveActions && !SetCatalogPopup(Test, TEXT("Button_V9More"), TEXT("Popup_V9More"), false)) return false;
             Test.TestNull(TEXT("The redundant selection confirmation strip is deleted from the saved catalog"),
                 Panel->GetWidgetFromName(TEXT("Border_AuroraSelection")));
             Test.TestEqual(TEXT("Continuous catalog has one logical page"), Panel->GetCatalogPageCount(), 1);
@@ -673,13 +732,20 @@ namespace FFPrepBuildVirtualizedSlateTest
                     !Test.TestNotNull(TEXT("Saved destination caption"), Label) || !Tile || !Item) return false;
                 const bool bDestination = Item->GetFacilityDefinitionId() == Destination;
                 const auto Visibility = bDestination ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+                const auto BadgeVisibility = bDestination && !Tile->IsThumbnailOnly()
+                    ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
                 Test.TestTrue(TEXT("Only the requested facility shows the independent non-interactive accent"),
-                    Tile->IsCodexFocused() == bDestination && Rim->GetVisibility() == Visibility && Badge->GetVisibility() == Visibility);
+                    Tile->IsCodexFocused() == bDestination && Rim->GetVisibility() == Visibility && Badge->GetVisibility() == BadgeVisibility);
                 Test.TestTrue(TEXT("The destination frame uses an actual UI material"),
                     Cast<UMaterialInterface>(Rim->GetBrush().GetResourceObject()) != nullptr);
                 if (!bDestination) continue;
                 ++FocusedRows;
                 Test.TestEqual(TEXT("Codex destination has a readable origin caption"), Label->GetText().ToString(), FString(TEXT("도감에서 찾은 시설")));
+                if (Tile->IsThumbnailOnly())
+                {
+                    Test.TestFalse(TEXT("Thumbnail-only codex destination does not add another caption"), IsEffectivelyVisible(Badge));
+                    continue;
+                }
                 auto* Favorite = Cast<UButton>(Row->GetWidgetFromName(TEXT("Button_Favorite")));
                 const FSlateRect BadgeBounds = Badge->GetCachedGeometry().GetLayoutBoundingRect();
                 const FSlateRect CardBounds = Row->GetCachedGeometry().GetLayoutBoundingRect();
@@ -750,16 +816,20 @@ namespace FFPrepBuildVirtualizedSlateTest
             Test.TestTrue(TEXT("Recommended data reaches the actual pooled widget"), RecommendedRow->IsSynergyHighlighted());
             Test.TestTrue(TEXT("Recommendation outline and readable badge are visible without intercepting input"),
                 Highlight->GetVisibility() == ESlateVisibility::HitTestInvisible &&
-                Badge->GetVisibility() == ESlateVisibility::HitTestInvisible && !Badge->GetText().IsEmpty());
+                Badge->GetVisibility() == (RecommendedRow->IsThumbnailOnly() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible) &&
+                !Badge->GetText().IsEmpty());
             const FSlateRect CardRect = Card->GetCachedGeometry().GetLayoutBoundingRect();
             for (const UWidget* Decoration : { static_cast<UWidget*>(Highlight), static_cast<UWidget*>(Badge) })
             {
+                if (!IsEffectivelyVisible(Decoration)) continue;
                 const FSlateRect Rect = Decoration->GetCachedGeometry().GetLayoutBoundingRect();
                 Test.TestTrue(TEXT("Recommendation outline and badge fit within the actual card at 1280x720"),
                     Rect.GetSize().X > 1.0f && Rect.GetSize().Y > 1.0f &&
                     Rect.Left >= CardRect.Left - 1.5f && Rect.Right <= CardRect.Right + 1.5f &&
                     Rect.Top >= CardRect.Top - 1.5f && Rect.Bottom <= CardRect.Bottom + 1.5f);
             }
+            if (RecommendedRow->IsThumbnailOnly())
+                return CheckFavoriteInputIsolation(Test, FName(TEXT("Rest_Seating_Seating")));
             const FGeometry& FavoriteGeometry = Favorite->GetCachedGeometry();
             const FVector2D Point = FavoriteGeometry.LocalToAbsolute(FavoriteGeometry.GetLocalSize() * 0.5);
             TArray<FWidgetAndPointer> Bubble = HitGrid.GetBubblePath(Point, 0.0f, false);
@@ -858,6 +928,13 @@ namespace FFPrepBuildVirtualizedSlateTest
             Test.TestTrue(TEXT("The real row receives required/satisfied state"),
                 RequiredRow->IsRequiredFacility() && RequiredRow->IsRequiredFacilitySatisfied() == bInstalled);
             const FSlateRect CardRect = Card->GetCachedGeometry().GetLayoutBoundingRect();
+            if (RequiredRow->IsThumbnailOnly())
+            {
+                const UWidget* Icon = RequiredRow->GetWidgetFromName(TEXT("Badge_RequiredIcon"));
+                Test.TestTrue(TEXT("Thumbnail-only requirement keeps its compact required pictogram"), IsEffectivelyVisible(Icon));
+                Test.TestFalse(TEXT("Thumbnail-only requirement never reveals an installation-count caption"), IsEffectivelyVisible(State));
+                return CheckFavoriteInputIsolation(Test, RequiredPreviewFacilityId);
+            }
             for (const bool bSatisfiedDecoration : { false, true })
             {
                 auto* Border = Cast<UBorder>(RequiredRow->GetWidgetFromName(bSatisfiedDecoration
@@ -961,8 +1038,90 @@ namespace FFPrepBuildVirtualizedSlateTest
             }
         }
 
+        bool SetCatalogPopup(FAutomationTestBase& Test, const TCHAR* ButtonName,
+            const TCHAR* PopupName, const bool bOpen)
+        {
+            auto* Button = Cast<UButton>(Panel->GetWidgetFromName(ButtonName));
+            UWidget* Popup = Panel->GetWidgetFromName(PopupName);
+            if (!Test.TestNotNull(TEXT("Progressive catalog action"), Button) ||
+                !Test.TestNotNull(TEXT("Authored progressive catalog popup"), Popup)) return false;
+            if (IsEffectivelyVisible(Popup) != bOpen)
+            {
+                Test.TestTrue(TEXT("Progressive catalog action retains its native binding"), Button->OnClicked.IsBound());
+                Button->OnClicked.Broadcast();
+                Paint();
+            }
+            return Test.TestEqual(TEXT("The catalog action applies its requested popup state"),
+                IsEffectivelyVisible(Popup), bOpen);
+        }
+
+        bool CheckProgressiveFilterLayout(FAutomationTestBase& Test, const FString& State)
+        {
+            if (!SetCatalogPopup(Test, TEXT("Button_V9Filters"), TEXT("Popup_V9Filters"), false) ||
+                !SetCatalogPopup(Test, TEXT("Button_V9More"), TEXT("Popup_V9More"), false)) return false;
+            auto* Favorites = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_FavoritesOnly")));
+            if (!Test.TestNotNull(TEXT("Independent icon-only favorite filter"), Favorites)) return false;
+            const FSlateRect FavoriteRect = Favorites->GetCachedGeometry().GetLayoutBoundingRect();
+            Test.TestTrue(*FString::Printf(TEXT("%s: the favorite icon has an independent usable hit area"), *State),
+                IsEffectivelyVisible(Favorites) && Favorites->GetIsEnabled() &&
+                FavoriteRect.GetSize().X >= 24.f * DpiScale && FavoriteRect.GetSize().Y >= 20.f * DpiScale &&
+                FavoriteRect.Left >= 0 && FavoriteRect.Right <= ViewportSize.X);
+            const auto CheckPopupControl = [&](const TCHAR* Name, const UWidget* Popup)
+            {
+                const UWidget* Control = Panel->GetWidgetFromName(Name);
+                if (!Test.TestNotNull(*FString::Printf(TEXT("Progressive catalog control %s"), Name), Control)) return false;
+                const FSlateRect Rect = Control->GetCachedGeometry().GetLayoutBoundingRect();
+                const FSlateRect PopupRect = Popup->GetCachedGeometry().GetLayoutBoundingRect();
+                Test.TestTrue(*FString::Printf(TEXT("%s: %s is readable and usable only inside its open popup"), *State, Name),
+                    IsEffectivelyVisible(Control) && Control->GetIsEnabled() &&
+                    Rect.GetSize().X >= 20.f * DpiScale && Rect.GetSize().Y >= 20.f * DpiScale &&
+                    Rect.Left >= PopupRect.Left - 1.5 && Rect.Right <= PopupRect.Right + 1.5 &&
+                    Rect.Top >= PopupRect.Top - 1.5 && Rect.Bottom <= PopupRect.Bottom + 1.5 &&
+                    Rect.Left >= 0 && Rect.Right <= ViewportSize.X && Rect.Top >= 0 && Rect.Bottom <= ViewportSize.Y);
+                const FVector2D Point((Rect.Left + Rect.Right) * .5, (Rect.Top + Rect.Bottom) * .5);
+                TArray<FWidgetAndPointer> Bubble = HitGrid.GetBubblePath(Point, 0.f, false);
+                FWidgetPath Path(MakeArrayView(Bubble));
+                return Test.TestTrue(*FString::Printf(TEXT("%s: %s remains clickable in its open popup"), *State, Name),
+                    Path.IsValid() && Path.ContainsWidget(Control->GetCachedWidget().Get()));
+            };
+            if (!SetCatalogPopup(Test, TEXT("Button_V9Filters"), TEXT("Popup_V9Filters"), true)) return false;
+            const UWidget* Filters = Panel->GetWidgetFromName(TEXT("Popup_V9Filters"));
+            for (const TCHAR* Name : { TEXT("Check_FilterRequired"), TEXT("Check_FilterAffordable"),
+                TEXT("Check_FilterPrograms"), TEXT("Check_FilterLighting") })
+                if (!CheckPopupControl(Name, Filters)) return false;
+            if (!SetCatalogPopup(Test, TEXT("Button_V9More"), TEXT("Popup_V9More"), true)) return false;
+            Test.TestFalse(TEXT("Opening More closes the filter popup"), IsEffectivelyVisible(Filters));
+            if (!CheckPopupControl(TEXT("ComboBox_CatalogSort"), Panel->GetWidgetFromName(TEXT("Popup_V9More")))) return false;
+            if (!SetCatalogPopup(Test, TEXT("Button_V9More"), TEXT("Popup_V9More"), false)) return false;
+            for (const TCHAR* Name : { TEXT("Check_FilterRequired"), TEXT("Check_FilterAffordable"),
+                TEXT("Check_FilterPrograms"), TEXT("Check_FilterLighting"), TEXT("ComboBox_CatalogSort") })
+                Test.TestFalse(*FString::Printf(TEXT("%s: the default view does not expose secondary control %s"), *State, Name),
+                    IsEffectivelyVisible(Panel->GetWidgetFromName(Name)));
+            if (Hud)
+            {
+                const UWidget* Dock = Panel->GetWidgetFromName(TEXT("Size_ClarityCatalogDock"));
+                if (!Test.TestNotNull(TEXT("Authored catalog bounds"), Dock)) return false;
+                const FSlateRect DockRect = Dock->GetCachedGeometry().GetLayoutBoundingRect();
+                int32 VisibleTabs = 0;
+                for (const TCHAR* Name : { TEXT("Tab_Build"), TEXT("Tab_Program"), TEXT("Tab_Staff"),
+                    TEXT("Tab_Promotion"), TEXT("Tab_Finale"), TEXT("Tab_Check") })
+                {
+                    const UWidget* Tab = Hud->GetWidgetFromName(Name);
+                    if (!Test.TestNotNull(TEXT("Existing global navigation remains authored"), Tab)) return false;
+                    if (!IsEffectivelyVisible(Tab)) continue;
+                    ++VisibleTabs;
+                    const FSlateRect Rect = Tab->GetCachedGeometry().GetLayoutBoundingRect();
+                    Test.TestTrue(*FString::Printf(TEXT("%s: catalog stays above %s"), *State, Name),
+                        Rect.GetSize().Y > 1 && DockRect.Bottom <= Rect.Top + 1.5);
+                }
+                Test.TestTrue(TEXT("Progressive catalog preserves the visible global navigation"), VisibleTabs >= 4);
+            }
+            return true;
+        }
+
         bool CheckFilterLayout(FAutomationTestBase& Test, const FString& State)
         {
+            if (Panel->GetWidgetFromName(TEXT("Button_V9Filters"))) return CheckProgressiveFilterLayout(Test, State);
             auto* Favorites = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_FavoritesOnly")));
             auto* Label = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_FavoritesOnly")));
             auto* Minors = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Subcategories")));
@@ -1085,21 +1244,51 @@ namespace FFPrepBuildVirtualizedSlateTest
 
         bool CheckCatalogFilterInput(FAutomationTestBase& Test)
         {
+            FSlateApplication& App = FSlateApplication::Get();
+            const TSharedPtr<SWidget> PreviousFocus = App.GetUserFocusedWidget(0);
+            // Manual HitGrid routing reaches controls, but menu anchors independently
+            // search Slate's registered windows when they open their option list.
+            App.RegisterVirtualWindow(Window.ToSharedRef());
+            ON_SCOPE_EXIT
+            {
+                App.DismissAllMenus();
+                App.ClearUserFocus(0, EFocusCause::Cleared);
+                App.UnregisterVirtualWindow(Window.ToSharedRef());
+                if (PreviousFocus) App.SetUserFocus(0, PreviousFocus, EFocusCause::SetDirectly);
+            };
             Paint();
+            const bool bProgressiveActions = Panel->GetWidgetFromName(TEXT("Button_V9Filters")) != nullptr;
+            if (bProgressiveActions && !SetCatalogPopup(Test, TEXT("Button_V9Filters"), TEXT("Popup_V9Filters"), true)) return false;
             auto* Sort = Cast<UComboBoxString>(Panel->GetWidgetFromName(TEXT("ComboBox_CatalogSort")));
             auto* Reset = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_ResetFilters")));
             if (!Test.TestNotNull(TEXT("Production sort menu"), Sort) ||
                 !Test.TestNotNull(TEXT("Production reset action"), Reset)) return false;
-            FSlateApplication& App = FSlateApplication::Get();
-            const TSharedPtr<SWidget> PreviousFocus = App.GetUserFocusedWidget(0);
-            const auto Click = [&](UWidget& Control)
+            const auto Click = [&](UWidget& Control, const bool bRequireCatalogOverlap = false)
             {
                 Paint();
+                // The filter drawer deliberately scrolls after the subcategory row
+                // was added. Cached geometry includes clipped children; bring the
+                // target into view before routing the same real pointer gesture.
+                for (UWidget* Ancestor = Control.GetParent(); Ancestor; Ancestor = Ancestor->GetParent())
+                {
+                    auto* Scroll = Cast<UScrollBox>(Ancestor);
+                    if (!Scroll || Scroll->GetOrientation() != Orient_Vertical) continue;
+                    Scroll->ScrollWidgetIntoView(&Control, false, EDescendantScrollDestination::IntoView, 4.f);
+                    Paint();
+                    break;
+                }
                 const FGeometry& Geometry = Control.GetCachedGeometry();
                 const FVector2D Point = Geometry.LocalToAbsolute(Geometry.GetLocalSize() * .5f);
+                if (bRequireCatalogOverlap && !Test.TestTrue(
+                    TEXT("The popup regression clicks inside the underlying TileView rectangle"),
+                    List->GetCachedGeometry().IsUnderLocation(Point))) return false;
+                const FName SelectedFacilityBefore = Panel->GetSelectedCatalogFacilityId();
+                const UObject* SelectedItemBefore = List->GetSelectedItem();
+                const float ScrollOffsetBefore = List->GetScrollOffset();
                 TArray<FWidgetAndPointer> Bubble = HitGrid.GetBubblePath(Point, 0.f, false);
                 FWidgetPath Path(MakeArrayView(Bubble));
-                if (!Test.TestTrue(TEXT("Filter event starts on its real Slate control"),
+                if (!Test.TestTrue(*FString::Printf(TEXT("Popup event starts on its real Slate control %s at %.1f,%.1f; path=%s"),
+                    *Control.GetName(), Point.X, Point.Y, *Path.ToString()),
                     Path.IsValid() && Path.ContainsWidget(Control.GetCachedWidget().Get()))) return false;
                 const TSet<FKey> Pressed = { EKeys::LeftMouseButton };
                 const TSet<FKey> Released;
@@ -1110,21 +1299,28 @@ namespace FFPrepBuildVirtualizedSlateTest
                 App.RoutePointerMoveEvent(Path, Move, false);
                 auto* Button = Cast<UButton>(&Control);
                 if (Button)
-                    Test.TestTrue(TEXT("The reset button receives the real pointer-enter transition"), Button->IsHovered());
+                    Test.TestTrue(TEXT("The popup button receives the real pointer-enter transition"), Button->IsHovered());
                 const FPointerEvent Down(0, Point, Point, Pressed, EKeys::LeftMouseButton, 0.f, FModifierKeysState());
                 const FPointerEvent Up(0, Point, Point, Released, EKeys::LeftMouseButton, 0.f, FModifierKeysState());
-                Test.TestTrue(TEXT("Filter consumes its actual pointer-down event"), App.RoutePointerDownEvent(Path, Down).IsEventHandled());
+                Test.TestTrue(TEXT("The popup control consumes its actual pointer-down event"), App.RoutePointerDownEvent(Path, Down).IsEventHandled());
                 if (Button)
                 {
-                    Test.TestTrue(TEXT("The reset button enters its pressed state through Slate input"), Button->IsPressed());
-                    Test.AddInfo(FString::Printf(TEXT("Reset input at %.1f,%.1f: hovered=%d pressed=%d capture=%d bound=%d path=%s"),
+                    Test.TestTrue(TEXT("The popup button enters its pressed state through Slate input"), Button->IsPressed());
+                    Test.AddInfo(FString::Printf(TEXT("%s input at %.1f,%.1f: hovered=%d pressed=%d capture=%d bound=%d path=%s"),
+                        *Button->GetName(),
                         Point.X, Point.Y, Button->IsHovered(), Button->IsPressed(), Button->HasMouseCapture(),
                         Button->OnClicked.IsBound(), *Path.ToString()));
                 }
-                Test.TestTrue(TEXT("Filter consumes its actual pointer-up event"), App.RoutePointerUpEvent(Path, Up).IsEventHandled());
+                Test.TestTrue(TEXT("The popup control consumes its actual pointer-up event"), App.RoutePointerUpEvent(Path, Up).IsEventHandled());
                 if (Button)
-                    Test.TestFalse(TEXT("The reset button releases its pressed state after the real click"), Button->IsPressed());
+                    Test.TestFalse(TEXT("The popup button releases its pressed state after the real click"), Button->IsPressed());
                 Paint();
+                Test.TestEqual(TEXT("Clicking an overlaid control never activates the facility beneath it"),
+                    Panel->GetSelectedCatalogFacilityId(), SelectedFacilityBefore);
+                Test.TestTrue(TEXT("Clicking an overlaid control preserves the TileView selection"),
+                    List->GetSelectedItem() == SelectedItemBefore);
+                Test.TestTrue(TEXT("Clicking an overlaid control does not drag or fling the catalog"),
+                    FMath::IsNearlyEqual(List->GetScrollOffset(), ScrollOffsetBefore, .02f));
                 return true;
             };
             const auto CheckMatches = [&](const TFunctionRef<bool(const FFF_BuildCatalogEntry&)>& Predicate)
@@ -1146,7 +1342,8 @@ namespace FFPrepBuildVirtualizedSlateTest
                 TEXT("Check_FilterPrograms"), TEXT("Check_FilterLighting") })
             {
                 auto* Check = Cast<UCheckBox>(Panel->GetWidgetFromName(Name));
-                if (!Test.TestNotNull(TEXT("Production filter checkbox"), Check) || !Click(*Check)) return false;
+                if (!Test.TestNotNull(TEXT("Production filter checkbox"), Check) ||
+                    !Click(*Check, bProgressiveActions && FString(Name) == TEXT("Check_FilterRequired"))) return false;
                 Test.TestTrue(TEXT("A real pointer click checks its filter"), Check->IsChecked());
                 const FString FilterName(Name);
                 CheckMatches([&FilterName](const FFF_BuildCatalogEntry& Entry)
@@ -1189,7 +1386,35 @@ namespace FFPrepBuildVirtualizedSlateTest
                 Test.TestTrue(TEXT("The closed sort menu paints its selected option instead of a blank label"),
                     !Selected.IsEmpty() && Sort->GetCachedWidget().IsValid() && HasSelectedText(Sort->GetCachedWidget().ToSharedRef()));
             };
+            if (bProgressiveActions && !SetCatalogPopup(Test, TEXT("Button_V9More"), TEXT("Popup_V9More"), true)) return false;
             CheckSelectedSortText();
+            if (bProgressiveActions)
+            {
+                if (!Click(*Sort, true)) return false;
+                Test.TestTrue(TEXT("A real click opens sorting instead of selecting an underlying facility"), Sort->IsOpen());
+                App.DismissAllMenus();
+                Paint();
+                Test.TestFalse(TEXT("The isolated sorting menu is dismissed before the next popup action"), Sort->IsOpen());
+                auto* Launcher = Cast<UUserWidget>(Panel->GetWidgetFromName(TEXT("Widget_FacilityCodexCatalogLauncher")));
+                auto* Codex = Launcher ? Cast<UButton>(Launcher->GetWidgetFromName(TEXT("Button_OpenCodex"))) : nullptr;
+                if (!Test.TestNotNull(TEXT("The More popup retains the native codex button"), Codex) ||
+                    !Test.TestTrue(TEXT("The popup codex button retains its production click binding"), Codex->OnClicked.IsBound()) ||
+                    !Click(*Codex, true)) return false;
+                // Wheel input over the popup shares the same rectangle with the list.
+                // A leaked wheel would start catalog momentum on the following paints.
+                const FVector2D Point = Codex->GetCachedGeometry().LocalToAbsolute(
+                    Codex->GetCachedGeometry().GetLocalSize() * .5f);
+                TArray<FWidgetAndPointer> Bubble = HitGrid.GetBubblePath(Point, 0.f, false);
+                FWidgetPath Path(MakeArrayView(Bubble));
+                const float ScrollOffsetBefore = List->GetScrollOffset();
+                const FPointerEvent Wheel(0, Point, Point, TSet<FKey>(), EKeys::Invalid, -1.f, FModifierKeysState());
+                App.RouteMouseWheelOrGestureEvent(Path, Wheel);
+                Paint();
+                Test.TestTrue(TEXT("Wheel input over an overlaid popup never scrolls the catalog behind it"),
+                    FMath::IsNearlyEqual(List->GetScrollOffset(), ScrollOffsetBefore, .02f));
+                Test.TestTrue(TEXT("Popup pointer and wheel input leave the placement candidate empty"),
+                    Panel->GetSelectedCatalogFacilityId().IsNone() && List->GetSelectedItem() == nullptr);
+            }
             for (const int32 Index : { 2, 3 })
             {
                 Sort->SetSelectedIndex(Index);
@@ -1204,21 +1429,32 @@ namespace FFPrepBuildVirtualizedSlateTest
                         (Index == 2 ? Previous->GetInstallCost() <= Current->GetInstallCost() : Previous->GetInstallCost() >= Current->GetInstallCost()));
                 }
             }
+            if (bProgressiveActions && !SetCatalogPopup(Test, TEXT("Button_V9Filters"), TEXT("Popup_V9Filters"), true)) return false;
             if (!Click(*Reset)) return false;
             Test.TestEqual(TEXT("Reset returns sorting to recommendation order"), Sort->GetSelectedIndex(), 0);
+            if (bProgressiveActions && !SetCatalogPopup(Test, TEXT("Button_V9More"), TEXT("Popup_V9More"), true)) return false;
             CheckSelectedSortText();
-            if (PreviousFocus) App.SetUserFocus(0, PreviousFocus, EFocusCause::SetDirectly);
+            if (bProgressiveActions && !SetCatalogPopup(Test, TEXT("Button_V9More"), TEXT("Popup_V9More"), false)) return false;
             return true;
         }
 
         void CheckCardTextLayout(FAutomationTestBase& Test, UUserWidget& Row,
             const FSlateRect& CardRect, const FString& State)
         {
+            const auto* Tile = Cast<UFF_PrepBuildTileWidget>(&Row);
+            const bool bThumbnailOnly = Tile && Tile->IsThumbnailOnly();
             TArray<FSlateRect> TextRects;
             for (const TCHAR* Name : { TEXT("Text_Name"), TEXT("Text_Cost") })
             {
                 const auto* Text = Cast<UTextBlock>(Row.GetWidgetFromName(Name));
                 if (!Test.TestNotNull(*FString::Printf(TEXT("%s: card keeps its %s label"), *State, Name), Text)) continue;
+                if (bThumbnailOnly)
+                {
+                    Test.TestFalse(*FString::Printf(TEXT("%s: thumbnail-only card does not expose %s"), *State, Name),
+                        IsEffectivelyVisible(Text));
+                    Test.TestFalse(*FString::Printf(TEXT("%s: hidden %s retains current item data"), *State, Name), Text->GetText().IsEmpty());
+                    continue;
+                }
                 const FSlateRect Rect = Text->GetCachedGeometry().GetLayoutBoundingRect();
                 Test.TestTrue(*FString::Printf(TEXT("%s: %s is readable inside the visible card"), *State, Name),
                     Text->IsVisible() && !Text->GetText().IsEmpty() && Text->GetFont().Size >= 10 &&
@@ -1228,6 +1464,13 @@ namespace FFPrepBuildVirtualizedSlateTest
                     Rect.Left >= CardRect.Left - 1.5 && Rect.Right <= CardRect.Right + 1.5 &&
                     Rect.Top >= CardRect.Top - 1.5 && Rect.Bottom <= CardRect.Bottom + 1.5);
                 TextRects.Add(Rect);
+            }
+            if (bThumbnailOnly)
+            {
+                Test.TestFalse(*FString::Printf(TEXT("%s: the price container cannot paint a coin behind a hidden price"), *State),
+                    IsEffectivelyVisible(Row.GetWidgetFromName(TEXT("Border_AuroraCardGold"))));
+                Test.TestFalse(*FString::Printf(TEXT("%s: thumbnail-only card retains its accessible description"), *State),
+                    Row.GetToolTipText().IsEmpty());
             }
             if (TextRects.Num() == 2)
                 Test.TestTrue(*FString::Printf(TEXT("%s: the name and price have separate lines"), *State),
@@ -1282,14 +1525,14 @@ namespace FFPrepBuildVirtualizedSlateTest
             if (!Items.IsEmpty())
             {
                 Test.TestTrue(*FString::Printf(TEXT("%s: at least one complete card is visible"), *State), FullyVisibleCount > 0);
-                constexpr int32 VisibleColumns = 8;
+                constexpr int32 VisibleColumns = 12;
                 constexpr int32 VisibleCapacity = VisibleColumns * 2;
                 Test.TestTrue(*FString::Printf(TEXT("%s: the list virtualizes facilities outside the grid"), *State),
                     VisibleRects.Num() <= Items.Num() &&
                     (Items.Num() <= VisibleCapacity * 2 || List->GetDisplayedEntryWidgets().Num() < Items.Num()));
                 if (Items.Num() >= VisibleCapacity && FMath::IsNearlyZero(List->GetScrollOffset(), .01f))
                 {
-                    Test.TestEqual(*FString::Printf(TEXT("%s: eight columns and two complete rows are visible at the top"), *State),
+                    Test.TestEqual(*FString::Printf(TEXT("%s: twelve columns and two complete rows are visible at the top"), *State),
                         FullyVisibleCount, VisibleCapacity);
                     if (!FullyVisibleRects.IsEmpty())
                     {
@@ -1297,8 +1540,8 @@ namespace FFPrepBuildVirtualizedSlateTest
                         const float FirstRowTop = FullyVisibleRects[0].Top;
                         const int32 FirstRowCount = FullyVisibleRects.FilterByPredicate([FirstRowTop](const FSlateRect& Rect)
                             { return FMath::IsNearlyEqual(Rect.Top, FirstRowTop, 1.5f); }).Num();
-                        Test.TestEqual(*FString::Printf(TEXT("%s: first row contains eight cards"), *State), FirstRowCount, VisibleColumns);
-                        Test.TestEqual(*FString::Printf(TEXT("%s: second row contains eight cards"), *State),
+                        Test.TestEqual(*FString::Printf(TEXT("%s: first row contains twelve cards"), *State), FirstRowCount, VisibleColumns);
+                        Test.TestEqual(*FString::Printf(TEXT("%s: second row contains twelve cards"), *State),
                             FullyVisibleRects.Num() - FirstRowCount, VisibleColumns);
                         if (FirstRowCount < FullyVisibleRects.Num())
                         {
@@ -1332,14 +1575,14 @@ namespace FFPrepBuildVirtualizedSlateTest
             auto* Minors = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Subcategories")));
             if (!Test.TestNotNull(TEXT("Full real category list"), Majors) ||
                 !Test.TestNotNull(TEXT("Full real minor choices"), Minors)) { return false; }
-            Test.TestEqual(TEXT("All and all ten categories are present"), Majors->GetChildrenCount(), 11);
+            const TArray<UFF_PrepBuildCategoryChoice*> MajorChoices = CategoryChoicesUnder(Majors);
+            Test.TestEqual(TEXT("All and all ten categories are present"), MajorChoices.Num(), 11);
             constexpr const TCHAR* CategoryIconNames[] = {
                 TEXT("All"), TEXT("Booth"), TEXT("Toilet"), TEXT("Info"), TEXT("Rest"),
                 TEXT("Performance"), TEXT("Safety"), TEXT("PhotoSpot"), TEXT("Lighting"),
                 TEXT("Road"), TEXT("Tile")};
-            for (UWidget* Child : Majors->GetAllChildren())
+            for (UFF_PrepBuildCategoryChoice* Choice : MajorChoices)
             {
-                auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(Child);
                 auto* Icon = Choice ? Cast<UImage>(Choice->GetWidgetFromName(TEXT("Image_Icon"))) : nullptr;
                 auto* Button = Choice ? Cast<UButton>(Choice->GetWidgetFromName(TEXT("Button_Root"))) : nullptr;
                 auto* Caption = Choice ? Cast<UTextBlock>(Choice->GetWidgetFromName(TEXT("Text_Label"))) : nullptr;
@@ -1347,7 +1590,7 @@ namespace FFPrepBuildVirtualizedSlateTest
                 if (!Test.TestNotNull(TEXT("Every saved category keeps its editable choice widget"), Choice) ||
                     !Test.TestNotNull(TEXT("Every existing category keeps an icon"), Icon) ||
                     !Test.TestNotNull(TEXT("Every existing category keeps its keyboard button"), Button) ||
-                    !Test.TestNotNull(TEXT("Pictograms retain their readable Korean captions"), Caption)) return false;
+                    !Test.TestNotNull(TEXT("Pictograms retain their Korean accessibility captions"), Caption)) return false;
                 UObject* Resource = Icon->GetBrush().GetResourceObject();
                 const int32 IconIndex = Choice->GetChoiceId() + 1;
                 if (!Test.TestTrue(TEXT("Each category has a known standalone icon identity"),
@@ -1369,19 +1612,18 @@ namespace FFPrepBuildVirtualizedSlateTest
                     Icon->GetColorAndOpacity().Equals(*TintProperty->ContainerPtrToValuePtr<FLinearColor>(Choice), .001f));
                 Test.TestTrue(TEXT("Standalone glyphs do not show the old atlas contrast backdrop"),
                     !Backdrop || Backdrop->GetVisibility() == ESlateVisibility::Collapsed);
-                // The 32px tab has 3px vertical padding. Keep a square glyph inside that content area.
                 const FVector2D IconLocalSize = Icon->GetCachedGeometry().GetLocalSize();
-                Test.TestTrue(FString::Printf(TEXT("Each standalone category icon occupies its authored compact 24px square (actual %.2f x %.2f)"), IconLocalSize.X, IconLocalSize.Y),
-                    IconLocalSize.Equals(FVector2D(24, 24), .5));
+                Test.TestTrue(FString::Printf(TEXT("Each icon-only category uses its authored compact square (actual %.2f x %.2f)"), IconLocalSize.X, IconLocalSize.Y),
+                    Choice->bIconOnly && IconLocalSize.Equals(FVector2D(Choice->IconOnlySize, Choice->IconOnlySize), .5));
                 Test.TestTrue(TEXT("Category buttons preserve native keyboard focusability"),
                     Button->GetIsFocusable() && Button->TakeWidget()->SupportsKeyboardFocus());
                 const FSlateRect IconRect = Icon->GetCachedGeometry().GetLayoutBoundingRect();
-                const FSlateRect CaptionRect = Caption->GetCachedGeometry().GetLayoutBoundingRect();
                 const FSlateRect ButtonRect = Button->GetCachedGeometry().GetLayoutBoundingRect();
-                Test.TestTrue(TEXT("Category pictogram and caption remain side by side inside their button"),
-                    !Caption->GetText().IsEmpty() && IconRect.Right < CaptionRect.Left &&
+                Test.TestTrue(TEXT("Icon-only categories keep a clear name tooltip and hide the permanent caption"),
+                    !Caption->GetText().IsEmpty() && !IsEffectivelyVisible(Caption) &&
+                    Choice->GetToolTipText().ToString() == Choice->AuthoredLabel.ToString() &&
                     IconRect.Top >= ButtonRect.Top - 1.5f && IconRect.Bottom <= ButtonRect.Bottom + 1.5f &&
-                    CaptionRect.Right <= ButtonRect.Right + 1.5f);
+                    IconRect.Left >= ButtonRect.Left - 1.5f && IconRect.Right <= ButtonRect.Right + 1.5f);
             }
             Test.TestEqual(TEXT("All facilities does not create a cross-category strip of every minor token"), Minors->GetChildrenCount(), 1);
             CheckFilterLayout(Test, TEXT("All facilities"));
@@ -1409,9 +1651,9 @@ namespace FFPrepBuildVirtualizedSlateTest
                 }));
             List->ScrollToTop();
             Paint();
-            for (int32 Index = 1; Index < Majors->GetChildrenCount(); ++Index)
+            for (int32 Index = 1; Index < MajorChoices.Num(); ++Index)
             {
-                auto* Choice = Cast<UFF_PrepChoiceButton>(Majors->GetChildAt(Index));
+                UFF_PrepChoiceButton* Choice = MajorChoices[Index];
                 if (!Test.TestNotNull(TEXT("Real category action"), Choice)) { return false; }
                 Choice->OnHudTabButtonClicked.ExecuteIfBound(Choice->GetChoiceId());
                 Paint();
@@ -1433,9 +1675,8 @@ namespace FFPrepBuildVirtualizedSlateTest
                 CheckCatalogRowPreview(Test, FString::Printf(TEXT("Major category %d"), Choice->GetChoiceId()));
             }
             UFF_PrepChoiceButton* Safety = nullptr;
-            for (UWidget* Child : Majors->GetAllChildren())
+            for (UFF_PrepBuildCategoryChoice* Choice : MajorChoices)
             {
-                auto* Choice = Cast<UFF_PrepChoiceButton>(Child);
                 if (Choice && Choice->GetChoiceId() == static_cast<int32>(EFFZSFacilityCategory::Safety)) { Safety = Choice; }
             }
             if (!Test.TestNotNull(TEXT("Safety category exists in the complete source fixture"), Safety)) { return false; }
@@ -1515,7 +1756,7 @@ namespace FFPrepBuildVirtualizedSlateTest
                 Measurements.SeenItems.Add(Item);
                 const FString Label = FString::Printf(TEXT("%s / %s"), *Step, *Item->GetFacilityDefinitionId().ToString());
                 const bool bHasPrograms = Item->GetEntry().CompatibleProgramCount > 0;
-                const ESlateVisibility ProgramVisibility = bHasPrograms
+                const ESlateVisibility ProgramVisibility = bHasPrograms && !Tile->IsThumbnailOnly()
                     ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
                 Test.TestTrue(*FString::Printf(TEXT("%s: pooled program badge belongs to the current facility and cannot intercept input"), *Label),
                     Tile->HasCompatiblePrograms() == bHasPrograms && ProgramBorder->GetVisibility() == ProgramVisibility);
@@ -1533,7 +1774,7 @@ namespace FFPrepBuildVirtualizedSlateTest
                 const auto* AuthoredBackdrop = TileTree ? Cast<UBorder>(TileTree->FindWidget(TEXT("Border_ThumbnailBackdrop"))) : nullptr;
                 FSlateBrush ExpectedBackdrop = AuthoredBackdrop ? AuthoredBackdrop->Background : FSlateBrush();
                 const bool bMissingRequired = Item->IsRequiredFacility() && !Item->IsRequiredFacilitySatisfied();
-                if (bMissingRequired || bHasPrograms)
+                if (!Tile->IsThumbnailOnly() && (bMissingRequired || bHasPrograms))
                 {
                     const auto* BrushProperty = FindFProperty<FStructProperty>(Row->GetClass(),
                         bMissingRequired ? TEXT("RequiredThumbnailBrush") : TEXT("ProgramThumbnailBrush"));
@@ -1615,7 +1856,7 @@ namespace FFPrepBuildVirtualizedSlateTest
                     TEXT("Border_ProgramBadge"), TEXT("Border_SynergyBadge"), TEXT("Button_Favorite") })
                 {
                     const UWidget* Badge = Row->GetWidgetFromName(BadgeName);
-                    if (!Badge || !Badge->IsVisible()) { continue; }
+                    if (!Badge || !IsEffectivelyVisible(Badge) || Badge->GetRenderOpacity() <= 0.f) { continue; }
                     if (FString(BadgeName) == TEXT("Border_SynergyBadge"))
                     {
                         // The border itself stays visible in Designer; its animated parent and
@@ -1666,10 +1907,17 @@ namespace FFPrepBuildVirtualizedSlateTest
                     (!CardFrame->IsHeightOverride() || CardSize.Y + 1.0 >= CardFrame->GetHeightOverride()));
                 Test.TestTrue(*FString::Printf(TEXT("%s: card dimensions survive reuse"), *Label),
                     CardSize.Equals(Measurements.CardSize, 1.0));
-                Test.TestTrue(*FString::Printf(TEXT("%s: thumbnail frame survives mixed native resolutions"), *Label),
+                // SizeBox overrides control desired size. Its Fill-aligned parent may
+                // allocate more width, which must remain stable across pooled images.
+                const FVector2D ThumbnailDesiredSize = ThumbnailFrame->GetDesiredSize();
+                Test.TestTrue(*FString::Printf(TEXT("%s: thumbnail frame survives mixed native resolutions (allocated %.1fx%.1f, reference %.1fx%.1f, desired %.1fx%.1f, overrides %.1fx%.1f)"),
+                    *Label, ThumbnailSize.X, ThumbnailSize.Y, Measurements.ThumbnailSize.X, Measurements.ThumbnailSize.Y,
+                    ThumbnailDesiredSize.X, ThumbnailDesiredSize.Y, ThumbnailFrame->GetWidthOverride(), ThumbnailFrame->GetHeightOverride()),
                     ThumbnailSize.Equals(Measurements.ThumbnailSize, 1.0) &&
-                    (!ThumbnailFrame->IsWidthOverride() || FMath::IsNearlyEqual(ThumbnailSize.X, static_cast<double>(ThumbnailFrame->GetWidthOverride()), 1.0)) &&
-                    (!ThumbnailFrame->IsHeightOverride() || FMath::IsNearlyEqual(ThumbnailSize.Y, static_cast<double>(ThumbnailFrame->GetHeightOverride()), 1.0)));
+                    ThumbnailSize.X > 0.0 && ThumbnailSize.Y > 0.0 &&
+                    ThumbnailSize.X <= CardSize.X + 1.0 && ThumbnailSize.Y <= CardSize.Y + 1.0 &&
+                    (!ThumbnailFrame->IsWidthOverride() || FMath::IsNearlyEqual(ThumbnailDesiredSize.X, static_cast<double>(ThumbnailFrame->GetWidthOverride()), 1.0)) &&
+                    (!ThumbnailFrame->IsHeightOverride() || FMath::IsNearlyEqual(ThumbnailDesiredSize.Y, static_cast<double>(ThumbnailFrame->GetHeightOverride()), 1.0)));
                 const FSlateRect ImageRect = Thumbnail->GetCachedGeometry().GetLayoutBoundingRect();
                 const FSlateRect FrameRect = ThumbnailFrame->GetCachedGeometry().GetLayoutBoundingRect();
                 const double ImageWidth = ImageRect.Right - ImageRect.Left;
@@ -1683,8 +1931,10 @@ namespace FFPrepBuildVirtualizedSlateTest
                         static_cast<double>(Texture->GetSizeX()) / Texture->GetSizeY(), 0.01));
                 const UWidget* NameContainer = Row->GetWidgetFromName(TEXT("Size_PearlFacilityName"));
                 const UWidget* CostContainer = Row->GetWidgetFromName(TEXT("HorizontalBox_Meta"));
-                Test.TestTrue(*FString::Printf(TEXT("%s: the compact card shows its name and price and retains the complete tooltip"), *Label),
-                    NameContainer && CostContainer && NameContainer->IsVisible() && CostContainer->IsVisible() &&
+                Test.TestTrue(*FString::Printf(TEXT("%s: caption visibility follows the card's presentation mode and its tooltip stays current"), *Label),
+                    NameContainer && CostContainer &&
+                    (Tile->IsThumbnailOnly() ? (!IsEffectivelyVisible(Name) && !IsEffectivelyVisible(Cost))
+                        : (IsEffectivelyVisible(NameContainer) && IsEffectivelyVisible(CostContainer))) &&
                     Tooltip.Contains(Item->GetDisplayName().ToString()) && Tooltip.Contains(Item->GetCostText().ToString()));
                 CheckCardTextLayout(Test, *Row, CardRect, Label);
             }
@@ -2045,6 +2295,71 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ClarityCatalogDragTest,
 
 bool FFF_ClarityCatalogDragTest::RunTest(const FString& Parameters)
 {
+    // Regression: a closed catalog must leave no translucent strip. This test
+    // already has the native friend seam needed for an isolated presentation session.
+    {
+        using namespace FFPrepBuildVirtualizedSlateTest;
+        if (!TestTrue(TEXT("Slate is initialized"), FSlateApplication::IsInitialized())) return false;
+        FCatalogFixture Fixture;
+        if (!Fixture.Initialize(*this, FVector2D(1920, 1080))) return false;
+        UFF_PrepPanelBuild* Panel = Fixture.GetPanel();
+        auto* Dock = Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_ClarityCatalogDock")));
+        UWidget* Background = Panel->GetWidgetFromName(TEXT("Border_ApprovedCatalogV9"));
+        UWidget* Catalog = Panel->GetWidgetFromName(TEXT("Panel_Catalog"));
+        UFunction* ModeHandler = Panel->FindFunction(TEXT("HandleBuildModeStateChanged"));
+        if (!TestNotNull(TEXT("Actual outer catalog dock"), Dock) ||
+            !TestNotNull(TEXT("Actual translucent catalog background"), Background) ||
+            !TestNotNull(TEXT("Actual catalog content"), Catalog) ||
+            !TestNotNull(TEXT("Production state event"), ModeHandler)) return false;
+        TestFalse(TEXT("The saved continuous catalog has no compact mode"), Panel->bUsePagination);
+        bool bBackgroundUnderDock = false;
+        for (const UWidget* Current = Background; Current; Current = Current->GetParent())
+            bBackgroundUnderDock |= Current == Dock;
+        TestTrue(TEXT("The translucent background belongs to the visibility-controlled dock"), bBackgroundUnderDock);
+
+        // The real category widgets stay in the tree. Remove only the focus-target
+        // references while this state test has no local player to receive focus.
+        auto SavedCategoryChoices = MoveTemp(Panel->CategoryChoices);
+        Panel->bPanelOpen = true;
+        ON_SCOPE_EXIT
+        {
+            Panel->CategoryChoices = MoveTemp(SavedCategoryChoices);
+            Panel->bPanelOpen = false;
+        };
+        EFF_BuildModeState Previous = EFF_BuildModeState::CatalogOpen;
+        const auto Transition = [&](const EFF_BuildModeState Next)
+        {
+            struct { EFF_BuildModeState Previous; EFF_BuildModeState Next; } ModeParameters{ Previous, Next };
+            Panel->ProcessEvent(ModeHandler, &ModeParameters);
+            Previous = Next;
+        };
+        for (const EFF_BuildModeState State : { EFF_BuildModeState::BuildMode, EFF_BuildModeState::Moving,
+            EFF_BuildModeState::Closed })
+        {
+            Transition(State);
+            const FString StateName = UEnum::GetValueAsString(State);
+            TestTrue(*FString::Printf(TEXT("%s collapses the outer dock and its layout footprint"), *StateName),
+                Dock->GetVisibility() == ESlateVisibility::Collapsed);
+            TestFalse(*FString::Printf(TEXT("%s leaves no painted or hit-testable background"), *StateName),
+                IsEffectivelyVisible(Background));
+            Transition(EFF_BuildModeState::CatalogOpen);
+            TestTrue(TEXT("Reopening restores the outer dock and catalog content"),
+                IsEffectivelyVisible(Dock) && IsEffectivelyVisible(Background) && IsEffectivelyVisible(Catalog));
+        }
+        Transition(EFF_BuildModeState::Placing);
+        TestTrue(TEXT("Placement keeps the catalog available"), IsEffectivelyVisible(Dock) && IsEffectivelyVisible(Catalog));
+
+        // Legacy compact content is optional in the saved continuous WBP, but its
+        // pagination policy must still retain the outer dock when enabled.
+        Panel->bUsePagination = true;
+        Transition(EFF_BuildModeState::BuildMode);
+        TestTrue(TEXT("Legacy compact mode retains its visible outer dock"),
+            IsEffectivelyVisible(Dock) && !IsEffectivelyVisible(Catalog));
+        Panel->bUsePagination = false;
+        Transition(EFF_BuildModeState::CatalogOpen);
+        TestTrue(TEXT("The continuous catalog reopens after leaving legacy compact mode"),
+            IsEffectivelyVisible(Dock) && IsEffectivelyVisible(Catalog));
+    }
     if (!TestTrue(TEXT("Slate is initialized"), FSlateApplication::IsInitialized())) return false;
     AddExpectedError(TEXT("ViewModel 을 찾지 못했다"), EAutomationExpectedErrorFlags::Contains, 2);
     for (const FIntPoint Resolution : { FIntPoint(1280, 720), FIntPoint(1920, 1080) })
@@ -2118,7 +2433,7 @@ bool FFF_PrepBuildReleasedRowPointerLifecycleTest::RunTest(const FString& Parame
     Entry->RefreshItemPresentation();
     TestTrue(TEXT("First item has a codex accent independent of its selection"),
         Entry->IsCodexFocused() && CodexRim->GetVisibility() == ESlateVisibility::HitTestInvisible &&
-        CodexBadge->GetVisibility() == ESlateVisibility::HitTestInvisible);
+        CodexBadge->GetVisibility() == (Entry->IsThumbnailOnly() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible));
     const TSharedPtr<SObjectTableRow<UObject*>> SlateRow =
         StaticCastSharedPtr<SObjectTableRow<UObject*>>(Entry->GetCachedWidget());
     const TSharedPtr<STableViewBase> SlateList =

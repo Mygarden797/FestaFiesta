@@ -393,6 +393,15 @@ private:
     void RefreshHelpPresentation();
     void RefreshPlacementSurfaces();
     void RefreshPlacementSynergy();
+    UFUNCTION() void HandleV9PlacementInfoClicked();
+    UFUNCTION() void HandleV9PlacementSynergyClicked();
+    void RefreshV9PlacementTabs();
+    FName V9PlacementDefinition;
+    bool bV9PlacementSynergy = false;
+    bool bV10PlacementHasSynergy = false;
+    bool bHasV9PlacementTabStyles = false;
+    FButtonStyle V9PlacementInfoStyle;
+    FButtonStyle V9PlacementSynergyStyle;
     TWeakObjectPtr<UUserWidget> FacilityInfoAvoidanceSurface;
     double NextFacilityInfoSearchTime = 0.0;
     void InstallToolbarForegroundLayer();

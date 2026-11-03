@@ -24,6 +24,7 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/SizeBox.h"
+#include "Components/TextBlock.h"
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
 #include "Engine/World.h"
@@ -266,6 +267,11 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	const bool bSelectionChanged = CurrentViewData.FacilityInstanceId != ViewData.FacilityInstanceId ||
 		CurrentViewData.Context != ViewData.Context;
 	if (bSelectionChanged) { bQueueSettingsDirty = false; CancelLightingEdit(); if (bLightingMinimized) HandleLightingMinimizeClicked(); }
+	else if (CurrentViewData.bHasLightingRig && !ViewData.bHasLightingRig)
+	{
+		CancelLightingEdit();
+		if (bLightingMinimized) HandleLightingMinimizeClicked();
+	}
 	if (bBuildContextChanged && WidgetTree)
 	{
 		const auto* GeneratedClass = Cast<UWidgetBlueprintGeneratedClass>(GetClass());
@@ -356,7 +362,8 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	SetText(Text_FacilityRevenueStatus, ViewData.RevenueStatusText);
 	if (Text_FacilityRevenueStatus)
 	{
-		Text_FacilityRevenueStatus->SetVisibility(ViewData.RevenueStatusText.IsEmpty()
+		Text_FacilityRevenueStatus->SetVisibility(ViewData.RevenueStatusText.IsEmpty() ||
+			(GetWidgetFromName(TEXT("Overlay_V10InfoPages")) && !ViewData.FacilityRevenueText.IsEmpty())
 			? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
 	SetText(Text_FacilityRevenueSummary, ViewData.RevenueSummaryText);
@@ -582,22 +589,105 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	SetText(Text_RemoveRecovery, ViewData.RecoveryCostText);
 	SetText(Text_RemoveInstallCost, ViewData.InstallCostText);
 	if (Button_RemoveConfirm) Button_RemoveConfirm->SetIsEnabled(bBuildContext && ViewData.bCanRemove);
+	RefreshMetricVisibility();
+	// An unsupported/empty combination page is hidden below, but pooled rows
+	// still need their stale content retired before the selected page changes.
+	if (ViewData.SynergyEntries.IsEmpty()) RefreshSynergyEntries();
 	RefreshPageVisibility();
 	OnViewDataApplied(ViewData);
 }
 
+bool UFF_FacilityInfoPanel::IsInfoPageAvailable(const EFF_FacilityInfoPage Page) const
+{
+	const bool bInstalled = CurrentViewData.FacilityInstanceId.IsValid();
+	const bool bBuild = CurrentViewData.Context == EFF_FacilityInfoContext::Build;
+	switch (Page)
+	{
+	case EFF_FacilityInfoPage::Overview: return true;
+	case EFF_FacilityInfoPage::Operation:
+		// This page contains queue/service metrics, not a generic facility state.
+		return bInstalled && CurrentViewData.bHasService;
+	case EFF_FacilityInfoPage::Synergy: return bInstalled && !CurrentViewData.SynergyEntries.IsEmpty();
+	case EFF_FacilityInfoPage::Staff: return bInstalled && CurrentViewData.bShowStaffSection;
+	case EFF_FacilityInfoPage::Lighting: return bInstalled && CurrentViewData.bHasLightingRig;
+	case EFF_FacilityInfoPage::Upgrade: return bInstalled && bBuild && CurrentViewData.bHasFacilityLevels;
+	case EFF_FacilityInfoPage::Revenue: return bInstalled && CurrentViewData.bShowRevenueSection;
+	case EFF_FacilityInfoPage::Programs: return bInstalled && CurrentViewData.bShowProgramSection;
+	case EFF_FacilityInfoPage::Queue: return bInstalled && CurrentViewData.bHasQueueSettings;
+	case EFF_FacilityInfoPage::RemoveConfirmation: return bInstalled && bBuild && CurrentViewData.bCanRemove;
+	default: return false;
+	}
+}
+
+void UFF_FacilityInfoPanel::RefreshMetricVisibility()
+{
+	// Collapse the whole authored metric, including its label and padding. Empty
+	// rows never leave holes, while supported zero values remain useful facts.
+	const auto ShowMetric = [this](UCommonTextBlock* Value, const bool bSupported, const FText& Text)
+	{
+		if (!Value) return;
+		const bool bVisible = bSupported && !Text.IsEmpty();
+		Value->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		const FString Name = Value->GetName();
+		for (const FString& HostName : {
+			TEXT("V10_Row_") + Name, TEXT("V10_Card_") + Name,
+			TEXT("V10_Card_") + Name + TEXT("_Size"),
+			TEXT("Clarity_Row_") + Name, TEXT("Aurora_Row_") + Name,
+			Name + TEXT("_Card")})
+			if (UWidget* Host = GetWidgetFromName(FName(*HostName)))
+				Host->SetVisibility(bVisible ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	};
+	ShowMetric(Text_InstallCost, true, CurrentViewData.InstallCostText);
+	ShowMetric(Text_Footprint, true, CurrentViewData.FootprintText);
+	ShowMetric(Text_Zone, true, CurrentViewData.ZoneText);
+	ShowMetric(Text_FacilityState, true, CurrentViewData.FacilityStateText);
+	ShowMetric(Text_RecoveryCost, true, CurrentViewData.RecoveryCostText);
+	ShowMetric(Text_InstanceLimit, CurrentViewData.MaxInstancesPerWorld > 0, CurrentViewData.InstanceLimitText);
+	ShowMetric(Text_QueueCapacity, CurrentViewData.bHasService, CurrentViewData.QueueCapacityText);
+	ShowMetric(Text_QueueCapacityValue, CurrentViewData.bHasService, CurrentViewData.QueueCapacityValueText);
+	ShowMetric(Text_ServiceCapacityValue, CurrentViewData.bHasService, CurrentViewData.ServiceCapacityValueText);
+	ShowMetric(Text_ServiceDuration, CurrentViewData.bHasService, CurrentViewData.ServiceDurationText);
+	ShowMetric(Text_OperationState, true, CurrentViewData.OperationStateText);
+	ShowMetric(Text_WaitingParties, CurrentViewData.bHasService, CurrentViewData.WaitingPartiesText);
+	ShowMetric(Text_Occupancy, CurrentViewData.bHasService, CurrentViewData.OccupancyText);
+	ShowMetric(Text_RemainingService, CurrentViewData.bHasService, CurrentViewData.RemainingServiceText);
+	ShowMetric(Text_ExpectedWait, CurrentViewData.bHasService, CurrentViewData.ExpectedWaitText);
+	ShowMetric(Text_Throughput, CurrentViewData.bHasService, CurrentViewData.ThroughputText);
+	ShowMetric(Text_UpgradeCurrentTime, CurrentViewData.bHasService, CurrentViewData.UpgradeCurrentValues.ServiceTime);
+	ShowMetric(Text_UpgradeNextTime, CurrentViewData.bHasService, CurrentViewData.UpgradeNextValues.ServiceTime);
+	ShowMetric(Text_UpgradeCurrentThroughput, CurrentViewData.bHasService, CurrentViewData.UpgradeCurrentValues.Throughput);
+	ShowMetric(Text_UpgradeNextThroughput, CurrentViewData.bHasService, CurrentViewData.UpgradeNextValues.Throughput);
+	if (UWidget* OverviewService = GetWidgetFromName(TEXT("V10_OverviewService")))
+		OverviewService->SetVisibility(CurrentViewData.bHasService &&
+			(!CurrentViewData.QueueCapacityValueText.IsEmpty() || !CurrentViewData.ServiceCapacityValueText.IsEmpty() ||
+			 !CurrentViewData.ServiceDurationText.IsEmpty()) ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	const auto ShowComparisonRow = [this](const TCHAR* Name, const bool bSupported, const FText& Current, const FText& Next)
+	{
+		if (UWidget* Row = GetWidgetFromName(Name))
+			Row->SetVisibility(bSupported && (!Current.IsEmpty() || !Next.IsEmpty())
+				? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	};
+	ShowComparisonRow(TEXT("V2_UpgradeRowTime"), CurrentViewData.bHasService,
+		CurrentViewData.UpgradeCurrentValues.ServiceTime, CurrentViewData.UpgradeNextValues.ServiceTime);
+	ShowComparisonRow(TEXT("V2_UpgradeRowThroughput"), CurrentViewData.bHasService,
+		CurrentViewData.UpgradeCurrentValues.Throughput, CurrentViewData.UpgradeNextValues.Throughput);
+	ShowComparisonRow(TEXT("V2_UpgradeRowSize"), true,
+		CurrentViewData.UpgradeCurrentValues.Footprint, CurrentViewData.UpgradeNextValues.Footprint);
+}
+
 void UFF_FacilityInfoPanel::SetInfoPage(const EFF_FacilityInfoPage Page)
 {
-	if (ActivePage == Page) return;
-	const bool bPageChanged = ActivePage != Page;
+	const EFF_FacilityInfoPage NextPage = IsInfoPageAvailable(Page) ? Page : EFF_FacilityInfoPage::Overview;
+	if (ActivePage == NextPage) return;
+	const bool bPageChanged = ActivePage != NextPage;
 	if (bPageChanged && ActivePage == EFF_FacilityInfoPage::Lighting)
 	{
 		bLightingIntroductionVisible = false;
 		CancelLightingEdit();
 		if (bLightingMinimized) HandleLightingMinimizeClicked();
 	}
-	ActivePage = Page;
-	if (Page == EFF_FacilityInfoPage::Lighting && Widget_LightingControls && !bLightingIntroductionVisible)
+	ActivePage = NextPage;
+	if (NextPage == EFF_FacilityInfoPage::Lighting && Widget_LightingControls && !bLightingIntroductionVisible)
 		Widget_LightingControls->BeginEdit();
 	RefreshPageVisibility();
 	if (bPageChanged && WidgetTree)
@@ -615,13 +705,13 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 		return;
 	}
 	const bool bBuild = CurrentViewData.Context == EFF_FacilityInfoContext::Build;
-	const bool bKeepUnavailableTabs = bBuild && bShowUnavailableBuildTabs && WidgetTree &&
-		WidgetTree->FindWidget(TEXT("Grid_InspectorTabs"));
+	// Unsupported features are absent, rather than occupying disabled tab slots.
+	if (!IsInfoPageAvailable(ActivePage)) ActivePage = EFF_FacilityInfoPage::Overview;
 	if (ActivePage == EFF_FacilityInfoPage::Upgrade && (!bBuild || !CurrentViewData.bHasFacilityLevels))
 		ActivePage = EFF_FacilityInfoPage::Overview;
 	if (ActivePage == EFF_FacilityInfoPage::RemoveConfirmation && (!bBuild || !CurrentViewData.bCanRemove))
 		ActivePage = EFF_FacilityInfoPage::Overview;
-	if (ActivePage == EFF_FacilityInfoPage::Synergy && (!Button_TabSynergy || !Panel_SynergySection))
+	if (ActivePage == EFF_FacilityInfoPage::Synergy && (!Button_TabSynergy || !Panel_SynergySection || CurrentViewData.SynergyEntries.IsEmpty()))
 		ActivePage = EFF_FacilityInfoPage::Overview;
 	if (ActivePage == EFF_FacilityInfoPage::Staff && (!Panel_StaffSection || !CurrentViewData.bShowStaffSection))
 		ActivePage = EFF_FacilityInfoPage::Overview;
@@ -669,49 +759,58 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 		Show(Widget_LightingControls, !bLightingIntroductionVisible && CurrentViewData.bHasLightingRig && (Button_TabLighting
 			? ActivePage == EFF_FacilityInfoPage::Lighting : ActivePage == EFF_FacilityInfoPage::Overview));
 	}
-	Show(Button_TabLighting, bKeepUnavailableTabs || CurrentViewData.bHasLightingRig);
+	Show(Button_TabOperation, IsInfoPageAvailable(EFF_FacilityInfoPage::Operation));
+	Show(Button_TabSynergy, IsInfoPageAvailable(EFF_FacilityInfoPage::Synergy));
+	Show(Button_TabLighting, IsInfoPageAvailable(EFF_FacilityInfoPage::Lighting));
 	if (UWidget* SupportBadge = GetWidgetFromName(TEXT("Border_A5LightingSupport")))
 		SupportBadge->SetVisibility(CurrentViewData.bHasLightingRig ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	Show(Button_TabRevenue, bKeepUnavailableTabs || bRevenueAvailable);
-	Show(Button_TabPrograms, bKeepUnavailableTabs || CurrentViewData.bShowProgramSection);
-	Show(Button_TabQueue, bKeepUnavailableTabs || bQueueAvailable);
-	if (bKeepUnavailableTabs) Show(Button_TabStaff, true);
+	Show(Button_TabRevenue, bRevenueAvailable);
+	Show(Button_TabPrograms, IsInfoPageAvailable(EFF_FacilityInfoPage::Programs));
+	Show(Button_TabQueue, bQueueAvailable);
 	Show(Button_LightingMinimize, ActivePage == EFF_FacilityInfoPage::Lighting && !bLightingIntroductionVisible);
-	Show(Button_TabUpgrade, bKeepUnavailableTabs || (bBuild && CurrentViewData.bHasFacilityLevels));
+	Show(Button_TabUpgrade, IsInfoPageAvailable(EFF_FacilityInfoPage::Upgrade));
 	if (Button_TabUpgrade)
 	{
 		Button_TabUpgrade->SetRenderOpacity(bBuild && CurrentViewData.bHasFacilityLevels ? 1.f : .42f);
 		Button_TabUpgrade->SetToolTipText(CurrentViewData.bHasFacilityLevels ? FText::GetEmpty() : LOCTEXT("NoFacilityUpgrade", "이 시설은 강화가 지원되지 않습니다."));
 	}
-	auto UpdateTab=[this,bKeepUnavailableTabs](UButton* Tab,const EFF_FacilityInfoPage Page,const bool bAvailable=true)
+	auto UpdateTab=[this](UButton* Tab,const EFF_FacilityInfoPage Page,const bool bAvailable=true)
 	{
 		if(!Tab)return;
 		if(!AuthoredTabStyles.Contains(Page))AuthoredTabStyles.Add(Page,Tab->GetStyle());
 		FButtonStyle TabStyle=AuthoredTabStyles.FindChecked(Page);
 		const bool bSelected=bAvailable&&ActivePage==Page;
 		if(bSelected)TabStyle.Normal=TabStyle.Hovered=TabStyle.Pressed=TabStyle.Disabled;
-		// Some authored styles use Disabled as the selected-tab brush; an actually
-		// unavailable tab must instead retain the neutral brush and reduced opacity.
-		else if (!bAvailable && bKeepUnavailableTabs) TabStyle.Disabled=TabStyle.Normal;
 		Tab->SetStyle(TabStyle);
 		Tab->SetIsEnabled(bAvailable);
-		if (bKeepUnavailableTabs || bAvailable) Tab->SetRenderOpacity(bAvailable ? 1.f : .42f);
+		Tab->SetVisibility(bAvailable ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		Tab->SetRenderOpacity(1.f);
 		if(Panel_PersistentIdentity)
 			if(auto* Label=Cast<UCommonTextBlock>(Tab->GetContent()))
 				Label->SetColorAndOpacity(FSlateColor(bSelected?SelectedTabTextColor:InactiveTabTextColor));
 	};
 	UpdateTab(Button_TabOverview,EFF_FacilityInfoPage::Overview);
-	UpdateTab(Button_TabSynergy,EFF_FacilityInfoPage::Synergy);
-	UpdateTab(Button_TabOperation,EFF_FacilityInfoPage::Operation);
-	UpdateTab(Button_TabStaff,EFF_FacilityInfoPage::Staff,CurrentViewData.bShowStaffSection);
-	UpdateTab(Button_TabUpgrade,EFF_FacilityInfoPage::Upgrade,bBuild&&CurrentViewData.bHasFacilityLevels);
-	UpdateTab(Button_TabLighting,EFF_FacilityInfoPage::Lighting,CurrentViewData.bHasLightingRig);
-	UpdateTab(Button_TabRevenue,EFF_FacilityInfoPage::Revenue,bRevenueAvailable);
-	UpdateTab(Button_TabPrograms,EFF_FacilityInfoPage::Programs,CurrentViewData.bShowProgramSection);
-	UpdateTab(Button_TabQueue,EFF_FacilityInfoPage::Queue,bQueueAvailable);
+	UpdateTab(Button_TabSynergy,EFF_FacilityInfoPage::Synergy,IsInfoPageAvailable(EFF_FacilityInfoPage::Synergy));
+	UpdateTab(Button_TabOperation,EFF_FacilityInfoPage::Operation,IsInfoPageAvailable(EFF_FacilityInfoPage::Operation));
+	UpdateTab(Button_TabStaff,EFF_FacilityInfoPage::Staff,IsInfoPageAvailable(EFF_FacilityInfoPage::Staff));
+	UpdateTab(Button_TabUpgrade,EFF_FacilityInfoPage::Upgrade,IsInfoPageAvailable(EFF_FacilityInfoPage::Upgrade));
+	UpdateTab(Button_TabLighting,EFF_FacilityInfoPage::Lighting,IsInfoPageAvailable(EFF_FacilityInfoPage::Lighting));
+	UpdateTab(Button_TabRevenue,EFF_FacilityInfoPage::Revenue,IsInfoPageAvailable(EFF_FacilityInfoPage::Revenue));
+	UpdateTab(Button_TabPrograms,EFF_FacilityInfoPage::Programs,IsInfoPageAvailable(EFF_FacilityInfoPage::Programs));
+	UpdateTab(Button_TabQueue,EFF_FacilityInfoPage::Queue,IsInfoPageAvailable(EFF_FacilityInfoPage::Queue));
 	RefreshInspectorTabLayout();
-	Show(Panel_Actions, ActivePage != EFF_FacilityInfoPage::Lighting && ActivePage != EFF_FacilityInfoPage::RemoveConfirmation &&
-		bBuild);
+	const bool bCompactInspector = WidgetTree && WidgetTree->FindWidget(TEXT("Overlay_V10InfoPages"));
+	Show(Panel_Actions, bBuild && (bCompactInspector
+		? ActivePage == EFF_FacilityInfoPage::Overview || ActivePage == EFF_FacilityInfoPage::Operation
+		: ActivePage != EFF_FacilityInfoPage::Lighting && ActivePage != EFF_FacilityInfoPage::RemoveConfirmation));
+	if (bCompactInspector)
+	{
+		// The name remains persistent; task pages do not repeat the large overview
+		// thumbnail/category above their own controls in the compact build dock.
+		const bool bShowOverviewIdentity = !bBuild || ActivePage == EFF_FacilityInfoPage::Overview;
+		Show(WidgetTree->FindWidget(TEXT("Thumbnail_Size")), bShowOverviewIdentity);
+		Show(Text_Category, bShowOverviewIdentity && !CurrentViewData.CategoryText.IsEmpty());
+	}
 	RefreshLightingIntroduction();
 	RefreshLightingPanelLayout();
 }
@@ -1205,6 +1304,20 @@ void UFF_FacilityInfoPanel::RefreshStaffControls()
 		Panel_StaffSection->SetToolTipText(CurrentViewData.StaffAssignmentHint);
 	}
 	SetText(Text_StaffSummary, CurrentViewData.StaffSummaryText);
+	if (auto* Count = Cast<UTextBlock>(GetWidgetFromName(TEXT("V10_Text_StaffCount"))))
+	{
+		Count->SetText(FText::Format(LOCTEXT("CompactStaffCount", "{0} / {1}명"),
+			FText::AsNumber(CurrentViewData.AssignedStaffCount), FText::AsNumber(CurrentViewData.StaffCapacity)));
+		Count->SetToolTipText(CurrentViewData.StaffSummaryText);
+	}
+	if (auto* Hint = Cast<UTextBlock>(GetWidgetFromName(TEXT("V10_Text_StaffHint"))))
+	{
+		Hint->SetText(!CurrentViewData.StaffRequirementText.IsEmpty() ? CurrentViewData.StaffRequirementText
+			: (CurrentViewData.bCanAssignStaff
+				? LOCTEXT("CompactStaffHint", "미배정 스태프를 이 안내소에 배치하세요.")
+				: LOCTEXT("CompactStaffCheck", "배정 정원과 미배정 스태프를 확인하세요.")));
+		Hint->SetToolTipText(CurrentViewData.StaffAssignmentHint);
+	}
 	if (Button_TabStaff)
 	{
 		Button_TabStaff->SetVisibility(CurrentViewData.bShowStaffSection
@@ -1221,6 +1334,8 @@ void UFF_FacilityInfoPanel::RefreshStaffControls()
 	}
 	if (Button_UnassignStaff)
 	{
+		Button_UnassignStaff->SetVisibility(CurrentViewData.bShowStaffSection && CurrentViewData.AssignedStaffCount > 0
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		Button_UnassignStaff->SetIsEnabled(CurrentViewData.bCanUnassignStaff);
 		Button_UnassignStaff->SetToolTipText(LOCTEXT("UnassignStaffTip", "이 시설의 대기 스태프 1명을 미배정 상태로 돌립니다. 출동 중인 스태프는 복귀 후 해제할 수 있습니다."));
 	}

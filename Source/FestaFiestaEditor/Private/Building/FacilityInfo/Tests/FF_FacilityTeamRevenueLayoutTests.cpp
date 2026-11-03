@@ -73,12 +73,13 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("Actual facility inspector instance"), Panel)) return false;
 
     const TSharedRef<SWidget> Slate = Panel->TakeWidget();
+    const bool bCompact = Panel->GetWidgetFromName(TEXT("Overlay_V10InfoPages")) != nullptr;
     auto* Value = Cast<UCommonTextBlock>(Panel->GetWidgetFromName(TEXT("Text_FacilityRevenue")));
     auto* Card = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("TeamRevenue_OverviewCard")));
     auto* Scroll = Cast<UScrollBox>(Panel->GetWidgetFromName(TEXT("ScrollBox_Details")));
     UWidget* Actions = Panel->GetWidgetFromName(TEXT("Panel_Actions"));
     UWidget* Basics = Panel->GetWidgetFromName(TEXT("Clarity_BasicFacts"));
-    UWidget* FirstFact = Panel->GetWidgetFromName(TEXT("Clarity_Row_Text_QueueCapacityValue"));
+    UWidget* FirstFact = Panel->GetWidgetFromName(bCompact ? TEXT("V10_Row_Text_Footprint") : TEXT("Clarity_Row_Text_QueueCapacityValue"));
     auto* LastFact = Cast<UCommonTextBlock>(Panel->GetWidgetFromName(TEXT("Text_InstanceLimit")));
     auto* Move = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_Move")));
     auto* Remove = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_Remove")));
@@ -116,6 +117,8 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
     Data.DisplayName = FText::FromString(TEXT("팀당 수익 검증 시설"));
     Data.CategoryText = FText::FromString(TEXT("부스"));
     Data.bCanMove = Data.bCanRemove = true;
+    Data.bHasService = true;
+    Data.MaxInstancesPerWorld = 12;
     Data.InstallCostText = FText::FromString(TEXT("300 Gold"));
     Data.RecoveryCostText = FText::FromString(TEXT("150 Gold"));
     Data.QueueCapacityValueText = FText::FromString(TEXT("5팀"));
@@ -139,7 +142,7 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
     FFFacilityInfoModel::ApplyUpgradePreview(&PaidPreview, Data);
     FFFacilityInfoModel::ApplyFacilityRevenue(&NoSales, true, true, 0, Data);
     Panel->ApplyViewData(Data);
-    Panel->SetInfoPage(EFF_FacilityInfoPage::Overview);
+    Panel->SetInfoPage(bCompact ? EFF_FacilityInfoPage::Revenue : EFF_FacilityInfoPage::Overview);
     Panel->SetPanelOpen(true);
     TestEqual(TEXT("Native data reaches the authored revenue text"), Value->GetText().ToString(), Data.FacilityRevenueText.ToString());
     TestTrue(TEXT("No hidden or collapsed ancestor conceals the team quote"), HasVisibleAncestors(Value));
@@ -151,6 +154,7 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
     auto RenderOverview = [&](const TCHAR* FileStem, const bool bShowQuote)
     {
         if (!bCanRender) return;
+        if (bCompact) Panel->SetInfoPage(bShowQuote ? EFF_FacilityInfoPage::Revenue : EFF_FacilityInfoPage::Overview);
         const FString Directory = FPaths::ProjectSavedDir() / TEXT("Automation/FacilityTeamRevenue");
         IFileManager::Get().MakeDirectory(*Directory, true);
         for (const FIntPoint Resolution : {FIntPoint(1280, 720), FIntPoint(1920, 1080)})
@@ -171,11 +175,12 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
             }
             const FSlateRect ValueRect = Value->GetPaintSpaceGeometry().GetLayoutBoundingRect();
             const FSlateRect CardRect = Card->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-            const FSlateRect ScrollRect = Scroll->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+            UWidget* PageViewport = bCompact ? Panel->GetWidgetFromName(TEXT("Body_Surface")) : static_cast<UWidget*>(Scroll);
+            const FSlateRect ScrollRect = PageViewport->GetPaintSpaceGeometry().GetLayoutBoundingRect();
             const FSlateRect ActionsRect = Actions->GetPaintSpaceGeometry().GetLayoutBoundingRect();
             if (bShowQuote)
             {
-                TestTrue(TEXT("All three quote lines have visible geometry"), ValueRect.GetSize().Y >= 40.f &&
+                TestTrue(TEXT("All three quote lines have visible geometry"), ValueRect.GetSize().Y >= 40.f * (bCompact ? Dpi : 1.f) &&
                     ValueRect.GetSize().X > 100.f && HasVisibleAncestors(Value));
                 TestTrue(TEXT("Revenue fits horizontally inside its card"),
                     ValueRect.Left >= CardRect.Left && ValueRect.Right <= CardRect.Right + 1.f);
@@ -192,7 +197,7 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
             {
                 const FSlateRect BasicsRect = Basics->GetPaintSpaceGeometry().GetLayoutBoundingRect();
                 const FSlateRect FirstFactRect = FirstFact->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-                const UWidget* CapacitySection = Panel->GetWidgetFromName(TEXT("Reference_BasicCapacitySection"));
+                const UWidget* CapacitySection = bCompact ? FirstFact : Panel->GetWidgetFromName(TEXT("Reference_BasicCapacitySection"));
                 const FSlateRect FirstSectionRect = CapacitySection
                     ? CapacitySection->GetPaintSpaceGeometry().GetLayoutBoundingRect() : FirstFactRect;
                 TestTrue(*FString::Printf(TEXT("Non-revenue overview leaves no empty card gap at %dp (%.1fpx)"),
@@ -203,7 +208,7 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
                     HasVisibleAncestors(FirstFact) && FirstFactRect.GetSize().Y > 0.f);
             }
             // 현재 컴팩트 Inspector는 긴 기본 정보를 스크롤한다. 실제 마지막 행에 도달하고 고정 조작 영역은 움직이지 않아야 한다.
-            Scroll->ScrollWidgetIntoView(LastFact, false, EDescendantScrollDestination::IntoView);
+            if (!bCompact) Scroll->ScrollWidgetIntoView(LastFact, false, EDescendantScrollDestination::IntoView);
             for (int32 Frame = 0; Frame < 3; ++Frame)
             {
                 Panel->ForceLayoutPrepass();
@@ -211,12 +216,13 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
                 FlushRenderingCommands();
             }
             const FSlateRect LastFactRect = LastFact->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-            const FSlateRect FinalScrollRect = Scroll->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+            const FSlateRect FinalScrollRect = PageViewport->GetPaintSpaceGeometry().GetLayoutBoundingRect();
             const FSlateRect FinalActionsRect = Actions->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-            TestTrue(TEXT("All ordinary overview facts are reachable in the scroll viewport"),
-                HasVisibleAncestors(LastFact) && LastFactRect.GetSize().Y > 0.f &&
-                LastFactRect.Top >= FinalScrollRect.Top - 1.f && LastFactRect.Bottom <= FinalScrollRect.Bottom + 1.f);
-            if (Data.Context == EFF_FacilityInfoContext::Build)
+            if (!bCompact || !bShowQuote)
+                TestTrue(TEXT("All ordinary overview facts are reachable in their detail viewport"),
+                    HasVisibleAncestors(LastFact) && LastFactRect.GetSize().Y > 0.f &&
+                    LastFactRect.Top >= FinalScrollRect.Top - 1.f && LastFactRect.Bottom <= FinalScrollRect.Bottom + 1.f);
+            if (Data.Context == EFF_FacilityInfoContext::Build && (!bCompact || !bShowQuote))
             {
                 TestTrue(TEXT("Scrolling overview facts preserves the fixed facility actions"),
                     FMath::IsNearlyEqual(FinalActionsRect.Top, ActionsRect.Top, .5f) &&
@@ -266,7 +272,7 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
         FFFacilityInfoModel::ApplyUpgradePreview(&PaidPreview, Data);
         FFFacilityInfoModel::ApplyFacilityRevenue(&NoSales, true, true, 0, Data);
         Panel->ApplyViewData(Data);
-        Panel->SetInfoPage(EFF_FacilityInfoPage::Overview);
+        Panel->SetInfoPage(bCompact ? EFF_FacilityInfoPage::Revenue : EFF_FacilityInfoPage::Overview);
         TestTrue(TEXT("Paid selection exposes the expected quote in both contexts"),
             !Value->GetText().IsEmpty() && HasVisibleAncestors(Value) && HasVisibleAncestors(Card));
         if (Context == EFF_FacilityInfoContext::Build)
@@ -284,9 +290,7 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
         TestTrue(TEXT("Non-revenue selection clears the previous facility's estimate"), Value->GetText().IsEmpty());
         TestEqual(TEXT("Non-revenue quote value collapses in Build and Live"), Value->GetVisibility(), ESlateVisibility::Collapsed);
         TestEqual(TEXT("Whole non-revenue overview card collapses in Build and Live"), Card->GetVisibility(), ESlateVisibility::Collapsed);
-        const ESlateVisibility UnsupportedRevenueTabVisibility = Context == EFF_FacilityInfoContext::Build &&
-            Panel->bShowUnavailableBuildTabs && Panel->GetWidgetFromName(TEXT("Grid_InspectorTabs"))
-            ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+        const ESlateVisibility UnsupportedRevenueTabVisibility = ESlateVisibility::Collapsed;
         TestEqual(TEXT("Non-revenue navigation follows the configured context policy"), RevenueTab->GetVisibility(), UnsupportedRevenueTabVisibility);
         TestFalse(TEXT("Non-revenue facility cannot activate the revenue tab"), RevenueTab->GetIsEnabled());
         TestTrue(TEXT("Free service clears both upgrade revenue values"),
@@ -319,7 +323,7 @@ bool FFF_FacilityTeamRevenueLayoutTest::RunTest(const FString& Parameters)
         FFFacilityInfoModel::ApplyUpgradePreview(&PaidPreview, Data);
         FFFacilityInfoModel::ApplyFacilityRevenue(&NoSales, true, true, 0, Data);
         Panel->ApplyViewData(Data);
-        Panel->SetInfoPage(EFF_FacilityInfoPage::Overview);
+        Panel->SetInfoPage(bCompact ? EFF_FacilityInfoPage::Revenue : EFF_FacilityInfoPage::Overview);
         TestTrue(TEXT("Paid-free-paid selection restores the quote and its card"),
             HasVisibleAncestors(Value) && HasVisibleAncestors(Card) && !Value->GetText().IsEmpty());
         TestTrue(TEXT("Paid-free-paid selection restores the revenue tab without settled sales"),

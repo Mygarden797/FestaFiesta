@@ -167,11 +167,23 @@ void UFF_PrepBuildTileWidget::NativePreConstruct()
 #if WITH_EDITOR
 	else { ApplyDesignerPreviewState(); }
 #endif
+	RefreshCompactVisibility();
 }
 
 void UFF_PrepBuildTileWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (bThumbnailOnly)
+	{
+		const UListViewBase* List = GetOwningListView();
+		const bool bFocused = HasAnyUserFocus() || HasFocusedDescendants() ||
+			(bCardSelected && List && List->HasAnyUserFocus());
+		if (bCardFocused != bFocused)
+		{
+			bCardFocused = bFocused;
+			RefreshCompactVisibility();
+		}
+	}
 	if (HoverAnimation || !Image_Thumbnail || !bCapturedAppearance || IsDesignTime()) return;
 	const bool bAnimateHover = Item && bCardHovered &&
 		Item->GetTileState() != EFF_PrepBuildTileState::BuildLimitReached;
@@ -240,6 +252,7 @@ void UFF_PrepBuildTileWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
 		ResetHoverMotion();
 		bCardSelected = false;
 		bCardHovered = false;
+		bCardFocused = false;
 	}
 	Item = NewItem;
 	IUserObjectListEntry::NativeOnListItemObjectSet(ListItemObject);
@@ -261,6 +274,7 @@ void UFF_PrepBuildTileWidget::NativeOnEntryReleased()
 	Item = nullptr;
 	bCardSelected = false;
 	bCardHovered = false;
+	bCardFocused = false;
 	if (UWidget* LightingBadge = GetWidgetFromName(TEXT("Badge_Lighting")))
 		LightingBadge->SetVisibility(ESlateVisibility::Collapsed);
 	// Released entries retain their fixed layout but no previous data or selection.
@@ -295,7 +309,7 @@ int32 UFF_PrepBuildTileWidget::NativePaint(const FPaintArgs& Args, const FGeomet
 	const int32 Layer = Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 	// Newer editable cards provide the lighting badge in their widget tree.
 	// Retain the legacy painted badge only for older authored cards.
-	return Item && Item->SupportsLighting() && !GetWidgetFromName(TEXT("Badge_Lighting"))
+	return !bThumbnailOnly && Item && Item->SupportsLighting() && !GetWidgetFromName(TEXT("Badge_Lighting"))
 		? FFBuildLightingBadge::Paint(AllottedGeometry, OutDrawElements, Layer) : Layer;
 }
 
@@ -304,8 +318,7 @@ void UFF_PrepBuildTileWidget::RefreshItemPresentation()
 	RefreshFromItem();
 	RefreshFavorite();
 	ApplyCodexFocus();
-	if (UWidget* LightingBadge = GetWidgetFromName(TEXT("Badge_Lighting")))
-		LightingBadge->SetVisibility(Item && Item->SupportsLighting() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	RefreshLightingBadge();
 	SetSynergyHighlighted(Item && Item->IsSynergyHighlighted());
 	SetRequiredFacilityStatus(Item && Item->IsRequiredFacility(), Item && Item->IsRequiredFacilitySatisfied(),
 		Item ? Item->GetRequiredFacilityCurrentCount() : 0, Item ? Item->GetRequiredFacilityMinimumCount() : 0);
@@ -315,7 +328,7 @@ void UFF_PrepBuildTileWidget::ApplyProgramAvailability()
 {
 	bHasCompatiblePrograms = Item && Item->HasCompatiblePrograms();
 	const ESlateVisibility BadgeVisibility = bHasCompatiblePrograms
-		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+		&& !bThumbnailOnly ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 	if (Border_ProgramBadge) { Border_ProgramBadge->SetVisibility(BadgeVisibility); }
 	if (Text_ProgramBadge) { Text_ProgramBadge->SetVisibility(BadgeVisibility); }
 	if (Border_ThumbnailBackdrop && bCapturedAppearance)
@@ -325,12 +338,12 @@ void UFF_PrepBuildTileWidget::ApplyProgramAvailability()
 		{
 			Brush = FSlateRoundedBoxBrush(LockedCardTint, 8.f);
 		}
-		else if (bRequiredFacility && !bRequiredFacilitySatisfied)
+		else if (!bThumbnailOnly && bRequiredFacility && !bRequiredFacilitySatisfied)
 		{
 			if (RequiredThumbnailBrush.GetResourceObject()) Brush = RequiredThumbnailBrush;
 			else Brush.TintColor = RequiredCardTint;
 		}
-		else if (bHasCompatiblePrograms)
+		else if (!bThumbnailOnly && bHasCompatiblePrograms)
 		{
 			if (ProgramThumbnailBrush.GetResourceObject()) Brush = ProgramThumbnailBrush;
 			else Brush.TintColor = ProgramCardTint;
@@ -353,7 +366,7 @@ void UFF_PrepBuildTileWidget::ApplySynergyHighlight()
 	const ESlateVisibility AccentVisibility = bSynergyHighlighted && !bCodexFocused
 		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 	if (Border_SynergyHighlight) { Border_SynergyHighlight->SetVisibility(AccentVisibility); }
-	if (Text_SynergyBadge) { Text_SynergyBadge->SetVisibility(AccentVisibility); }
+	if (Text_SynergyBadge) { Text_SynergyBadge->SetVisibility(bThumbnailOnly ? ESlateVisibility::Collapsed : AccentVisibility); }
 }
 
 void UFF_PrepBuildTileWidget::ApplyCodexFocus()
@@ -362,7 +375,7 @@ void UFF_PrepBuildTileWidget::ApplyCodexFocus()
 	const ESlateVisibility CodexFocusVisibility = bCodexFocused
 		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 	if (Image_CodexFocusRim) { Image_CodexFocusRim->SetVisibility(CodexFocusVisibility); }
-	if (Border_CodexFocusBadge) { Border_CodexFocusBadge->SetVisibility(CodexFocusVisibility); }
+	if (Border_CodexFocusBadge) { Border_CodexFocusBadge->SetVisibility(bThumbnailOnly ? ESlateVisibility::Collapsed : CodexFocusVisibility); }
 }
 
 void UFF_PrepBuildTileWidget::SetRequiredFacilityStatus(const bool bRequired, const bool bSatisfied,
@@ -458,6 +471,45 @@ void UFF_PrepBuildTileWidget::RefreshFavorite()
 		Text_Favorite->SetColorAndOpacity(bFavorite ? FSlateColor(FavoriteColor) : AuthoredFavoriteColor);
 		Text_Favorite->SetVisibility(bUsingGeneratedIcon ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
+	RefreshCompactVisibility();
+}
+
+void UFF_PrepBuildTileWidget::RefreshLightingBadge()
+{
+	// Lighting capability is useful before opening the inspector. The authored
+	// upper-left badge row lays it next to the required star without overlapping.
+	if (UWidget* Badge = GetWidgetFromName(TEXT("Badge_Lighting")))
+		Badge->SetVisibility(Item && Item->SupportsLighting() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+}
+
+void UFF_PrepBuildTileWidget::RefreshCompactVisibility()
+{
+	if (!bThumbnailOnly) return;
+	// Data and bound widgets remain intact for accessibility/tooltips and pooled-row refreshes.
+	for (const FName Name : {FName(TEXT("Text_Name")), FName(TEXT("Text_CategoryPath")),
+		FName(TEXT("Text_Cost")), FName(TEXT("Text_BuildLimit")), FName(TEXT("Text_State")),
+		FName(TEXT("Size_PearlFacilityName")), FName(TEXT("Border_AuroraCardGold")),
+		FName(TEXT("Border_ProgramBadge")), FName(TEXT("Text_ProgramBadge")),
+		FName(TEXT("Border_RequiredMissing")),
+		FName(TEXT("Border_RequiredSatisfied")), FName(TEXT("Text_SynergyBadge")),
+		FName(TEXT("Border_CodexFocusBadge"))})
+		if (UWidget* Widget = GetWidgetFromName(Name))
+		{
+			Widget->SetVisibility(ESlateVisibility::Collapsed);
+#if WITH_EDITOR
+			if (IsDesignTime()) Widget->bHiddenInDesigner = true;
+#endif
+		}
+	RefreshLightingBadge();
+	if (Button_Favorite)
+	{
+		const bool bShow = Item && (bCardHovered || bCardFocused || Button_Favorite->HasAnyUserFocus());
+		// Hidden keeps the authored overlay geometry, but cannot silently intercept a card click.
+		Button_Favorite->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
+#if WITH_EDITOR
+		if (IsDesignTime()) Button_Favorite->bHiddenInDesigner = true;
+#endif
+	}
 }
 
 void UFF_PrepBuildTileWidget::RefreshFromItem()
@@ -542,6 +594,7 @@ void UFF_PrepBuildTileWidget::RefreshFromItem()
 		Text_ThumbnailPlaceholder->SetVisibility(Item && !LoadedThumbnail
 			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
+	RefreshCompactVisibility();
 }
 
 FVector2D UFF_PrepBuildTileWidget::GetAuthoredThumbnailBounds() const
@@ -563,7 +616,7 @@ void UFF_PrepBuildTileWidget::RefreshVisualState()
 	{
 		FSlateBrush Brush = AuthoredCardBrush;
 		const bool bMissingRequired = bRequiredFacility && !bRequiredFacilitySatisfied;
-		const bool bAccented = bMissingRequired || bHasCompatiblePrograms;
+		const bool bAccented = !bThumbnailOnly && (bMissingRequired || bHasCompatiblePrograms);
 		const FLinearColor AccentTint = bMissingRequired ? RequiredCardTint : ProgramCardTint;
 		if (bAccented)
 		{
@@ -573,6 +626,11 @@ void UFF_PrepBuildTileWidget::RefreshVisualState()
 		}
 		if (bCardSelected) { Brush.TintColor = bAccented ? FMath::Lerp(AccentTint, SelectedTint, 0.25f) : SelectedTint; }
 		else if (bCardHovered) { Brush.TintColor = bAccented ? FMath::Lerp(AccentTint, HoverTint, 0.2f) : HoverTint; }
+		if (bThumbnailOnly && bCardSelected)
+		{
+			Brush.OutlineSettings.Color = FSlateColor(FLinearColor::FromSRGBColor(FColor(0x91, 0xDF, 0xFF)));
+			Brush.OutlineSettings.Width = 1.5f;
+		}
 		if (bLocked)
 		{
 			Brush.TintColor = LockedCardTint;
@@ -587,4 +645,5 @@ void UFF_PrepBuildTileWidget::RefreshVisualState()
 	// Disable only decorative artwork for Slate's desaturated effect. The row and
 	// favorite button retain input, and pooled rows restore the authored state.
 	if (Image_Thumbnail) { Image_Thumbnail->SetIsEnabled(!bLocked && bAuthoredThumbnailEnabled); }
+	RefreshCompactVisibility();
 }

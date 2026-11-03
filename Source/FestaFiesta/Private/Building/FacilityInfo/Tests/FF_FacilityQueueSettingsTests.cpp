@@ -116,6 +116,7 @@ bool FFF_FacilityQueueSettingsInspectorTest::RunTest(const FString& Parameters)
 	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, Panels, UFF_FacilityInfoPanel::StaticClass(), false);
 	auto* Panel = Panels.Num() == 1 ? Cast<UFF_FacilityInfoPanel>(Panels[0]) : nullptr;
 	if (!TestNotNull(TEXT("One production facility inspector"), Panel)) return false;
+	TestTrue(TEXT("Actual service capability reaches the inspector snapshot"), Panel->GetCurrentViewData().bHasService);
 	ON_SCOPE_EXIT { Info->ClearSelection(); };
 	Panel->TakeWidget();
 	auto* Teams = Cast<UEditableTextBox>(Panel->GetWidgetFromName(TEXT("Editable_FacilityQueueTeams")));
@@ -130,7 +131,11 @@ bool FFF_FacilityQueueSettingsInspectorTest::RunTest(const FString& Parameters)
 	bool bInsideDetailsScroll = false;
 	for (UWidget* Parent = Section->GetParent(); Parent; Parent = Parent->GetParent())
 		if (Parent == Scroll) bInsideDetailsScroll = true;
-	if (!TestTrue(TEXT("Queue page uses the shared details scroller"), bInsideDetailsScroll)) return false;
+	if (Panel->GetWidgetFromName(TEXT("Overlay_V10InfoPages")))
+	{
+		if (!TestFalse(TEXT("Compact queue settings do not require scrolling"), bInsideDetailsScroll)) return false;
+	}
+	else if (!TestTrue(TEXT("Legacy queue page uses its details scroller"), bInsideDetailsScroll)) return false;
 	UWidget* Footer = Panel->GetWidgetFromName(TEXT("Panel_Actions"));
 	UWidget* Card = Panel->GetWidgetFromName(TEXT("Border_Panel"));
 	if (!TestNotNull(TEXT("Fixed action footer"), Footer) || !TestNotNull(TEXT("Facility card"), Card)) return false;
@@ -202,6 +207,7 @@ bool FFF_FacilityQueueSettingsInspectorTest::RunTest(const FString& Parameters)
 	Info->SetPauseMenuPresentationSuppressed(false);
 	if (!TestTrue(TEXT("Inspector opens the audience-only main stage"), Info->SelectFacility(Controller, MainStage, EFF_FacilityInfoContext::Build))) return false;
 	TestFalse(TEXT("Audience-only main stage has no queue settings"), Panel->GetCurrentViewData().bHasQueueSettings);
+	TestFalse(TEXT("Audience-only stage projects no ordinary queue service"), Panel->GetCurrentViewData().bHasService);
 	TestEqual(TEXT("Audience-only main stage hides all queue controls"), Section->GetVisibility(), ESlateVisibility::Collapsed);
 	TestFalse(TEXT("Inspector cannot recreate the removed main-stage queue"), Info->ApplySelectedQueueSettings(MainStage->GetFacilityInstanceId(), Applied));
 	if (!TestTrue(TEXT("Inspector reopens the current first facility after history"), Info->SelectFacility(Controller, First, EFF_FacilityInfoContext::Build))) return false;
@@ -229,13 +235,14 @@ bool FFF_FacilityQueueSettingsInspectorTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Apply button has a usable rendered target"), ApplyGeometry.GetLocalSize().X > 100 && ApplyGeometry.GetLocalSize().Y > 20);
 		const FSlateRect CardBounds = Card->GetCachedGeometry().GetRenderBoundingRect();
 		const FSlateRect FooterBounds = Footer->GetCachedGeometry().GetRenderBoundingRect();
+		const float BottomLimit = Footer->IsVisible() ? FooterBounds.Top : CardBounds.Bottom;
 		TestTrue(TEXT("Queue controls need no scrolling"), FMath::IsNearlyZero(Scroll->GetScrollOffset(), 1.f));
 		for (UWidget* Control : {static_cast<UWidget*>(Teams), static_cast<UWidget*>(Spacing), static_cast<UWidget*>(Width), static_cast<UWidget*>(Apply)})
 		{
 			const FSlateRect Bounds = Control->GetCachedGeometry().GetRenderBoundingRect();
 			TestTrue(*FString::Printf(TEXT("%s is completely visible above the action footer"), *Control->GetName()),
 				Bounds.Left >= CardBounds.Left && Bounds.Right <= CardBounds.Right &&
-				Bounds.Top >= CardBounds.Top && Bounds.Bottom <= FooterBounds.Top + 1.f &&
+				Bounds.Top >= CardBounds.Top && Bounds.Bottom <= BottomLimit + 1.f &&
 				Bounds.Bottom <= Size.Y && Bounds.Bottom > Bounds.Top);
 		}
 		TArray<FColor> Pixels;

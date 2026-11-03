@@ -118,6 +118,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
 	FName GetSelectedCatalogFacilityId() const { return SelectedCatalogFacilityId; }
 
+	/** Shared by separately hosted build inspectors so their authored dimensions match this dock. */
+	float GetCatalogInspectorWidth() const { return FMath::Max(1.f, CatalogInspectorWidth); }
+	float GetCatalogInspectorGap() const { return FMath::Max(0.f, CatalogInspectorGap); }
+	bool UsesIntegratedCatalogInspector() const { return bIntegrateCatalogInspector; }
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativePreConstruct() override;
@@ -360,6 +365,7 @@ private:
 	friend class FFF_PrepBuildCatalogSortInitializationTest;
 #endif
 	bool IsPointerOverCatalog(const FVector2D& ScreenPosition) const;
+	bool IsPointerOverCatalogPopup(const FVector2D& ScreenPosition) const;
 	void ResetCatalogDrag();
 	void MatchCatalogHeaderActions();
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> Size_ClarityCatalogDock;
@@ -381,6 +387,12 @@ private:
 	bool bFitCatalogToViewport = true;
 	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Catalog", meta = (ClampMin = "0", DisplayName = "화면 좌우 여백 합계"))
 	float CatalogViewportMargin = 64.f;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Catalog", meta = (ClampMin = "1", DisplayName = "우측 시설 정보 폭"))
+	float CatalogInspectorWidth = 550.f;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Catalog", meta = (ClampMin = "0", DisplayName = "시설 정보 간격"))
+	float CatalogInspectorGap = 24.f;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Catalog", meta = (DisplayName = "시설 정보를 카탈로그에 통합"))
+	bool bIntegrateCatalogInspector = false;
 	float AuthoredCatalogHeight = 0.f;
 	float AuthoredCatalogWidth = 0.f;
 	FName SelectedCatalogFacilityId = NAME_None;
@@ -402,6 +414,11 @@ private:
 	void UnbindExternalSources();
 	void EndPanelSession();
 	void BuildCategoryFilterSurface();
+	UFUNCTION() void HandleV9FiltersClicked();
+	UFUNCTION() void HandleV9MoreClicked();
+	UFUNCTION() void HandleV9CloseClicked();
+	bool CloseCatalogPopups();
+	void ToggleCatalogPopup(FName PopupName, FName OtherPopupName);
 	void RefreshCategoryChoiceSelection();
 	void RefreshLegacyCategoryButtonStyles();
 	void FocusSelectedCategoryChoice();

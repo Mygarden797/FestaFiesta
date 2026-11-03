@@ -13,6 +13,7 @@
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Engine/PrimaryAssetLabel.h"
 #include "Components/HorizontalBox.h"
+#include "Components/PanelWidget.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildCategoryChoice.h"
@@ -23,6 +24,17 @@
 
 namespace FFPrepBuildWidgetContractTest
 {
+	void CollectCategoryChoices(UWidget* Root, TArray<UFF_PrepBuildCategoryChoice*>& Choices)
+	{
+		if (auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(Root))
+		{
+			Choices.Add(Choice);
+			return;
+		}
+		if (auto* Panel = Cast<UPanelWidget>(Root))
+			for (UWidget* Child : Panel->GetAllChildren()) CollectCategoryChoices(Child, Choices);
+	}
+
 	constexpr const TCHAR* TileClassPath =
 		FFBuildUIAssetPaths::PrepBuildTileClass;
 	constexpr const TCHAR* PanelClassPath =
@@ -86,6 +98,8 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("가상화 타일 WBP 클래스를 로드한다"), TileClass);
 	TestTrue(TEXT("타일 WBP는 전용 네이티브 타일을 상속한다"),
 		TileClass && TileClass->IsChildOf(UFF_PrepBuildTileWidget::StaticClass()));
+	TestTrue(TEXT("Production catalog uses the authored thumbnail-only presentation"),
+		TileClass && TileClass->GetDefaultObject<UFF_PrepBuildTileWidget>()->IsThumbnailOnly());
 
 	UWidgetTree* TileTree = ResolveWidgetTree(TileClass);
 	TestNotNull(TEXT("타일 WBP의 WidgetTree가 저장됐다"), TileTree);
@@ -167,13 +181,14 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 			FName(TEXT("Border_AuroraSelection")), FName(TEXT("HorizontalBox_Tools")),
 			FName(TEXT("Panel_PlacementCompact")), FName(TEXT("Border_CatalogFooter")) })
 			TestNull(*FString::Printf(TEXT("Retired surface is deleted: %s"), *RetiredName.ToString()), PanelTree->FindWidget(RetiredName));
-		const auto* Categories = Cast<UHorizontalBox>(PanelTree->FindWidget(TEXT("HorizontalBox_Categories")));
+		auto* Categories = Cast<UHorizontalBox>(PanelTree->FindWidget(TEXT("HorizontalBox_Categories")));
 		if (TestNotNull(TEXT("Saved editable category row"), Categories))
 		{
+			TArray<UFF_PrepBuildCategoryChoice*> Choices;
+			CollectCategoryChoices(Categories, Choices);
 			TSet<int32> Ids;
-			for (UWidget* Child : Categories->GetAllChildren())
+			for (const UFF_PrepBuildCategoryChoice* Choice : Choices)
 			{
-				const auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(Child);
 				if (TestNotNull(TEXT("Category is a saved editable choice"), Choice))
 				{
 					TestFalse(TEXT("Each saved tab has an authored label"), Choice->AuthoredLabel.IsEmpty());
@@ -183,7 +198,7 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 			TestTrue(TEXT("Saved categories contain All"), Ids.Contains(INDEX_NONE));
 			for (auto Category : FFF_PrepBuildPresentationRules::GetCategoryOrder())
 				TestTrue(TEXT("Saved categories contain every production category"), Ids.Contains(static_cast<int32>(Category)));
-			TestEqual(TEXT("Saved tabs have no duplicated category IDs"), Ids.Num(), Categories->GetChildrenCount());
+			TestEqual(TEXT("Saved tabs have no duplicated category IDs"), Ids.Num(), Choices.Num());
 		}
 
 		const UFF_PrepBuildTileView* TileView =

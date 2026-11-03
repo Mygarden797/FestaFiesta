@@ -118,6 +118,9 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	FText StaffSummaryText;
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
 	FText StaffAssignmentHint;
+	/** Short authoritative opening requirement for the compact staff page. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
+	FText StaffRequirementText;
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
 	bool bCanAssignStaff = false;
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Staff")
@@ -165,6 +168,9 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText QueueCapacityText;
+	/** Typed capability; non-service facilities must not show queue/service placeholders. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
+	bool bHasService = false;
 	/** The installed facility's configuration, independent of current queue occupancy. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Queue") bool bHasQueueSettings = false;
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Queue") bool bCanEditQueueSettings = false;
