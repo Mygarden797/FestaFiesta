@@ -31,6 +31,9 @@ bool FFF_FacilityInfoBuildTabsTest::RunTest(const FString& Parameters)
 	FFF_FacilityInfoViewData View;
 	View.Context = EFF_FacilityInfoContext::Build;
 	View.FacilityInstanceId = FGuid::NewGuid();
+	View.bHasService = View.bHasLightingRig = View.bHasQueueSettings = View.bHasFacilityLevels = true;
+	View.bShowStaffSection = View.bShowProgramSection = View.bShowRevenueSection = true;
+	View.SynergyEntries.AddDefaulted();
 	Panel->ApplyViewData(View);
 	const TCHAR* Names[] = {TEXT("Button_TabOverview"), TEXT("Button_TabOperation"), TEXT("Button_TabQueue"),
 		TEXT("Button_TabSynergy"), TEXT("Button_TabUpgrade"), TEXT("Button_TabRevenue"), TEXT("Button_TabLighting"),
@@ -47,8 +50,11 @@ bool FFF_FacilityInfoBuildTabsTest::RunTest(const FString& Parameters)
 	}
 	auto* Lighting = CastChecked<UButton>(Panel->GetWidgetFromName(TEXT("Button_TabLighting")));
 	auto* Queue = CastChecked<UButton>(Panel->GetWidgetFromName(TEXT("Button_TabQueue")));
-	TestFalse(TEXT("Unsupported lighting is disabled"), Lighting->GetIsEnabled());
-	TestFalse(TEXT("Unsupported queue is disabled"), Queue->GetIsEnabled());
+	View.bHasLightingRig = false;
+	View.bHasQueueSettings = false;
+	Panel->ApplyViewData(View);
+	TestEqual(TEXT("Unsupported lighting is absent"), Lighting->GetVisibility(), ESlateVisibility::Collapsed);
+	TestEqual(TEXT("Unsupported queue is absent"), Queue->GetVisibility(), ESlateVisibility::Collapsed);
 	View.bHasLightingRig = true;
 	View.bHasQueueSettings = true;
 	Panel->ApplyViewData(View);

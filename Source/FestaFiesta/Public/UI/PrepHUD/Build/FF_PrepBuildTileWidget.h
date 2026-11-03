@@ -78,6 +78,11 @@ class FESTAFIESTA_API UFF_PrepBuildTileWidget
 public:
 	// Rebind visible data after a price/thumbnail change without releasing the virtualized row.
 	void RefreshItemPresentation();
+
+	/** Compact catalogs project names/costs in their inspector, while retaining row data and tooltips. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Catalog", meta = (DisplayName = "썸네일만 표시"))
+	bool bThumbnailOnly = false;
+	bool IsThumbnailOnly() const { return bThumbnailOnly; }
 #if WITH_EDITORONLY_DATA
 	/** Designer-only state; live card status still comes exclusively from its item. */
 	UPROPERTY(EditAnywhere, Category = "Designer Preview", meta = (DisplayName = "대표 카드 상태"))
@@ -274,6 +279,8 @@ private:
 	void ApplyCodexFocus();
 	void ApplyRequiredFacilityStatus();
 	void ApplyProgramAvailability();
+	void RefreshLightingBadge();
+	void RefreshCompactVisibility();
 	FVector2D GetAuthoredThumbnailBounds() const;
 	TWeakObjectPtr<USizeBox> ThumbnailFrame;
 
@@ -283,6 +290,7 @@ private:
 	// selection delivered by the list-entry callback instead of querying that row.
 	bool bCardSelected = false;
 	bool bCardHovered = false;
+	bool bCardFocused = false;
 	bool bSynergyHighlighted = false;
 	bool bCodexFocused = false;
 	bool bRequiredFacility = false;

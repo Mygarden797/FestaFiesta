@@ -36,6 +36,9 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	TStrongObjectPtr<UFF_PrepBuildTileWidget> Tile(CreateWidget<UFF_PrepBuildTileWidget>(World, Class));
 	Class->bCanCallInitializedWithoutPlayerContext = Previous;
 	if (!TestNotNull(TEXT("Transient tile instance"), Tile.Get())) { return false; }
+	// This test keeps exercising the legacy full-caption styling contract. The compact
+	// production mode has its own pooled-data/visibility regression below.
+	Tile->bThumbnailOnly = false;
 	auto* Size = Cast<USizeBox>(Tile->GetWidgetFromName(TEXT("SizeBox_Card")));
 	auto* Card = Cast<UBorder>(Tile->GetWidgetFromName(TEXT("Border_Card")));
 	auto* Name = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_Name")));
@@ -310,6 +313,91 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 		!Tile->HasCompatiblePrograms() && ProgramBadge->GetVisibility() == ESlateVisibility::Collapsed);
 	TestTrue(TEXT("Released row contains no stale pearl thumbnail or required/program outline"),
 		ThumbnailBackdrop->Background == AuthoredThumbnailBrush && Card->Background == AuthoredBrush);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepBuildThumbnailOnlyReuseTest,
+	"FestaFiesta.UI.PrepBuild.ThumbnailOnlyReuse",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_PrepBuildThumbnailOnlyReuseTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepBuildTileWidget>(nullptr,
+		FFBuildUIAssetPaths::PrepBuildTileClass));
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!TestNotNull(TEXT("Actual compact tile class"), Class) || !TestNotNull(TEXT("Editor fixture world"), World)) return false;
+	const bool Previous = Class->bCanCallInitializedWithoutPlayerContext;
+	Class->bCanCallInitializedWithoutPlayerContext = true;
+	TStrongObjectPtr<UFF_PrepBuildTileWidget> Tile(CreateWidget<UFF_PrepBuildTileWidget>(World, Class));
+	Class->bCanCallInitializedWithoutPlayerContext = Previous;
+	if (!TestNotNull(TEXT("Transient compact tile"), Tile.Get())) return false;
+	Tile->bThumbnailOnly = true;
+	const FObjectPropertyBase* ItemProperty = FindFProperty<FObjectPropertyBase>(Class, TEXT("Item"));
+	if (!TestNotNull(TEXT("Pooled tile data slot"), ItemProperty)) return false;
+	const TSharedRef<SWidget> Slate = Tile->TakeWidget();
+	FFF_BuildCatalogEntry Entry;
+	Entry.FacilityDefinitionId = TEXT("Booth_Compact_First");
+	Entry.DisplayName = FText::FromString(TEXT("첫 번째 시설"));
+	Entry.Category = EFFZSFacilityCategory::Booth;
+	Entry.InstallCost = 300;
+	Entry.bHasResolvedInstallCost = true;
+	Entry.bRequiredForSetup = true;
+	Entry.RequiredMinimumCount = 1;
+	Entry.CompatibleProgramCount = 1;
+	Entry.CompatibleProgramNames = FText::FromString(TEXT("체험 프로그램"));
+	TStrongObjectPtr<UFF_PrepBuildTileData> Data(NewObject<UFF_PrepBuildTileData>(Tile.Get()));
+	Data->Initialize(Entry, 1000, true);
+	ItemProperty->SetObjectPropertyValue_InContainer(Tile.Get(), Data.Get());
+	const auto CheckHiddenCaptions = [&]()
+	{
+		for (const FName Name : { FName(TEXT("Text_Name")), FName(TEXT("Text_Cost")), FName(TEXT("Text_State")) })
+		{
+			const UWidget* Caption = Tile->GetWidgetFromName(Name);
+			if (TestNotNull(*FString::Printf(TEXT("Bound compact caption %s"), *Name.ToString()), Caption))
+				TestEqual(*FString::Printf(TEXT("Refresh never reopens compact caption %s"), *Name.ToString()),
+					Caption->GetVisibility(), ESlateVisibility::Collapsed);
+		}
+		const UWidget* Coin = Tile->GetWidgetFromName(TEXT("Border_AuroraCardGold"));
+		if (TestNotNull(TEXT("Authored coin/cost wrapper"), Coin))
+			TestEqual(TEXT("No price coin can remain after hiding its caption"), Coin->GetVisibility(), ESlateVisibility::Collapsed);
+	};
+	for (int32 Pass = 0; Pass < 3; ++Pass) Tile->RefreshItemPresentation();
+	Slate->SlatePrepass(1.f);
+	CheckHiddenCaptions();
+	TestTrue(TEXT("Compact mode preserves the current facility name and cost in its description"),
+		Tile->GetToolTipText().ToString().Contains(Entry.DisplayName.ToString()) &&
+		Tile->GetToolTipText().ToString().Contains(Data->GetCostText().ToString()));
+	const UWidget* Program = Tile->GetWidgetFromName(TEXT("Border_ProgramBadge"));
+	TestTrue(TEXT("Program capability stays in data without restoring the repeated badge"),
+		Tile->HasCompatiblePrograms() && Program && Program->GetVisibility() == ESlateVisibility::Collapsed);
+	const UWidget* Required = Tile->GetWidgetFromName(TEXT("Badge_RequiredIcon"));
+	TestTrue(TEXT("Required facility keeps its single compact marker"),
+		Tile->IsRequiredFacility() && Required && Required->IsVisible());
+	auto* Favorite = Cast<UButton>(Tile->GetWidgetFromName(TEXT("Button_Favorite")));
+	TestTrue(TEXT("At rest the compact favorite is hidden while its action remains bound"),
+		Favorite && Favorite->GetVisibility() == ESlateVisibility::Hidden && Favorite->OnClicked.IsBound());
+	Data->RefreshGold(0, true);
+	Tile->RefreshItemPresentation();
+	CheckHiddenCaptions();
+	IUserListEntry::ReleaseEntry(*Tile.Get());
+	TestFalse(TEXT("Release clears the prior required state"), Tile->IsRequiredFacility());
+	TestTrue(TEXT("Release clears the previous facility tooltip"), Tile->GetToolTipText().IsEmpty());
+	Entry.FacilityDefinitionId = TEXT("Booth_Compact_Second");
+	Entry.DisplayName = FText::FromString(TEXT("두 번째 시설"));
+	Entry.InstallCost = 450;
+	Entry.bRequiredForSetup = false;
+	Entry.RequiredMinimumCount = 0;
+	Entry.CompatibleProgramCount = 0;
+	Entry.CompatibleProgramNames = FText::GetEmpty();
+	Data->Initialize(Entry, 1000, true);
+	ItemProperty->SetObjectPropertyValue_InContainer(Tile.Get(), Data.Get());
+	Tile->RefreshItemPresentation();
+	CheckHiddenCaptions();
+	TestTrue(TEXT("A rebound compact card describes only its new facility and price"),
+		Tile->GetToolTipText().ToString().Contains(Entry.DisplayName.ToString()) &&
+		Tile->GetToolTipText().ToString().Contains(Data->GetCostText().ToString()) &&
+		!Tile->GetToolTipText().ToString().Contains(TEXT("첫 번째 시설")));
 	return true;
 }
 

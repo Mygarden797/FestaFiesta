@@ -844,6 +844,10 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 			if (Required && Required->TryGetRequiredFacilityRow(Spec.FacilityDefinitionId, RequiredRow)
 				&& RequiredRow.bDefinitionValid && RequiredRow.RequiresStaffAssignment())
 			{
+				OutViewData.StaffRequirementText = RequiredRow.MissingStaffCount > 0
+					? FText::Format(LOCTEXT("CompactStaffMissing", "필수 배정 {0}명 · {1}명 부족"),
+						FText::AsNumber(RequiredRow.RequiredStaffCount), FText::AsNumber(RequiredRow.MissingStaffCount))
+					: LOCTEXT("CompactStaffReady", "필수 배정 완료");
 				OutViewData.StaffSummaryText = FText::Format(RequiredRow.MissingStaffCount > 0
 						? LOCTEXT("StaffFacilityRequiredMissing",
 							"{0}\n! 필수 배정: 스태프를 {1}명 이상 배정해야 개장할 수 있습니다. 아래 `+ 배정`을 누르세요. (같은 시설 전체 {2}명)")
@@ -865,6 +869,7 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		OutViewData.bInstanceLimitReached);
 	OutViewData.FootprintText = FFFacilityInfoModel::FormatFootprint(Spec.FootprintSizeCells);
 	OutViewData.ClearanceText = FText::GetEmpty();
+	OutViewData.bHasService = Spec.UsesServiceQueue();
 	OutViewData.QueueCapacityText = FText::Format(
 		LOCTEXT("QueueCapacityFormat", "대기 {0}팀 · 동시 이용 {1}팀"),
 		FText::AsNumber(Spec.QueueRules.MaxWaitingAgents),

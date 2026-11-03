@@ -8,6 +8,7 @@
 #include "CommonTextBlock.h"
 #include "Components/Button.h"
 #include "Components/ScrollBox.h"
+#include "Components/TextBlock.h"
 #include "Editor.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
@@ -62,6 +63,7 @@ bool FFF_FacilityStaffPanelTest::RunTest(const FString& Parameters)
 	Data.bCanUnassignStaff = true;
 	Data.StaffSummaryText = FText::FromString(TEXT("스태프 배정 1 / 3명 · 출동 중 0명"));
 	Data.StaffAssignmentHint = FText::FromString(TEXT("시설 설치는 정원만 늘립니다. 고용 후 + 배정하세요."));
+	Data.StaffRequirementText = FText::FromString(TEXT("필수 배정 2명 · 1명 부족"));
 	Panel->ApplyViewData(Data);
 	Panel->SetPanelOpen(true);
 	TestEqual(TEXT("Supported facility shows its staff tab"), StaffTab->GetVisibility(), ESlateVisibility::Visible);
@@ -70,6 +72,15 @@ bool FFF_FacilityStaffPanelTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Staff tab opens the assignment page"), Panel->GetInfoPage(), EFF_FacilityInfoPage::Staff);
 	TestEqual(TEXT("Staff page exposes staff section"), Section->GetVisibility(), ESlateVisibility::Visible);
 	TestEqual(TEXT("Staff snapshot reaches the actual WBP text"), Summary->GetText().ToString(), Data.StaffSummaryText.ToString());
+	if (Panel->GetWidgetFromName(TEXT("Overlay_V10InfoPages")))
+	{
+		auto* CompactCount = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("V10_Text_StaffCount")));
+		if (!TestNotNull(TEXT("Compact staff count uses its authored text widget"), CompactCount)) return false;
+		TestEqual(TEXT("Compact count uses authoritative assigned and capacity values"), CompactCount->GetText().ToString(), FString(TEXT("1 / 3명")));
+		auto* CompactHint = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("V10_Text_StaffHint")));
+		if (TestNotNull(TEXT("Compact staff page retains the opening requirement"), CompactHint))
+			TestEqual(TEXT("Short opening requirement stays visible without a tooltip"), CompactHint->GetText().ToString(), Data.StaffRequirementText.ToString());
+	}
 	TestTrue(TEXT("Buttons reflect authoritative eligibility"), Assign->GetIsEnabled() && Unassign->GetIsEnabled());
 
 	int32 AssignRequests = 0;

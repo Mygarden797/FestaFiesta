@@ -6,13 +6,30 @@
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/HorizontalBox.h"
+#include "Components/PanelWidget.h"
 #include "Components/Button.h"
 #include "Components/SizeBox.h"
+#include "Components/TextBlock.h"
 #include "Editor.h"
 #include "Misc/AutomationTest.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildCategoryChoice.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
+
+namespace FFBuildStudioWidgetTest
+{
+	void CollectCategoryChoices(UWidget* Root, TArray<UFF_PrepBuildCategoryChoice*>& Choices)
+	{
+		if (auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(Root))
+		{
+			Choices.Add(Choice);
+			return;
+		}
+		if (auto* Panel = Cast<UPanelWidget>(Root))
+			for (UWidget* Child : Panel->GetAllChildren()) CollectCategoryChoices(Child, Choices);
+	}
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildStudioWidgetBindings,
 	"FestaFiesta.UI.PrepBuild.StudioBindings",
@@ -51,9 +68,26 @@ bool FFF_BuildStudioWidgetBindings::RunTest(const FString& Parameters)
 	}
 	const auto* MinorHost = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Subcategories")));
 	TestTrue(TEXT("The second-level filter is populated in the real widget"), MinorHost && MinorHost->GetChildrenCount() > 0);
-	const auto* Categories = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Categories")));
-	TestTrue(TEXT("The authored horizontal row contains All and all ten facility categories"),
-		Categories && Categories->GetChildrenCount() == 11);
+	auto* Categories = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Categories")));
+	TArray<UFF_PrepBuildCategoryChoice*> Choices;
+	FFBuildStudioWidgetTest::CollectCategoryChoices(Categories, Choices);
+	TestTrue(TEXT("The authored category rail contains All and all ten facility categories"),
+		Categories && Choices.Num() == 11);
+	for (UFF_PrepBuildCategoryChoice* Choice : Choices)
+	{
+		TestTrue(TEXT("Every nested saved category retains its live selection action"), Choice->OnHudTabButtonClicked.IsBound());
+		const auto* Label = Cast<UTextBlock>(Choice->GetWidgetFromName(TEXT("Text_Label")));
+		TestTrue(TEXT("Major categories are icon-only while retaining a name tooltip"),
+			Choice->bIconOnly && Label && Label->GetVisibility() == ESlateVisibility::Collapsed &&
+			!Choice->GetToolTipText().IsEmpty());
+	}
+	if (MinorHost && MinorHost->GetChildrenCount() > 0)
+	{
+		const auto* Minor = Cast<UFF_PrepBuildCategoryChoice>(MinorHost->GetChildAt(0));
+		const auto* Label = Minor ? Cast<UTextBlock>(Minor->GetWidgetFromName(TEXT("Text_Label"))) : nullptr;
+		TestTrue(TEXT("Icon-only major settings do not hide dynamically populated minor labels"),
+			Minor && !Minor->bIconOnly && Label && Label->IsVisible() && !Label->GetText().IsEmpty());
+	}
 	const auto* Favorites = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_FavoritesOnly")));
 	TestTrue(TEXT("Favorites-only has a separate bound control"), Favorites && Favorites->OnClicked.IsBound());
 	return true;

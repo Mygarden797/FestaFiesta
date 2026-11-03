@@ -20,16 +20,24 @@ public:
         LayerId = SColorWheel::OnPaint(Args, AllottedGeometry, MyCullingRect,
             OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 
-        // Enlarge only the lighting selector; native color coordinates and drag input stay intact.
+        // Keep the indicator proportional when the compact inspector uses a32px
+        // wheel. Native hue/saturation coordinates and drag input stay intact.
         const FSlateBrush* Selector = FCoreStyle::Get().GetBrush("ColorWheel.Selector");
-        const FVector2f SelectorSize = Selector->ImageSize * 5.f;
-        const FVector2f CircleCenter = AllottedGeometry.GetLocalSize() * 0.5f;
-        const FVector2f SelectorLocation = CircleCenter +
+        const FVector2f WheelSize = AllottedGeometry.GetLocalSize();
+        const float WheelEdge = FMath::Min(WheelSize.X, WheelSize.Y);
+        if (WheelEdge < 4.f) return LayerId;
+        const float SelectorEdge = FMath::Max(1.f, FMath::Max(Selector->ImageSize.X, Selector->ImageSize.Y));
+        const FVector2f SelectorSize = Selector->ImageSize * FMath::Min(5.f, WheelEdge * .35f / SelectorEdge);
+        const FVector2f CircleCenter = WheelSize * 0.5f;
+        FVector2f SelectorLocation = CircleCenter +
             (CalcRelativePositionFromCenter() * CircleCenter) - (0.5f * SelectorSize);
+        SelectorLocation.X = FMath::Clamp(SelectorLocation.X, 0.f, WheelSize.X - SelectorSize.X);
+        SelectorLocation.Y = FMath::Clamp(SelectorLocation.Y, 0.f, WheelSize.Y - SelectorSize.Y);
         // Vector outlines stay smooth when enlarged, with contrast on every wheel color.
         const FLinearColor Tint = InWidgetStyle.GetColorAndOpacityTint();
-        const FSlateRoundedBoxBrush OuterRing(FLinearColor::Transparent, FLinearColor::Black * Tint, 4.f);
-        const FSlateRoundedBoxBrush InnerRing(FLinearColor::Transparent, FLinearColor::White * Tint, 2.f);
+        const float Stroke = FMath::Clamp(SelectorSize.X * .1f, 1.f, 4.f);
+        const FSlateRoundedBoxBrush OuterRing(FLinearColor::Transparent, FLinearColor::Black * Tint, Stroke);
+        const FSlateRoundedBoxBrush InnerRing(FLinearColor::Transparent, FLinearColor::White * Tint, FMath::Max(1.f, Stroke * .5f));
         const ESlateDrawEffect Effects = ShouldBeEnabled(bParentEnabled) ? ESlateDrawEffect::None : ESlateDrawEffect::DisabledEffect;
         FSlateDrawElement::MakeBox(OutDrawElements, ++LayerId,
             AllottedGeometry.ToPaintGeometry(SelectorSize, FSlateLayoutTransform(SelectorLocation)),

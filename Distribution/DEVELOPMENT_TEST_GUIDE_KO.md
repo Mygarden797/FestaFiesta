@@ -182,6 +182,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Tools\Build\Package-Wi
 
 정규 명령은 자동화와 콘텐츠 검증을 수행한다. 실패한 경우 출력 로그를 확인해 원인을 해결한 뒤 다시 실행한다. 기존 결과를 덮어쓰지 않으므로 같은 빌드 이름이 이미 있으면 새 이름을 사용한다. 예: `FestaFiesta-Win64-Development-SingleExe-20260911-R2`.
 
-완료된 결과는 기본적으로 `Artifacts\Releases\<빌드 이름>`에 생긴다. 해당 폴더의 ZIP은 공유용 전체 패키지이며, `Validation`은 자동화·콘텐츠 검사, `Logs`는 패키징 기록, `Metadata`는 검사 결과와 파일 무결성 자료다. 실패한 작업은 `.staging` 아래 기록을 확인하고, 오류가 난 임시 결과를 완료된 배포본으로 전달하지 않는다.
+완료된 결과는 기본적으로 `C:\FestaFiestaBuild\<빌드 이름>`에 생긴다. 해당 폴더의 ZIP은 공유용 전체 패키지이며, `Validation`은 자동화·콘텐츠 검사, `Logs`는 패키징 기록, `Metadata`는 검사 결과와 파일 무결성 자료다. 실패한 작업은 `.staging` 아래 기록을 확인하고, 오류가 난 임시 결과를 완료된 배포본으로 전달하지 않는다.
 
 사용자가 일반 실행으로 플레이한 Development 게임 로그는 **압축을 푼 게임 폴더의 `FestaFiesta\Saved\Logs`**에서 찾는다. 빌드하는 과정의 `Logs` 및 자동 검사의 별도 출력 폴더와 구분한다. 플레이한 복사본에는 사용자 설정과 로그가 추가될 수 있으므로 공유용 ZIP은 패키징 결과의 원본을 사용한다.

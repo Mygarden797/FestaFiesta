@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Components/SlateWrapperTypes.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "FF_PrepBuildCategoryChoice.generated.h"
 
@@ -23,6 +24,13 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Catalog Tab", meta = (DisplayName = "탭 아이콘"))
 	FSlateBrush AuthoredIcon;
+
+	/** Major-category rails keep the localized label as a tooltip; minor choices retain captions. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Catalog Tab", meta = (DisplayName = "아이콘만 표시"))
+	bool bIconOnly = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Catalog Tab", meta = (ClampMin = "1", DisplayName = "아이콘 전용 크기"))
+	float IconOnlySize = 22.f;
 
 	/** Optional generated icon atlas. Empty retains the authored brush unchanged. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Catalog Tab|Atlas")
@@ -53,6 +61,24 @@ protected:
 	TObjectPtr<UBorder> Border_IconBackdrop;
 
 	virtual void NativeOnInitialized() override;
+	virtual void NativeConstruct() override;
 	virtual void NativePreConstruct() override;
 	virtual void RefreshVisualState() override;
+
+private:
+	void RefreshIconOnlyLayout();
+
+	ESlateVisibility AuthoredLabelVisibility = ESlateVisibility::SelfHitTestInvisible;
+	bool bCapturedLabelVisibility = false;
+	bool bCapturedIconOnlyLayout = false;
+	bool bAppliedIconOnlyLayout = false;
+	FMargin AuthoredNormalPadding;
+	FMargin AuthoredPressedPadding;
+	FMargin AuthoredButtonSlotPadding;
+	EHorizontalAlignment AuthoredButtonHorizontalAlignment = HAlign_Center;
+	EVerticalAlignment AuthoredButtonVerticalAlignment = VAlign_Center;
+	FMargin AuthoredIconSlotPadding;
+	FSlateChildSize AuthoredIconSlotSize;
+	EHorizontalAlignment AuthoredIconHorizontalAlignment = HAlign_Fill;
+	EVerticalAlignment AuthoredIconVerticalAlignment = VAlign_Center;
 };

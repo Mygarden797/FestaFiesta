@@ -189,6 +189,7 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
     Data.DisplayName = Burger->Spec.DisplayName;
     Data.CategoryText = FText::FromString(TEXT("음식 판매"));
     Data.FacilityStateText = FText::FromString(TEXT("운영 준비 완료"));
+    Data.bHasService = Burger->Spec.UsesServiceQueue();
     Data.FacilityLevelText = FText::FromString(TEXT("Lv. 1"));
     Data.bHasFacilityLevels = true;
     Data.bCanMove = true;
@@ -346,12 +347,23 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
         Renderer.DrawWindow(Target.Get(), HitTestGrid, Window, 1.0f, Size, 0.0f, false);
         RecordSummaryGeometry(TEXT("settled frame"));
         const FSlateRect SummaryRect = Summary->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-        const FSlateRect ScrollRect = Scroll->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-        TestTrue(TEXT("Complete synergy summary stays inside the visible scroll viewport"),
-            SummaryRect.Top >= ScrollRect.Top && SummaryRect.Bottom <= ScrollRect.Bottom &&
-            SummaryRect.Left >= ScrollRect.Left && SummaryRect.Right <= ScrollRect.Right &&
-            SummaryRect.GetSize().Y + 0.5f >= Summary->GetDesiredSize().Y);
-        TestTrue(TEXT("Synergy selection starts at the top of the existing scroll"), Scroll->GetScrollOffset() < 1.0f);
+        const bool bCompact = Panel->GetWidgetFromName(TEXT("Overlay_V10InfoPages")) != nullptr;
+        UWidget* PageViewport = bCompact ? Panel->GetWidgetFromName(TEXT("Body_Surface")) : Scroll;
+        const FSlateRect ScrollRect = PageViewport->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+        if (!bCompact)
+        {
+            TestTrue(TEXT("Complete synergy summary stays inside the visible scroll viewport"),
+                SummaryRect.Top >= ScrollRect.Top && SummaryRect.Bottom <= ScrollRect.Bottom &&
+                SummaryRect.Left >= ScrollRect.Left && SummaryRect.Right <= ScrollRect.Right &&
+                SummaryRect.GetSize().Y + 0.5f >= Summary->GetDesiredSize().Y);
+            TestTrue(TEXT("Synergy selection starts at the top of the existing scroll"), Scroll->GetScrollOffset() < 1.0f);
+        }
+        else
+        {
+            TestTrue(TEXT("Compact synergy uses a real fixed page viewport"), ScrollRect.GetSize().X > 0.f && ScrollRect.GetSize().Y > 0.f);
+            if (!Data.SynergyEntries.IsEmpty())
+                TestTrue(TEXT("Compact synergy keeps the paged recipe visible"), Row->IsVisible() && Section->IsVisible());
+        }
         if (!Data.SynergyEntries.IsEmpty())
         {
             const FSlateRect PartnerRect = PartnerText->GetPaintSpaceGeometry().GetLayoutBoundingRect();

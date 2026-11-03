@@ -41,6 +41,7 @@
 #include "InputCoreTypes.h"
 #include "Misc/DefaultValueHelper.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "Building/Presentation/FF_BuildCatalogDock.h"
 #include "UI/Settings/FF_FestivalSettingsSubsystem.h"
 #include "UI/Settings/FF_KeyBindingRuntimeSubsystem.h"
@@ -477,6 +478,13 @@ void UFF_BuildToolsWidget::NativePreConstruct()
 void UFF_BuildToolsWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+    if (auto* Button = Cast<UButton>(GetWidgetFromName(TEXT("Button_V9PlacementInfo"))))
+        Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleV9PlacementInfoClicked);
+    if (auto* Button = Cast<UButton>(GetWidgetFromName(TEXT("Button_V9PlacementSynergy"))))
+        Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleV9PlacementSynergyClicked);
+    bV9PlacementSynergy = false;
+    V9PlacementDefinition = NAME_None;
+    RefreshV9PlacementTabs();
     // Ship the spacing control with existing saved toolbars as well as rebuilt ones.
     if (WidgetTree)
     {
@@ -631,6 +639,8 @@ void UFF_BuildToolsWidget::NativeConstruct()
 // 회전 타이머와 외부 알림 연결을 해제해 닫힌 화면에 작업이 남지 않게 한다.
 void UFF_BuildToolsWidget::NativeDestruct()
 {
+    for (const FName Name : {FName(TEXT("Button_V9PlacementInfo")), FName(TEXT("Button_V9PlacementSynergy"))})
+        if (auto* Button = Cast<UButton>(GetWidgetFromName(Name))) Button->OnClicked.RemoveAll(this);
     if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(FeatureSummaryTimer);
     HideFeatureSummary();
     StopPointerFreeRotation();
@@ -1195,6 +1205,55 @@ void UFF_BuildToolsWidget::RefreshPlacementSurfaces()
         Border_Tools->SetVisibility(bNewPlacement ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 }
 
+void UFF_BuildToolsWidget::HandleV9PlacementInfoClicked()
+{
+    bV9PlacementSynergy = false;
+    RefreshV9PlacementTabs();
+}
+
+void UFF_BuildToolsWidget::HandleV9PlacementSynergyClicked()
+{
+    bV9PlacementSynergy = true;
+    NextPlacementSynergyRefresh = 0.0;
+    RefreshPlacementSynergy();
+    RefreshV9PlacementTabs();
+}
+
+void UFF_BuildToolsWidget::RefreshV9PlacementTabs()
+{
+    UWidget* Facts = GetWidgetFromName(TEXT("Panel_V9PlacementFacts"));
+    UWidget* Synergy = GetWidgetFromName(TEXT("Panel_V9PlacementSynergy"));
+    if (!Facts || !Synergy) return; // Older saved toolbars keep their existing presentation.
+    const bool bCompact = GetWidgetFromName(TEXT("Text_V10PlacementStatus")) != nullptr;
+    const bool bAvailable = !bCompact || bV10PlacementHasSynergy;
+    if (!bAvailable) bV9PlacementSynergy = false;
+    if (bCompact)
+    {
+        UWidget* SynergyTab = GetWidgetFromName(TEXT("Button_V9PlacementSynergy"));
+        if (SynergyTab && Cast<USizeBox>(SynergyTab->GetParent())) SynergyTab = SynergyTab->GetParent();
+        if (SynergyTab) SynergyTab->SetVisibility(bAvailable ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+    }
+    Facts->SetVisibility(bV9PlacementSynergy ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+    Synergy->SetVisibility(bV9PlacementSynergy ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+    auto* InfoButton = Cast<UButton>(GetWidgetFromName(TEXT("Button_V9PlacementInfo")));
+    auto* SynergyButton = Cast<UButton>(GetWidgetFromName(TEXT("Button_V9PlacementSynergy")));
+    if (!InfoButton || !SynergyButton) return;
+    if (!bHasV9PlacementTabStyles)
+    {
+        V9PlacementInfoStyle = InfoButton->GetStyle();
+        V9PlacementSynergyStyle = SynergyButton->GetStyle();
+        bHasV9PlacementTabStyles = true;
+    }
+    const auto ApplyTab = [](UButton& Button, const FButtonStyle& Authored, const bool bSelected)
+    {
+        FButtonStyle Style = Authored;
+        if (bSelected) Style.Normal = Style.Hovered = Style.Pressed = Authored.Disabled;
+        Button.SetStyle(Style);
+    };
+    ApplyTab(*InfoButton, V9PlacementInfoStyle, !bV9PlacementSynergy);
+    ApplyTab(*SynergyButton, V9PlacementSynergyStyle, bV9PlacementSynergy);
+}
+
 void UFF_BuildToolsWidget::RefreshPlacementSynergy()
 {
     if (!Text_PlacementSynergySummary || !Border_PlacementInfo || !Border_PlacementInfo->IsVisible())
@@ -1221,15 +1280,22 @@ void UFF_BuildToolsWidget::RefreshPlacementSynergy()
     const UFF_BuildModeSubsystem* System = BuildMode.Get();
     const UFF_FacilitySynergySubsystem* Synergy = GetWorld()
         ? GetWorld()->GetSubsystem<UFF_FacilitySynergySubsystem>() : nullptr;
-    FVector Location;
-    if (!System || !System->GetPlacementMarkerLocation(Location))
+    FVector Location = FVector::ZeroVector;
+    const bool bHasLocation = System && System->GetPlacementMarkerLocation(Location);
+    FFF_FacilitySynergyPreview Preview;
+    if (System && Synergy) Synergy->BuildPlacementPreview(System->GetSelectedFacilitySpec().FacilityDefinitionId,
+        Location, FGuid(), Preview);
+    const bool bHasSynergy = Preview.bRulesAvailable && !Preview.Entries.IsEmpty();
+    if (bHasSynergy != bV10PlacementHasSynergy)
+    {
+        bV10PlacementHasSynergy = bHasSynergy;
+        RefreshV9PlacementTabs();
+    }
+    if (!bHasLocation)
     {
         ProjectText(Text_PlacementSynergySummary, LOCTEXT("SynergyChooseLocation", "설치할 위치를 선택하면 조합 효과를 확인할 수 있습니다."));
         return;
     }
-    FFF_FacilitySynergyPreview Preview;
-    if (Synergy) Synergy->BuildPlacementPreview(System->GetSelectedFacilitySpec().FacilityDefinitionId,
-        Location, FGuid(), Preview);
     if (!Preview.bRulesAvailable || Preview.Entries.IsEmpty())
     {
         ProjectText(Text_PlacementSynergySummary, Preview.bRulesAvailable
@@ -2019,6 +2085,15 @@ void UFF_BuildToolsWidget::RefreshTools()
     UFF_BuildModeSubsystem* System = BuildMode.Get();
     const EFF_BuildModeState State = System ? System->GetBuildModeState() : EFF_BuildModeState::Closed;
     const bool bPreview = FFBuildModeModel::IsPreviewActive(State);
+    const FName Definition = System ? System->GetSelectedFacilityDefinitionId() : NAME_None;
+    if (!bPreview || Definition != V9PlacementDefinition)
+    {
+        bV9PlacementSynergy = false;
+        bV10PlacementHasSynergy = false;
+        NextPlacementSynergyRefresh = 0.0;
+        V9PlacementDefinition = Definition;
+    }
+    RefreshV9PlacementTabs();
     // Also retire the button for older, not-yet-migrated widget assets.
     if (Button_Radial) Button_Radial->SetVisibility(ESlateVisibility::Collapsed);
     if (Panel_Radial) Panel_Radial->SetVisibility(ESlateVisibility::Collapsed);
@@ -2108,11 +2183,16 @@ void UFF_BuildToolsWidget::RefreshTools()
     }
     UFF_BuildCatalogSubsystem* Catalog = CatalogModel.Get();
     FFF_BuildCatalogEntry Entry;
+    FText CategoryText;
+    bool bCostKnown = false;
     if (System && Catalog && Catalog->FindEntry(System->GetSelectedFacilityDefinitionId(), Entry))
     {
         ViewData.FacilityName = Entry.DisplayName;
+        CategoryText = Entry.MinorToken.IsNone()
+            ? FFF_PrepBuildPresentationRules::ResolveCategoryDisplayName(Entry.Category)
+            : FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(Entry.MinorToken);
         FString Failure;
-        const bool bCostKnown = Economy.IsValid() && Economy->TryProjectFacilityCosts(Entry, Entry.Definition.Get(), Failure);
+        bCostKnown = Economy.IsValid() && Economy->TryProjectFacilityCosts(Entry, Entry.Definition.Get(), Failure);
         ViewData.CostText = ViewData.bMoving ? LOCTEXT("MoveCost", "이동 비용 없음") : bCostKnown
             ? FText::Format(InstallationCostFormat, FFormatNamedArguments{{TEXT("Cost"), FText::AsNumber(Entry.InstallCost)}})
             : LOCTEXT("UnknownCost", "설치 비용 확인 필요");
@@ -2125,7 +2205,21 @@ void UFF_BuildToolsWidget::RefreshTools()
         }
     }
     if (Text_FacilityName) { Text_FacilityName->SetText(ViewData.FacilityName); }
-    if (Text_Cost) { Text_Cost->SetText(ViewData.CostText); }
+    if (auto* Category = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_V10PlacementCategory"))))
+    {
+        Category->SetText(CategoryText);
+        Category->SetVisibility(CategoryText.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+    }
+    if (Text_Cost)
+    {
+        // The compact card pairs the HUD currency image with a short value.
+        // Keep full movement/loading explanations available without clipping.
+        const bool bCompact = GetWidgetFromName(TEXT("Text_V10PlacementStatus")) != nullptr;
+        Text_Cost->SetText(!bCompact ? ViewData.CostText
+            : ViewData.bMoving ? FText::AsNumber(0)
+            : bCostKnown ? ViewData.CostText : LOCTEXT("CompactCostPending", "확인 중"));
+        if (bCompact) Text_Cost->SetToolTipText(ViewData.CostText);
+    }
     if (Text_Balance) Text_Balance->SetText(ViewData.BalanceText);
     if (Text_Footprint) Text_Footprint->SetText(ViewData.FootprintText);
     if (Text_Audience)
@@ -2247,6 +2341,25 @@ void UFF_BuildToolsWidget::RefreshTools()
             Text_Legend->SetText(Status);
             Text_Legend->SetColorAndOpacity(Color);
             Text_Legend->SetToolTipText(Status);
+        }
+        if (auto* CompactStatus = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_V10PlacementStatus"))))
+        {
+            CompactStatus->SetText(!bPreview ? FText::GetEmpty()
+                : !System->HasPlacementTarget() ? LOCTEXT("CompactChoosePosition", "위치 선택")
+                : !System->IsCurrentPlacementValid() ? LOCTEXT("CompactPlacementBlocked", "배치 불가")
+                : ViewData.bMoving ? LOCTEXT("CompactMoveReady", "이동 가능")
+                : LOCTEXT("CompactPlacementReady", "배치 가능"));
+            CompactStatus->SetColorAndOpacity(Color);
+            CompactStatus->SetToolTipText(Status);
+            CompactStatus->SetVisibility(bPreview ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+            if (auto* Chip = Cast<UBorder>(GetWidgetFromName(TEXT("Border_V10PlacementStatus"))))
+            {
+                FSlateBrush Brush = Chip->Background;
+                FLinearColor Fill = FMath::Lerp(FLinearColor::White, Color.GetSpecifiedColor(), .12f);
+                Fill.A = .96f;
+                Brush.TintColor = FSlateColor(Fill);
+                Chip->SetBrush(Brush);
+            }
         }
         const auto SetOptional = [](UTextBlock* Text, const FText& Value)
         {

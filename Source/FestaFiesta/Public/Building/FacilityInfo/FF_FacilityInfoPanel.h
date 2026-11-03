@@ -65,9 +65,10 @@ public:
 	/** Number of tab columns in the build inspector. Match Grid_InspectorTabs slot width in the WBP. */
 	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Build Layout", meta = (ClampMin = "1", ClampMax = "9", UIMin = "1", UIMax = "9"))
 	int32 BuildInspectorTabColumns = 5;
-	/** Keep unsupported feature tabs visible but disabled in the build inspector. */
-	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Build Layout")
-	bool bShowUnavailableBuildTabs = true;
+	/** Serialized compatibility only. Unsupported tabs are always hidden. */
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Build Layout", meta = (DeprecatedProperty,
+		DeprecationMessage = "Unsupported facility tabs are now hidden."))
+	bool bShowUnavailableBuildTabs = false;
 	/** Designer-authored entrance; optional for older inspector assets. */
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Appearance|Animation", meta = (BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> Anim_InspectorOpen;
@@ -200,6 +201,8 @@ private:
 	UFUNCTION() void HandleRemoveCancelClicked();
 	UFUNCTION() void HandleRevenueRankingClicked();
 	void RefreshPageVisibility();
+	bool IsInfoPageAvailable(EFF_FacilityInfoPage Page) const;
+	void RefreshMetricVisibility();
 	void HideLegacyClearanceWidgets();
 	void RefreshSynergyEntries();
 	void HandleSynergyPartnerCatalogRequested(FName FacilityDefinitionId);

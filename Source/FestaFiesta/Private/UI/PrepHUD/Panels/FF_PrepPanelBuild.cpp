@@ -20,6 +20,7 @@
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Layout/WidgetPath.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/ButtonSlot.h"
@@ -28,6 +29,7 @@
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/PanelWidget.h"
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
 #include "Components/ScaleBoxSlot.h"
@@ -57,8 +59,16 @@
 namespace FFPrepBuildPanel
 {
 	constexpr int32 AllCategoryChoiceId = INDEX_NONE;
-	// Reassign the authored 160-unit codex launcher width to the inspector.
-	constexpr float CatalogDetailsWidth = 550.f;
+	void CollectCategoryChoices(UWidget* Root, TArray<TObjectPtr<UFF_PrepChoiceButton>>& OutChoices)
+	{
+		if (auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(Root))
+		{
+			OutChoices.AddUnique(Choice);
+			return;
+		}
+		if (auto* Panel = Cast<UPanelWidget>(Root))
+			for (UWidget* Child : Panel->GetAllChildren()) CollectCategoryChoices(Child, OutChoices);
+	}
 }
 
 UFF_PrepPanelBuild::UFF_PrepPanelBuild(const FObjectInitializer& ObjectInitializer)
@@ -108,6 +118,13 @@ void UFF_PrepPanelBuild::NativeConstruct()
 			DockSlot->SetHorizontalAlignment(HAlign_Left);
 	}
 	if (!bUseDesignerCatalogLayout) MatchCatalogHeaderActions();
+	if (auto* Button = Cast<UButton>(GetWidgetFromName(TEXT("Button_V9Filters"))))
+		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleV9FiltersClicked);
+	if (auto* Button = Cast<UButton>(GetWidgetFromName(TEXT("Button_V9More"))))
+		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleV9MoreClicked);
+	if (auto* Button = Cast<UButton>(GetWidgetFromName(TEXT("Button_V9Close"))))
+		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleV9CloseClicked);
+	CloseCatalogPopups();
 	// Preserve legacy named bindings while retiring the redundant confirmation strip.
 	if (UWidget* Selection = GetWidgetFromName(TEXT("Border_AuroraSelection")))
 		Selection->SetVisibility(ESlateVisibility::Collapsed);
@@ -234,6 +251,9 @@ void UFF_PrepPanelBuild::NativePreConstruct()
 
 void UFF_PrepPanelBuild::NativeDestruct()
 {
+	for (const FName Name : {FName(TEXT("Button_V9Filters")), FName(TEXT("Button_V9More")), FName(TEXT("Button_V9Close"))})
+		if (auto* Button = Cast<UButton>(GetWidgetFromName(Name))) Button->OnClicked.RemoveAll(this);
+	CloseCatalogPopups();
 	ResetCatalogDrag();
 	if (UButton* RankingButton = WidgetTree ? Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_RevenueRanking"))) : nullptr)
 	{
@@ -310,6 +330,48 @@ void UFF_PrepPanelBuild::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+bool UFF_PrepPanelBuild::CloseCatalogPopups()
+{
+	bool bClosed = false;
+	for (const FName Name : {FName(TEXT("Popup_V9Filters")), FName(TEXT("Popup_V9More"))})
+		if (UWidget* Popup = GetWidgetFromName(Name))
+		{
+			bClosed |= Popup->IsVisible();
+			Popup->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	return bClosed;
+}
+
+void UFF_PrepPanelBuild::ToggleCatalogPopup(const FName PopupName, const FName OtherPopupName)
+{
+	UWidget* Popup = GetWidgetFromName(PopupName);
+	if (!Popup) return;
+	const bool bOpen = !Popup->IsVisible();
+	if (UWidget* Other = GetWidgetFromName(OtherPopupName)) Other->SetVisibility(ESlateVisibility::Collapsed);
+	Popup->SetVisibility(bOpen ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (bOpen)
+	{
+		ResetCatalogDrag();
+		CatalogScrollVelocity = 0.f;
+	}
+}
+
+void UFF_PrepPanelBuild::HandleV9FiltersClicked()
+{
+	ToggleCatalogPopup(TEXT("Popup_V9Filters"), TEXT("Popup_V9More"));
+}
+
+void UFF_PrepPanelBuild::HandleV9MoreClicked()
+{
+	ToggleCatalogPopup(TEXT("Popup_V9More"), TEXT("Popup_V9Filters"));
+}
+
+void UFF_PrepPanelBuild::HandleV9CloseClicked()
+{
+	CloseCatalogPopups();
+	RequestClose();
+}
+
 void UFF_PrepPanelBuild::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
@@ -327,9 +389,9 @@ void UFF_PrepPanelBuild::NativeTick(const FGeometry& MyGeometry, const float InD
 	{
 		const float ViewportScale = FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(this));
 		const float LogicalViewportWidth = UWidgetLayoutLibrary::GetViewportSize(this).X / ViewportScale;
-		if (bFitCatalogToViewport && LogicalViewportWidth > CatalogViewportMargin + FFPrepBuildPanel::CatalogDetailsWidth)
+		if (bFitCatalogToViewport && LogicalViewportWidth > CatalogViewportMargin + GetCatalogInspectorWidth())
 		{
-			const float AvailableWidth = LogicalViewportWidth - CatalogViewportMargin - FFPrepBuildPanel::CatalogDetailsWidth;
+			const float AvailableWidth = LogicalViewportWidth - CatalogViewportMargin - GetCatalogInspectorWidth();
 			const float DockWidth = AvailableWidth;
 			if (!Size_ClarityCatalogDock->IsWidthOverride() ||
 				!FMath::IsNearlyEqual(Size_ClarityCatalogDock->GetWidthOverride(), DockWidth, .5f))
@@ -449,7 +511,30 @@ void UFF_PrepPanelBuild::MatchCatalogHeaderActions()
 bool UFF_PrepPanelBuild::IsPointerOverCatalog(const FVector2D& ScreenPosition) const
 {
 	return TileView_Facilities && TileView_Facilities->IsVisible() &&
-		TileView_Facilities->GetCachedGeometry().IsUnderLocation(ScreenPosition);
+		TileView_Facilities->GetCachedGeometry().IsUnderLocation(ScreenPosition) &&
+		!IsPointerOverCatalogPopup(ScreenPosition);
+}
+
+bool UFF_PrepPanelBuild::IsPointerOverCatalogPopup(const FVector2D& ScreenPosition) const
+{
+	// The popups overlay the tile view inside the same UserWidget. The catalog's
+	// preview handler must leave their entire surface to Slate's child controls.
+	for (const FName Name : {FName(TEXT("Popup_V9Filters")), FName(TEXT("Popup_V9More"))})
+		if (const UWidget* Popup = GetWidgetFromName(Name))
+			if (Popup->IsVisible() && Popup->GetCachedGeometry().IsUnderLocation(ScreenPosition)) return true;
+	// In the game viewport Slate hosts combo menus in the current window. Their
+	// option rows can extend beyond the authored More surface while remaining its
+	// descendants, so let the open sort menu own those rows as well.
+	const UWidget* More = GetWidgetFromName(TEXT("Popup_V9More"));
+	const auto* Sort = Cast<UComboBoxString>(GetWidgetFromName(TEXT("ComboBox_CatalogSort")));
+	if (More && More->IsVisible() && Sort && Sort->IsOpen() && FSlateApplication::IsInitialized())
+	{
+		auto& Slate = FSlateApplication::Get();
+		const FWidgetPath Path = Slate.LocateWindowUnderMouse(ScreenPosition, Slate.GetInteractiveTopLevelWindows());
+		if (const TSharedPtr<SWidget> PopupSlate = More->GetCachedWidget())
+			return Path.ContainsWidget(PopupSlate.Get());
+	}
+	return false;
 }
 
 void UFF_PrepPanelBuild::ResetCatalogDrag()
@@ -481,7 +566,15 @@ void UFF_PrepPanelBuild::ScrollCatalogBy(const float ItemDelta)
 
 FReply UFF_PrepPanelBuild::NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
 {
-	if (Event.GetEffectingButton() != EKeys::LeftMouseButton || !IsPointerOverCatalog(Event.GetScreenSpacePosition()))
+	if (Event.GetEffectingButton() != EKeys::LeftMouseButton)
+		return Super::NativeOnPreviewMouseButtonDown(Geometry, Event);
+	if (IsPointerOverCatalogPopup(Event.GetScreenSpacePosition()))
+	{
+		ResetCatalogDrag();
+		CatalogScrollVelocity = 0.f;
+		return Super::NativeOnPreviewMouseButtonDown(Geometry, Event);
+	}
+	if (!IsPointerOverCatalog(Event.GetScreenSpacePosition()))
 		return Super::NativeOnPreviewMouseButtonDown(Geometry, Event);
 	// A new direct interaction stops the previous fling, including interactions
 	// owned by the independent scrollbar or favorite button below.
@@ -518,11 +611,17 @@ FReply UFF_PrepPanelBuild::NativeOnMouseMove(const FGeometry& Geometry, const FP
 {
 	if (!bCatalogPointerDown) return Super::NativeOnMouseMove(Geometry, Event);
 	UpdateCatalogDrag(Geometry, Event.GetScreenSpacePosition());
-	return FReply::Handled();
+	return bCatalogPointerDown ? FReply::Handled() : Super::NativeOnMouseMove(Geometry, Event);
 }
 
 void UFF_PrepPanelBuild::UpdateCatalogDrag(const FGeometry& Geometry, const FVector2D& ScreenPosition)
 {
+	if (IsPointerOverCatalogPopup(ScreenPosition))
+	{
+		ResetCatalogDrag();
+		CatalogScrollVelocity = 0.f;
+		return;
+	}
 	const FVector2D Position = Geometry.AbsoluteToLocal(ScreenPosition);
 	if (!FMath::IsFinite(Position.X) || !FMath::IsFinite(Position.Y)) return;
 	if (Position.Equals(CatalogDragLastPosition, .01f)) return;
@@ -556,6 +655,12 @@ FReply UFF_PrepPanelBuild::NativeOnMouseButtonUp(const FGeometry& Geometry, cons
 {
 	if (!bCatalogPointerDown || Event.GetEffectingButton() != EKeys::LeftMouseButton)
 		return Super::NativeOnMouseButtonUp(Geometry, Event);
+	if (IsPointerOverCatalogPopup(Event.GetScreenSpacePosition()))
+	{
+		ResetCatalogDrag();
+		CatalogScrollVelocity = 0.f;
+		return Super::NativeOnMouseButtonUp(Geometry, Event);
+	}
 	FinishCatalogDrag(Geometry, Event.GetScreenSpacePosition());
 	return FReply::Handled();
 }
@@ -565,6 +670,7 @@ void UFF_PrepPanelBuild::FinishCatalogDrag(const FGeometry& Geometry, const FVec
 	// Some platforms coalesce the last move into pointer-up. Commit that final
 	// sample before clearing the gesture so a short swipe is never discarded.
 	UpdateCatalogDrag(Geometry, ScreenPosition);
+	if (!bCatalogPointerDown) return;
 	const FVector2D Delta = Geometry.AbsoluteToLocal(ScreenPosition) - CatalogDragOrigin;
 	const bool bMoved = bCatalogPointerMoved || Delta.SizeSquared() >= FMath::Square(10.0);
 	UFF_PrepBuildTileData* PressedItem = CatalogPressedItem.Get();
@@ -598,6 +704,12 @@ void UFF_PrepPanelBuild::FinishCatalogDrag(const FGeometry& Geometry, const FVec
 
 FReply UFF_PrepPanelBuild::NativeOnMouseWheel(const FGeometry& Geometry, const FPointerEvent& Event)
 {
+	if (IsPointerOverCatalogPopup(Event.GetScreenSpacePosition()))
+	{
+		ResetCatalogDrag();
+		CatalogScrollVelocity = 0.f;
+		return Super::NativeOnMouseWheel(Geometry, Event);
+	}
 	if (!IsPointerOverCatalog(Event.GetScreenSpacePosition()) || FMath::IsNearlyZero(Event.GetWheelDelta()))
 		return Super::NativeOnMouseWheel(Geometry, Event);
 	if (!bUsePagination)
@@ -749,6 +861,7 @@ void UFF_PrepPanelBuild::NativeOnPanelOpened()
 
 void UFF_PrepPanelBuild::NativeOnPanelClosed()
 {
+	CloseCatalogPopups();
 	EndPanelSession();
 	Super::NativeOnPanelClosed();
 }
@@ -965,6 +1078,17 @@ FReply UFF_PrepPanelBuild::NativeOnPreviewKeyDown(
 	const FGeometry& InGeometry,
 	const FKeyEvent& InKeyEvent)
 {
+	if (!InKeyEvent.IsRepeat() && InKeyEvent.GetKey() == EKeys::Escape)
+	{
+		const UWidget* Filters = GetWidgetFromName(TEXT("Popup_V9Filters"));
+		const FName FocusButton = Filters && Filters->IsVisible()
+			? FName(TEXT("Button_V9Filters")) : FName(TEXT("Button_V9More"));
+		if (CloseCatalogPopups())
+		{
+			if (auto* Button = Cast<UButton>(GetWidgetFromName(FocusButton))) Button->SetFocus();
+			return FReply::Handled();
+		}
+	}
 	const UFF_FestivalSettingsDeveloperSettings* Settings =
 		UFF_FestivalSettingsDeveloperSettings::Get();
 	const EFF_BuildModeState CurrentState = BuildModeSubsystem
@@ -1454,6 +1578,7 @@ void UFF_PrepPanelBuild::RefreshAdvancedFilterControls()
 
 void UFF_PrepPanelBuild::HandleCategoryChoiceClicked(const int32 ChoiceId)
 {
+	CloseCatalogPopups();
 	if (ChoiceId == FFPrepBuildPanel::AllCategoryChoiceId)
 	{
 		SetCategoryFilter(false, EFFZSFacilityCategory::Booth);
@@ -1624,13 +1749,13 @@ void UFF_PrepPanelBuild::BuildCategoryFilterSurface()
 		if (bUseDesignerCatalogLayout)
 		{
 			CategoryChoices.Reset();
-			for (UWidget* Child : HorizontalBox_Categories->GetAllChildren())
+			FFPrepBuildPanel::CollectCategoryChoices(HorizontalBox_Categories, CategoryChoices);
+			for (UFF_PrepChoiceButton* BaseChoice : CategoryChoices)
 			{
-				if (auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(Child))
+				if (auto* Choice = Cast<UFF_PrepBuildCategoryChoice>(BaseChoice))
 				{
 					Choice->ConfigureTab(Choice->AuthoredChoiceId, Choice->AuthoredLabel, Choice->GetEffectiveIcon());
 					Choice->OnHudTabButtonClicked.BindUObject(this, &ThisClass::HandleCategoryChoiceClicked);
-					CategoryChoices.Add(Choice);
 				}
 			}
 			RefreshCategoryChoiceSelection();
@@ -2198,6 +2323,7 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 
 void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 {
+	if (State != EFF_BuildModeState::CatalogOpen && State != EFF_BuildModeState::Placing) CloseCatalogPopups();
 	ResetCatalogDrag();
 	RefreshSelectedFacilityPresentation();
 	const bool bShowCatalog = State == EFF_BuildModeState::CatalogOpen || State == EFF_BuildModeState::Placing;
@@ -2207,14 +2333,18 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		? AuthoredCatalogHeight : CatalogHeight;
 	if (Size_ClarityCatalogDock)
 	{
+		// Collapse the complete dock, including its outer translucent background.
+		// Hiding only the inner content leaves an empty 40 px strip in build mode.
+		Size_ClarityCatalogDock->SetVisibility(bShowCatalog || bShowCompact
+			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 		Size_ClarityCatalogDock->SetHeightOverride(bShowCatalog ? ExpandedHeight : CompactHeight);
 		float CatalogWidth = bUseDesignerCatalogLayout && AuthoredCatalogWidth > 0.f ? AuthoredCatalogWidth : 1560.f;
 		if (bShowCatalog && bFitCatalogToViewport)
 		{
 			const float Scale = FMath::Max(.01f, UWidgetLayoutLibrary::GetViewportScale(this));
 			const float LogicalWidth = UWidgetLayoutLibrary::GetViewportSize(this).X / Scale;
-			if (LogicalWidth > CatalogViewportMargin + FFPrepBuildPanel::CatalogDetailsWidth)
-				CatalogWidth = LogicalWidth - CatalogViewportMargin - FFPrepBuildPanel::CatalogDetailsWidth;
+			if (LogicalWidth > CatalogViewportMargin + GetCatalogInspectorWidth())
+				CatalogWidth = LogicalWidth - CatalogViewportMargin - GetCatalogInspectorWidth();
 		}
 		Size_ClarityCatalogDock->SetWidthOverride(bShowCatalog ? CatalogWidth : 1080.f);
 	}

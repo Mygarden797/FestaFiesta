@@ -134,6 +134,7 @@ namespace
 		View.bHasLightingRig = true;
 		View.bCanEditLighting = true;
 		View.LightingState.bEnabled = true;
+		View.OperationStateText = FText::FromString(TEXT("조명 켜짐"));
 		View.LightingState.BrightnessMultiplier = 1.f;
 		return View;
 	}
@@ -214,7 +215,8 @@ bool FFF_FacilityLightingIntroductionTest::RunTest(const FString&)
 		TestFalse(TEXT("Merely displaying the reminder does not consume it"), Profile.IsSaved());
 		TestEqual(TEXT("The editor is initially hidden"), Fixture.Controls->GetVisibility(), ESlateVisibility::Collapsed);
 		Panel.SetInfoPage(EFF_FacilityInfoPage::Operation);
-		TestEqual(TEXT("The color action belongs only to overview"), Fixture.HelpRow->GetVisibility(), ESlateVisibility::Collapsed);
+		TestEqual(TEXT("Non-service facilities do not open an irrelevant operation page"), Panel.GetInfoPage(), EFF_FacilityInfoPage::Overview);
+		TestTrue(TEXT("Basic lighting help remains visible after an unavailable page request"), Fixture.HelpRow->IsVisible());
 		Panel.SetInfoPage(EFF_FacilityInfoPage::Overview);
 		if (Entry == 0)
 		{
