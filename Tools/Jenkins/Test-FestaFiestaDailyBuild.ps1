@@ -42,6 +42,18 @@ try {
     Assert-FFTest ($label -eq 'FF-v1.0.0.0-20261104-000000-b12-aaaaaaaa') 'Build labels use the Korean date across UTC midnight.'
     Assert-FFThrows { New-FFBuildLabel -ProjectVersion '1.0.0.0' -Commit $shaA -BuildNumber '1;exit' } 'Shell-like build numbers are rejected.'
     Assert-FFTest ((New-FFBuildLabel -ProjectVersion '1.0.0.0' -Commit $shaA -BuildNumber 'manual-20261103190000') -match '-bmanual-20261103190000-') 'Manual launcher build numbers are supported.'
+    $publicationName = & $module { New-FFPublicationName -Version 25 -StartedAt ([DateTimeOffset]'2026-11-03T15:00:00Z') }
+    Assert-FFTest ($publicationName -ceq 'V25(2026.11.04.00:00)') 'Publication folders use a sequential version and Korean build date/time across UTC midnight.'
+    $timedPublicationName = & $module { New-FFPublicationName -Version 24 -StartedAt ([DateTimeOffset]'2026-11-03T09:44:30Z') }
+    Assert-FFTest ($timedPublicationName -ceq 'V24(2026.11.03.18:44)') 'Publication folders include the actual Korean build hour and minute.'
+    $seededState = [pscustomobject]@{ publicationSequence = 24; published = [pscustomobject]@{ publicationVersion = 24 }
+        pending = [pscustomobject]@{ startedAtUtc = '2026-11-03T15:00:00Z' } }
+    & $module { param($State) Initialize-FFPublicationSequence -State $State; Set-FFPendingPublicationIdentity -State $State } $seededState
+    Assert-FFTest ($seededState.publicationSequence -eq 25 -and $seededState.pending.publicationName -ceq 'V25(2026.11.04.00:00)') 'A migrated V24 publication seeds the next build as V25.'
+    & $module { param($State) Set-FFPendingPublicationIdentity -State $State } $seededState
+    Assert-FFTest ($seededState.publicationSequence -eq 25 -and $seededState.pending.publicationName -ceq 'V25(2026.11.04.00:00)') 'A reserved publication identity keeps its build date/time and version on later retries.'
+    $seededState.pending.publicationName = 'V25(2026.11.04.00:01)'
+    Assert-FFThrows { & $module { param($State) Set-FFPendingPublicationIdentity -State $State } $seededState } 'An identity with a changed build minute is refused.' 'reserved version'
 
     $arguments = @{
         SourceRepository = 'https://github.com/example/FestaFiesta.git'
@@ -133,6 +145,9 @@ try {
     Invoke-FFDailyBuild @arguments -BuildOnly
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     Assert-FFTest ($harness.BuildCalls -eq 1 -and $harness.CopyCalls -eq 0 -and $null -eq $state.published -and $state.pending.phase -eq 'ready') 'BuildOnly works without Drive credentials and preserves a ready pending artifact.'
+    $firstPublicationName = $state.pending.publicationName
+    Assert-FFTest ($state.publicationSequence -eq 24 -and $state.pending.publicationVersion -eq 24 -and
+        $state.pending.files.Count -eq 1 -and $state.pending.files[0].remoteName -ceq 'FestaFiesta!.zip') 'The initial build reserves a V24 folder and queues only FestaFiesta!.zip.'
     $harness.RemoteCommit = $shaB
     Invoke-FFDailyBuild @arguments -BuildOnly
     Assert-FFTest ($harness.BuildCalls -eq 1 -and $harness.RemoteCalls -eq 1) 'BuildOnly preserves existing pending files even when newer source exists.'
@@ -140,23 +155,29 @@ try {
     $harness.RemoteCommit = $shaA
     Invoke-FFDailyBuild @arguments
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
-    Assert-FFTest ($harness.BuildCalls -eq 1 -and $harness.CopyCalls -eq 4 -and $state.published.commit -eq $shaA -and $null -eq $state.pending) 'An authenticated rerun uploads and verifies pending files without rebuilding.'
+    Assert-FFTest ($harness.BuildCalls -eq 1 -and $harness.CopyCalls -eq 1 -and $state.published.commit -eq $shaA -and $null -eq $state.pending) 'An authenticated rerun uploads and verifies one pending ZIP without rebuilding.'
+    Assert-FFTest ($state.published.publicationName -ceq $firstPublicationName -and $state.published.publicationVersion -eq 24 -and
+        $state.published.publicationArchiveName -ceq 'FestaFiesta!.zip' -and
+        $harness.RemoteFiles.ContainsKey('festafiesta-drive:/' + $firstPublicationName + '/FestaFiesta!.zip')) 'The verified ZIP is published as FestaFiesta!.zip in its reserved version folder.'
     Invoke-FFDailyBuild @arguments
-    Assert-FFTest ($harness.BuildCalls -eq 1 -and $harness.CopyCalls -eq 4) 'An unchanged branch performs no build or upload.'
+    Assert-FFTest ($harness.BuildCalls -eq 1 -and $harness.CopyCalls -eq 1) 'An unchanged branch performs no build or upload.'
 
     $harness.RemoteCommit = $shaB; $arguments.BuildNumber = '2'
-    $harness.FailCopyAt = $harness.CopyCalls + 2
-    Assert-FFThrows { Invoke-FFDailyBuild @arguments } 'A partial upload fails the job.' 'Fixture upload failure'
+    $harness.FailCopyAt = $harness.CopyCalls + 1
+    Assert-FFThrows { Invoke-FFDailyBuild @arguments } 'A failed ZIP upload fails the job.' 'Fixture upload failure'
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     Assert-FFTest ($state.published.commit -eq $shaA -and $state.pending.commit -eq $shaB -and $state.pending.phase -eq 'ready') 'Upload failure retains the previous published SHA and retryable pending files.'
     $pendingLabel = $state.pending.buildLabel
+    $pendingPublicationName = $state.pending.publicationName
+    Assert-FFTest ($state.pending.publicationVersion -eq 25) 'A new source build increments the publication version once.'
     $eventStart = $harness.Events.Count
     $harness.FailCopyAt = 0; $harness.RemoteCommit = $shaC; $arguments.BuildNumber = '3'
     Invoke-FFDailyBuild @arguments
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     $newEvents = @($harness.Events | Select-Object -Skip $eventStart)
-    Assert-FFTest ($newEvents[0] -like ('copy:*/' + $pendingLabel + '/*')) 'The previous pending upload happens before probing newer source.'
+    Assert-FFTest ($newEvents[0] -ceq ('copy:festafiesta-drive:/' + $pendingPublicationName + '/FestaFiesta!.zip')) 'The previous pending upload reuses its version folder and archive name before probing newer source.'
     Assert-FFTest ($harness.BuildCalls -eq 3 -and $state.published.commit -eq $shaC -and $null -eq $state.pending) 'New source is built only after the pending commit has been published.'
+    Assert-FFTest ($state.publicationSequence -eq 26 -and $state.published.publicationVersion -eq 26) 'A retry does not consume an extra publication version.'
 
     $harness.RemoteCommit = $shaD; $arguments.BuildNumber = '4'; $harness.TamperRemoteMd5 = $true
     Assert-FFThrows { Invoke-FFDailyBuild @arguments } 'Incorrect remote hashes fail publication.' 'checksum verification failed'
@@ -178,12 +199,14 @@ try {
     Assert-FFThrows { Invoke-FFDailyBuild @arguments } 'A failed package cannot be published.' 'Fixture package failure'
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     Assert-FFTest ($state.pending.phase -eq 'building' -and $state.published.commit -eq $shaD) 'Interrupted package state retains the last published SHA.'
+    $failedPublicationVersion = $state.pending.publicationVersion
     $harness.FailBuild = $false; $arguments.BuildNumber = '6'
     Invoke-FFDailyBuild @arguments
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     Assert-FFTest ($state.published.commit -eq $shaE -and $null -eq $state.pending) 'An incomplete package is retried using a fresh build label.'
+    Assert-FFTest ($state.published.publicationVersion -eq ($failedPublicationVersion + 1)) 'A newly created build after a failed package reserves a fresh publication version.'
 
-    $publicationProbe = [pscustomobject]@{ commit = $shaE; buildLabel = $state.published.buildLabel }
+    $publicationProbe = [pscustomobject]@{ commit = $shaE; buildLabel = $state.published.buildLabel; publicationName = $state.published.publicationName }
     $probeManifest = Join-Path $arguments.OutputRoot ($publicationProbe.buildLabel + '\Metadata\build-manifest.json')
     $originalManifest = [IO.File]::ReadAllBytes($probeManifest)
     $modifiedManifest = Get-Content -LiteralPath $probeManifest -Raw | ConvertFrom-Json
@@ -196,6 +219,88 @@ try {
     Write-FFState -State $modifiedManifest -Path $probeManifest
     Assert-FFThrows { & $module { param($Options, $Pending) Get-FFPublicationFiles -Options $Options -Pending $Pending } ([pscustomobject]$arguments) $publicationProbe } 'Packages without graphics verification cannot enter the upload queue.' 'graphicsStartupTest'
     [IO.File]::WriteAllBytes($probeManifest, $originalManifest)
+
+    # A pre-update pending queue contains all four original publication files.
+    # Verify their original hashes before reducing it to one ZIP in a version folder.
+    $legacyRoot = Join-Path $arguments.OutputRoot $state.published.buildLabel
+    $legacyFiles = @()
+    foreach ($path in @((Join-Path $legacyRoot ($state.published.buildLabel + '.zip')),
+        (Join-Path $legacyRoot 'Metadata\build-manifest.json'), (Join-Path $legacyRoot 'Metadata\ARCHIVE-SHA256.txt'),
+        (Join-Path $legacyRoot 'Metadata\verification.json'))) {
+        $legacyFiles += [pscustomobject]@{ path = $path; remoteName = [IO.Path]::GetFileName($path)
+            bytes = (Get-Item -LiteralPath $path).Length
+            sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            md5 = (Get-FileHash -LiteralPath $path -Algorithm MD5).Hash.ToLowerInvariant() }
+    }
+    $legacyPending = [pscustomobject]@{ phase = 'ready'; commit = $shaE; buildLabel = $state.published.buildLabel
+        startedAtUtc = '2026-11-03T15:00:00Z'; files = $legacyFiles }
+    $state.pending = $legacyPending
+    $legacySequence = $state.publicationSequence
+    Write-FFState -State $state -Path $statePath
+    $originalLegacyManifest = [IO.File]::ReadAllBytes($probeManifest)
+    [IO.File]::WriteAllText($probeManifest, 'tampered legacy sidecar')
+    $priorCopies = $harness.CopyCalls
+    Assert-FFThrows { Invoke-FFDailyBuild @arguments } 'Legacy pending sidecars are checked against their recorded bytes.' 'changed on disk'
+    Assert-FFTest ($harness.CopyCalls -eq $priorCopies) 'A modified legacy sidecar prevents every upload.'
+    [IO.File]::WriteAllBytes($probeManifest, $originalLegacyManifest)
+    Invoke-FFDailyBuild @arguments
+    $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    Assert-FFTest ($harness.CopyCalls -eq ($priorCopies + 1) -and $null -eq $state.pending -and
+        $state.published.publicationVersion -eq ($legacySequence + 1) -and
+        $state.published.publicationName -ceq ('V{0}(2026.11.04.00:00)' -f ($legacySequence + 1))) 'A legacy four-file pending queue migrates to one verified ZIP with its original Korean build date/time.'
+
+    # Also recover the briefly supported flat Vn(date).zip pending layout.
+    $flatVersion = $state.publicationSequence + 1
+    $flatName = 'V{0}(2026.11.04).zip' -f $flatVersion
+    $flatFile = $legacyFiles[0].PSObject.Copy()
+    $flatFile.remoteName = $flatName
+    $state.publicationSequence = $flatVersion
+    $state.pending = [pscustomobject]@{ phase = 'ready'; commit = $shaE; buildLabel = $state.published.buildLabel
+        startedAtUtc = '2026-11-03T15:00:00Z'; publicationVersion = $flatVersion; publicationName = $flatName; files = @($flatFile) }
+    Write-FFState -State $state -Path $statePath
+    $originalFlatBytes = [IO.File]::ReadAllBytes($flatFile.path)
+    [IO.File]::WriteAllText($flatFile.path, 'tampered flat pending ZIP')
+    $priorCopies = $harness.CopyCalls; $priorBuilds = $harness.BuildCalls
+    Assert-FFThrows { Invoke-FFDailyBuild @arguments } 'A flat pending ZIP must match its recorded bytes before layout migration.' 'changed on disk'
+    $failedFlatState = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    Assert-FFTest ($harness.CopyCalls -eq $priorCopies -and $failedFlatState.pending.publicationName -ceq $flatName) 'A modified flat ZIP prevents upload and preserves the original pending identity.'
+    [IO.File]::WriteAllBytes($flatFile.path, $originalFlatBytes)
+    $harness.FailCopyAt = $harness.CopyCalls + 1
+    Assert-FFThrows { Invoke-FFDailyBuild @arguments } 'A migrated flat pending ZIP remains retryable if uploading fails.' 'Fixture upload failure'
+    $migratedFlatState = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    Assert-FFTest ($migratedFlatState.publicationSequence -eq $flatVersion -and
+        $migratedFlatState.pending.publicationName -ceq ('V{0}(2026.11.04.00:00)' -f $flatVersion) -and
+        $migratedFlatState.pending.files[0].remoteName -ceq 'FestaFiesta!.zip' -and
+        $migratedFlatState.pending.files[0].sha256 -ceq $flatFile.sha256) 'Flat migration preserves the reserved version and ZIP hash, derives the original build time, and saves the new folder layout before uploading.'
+    $harness.FailCopyAt = 0
+    Invoke-FFDailyBuild @arguments
+    $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    Assert-FFTest ($null -eq $state.pending -and $state.published.publicationVersion -eq $flatVersion -and
+        $state.publicationSequence -eq $flatVersion -and $harness.BuildCalls -eq $priorBuilds -and
+        $harness.RemoteFiles.ContainsKey('festafiesta-drive:/' + $state.published.publicationName + '/FestaFiesta!.zip')) 'A migrated flat pending ZIP publishes in its version folder without rebuilding or consuming another version.'
+
+    $dateOnlyVersion = $state.publicationSequence + 1
+    $dateOnlyFile = $legacyFiles[0].PSObject.Copy()
+    $dateOnlyFile.remoteName = 'FestaFiesta!.zip'
+    $state.publicationSequence = $dateOnlyVersion
+    $state.pending = [pscustomobject]@{ phase = 'ready'; commit = $shaE; buildLabel = $state.published.buildLabel
+        startedAtUtc = '2026-11-03T09:44:30Z'; publicationVersion = $dateOnlyVersion
+        publicationName = ('V{0}(2026.11.03)' -f $dateOnlyVersion); files = @($dateOnlyFile) }
+    Write-FFState -State $state -Path $statePath
+    $harness.FailCopyAt = $harness.CopyCalls + 1
+    Assert-FFThrows { Invoke-FFDailyBuild @arguments } 'A date-only folder pending ZIP remains retryable after adding its original build time.' 'Fixture upload failure'
+    $timedFolderState = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    Assert-FFTest ($timedFolderState.publicationSequence -eq $dateOnlyVersion -and
+        $timedFolderState.pending.publicationName -ceq ('V{0}(2026.11.03.18:44)' -f $dateOnlyVersion) -and
+        $timedFolderState.pending.files[0].remoteName -ceq 'FestaFiesta!.zip' -and
+        $timedFolderState.pending.files[0].sha256 -ceq $dateOnlyFile.sha256) 'Adding a missing build time preserves the reserved version and original ZIP hash.'
+    $harness.FailCopyAt = 0
+    Invoke-FFDailyBuild @arguments
+    $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    Assert-FFTest ($null -eq $state.pending -and $state.published.publicationVersion -eq $dateOnlyVersion -and
+        $harness.RemoteFiles.ContainsKey('festafiesta-drive:/' + $state.published.publicationName + '/FestaFiesta!.zip')) 'A migrated date-only pending build publishes in its folder with the original Korean build time.'
+    Assert-FFThrows { & $module { Invoke-FFUploadFile -Options $null -BuildLabel 'safe' -File ([pscustomobject]@{ remoteName = '../V25(2026.11.04).zip' }) } } 'Publication filename traversal is refused before reading local files.' 'Unsafe remote filename'
+    Assert-FFThrows { & $module { Invoke-FFUploadFile -Options $null -BuildLabel 'safe' -File ([pscustomobject]@{ remoteName = 'FestaFiesta!.zip' }) -PublicationFolder '../V25(2026.11.04)' } } 'Publication folder traversal is refused before reading local files.' 'Unsafe publication folder'
 
     $lockPath = Join-Path $arguments.StateRoot 'daily-build.lock'
     $heldLock = New-Object IO.FileStream($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)

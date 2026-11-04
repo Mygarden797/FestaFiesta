@@ -66,6 +66,100 @@ function New-FFBuildLabel {
     return 'FF-v{0}-{1}-b{2}-{3}' -f $ProjectVersion, $kstDate, $BuildNumber, $Commit.Substring(0, 8)
 }
 
+function New-FFPublicationName {
+    param([ValidateRange(1, 2147483647)][long] $Version, [DateTimeOffset] $StartedAt)
+    $date = $StartedAt.ToOffset([TimeSpan]::FromHours(9)).ToString('yyyy.MM.dd.HH:mm', [Globalization.CultureInfo]::InvariantCulture)
+    return 'V{0}({1})' -f $Version, $date
+}
+
+function Initialize-FFPublicationSequence {
+    param($State)
+    # The first release in the simplified distribution sequence is V24.
+    # A migrated published version or a reserved pending version takes precedence.
+    $sequence = 23L
+    $values = @()
+    if ($State.PSObject.Properties.Name -contains 'publicationSequence') { $values += $State.publicationSequence }
+    foreach ($item in @($State.published, $State.pending)) {
+        if ($null -ne $item -and $item.PSObject.Properties.Name -contains 'publicationVersion') { $values += $item.publicationVersion }
+    }
+    foreach ($value in $values) {
+        $parsed = 0L
+        if ([string]$value -notmatch '^[0-9]+$' -or -not [long]::TryParse([string]$value, [ref]$parsed) -or
+            $parsed -lt 0 -or $parsed -gt 2147483647) { throw 'Invalid publication version in daily-build state.' }
+        $sequence = [Math]::Max($sequence, $parsed)
+    }
+    $State | Add-Member -NotePropertyName publicationSequence -NotePropertyValue $sequence -Force
+}
+
+function Get-FFPendingPublicationStartedAt {
+    param($Pending)
+    # PowerShell 7 can deserialize ISO timestamps as DateTime; preserve its UTC
+    # kind rather than formatting it as a timezone-free local string first.
+    if ($Pending.startedAtUtc -is [DateTime] -or $Pending.startedAtUtc -is [DateTimeOffset]) {
+        return [DateTimeOffset]$Pending.startedAtUtc
+    }
+    return [DateTimeOffset]::Parse([string]$Pending.startedAtUtc, [Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Set-FFPendingPublicationIdentity {
+    param($State)
+    $pending = $State.pending
+    $hasVersion = $pending.PSObject.Properties.Name -contains 'publicationVersion'
+    $hasName = $pending.PSObject.Properties.Name -contains 'publicationName'
+    if ($hasVersion -ne $hasName) { throw 'The pending publication identity is incomplete.' }
+    $startedAt = Get-FFPendingPublicationStartedAt -Pending $pending
+    if ($hasVersion) {
+        if ([string]$pending.publicationVersion -notmatch '^[1-9][0-9]*$' -or
+            [long]$pending.publicationVersion -gt 2147483647 -or
+            [string]$pending.publicationName -cne (New-FFPublicationName -Version $pending.publicationVersion -StartedAt $startedAt)) {
+            throw 'The pending publication name does not match its reserved version and Korean build date/time.'
+        }
+        return
+    }
+    if ($State.publicationSequence -ge 2147483647) { throw 'The publication version sequence is exhausted.' }
+    $State.publicationSequence++
+    $pending | Add-Member -NotePropertyName publicationVersion -NotePropertyValue $State.publicationSequence
+    $pending | Add-Member -NotePropertyName publicationName -NotePropertyValue (
+        New-FFPublicationName -Version $State.publicationSequence -StartedAt $startedAt)
+}
+
+function Update-FFPendingPublicationLayout {
+    param($Options, $State, [string] $StatePath)
+    $pending = $State.pending
+    if (-not ($pending.PSObject.Properties.Name -contains 'publicationName') -or
+        [string]$pending.publicationName -cnotmatch '^V[1-9][0-9]*\([0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[0-9]{2}:[0-9]{2})?\)(\.zip)?$') { return }
+    if ($pending.buildLabel -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$') { throw 'Invalid pending build label.' }
+    $startedAt = Get-FFPendingPublicationStartedAt -Pending $pending
+    $publicationName = New-FFPublicationName -Version $pending.publicationVersion -StartedAt $startedAt
+    if ([string]$pending.publicationName -ceq $publicationName) { return }
+    $dateOnly = $startedAt.ToOffset([TimeSpan]::FromHours(9)).ToString('yyyy.MM.dd', [Globalization.CultureInfo]::InvariantCulture)
+    $expectedOldFolder = 'V{0}({1})' -f $pending.publicationVersion, $dateOnly
+    $isFlat = ([string]$pending.publicationName).EndsWith('.zip', [StringComparison]::Ordinal)
+    $expectedOldName = if ($isFlat) { $expectedOldFolder + '.zip' } else { $expectedOldFolder }
+    if ([string]$pending.publicationName -cne $expectedOldName -and
+        -not ($isFlat -and [string]$pending.publicationName -ceq ($publicationName + '.zip'))) {
+        throw 'The legacy publication name does not match its reserved version and Korean build date/time.'
+    }
+    if ($pending.files.Count -eq 1) {
+        $file = $pending.files[0]
+        $expectedPath = Join-Path (Join-Path $Options.OutputRoot $pending.buildLabel) ($pending.buildLabel + '.zip')
+        $expectedRemoteName = if ($isFlat) { $pending.publicationName } else { 'FestaFiesta!.zip' }
+        if ([IO.Path]::GetFullPath([string]$file.path) -cne [IO.Path]::GetFullPath($expectedPath) -or
+            $file.remoteName -cne $expectedRemoteName) { throw 'Invalid legacy publication file list.' }
+        if ((Get-FileHash -LiteralPath $file.path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $file.sha256 -or
+            (Get-Item -LiteralPath $file.path).Length -ne $file.bytes) {
+            throw 'A pending publication file changed on disk; refusing to upload different bytes.'
+        }
+    }
+    elseif ($pending.phase -cne 'building' -or $pending.files.Count -ne 0) { throw 'Invalid legacy publication file list.' }
+    # Keep the reserved version and derive the missing time from the recorded
+    # build start. No ZIP bytes or expected hashes are replaced.
+    $pending.publicationName = $publicationName
+    Set-FFPendingPublicationIdentity -State $State
+    if ($pending.files.Count -eq 1) { $pending.files[0].remoteName = 'FestaFiesta!.zip' }
+    Write-FFState -State $State -Path $StatePath
+}
+
 function Invoke-FFNative {
     param([string] $FilePath, [string[]] $Arguments, [string] $Operation)
     # Argument arrays are never evaluated as shell code. Keep credentials and
@@ -183,10 +277,10 @@ function Get-FFPublicationFiles {
     $expectedChecksum = $sha256 + '  ' + $zipName
     if ((Get-Content -LiteralPath $checksumPath -Raw).Trim() -cne $expectedChecksum) { throw 'Package ZIP does not match ARCHIVE-SHA256.txt.' }
     $files = @()
-    foreach ($filePath in @($zipPath, $manifestPath, $checksumPath, $verificationPath)) {
+    foreach ($filePath in @($zipPath)) {
         $files += [pscustomobject]@{
             path = $filePath
-            remoteName = [IO.Path]::GetFileName($filePath)
+            remoteName = 'FestaFiesta!.zip'
             bytes = (Get-Item -LiteralPath $filePath).Length
             sha256 = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
             md5 = (Get-FileHash -LiteralPath $filePath -Algorithm MD5).Hash.ToLowerInvariant()
@@ -196,23 +290,24 @@ function Get-FFPublicationFiles {
 }
 
 function Invoke-FFUploadFile {
-    param($Options, [string] $BuildLabel, $File)
-    if ($File.remoteName -cne [IO.Path]::GetFileName($File.path)) { throw 'Unsafe remote filename in pending state.' }
+    param($Options, [string] $BuildLabel, $File, [string] $PublicationFolder)
+    if ([string]$File.remoteName -cne 'FestaFiesta!.zip') { throw 'Unsafe remote filename in pending state.' }
+    if ($PublicationFolder -cnotmatch '^V[1-9][0-9]*\([0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}:[0-9]{2}\)$') { throw 'Unsafe publication folder in pending state.' }
     $localHash = (Get-FileHash -LiteralPath $File.path -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($localHash -cne $File.sha256 -or (Get-Item -LiteralPath $File.path).Length -ne $File.bytes) {
         throw 'A pending publication file changed on disk; refusing to upload different bytes.'
     }
     if ($Options.UploadProvider -eq 'Duck') {
         Import-Module (Join-Path $PSScriptRoot 'FestaFiesta.Duck.psm1') -Force
-        Invoke-FFDuckUploadFile -Options $Options -BuildLabel $BuildLabel -File $File
+        Invoke-FFDuckUploadFile -Options $Options -BuildLabel $BuildLabel -File $File -PublicationFolder $PublicationFolder
         return
     }
-    $remotePath = $Options.RcloneRemote + ':/' + $BuildLabel + '/' + $File.remoteName
+    $remotePath = $Options.RcloneRemote + ':/' + $PublicationFolder + '/' + $File.remoteName
     $commonArguments = @('--config', $Options.RcloneConfig, '--drive-root-folder-id', $Options.DriveFolderId,
         '--retries', '3', '--low-level-retries', '10', '--contimeout', '30s', '--timeout', '10m')
     $null = Invoke-FFNative -FilePath $Options.RcloneExe -Arguments (@('copyto', $File.path, $remotePath, '--checksum') + $commonArguments) -Operation 'Upload build artifact'
     $remoteHash = Invoke-FFNative -FilePath $Options.RcloneExe -Arguments (@('md5sum', $remotePath) + $commonArguments) -Operation 'Verify uploaded artifact'
-    # Drive exposes MD5 for binary uploads; SHA-256 is shipped separately for users.
+    # Drive exposes MD5 for binary uploads; the SHA-256 remains in local metadata.
     $hashLines = @($remoteHash -split '\r?\n' | Where-Object { $_ -match '\S' })
     if ($hashLines.Count -ne 1 -or $hashLines[0] -notmatch '^([a-fA-F0-9]{32})\s+' -or $Matches[1].ToLowerInvariant() -cne $File.md5) {
         throw 'Google Drive artifact checksum verification failed.'
@@ -223,24 +318,54 @@ function Complete-FFPendingPublication {
     param($Options, $State, [string] $StatePath)
     $pending = $State.pending
     if ($pending.phase -cne 'ready') { throw 'A pending build is not ready to upload.' }
-    if ($pending.files.Count -ne 4) { throw 'The pending publication file list is incomplete.' }
-    foreach ($file in $pending.files) {
-        $expectedDirectory = Join-Path $Options.OutputRoot $pending.buildLabel
-        $fileFullPath = [IO.Path]::GetFullPath([string]$file.path)
-        if (-not $fileFullPath.StartsWith($expectedDirectory.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
-            throw 'A pending artifact is outside its release directory.'
+    if ($pending.buildLabel -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$') { throw 'Invalid pending build label.' }
+    if ($pending.files.Count -eq 4 -and -not ($pending.PSObject.Properties.Name -contains 'publicationName')) {
+        # Upgrade a pre-existing queue only after checking every recorded byte.
+        # Never recalculate expected hashes over a modified legacy pending file.
+        $releaseRoot = [IO.Path]::GetFullPath((Join-Path $Options.OutputRoot $pending.buildLabel))
+        $expectedPaths = @((Join-Path $releaseRoot ($pending.buildLabel + '.zip')),
+            (Join-Path $releaseRoot 'Metadata\build-manifest.json'),
+            (Join-Path $releaseRoot 'Metadata\ARCHIVE-SHA256.txt'),
+            (Join-Path $releaseRoot 'Metadata\verification.json'))
+        $seenPaths = @()
+        foreach ($file in $pending.files) {
+            $fullPath = [IO.Path]::GetFullPath([string]$file.path)
+            if ($expectedPaths -cnotcontains $fullPath -or $seenPaths -ccontains $fullPath -or
+                $file.remoteName -cne [IO.Path]::GetFileName($fullPath)) { throw 'Invalid legacy publication file list.' }
+            $seenPaths += $fullPath
+            if ((Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $file.sha256 -or
+                (Get-Item -LiteralPath $fullPath).Length -ne $file.bytes) {
+                throw 'A pending publication file changed on disk; refusing to upload different bytes.'
+            }
         }
-        Invoke-FFUploadFile -Options $Options -BuildLabel $pending.buildLabel -File $file
+        Set-FFPendingPublicationIdentity -State $State
+        $pending.files = @(Get-FFPublicationFiles -Options $Options -Pending $pending)
+        Write-FFState -State $State -Path $StatePath
+    }
+    Set-FFPendingPublicationIdentity -State $State
+    if ($pending.files.Count -ne 1 -or $pending.files[0].remoteName -cne 'FestaFiesta!.zip') {
+        throw 'The pending publication must contain exactly one FestaFiesta!.zip.'
+    }
+    foreach ($file in $pending.files) {
+        $expectedPath = Join-Path (Join-Path $Options.OutputRoot $pending.buildLabel) ($pending.buildLabel + '.zip')
+        $fileFullPath = [IO.Path]::GetFullPath([string]$file.path)
+        if ($fileFullPath -cne [IO.Path]::GetFullPath($expectedPath)) {
+            throw 'The pending ZIP is outside its expected release path.'
+        }
+        Invoke-FFUploadFile -Options $Options -BuildLabel $pending.buildLabel -File $file -PublicationFolder $pending.publicationName
     }
     $State.published = [pscustomobject]@{
         commit = $pending.commit
         buildLabel = $pending.buildLabel
+        publicationVersion = $pending.publicationVersion
+        publicationName = $pending.publicationName
+        publicationArchiveName = 'FestaFiesta!.zip'
         publishedAtUtc = [DateTimeOffset]::UtcNow.ToString('o')
         driveFolderId = $Options.DriveFolderId
     }
     $State.pending = $null
     Write-FFState -State $State -Path $StatePath
-    Write-Host ('Published: {0} ({1})' -f $State.published.buildLabel, $State.published.commit.Substring(0, 12))
+    Write-Host ('Published: {0}/{1} ({2})' -f $State.published.publicationName, $State.published.publicationArchiveName, $State.published.commit.Substring(0, 12))
 }
 
 function Invoke-FFDailyBuild {
@@ -312,6 +437,7 @@ function Invoke-FFDailyBuild {
     $statePath = Join-Path $options.StateRoot 'daily-build-state.json'
     if ($Plan) {
         $state = Read-FFState -Path $statePath -Binding $binding
+        Initialize-FFPublicationSequence -State $state
         $planResult = Get-FFBuildPlan -State $state -CandidateCommit $CandidateCommit
         [pscustomobject]@{ mode = 'OfflinePlan'; branch = $SourceBranch; checkoutRoot = $options.CheckoutRoot
             outputRoot = $options.OutputRoot; statePath = $statePath; actions = $planResult.actions; buildOnly = [bool]$BuildOnly
@@ -335,12 +461,15 @@ function Invoke-FFDailyBuild {
         catch { throw 'Another daily-build process holds the state lock, or StateRoot is not writable.' }
         [Environment]::SetEnvironmentVariable('GIT_TERMINAL_PROMPT', '0', 'Process')
         $state = Read-FFState -Path $statePath -Binding $binding
+        Initialize-FFPublicationSequence -State $state
         if ($null -ne $state.pending) {
+            Update-FFPendingPublicationLayout -Options $options -State $state -StatePath $statePath
             if ($state.pending.phase -eq 'building') {
                 # A crash may occur after Package-Win64 succeeds but before state is saved.
                 $previousLabel = $state.pending.buildLabel
                 $completedRoot = Join-Path $options.OutputRoot $previousLabel
                 if (Test-Path -LiteralPath $completedRoot -PathType Container) {
+                    Set-FFPendingPublicationIdentity -State $state
                     $state.pending.files = @(Get-FFPublicationFiles -Options $options -Pending $state.pending)
                     $state.pending.phase = 'ready'
                     Write-FFState -State $state -Path $statePath
@@ -374,6 +503,7 @@ function Invoke-FFDailyBuild {
             phase = 'building'; commit = $commit; buildLabel = $label
             startedAtUtc = [DateTimeOffset]::UtcNow.ToString('o'); files = @()
         }
+        Set-FFPendingPublicationIdentity -State $state
         Write-FFState -State $state -Path $statePath
         Invoke-FFPackage -Options $options -BuildLabel $label
         $state.pending.files = @(Get-FFPublicationFiles -Options $options -Pending $state.pending)
