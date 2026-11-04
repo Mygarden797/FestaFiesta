@@ -93,10 +93,10 @@ try {
                 $uri = $Arguments[$download + 1]; $path = $Arguments[$download + 2]
                 $script:DuckFixture.Events.Add('download:' + $uri)
                 if ($script:DuckFixture.OmitDownload) { return }
-                if ($script:DuckFixture.OmitArtifactDownload -and $uri.EndsWith('/build.zip')) { return }
+                if ($script:DuckFixture.OmitArtifactDownload -and $uri.EndsWith('.zip')) { return }
                 if (-not $script:DuckFixture.RemoteFiles.ContainsKey($uri)) { throw 'Fixture remote download failed.' }
                 $bytes = [byte[]]$script:DuckFixture.RemoteFiles[$uri]
-                if ($script:DuckFixture.TamperArtifact -and $uri.EndsWith('/build.zip')) {
+                if ($script:DuckFixture.TamperArtifact -and $uri.EndsWith('.zip')) {
                     $bytes = [byte[]]$bytes.Clone()
                     $bytes[0] = $bytes[0] -bxor 1
                 }
@@ -104,11 +104,17 @@ try {
                 return 'Credential-bearing output must never be forwarded.'
             }
             if ($upload -ge 0) {
-                $directoryUri = $Arguments[$upload + 1]; $path = $Arguments[$upload + 2]
-                $uri = $directoryUri + [IO.Path]::GetFileName($path)
+                $targetUri = $Arguments[$upload + 1]; $path = $Arguments[$upload + 2]
+                if ($targetUri.EndsWith('/')) {
+                    $directoryUri = $targetUri
+                    $uri = $directoryUri + [IO.Path]::GetFileName($path)
+                }
+                else {
+                    $uri = $targetUri
+                    $directoryUri = $targetUri.Substring(0, $targetUri.LastIndexOf('/') + 1)
+                }
                 $script:DuckFixture.Events.Add('upload:' + $uri)
                 if ($script:DuckFixture.FailUpload) { throw 'Fixture remote upload failed.' }
-                if (-not $directoryUri.EndsWith('/')) { throw 'Fixture requires the documented upload-directory URI.' }
                 if (-not $script:DuckFixture.Directories.ContainsKey($directoryUri)) { throw 'Fixture refuses an upload into a missing directory.' }
                 $script:DuckFixture.RemoteFiles[$uri] = [IO.File]::ReadAllBytes($path)
                 return 'Credential-bearing output must never be forwarded.'
@@ -166,6 +172,79 @@ try {
     $harness.OmitArtifactDownload = $false
     $wrongLengthFile = $file.PSObject.Copy(); $wrongLengthFile.bytes++
     Assert-DuckThrows { Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $wrongLengthFile } 'Correct readback bytes cannot satisfy an incorrect expected length.' 'byte length'
+
+    $rootFile = $file.PSObject.Copy(); $rootFile.remoteName = 'V24(2026.11.03).zip'
+    $rootArtifactUri = $configuration.rootUri + '/V24%282026.11.03%29.zip'
+    $harness.Directories[$configuration.rootUri + '/'] = $true
+    $harness.Events.Clear(); $harness.Invocations.Clear()
+    Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $rootFile -RootFile
+    Assert-DuckTest ($harness.Events.Count -eq 3 -and $harness.Events[0] -eq ('download:' + $markerUri) -and
+        $harness.Events[1] -eq ('upload:' + $rootArtifactUri) -and
+        $harness.Events[2] -eq ('download:' + $rootArtifactUri)) 'A root ZIP is sent directly after marker verification, with no build directory listing or creation.'
+    Assert-DuckTest ($harness.RemoteFiles.ContainsKey($rootArtifactUri)) 'The versioned ZIP is stored directly in the target root.'
+    $rootUpload = @($harness.Invocations | Where-Object { $_.arguments -contains '--upload' })[0]
+    Assert-DuckTest ($rootUpload.arguments -contains $artifactPath -and $rootUpload.arguments -contains $rootArtifactUri) 'The exact remote file URI renames the upload without copying or renaming the local source ZIP.'
+    Assert-DuckTest ($file.remoteName -ceq 'build.zip' -and (Get-Item -LiteralPath $artifactPath).Name -ceq 'build.zip') 'Root publication preserves the original local archive name.'
+    $maxVersionFile = $rootFile.PSObject.Copy(); $maxVersionFile.remoteName = 'V2147483647(2026.11.03).zip'
+    Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $maxVersionFile -RootFile
+    Assert-DuckTest ($harness.RemoteFiles.ContainsKey($configuration.rootUri + '/V2147483647%282026.11.03%29.zip')) 'The maximum publication version supported by the main pipeline can be uploaded.'
+    $harness.TamperArtifact = $true
+    Assert-DuckThrows { Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $rootFile -RootFile } 'Root ZIP readback still detects content corruption.' 'readback SHA-256'
+    $harness.TamperArtifact = $false; $harness.OmitArtifactDownload = $true
+    Assert-DuckThrows { Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $rootFile -RootFile } 'Root ZIP readback cannot succeed when the download is missing.' 'not downloaded'
+    $harness.OmitArtifactDownload = $false
+    $priorCalls = $harness.Invocations.Count
+    foreach ($unsafeName in @('../V24(2026.11.03).zip', 'V24(2026.11.03)/build.zip',
+        'V24%282026.11.03%29.zip', 'V24(2026.11.03).json', 'V0(2026.11.03).zip', 'V24(2026.02.30).zip',
+        'V2147483648(2026.11.03).zip', 'V9999999999(2026.11.03).zip', 'V10000000000(2026.11.03).zip')) {
+        $unsafeRootFile = $rootFile.PSObject.Copy(); $unsafeRootFile.remoteName = $unsafeName
+        Assert-DuckThrows { Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $unsafeRootFile -RootFile } 'Root publication refuses unsafe filenames and invalid dates.'
+    }
+    Assert-DuckTest ($harness.Invocations.Count -eq $priorCalls) 'Invalid root publication names fail before any native call.'
+    Assert-DuckThrows { Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $rootFile } 'Versioned basename remapping is enabled only by explicit root publication mode.' 'single filename'
+
+    $folderFile = $file.PSObject.Copy(); $folderFile.remoteName = 'FestaFiesta!.zip'
+    $publicationFolder = 'V24(2026.11.03.18:44)'
+    $publicationDirectoryUri = $configuration.rootUri + '/V24%282026.11.03.18%3A44%29/'
+    $publicationArtifactUri = $publicationDirectoryUri + 'FestaFiesta%21.zip'
+    $harness.Events.Clear(); $harness.Invocations.Clear()
+    Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $folderFile -PublicationFolder $publicationFolder
+    Assert-DuckTest ($harness.Events.Count -eq 6 -and $harness.Events[0] -eq ('download:' + $markerUri) -and
+        $harness.Events[1] -eq ('list:' + $publicationDirectoryUri) -and
+        $harness.Events[2] -eq ('mkdir:' + $publicationDirectoryUri) -and
+        $harness.Events[3] -eq ('list:' + $publicationDirectoryUri) -and
+        $harness.Events[4] -eq ('upload:' + $publicationArtifactUri) -and
+        $harness.Events[5] -eq ('download:' + $publicationArtifactUri)) 'Version folders are created and confirmed after marker verification, then the renamed ZIP is uploaded and read back.'
+    $folderArtifacts = @($harness.RemoteFiles.Keys | Where-Object { $_.StartsWith($publicationDirectoryUri, [StringComparison]::Ordinal) })
+    Assert-DuckTest ($folderArtifacts.Count -eq 1 -and $folderArtifacts[0] -ceq $publicationArtifactUri) 'The version folder receives exactly one FestaFiesta!.zip archive.'
+    $folderUpload = @($harness.Invocations | Where-Object { $_.arguments -contains '--upload' })[0]
+    Assert-DuckTest ($folderUpload.arguments -contains $artifactPath -and $folderUpload.arguments -contains $publicationArtifactUri) 'An exact destination file URI maps the original local ZIP to the fixed archive name.'
+    $harness.Events.Clear()
+    Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $folderFile -PublicationFolder $publicationFolder
+    Assert-DuckTest ($harness.Events.Count -eq 4 -and $harness.Events -notcontains ('mkdir:' + $publicationDirectoryUri)) 'A version folder retry reuses its existing directory.'
+    $harness.Directories.Remove($publicationDirectoryUri); $harness.Events.Clear(); $harness.FailCreateDirectory = $true
+    Assert-DuckThrows { Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $folderFile -PublicationFolder $publicationFolder } 'A failed version-folder creation prevents uploading the archive.' 'directory creation failed'
+    Assert-DuckTest (@($harness.Events | Where-Object { $_ -like 'upload:*' }).Count -eq 0) 'No version archive is uploaded when folder creation fails.'
+    $harness.FailCreateDirectory = $false; $harness.FailDirectoryConfirmation = $true; $harness.Events.Clear()
+    Assert-DuckThrows { Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $folderFile -PublicationFolder $publicationFolder } 'A new version folder must pass confirmation before upload.' 'directory list failed'
+    Assert-DuckTest (@($harness.Events | Where-Object { $_ -like 'upload:*' }).Count -eq 0) 'An unconfirmed version folder receives no archive.'
+    $harness.FailDirectoryConfirmation = $false; $harness.TamperArtifact = $true
+    Assert-DuckThrows { Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $folderFile -PublicationFolder $publicationFolder } 'The fixed archive filename still receives full SHA-256 verification.' 'readback SHA-256'
+    $harness.TamperArtifact = $false; $harness.OmitArtifactDownload = $true
+    Assert-DuckThrows { Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $folderFile -PublicationFolder $publicationFolder } 'A missing version archive readback fails publication.' 'not downloaded'
+    $harness.OmitArtifactDownload = $false
+    Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $folderFile -PublicationFolder 'V2147483647(2026.11.03.18:44)'
+    Assert-DuckTest ($harness.RemoteFiles.ContainsKey($configuration.rootUri + '/V2147483647%282026.11.03.18%3A44%29/FestaFiesta%21.zip')) 'Version-folder mode accepts the same maximum version as the main pipeline.'
+    $priorCalls = $harness.Invocations.Count
+    foreach ($unsafeFolder in @('../V24(2026.11.03.18:44)', 'V24(2026.11.03.18:44)/child', 'V24%282026.11.03.18%3A44%29',
+        'V24(2026.11.03.18:44).zip', 'V0(2026.11.03.18:44)', 'V24(2026.02.30.18:44)', 'V2147483648(2026.11.03.18:44)',
+        'V24(2026.11.03.24:00)', 'V24(2026.11.03.18:60)', 'V24(2026.11.03)', '')) {
+        Assert-DuckThrows { Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $folderFile -PublicationFolder $unsafeFolder } 'Unsafe version folders and invalid calendar dates are refused.'
+    }
+    Assert-DuckThrows { Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $folderFile -PublicationFolder $publicationFolder -RootFile } 'Ambiguous root and folder publication modes are refused.' 'either root'
+    $wrongArchiveFile = $folderFile.PSObject.Copy(); $wrongArchiveFile.remoteName = 'other.zip'
+    Assert-DuckThrows { Invoke-FFDuckUploadFile -Options $options -BuildLabel $label -File $wrongArchiveFile -PublicationFolder $publicationFolder } 'Version folders accept only the fixed FestaFiesta!.zip filename.' 'FestaFiesta!.zip'
+    Assert-DuckTest ($harness.Invocations.Count -eq $priorCalls) 'Invalid version-folder requests fail before native calls.'
 
     $changedOptions = $options.PSObject.Copy(); $changedOptions.DriveFolderId = 'different_requested_folder'
     $priorCalls = $harness.Invocations.Count

@@ -110,13 +110,38 @@ function Invoke-FFDuckUploadFile {
     param(
         [Parameter(Mandatory = $true)] $Options,
         [Parameter(Mandatory = $true)][string] $BuildLabel,
-        [Parameter(Mandatory = $true)] $File
+        [Parameter(Mandatory = $true)] $File,
+        [switch] $RootFile,
+        [string] $PublicationFolder
     )
     if ($BuildLabel -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$') { throw 'Invalid Duck build label.' }
     foreach ($name in @('path', 'remoteName', 'sha256', 'bytes')) {
         if (-not ($File.PSObject.Properties.Name -contains $name)) { throw "The upload file requires $name." }
     }
-    if ([string]$File.remoteName -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,239}$' -or
+    $hasPublicationFolder = $PSBoundParameters.ContainsKey('PublicationFolder')
+    if ($RootFile -and $hasPublicationFolder) { throw 'Choose either root publication or a versioned publication folder.' }
+    if ($RootFile -or $hasPublicationFolder) {
+        if ($hasPublicationFolder -and [string]$File.remoteName -cne 'FestaFiesta!.zip') {
+            throw 'A versioned publication folder requires the FestaFiesta!.zip filename.'
+        }
+        $versionedName = if ($hasPublicationFolder) { $PublicationFolder + '.zip' } else { [string]$File.remoteName }
+        $versionedPattern = if ($hasPublicationFolder) {
+            '^V([1-9][0-9]{0,9})\([0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}:[0-9]{2}\)\.zip$'
+        }
+        else { '^V([1-9][0-9]{0,9})\([0-9]{4}\.[0-9]{2}\.[0-9]{2}\)\.zip$' }
+        if ($versionedName -cnotmatch $versionedPattern -or
+            [long]$Matches[1] -gt 2147483647) {
+            throw 'A publication requires a safe versioned ZIP filename or folder.'
+        }
+        $publicationDate = [DateTime]::MinValue
+        $dateText = if ($hasPublicationFolder) { $PublicationFolder.Split('(')[1].TrimEnd(')') } else { $versionedName.Split('(')[1].Substring(0, 10) }
+        $dateFormat = if ($hasPublicationFolder) { 'yyyy.MM.dd.HH:mm' } else { 'yyyy.MM.dd' }
+        if (-not [DateTime]::TryParseExact($dateText, $dateFormat, [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::None, [ref]$publicationDate)) {
+            throw 'A publication requires a valid calendar date.'
+        }
+    }
+    elseif ([string]$File.remoteName -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,239}$' -or
         [string]$File.remoteName -cne [IO.Path]::GetFileName([string]$File.path)) {
         throw 'The Duck artifact requires a safe single filename matching the source file.'
     }
@@ -154,27 +179,49 @@ function Invoke-FFDuckUploadFile {
             [string]$marker.folderId -cne $settings.folderId) {
             throw 'The verified Duck marker does not identify the requested Drive folder.'
         }
-        $artifactUri = $settings.rootUri + '/' + $BuildLabel + '/' + [string]$File.remoteName
-        $uploadDirectoryUri = $settings.rootUri + '/' + $BuildLabel + '/'
-        $directoryExists = $false
-        try {
-            $null = Invoke-FFDuckNative -FilePath $settings.executable -Arguments (
-                $commonArguments + @('--list', $uploadDirectoryUri)) -Operation 'Inspect Duck build directory'
-            $directoryExists = $true
+        if ($RootFile) {
+            # .NET Framework leaves parentheses unescaped while newer .NET
+            # encodes them; use the same URI in both PowerShell runtimes.
+            $encodedName = [Uri]::EscapeDataString([string]$File.remoteName).Replace('(', '%28').Replace(')', '%29')
+            $artifactUri = $settings.rootUri + '/' + $encodedName
+            # A file URI without a trailing slash is the documented --upload
+            # form for renaming the source on the server. Keep the local ZIP.
+            $uploadUri = $artifactUri
         }
-        catch {
-            # CLI diagnostics deliberately remain suppressed. If this is a
-            # permission/network failure, mkdir or its confirmation also fails
-            # and no artifact is uploaded or recorded as published.
-        }
-        if (-not $directoryExists) {
-            $null = Invoke-FFDuckNative -FilePath $settings.executable -Arguments (
-                $commonArguments + @('--mkdir', $uploadDirectoryUri)) -Operation 'Create Duck build directory'
-            $null = Invoke-FFDuckNative -FilePath $settings.executable -Arguments (
-                $commonArguments + @('--list', $uploadDirectoryUri)) -Operation 'Confirm Duck build directory'
+        else {
+            if ($hasPublicationFolder) {
+                $encodedFolder = [Uri]::EscapeDataString($PublicationFolder).Replace('(', '%28').Replace(')', '%29').Replace(':', '%3A')
+                # Framework EscapeDataString also leaves ! literal; normalize
+                # the fixed archive name for both supported runtimes.
+                $encodedArchiveName = [Uri]::EscapeDataString([string]$File.remoteName).Replace('!', '%21')
+                $uploadDirectoryUri = $settings.rootUri + '/' + $encodedFolder + '/'
+                $artifactUri = $uploadDirectoryUri + $encodedArchiveName
+                $uploadUri = $artifactUri
+            }
+            else {
+                $artifactUri = $settings.rootUri + '/' + $BuildLabel + '/' + [string]$File.remoteName
+                $uploadDirectoryUri = $settings.rootUri + '/' + $BuildLabel + '/'
+                $uploadUri = $uploadDirectoryUri
+            }
+            $directoryExists = $false
+            try {
+                $null = Invoke-FFDuckNative -FilePath $settings.executable -Arguments (
+                    $commonArguments + @('--list', $uploadDirectoryUri)) -Operation 'Inspect Duck build directory'
+                $directoryExists = $true
+            }
+            catch {
+                # A permission/network failure must also fail mkdir or its
+                # confirmation before any artifact can be uploaded.
+            }
+            if (-not $directoryExists) {
+                $null = Invoke-FFDuckNative -FilePath $settings.executable -Arguments (
+                    $commonArguments + @('--mkdir', $uploadDirectoryUri)) -Operation 'Create Duck build directory'
+                $null = Invoke-FFDuckNative -FilePath $settings.executable -Arguments (
+                    $commonArguments + @('--list', $uploadDirectoryUri)) -Operation 'Confirm Duck build directory'
+            }
         }
         $null = Invoke-FFDuckNative -FilePath $settings.executable -Arguments (
-            $commonArguments + @('--upload', $uploadDirectoryUri, [string]$File.path)) -Operation 'Upload build artifact with Duck'
+            $commonArguments + @('--upload', $uploadUri, [string]$File.path)) -Operation 'Upload build artifact with Duck'
         $null = Invoke-FFDuckNative -FilePath $settings.executable -Arguments (
             $commonArguments + @('--download', $artifactUri, $readbackPath)) -Operation 'Read back the uploaded Duck artifact'
         $actualHash = Get-FFDuckDownloadedHash -Path $readbackPath -Description 'The uploaded artifact'

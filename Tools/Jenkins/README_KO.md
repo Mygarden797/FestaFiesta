@@ -99,14 +99,16 @@ Job은 `TZ=Asia/Seoul`과 `0 19 * * *`로 예약한다. 실행 중 중복 Job을
 3. 마지막 **업로드 성공 SHA**와 같으면 빌드 없이 종료한다.
 4. 다르면 그 SHA로 checkout하고 LFS 에셋을 받는다. 빌드 도중 새 push가 와도 이번 실행은 처음 선택한 SHA를 유지한다.
 5. `Package-Win64.ps1`의 표준 패키징과 `-GraphicsSmokeTest`를 실행한다. 검증 생략 옵션은 사용하지 않는다.
-6. 성공본의 ZIP, `build-manifest.json`, `ARCHIVE-SHA256.txt`, `verification.json`을 같은 라벨의 Drive 하위 폴더에 올린다. 각 파일을 올리기 전에 대상 마커를 검증하며, 업로드 뒤에는 파일 전체를 다시 내려받아 SHA-256과 크기를 대조한다.
-7. 네 파일의 업로드와 검증이 끝난 뒤에만 게시 성공 SHA를 원자적으로 갱신한다.
+6. 팀 빌드 Drive 안에 `V25(2026.11.04.19:00)` 형식의 버전 폴더를 만들고, 그 안에 **`FestaFiesta!.zip` 하나만** 올린다. 로컬 manifest·검증 결과·ZIP 체크섬을 확인하고, Duck 업로드 전 대상 마커를 검증한다. Duck 업로드 뒤에는 ZIP 전체를 다시 내려받아 SHA-256과 크기를 대조한다. 선택 사항인 rclone 업로더는 Drive의 MD5를 대조한다.
+7. ZIP 업로드와 무결성 검증이 끝난 뒤에만 게시 성공 SHA를 원자적으로 갱신한다.
 
-전체 파일 재다운로드 검증으로 업로드 용량과 비슷한 다운로드 트래픽·임시 디스크 공간이 추가로 필요하다. 6시간 제한에는 패키징과 이 왕복 검증이 모두 포함된다. 네 파일이 전부 검증되기 전에는 Drive에 폴더가 보이더라도 게시 성공으로 보지 않는다.
+Duck의 전체 ZIP 재다운로드 검증으로 업로드 용량과 비슷한 다운로드 트래픽·임시 디스크 공간이 추가로 필요하다. 6시간 제한에는 패키징과 이 왕복 검증이 모두 포함된다. ZIP이 Drive에 보이더라도 무결성 검증이 끝나기 전에는 게시 성공으로 보지 않는다.
 
-라벨 예시는 `FF-v1.0.0.0-20261103-190000-b12-a1b2c3d4`다. 날짜·시각은 한국 시간이며 버전은 선택한 커밋의 `ProjectVersion`, `b12`는 Jenkins 빌드번호다. 소스의 게임 버전을 자동 증가시키지는 않는다.
+배포 폴더명은 `V24(2026.11.03.18:44)` → `V25(2026.11.04.19:00)` → `V26(2026.11.04.20:15)`처럼 새 빌드를 만들 때마다 번호를 1 올린다. 각 폴더 안의 파일명은 항상 `FestaFiesta!.zip`이다. 괄호 안 `yyyy.MM.dd.HH:mm`은 `pending.startedAtUtc`에 기록된 실제 빌드 시작 시각을 한국 시간으로 바꾼 날짜·시·분이다. 업로드 재시도에서는 번호와 시각을 유지한다. `daily-build-state.json`의 `publicationSequence`에 예약한 마지막 번호를 저장하고, `pending`과 `published`의 `publicationVersion`·`publicationName`에 각 배포의 번호·폴더명을 기록한다. `published.publicationArchiveName`은 `FestaFiesta!.zip`을 기록한다. 상태가 없거나 이전 형식이면 기본 기준값은 23이어서 첫 번호는 V24다. 이번 기존 배포를 V24로 정리한 상태에서는 기준값을 24로 보존하므로 다음 빌드는 V25가 된다. 빌드 도중 실패한 번호는 다시 쓰지 않으며 다음 새 빌드가 다음 번호를 예약한다.
 
-로컬 라벨 폴더에는 `Package`, ZIP, 내부 분석용 `Symbols`, `Metadata`, `Validation`, `Logs`가 남는다. Drive에는 배포 ZIP과 확인용 메타데이터만 올린다. 게임을 전달할 때 EXE 하나가 아닌 ZIP 전체를 사용한다. 실행 방법은 [배포본 안내](../../Distribution/README_KO.md)를 따른다.
+내부 로컬 라벨은 `FF-v1.0.0.0-20261103-190000-b12-a1b2c3d4` 형식을 유지한다. `ProjectVersion`과 Jenkins 빌드번호·소스 커밋의 추적 용도이며 배포 번호와 별개다. 소스의 게임 버전을 자동 증가시키지는 않는다.
+
+로컬 라벨 폴더에는 `Package`, 원래 이름의 ZIP, 내부 분석용 `Symbols`, `Metadata`, `Validation`, `Logs`가 남는다. ZIP의 내용과 바이트는 바꾸지 않고 원격 폴더명·파일명만 적용한다. `build-manifest.json`은 기존처럼 ZIP 안에도 포함되며 `ARCHIVE-SHA256.txt`와 `verification.json`은 로컬 `Metadata`에 보존한다. 이전 형식의 4개 파일 업로드 대기본은 기록된 크기·해시를 모두 확인한 다음 ZIP 하나의 대기본으로 전환한다. 루트에 `V번호(날짜).zip`을 올리던 대기본이나 날짜만 있는 폴더의 대기본도 기록된 ZIP 크기·해시를 확인한 후 같은 번호와 실제 빌드 시작 시각의 폴더 안에 `FestaFiesta!.zip`을 올리는 형태로 전환한다. 이미 Drive에 있는 과거 폴더를 자동으로 삭제하지는 않는다. 게임을 전달할 때 ZIP 전체를 사용한다. 실행 방법은 [배포본 안내](../../Distribution/README_KO.md)를 따른다.
 
 상태 확인과 수동 실행은 다음 명령을 쓴다. `Build`는 정상 게시 실행이며 `BuildOnly`는 아래의 초기 검증 모드다.
 
@@ -146,7 +148,7 @@ Drive 인증 전 패키징 검증은 Job의 **Build with Parameters → `BUILD_O
 & '.\Tools\Jenkins\Test-FestaFiestaLiveDriveCleanup.ps1'
 ```
 
-확인된 fixture 검증은 핵심 흐름 46개, Duck 전송 52개다. Duck의 52개에는 캡처한 실제 CLI 도움말의 옵션 확인이 포함된다. 위 도움말 파일은 이번 설치의 캡처 결과다. 다른 checkout에 파일이 없다면 설치된 `duck.exe --help`를 캡처해 그 경로를 지정한다. `-CliHelpPath`를 생략하면 도움말 확인을 제외한 51개를 실행한다. 원격 Git, Unreal 빌드, 실제 Drive 요청 없이 변경 생략, KST 라벨, 실패 복구, 파일 변조, 잠금, 마커 불일치, 폴더 생성 실패, 업로드 실패, 원격 변조·누락 등을 검사한다. 별도 cleanup fixture 24개는 CLI의 커서 제어문자를 포함한 빈 목록 처리, 비어 있지 않은 폴더 보존, 실패 시 성공 기록 거부를 확인한다. fixture 통과는 실제 게임 빌드나 수동 플레이 QA의 통과를 뜻하지 않는다.
+핵심 흐름 fixture는 76개 검증을 수행한다. 새 배포 번호·KST 시작 날짜와 시각, 버전 폴더 안 `FestaFiesta!.zip` 하나의 업로드, 재시도에서 이름 유지, 기존 V24 상태에서 V25 예약, 이전 4개 파일·루트 ZIP·날짜만 있는 폴더 대기본의 전환을 포함한다. Duck 전송 fixture는 별도로 실행하며 실제 CLI 도움말 검증은 `-CliHelpPath`를 지정했을 때 포함한다. 위 도움말 파일은 이번 설치의 캡처 결과다. 다른 checkout에 파일이 없다면 설치된 `duck.exe --help`를 캡처해 그 경로를 지정한다. 원격 Git, Unreal 빌드, 실제 Drive 요청 없이 변경 생략, 실패 복구, 파일 변조, 잠금, 마커 불일치, 업로드 실패, 원격 변조·누락 등을 검사한다. 별도 cleanup fixture 24개는 CLI의 커서 제어문자를 포함한 빈 목록 처리, 비어 있지 않은 폴더 보존, 실패 시 성공 기록 거부를 확인한다. fixture 통과는 실제 게임 빌드나 수동 플레이 QA의 통과를 뜻하지 않는다.
 
 ## 문제 확인과 재시도
 
